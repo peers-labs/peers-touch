@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import base64
 import importlib.util
+import inspect
 import json
 import os
 import re
@@ -10,7 +11,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from tooling.acceptance.core import (
     ArtifactRef,
@@ -191,6 +192,93 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         )
         self.environment = patch.dict(os.environ, environment)
         self.environment.start()
+
+    def test_native_login_pins_the_manifest_station_identity_first(self) -> None:
+        report = self.valid_report()
+        station = report["manifest"]["services"]["station-four"]
+        station["runtimeIdentity"] = "station-peer-four"
+        actors = {
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}",
+                    "ptid": f"did:pt:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": True, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=report["manifest"],
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+        )
+        with patch(
+            "tooling.acceptance.gates.chat.native_two_client_runner."
+            "call_async_harness",
+            return_value={
+                "configured": True,
+                "activeUrl": "http://station-four",
+                "boundUrl": "http://station-four",
+                "bindingPhase": "access_gate",
+                "activeStationPeerId": "station-peer-four",
+            },
+        ) as harness:
+            binding = gate.configure_station_access(object(), "alice")
+
+        self.assertTrue(binding["configured"])
+        harness.assert_called_once_with(
+            ANY,
+            "configureStation",
+            {"stationUrl": "http://station-four"},
+            namespace="stationAccess",
+            script_timeout=30,
+        )
+        source = inspect.getsource(NativeTwoClientGate.start_client)
+        self.assertLess(
+            source.index("self.configure_station_access(client, actor)"),
+            source.index('"loginWithPassword"'),
+        )
+
+    def test_native_login_rejects_the_wrong_station_identity(self) -> None:
+        report = self.valid_report()
+        report["manifest"]["services"]["station-four"][
+            "runtimeIdentity"
+        ] = "station-peer-four"
+        actors = {
+            "actors": [
+                {
+                    "role": actor,
+                    "accountRef": f"station-account:{actor}",
+                    "ptid": f"did:pt:{actor}",
+                }
+                for actor in ("alice", "bob")
+            ],
+            "reset": {"authorized": True, "targetVerified": True},
+        }
+        gate = NativeTwoClientGate(
+            manifest=report["manifest"],
+            actor_manifest=actors,
+            runtime_binding=SyntheticRuntimeBinding(),  # type: ignore[arg-type]
+        )
+        with (
+            patch(
+                "tooling.acceptance.gates.chat.native_two_client_runner."
+                "call_async_harness",
+                return_value={
+                    "configured": True,
+                    "activeUrl": "http://station-four",
+                    "boundUrl": "http://station-four",
+                    "bindingPhase": "access_gate",
+                    "activeStationPeerId": "wrong-station",
+                },
+            ),
+            self.assertRaisesRegex(
+                GateError,
+                "did not verify the configured Station",
+            ),
+        ):
+            gate.configure_station_access(object(), "alice")
 
     def test_avatar_evidence_requires_each_actor_on_a_remote_client(self) -> None:
         alice = "data:image/svg+xml;base64,alice"
