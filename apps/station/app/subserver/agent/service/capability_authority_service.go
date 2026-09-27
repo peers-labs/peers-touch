@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
@@ -28,16 +29,30 @@ const (
 	maxCapabilityIdempotencyKeyBytes = 160
 )
 
+type capabilityAcceptanceMutationGuard interface {
+	BeforeBindingMutation(
+		context.Context,
+		string,
+		*model.UpsertAgentCapabilityBindingRequest,
+	) error
+	BindingTarget(string, string) (string, string)
+}
+
 type CapabilityAuthorityService struct {
-	db       *gorm.DB
-	eventBus domain.EventBus
-	now      func() time.Time
+	db                      *gorm.DB
+	eventBus                domain.EventBus
+	now                     func() time.Time
+	catalogIssuesMu         sync.RWMutex
+	catalogIssues           map[string][]*model.CapabilityCatalogIssue
+	catalogIssueRevision    uint64
+	acceptanceMutationGuard capabilityAcceptanceMutationGuard
 }
 
 func NewCapabilityAuthorityService(db *gorm.DB) *CapabilityAuthorityService {
 	return &CapabilityAuthorityService{
-		db:  db,
-		now: func() time.Time { return time.Now().UTC() },
+		db:            db,
+		now:           func() time.Time { return time.Now().UTC() },
+		catalogIssues: make(map[string][]*model.CapabilityCatalogIssue),
 	}
 }
 
@@ -45,10 +60,20 @@ func (s *CapabilityAuthorityService) SetEventBus(eventBus domain.EventBus) {
 	s.eventBus = eventBus
 }
 
+func (s *CapabilityAuthorityService) SetAcceptanceMutationGuard(
+	guard capabilityAcceptanceMutationGuard,
+) {
+	s.acceptanceMutationGuard = guard
+}
+
 func (s *CapabilityAuthorityService) RegisterManifest(
 	ctx context.Context,
 	manifest *model.CapabilityManifest,
 ) (*model.CapabilityManifest, error) {
+	if err := validateCapabilityManifest(manifest); err != nil {
+		s.recordCatalogIssue(manifest, err)
+		return nil, err
+	}
 	var created *model.CapabilityManifest
 	mutated := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -63,6 +88,13 @@ func (s *CapabilityAuthorityService) RegisterManifest(
 			created,
 		)
 	}
+	if err == nil {
+		s.clearCatalogIssue(
+			created.GetOwnerPtid(),
+			created.GetCapabilityId(),
+			created.GetVersion(),
+		)
+	}
 	return created, err
 }
 
@@ -70,14 +102,6 @@ func (s *CapabilityAuthorityService) registerManifestTx(
 	tx *gorm.DB,
 	manifest *model.CapabilityManifest,
 ) (*model.CapabilityManifest, bool, error) {
-	if manifest == nil ||
-		strings.TrimSpace(manifest.GetCapabilityId()) == "" ||
-		strings.TrimSpace(manifest.GetVersion()) == "" {
-		return nil, false, capabilityInvalid("capability_id and version are required")
-	}
-	if err := validateCapabilityManifest(manifest); err != nil {
-		return nil, false, err
-	}
 	normalized := proto.Clone(manifest).(*model.CapabilityManifest)
 	normalized.CapabilityId = strings.TrimSpace(normalized.GetCapabilityId())
 	normalized.Version = strings.TrimSpace(normalized.GetVersion())
@@ -148,6 +172,202 @@ func (s *CapabilityAuthorityService) ListManifests(
 		result = append(result, capabilityManifestModel(&records[i]))
 	}
 	return result, nil
+}
+
+func (s *CapabilityAuthorityService) ListManifestInventory(
+	ctx context.Context,
+	ptid string,
+	sourceKinds []model.CapabilitySourceKind,
+) ([]*model.CapabilityManifest, []*model.CapabilityCatalogIssue, error) {
+	manifests, err := s.ListManifests(ctx, ptid, sourceKinds)
+	if err != nil {
+		return nil, nil, err
+	}
+	ptid = strings.TrimSpace(ptid)
+	s.catalogIssuesMu.RLock()
+	defer s.catalogIssuesMu.RUnlock()
+	stored := s.catalogIssues[ptid]
+	issues := make([]*model.CapabilityCatalogIssue, 0, len(stored))
+	for _, issue := range stored {
+		issues = append(issues, proto.Clone(issue).(*model.CapabilityCatalogIssue))
+	}
+	return manifests, issues, nil
+}
+
+func (s *CapabilityAuthorityService) recordCatalogIssue(
+	manifest *model.CapabilityManifest,
+	err error,
+) {
+	if manifest == nil || strings.TrimSpace(manifest.GetOwnerPtid()) == "" {
+		return
+	}
+	var biz *errcode.BizError
+	if !errors.As(err, &biz) ||
+		biz.Code != errcode.AgentCapabilityManifestSchemaInvalid ||
+		biz.Payload == nil {
+		return
+	}
+	ptid := strings.TrimSpace(manifest.GetOwnerPtid())
+	capabilityID := strings.TrimSpace(manifest.GetCapabilityId())
+	version := strings.TrimSpace(manifest.GetVersion())
+	s.catalogIssuesMu.Lock()
+	defer s.catalogIssuesMu.Unlock()
+	s.catalogIssueRevision++
+	issue := &model.CapabilityCatalogIssue{
+		CapabilityId:      capabilityID,
+		CapabilityVersion: version,
+		Code:              model.CapabilityCatalogErrorCode_CAPABILITY_CATALOG_ERROR_CODE_SCHEMA_INVALID,
+		Error:             proto.Clone(biz.Payload).(*model.ErrorPayload),
+		Revision:          s.catalogIssueRevision,
+		ObservedAt:        timestamppb.New(s.now()),
+	}
+	current := s.catalogIssues[ptid]
+	filtered := current[:0]
+	for _, existing := range current {
+		if existing.GetCapabilityId() != capabilityID ||
+			existing.GetCapabilityVersion() != version {
+			filtered = append(filtered, existing)
+		}
+	}
+	s.catalogIssues[ptid] = append(filtered, issue)
+}
+
+func (s *CapabilityAuthorityService) clearCatalogIssue(
+	ptid string,
+	capabilityID string,
+	version string,
+) {
+	ptid = strings.TrimSpace(ptid)
+	if ptid == "" {
+		return
+	}
+	s.catalogIssuesMu.Lock()
+	defer s.catalogIssuesMu.Unlock()
+	current := s.catalogIssues[ptid]
+	filtered := current[:0]
+	for _, issue := range current {
+		if issue.GetCapabilityId() != capabilityID ||
+			issue.GetCapabilityVersion() != version {
+			filtered = append(filtered, issue)
+		}
+	}
+	if len(filtered) == 0 {
+		delete(s.catalogIssues, ptid)
+		return
+	}
+	s.catalogIssues[ptid] = filtered
+}
+
+func (s *CapabilityAuthorityService) purgeAcceptanceManifest(
+	ctx context.Context,
+	ptid string,
+	capabilityID string,
+) error {
+	return s.purgeAcceptanceManifestVersion(ctx, ptid, capabilityID, "")
+}
+
+func (s *CapabilityAuthorityService) purgeAcceptanceManifestVersion(
+	ctx context.Context,
+	ptid string,
+	capabilityID string,
+	version string,
+) error {
+	ptid = strings.TrimSpace(ptid)
+	capabilityID = strings.TrimSpace(capabilityID)
+	if ptid == "" || !strings.HasPrefix(capabilityID, capabilityAcceptancePrefix) {
+		return capabilityInvalid("acceptance capability cleanup scope is invalid")
+	}
+	query := s.db.WithContext(ctx).
+		Where("capability_id = ? AND owner_ptid = ?", capabilityID, ptid)
+	if strings.TrimSpace(version) != "" {
+		query = query.Where("version = ?", strings.TrimSpace(version))
+	}
+	result := query.Delete(&persistence.CapabilityManifest{})
+	if result.Error != nil {
+		return capabilityInternal("failed to purge acceptance capability manifest", result.Error)
+	}
+	return nil
+}
+
+func (s *CapabilityAuthorityService) purgeAcceptanceScenario(
+	ctx context.Context,
+	ptid string,
+	capabilityIDs []string,
+) error {
+	ptid = strings.TrimSpace(ptid)
+	if ptid == "" || len(capabilityIDs) == 0 {
+		return capabilityInvalid("acceptance capability cleanup scope is required")
+	}
+	normalized := make([]string, 0, len(capabilityIDs))
+	for _, capabilityID := range capabilityIDs {
+		capabilityID = strings.TrimSpace(capabilityID)
+		if !strings.HasPrefix(capabilityID, capabilityAcceptancePrefix) {
+			return capabilityInvalid("acceptance capability cleanup scope is invalid")
+		}
+		normalized = append(normalized, capabilityID)
+	}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var bindings []persistence.AgentCapabilityBinding
+		if err := tx.Select("binding_id").
+			Where("ptid = ? AND capability_id IN ?", ptid, normalized).
+			Find(&bindings).Error; err != nil {
+			return capabilityInternal("failed to load acceptance capability bindings", err)
+		}
+		bindingIDs := make([]string, 0, len(bindings))
+		for i := range bindings {
+			bindingIDs = append(bindingIDs, bindings[i].BindingID)
+		}
+		if len(bindingIDs) > 0 {
+			if err := tx.Where("ptid = ? AND binding_id IN ?", ptid, bindingIDs).
+				Delete(&persistence.CapabilityBindingCommand{}).Error; err != nil {
+				return capabilityInternal(
+					"failed to purge acceptance capability commands",
+					err,
+				)
+			}
+		}
+		if err := tx.Where("ptid = ? AND capability_id IN ?", ptid, normalized).
+			Delete(&persistence.AgentCapabilityBinding{}).Error; err != nil {
+			return capabilityInternal("failed to purge acceptance capability bindings", err)
+		}
+		if err := tx.Where("ptid = ? AND capability_id IN ?", ptid, normalized).
+			Delete(&persistence.CapabilityManifestCommand{}).Error; err != nil {
+			return capabilityInternal("failed to purge acceptance manifest commands", err)
+		}
+		if err := tx.Where(
+			"owner_ptid = ? AND capability_id IN ?",
+			ptid,
+			normalized,
+		).Delete(&persistence.CapabilityManifest{}).Error; err != nil {
+			return capabilityInternal("failed to purge acceptance manifests", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.catalogIssuesMu.Lock()
+	defer s.catalogIssuesMu.Unlock()
+	current := s.catalogIssues[ptid]
+	filtered := current[:0]
+	for _, issue := range current {
+		remove := false
+		for _, capabilityID := range normalized {
+			if issue.GetCapabilityId() == capabilityID {
+				remove = true
+				break
+			}
+		}
+		if !remove {
+			filtered = append(filtered, issue)
+		}
+	}
+	if len(filtered) == 0 {
+		delete(s.catalogIssues, ptid)
+	} else {
+		s.catalogIssues[ptid] = filtered
+	}
+	return nil
 }
 
 func (s *CapabilityAuthorityService) RetireManifest(
@@ -368,6 +588,15 @@ func (s *CapabilityAuthorityService) UpsertBinding(
 		len(req.GetIdempotencyKey()) > maxCapabilityIdempotencyKeyBytes {
 		return nil, capabilityInvalid("ptid, binding and idempotency_key are required")
 	}
+	if s.acceptanceMutationGuard != nil {
+		if err := s.acceptanceMutationGuard.BeforeBindingMutation(
+			ctx,
+			ptid,
+			req,
+		); err != nil {
+			return nil, err
+		}
+	}
 	payloadHash, err := capabilityProtoHash(req)
 	if err != nil {
 		return nil, capabilityInternal("failed to hash binding command", err)
@@ -497,7 +726,11 @@ func (s *CapabilityAuthorityService) DeleteBinding(
 			return capabilityRecordError("capability binding", err)
 		}
 		if record.TombstonedAt != nil || record.Revision != req.GetExpectedBindingRevision() {
-			return capabilityConflict("capability binding revision conflict")
+			return errcode.NewCapabilityBindingVersionConflict(
+				record.BindingID,
+				req.GetExpectedBindingRevision(),
+				record.Revision,
+			)
 		}
 		now := s.now()
 		nextRevision := record.Revision + 1
@@ -573,7 +806,11 @@ func (s *CapabilityAuthorityService) upsertBinding(
 	}
 	if input.GetApprovalPolicy() ==
 		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_UNSPECIFIED {
-		return nil, capabilityInvalid("approval_policy is required")
+		return nil, errcode.NewCapabilityPolicyInvalid(
+			strings.TrimSpace(input.GetBindingId()),
+			input.GetApprovalPolicy().String(),
+			"approval_policy_unspecified",
+		)
 	}
 	var agent persistence.Agent
 	if err := tx.Where("id = ? AND owner_actor_ptid = ?", agentID, ptid).First(&agent).Error; err != nil {
@@ -584,13 +821,71 @@ func (s *CapabilityAuthorityService) upsertBinding(
 	}
 	var manifest persistence.CapabilityManifest
 	if err := tx.Where(
-		"capability_id = ? AND version = ? AND retired_at IS NULL",
-		capabilityID, capabilityVersion,
+		"capability_id = ? AND version = ? AND retired_at IS NULL AND (owner_ptid = ? OR owner_ptid = ?)",
+		capabilityID, capabilityVersion, "", ptid,
 	).First(&manifest).Error; err != nil {
-		return nil, capabilityRecordError("active capability manifest", err)
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, capabilityInternal(
+				"failed to load active capability manifest",
+				err,
+			)
+		}
+		var inaccessible persistence.CapabilityManifest
+		inaccessibleErr := tx.Where(
+			"capability_id = ? AND version = ? AND retired_at IS NULL",
+			capabilityID,
+			capabilityVersion,
+		).First(&inaccessible).Error
+		if inaccessibleErr == nil {
+			return nil, capabilityRecordError(
+				"active capability manifest",
+				gorm.ErrRecordNotFound,
+			)
+		}
+		if !errors.Is(inaccessibleErr, gorm.ErrRecordNotFound) {
+			return nil, capabilityInternal(
+				"failed to resolve capability manifest ownership",
+				inaccessibleErr,
+			)
+		}
+		var current persistence.CapabilityManifest
+		currentErr := tx.Where(
+			"capability_id = ? AND retired_at IS NULL AND (owner_ptid = ? OR owner_ptid = ?)",
+			capabilityID, "", ptid,
+		).Order("created_at DESC, version DESC").First(&current).Error
+		if currentErr == nil {
+			return nil, errcode.NewCapabilityManifestVersionStale(
+				capabilityID,
+				capabilityVersion,
+				current.Version,
+			)
+		}
+		if !errors.Is(currentErr, gorm.ErrRecordNotFound) {
+			return nil, capabilityInternal(
+				"failed to resolve current capability manifest",
+				currentErr,
+			)
+		}
+		return nil, errcode.NewCapabilityManifestNotFound(
+			capabilityID,
+			capabilityVersion,
+		)
 	}
-	if manifest.OwnerPtid != "" && manifest.OwnerPtid != ptid {
-		return nil, capabilityRecordError("active capability manifest", gorm.ErrRecordNotFound)
+	if model.CapabilityAvailability(manifest.Availability) ==
+		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNAVAILABLE {
+		targetDeviceID := ""
+		reasonCode := "manifest_unavailable"
+		if s.acceptanceMutationGuard != nil {
+			targetDeviceID, reasonCode = s.acceptanceMutationGuard.BindingTarget(
+				ptid,
+				capabilityID,
+			)
+		}
+		return nil, errcode.NewCapabilityUnavailable(
+			capabilityID,
+			targetDeviceID,
+			reasonCode,
+		)
 	}
 	now := s.now()
 	bindingID := strings.TrimSpace(input.GetBindingId())
@@ -624,7 +919,11 @@ func (s *CapabilityAuthorityService) upsertBinding(
 		return nil, capabilityRecordError("capability binding", err)
 	}
 	if record.AgentID != agentID || record.Revision != req.GetExpectedBindingRevision() {
-		return nil, capabilityConflict("capability binding revision or agent mismatch")
+		return nil, errcode.NewCapabilityBindingVersionConflict(
+			record.BindingID,
+			req.GetExpectedBindingRevision(),
+			record.Revision,
+		)
 	}
 	nextRevision := record.Revision + 1
 	update := tx.Model(&persistence.AgentCapabilityBinding{}).
@@ -674,21 +973,52 @@ func capabilityManifestContentHash(manifest *model.CapabilityManifest) (string, 
 }
 
 func validateCapabilityManifest(manifest *model.CapabilityManifest) error {
+	capabilityID := strings.TrimSpace(manifest.GetCapabilityId())
+	if capabilityID == "" {
+		return errcode.NewCapabilityManifestSchemaInvalid(
+			"",
+			"capability_id",
+			"required",
+		)
+	}
+	if strings.TrimSpace(manifest.GetVersion()) == "" {
+		return errcode.NewCapabilityManifestSchemaInvalid(
+			capabilityID,
+			"version",
+			"required",
+		)
+	}
 	if manifest.GetSourceKind() ==
 		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_UNSPECIFIED {
-		return capabilityInvalid("source_kind is required")
+		return errcode.NewCapabilityManifestSchemaInvalid(
+			capabilityID,
+			"source_kind",
+			"unspecified",
+		)
 	}
 	if manifest.GetExecutionOwner() ==
 		model.ToolExecutionOwner_TOOL_EXECUTION_OWNER_UNSPECIFIED {
-		return capabilityInvalid("execution_owner is required")
+		return errcode.NewCapabilityManifestSchemaInvalid(
+			capabilityID,
+			"execution_owner",
+			"unspecified",
+		)
 	}
 	if manifest.GetDefaultApprovalPolicy() ==
 		model.CapabilityApprovalPolicy_CAPABILITY_APPROVAL_POLICY_UNSPECIFIED {
-		return capabilityInvalid("default_approval_policy is required")
+		return errcode.NewCapabilityManifestSchemaInvalid(
+			capabilityID,
+			"default_approval_policy",
+			"unspecified",
+		)
 	}
 	if manifest.GetAvailability() ==
 		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_UNSPECIFIED {
-		return capabilityInvalid("availability is required")
+		return errcode.NewCapabilityManifestSchemaInvalid(
+			capabilityID,
+			"availability",
+			"unspecified",
+		)
 	}
 	return nil
 }

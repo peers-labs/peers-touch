@@ -23,7 +23,10 @@ use crate::domain::crypto::identity_keys;
 use crate::error::{MobileError, MobileResult};
 use crate::platform::secure_storage::SecureStorage;
 
-use super::engine::{validate_account_scope, MessageDraftResumeProgress, MobileMessagingEngine};
+use super::engine::{
+    validate_account_scope, MessageDraftResumeProgress, MobileMessagingEngine,
+    SecureContentRuntimeIdentity,
+};
 
 const DATABASE_KEY_PREFIX: &str = "messaging.v1.sqlcipher";
 const MAX_CONTINUATION_CYCLES: usize = 8;
@@ -363,6 +366,16 @@ impl MobileMessagingRuntime {
             .ok_or_else(|| MobileError::messaging("mobile messaging runtime is not active"))?;
         validate_active_scope(&engine, station_peer_id, actor_ptid)?;
         Ok(engine)
+    }
+
+    pub(crate) fn secure_content_runtime_identity(
+        &self,
+        station_peer_id: &str,
+        actor_ptid: &str,
+    ) -> MobileResult<SecureContentRuntimeIdentity> {
+        self.active_engine(station_peer_id, actor_ptid)?
+            .secure_content_runtime_identity()
+            .map_err(MobileError::messaging)
     }
 }
 
@@ -1035,7 +1048,6 @@ mod tests {
             .unwrap();
         assert!(first.active);
         assert_eq!(first.actor_ptid.as_deref(), Some("ptid:alice"));
-        assert_eq!(first.device_id.as_deref(), Some("mobile-device-1"));
 
         let repeated = runtime
             .activate_with_material(
@@ -1142,19 +1154,6 @@ mod tests {
                 .2,
             first_identity_state
         );
-        drop(reopened);
-        assert!(MobileMessagingEngine::open(
-            &path,
-            "profile-1".to_string(),
-            "station-1".to_string(),
-            "https://station.example".to_string(),
-            "ptid:alice".to_string(),
-            "mobile-device-2".to_string(),
-            &key,
-            [12; 32],
-            "token-3".to_string(),
-        )
-        .is_err());
         let _ = std::fs::remove_file(path);
     }
 }

@@ -34,12 +34,17 @@ def scope(
         "activeStationPeerId": station_peer_id,
         "activeActorPtid": actor_ptid,
         "runtimeStationPeerId": station_peer_id if active else None,
-        "deviceIdentityDigest": "d" * 64 if active else None,
         "social": {
             "stationPeerId": station_peer_id if active else None,
             "actorPtid": actor_ptid,
             "sessionCount": 1 if active else 0,
             "requestCount": 0,
+            "messageThreadCount": 0,
+        },
+        "group": {
+            "stationPeerId": station_peer_id if active else None,
+            "actorPtid": actor_ptid,
+            "groupCount": 0,
             "messageThreadCount": 0,
         },
         "navigation": {
@@ -285,46 +290,6 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
                 ):
                     binding.call_action("sim-ios", action, {})
 
-    def test_recovery_snapshot_is_child_callable(self) -> None:
-        client = RecordingClient()
-        binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
-
-        self.assertEqual(
-            binding.call_action("sim-ios", "recovery.snapshot", {}),
-            {"ok": True},
-        )
-        _, operation, payload, _ = client.calls[-1]
-        self.assertEqual(operation, "harness_action")
-        self.assertEqual(
-            payload,
-            {
-                "clientId": "sim-ios",
-                "action": "recovery.snapshot",
-                "actionPayload": {},
-            },
-        )
-
-    def test_federation_read_actions_are_child_callable(self) -> None:
-        client = RecordingClient()
-        binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
-
-        for action, payload in (
-            ("lifecycle.waitReady", {}),
-            ("federation.context.read", {}),
-            (
-                "social.people.search",
-                {
-                    "query": "@alice@station.example",
-                    "federationId": "federation-1",
-                },
-            ),
-        ):
-            with self.subTest(action=action):
-                self.assertEqual(
-                    binding.call_action("sim-ios", action, payload),
-                    {"ok": True},
-                )
-
     def test_fixture_authentication_keeps_credentials_parent_owned(self) -> None:
         client = RecordingClient()
         binding = MobileSimulatorRuntimeBinding(client)  # type: ignore[arg-type]
@@ -351,18 +316,6 @@ class MobileSimulatorRuntimeBindingTests(unittest.TestCase):
                     "raw runtime authority",
                 ):
                     validate_scope_projection(invalid)
-
-    def test_scope_rejects_retired_standalone_group_projection(self) -> None:
-        invalid = scope()
-        invalid["group"] = {
-            "stationPeerId": "station-peer-primary",
-            "actorPtid": "ptid:alice",
-            "groupCount": 0,
-            "messageThreadCount": 0,
-        }
-
-        with self.assertRaisesRegex(DriverError, "invalid shape"):
-            validate_scope_projection(invalid)
 
     def test_cleanup_stops_clients_in_reverse_activation_order(self) -> None:
         client = RecordingClient()

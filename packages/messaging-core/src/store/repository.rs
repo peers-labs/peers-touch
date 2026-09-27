@@ -48,6 +48,8 @@ pub struct DirectOutboundSendCommit<'a> {
 }
 
 pub struct DirectOutboundEditCommit<'a> {
+    pub logical_intent_id: &'a str,
+    pub replaces_command_id: Option<&'a str>,
     pub command_id: &'a str,
     pub conversation_id: &'a str,
     pub target_message_id: &'a str,
@@ -104,6 +106,8 @@ pub struct MlsOutboundSendCommit<'a> {
 }
 
 pub struct MlsOutboundEditCommit<'a> {
+    pub logical_intent_id: &'a str,
+    pub replaces_command_id: Option<&'a str>,
     pub command_id: &'a str,
     pub conversation_id: &'a str,
     pub target_message_id: &'a str,

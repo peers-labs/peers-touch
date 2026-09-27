@@ -75,7 +75,7 @@ var knownTables = []domain.StorageTableCount{
 	{Group: "Identity", Table: "actor_sessions"},
 	{Group: "Social", Table: "social_public_posts"},
 	{Group: "Social", Table: "social_private_posts"},
-	{Group: "Social", Table: "social_private_audience_grants"},
+	{Group: "Social", Table: "social_private_comments"},
 	{Group: "Social", Table: "social_comments"},
 	{Group: "Social", Table: "social_reactions"},
 	{Group: "Social", Table: "social_circles"},

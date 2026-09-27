@@ -75,7 +75,7 @@ func ListActorsAsPreset(ctx context.Context, excludeActorID uint64) ([]PresetAct
 			Inbox:       inbox,
 			Outbox:      outbox,
 			Endpoints:   endpoints,
-			Ref:         ProtoActorRef(&a, base),
+			Ref:         ProtoActorRef(&a),
 		})
 	}
 	return out, nil
@@ -128,7 +128,7 @@ func SearchActorsAsPreset(ctx context.Context, query string, excludeActorID uint
 			Inbox:       inbox,
 			Outbox:      outbox,
 			Endpoints:   endpoints,
-			Ref:         ProtoActorRef(&a, base),
+			Ref:         ProtoActorRef(&a),
 		})
 	}
 	return out, nil

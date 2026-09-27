@@ -48,7 +48,7 @@ func OAuthLogin(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	actorRef := touchactor.ProtoActorRef(result.Actor, baseURLFrom(ctx))
+	actorRef := touchactor.ProtoActorRef(result.Actor)
 	if allowed, reason := gate.CheckActorAllowed(
 		c,
 		actorRef,

@@ -28,6 +28,10 @@ const (
 	privateContentPostKindText  = "TEXT"
 	privateContentPostKindImage = "IMAGE"
 	privateContentActiveState   = "ACTIVE"
+
+	privateCommentRateWindow = time.Hour
+	privateCommentActorLimit = int64(30)
+	privateCommentPostLimit  = int64(600)
 )
 
 // ErrPrivateContentInactiveEndpoint is returned only after Actor Identity
@@ -42,7 +46,7 @@ var ErrPrivateContentInactiveEndpoint = errors.New(
 // contract rather than introducing a second persistence authority.
 type PrivateContentStore = infrastructure.PrivateContentStore
 
-// PrivateAudienceAuthority resolves Social's accepted FRIENDS projection.
+// PrivateAudienceAuthority resolves Social's accepted relationship projections.
 // A nil transaction is used during prepare. Submit passes the exact Social
 // transaction so the current projection remains fenced through commit.
 type PrivateAudienceAuthority interface {
@@ -50,6 +54,36 @@ type PrivateAudienceAuthority interface {
 		context.Context,
 		federationdelivery.Transaction,
 		string,
+	) (socialdomain.FriendsSnapshot, error)
+	ResolveFollowersPostSnapshot(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+	) (socialdomain.FriendsSnapshot, error)
+	ResolveCirclePostSnapshot(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		uint64,
+	) (socialdomain.FriendsSnapshot, error)
+	ResolveGroupPostSnapshot(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		uint64,
+	) (socialdomain.FriendsSnapshot, error)
+	ResolveCustomAllowPostSnapshot(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		[]string,
+	) (socialdomain.FriendsSnapshot, error)
+	ResolveCustomDenyPostSnapshot(
+		context.Context,
+		federationdelivery.Transaction,
+		string,
+		[]string,
+		actormodel.Audience_Kind,
 	) (socialdomain.FriendsSnapshot, error)
 	ResolvePrivateCommentSnapshot(
 		context.Context,
@@ -213,10 +247,11 @@ func (s *PrivateContentService) PreparePrivateMoment(
 	); found || err != nil {
 		return response, err
 	}
-	snapshot, err := s.audiences.ResolveFriendsPostSnapshot(
+	snapshot, err := s.resolvePostSnapshot(
 		ctx,
 		nil,
 		author.Endpoint.GetActor().GetPtid(),
+		request.GetAudience(),
 	)
 	if err != nil {
 		return nil, mapPrivateDependencyError(operation, err)
@@ -259,6 +294,10 @@ func (s *PrivateContentService) PreparePrivateComment(
 	if err != nil {
 		return nil, mapPrivateDependencyError(operation, err)
 	}
+	material.Audience = proto.Clone(
+		snapshot.Audience,
+	).(*actormodel.Audience)
+	material.AudienceKind = material.Audience.GetKind()
 	response, err := s.prepare(ctx, author, material, snapshot)
 	if err != nil {
 		return nil, err
@@ -284,6 +323,25 @@ func (s *PrivateContentService) prepare(
 	if err != nil {
 		return nil, err
 	}
+	if material.Audience == nil {
+		material.Audience = proto.Clone(
+			normalizedSnapshot.Audience,
+		).(*actormodel.Audience)
+		material.AudienceKind = material.Audience.GetKind()
+	} else if !proto.Equal(material.Audience, normalizedSnapshot.Audience) {
+		return nil, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentConflict,
+			operation,
+			"audience",
+			"resolved audience differs from the prepare request",
+		)
+	}
+	audienceBytes, err := socialdomain.CanonicalProtoBytes(material.Audience)
+	if err != nil {
+		return nil, err
+	}
+	audienceHash := sha256.Sum256(audienceBytes)
+	emptySubtypeHash := sha256.Sum256(nil)
 
 	targets, err := s.recipients.ResolveContentPreKeyTargets(
 		ctx,
@@ -327,6 +385,7 @@ func (s *PrivateContentService) prepare(
 		ContentID:               material.ContentID,
 		Generation:              1,
 		ResourceKind:            string(material.ResourceKind),
+		AudienceKind:            material.AudienceKind.String(),
 		AuthorDeviceID:          author.Endpoint.GetDeviceId(),
 		AuthorHomeStationPeerID: author.HomeStationPeerID,
 		AudienceSnapshotID:      snapshotID,
@@ -340,7 +399,15 @@ func (s *PrivateContentService) prepare(
 		State:                  dbmodel.SocialPrivatePlanStatePreparing,
 		ExpiresAt:              now.Add(socialdomain.PrivateContentPlanLifetime),
 	}
-	preparing, err := s.store.ClaimPreparing(ctx, candidate)
+	preparing, err := s.store.ClaimPreparing(
+		ctx,
+		candidate,
+		infrastructure.PrivatePrepareBinding{
+			AudienceBytes:                 audienceBytes,
+			AudienceSHA256:                audienceHash[:],
+			SubtypePrepareAuthoritySHA256: emptySubtypeHash[:],
+		},
+	)
 	if err != nil {
 		return nil, mapPrivateStoreError(operation, err)
 	}
@@ -725,28 +792,8 @@ func (s *PrivateContentService) GetPrivateMoment(
 	postID string,
 ) (*privatecontentpb.GetMomentResourceResponse, error) {
 	const operation = "social.private_content.get_moment"
-	if viewer == nil || viewer.GetActor() == nil {
-		return nil, socialdomain.NewPrivateContentError(
-			socialdomain.PrivateContentUnauthorized,
-			operation,
-			"viewer",
-			"requires an authenticated active device",
-		)
-	}
-	if err := s.recipients.ValidateActiveEndpoint(ctx, viewer); err != nil {
-		if errors.Is(err, ErrPrivateContentInactiveEndpoint) {
-			return nil, socialdomain.NewPrivateContentError(
-				socialdomain.PrivateContentNotFound,
-				operation,
-				"viewer",
-				"does not identify an active authorized endpoint",
-			)
-		}
-		return nil, socialdomain.WrapPrivateContentError(
-			socialdomain.PrivateContentDependency,
-			operation,
-			err,
-		)
+	if err := s.validatePrivateContentViewer(ctx, viewer, operation); err != nil {
+		return nil, err
 	}
 	read, err := s.store.GetPrivatePost(
 		ctx,
@@ -1003,13 +1050,6 @@ func (s *PrivateContentService) GetPrivateMoment(
 			"persisted private-content commitments diverge",
 		)
 	}
-	author := &actormodel.ActorDeviceRef{
-		Actor: &actormodel.ActorRef{
-			Ptid: read.Post.AuthorPTID,
-			Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
-		},
-		DeviceId: read.AuthorDeviceID,
-	}
 	postType := actormodel.PostType_TEXT
 	if read.Post.Kind == privateContentPostKindImage {
 		postType = actormodel.PostType_IMAGE
@@ -1017,11 +1057,13 @@ func (s *PrivateContentService) GetPrivateMoment(
 	return &privatecontentpb.GetMomentResourceResponse{
 		Resource: &privatecontentpb.PostResource{
 			Metadata: &privatecontentpb.PostMetadata{
-				PostId:       read.Post.PostID,
-				ContentId:    read.Post.ContentID,
-				Author:       author.GetActor(),
+				PostId:    read.Post.PostID,
+				ContentId: read.Post.ContentID,
+				Author: proto.Clone(
+					proof.GetAuthor().GetActor(),
+				).(*actormodel.ActorRef),
 				Type:         postType,
-				AudienceKind: actormodel.Audience_FRIENDS,
+				AudienceKind: parseStoredAudienceKind(read.Snapshot.AudienceKind),
 				CreatedAt:    timestamppb.New(read.Post.CreatedAt),
 				UpdatedAt:    timestamppb.New(read.Post.UpdatedAt),
 				Stats: &actormodel.PostStats{
@@ -1173,7 +1215,12 @@ func (s *PrivateContentService) submit(
 						err,
 					)
 			}
-			prepared, err := decodePersistedPrepare(plan)
+			binding, err := tx.LoadPrepareBinding(ctx, plan.PlanID)
+			if err != nil {
+				return infrastructure.SubmitMutationResult{},
+					mapPrivateStoreError(operation, err)
+			}
+			prepared, err := decodePersistedPrepare(plan, binding)
 			if err != nil {
 				return infrastructure.SubmitMutationResult{}, err
 			}
@@ -1347,6 +1394,50 @@ func (s *PrivateContentService) submit(
 	return nil
 }
 
+func (s *PrivateContentService) resolvePostSnapshot(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	authorPTID string,
+	audience *actormodel.Audience,
+) (socialdomain.FriendsSnapshot, error) {
+	switch audience.GetKind() {
+	case actormodel.Audience_FRIENDS:
+		return s.audiences.ResolveFriendsPostSnapshot(ctx, transaction, authorPTID)
+	case actormodel.Audience_FOLLOWERS:
+		return s.audiences.ResolveFollowersPostSnapshot(ctx, transaction, authorPTID)
+	case actormodel.Audience_CIRCLE:
+		return s.audiences.ResolveCirclePostSnapshot(
+			ctx, transaction, authorPTID, audience.GetTargetId(),
+		)
+	case actormodel.Audience_GROUP:
+		return s.audiences.ResolveGroupPostSnapshot(
+			ctx, transaction, authorPTID, audience.GetTargetId(),
+		)
+	case actormodel.Audience_SELF:
+		return socialdomain.FriendsSnapshot{
+			Audience:         &actormodel.Audience{Kind: actormodel.Audience_SELF},
+			SourceRevision:   1,
+			SourceHeadSHA256: privateSHA256([]byte("social:self:" + authorPTID)),
+		}, nil
+	case actormodel.Audience_CUSTOM_ALLOW:
+		return s.audiences.ResolveCustomAllowPostSnapshot(
+			ctx, transaction, authorPTID, audience.GetActorPtids(),
+		)
+	case actormodel.Audience_CUSTOM_DENY:
+		return s.audiences.ResolveCustomDenyPostSnapshot(
+			ctx, transaction, authorPTID,
+			audience.GetActorPtids(), audience.GetBaseKind(),
+		)
+	default:
+		return socialdomain.FriendsSnapshot{}, socialdomain.NewPrivateContentError(
+			socialdomain.PrivateContentUnsupported,
+			"social.private_content.resolve_post_snapshot",
+			"audience_kind",
+			"unsupported audience kind",
+		)
+	}
+}
+
 func (s *PrivateContentService) resolveCurrentSnapshot(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
@@ -1359,10 +1450,16 @@ func (s *PrivateContentService) resolveCurrentSnapshot(
 	)
 	switch prepared.ResourceKind {
 	case socialdomain.PrivateContentResourcePost:
-		snapshot, err = s.audiences.ResolveFriendsPostSnapshot(
-			ctx,
-			transaction,
-			authorPTID,
+		if prepared.Audience == nil {
+			return snapshot, socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				"social.private_content.revalidate_snapshot",
+				"audience",
+				"is unavailable from the durable prepare binding",
+			)
+		}
+		snapshot, err = s.resolvePostSnapshot(
+			ctx, transaction, authorPTID, prepared.Audience,
 		)
 	case socialdomain.PrivateContentResourceComment:
 		snapshot, err = s.audiences.ResolvePrivateCommentSnapshot(
@@ -1536,7 +1633,7 @@ func (s *PrivateContentService) persistMoment(
 					request.GetPlan().GetAuthor().GetActor(),
 				).(*actormodel.ActorRef),
 				Type:         postType,
-				AudienceKind: actormodel.Audience_FRIENDS,
+				AudienceKind: parseStoredAudienceKind(plan.AudienceKind),
 				CreatedAt:    timestamppb.New(committedAt),
 				UpdatedAt:    timestamppb.New(committedAt),
 				Stats:        &actormodel.PostStats{},
@@ -1552,7 +1649,8 @@ func (s *PrivateContentService) persistMoment(
 			},
 		},
 	}
-	return socialdomain.CanonicalProtoBytes(response)
+	responseBytes, err := socialdomain.CanonicalProtoBytes(response)
+	return responseBytes, err
 }
 
 func (s *PrivateContentService) persistComment(
@@ -1567,6 +1665,36 @@ func (s *PrivateContentService) persistComment(
 	proofRow dbmodel.SocialPrivateCommitProof,
 	committedAt time.Time,
 ) ([]byte, error) {
+	retryAfter, err := tx.PrivateCommentRetryAfter(
+		ctx,
+		prepared.ParentPostID,
+		plan.AuthorPTID,
+		committedAt,
+		privateCommentRateWindow,
+		privateCommentActorLimit,
+		privateCommentPostLimit,
+	)
+	if err != nil {
+		if errors.Is(err, infrastructure.ErrPrivateContentNotFound) {
+			if rejectErr := tx.RejectStale(ctx); rejectErr != nil {
+				return nil, mapPrivateStoreError(
+					"social.private_content.persist_comment",
+					rejectErr,
+				)
+			}
+			return nil, nil
+		}
+		return nil, mapPrivateStoreError(
+			"social.private_content.persist_comment",
+			err,
+		)
+	}
+	if retryAfter > 0 {
+		return nil, socialdomain.NewPrivateContentRateLimitError(
+			"social.private_content.persist_comment",
+			retryAfter,
+		)
+	}
 	if err := tx.CreateComment(ctx, dbmodel.SocialPrivateContentComment{
 		CommentID:                 plan.ContentID,
 		ContentID:                 plan.ContentID,
@@ -1660,6 +1788,13 @@ func (s *PrivateContentService) persistSharedSubmitRows(
 	if err != nil {
 		return err
 	}
+	audienceTargetID := ""
+	if snapshot.Audience.GetTargetId() != 0 {
+		audienceTargetID = strconv.FormatUint(
+			snapshot.Audience.GetTargetId(),
+			10,
+		)
+	}
 	if err := tx.CreateAudienceSnapshot(
 		ctx,
 		dbmodel.SocialPrivateAudienceSnapshot{
@@ -1667,7 +1802,8 @@ func (s *PrivateContentService) persistSharedSubmitRows(
 			ResourceKind:            plan.ResourceKind,
 			ResourceID:              resourceID,
 			PostID:                  postID,
-			AudienceKind:            "FRIENDS",
+			AudienceKind:            snapshot.Audience.GetKind().String(),
+			AudienceTargetID:        audienceTargetID,
 			SourceRevision:          snapshot.SourceRevision,
 			CanonicalSnapshotSHA256: snapshotHash[:],
 			CreatedAt:               committedAt,
@@ -2193,7 +2329,7 @@ func normalizeClaimTargets(
 				socialdomain.PrivateContentUnauthorized,
 				operation,
 				"claim_targets",
-				"contains a principal outside the FRIENDS snapshot",
+				"contains a principal outside the frozen audience snapshot",
 			)
 		}
 		current := covered[actorPTID]
@@ -2606,8 +2742,33 @@ func (s *PrivateContentService) verifySubmitResponseProof(
 
 func decodePersistedPrepare(
 	plan dbmodel.SocialPrivateContentPlan,
+	binding infrastructure.PrivatePrepareBinding,
 ) (socialdomain.PrivatePrepareMaterial, error) {
 	const operation = "social.private_content.decode_prepare"
+	audience := &actormodel.Audience{}
+	if err := proto.Unmarshal(binding.AudienceBytes, audience); err != nil {
+		return socialdomain.PrivatePrepareMaterial{},
+			socialdomain.WrapPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				err,
+			)
+	}
+	audienceBytes, err := socialdomain.CanonicalProtoBytes(audience)
+	if err != nil {
+		return socialdomain.PrivatePrepareMaterial{}, err
+	}
+	audienceHash := sha256.Sum256(audienceBytes)
+	if !bytes.Equal(audienceBytes, binding.AudienceBytes) ||
+		!bytes.Equal(audienceHash[:], binding.AudienceSHA256) {
+		return socialdomain.PrivatePrepareMaterial{},
+			socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentIntegrityFailed,
+				operation,
+				"audience",
+				"durable audience bytes or hash differ",
+			)
+	}
 	switch plan.ResourceKind {
 	case infrastructure.PrivateContentResourcePost:
 		input := &privatecontentpb.PreparePrivateMomentHashInput{}
@@ -2619,9 +2780,20 @@ func decodePersistedPrepare(
 					err,
 				)
 		}
+		if input.GetAudienceSha256() == nil ||
+			!bytes.Equal(input.GetAudienceSha256(), audienceHash[:]) ||
+			plan.AudienceKind != audience.GetKind().String() {
+			return socialdomain.PrivatePrepareMaterial{},
+				socialdomain.NewPrivateContentError(
+					socialdomain.PrivateContentIntegrityFailed,
+					operation,
+					"audience",
+					"does not match the canonical prepare commitment",
+				)
+		}
 		request := &privatecontentpb.PreparePrivateMomentRequest{
 			ContentId:   input.GetContentId(),
-			Audience:    &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
+			Audience:    audience,
 			ObjectCount: input.GetObjectCount(),
 			CommandId:   input.GetCommandId(),
 			Kind:        input.GetKind(),
@@ -2676,6 +2848,8 @@ func decodePersistedPrepare(
 				"durable Comment prepare bytes or hash differ",
 			)
 		}
+		material.Audience = audience
+		material.AudienceKind = audience.GetKind()
 		return material, nil
 	default:
 		return socialdomain.PrivatePrepareMaterial{},
@@ -2776,6 +2950,13 @@ func cloneRequiredSlots(
 
 func cloneApplicationBytes(value []byte) []byte {
 	return append([]byte(nil), value...)
+}
+
+func parseStoredAudienceKind(s string) actormodel.Audience_Kind {
+	if v, ok := actormodel.Audience_Kind_value[s]; ok {
+		return actormodel.Audience_Kind(v)
+	}
+	return actormodel.Audience_KIND_UNSPECIFIED
 }
 
 func mapPrivateStoreError(operation string, err error) error {

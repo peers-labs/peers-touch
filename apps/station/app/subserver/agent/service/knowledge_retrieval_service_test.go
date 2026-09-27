@@ -103,6 +103,65 @@ func TestLoadAuthorizedCapabilitySetRejectsExpiredSnapshot(t *testing.T) {
 	}
 }
 
+func TestContinuationCapabilitySetOmitsContractedBinding(t *testing.T) {
+	fixture := newKnowledgeAuthorityFixture(t)
+	fixture.addStationKnowledge(
+		t,
+		"knowledge-contracted",
+		"Contracted",
+		"historical content",
+		model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY,
+	)
+	fixture.loadAuthorized(t, time.Now().UTC().Add(time.Hour))
+
+	ready := fixture.readiness[0]
+	deletedAt := time.Now().UTC()
+	if err := fixture.db.Model(&persistence.AgentCapabilityBinding{}).
+		Where(
+			"binding_id = ? AND ptid = ? AND agent_id = ?",
+			ready.GetBindingId(),
+			fixture.actorID,
+			fixture.agentID,
+		).
+		Updates(map[string]interface{}{
+			"revision":      ready.GetBindingRevision() + 1,
+			"tombstoned_at": deletedAt,
+			"updated_at":    deletedAt,
+		}).Error; err != nil {
+		t.Fatalf("tombstone admitted capability binding: %v", err)
+	}
+
+	config := &TurnConfig{
+		TurnID:    fixture.turnID,
+		AttemptID: fixture.attemptID,
+		ActorID:   fixture.actorID,
+		AgentID:   fixture.agentID,
+	}
+	if _, err := LoadAuthorizedCapabilitySet(
+		context.Background(),
+		fixture.db,
+		config,
+	); !isCapabilityError(err, errcode.AgentInvalidSourceState) {
+		t.Fatalf("strict admission accepted contracted binding: %v", err)
+	}
+	continuation, err := LoadAuthorizedCapabilitySetForContinuation(
+		context.Background(),
+		fixture.db,
+		config,
+	)
+	if err != nil {
+		t.Fatalf("load continuation capability intersection: %v", err)
+	}
+	if len(continuation.Sources(
+		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_KNOWLEDGE,
+	)) != 0 {
+		t.Fatal("contracted capability remained available to continuation")
+	}
+	if continuation.SnapshotID == "" {
+		t.Fatal("continuation lost immutable readiness snapshot lineage")
+	}
+}
+
 func TestPromptAssemblyUsesAuthorizedKnowledge(t *testing.T) {
 	fixture := newKnowledgeAuthorityFixture(t)
 	fixture.addStationKnowledge(

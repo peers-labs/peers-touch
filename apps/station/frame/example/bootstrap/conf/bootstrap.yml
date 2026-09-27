@@ -4,7 +4,7 @@ peers:
     # them via federation.GetPolicy(). See peers.node.federation below.
     federation:
       bootstrap-nodes:
-        - /ip4/81.71.4.157/tcp/5001/p2p/12D3KooWMsPvD5yp7s3UYYXSohEshNB5Xv5Epwdb5oHmtYuqLCzT
+        - /ip4/192.0.2.13/tcp/5001/p2p/12D3KooWMsPvD5yp7s3UYYXSohEshNB5Xv5Epwdb5oHmtYuqLCzT
     server:
       subserver:
         bootstrap:

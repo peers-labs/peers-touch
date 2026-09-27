@@ -456,8 +456,8 @@ export function createSessionRuntimeController({
         stationPeerId: projection.stationPeerId ?? '',
         sessionId: projection.session.sessionId,
         actorPtid: projection.session.actorPtid,
-      deviceId: projection.session.deviceId,
-      lifecycleGeneration: projection.session.lifecycleGeneration,
+        deviceId: projection.session.deviceId,
+        lifecycleGeneration: projection.session.lifecycleGeneration,
         expiresAt: projection.session.expiresAt,
       }, station);
       activate(projected);
@@ -713,6 +713,8 @@ export function createSessionRuntimeDescriptor(): MobileRuntimeDescriptor {
             ? mobileMutationScopeKey(
               current.session.stationPeerId,
               current.session.actorPtid,
+              current.session.deviceId,
+              current.session.lifecycleGeneration,
             )
             : null,
           open: current.phase === 'active' && current.writesAllowed,

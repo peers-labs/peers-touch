@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Run the V2-J06 Evaluation Lab Development Journey and formal preflight."""
+"""Run the legacy composite V2-J06 Evaluation development Journey."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import traceback
@@ -19,7 +18,6 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -33,16 +31,12 @@ from tooling.acceptance.core.evidence_store import (
     source_identity,
     workspace_id,
 )
-from tooling.acceptance.gates.agent.agent_v2_gate import (
-    GATE_ROLES,
-    MATRIX,
-    RUNNER_GENERATED_ROLES,
-)
 from tooling.acceptance.gates.agent.capability_binding_development import (
     copy_native_runtime_logs,
     resolve_machine_profile,
 )
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
+    FoundationClientError,
     FoundationClientSpec,
     FoundationRuntimeClient,
 )
@@ -88,22 +82,6 @@ ACTOR_IDENTITY_FIXTURES = {
     ),
     "bob": IDENTITY_FIXTURE_ROOT / "carol",
 }
-MATRIX_PATH = (
-    ROOT / "tooling/acceptance/matrices/agent-v2-runtime-matrix.yaml"
-)
-EXPANDER_PATH = (
-    ROOT / "tooling/scripts/expand-agent-v2-runtime-matrix.py"
-)
-TUPLE_FIELDS = (
-    "gate",
-    "row",
-    "platform",
-    "runtime",
-    "cell",
-    "locale",
-    "ordering",
-    "sample_id",
-)
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 
 
@@ -140,41 +118,6 @@ def begin_attestation_run(artifact_root: Path) -> RunHandle:
     return run
 
 
-def _load_module(path: Path, name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise EvaluationDevelopmentError(f"cannot load module: {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def expected_evaluation_tuples() -> list[dict[str, str]]:
-    expander = _load_module(
-        EXPANDER_PATH,
-        "_agent_v2_evaluation_runtime_matrix_expander",
-    )
-    matrix = expander.load_matrix(MATRIX_PATH)
-    expanded, counts = expander.expand_matrix(matrix)
-    require(
-        counts.get(AGENT_V2_EVALUATION_GATE) == 57,
-        "reviewed J06 runtime matrix no longer contains exactly 57 tuples",
-    )
-    return [
-        dict(zip(TUPLE_FIELDS, values))
-        for values in expanded
-        if values[0] == AGENT_V2_EVALUATION_GATE
-    ]
-
-
-def tuple_key(value: Mapping[str, Any]) -> str:
-    return json.dumps(
-        [str(value.get(field) or "") for field in TUPLE_FIELDS],
-        separators=(",", ":"),
-    )
-
-
 def _all_true(value: object, label: str) -> bool:
     assertions = require_mapping(value, label)
     return bool(assertions) and all(item is True for item in assertions.values())
@@ -182,9 +125,6 @@ def _all_true(value: object, label: str) -> bool:
 
 def evaluate_evaluation_journey(
     capture: Mapping[str, Any],
-    *,
-    expected_tuples: list[dict[str, str]],
-    require_formal_coverage: bool = True,
 ) -> dict[str, bool]:
     prepare = require_mapping(capture.get("prepare"), "prepare capture")
     recovery = require_mapping(capture.get("recovery"), "recovery capture")
@@ -211,23 +151,6 @@ def evaluate_evaluation_journey(
         prepare.get("runtime-events"),
         "runtime events",
     )
-    tuple_results = capture.get("cell-results")
-    require(
-        isinstance(tuple_results, list),
-        "formal cell-results must be an array",
-    )
-    expected_keys = {tuple_key(item) for item in expected_tuples}
-    observed_keys = {
-        tuple_key(require_mapping(item, "cell result"))
-        for item in tuple_results
-    }
-    all_cells_pass = all(
-        isinstance(item, Mapping)
-        and item.get("observed") is True
-        and item.get("passed") is True
-        for item in tuple_results
-    )
-
     primary = require_mapping(station.get("primary"), "primary run")
     cancelled = require_mapping(station.get("cancelled"), "cancelled run")
     child = require_mapping(station.get("child"), "child run")
@@ -338,15 +261,7 @@ def evaluate_evaluation_journey(
             and cleanup.get("retentionConflictObserved") is True
             and cleanup.get("resourceDeletionComplete") is True
         ),
-        "exactFormalTupleCoverage": (
-            len(tuple_results) == 57
-            and len(observed_keys) == 57
-            and observed_keys == expected_keys
-            and all_cells_pass
-        ),
     }
-    if not require_formal_coverage:
-        assertions.pop("exactFormalTupleCoverage")
     failed = sorted(name for name, passed in assertions.items() if not passed)
     if failed:
         raise EvaluationDevelopmentError(
@@ -363,6 +278,7 @@ class _EvaluationProviderServer(ThreadingHTTPServer):
         self.lock = threading.Lock()
         self.requests: list[dict[str, Any]] = []
         self.fail_once_seen = False
+        self.api_key = secrets.token_urlsafe(32)
 
     def record(self, value: dict[str, Any]) -> None:
         with self.lock:
@@ -416,7 +332,7 @@ class _EvaluationProviderHandler(BaseHTTPRequestHandler):
             "stream": payload.get("stream") is True,
             "authorizationPresent": (
                 self.headers.get("Authorization")
-                == "Bearer mca-j03-fixture-key"
+                == f"Bearer {self.fixture.api_key}"
             ),
             "model": str(payload.get("model") or ""),
         }
@@ -482,6 +398,10 @@ class EvaluationProviderFixture:
     def port(self) -> int:
         return int(self.server.server_address[1])
 
+    @property
+    def api_key(self) -> str:
+        return self.server.api_key
+
     def start(self) -> None:
         self.thread.start()
 
@@ -492,6 +412,10 @@ class EvaluationProviderFixture:
 
     def snapshot(self) -> list[dict[str, Any]]:
         return self.server.snapshot()
+
+    def reset_scenario(self) -> None:
+        with self.server.lock:
+            self.server.fail_once_seen = False
 
 
 def _validate_identity_root_path(root: Path) -> None:
@@ -600,20 +524,23 @@ def persist_actor_identity(
         existing = json.loads(
             (fixture / "fixture.json").read_text(encoding="utf-8")
         )
-        require(
-            existing == metadata,
-            f"retained {role} identity belongs to another actor",
-        )
-        fixture_identity_root = fixture / "actor-identity"
-        _validate_identity_root(fixture_identity_root)
-        _validate_identity_key(
-            _stable_identity_key_path(
-                fixture_identity_root,
-                station_peer_id,
-                actor_id,
+        if existing == metadata:
+            fixture_identity_root = fixture / "actor-identity"
+            _validate_identity_root(fixture_identity_root)
+            _validate_identity_key(
+                _stable_identity_key_path(
+                    fixture_identity_root,
+                    station_peer_id,
+                    actor_id,
+                )
             )
+            return metadata
+        require(
+            existing.get("profile") == metadata["profile"]
+            and existing.get("account") == metadata["account"],
+            f"retained {role} identity belongs to a different profile or account",
         )
-        return metadata
+        shutil.rmtree(fixture)
     _validate_identity_root_path(source_root)
     source_key = _stable_identity_key_path(
         source_root,
@@ -645,8 +572,23 @@ def authenticate_client(
     *,
     account: str,
     password: str,
+    ensure_provider: Mapping[str, str] | None = None,
+    skip_capability_session: bool = False,
 ) -> dict[str, Any]:
-    station = client.configure_station(timeout=60)
+    station: dict[str, Any] | None = None
+    for attempt in range(20):
+        try:
+            station = client.configure_station(timeout=60)
+            break
+        except FoundationClientError as error:
+            retryable_switch = (
+                "Another Station switch is already in progress" in str(error)
+                or "station_switch_in_progress" in str(error)
+            )
+            if not retryable_switch or attempt == 19:
+                raise
+            time.sleep(250 / 1_000)
+    require(station is not None, f"Station configuration failed for {account}")
     login = client.harness(
         "loginWithPassword",
         {"account": account, "password": password},
@@ -664,23 +606,35 @@ def authenticate_client(
         and navigation.get("navigated") is True,
         f"Native Agent navigation failed for {account}",
     )
-    capability_session = client.harness(
-        "waitForCapabilitySession",
-        {},
-        timeout=120,
-    )
-    require(
-        isinstance(capability_session, Mapping)
-        and isinstance(
-            capability_session.get("selectedStationSession"),
-            Mapping,
-        ),
-        f"Station did not accept the Native actor identity for {account}",
-    )
+    if ensure_provider is not None:
+        provider_result = client.harness(
+            "setupProviderFixture",
+            dict(ensure_provider),
+            timeout=120,
+        )
+        require(
+            isinstance(provider_result, Mapping)
+            and provider_result.get("configured") is True,
+            f"Provider setup failed for {account}: {provider_result}",
+        )
+    if not skip_capability_session:
+        capability_session = client.harness(
+            "waitForCapabilitySession",
+            {},
+            timeout=240,
+        )
+        require(
+            isinstance(capability_session, Mapping)
+            and isinstance(
+                capability_session.get("selectedStationSession"),
+                Mapping,
+            ),
+            f"Station did not accept the Native actor identity for {account}",
+        )
     return {
         **dict(login),
         "stationPeerId": station["activeStationPeerId"],
-        "stationAccepted": True,
+        "stationAccepted": not skip_capability_session,
     }
 
 
@@ -697,17 +651,21 @@ def _clients_from_manifest(
     )
     require(
         isinstance(clients, list) and len(clients) == 2,
-        "J06 runtime manifest must contain two Native clients",
+        "J06 runtime manifest must contain Native and Browser clients",
     )
+    expected_runtimes = {
+        "alice": "native-tauri",
+        "bob": "browser",
+    }
     result: dict[str, FoundationRuntimeClient] = {}
     for raw_client in clients:
-        client = require_mapping(raw_client, "J06 Native client")
+        client = require_mapping(raw_client, "J06 client")
         actor = str(client.get("actor") or "")
         require(
             actor in ACTOR_ACCOUNTS
-            and client.get("runtime") == "native-tauri"
+            and client.get("runtime") == expected_runtimes[actor]
             and actor not in result,
-            "J06 clients must be isolated Alice and Bob native-tauri clients",
+            "J06 clients must be isolated Alice Native and Bob Browser clients",
         )
         result[actor] = FoundationRuntimeClient(
             FoundationClientSpec.from_mapping(client),
@@ -738,78 +696,6 @@ def _write_json(path: Path, value: Mapping[str, Any]) -> Path:
     return path
 
 
-def write_candidate(
-    root: Path,
-    capture: Mapping[str, Any],
-    *,
-    runtime_manifest: Mapping[str, Any],
-    duration_ms: int,
-    provider_requests: list[dict[str, Any]],
-) -> Path:
-    prepare = require_mapping(capture["prepare"], "prepare capture")
-    recovery = require_mapping(capture["recovery"], "recovery capture")
-    role_payloads: dict[str, Mapping[str, Any]] = {
-        "cell-results": {
-            "expectedTupleCount": 57,
-            "results": capture["cell-results"],
-        },
-        "receiver-dom": {
-            "prepare": prepare["receiver-dom"],
-            "recovery": recovery["receiver-dom"],
-        },
-        "station-readback": {
-            "prepare": prepare["station-readback"],
-            "recovery": recovery["station-readback"],
-            "isolation": capture["isolation"],
-        },
-        "runtime-events": {
-            "prepare": prepare["runtime-events"],
-            "recovery": recovery["runtime-events"],
-        },
-        "turn-trace": require_mapping(prepare["turn-trace"], "turn trace"),
-        "metrics-lineage": require_mapping(
-            prepare["metrics-lineage"],
-            "metrics lineage",
-        ),
-        "runtime-attestation-set": {
-            "sourceIdentity": source_identity(ROOT),
-            "runtimeManifest": runtime_manifest,
-        },
-        "measurement-report": {
-            "durationMs": duration_ms,
-            "providerRequestCount": len(provider_requests),
-            "providerRequests": provider_requests,
-        },
-        "side-effect-count": require_mapping(
-            prepare["side-effect-count"],
-            "side-effect count",
-        ),
-        "cleanup": require_mapping(capture["cleanup"], "cleanup"),
-        "replay": require_mapping(prepare["replay"], "replay"),
-    }
-    scenario_roles = (
-        set(GATE_ROLES[AGENT_V2_EVALUATION_GATE]) - RUNNER_GENERATED_ROLES
-    )
-    require(
-        set(role_payloads) == scenario_roles,
-        "J06 candidate role set does not match the formal Gate",
-    )
-    references = []
-    for role, payload in sorted(role_payloads.items()):
-        role_path = _write_json(root / "roles" / f"{role}.json", payload)
-        references.append({"role": role, "path": str(role_path)})
-    return _write_json(
-        root / "candidate.json",
-        {
-            "gateId": AGENT_V2_EVALUATION_GATE,
-            "runtimeMatrix": MATRIX,
-            "scenarioExecuted": True,
-            "proofStatus": "UNPROVEN",
-            "artifacts": references,
-        },
-    )
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the V2-J06 Evaluation Lab Development Journey.",
@@ -817,6 +703,12 @@ def main() -> int:
     parser.add_argument("--output-root", default="")
     parser.add_argument("--formal-candidate", action="store_true")
     args = parser.parse_args()
+    if args.formal_candidate:
+        from tooling.acceptance.gates.agent.evaluation_candidate import (
+            main as candidate_main,
+        )
+
+        return candidate_main()
     started_at = time.monotonic()
     activation = subprocess.run(
         ["make", "profile", f"PROFILE={PROFILE}"],
@@ -879,14 +771,10 @@ def main() -> int:
         "provisionerResourcesReleased": [],
         "failures": [],
     }
-    candidate_root = Path(
-        tempfile.mkdtemp(prefix=f"pt-agent-v2-j06-{artifact_run_id}-")
-    )
     attestation_root = Path("/tmp") / f"mca-evaluation-{artifact_run_id}"
     try:
         attestation_run = begin_attestation_run(attestation_root)
     except BaseException:
-        shutil.rmtree(candidate_root, ignore_errors=True)
         raise
 
     try:
@@ -942,6 +830,7 @@ def main() -> int:
                 "phase": "prepare",
                 "sampleId": f"mca-j06-{artifact_run_id}",
                 "providerBaseUrl": provider_base_url,
+                "providerApiKey": provider_fixture.api_key,
             },
             timeout=1200,
         )
@@ -1085,43 +974,14 @@ def main() -> int:
         ),
         "runtime": cleanup,
     }
-    formal_error: BaseException | None = None
     if primary_error is None and cleanup["status"] == "clean":
         try:
-            assertions = evaluate_evaluation_journey(
-                capture,
-                expected_tuples=expected_evaluation_tuples(),
-                require_formal_coverage=False,
-            )
+            assertions = evaluate_evaluation_journey(capture)
         except BaseException as error:
             primary_error = error
-    if primary_error is None and assertions:
-        try:
-            evaluate_evaluation_journey(
-                capture,
-                expected_tuples=expected_evaluation_tuples(),
-            )
-        except BaseException as error:
-            formal_error = error
 
     duration_ms = int((time.monotonic() - started_at) * 1000)
     provider_requests = provider_fixture.snapshot()
-    candidate_path: Path | None = None
-    if (
-        primary_error is None
-        and formal_error is None
-        and assertions
-        and all(assertions.values())
-        and cleanup["status"] == "clean"
-        and runtime_manifest is not None
-    ):
-        candidate_path = write_candidate(
-            candidate_root,
-            capture,
-            runtime_manifest=runtime_manifest.to_dict(),
-            duration_ms=duration_ms,
-            provider_requests=provider_requests,
-        )
 
     station = (
         runtime_manifest.services.get("station")
@@ -1148,7 +1008,7 @@ def main() -> int:
             "profile": PROFILE,
             "stationDeploymentEnvironment": deployment_environment,
             "stationBuildCommit": station.live_commit if station else "",
-            "clientRuntimes": ["native-tauri:alice", "native-tauri:bob"],
+            "clientRuntimes": ["native-tauri:alice", "browser:bob"],
         },
         "assertions": assertions,
         "capture": capture,
@@ -1156,7 +1016,7 @@ def main() -> int:
         "formalCoverage": {
             "expectedTupleCount": 57,
             "observedTupleCount": len(capture["cell-results"]),
-            "proofStatus": "CANDIDATE" if candidate_path else "UNPROVEN",
+            "proofStatus": "UNPROVEN",
         },
         "failure": (
             []
@@ -1166,22 +1026,10 @@ def main() -> int:
                 "message": str(primary_error)[:4096],
             }]
         ),
-        "formalFailure": (
-            []
-            if formal_error is None
-            else [{
-                "type": type(formal_error).__name__,
-                "message": str(formal_error)[:4096],
-            }]
-        ),
         "cleanup": cleanup,
         "durationMs": duration_ms,
     }
     result_path = _write_json(artifact_dir / "result.json", result)
-    if candidate_path is not None:
-        sys.stdout.write(f"{candidate_path}\n")
-        return 0
-    shutil.rmtree(candidate_root, ignore_errors=True)
     sys.stdout.write(f"{result_path}\n")
     if primary_error is not None:
         traceback.print_exception(
@@ -1190,8 +1038,6 @@ def main() -> int:
             primary_error.__traceback__,
             file=sys.stderr,
         )
-    if args.formal_candidate:
-        return 1
     return 0 if result["result"] == "FUNCTIONAL_PASS" else 1
 
 

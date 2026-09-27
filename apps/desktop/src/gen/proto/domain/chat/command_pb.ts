@@ -998,4 +998,3 @@ export enum ConversationMemberAuthorityAction {
  */
 export const ConversationMemberAuthorityActionSchema: GenEnum<ConversationMemberAuthorityAction> = /*@__PURE__*/
   enumDesc(file_domain_chat_command, 3);
-

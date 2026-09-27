@@ -44,7 +44,6 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     ACTOR_PASSWORD,
 )
-from tooling.acceptance.gates.station_access.gateway import gateway_access_login
 
 GATE_ID = "chat-friend-request-gateway-e2e"
 
@@ -227,11 +226,10 @@ def gateway_status(
 
 
 def gateway_login(gateway: str, actor: ActorCredentials) -> ActorCredentials:
-    result = gateway_access_login(
-        gateway_command,
+    result = gateway_command(
         gateway,
-        actor.email,
-        actor.password,
+        "auth_login",
+        {"account": actor.email, "password": actor.password},
     )
     actor_ptid = str(result.get("actor_ptid") or "")
     require(

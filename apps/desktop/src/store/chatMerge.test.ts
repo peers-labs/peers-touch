@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { mergeServerMessages, type ChatMessage } from './chat';
+import {
+  isMessageRetryBlocked,
+  mergeServerMessages,
+  type ChatMessage,
+  type ChatOperation,
+} from './chat';
 
 function msg(id: string, role: ChatMessage['role'], content: string, extra: Partial<ChatMessage> = {}): ChatMessage {
   return { id, role, content, timestamp: 1781680000000, ...extra };
@@ -43,6 +48,25 @@ describe('mergeServerMessages', () => {
     const merged = mergeServerMessages(current, server);
 
     expect(merged.map((m) => m.id)).toEqual(['server-user-1', 'temp-assistant-1']);
+  });
+
+  it('does not let a recent reply supersede the next optimistic assistant', () => {
+    const current = [
+      msg('server-user-1', 'user', 'original request', { timestamp: 1000 }),
+      msg('server-assistant-1', 'assistant', 'original response', { timestamp: 1500 }),
+      msg('temp-user-2', 'user', 'conflicting request', { timestamp: 1900 }),
+      msg('temp-assistant-2', 'assistant', '', { loading: true, timestamp: 1900 }),
+    ];
+    const server = current.slice(0, 2);
+
+    const merged = mergeServerMessages(current, server);
+
+    expect(merged.map((message) => message.id)).toEqual([
+      'server-user-1',
+      'server-assistant-1',
+      'temp-user-2',
+      'temp-assistant-2',
+    ]);
   });
 
   it('uses server messages as the authoritative base and carries chain-of-thought fields for matched ids', () => {
@@ -130,6 +154,93 @@ describe('mergeServerMessages', () => {
 
     expect(merged.map((m) => m.id)).toEqual(['temp-user-1', 'temp-assistant-1']);
     expect(merged[1].error).toBe('runtime unavailable');
+  });
+
+  it('retains a local typed rejection when a late server page contains the preceding reply', () => {
+    const current = [
+      msg('server-user-1', 'user', 'original request', { timestamp: 1000 }),
+      msg('server-assistant-1', 'assistant', 'original response', { timestamp: 1500 }),
+      msg('temp-user-conflict', 'user', 'conflicting request', { timestamp: 1900 }),
+      msg('temp-assistant-conflict', 'assistant', '', {
+        timestamp: 1900,
+        loading: false,
+        error: 'agent.errors.duplicateConflict',
+        typedError: {
+          error: 'agent.errors.duplicateConflict',
+          error_type: 'ADMISSION_DUPLICATE_CONFLICT',
+          locale_key: 'agent.errors.duplicateConflict',
+          retryable: false,
+          terminal: true,
+          details: {
+            existing_command_id: 'turn-1',
+            idempotency_key_hash: 'hash-1',
+          },
+        },
+      }),
+    ];
+    const server = current.slice(0, 2);
+
+    const merged = mergeServerMessages(current, server);
+
+    expect(merged.map((message) => message.id)).toEqual([
+      'server-user-1',
+      'server-assistant-1',
+      'temp-user-conflict',
+      'temp-assistant-conflict',
+    ]);
+    expect(merged[3].typedError?.error_type).toBe('ADMISSION_DUPLICATE_CONFLICT');
+  });
+
+  it('keeps a non-terminal lease incident over a stale server terminal', () => {
+    const current = [
+      msg('assistant-1', 'assistant', '', {
+        turnId: 'turn-1',
+        loading: true,
+        error: 'agent.errors.clientLeaseExpired',
+        typedError: {
+          error: 'agent.errors.clientLeaseExpired',
+          error_type: 'CLIENT_LEASE_EXPIRED',
+          locale_key: 'agent.errors.clientLeaseExpired',
+          retryable: true,
+          terminal: false,
+          details: {
+            session_id: 'capability-session-1',
+            lease_id: 'capability-lease-1',
+            expired_at: '2026-09-26T08:00:00Z',
+          },
+        },
+        resolution: {
+          type: 'reconcile',
+          sessionId: 'capability-session-1',
+          leaseId: 'capability-lease-1',
+          expiredAt: '2026-09-26T08:00:00Z',
+          label: 'agent.recovery.reconcile',
+        },
+      }),
+    ];
+    const server = [
+      msg('assistant-1', 'assistant', '', {
+        turnId: 'turn-1',
+        loading: false,
+        terminalStatus: 'completed',
+      }),
+    ];
+
+    const [merged] = mergeServerMessages(current, server);
+
+    expect(merged).toMatchObject({
+      loading: true,
+      cancelled: false,
+      error: 'agent.errors.clientLeaseExpired',
+      terminalStatus: undefined,
+      typedError: {
+        error_type: 'CLIENT_LEASE_EXPIRED',
+        terminal: false,
+      },
+      resolution: {
+        type: 'reconcile',
+      },
+    });
   });
 
   it.each([
@@ -259,4 +370,31 @@ describe('mergeServerMessages', () => {
 
     expect(merged).toEqual(current);
   });
+});
+
+describe('isMessageRetryBlocked', () => {
+  it.each(['failed', 'cancelled', 'interrupted'] as const)(
+    'allows retry when the matching %s Turn is terminal despite stale streaming state',
+    (status) => {
+      const operation: ChatOperation = {
+        id: 'operation-1',
+        sessionKey: 'test',
+        type: 'sendMessage',
+        status,
+        runState: status,
+        assistantMessageId: 'assistant-1',
+        abortController: new AbortController(),
+        startedAt: 1,
+        endedAt: 2,
+        turnId: 'turn-1',
+      };
+
+      expect(
+        isMessageRetryBlocked(true, operation, 'turn-1', status),
+      ).toBe(false);
+      expect(
+        isMessageRetryBlocked(true, operation, 'turn-2', status),
+      ).toBe(true);
+    },
+  );
 });

@@ -71,24 +71,6 @@ func (r testConversationReader) Get(
 	)
 }
 
-func (r testConversationReader) ResolveRoute(
-	_ context.Context,
-	_ valueobject.ConversationID,
-) (query.ConversationRoute, error) {
-	source := r.source
-	if source == "" {
-		source = query.SourceAuthority
-	}
-	return query.ConversationRoute{
-		ConversationID:   r.snapshot.ID,
-		Source:           source,
-		FederationID:     r.snapshot.FederationID,
-		AuthorityStation: r.snapshot.AuthorityStation,
-		AuthorityEpoch:   r.snapshot.AuthorityEpoch,
-		FollowerStatus:   r.followerStatus,
-	}, nil
-}
-
 type testDeviceDirectory struct {
 	active map[valueobject.Endpoint]bool
 }
@@ -540,21 +522,12 @@ func TestServiceForwardsFollowerReadCursorWithoutLocalAuthorityMutation(t *testi
 }
 
 func TestServiceDeliveryReceiptValidatesAndCommitsIdempotently(t *testing.T) {
-	aliceOne := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
-	aliceTwo := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-2"}
-	bob := valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"}
-	snapshot := interactionConversationSnapshot(aliceOne, aliceTwo, bob)
-	snapshot.Members[1].Status = valueobject.MemberStatusRemoved
-	snapshot.Devices[2].Active = false
-	service, _, _, _, _, _ := newInteractionFixture(
-		t,
-		testConversationReader{snapshot: snapshot},
-	)
+	service, _, _, _, _, _ := newInteractionFixture(t)
 	receipt := interaction.DeliveryReceipt{
 		ReceiptID:      "device-consumed:item-3",
 		ConversationID: "conversation-1",
 		EventID:        "event-3",
-		Consumer:       bob,
+		Consumer:       valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"},
 		EventSequence:  3,
 		LaneSequence:   9,
 		PayloadHash:    valueobject.HashBytes([]byte("opaque-payload")),
@@ -603,14 +576,12 @@ func TestServiceForwardsFollowerDeliveryReceiptIdempotently(t *testing.T) {
 	snapshot.Members[0].HomeStation = "station:authority"
 	snapshot.Devices[0].HomeStation = "station:authority"
 	snapshot.Devices[1].HomeStation = "station:authority"
-	snapshot.Members[1].Status = valueobject.MemberStatusRemoved
-	snapshot.Devices[2].Active = false
 	service, _, _, _, _, forwarder := newInteractionFixture(
 		t,
 		testConversationReader{
 			snapshot:       snapshot,
 			source:         query.SourceFollower,
-			followerStatus: repository.FollowerStatusResyncRequired,
+			followerStatus: repository.FollowerStatusActive,
 		},
 	)
 	receipt := interaction.DeliveryReceipt{

@@ -1,8 +1,8 @@
 # Secure Content - Data Model
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-15
+> **Version**: v1.9
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `model/domain/social/`, `model/domain/key_exchange/`
 
@@ -22,6 +22,10 @@
 | `root_content_key` | Independent random 256-bit key for one private Post or Comment |
 | `object_id` | Domain-owned immutable ciphertext object |
 | `domain_commit_id` | Post/Comment ID or Conversation event ID that atomically attaches objects/grants |
+| `runtime_manifest_digest` | Immutable digest of the runtime owner's exact source/profile/client/boot binding |
+| `boot_identity` | Process-instance identity that must change across an acknowledged restart |
+| `barrier_token` | One-shot acceptance-only release capability for one production lifecycle observation |
+| `fixture_handle` | Opaque, digest-bound reference to state provisioned by its business/runtime truth owner |
 
 ## 2. Contract Roots
 
@@ -1245,7 +1249,7 @@ social_private_object_grants
 | `social_private_comments` | `comment_id`, unique `content_id` | post, parent comment, author, interaction snapshot, canonical encrypted payload bytes/hash |
 | `social_private_audience_snapshots` | `snapshot_id`, unique `post_id` | audience kind/target, source revision, canonical snapshot hash |
 | `social_private_recipient_grants` | `(snapshot_id, recipient_ptid)` | grant time, revoke time/reason |
-| `social_private_content_plans` | `plan_id`; unique `(author_ptid, prepare_command_id)`; unique `(content_id, generation)` | canonical prepare bytes/hash, exact Key Exchange claim-request bytes/hash and ordered targets, exact claim-response bytes/hash, resource kind, author endpoint, snapshot ID, exact signed plan bytes/hash, state, expiry, optional domain commit |
+| `social_private_content_plans` | `plan_id`; unique `(author_ptid, prepare_command_id)`; unique `(content_id, generation)` | canonical prepare bytes/hash, exact audience bytes/hash, exact subtype prepare-authority bytes/hash, exact Key Exchange claim-request bytes/hash and ordered targets, exact claim-response bytes/hash, resource kind, author endpoint, snapshot ID, exact signed plan bytes/hash, state, expiry, optional domain commit |
 | `social_private_content_plan_slots` | `(plan_id, recipient_slot_id)`; globally unique `claim_id`; unique `(plan_id, one_time_key_id)` | key kind, recipient actor/device, principal epoch, exact claimed PreKey bytes/hash including issuer signature, principal-binding hash |
 | `social_private_content_envelopes` | `(content_id, key_kind, recipient principal, one_time_key_id)` | exact plan/binding/envelope/signature hashes |
 | `social_private_command_receipts` | `(author_ptid, command_id)` | canonical submit hash, resource kind/content/generation, domain commit ID, exact response bytes/hash, completion time |
@@ -1395,7 +1399,549 @@ payload and object descriptors through that locator. Results are cursor
 paginated and restartable; no root-key list is embedded in the whole Recovery
 archive.
 
-## 13. Limits
+## 13. Deterministic Lifecycle Evidence Model
+
+`SC-D21` adds Development/Acceptance control records. They are not product
+business messages and do not enter Social, Conversation, Key Exchange, or
+Secure Content public APIs. Their wire projection belongs to the existing
+versioned Development runtime-manifest/scenario schema and must remain typed
+and canonical.
+
+```text
+LifecycleBarrierRecord {
+  schema_version
+  run_id
+  operation_id
+  barrier_kind
+  ordinal
+  source_checkpoint
+  runtime_manifest_digest
+  boot_identity
+  session_generation
+  production_state
+  command_digest?
+  request_digest?
+  state_digest?
+  release_token
+  created_at
+}
+
+RuntimeRestartRequest {
+  schema_version
+  run_id
+  request_id
+  client_id
+  parent_runtime_manifest_digest
+  expected_source_checkpoint
+  expected_profile
+  retained_storage_identity_digest
+  resume_artifact_digest
+}
+
+RuntimeRestartAcknowledgement {
+  schema_version
+  request_id
+  owner_id
+  parent_runtime_manifest_digest
+  child_runtime_manifest_digest
+  previous_boot_identity
+  current_boot_identity
+  session_generation
+  retained_storage_identity_digest
+  lease_evidence_ref
+}
+
+StreamTerminalMarker {
+  schema_version
+  capture_id
+  action_id
+  runtime_manifest_digest
+  final_observer_sequence
+  open_stream_identity_digests[]
+  capture_interval_digest
+}
+
+FixtureManifest {
+  schema_version
+  fixture_set_id
+  source_checkpoint
+  handles[]
+  manifest_digest
+}
+
+FixtureHandle {
+  kind
+  opaque_id
+  owner
+  capability
+  expected_identity_digest
+  secret_channel_ref?
+}
+```
+
+Rules:
+
+- `barrier_kind` is exactly `persisted-before-send`,
+  `sent-before-response`, or `response-before-local-commit`.
+- One operation has ordinals `1`, `2`, and `3` in that order. A journey may
+  stop at an earlier barrier only when its declared assertion requires it.
+- `release_token` is random, run-local, single-use, and never written to the
+  final evidence bundle.
+- Barrier digests bind canonical production-owned state but cannot contain
+  plaintext, key material, signatures, credentials, PTIDs, device IDs, raw
+  request/response bytes, or local paths.
+- A child runtime manifest binds exactly one parent manifest and restart
+  request. `previous_boot_identity == current_boot_identity` is invalid.
+- Retained restart continuity requires equal storage identity digests and
+  unchanged source/profile/client bindings; it does not expose the storage path.
+- `final_observer_sequence` closes the capture interval inclusively. Events
+  after it are outside that interval even if a listed stream remains open.
+- A fixture manifest is immutable after scenario attachment. Its digest is
+  bound into the runtime manifest and result evidence.
+- `secret_channel_ref` is an ephemeral delivery reference, not secret material.
+  It is consumed by Native and omitted from result serialization.
+
+Lifecycle controller state:
+
+```text
+DISABLED
+  -> ARMED(operation_id, boot_identity, session_generation)
+  -> WAITING(barrier_1) -> RELEASED(barrier_1)
+  -> WAITING(barrier_2) -> RELEASED(barrier_2)
+  -> WAITING(barrier_3) -> RELEASED(barrier_3)
+  -> COMPLETED
+
+any state -> FAILED_CLOSED
+process restart -> DISABLED
+```
+
+A controller never survives process restart. Continuation creates a new
+controller under the child runtime manifest and consumes the immutable resume
+artifact. The runtime owner, not the controller, owns process lifecycle.
+
+## 14. Accepted Development Runtime Manifest v3
+
+Accepted `SC-D22`, as amended by accepted `SC-D28`, replaces the
+single-profile Development attachment schema with one immutable multi-service
+manifest and hard-cuts its service identity shape from v2 to v3:
+
+```text
+DevelopmentRuntimeManifestV3 {
+  schema_version = 3
+  kind = "secure-content-development-runtime"
+  run_id
+  journey_id
+  source {
+    canonical_worktree
+    workspace_id
+    commit
+    worktree_set_digest
+    workspace_digest = "clean"
+  }
+  controller_binding {
+    profile_id = "four"
+    slot = 5
+  }
+  services {
+    <service_id> {
+      kind
+      profile_id
+      deployment_environment
+      endpoint
+      schema_attestation_endpoint
+      live_commit
+      protocol_digest
+      runtime_identity
+      attestation_artifact_ref
+      canonical_private_schema_attestation_ref
+    }
+  }
+  clients[] {
+    id
+    actor_role
+    actor_role_digest
+    runtime_kind
+    required_service_roles[]
+    service_bindings {
+      <role> {
+        service_id
+        required_kind
+      }
+    }
+    storage_identity_digest
+    boot_identity
+    session_generation
+    automation_attachment_ref
+    harness_identity_digest
+  }
+  fixture_manifest_ref
+  fixture_manifest_digest
+  lifecycle_observer_capabilities[]
+  created_at
+  manifest_digest
+}
+```
+
+Rules:
+
+- `source.commit` equals the clean current checkpoint and every Station
+  `live_commit` required by the Journey equals that checkpoint.
+- `services` is the only Station/Relay topology truth. A service role is stable
+  and cannot encode `four`, `fiveArm`, an endpoint, or list position.
+- `clients[].id` is unique and stable within the environment. Actor role is not
+  client identity.
+- each required service role has exactly one binding to a same-manifest service
+  whose kind matches `required_kind`;
+- client runtime kind is exactly `native-tauri`, `browser`,
+  `tauri-ios-simulator`, or `tauri-android-emulator`;
+- storage, boot, session, automation, Harness, actor, and Station identities
+  are observed from the live client and bind to the runtime-owner allocation;
+- `endpoint` is the exact runtime connection route consumed by clients,
+  scenarios, the live service attestation, and Harness identity validation;
+- `schema_attestation_endpoint` is the profile-owned canonical deployment
+  route used only to reconstruct the service-attestation binding digest carried
+  by `CanonicalPrivateSchemaAttestationV1`; the canonical digest projection
+  copies the service identity fields, substitutes this value into its
+  `endpoint` member, and excludes the live `endpoint`; it is never inferred
+  from `endpoint`, profile ID, deployment environment, service ID, or CLI
+  order;
+- both endpoint values are non-secret connection data and are independently
+  syntax-validated and manifest-digest-bound; credentials, tokens, keys,
+  plaintext, raw device handles, and local storage paths are excluded;
+- the two endpoint values may be equal when the runtime connects directly, but
+  a missing field, cross-use, fallback, or digest mismatch fails closed before
+  the first private product action;
+- the manifest is outside the repository, owned by the current user, mode
+  `0600`, immutable after publication, and hash-verified before and after every
+  scenario action;
+- CLI profile selectors must equal the manifest service-profile set exactly and
+  never become an alternate topology source;
+- v2 and v3 are not accepted concurrently. The implementation cut replaces the
+  v2 reader/writer and fixtures in the same checkpoint; no compatibility
+  reader, alias, or migration path remains.
+
+Each child Development result contains:
+
+```text
+DevelopmentScenarioResult {
+  schema_version
+  workstream_id
+  journey_id
+  scenario_id
+  variant_id
+  runtime_kind
+  client_ids[]
+  service_ids[]
+  source_commit
+  runtime_manifest_digest
+  fixture_manifest_digest
+  status
+  first_failure?
+  observation_digests[]
+  cleanup_result
+}
+```
+
+An aggregate result contains only immutable child-result references and their
+digests. Missing, stale, duplicate, wrong-runtime, or non-PASS required child
+results keep the aggregate `UNPROVEN`.
+
+## 15. Accepted Reset Manifest And Audit Model
+
+Accepted `SC-D23` introduces one immutable reset identity per profile:
+accepted `SC-D24` adds `reset_intent`, the bounded invocation, and the schema
+attestation before the first implementation, so the control records remain
+version `1`.
+
+```text
+SecureContentResetManifestV1 {
+  schema_version = 1
+  reset_id
+  reset_intent = SCHEMA_ACTIVATION | FINAL_CUT
+  source_commit
+  workspace_id
+  profile_id
+  deployment_environment
+  destructive_scope
+  database_identity_digest
+  public_snapshot_before
+  database_targets[]
+  canonical_private_object_targets[]
+  legacy_oss_object_targets[]
+  out_of_scope_table_names[]
+  recovery_predecessor?
+  created_at
+  manifest_digest
+}
+
+ResetRecoveryPredecessorV1 {
+  reset_id
+  reset_manifest_digest
+  journal_digest
+  state = OBJECTS_DELETED | STATION_DEPLOYED
+  failure_code = RESET_SOURCE_SUPERSEDED | RESET_SCHEMA_TARGET_UNREVIEWED
+}
+
+SecureContentResetInvocationV1 {
+  schema_version = 1
+  invocation_id
+  reset_id
+  reset_intent
+  reset_manifest_digest
+  plan_id
+  task_id
+  declaration_digest
+  source_commit
+  workspace_id
+  profile_id
+  deployment_environment
+  destructive_scope
+  issued_at
+  expires_at
+  invocation_digest
+}
+
+DatabaseResetTarget {
+  table
+  operation
+  predicate?
+  expected_schema_before_digest
+  expected_row_count
+}
+
+ObjectResetTarget {
+  owner_domain
+  owner_identity_digest
+  backend
+  storage_key_digest
+  metadata_digest
+  blob_digest
+  source_row_digest
+  reference_classification
+}
+
+PublicSocialSnapshotV1 {
+  schema_version = 1
+  profile_id
+  public_post_schema_digest
+  public_post_rows_digest
+  public_comment_rows_digest
+  public_reaction_rows_digest
+  public_object_metadata_digest
+  public_object_bytes_digest
+  counts
+  snapshot_digest
+}
+
+ResetJournalV1 {
+  schema_version = 1
+  reset_manifest_digest
+  current_state
+  accepted_invocations[]
+  transitions[]
+  failure?
+}
+
+ResetInvocationAcceptance {
+  invocation_id
+  invocation_digest
+  accepted_at
+}
+
+CanonicalPrivateSchemaAttestationV1 {
+  schema_version = 1
+  source_commit
+  workspace_id
+  profile_id
+  deployment_environment
+  destructive_scope
+  station_service_id
+  station_peer_id
+  station_runtime_identity
+  service_attestation_digest
+  reset_intent
+  reset_manifest_digest
+  completed_journal_digest
+  canonical_private_schema_digest
+  retired_columns_absent
+  public_snapshot_digest
+  created_at
+  attestation_digest
+}
+```
+
+The database operation vocabulary is closed:
+
+```text
+CLEAR_TABLE
+DELETE_WHERE_POST_CLASS_PRIVATE
+DROP_RETIRED_TABLE
+REBUILD_CANONICAL_PRIVATE_POST_TABLE
+```
+
+The manifest's table/predicate pairs are exactly:
+
+| Target | Operation |
+|---|---|
+| `social_private_content_plans` | `CLEAR_TABLE` |
+| `social_private_content_plan_slots` | `CLEAR_TABLE` |
+| `social_private_command_receipts` | `CLEAR_TABLE` |
+| `social_private_posts` | `CLEAR_TABLE` |
+| `social_private_comments` | `CLEAR_TABLE` |
+| `social_private_audience_snapshots` | `CLEAR_TABLE` |
+| `social_private_recipient_grants` | `CLEAR_TABLE` |
+| `social_private_content_envelopes` | `CLEAR_TABLE` |
+| `social_private_delivery_intents` | `CLEAR_TABLE` |
+| `social_private_object_uploads` | `CLEAR_TABLE` |
+| `social_private_object_parts` | `CLEAR_TABLE` |
+| `social_private_objects` | `CLEAR_TABLE` |
+| `social_private_object_grants` | `CLEAR_TABLE` |
+| `social_private_commit_proofs` | `CLEAR_TABLE` |
+| `social_comments` | `DELETE_WHERE_POST_CLASS_PRIVATE` |
+| `social_reactions` | `DELETE_WHERE_POST_CLASS_PRIVATE` |
+| `social_moment_deliveries` | `CLEAR_TABLE` |
+| `social_private_audience_grants` | `DROP_RETIRED_TABLE` |
+| `social_private_posts` | `REBUILD_CANONICAL_PRIVATE_POST_TABLE` after clear |
+
+The private-post rebuild retains only the canonical
+`SocialPrivateContentPost` columns and indexes. The retired-column allowlist is
+owned by `SC-D23`; discovery of an additional non-canonical column returns
+`RESET_SCHEMA_TARGET_UNREVIEWED` before mutation.
+
+Object targets are keyed by digests in durable artifacts, while the live
+owner-specific deletion adapter receives the resolved key through an ephemeral
+run context. This prevents storage keys and user identities from leaking into
+reviewable evidence. Each target must be exclusively private or shared-CAS-safe;
+an unknown or public/Conversation reference returns
+`RESET_OBJECT_REFERENCE_AMBIGUOUS`.
+
+Journal transitions are monotonic:
+
+```text
+PREPARED
+  -> DATABASE_SCHEMA_COMMITTED
+  -> OBJECTS_DELETED
+  -> STATION_DEPLOYED
+  -> POST_AUDIT_PASSED
+  -> COMPLETE
+
+PREPARED
+  -> SUPERSEDED
+
+STATION_DEPLOYED
+  -> RECOVERY_REPLACED
+
+OBJECTS_DELETED
+  -> RECOVERY_REPLACED
+```
+
+`DATABASE_SCHEMA_COMMITTED` means the allowlisted row deletion and canonical
+private-post table rebuild committed in one database transaction. On resume,
+the owner revalidates the exact schema and data state before continuing; it
+does not repeat conflicting DDL.
+
+Only the exact same manifest digest may resume a partial journal.
+`SUPERSEDED` is terminal non-success and is legal only from `PREPARED`.
+Admission of a fresh authorized manifest atomically supersedes the older
+`PREPARED` journal when workspace, profile, deployment environment, destructive
+scope, and intent match but source commits differ. Same-source conflicts and
+all post-commit states remain active conflicts. Public snapshot inequality,
+extra target rows/columns, source/runtime drift, lease loss, or incomplete
+deletion blocks `COMPLETE`.
+
+Accepted `SC-D26` adds one narrow exception for the verified W12A source
+contradiction and a source defect found at the deployment handoff. A fresh
+manifest may carry one `recovery_predecessor` only when the existing active
+journal is an unfailed `OBJECTS_DELETED` journal or exactly
+`STATION_DEPLOYED` with `RESET_SCHEMA_TARGET_UNREVIEWED`. The predecessor
+record binds its reset and manifest identities plus the complete pre-transition
+journal digest. The
+predecessor and fresh manifest must have equal workspace, profile, deployment
+environment, destructive scope, reset intent, database identity, and public
+snapshot, while source commits and reset IDs differ.
+
+Fresh invocation admission re-reads and locks the predecessor. Only an exact
+match may atomically append `<predecessor> -> RECOVERY_REPLACED` and create the
+fresh `PREPARED` journal. A `STATION_DEPLOYED` predecessor retains its original
+schema failure; an `OBJECTS_DELETED` predecessor records
+`RESET_SOURCE_SUPERSEDED`. It is excluded from active-scope conflicts but
+cannot resume, advance, emit an attestation, or satisfy an aggregate. No other
+post-commit state or failure code is replaceable.
+
+Accepted `SC-D27` adds an append-only
+`social_secure_content_reset_replacements` execution receipt:
+
+```text
+predecessor_reset_id            primary key, FK -> reset manifests
+initial_successor_reset_id      unique, FK -> reset manifests
+predecessor_manifest_digest
+predecessor_journal_digest
+predecessor_state
+predecessor_failure_code        nullable
+terminal_failure_code           nullable
+replacement_reason
+deployment_environment
+destructive_scope
+provenance_mode                 LOCKED_ADMISSION | REVIEWED_MIGRATION
+replaced_at
+```
+
+The fresh manifest is audited and persisted before mutation. The receipt is
+then inserted in the same invocation transaction as predecessor
+terminalization, fresh journal persistence, and first successor invocation
+acceptance. The predecessor journal retains its original failure projection;
+the replacement reason exists only in the receipt. The exact allowed tuples
+are:
+
+```text
+OBJECTS_DELETED + no failure
+  -> RESET_SOURCE_SUPERSEDED
+OBJECTS_DELETED + RESET_PARTIAL_FAILURE
+  -> RESET_SOURCE_SUPERSEDED
+STATION_DEPLOYED + RESET_SCHEMA_TARGET_UNREVIEWED
+  -> RESET_SCHEMA_TARGET_UNREVIEWED
+STATION_DEPLOYED + RESET_JOURNAL_STATE_CONFLICT + existing recovery ancestry
+  -> RESET_SOURCE_SUPERSEDED
+```
+
+For the ancestry-qualified journal-conflict branch, the complete predecessor
+chain must validate inside the admission transaction before replacement. The
+manifest's `predecessor_journal_digest` is a compare-and-swap token verified
+against the locked live projection. Terminal validation consumes the
+append-only receipt and never reconstructs that historical digest from the
+terminal row.
+
+If SC-D25 later supersedes an uncommitted recovery successor, the replacement
+receipt continues to name the initial successor. The newer manifest inherits
+the exact predecessor link and validates against the same receipt.
+
+The optional field does not alter canonical JSON or digests for existing
+manifests when absent. A recovery manifest includes it in its canonical digest.
+If SC-D25 supersedes an uncommitted `PREPARED` recovery manifest, its successor
+inherits the exact same predecessor link so the ancestry cannot be truncated.
+The fresh reset still executes the full SC-D23 target set. Its post-audit also
+walks the bounded, cycle-free predecessor chain, loads every persisted object
+target, and requires each original Social or OSS owner to prove the target
+remains deleted. It earns success only through its own complete journal.
+
+Under accepted `SC-D24`, reset intent is closed and immutable. A
+`SCHEMA_ACTIVATION` completion emits the schema attestation required by W7-W11
+runtime manifests. `FINAL_CUT` creates a new manifest and journal and cannot
+reuse or relabel the activation result. A schema attestation is valid only for
+its exact source, profile, deployment environment, destructive scope, Station
+service/peer/runtime identity, service attestation, completed journal, schema
+digest, and public snapshot.
+
+The reset invocation is a bounded control record delivered through
+OS-authenticated SSH stdin. The remote maintenance CLI acquires a database
+advisory lock keyed by deployment environment and destructive scope. The
+journal records each accepted invocation ID and digest. Exact replay returns
+the current journal state; a conflicting digest for one invocation ID fails.
+Resume retains the reset manifest and journal identity but uses a fresh
+invocation ID. Expired, wrong-source, wrong-environment, wrong-scope, or
+different-manifest invocation fails before mutation.
+
+## 16. Limits
 
 | Resource | Initial bound |
 |---|---|

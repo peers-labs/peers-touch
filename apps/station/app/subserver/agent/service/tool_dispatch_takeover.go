@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -14,6 +15,87 @@ import (
 )
 
 const maxPreparedTakeoversPerLease = 100
+
+// ReconcileApprovedClientDispatches closes the narrow crash window after a
+// durable approval and before its claim/outbox transaction.
+func (s *ToolDispatchService) ReconcileApprovedClientDispatches(
+	ctx context.Context,
+) (int64, error) {
+	db, err := s.getDB(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var candidates []persistence.ToolCall
+	if err := db.WithContext(ctx).
+		Where(
+			"execution_owner = ? AND status = ? AND result_persisted = ?",
+			persistence.ToolOwnerClientCapability,
+			persistence.ToolCallStatusApproved,
+			false,
+		).
+		Order("updated_at ASC, tool_call_id ASC").
+		Limit(maxPreparedTakeoversPerLease).
+		Find(&candidates).Error; err != nil {
+		return 0, internalToolError("load approved client tool calls", err)
+	}
+
+	var affected int64
+	for i := range candidates {
+		interrupted, err := s.reachAcceptanceBarrier(
+			ctx,
+			candidates[i].ActorID,
+			capabilityBarrierDecisionBeforeClaim,
+		)
+		if err != nil {
+			return affected, err
+		}
+		if interrupted {
+			return affected, errCapabilityAcceptanceWorkerInterrupted
+		}
+		dispatched := false
+		err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var call persistence.ToolCall
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ?", candidates[i].ID).
+				First(&call).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return internalToolError("lock approved client tool call", err)
+			}
+			if call.ExecutionOwner != persistence.ToolOwnerClientCapability ||
+				call.Status != persistence.ToolCallStatusApproved ||
+				call.ResultPersisted {
+				return nil
+			}
+			var lease persistence.ClientCapabilityLease
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where(
+					"session_id = ? AND actor_id = ? AND device_id = ? "+
+						"AND revoked_at IS NULL AND expires_at > ?",
+					call.CapabilitySessionID,
+					call.ActorID,
+					call.TargetDeviceID,
+					s.now(),
+				).
+				First(&lease).Error; err != nil {
+				return notFoundToolError("active capability lease", err)
+			}
+			if err := s.dispatchCallTx(tx, &call, s.now()); err != nil {
+				return err
+			}
+			dispatched = true
+			return nil
+		})
+		if err != nil {
+			return affected, err
+		}
+		if dispatched {
+			affected++
+		}
+	}
+	return affected, nil
+}
 
 // ReconcilePreparedCapabilityTakeovers re-authorizes eligible PREPARED work
 // through the newest active matching lease. Recovery credentials remain

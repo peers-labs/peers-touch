@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import socket
 import subprocess
 import tempfile
@@ -275,6 +276,7 @@ class ProfileResolutionTests(unittest.TestCase):
                         "PT_STATION_MODE=remote",
                         "PT_STATION_URL=http://station.example:18080",
                         "PT_DESKTOP_APP_GATEWAY_PORT=1",
+                        "PT_AGENT_PROVIDER_API_KEY=",
                     )
                 )
                 + "\n",
@@ -303,6 +305,9 @@ class ProfileResolutionTests(unittest.TestCase):
             with patch(
                 "tooling.acceptance.core.provisioner.REPO_ROOT",
                 fake_worktree,
+            ), patch.dict(
+                os.environ,
+                {"PT_AGENT_PROVIDER_API_KEY": "injected-provider-secret"},
             ), patch(
                 "tooling.acceptance.core.provisioner.subprocess.run",
                 return_value=subprocess.CompletedProcess(
@@ -322,6 +327,68 @@ class ProfileResolutionTests(unittest.TestCase):
         self.assertEqual(values["PT_DEV_SLOT"], "3")
         self.assertEqual(values["PT_DESKTOP_APP_GATEWAY_PORT"], "3330")
         self.assertEqual(values["PT_MOBILE_WEB_PORT"], "5473")
+        self.assertEqual(
+            values["PT_AGENT_PROVIDER_API_KEY"],
+            "injected-provider-secret",
+        )
+
+    def test_machine_binding_uses_explicit_environment_repository(self):
+        provisioner = get_provisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_worktree = Path(tmpdir) / "peers-oss"
+            reviewed_env = Path(tmpdir) / "reviewed-env"
+            profile = reviewed_env / "peers-touch" / "two" / "profile.env.example"
+            profile.parent.mkdir(parents=True)
+            profile.write_text(
+                "PT_DEV_PROFILE=two\n",
+                encoding="utf-8",
+            )
+            resolution = {
+                "authority": "machine-control-plane",
+                "binding": {
+                    "canonicalRoot": str(fake_worktree),
+                    "profile": "two",
+                    "slot": 3,
+                    "workspaceId": "0" * 16,
+                },
+                "profile": {
+                    "profileFile": str(profile),
+                    "sourceState": "tracked-clean",
+                },
+                "ports": {
+                    "desktopAppGateway": 3330,
+                    "desktopAppWeb": 3510,
+                    "desktopWebGateway": 3331,
+                    "desktopWebWeb": 3511,
+                    "mobileWeb": 5473,
+                },
+            }
+            with patch(
+                "tooling.acceptance.core.provisioner.REPO_ROOT",
+                fake_worktree,
+            ), patch.dict(
+                os.environ,
+                {"PT_ENV_REPO": str(reviewed_env)},
+            ), patch(
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps(resolution),
+                    stderr="",
+                ),
+            ) as run:
+                provisioner._resolve_active_profile()
+
+        command = run.call_args.args[0]
+        self.assertEqual(
+            command[command.index("--env-repo") + 1],
+            str(reviewed_env.resolve()),
+        )
 
     def test_profile_identity_mismatch_blocks(self):
         provisioner = get_provisioner(
@@ -434,6 +501,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_DESKTOP_WEB_GATEWAY_PORT": "24031",
                 "PT_DESKTOP_WEB_WEB_PORT": "24211",
                 "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
+                "CHAT_ACCEPTANCE_RESET": "1",
             },
         )
 
@@ -1227,8 +1295,16 @@ class ProvisionerBlockingTests(unittest.TestCase):
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
         )
-        actor_manifest.assert_not_called()
-        self.assertIsNone(manifest.actor_manifest_ref)
+        actor_manifest.assert_called_once_with(
+            environment_id="home-station",
+            run_id=manifest.run_id,
+            station_url="http://station.example:28080",
+            deployment_environment="station-2",
+            roles=("alice", "bob"),
+            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
+            reset_authorized=True,
+        )
+        self.assertIsNotNone(manifest.actor_manifest_ref)
         profile_lease.assert_called_once_with(
             "station-2",
             f"acceptance:agent-v2-capability-binding-e2e:{manifest.run_id}",
@@ -1318,7 +1394,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-governed-tool-", cleanup[0])
 
-    def test_agent_v2_mcp_provisions_profile_two_single_native_client(self):
+    def test_agent_v2_mcp_provisions_profile_two_native_and_browser_clients(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
@@ -1359,6 +1435,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {
                 "PT_AGENT_V2_MCP_NATIVE_WEBDRIVER_PORT": "27445",
+                "PT_AGENT_V2_MCP_BROWSER_WEBDRIVER_PORT": "27446",
             },
             clear=True,
         ):
@@ -1369,13 +1446,18 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertEqual(manifest.profile_resolved, "two")
         self.assertEqual(manifest.services, {"station": attestation})
-        self.assertEqual(len(manifest.clients), 1)
-        native = manifest.clients[0]
+        self.assertEqual(len(manifest.clients), 2)
+        native, browser = manifest.clients
         self.assertEqual(native.runtime, "native-tauri")
         self.assertEqual(native.actor, "bob")
         self.assertEqual(native.profile, "agent-v2-mcp-native")
         self.assertEqual(native.webdriver_port, 27445)
+        self.assertEqual(browser.runtime, "browser")
+        self.assertEqual(browser.actor, "bob")
+        self.assertEqual(browser.profile, "agent-v2-mcp-browser")
+        self.assertEqual(browser.webdriver_port, 27446)
         self.assertIn("pt-agent-v2-mcp-", native.storage_root)
+        self.assertIn("pt-agent-v2-mcp-", browser.storage_root)
         self.assertEqual(
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
@@ -1392,7 +1474,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-mcp-", cleanup[0])
 
-    def test_agent_v2_connector_provisions_profile_two_single_native_client(self):
+    def test_agent_v2_connector_provisions_profile_two_runtime_pair(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
@@ -1433,6 +1515,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "os.environ",
             {
                 "PT_AGENT_V2_CONNECTOR_NATIVE_WEBDRIVER_PORT": "28445",
+                "PT_AGENT_V2_CONNECTOR_BROWSER_WEBDRIVER_PORT": "28446",
             },
             clear=True,
         ):
@@ -1443,13 +1526,18 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
         self.assertEqual(manifest.profile_resolved, "two")
         self.assertEqual(manifest.services, {"station": attestation})
-        self.assertEqual(len(manifest.clients), 1)
-        native = manifest.clients[0]
+        self.assertEqual(len(manifest.clients), 2)
+        native, browser = manifest.clients
         self.assertEqual(native.runtime, "native-tauri")
         self.assertEqual(native.actor, "bob")
         self.assertEqual(native.profile, "agent-v2-connector-native")
         self.assertEqual(native.webdriver_port, 28445)
+        self.assertEqual(browser.runtime, "browser")
+        self.assertEqual(browser.actor, "bob")
+        self.assertEqual(browser.profile, "agent-v2-connector-browser")
+        self.assertEqual(browser.webdriver_port, 28446)
         self.assertIn("pt-agent-v2-connector-", native.storage_root)
+        self.assertIn("pt-agent-v2-connector-", browser.storage_root)
         self.assertEqual(
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
@@ -1472,7 +1560,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-connector-", cleanup[0])
 
-    def test_agent_v2_evaluation_provisions_two_isolated_native_clients(self):
+    def test_agent_v2_evaluation_provisions_native_and_browser_clients(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
@@ -1529,15 +1617,15 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual((alice.actor, bob.actor), ("alice", "bob"))
         self.assertEqual(
             (alice.runtime, bob.runtime),
-            ("native-tauri", "native-tauri"),
+            ("native-tauri", "browser"),
         )
         self.assertEqual(
             alice.profile,
-            "agent-v2-evaluation-alice-native",
+            "agent-v2-evaluation-native",
         )
         self.assertEqual(
             bob.profile,
-            "agent-v2-evaluation-bob-native",
+            "agent-v2-evaluation-browser",
         )
         self.assertEqual(
             (alice.webdriver_port, bob.webdriver_port),

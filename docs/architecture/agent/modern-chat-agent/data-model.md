@@ -1,8 +1,8 @@
 # Modern Chat Agent — Data Model
 
 > **Status**: accepted
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-09-17
+> **Version**: v1.3
+> **Created**: 2026-07-30 | **Updated**: 2026-09-25
 > **Owner**: Peers-Touch Agent Team
 > **Proto Root**: `model/domain/agent/`
 
@@ -473,6 +473,16 @@ from current Agent configuration.
 ### 2.14 ClientCapabilitySession
 
 ```protobuf
+enum CapabilityPermissionKind {
+  CAPABILITY_PERMISSION_KIND_UNSPECIFIED = 0;
+  CAPABILITY_PERMISSION_KIND_CLIPBOARD = 1;
+  CAPABILITY_PERMISSION_KIND_FILESYSTEM = 2;
+  CAPABILITY_PERMISSION_KIND_CAMERA = 3;
+  CAPABILITY_PERMISSION_KIND_MICROPHONE = 4;
+  CAPABILITY_PERMISSION_KIND_NOTIFICATIONS = 5;
+  CAPABILITY_PERMISSION_KIND_SCREEN_CAPTURE = 6;
+}
+
 message ClientCapabilityLease {
   string capability_session_id = 1;
   string ptid = 2;
@@ -492,6 +502,7 @@ message ClientCapability {
   string schema_version = 2;
   CapabilityPermissionState permission = 3;
   CapabilityConstraints constraints = 4;
+  CapabilityPermissionKind permission_kind = 5;
 }
 ```
 
@@ -503,6 +514,14 @@ Rules:
   client-selected actor, lease/session ID, revision, or expiry and applies its
   own maximum TTL.
 - Capabilities describe typed operations, not arbitrary commands.
+- Permission kind and state are reported by the client capability owner in the
+  signed advertisement. Station must not derive a permission kind from a
+  capability ID.
+- `DENIED` and `PROMPT` require a non-unspecified permission kind.
+  Permissionless capabilities may use an unspecified kind only while granted.
+- A selected exact capability/schema with `DENIED` produces terminal
+  `CLIENT_PERMISSION_DENIED` before ToolCall persistence or dispatch, with
+  only `capability_id` and the enum wire name in `permission_kind`.
 - Renewal requires the same authenticated actor/device/session, active lease,
   expected lease revision, capability-set hash, connection identity, and device
   signing-key ID. It advances revision and expiry only.
@@ -733,6 +752,11 @@ Tool invocation is not a `CapabilityOperation`. It remains a `ToolCall` inside
 the canonical Turn. Capability operations cover install/configure/test/connect/
 reconnect/uninstall and their local resource lifecycle.
 
+Consequently, J03 `ERR-O06` applies to the ToolCall
+`ReceiptRecoveryCredential` expiry boundary. The similarly named J04 cell
+applies to the independent `CapabilityOperation` cleanup lease. Formal
+evidence must not project either record as the other.
+
 ### Evaluation Commands
 
 - Create/update benchmark/dataset/case mutations carry actor-scoped
@@ -764,6 +788,12 @@ Required categories:
 
 Every typed error has stable code, locale key, retryability, terminality, and
 safe structured arguments.
+
+`CLIENT_PERMISSION_DENIED` is non-retryable and terminal for the submitted
+Turn. Its only safe details are `capability_id` and `permission_kind`.
+Permission correction is a later user action and never causes automatic
+resubmission. Browser renders the same Station payload for a selected native
+executor while its own MCA-D19E session remains capability-empty.
 
 ## 6. Persistence And Retention
 
@@ -1781,3 +1811,127 @@ Agent and Skill targets are Station-owned; MCP targets are owned by the
 actor-scoped Desktop Rust MCP store. Catalog revocation blocks new mutation but
 does not delete the target. Explicit uninstall deletes through the same target
 authority and removes the ledger record only after absence readback.
+
+### 8.12 Formal Scenario Evidence
+
+MCA-D21 makes one expanded runtime-matrix tuple the atomic evidence identity:
+
+```text
+ScenarioTuple:
+  gate, row, platform, runtime
+  cell, locale, ordering, sample_id
+
+ScenarioExecution:
+  scenario_execution_id
+  tuple
+  attestation_profile
+  source_identity
+  observed_at
+  runtime_facts
+
+RoleObservation:
+  scenario_execution_id
+  runtime_tuple_key
+  role
+  oracle_assertion_id
+  observed_facts
+```
+
+`scenario_execution_id` is unique inside one Gate candidate. All role
+observations for a tuple reference that ID. A primary command, Turn, ToolCall,
+operation, Evaluation run, or contract-run identity cannot appear under a
+second executable tuple.
+
+The supported profiles are:
+
+- `station_command`
+- `station_control_plane`
+- `station_turn`
+- `client_capability_turn`
+- `station_capability_turn`
+- `contract_only`
+- `unavailable_runtime`
+- `orchestration_guard`
+- `non_advertised`
+
+Profiles contain only entities created by their production path. In
+particular, `station_command`, `station_control_plane`, `contract_only`, and
+`unavailable_runtime` never carry a synthetic TurnAttempt, ToolCall, client
+lease, or receipt. `station_capability_turn` identifies the Station executor
+without presenting it as a client device lease.
+
+Each matrix row owns a complete role-policy partition:
+
+```text
+always + required + not_applicable = Gate scenario roles
+```
+
+The sets are disjoint. The validator compares every role's observation keys to
+the exact applicable tuple set and rejects missing, extra, duplicate, or
+cross-execution observations.
+
+### 8.13 Agent Acceptance Scenario State
+
+MCA-D22 through MCA-D24 define one ephemeral Station-owned scenario state that
+exists only while an authorized Acceptance run is active:
+
+```text
+AgentAcceptanceScenario:
+  run_id
+  scenario_execution_id
+  actor_ptid
+  family = binding_j02 | governed_tool_j03 | mcp_j04 |
+           connector_j05 | evaluation_j06
+  runtime_attestation_profile
+  cell
+  platform
+  locale
+  ordering
+  sample_id
+  scenario_handle
+  resource_ids[]
+  active_barrier?
+  selected_executor?
+  executor_hook_ticket_digest?
+  clock_milestone?
+  created_at
+```
+
+This state is process-local coordination, not product truth or durable
+evidence. Product manifests, bindings, readiness snapshots, ToolCalls,
+receipts, MCP processes, Connector resources, Evaluation runs/results/metrics,
+typed failures, and activity counters remain in their canonical owners. A
+Station restart invalidates every handle except when the reviewed cell
+explicitly requires handle restoration, and cleanup is idempotent.
+
+The setup response exposes only opaque resource identities and a source
+inventory hash. A selected executor may receive one short-lived, single-use
+hook ticket whose secret is not evidence. Setup, barrier, clock, interruption,
+and cleanup responses cannot contain expected outcomes, assertion booleans,
+evidence roles, or candidate status.
+
+The server derives every allowed barrier, lifecycle action, provider response
+class, and clock milestone from the reviewed tuple. Callers cannot submit raw
+methods, paths, SQL, timestamps, durations, state values, or expected results.
+J03-J05 executor/provider hooks remain subordinate to the Station handle. J06
+barriers observe canonical Evaluation CAS boundaries and cannot choose their
+winner.
+
+Capability catalog and binding failures use the existing enum families:
+
+```text
+CapabilityCatalogErrorCode:
+  MANIFEST_MISSING
+  MANIFEST_VERSION_STALE
+  SCHEMA_INVALID
+
+CapabilityBindingErrorCode:
+  VERSION_CONFLICT
+  CAPABILITY_UNAVAILABLE
+  POLICY_INVALID
+```
+
+Their transport projection follows the shared typed-error contract: exact
+stable code, locale key, retryability, terminality, and an allowlisted detail
+map. Rejected commands preserve the latest authority revision and have zero
+runtime execution count.

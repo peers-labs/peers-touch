@@ -26,14 +26,6 @@
       "notes": "Structurally onboarded managed domain. Required product proof uses same-Station iOS Simulator cells; cross-Station/Relay, Android, and physical-device scope remains UNPROVEN."
     },
     {
-      "id": "station-access",
-      "status": "active",
-      "profile": "tooling/acceptance/domains/station-access.yaml",
-      "capabilities": "tooling/acceptance/capabilities/station-access.yaml",
-      "coverage": "managed_domain",
-      "notes": "Identity and Access managed domain for signed Station selection, canonical protobuf Access Gate admission, and Desktop/Mobile scope isolation."
-    },
-    {
       "id": "applet",
       "status": "active",
       "profile": "tooling/acceptance/domains/applet.yaml",

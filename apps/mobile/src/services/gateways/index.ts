@@ -18,6 +18,18 @@ export type {
 export { createSocialGateway } from './socialGateway';
 export type { SocialGateway, SocialFriendRequestsResult } from './socialGateway';
 
+export { createGroupGateway } from './groupGateway';
+export type {
+  GroupGateway,
+  GroupListResult,
+  GroupMembersResult,
+  GroupSettings as GroupGatewaySettings,
+  CreateGroupInput as GroupGatewayCreateInput,
+  UpdateGroupInput as GroupGatewayUpdateInput,
+  UpdateGroupMemberInput as GroupGatewayUpdateMemberInput,
+  UpdateGroupSettingsInput as GroupGatewayUpdateSettingsInput,
+} from './groupGateway';
+
 export { createMomentsGateway } from './momentsGateway';
 export type { MomentsGateway, MomentCreatedResult } from './momentsGateway';
 

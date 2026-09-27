@@ -32,6 +32,16 @@ pub mod peers_touch {
         }
 
         #[allow(dead_code)]
+        pub mod federation {
+            pub mod v1 {
+                include!(concat!(
+                    env!("OUT_DIR"),
+                    "/peers_touch.model.federation.v1.rs"
+                ));
+            }
+        }
+
+        #[allow(dead_code)]
         pub mod secure_content {
             pub mod v1 {
                 include!(concat!(
@@ -51,7 +61,7 @@ pub mod peers_touch {
 }
 
 #[allow(unused_imports)]
-pub use peers_touch::model::{activity, actor, common, error, secure_content, social};
+pub use peers_touch::model::{activity, actor, common, error, federation, secure_content, social};
 
 #[cfg(test)]
 mod tests {

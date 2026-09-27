@@ -52,7 +52,6 @@ export interface Message {
   reply?: MessageReply;
   image?: string;
   file?: { name: string; size: string };
-  voice?: { durationSeconds: number };
   dateLabel?: string;
   reactions?: MessageReaction[];
   recalled?: boolean;

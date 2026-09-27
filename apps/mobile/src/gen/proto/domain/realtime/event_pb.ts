@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/realtime/event.proto.
  */
 export const file_domain_realtime_event: GenFile = /*@__PURE__*/
-  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIuEJCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAEmMKHWNvbnZlcnNhdGlvbl9zZXR0aW5nc19jaGFuZ2VkGBMgASgLMjoucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkSAASPAoGbW9tZW50GBQgASgLMioucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTW9tZW50RXZlbnRIABJVChZncm91cF9mZWRlcmF0aW9uX2V2ZW50GBUgASgLMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBGZWRlcmF0aW9uRXZlbnRIABJiCh1ncm91cF9za2RtX2VudmVsb3BlX2RlbGl2ZXJlZBgWIAEoCzI5LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwU2tkbUVudmVsb3BlRGVsaXZlcmVkSAASTgoSZW52ZWxvcGVfZGVsaXZlcmVkGBcgASgLMjAucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuRW52ZWxvcGVEZWxpdmVyZWRIABJVChZsZWRnZXJfZXZlbnRfZGVsaXZlcmVkGBggASgLMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTGVkZ2VyRXZlbnREZWxpdmVyZWRIABJNChJzb2NpYWxfZ3JhcGhfZXZlbnQYGSABKAsyLy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Tb2NpYWxHcmFwaEV2ZW50SABCBgoEa2luZCIjCglIZWFydGJlYXQSFgoOZmxvb3JfZXZlbnRfaWQYASABKAkimwEKD01lc3NhZ2VFbnZlbG9wZRIZChFzZW5kZXJfYWN0b3JfcHRpZBgBIAEoCRIcChRyZWNpcGllbnRfYWN0b3JfcHRpZBgCIAEoCRIUCgxzZXNzaW9uX3VsaWQYAyABKAkSDAoEdWxpZBgEIAEoCRISCgpjaXBoZXJ0ZXh0GAUgASgMEhcKD3NlbnRfdHNfdW5peF9tcxgGIAEoAyLGAQoOTWVzc2FnZVJlY2VpcHQSFAoMc2Vzc2lvbl91bGlkGAEgASgJEgwKBHVsaWQYAiABKAkSQAoEa2luZBgDIAEoDjIyLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VSZWNlaXB0LktpbmQSFwoPZnJvbV9hY3Rvcl9wdGlkGAQgASgJIjUKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEg0KCURFTElWRVJFRBABEggKBFJFQUQQAiJMCgtUeXBpbmdTdGF0ZRIUCgxzZXNzaW9uX3VsaWQYASABKAkSFwoPZnJvbV9hY3Rvcl9wdGlkGAIgASgJEg4KBnR5cGluZxgDIAEoCCIyCgxQcmVzZW5jZUZsaXASEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZvbmxpbmUYAiABKAgi3QIKCkNhbGxTaWduYWwSFAoMc2Vzc2lvbl91bGlkGAEgASgJEhcKD2Zyb21fYWN0b3JfcHRpZBgCIAEoCRI8CgRraW5kGAMgASgOMi4ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ2FsbFNpZ25hbC5LaW5kEg8KB3BheWxvYWQYBCABKAwSDwoHY2FsbF9pZBgFIAEoCRIZChF3aW5uaW5nX2RldmljZV9pZBgGIAEoCSKkAQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCQoFT0ZGRVIQARIKCgZBTlNXRVIQAhINCglDQU5ESURBVEUQAxIKCgZIQU5HVVAQBBIQCgxDQUxMX1JFUVVFU1QQBRIPCgtDQUxMX0FDQ0VQVBAGEg8KC0NBTExfUkVKRUNUEAcSDAoIQ0FMTF9FTkQQCBISCg5DQUxMX05PX0FOU1dFUhAJIm4KE0ZlZGVyYXRlZENhbGxTaWduYWwSHAoUcmVjaXBpZW50X2FjdG9yX3B0aWQYASABKAkSOQoGc2lnbmFsGAIgASgLMikucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ2FsbFNpZ25hbCJsCiFHZXRGZWRlcmF0ZWRDYWxsUmVzb2x1dGlvblJlcXVlc3QSHQoVcmVxdWVzdGluZ19hY3Rvcl9wdGlkGAEgASgJEg8KB2NhbGxfaWQYAiABKAkSFwoPcGVlcl9hY3Rvcl9wdGlkGAMgASgJItABCiJHZXRGZWRlcmF0ZWRDYWxsUmVzb2x1dGlvblJlc3BvbnNlEg8KB2NhbGxfaWQYASABKAkSDQoFc3RhdGUYAiABKAkSGQoRd2lubmluZ19kZXZpY2VfaWQYAyABKAkSFwoPdGVybWluYWxfYWN0aW9uGAQgASgJEh0KFXJpbmdfZGVhZGxpbmVfdW5peF9tcxgFIAEoAxIbChNyZXNvbHZlZF9hdF91bml4X21zGAYgASgDEhoKEmV4cGlyZXNfYXRfdW5peF9tcxgHIAEoAyKaAgoPTWVzc2FnZU11dGF0aW9uEhQKDHNlc3Npb25fdWxpZBgBIAEoCRIMCgR1bGlkGAIgASgJEhcKD2Zyb21fYWN0b3JfcHRpZBgDIAEoCRJBCgRraW5kGAQgASgOMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTWVzc2FnZU11dGF0aW9uLktpbmQSFgoObmV3X2NpcGhlcnRleHQYBSABKAwSEwoLbmV3X2NvbnRlbnQYBiABKAkSGgoSbXV0YXRlZF90c191bml4X21zGAcgASgDIj4KBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgoKBlJFQ0FMTBABEggKBEVESVQQAhIKCgZERUxFVEUQAyLCAgoVR3JvdXBNZW1iZXJzaGlwQ2hhbmdlEhAKCGV2ZW50X2lkGAEgASgJEhIKCmdyb3VwX3VsaWQYAiABKAkSEgoKYWN0b3JfcHRpZBgDIAEoCRJHCgRraW5kGAQgASgOMjkucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBNZW1iZXJzaGlwQ2hhbmdlLktpbmQSGgoSY2hhbmdlZF90c191bml4X21zGAUgASgDIokBCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIOCgpLSU5EX0FEREVEEAESEAoMS0lORF9SRU1PVkVEEAISDQoJS0lORF9MRUZUEAMSEAoMS0lORF9VUERBVEVEEAQSFAoQS0lORF9UUkFOU0ZFUlJFRBAFEhIKDktJTkRfRElTU09MVkVEEAYi6QEKG0NvbnZlcnNhdGlvblNldHRpbmdzQ2hhbmdlZBIWCg5jb250YWluZXJfdWxpZBgBIAEoCRJNCgRraW5kGAIgASgOMj8ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkLktpbmQSEgoKYWN0b3JfcHRpZBgDIAEoCRIaChJjaGFuZ2VkX3RzX3VuaXhfbXMYBCABKAMiMwoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCgoGRlJJRU5EEAESCQoFR1JPVVAQAiLLAgoLTW9tZW50RXZlbnQSPQoEa2luZBgBIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1vbWVudEV2ZW50LktpbmQSDwoHcG9zdF9pZBgCIAEoCRIZChFhdXRob3JfYWN0b3JfcHRpZBgDIAEoCRISCgphY3Rvcl9wdGlkGAQgASgJEhIKCmNvbW1lbnRfaWQYBSABKAkSFQoNcmVhY3Rpb25fa2luZBgGIAEoCRIPCgdyZW1vdmVkGAcgASgIEhAKCGF1ZGllbmNlGAggASgJEhsKE29jY3VycmVkX3RzX3VuaXhfbXMYCSABKAMiUgoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCwoHQ1JFQVRFRBABEgsKB0RFTEVURUQQAhINCglDT01NRU5URUQQAxILCgdSRUFDVEVEEAQikQIKFEdyb3VwRmVkZXJhdGlvbkV2ZW50EhIKCmdyb3VwX3VsaWQYASABKAkSEgoKZXZlbnRfdWxpZBgCIAEoCRILCgNzZXEYAyABKAMSEgoKZXZlbnRfdHlwZRgEIAEoCRIhChlhdXRob3JpdHlfc3RhdGlvbl9wZWVyX2lkGAUgASgJEhcKD2F1dGhvcml0eV9lcG9jaBgGIAEoAxISCgpldmVudF9oYXNoGAcgASgJEhQKDG1lc3NhZ2VfdWxpZBgIIAEoCRIYChBtZW1iZXJzaGlwX2Vwb2NoGAkgASgDEhwKFGNvbW1pdHRlZF90c191bml4X21zGAogASgDEhIKCmFjdG9yX3B0aWQYCyABKAkiogIKGkdyb3VwU2tkbUVudmVsb3BlRGVsaXZlcmVkEhIKCmdyb3VwX3VsaWQYASABKAkSGAoQbWVtYmVyc2hpcF9lcG9jaBgCIAEoAxITCgtzZW5kZXJfcHRpZBgDIAEoCRIVCg1zZW5kZXJfa2V5X2lkGAQgASgNEhYKDnJlY2lwaWVudF9wdGlkGAUgASgJEhsKE3JlY2lwaWVudF9kZXZpY2VfaWQYBiABKAkSFwoPaWRlbXBvdGVuY3lfa2V5GAcgASgJEhkKEWVuY3J5cHRlZF9wYXlsb2FkGAggASgMEhwKFGRlbGl2ZXJlZF90c191bml4X21zGAkgASgDEiMKG3NlbmRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgKIAEoCSIxCgZSZXN5bmMSFwoPbmV3ZXN0X2V2ZW50X2lkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSKGAgoRRW52ZWxvcGVEZWxpdmVyZWQSFQoNaW5ib3hfaXRlbV9pZBgBIAEoCRITCgtlbnZlbG9wZV9pZBgCIAEoCRIXCg9jb252ZXJzYXRpb25faWQYAyABKAkSFAoMcGF5bG9hZF90eXBlGAQgASgFEhUKDXBheWxvYWRfYnl0ZXMYBSABKAwSEwoLc2VuZGVyX3B0aWQYBiABKAkSGAoQc2VuZGVyX2RldmljZV9pZBgHIAEoCRIbChNyZWNpcGllbnRfZGV2aWNlX2lkGAggASgJEhgKEG1lbWJlcnNoaXBfZXBvY2gYCSABKAMSGQoRcXVldWVkX3RzX3VuaXhfbXMYCiABKAMi/wIKFExlZGdlckV2ZW50RGVsaXZlcmVkEhUKDWZlZGVyYXRpb25faWQYASABKAkSCwoDc2VxGAIgASgEEhIKCmV2ZW50X2hhc2gYAyABKAwSEQoJcHJldl9oYXNoGAQgASgMEhIKCmV2ZW50X3R5cGUYBSABKAkSFQoNcGF5bG9hZF9ieXRlcxgGIAEoDBIUCgxwYXlsb2FkX2hhc2gYByABKAwSFwoPYWN0b3Jfc2lnbmF0dXJlGAggASgMEhkKEXN0YXRpb25fc2lnbmF0dXJlGAkgASgMEhsKE3NlcXVlbmNlcl9zaWduYXR1cmUYCiABKAwSEgoKYWN0b3JfcHRpZBgLIAEoCRIeChZhY3Rvcl9mZWRlcmF0ZWRfaGFuZGxlGAwgASgJEhcKD3N0YXRpb25fcGVlcl9pZBgNIAEoCRIhChlzZXF1ZW5jZXJfc3RhdGlvbl9wZWVyX2lkGA4gASgJEhoKEmNyZWF0ZWRfYXRfdW5peF9tcxgPIAEoAyKeAwoQU29jaWFsR3JhcGhFdmVudBJCCgRraW5kGAEgASgOMjQucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuU29jaWFsR3JhcGhFdmVudC5LaW5kEhIKCmFjdG9yX3B0aWQYAiABKAkSEwoLdGFyZ2V0X3B0aWQYAyABKAkSEgoKcmVxdWVzdF9pZBgEIAEoCRIXCg9jb252ZXJzYXRpb25faWQYBSABKAkSGgoSYWN0b3JfZGlzcGxheV9uYW1lGAYgASgJItMBCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIbChdGUklFTkRfUkVRVUVTVF9SRUNFSVZFRBABEhsKF0ZSSUVORF9SRVFVRVNUX0FDQ0VQVEVEEAISGwoXRlJJRU5EX1JFUVVFU1RfUkVKRUNURUQQAxIYChRDT05WRVJTQVRJT05fQ1JFQVRFRBAEEg4KClVORlJJRU5ERUQQBRIYChRSRUxBVElPTlNISVBfQkxPQ0tFRBAGEhoKFlJFTEFUSU9OU0hJUF9VTkJMT0NLRUQQB0JPWk1naXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9yZWFsdGltZTtyZWFsdGltZWIGcHJvdG8z");
+  fileDesc("Chtkb21haW4vcmVhbHRpbWUvZXZlbnQucHJvdG8SHXBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxIuEJCgtTdHJlYW1FdmVudBIQCghldmVudF9pZBgBIAEoCRISCgp0c191bml4X21zGAIgASgDEjYKAmhiGAogASgLMigucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuSGVhcnRiZWF0SAASQQoHbWVzc2FnZRgLIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VFbnZlbG9wZUgAEkAKB3JlY2VpcHQYDCABKAsyLS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlUmVjZWlwdEgAEjwKBnR5cGluZxgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLlR5cGluZ1N0YXRlSAASPwoIcHJlc2VuY2UYDiABKAsyKy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5QcmVzZW5jZUZsaXBIABI+CglzaWduYWxpbmcYDyABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5DYWxsU2lnbmFsSAASNwoGcmVzeW5jGBAgASgLMiUucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuUmVzeW5jSAASQgoIbXV0YXRpb24YESABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb25IABJXChdncm91cF9tZW1iZXJzaGlwX2NoYW5nZRgSIAEoCzI0LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwTWVtYmVyc2hpcENoYW5nZUgAEmMKHWNvbnZlcnNhdGlvbl9zZXR0aW5nc19jaGFuZ2VkGBMgASgLMjoucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkSAASPAoGbW9tZW50GBQgASgLMioucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTW9tZW50RXZlbnRIABJVChZncm91cF9mZWRlcmF0aW9uX2V2ZW50GBUgASgLMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuR3JvdXBGZWRlcmF0aW9uRXZlbnRIABJiCh1ncm91cF9za2RtX2VudmVsb3BlX2RlbGl2ZXJlZBgWIAEoCzI5LnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLkdyb3VwU2tkbUVudmVsb3BlRGVsaXZlcmVkSAASTgoSZW52ZWxvcGVfZGVsaXZlcmVkGBcgASgLMjAucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuRW52ZWxvcGVEZWxpdmVyZWRIABJVChZsZWRnZXJfZXZlbnRfZGVsaXZlcmVkGBggASgLMjMucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTGVkZ2VyRXZlbnREZWxpdmVyZWRIABJNChJzb2NpYWxfZ3JhcGhfZXZlbnQYGSABKAsyLy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Tb2NpYWxHcmFwaEV2ZW50SABCBgoEa2luZCIjCglIZWFydGJlYXQSFgoOZmxvb3JfZXZlbnRfaWQYASABKAkimwEKD01lc3NhZ2VFbnZlbG9wZRIZChFzZW5kZXJfYWN0b3JfcHRpZBgBIAEoCRIcChRyZWNpcGllbnRfYWN0b3JfcHRpZBgCIAEoCRIUCgxzZXNzaW9uX3VsaWQYAyABKAkSDAoEdWxpZBgEIAEoCRISCgpjaXBoZXJ0ZXh0GAUgASgMEhcKD3NlbnRfdHNfdW5peF9tcxgGIAEoAyLGAQoOTWVzc2FnZVJlY2VpcHQSFAoMc2Vzc2lvbl91bGlkGAEgASgJEgwKBHVsaWQYAiABKAkSQAoEa2luZBgDIAEoDjIyLnBlZXJzX3RvdWNoLm1vZGVsLnJlYWx0aW1lLnYxLk1lc3NhZ2VSZWNlaXB0LktpbmQSFwoPZnJvbV9hY3Rvcl9wdGlkGAQgASgJIjUKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEg0KCURFTElWRVJFRBABEggKBFJFQUQQAiJMCgtUeXBpbmdTdGF0ZRIUCgxzZXNzaW9uX3VsaWQYASABKAkSFwoPZnJvbV9hY3Rvcl9wdGlkGAIgASgJEg4KBnR5cGluZxgDIAEoCCIyCgxQcmVzZW5jZUZsaXASEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZvbmxpbmUYAiABKAgipQMKCkNhbGxTaWduYWwSFAoMc2Vzc2lvbl91bGlkGAEgASgJEhcKD2Zyb21fYWN0b3JfcHRpZBgCIAEoCRI8CgRraW5kGAMgASgOMi4ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuQ2FsbFNpZ25hbC5LaW5kEg8KB3BheWxvYWQYBCABKAwSEgoKZ3JvdXBfdWxpZBgFIAEoCRIRCglyb29tX25hbWUYBiABKAkSDwoHY2FsbF9pZBgHIAEoCRIZChF3aW5uaW5nX2RldmljZV9pZBgIIAEoCSLFAQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCQoFT0ZGRVIQARIKCgZBTlNXRVIQAhINCglDQU5ESURBVEUQAxIKCgZIQU5HVVAQBBIQCgxDQUxMX1JFUVVFU1QQBRIPCgtDQUxMX0FDQ0VQVBAGEg8KC0NBTExfUkVKRUNUEAcSDAoIQ0FMTF9FTkQQCBIPCgtST09NX0FDVElWRRAJEg4KClJPT01fRU5ERUQQChISCg5DQUxMX05PX0FOU1dFUhALImwKIUdldEZlZGVyYXRlZENhbGxSZXNvbHV0aW9uUmVxdWVzdBIdChVyZXF1ZXN0aW5nX2FjdG9yX3B0aWQYASABKAkSDwoHY2FsbF9pZBgCIAEoCRIXCg9wZWVyX2FjdG9yX3B0aWQYAyABKAki0AEKIkdldEZlZGVyYXRlZENhbGxSZXNvbHV0aW9uUmVzcG9uc2USDwoHY2FsbF9pZBgBIAEoCRINCgVzdGF0ZRgCIAEoCRIZChF3aW5uaW5nX2RldmljZV9pZBgDIAEoCRIXCg90ZXJtaW5hbF9hY3Rpb24YBCABKAkSHQoVcmluZ19kZWFkbGluZV91bml4X21zGAUgASgDEhsKE3Jlc29sdmVkX2F0X3VuaXhfbXMYBiABKAMSGgoSZXhwaXJlc19hdF91bml4X21zGAcgASgDIpoCCg9NZXNzYWdlTXV0YXRpb24SFAoMc2Vzc2lvbl91bGlkGAEgASgJEgwKBHVsaWQYAiABKAkSFwoPZnJvbV9hY3Rvcl9wdGlkGAMgASgJEkEKBGtpbmQYBCABKA4yMy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5NZXNzYWdlTXV0YXRpb24uS2luZBIWCg5uZXdfY2lwaGVydGV4dBgFIAEoDBITCgtuZXdfY29udGVudBgGIAEoCRIaChJtdXRhdGVkX3RzX3VuaXhfbXMYByABKAMiPgoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASCgoGUkVDQUxMEAESCAoERURJVBACEgoKBkRFTEVURRADIsICChVHcm91cE1lbWJlcnNoaXBDaGFuZ2USEAoIZXZlbnRfaWQYASABKAkSEgoKZ3JvdXBfdWxpZBgCIAEoCRISCgphY3Rvcl9wdGlkGAMgASgJEkcKBGtpbmQYBCABKA4yOS5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Hcm91cE1lbWJlcnNoaXBDaGFuZ2UuS2luZBIaChJjaGFuZ2VkX3RzX3VuaXhfbXMYBSABKAMiiQEKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEg4KCktJTkRfQURERUQQARIQCgxLSU5EX1JFTU9WRUQQAhINCglLSU5EX0xFRlQQAxIQCgxLSU5EX1VQREFURUQQBBIUChBLSU5EX1RSQU5TRkVSUkVEEAUSEgoOS0lORF9ESVNTT0xWRUQQBiLpAQobQ29udmVyc2F0aW9uU2V0dGluZ3NDaGFuZ2VkEhYKDmNvbnRhaW5lcl91bGlkGAEgASgJEk0KBGtpbmQYAiABKA4yPy5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Db252ZXJzYXRpb25TZXR0aW5nc0NoYW5nZWQuS2luZBISCgphY3Rvcl9wdGlkGAMgASgJEhoKEmNoYW5nZWRfdHNfdW5peF9tcxgEIAEoAyIzCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIKCgZGUklFTkQQARIJCgVHUk9VUBACIssCCgtNb21lbnRFdmVudBI9CgRraW5kGAEgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwucmVhbHRpbWUudjEuTW9tZW50RXZlbnQuS2luZBIPCgdwb3N0X2lkGAIgASgJEhkKEWF1dGhvcl9hY3Rvcl9wdGlkGAMgASgJEhIKCmFjdG9yX3B0aWQYBCABKAkSEgoKY29tbWVudF9pZBgFIAEoCRIVCg1yZWFjdGlvbl9raW5kGAYgASgJEg8KB3JlbW92ZWQYByABKAgSEAoIYXVkaWVuY2UYCCABKAkSGwoTb2NjdXJyZWRfdHNfdW5peF9tcxgJIAEoAyJSCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABILCgdDUkVBVEVEEAESCwoHREVMRVRFRBACEg0KCUNPTU1FTlRFRBADEgsKB1JFQUNURUQQBCKRAgoUR3JvdXBGZWRlcmF0aW9uRXZlbnQSEgoKZ3JvdXBfdWxpZBgBIAEoCRISCgpldmVudF91bGlkGAIgASgJEgsKA3NlcRgDIAEoAxISCgpldmVudF90eXBlGAQgASgJEiEKGWF1dGhvcml0eV9zdGF0aW9uX3BlZXJfaWQYBSABKAkSFwoPYXV0aG9yaXR5X2Vwb2NoGAYgASgDEhIKCmV2ZW50X2hhc2gYByABKAkSFAoMbWVzc2FnZV91bGlkGAggASgJEhgKEG1lbWJlcnNoaXBfZXBvY2gYCSABKAMSHAoUY29tbWl0dGVkX3RzX3VuaXhfbXMYCiABKAMSEgoKYWN0b3JfcHRpZBgLIAEoCSKiAgoaR3JvdXBTa2RtRW52ZWxvcGVEZWxpdmVyZWQSEgoKZ3JvdXBfdWxpZBgBIAEoCRIYChBtZW1iZXJzaGlwX2Vwb2NoGAIgASgDEhMKC3NlbmRlcl9wdGlkGAMgASgJEhUKDXNlbmRlcl9rZXlfaWQYBCABKA0SFgoOcmVjaXBpZW50X3B0aWQYBSABKAkSGwoTcmVjaXBpZW50X2RldmljZV9pZBgGIAEoCRIXCg9pZGVtcG90ZW5jeV9rZXkYByABKAkSGQoRZW5jcnlwdGVkX3BheWxvYWQYCCABKAwSHAoUZGVsaXZlcmVkX3RzX3VuaXhfbXMYCSABKAMSIwobc2VuZGVyX2hvbWVfc3RhdGlvbl9wZWVyX2lkGAogASgJIjEKBlJlc3luYxIXCg9uZXdlc3RfZXZlbnRfaWQYASABKAkSDgoGcmVhc29uGAIgASgJIoYCChFFbnZlbG9wZURlbGl2ZXJlZBIVCg1pbmJveF9pdGVtX2lkGAEgASgJEhMKC2VudmVsb3BlX2lkGAIgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgDIAEoCRIUCgxwYXlsb2FkX3R5cGUYBCABKAUSFQoNcGF5bG9hZF9ieXRlcxgFIAEoDBITCgtzZW5kZXJfcHRpZBgGIAEoCRIYChBzZW5kZXJfZGV2aWNlX2lkGAcgASgJEhsKE3JlY2lwaWVudF9kZXZpY2VfaWQYCCABKAkSGAoQbWVtYmVyc2hpcF9lcG9jaBgJIAEoAxIZChFxdWV1ZWRfdHNfdW5peF9tcxgKIAEoAyL/AgoUTGVkZ2VyRXZlbnREZWxpdmVyZWQSFQoNZmVkZXJhdGlvbl9pZBgBIAEoCRILCgNzZXEYAiABKAQSEgoKZXZlbnRfaGFzaBgDIAEoDBIRCglwcmV2X2hhc2gYBCABKAwSEgoKZXZlbnRfdHlwZRgFIAEoCRIVCg1wYXlsb2FkX2J5dGVzGAYgASgMEhQKDHBheWxvYWRfaGFzaBgHIAEoDBIXCg9hY3Rvcl9zaWduYXR1cmUYCCABKAwSGQoRc3RhdGlvbl9zaWduYXR1cmUYCSABKAwSGwoTc2VxdWVuY2VyX3NpZ25hdHVyZRgKIAEoDBISCgphY3Rvcl9wdGlkGAsgASgJEh4KFmFjdG9yX2ZlZGVyYXRlZF9oYW5kbGUYDCABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGA0gASgJEiEKGXNlcXVlbmNlcl9zdGF0aW9uX3BlZXJfaWQYDiABKAkSGgoSY3JlYXRlZF9hdF91bml4X21zGA8gASgDIp4DChBTb2NpYWxHcmFwaEV2ZW50EkIKBGtpbmQYASABKA4yNC5wZWVyc190b3VjaC5tb2RlbC5yZWFsdGltZS52MS5Tb2NpYWxHcmFwaEV2ZW50LktpbmQSEgoKYWN0b3JfcHRpZBgCIAEoCRITCgt0YXJnZXRfcHRpZBgDIAEoCRISCgpyZXF1ZXN0X2lkGAQgASgJEhcKD2NvbnZlcnNhdGlvbl9pZBgFIAEoCRIaChJhY3Rvcl9kaXNwbGF5X25hbWUYBiABKAki0wEKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEhsKF0ZSSUVORF9SRVFVRVNUX1JFQ0VJVkVEEAESGwoXRlJJRU5EX1JFUVVFU1RfQUNDRVBURUQQAhIbChdGUklFTkRfUkVRVUVTVF9SRUpFQ1RFRBADEhgKFENPTlZFUlNBVElPTl9DUkVBVEVEEAQSDgoKVU5GUklFTkRFRBAFEhgKFFJFTEFUSU9OU0hJUF9CTE9DS0VEEAYSGgoWUkVMQVRJT05TSElQX1VOQkxPQ0tFRBAHQk9aTWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL3JlYWx0aW1lO3JlYWx0aW1lYgZwcm90bzM");
 
 /**
  * StreamEvent is the single envelope every realtime frame uses.
@@ -382,24 +382,31 @@ export type CallSignal = Message<"peers_touch.model.realtime.v1.CallSignal"> & {
   payload: Uint8Array;
 
   /**
-   * Plaintext call identifier visible to Station for multi-device
-   * arbitration (CCU-D06). Populated on every signal belonging to an
-   * active call. A pre-call transport handshake may leave it empty.
-   * Station uses this for atomic first-terminal-action-wins without
-   * decrypting the payload.
+   * Group ULID for group call routing. Empty for 1-to-1 calls.
    *
-   * @generated from field: string call_id = 5;
+   * @generated from field: string group_ulid = 5;
+   */
+  groupUlid: string;
+
+  /**
+   * LiveKit room name assigned by Station for this call session.
+   *
+   * @generated from field: string room_name = 6;
+   */
+  roomName: string;
+
+  /**
+   * Plaintext direct-call identifier used only for multi-device
+   * first-terminal-action-wins arbitration.
+   *
+   * @generated from field: string call_id = 7;
    */
   callId: string;
 
   /**
-   * Populated by Station in the fan-out frame after a terminal action
-   * (CALL_ACCEPT or CALL_REJECT) wins the first-terminal-action-wins
-   * arbitration for this call_id. Allows sibling devices to
-   * distinguish "I won" from "handled elsewhere" without relying on
-   * heuristic echo detection.
+   * Station-authored winner for a terminal direct-call action.
    *
-   * @generated from field: string winning_device_id = 6;
+   * @generated from field: string winning_device_id = 8;
    */
   winningDeviceId: string;
 };
@@ -469,12 +476,23 @@ export enum CallSignal_Kind {
   CALL_END = 8,
 
   /**
-   * Station-authored terminal control event emitted when the shared
-   * ring deadline wins before any endpoint accepts or rejects.
+   * SSE notifications for group call room lifecycle.
    *
-   * @generated from enum value: CALL_NO_ANSWER = 9;
+   * @generated from enum value: ROOM_ACTIVE = 9;
    */
-  CALL_NO_ANSWER = 9,
+  ROOM_ACTIVE = 9,
+
+  /**
+   * @generated from enum value: ROOM_ENDED = 10;
+   */
+  ROOM_ENDED = 10,
+
+  /**
+   * Station-authored terminal event for an unanswered direct call.
+   *
+   * @generated from enum value: CALL_NO_ANSWER = 11;
+   */
+  CALL_NO_ANSWER = 11,
 }
 
 /**
@@ -484,34 +502,8 @@ export const CallSignal_KindSchema: GenEnum<CallSignal_Kind> = /*@__PURE__*/
   enumDesc(file_domain_realtime_event, 6, 0);
 
 /**
- * FederatedCallSignal is the typed, Station-signed cross-Station envelope for
- * one opaque CallSignal. Federation authenticates Station identity while
- * Realtime retains actor authorization and call-resolution ownership.
- *
- * @generated from message peers_touch.model.realtime.v1.FederatedCallSignal
- */
-export type FederatedCallSignal = Message<"peers_touch.model.realtime.v1.FederatedCallSignal"> & {
-  /**
-   * @generated from field: string recipient_actor_ptid = 1;
-   */
-  recipientActorPtid: string;
-
-  /**
-   * @generated from field: peers_touch.model.realtime.v1.CallSignal signal = 2;
-   */
-  signal?: CallSignal | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.realtime.v1.FederatedCallSignal.
- * Use `create(FederatedCallSignalSchema)` to create a new message.
- */
-export const FederatedCallSignalSchema: GenMessage<FederatedCallSignal> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 7);
-
-/**
- * GetFederatedCallResolutionRequest proxies a caller-side readback to the
- * callee Home Station, which is the only call-resolution authority.
+ * Cross-Station readback for direct-call arbitration. The callee Home Station
+ * is the sole authority for this short-lived control-plane state.
  *
  * @generated from message peers_touch.model.realtime.v1.GetFederatedCallResolutionRequest
  */
@@ -537,7 +529,7 @@ export type GetFederatedCallResolutionRequest = Message<"peers_touch.model.realt
  * Use `create(GetFederatedCallResolutionRequestSchema)` to create a new message.
  */
 export const GetFederatedCallResolutionRequestSchema: GenMessage<GetFederatedCallResolutionRequest> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 8);
+  messageDesc(file_domain_realtime_event, 7);
 
 /**
  * @generated from message peers_touch.model.realtime.v1.GetFederatedCallResolutionResponse
@@ -584,7 +576,7 @@ export type GetFederatedCallResolutionResponse = Message<"peers_touch.model.real
  * Use `create(GetFederatedCallResolutionResponseSchema)` to create a new message.
  */
 export const GetFederatedCallResolutionResponseSchema: GenMessage<GetFederatedCallResolutionResponse> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 9);
+  messageDesc(file_domain_realtime_event, 8);
 
 /**
  * MessageMutation notifies a peer that a previously-delivered message
@@ -658,7 +650,7 @@ export type MessageMutation = Message<"peers_touch.model.realtime.v1.MessageMuta
  * Use `create(MessageMutationSchema)` to create a new message.
  */
 export const MessageMutationSchema: GenMessage<MessageMutation> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 10);
+  messageDesc(file_domain_realtime_event, 9);
 
 /**
  * @generated from enum peers_touch.model.realtime.v1.MessageMutation.Kind
@@ -689,7 +681,7 @@ export enum MessageMutation_Kind {
  * Describes the enum peers_touch.model.realtime.v1.MessageMutation.Kind.
  */
 export const MessageMutation_KindSchema: GenEnum<MessageMutation_Kind> = /*@__PURE__*/
-  enumDesc(file_domain_realtime_event, 10, 0);
+  enumDesc(file_domain_realtime_event, 9, 0);
 
 /**
  * GroupMembershipChange notifies subscribers that a group's roster
@@ -735,7 +727,7 @@ export type GroupMembershipChange = Message<"peers_touch.model.realtime.v1.Group
  * Use `create(GroupMembershipChangeSchema)` to create a new message.
  */
 export const GroupMembershipChangeSchema: GenMessage<GroupMembershipChange> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 11);
+  messageDesc(file_domain_realtime_event, 10);
 
 /**
  * @generated from enum peers_touch.model.realtime.v1.GroupMembershipChange.Kind
@@ -791,7 +783,7 @@ export enum GroupMembershipChange_Kind {
  * Describes the enum peers_touch.model.realtime.v1.GroupMembershipChange.Kind.
  */
 export const GroupMembershipChange_KindSchema: GenEnum<GroupMembershipChange_Kind> = /*@__PURE__*/
-  enumDesc(file_domain_realtime_event, 11, 0);
+  enumDesc(file_domain_realtime_event, 10, 0);
 
 /**
  * ConversationSettingsChanged invalidates the local per-conversation
@@ -830,7 +822,7 @@ export type ConversationSettingsChanged = Message<"peers_touch.model.realtime.v1
  * Use `create(ConversationSettingsChangedSchema)` to create a new message.
  */
 export const ConversationSettingsChangedSchema: GenMessage<ConversationSettingsChanged> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 12);
+  messageDesc(file_domain_realtime_event, 11);
 
 /**
  * @generated from enum peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind
@@ -856,7 +848,7 @@ export enum ConversationSettingsChanged_Kind {
  * Describes the enum peers_touch.model.realtime.v1.ConversationSettingsChanged.Kind.
  */
 export const ConversationSettingsChanged_KindSchema: GenEnum<ConversationSettingsChanged_Kind> = /*@__PURE__*/
-  enumDesc(file_domain_realtime_event, 12, 0);
+  enumDesc(file_domain_realtime_event, 11, 0);
 
 /**
  * MomentEvent notifies a viewer that a Moment they can see changed.
@@ -918,7 +910,7 @@ export type MomentEvent = Message<"peers_touch.model.realtime.v1.MomentEvent"> &
  * Use `create(MomentEventSchema)` to create a new message.
  */
 export const MomentEventSchema: GenMessage<MomentEvent> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 13);
+  messageDesc(file_domain_realtime_event, 12);
 
 /**
  * @generated from enum peers_touch.model.realtime.v1.MomentEvent.Kind
@@ -954,7 +946,7 @@ export enum MomentEvent_Kind {
  * Describes the enum peers_touch.model.realtime.v1.MomentEvent.Kind.
  */
 export const MomentEvent_KindSchema: GenEnum<MomentEvent_Kind> = /*@__PURE__*/
-  enumDesc(file_domain_realtime_event, 13, 0);
+  enumDesc(file_domain_realtime_event, 12, 0);
 
 /**
  * GroupFederationEvent notifies a member's Home Station client that a
@@ -1027,7 +1019,7 @@ export type GroupFederationEvent = Message<"peers_touch.model.realtime.v1.GroupF
  * Use `create(GroupFederationEventSchema)` to create a new message.
  */
 export const GroupFederationEventSchema: GenMessage<GroupFederationEvent> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 14);
+  messageDesc(file_domain_realtime_event, 13);
 
 /**
  * GroupSkdmEnvelopeDelivered notifies one actor stream that their Home
@@ -1099,7 +1091,7 @@ export type GroupSkdmEnvelopeDelivered = Message<"peers_touch.model.realtime.v1.
  * Use `create(GroupSkdmEnvelopeDeliveredSchema)` to create a new message.
  */
 export const GroupSkdmEnvelopeDeliveredSchema: GenMessage<GroupSkdmEnvelopeDelivered> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 15);
+  messageDesc(file_domain_realtime_event, 14);
 
 /**
  * Resync is the server's only signal that the client's Last-Event-ID
@@ -1131,7 +1123,7 @@ export type Resync = Message<"peers_touch.model.realtime.v1.Resync"> & {
  * Use `create(ResyncSchema)` to create a new message.
  */
 export const ResyncSchema: GenMessage<Resync> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 16);
+  messageDesc(file_domain_realtime_event, 15);
 
 /**
  * EnvelopeDelivered notifies a device that its canonical durable Device Inbox
@@ -1201,7 +1193,7 @@ export type EnvelopeDelivered = Message<"peers_touch.model.realtime.v1.EnvelopeD
  * Use `create(EnvelopeDeliveredSchema)` to create a new message.
  */
 export const EnvelopeDeliveredSchema: GenMessage<EnvelopeDelivered> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 17);
+  messageDesc(file_domain_realtime_event, 16);
 
 /**
  * LedgerEventDelivered pushes a new Federation governance event to connected
@@ -1292,7 +1284,7 @@ export type LedgerEventDelivered = Message<"peers_touch.model.realtime.v1.Ledger
  * Use `create(LedgerEventDeliveredSchema)` to create a new message.
  */
 export const LedgerEventDeliveredSchema: GenMessage<LedgerEventDelivered> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 18);
+  messageDesc(file_domain_realtime_event, 17);
 
 /**
  * SocialGraphEvent signals a change in the social relationship graph:
@@ -1340,7 +1332,7 @@ export type SocialGraphEvent = Message<"peers_touch.model.realtime.v1.SocialGrap
  * Use `create(SocialGraphEventSchema)` to create a new message.
  */
 export const SocialGraphEventSchema: GenMessage<SocialGraphEvent> = /*@__PURE__*/
-  messageDesc(file_domain_realtime_event, 19);
+  messageDesc(file_domain_realtime_event, 18);
 
 /**
  * @generated from enum peers_touch.model.realtime.v1.SocialGraphEvent.Kind
@@ -1391,4 +1383,4 @@ export enum SocialGraphEvent_Kind {
  * Describes the enum peers_touch.model.realtime.v1.SocialGraphEvent.Kind.
  */
 export const SocialGraphEvent_KindSchema: GenEnum<SocialGraphEvent_Kind> = /*@__PURE__*/
-  enumDesc(file_domain_realtime_event, 19, 0);
+  enumDesc(file_domain_realtime_event, 18, 0);

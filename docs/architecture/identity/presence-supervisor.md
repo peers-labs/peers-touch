@@ -1,6 +1,7 @@
 # Presence Supervisor
 
 > **Status:** Implemented (global actor presence).
+> **Updated:** 2026-09-20
 > **Owner module (Rust):** `apps/desktop/src-tauri/src/{domain,application,interface/tauri_commands}/presence`
 > **Owner module (Frontend):** `apps/desktop/src/{services/presence.ts, hooks/usePresence.ts}`
 > **Owner module (Station):** `apps/station/app/subserver/presence`
@@ -9,8 +10,8 @@
 ## 1. Problem
 
 The desktop client has many independent lifecycle signals — `visibilitychange`,
-`focus`/`blur`, `online`/`offline`, identity-restore, identity-switch, logout,
-process startup, process shutdown — and each of them historically triggered
+`focus`, `online`/`offline`, identity-restore, identity-switch, logout, process
+startup, process shutdown — and each of them historically triggered
 ad-hoc network calls scattered across components. The result was visible to
 users as:
 
@@ -29,21 +30,21 @@ These were not three bugs to patch — they were one missing layer.
 ### 2.1 Layered model
 
 ```
-                   Triggers (browser + Tauri lifecycle)
+                  Triggers (runtime + identity lifecycle)
                                  │
                                  ▼
       ┌──────────────────────────────────────────────┐
       │ PresenceSupervisor  (per-actor state machine) │   application
-      │   • cooldown / debounce                       │   layer
-      │   • in-flight de-dup                          │
-      │   • reconcile pipeline                        │
+      │   • cooldown / in-flight de-dup                │   layer
+      │   • lease renewal before TTL                   │
+      │   • explicit offline boundaries                │
       └─────────────────────┬────────────────────────┘
                             │
                             ▼
       ┌──────────────────────────────────────────────┐
-      │  Station HTTP: /presence/heartbeat ·          │   infrastructure
-      │  /presence/offline + Messaging runtime         │   (resource owners)
-      │  reconciliation through Device Inbox           │
+      │  Home Station: /presence/heartbeat ·           │   infrastructure
+      │  /presence/offline · /presence/query           │
+      │  Federation peer presence query                │
       └──────────────────────────────────────────────┘
 ```
 
@@ -53,19 +54,20 @@ else either *produces* triggers or *consumes* the resulting transitions.
 ### 2.2 Vocabulary
 
 ```
-PresenceState  ::= Offline | Online                      // domain/presence
+PresenceState  ::= Unknown | Offline | Online             // query projection
 PresenceTrigger ::= AppLaunch
-                  | AppForeground | AppBackground | AppShutdown
+                  | AppForeground | AppShutdown
                   | IdentityRestored | IdentitySwitched | IdentityLoggedOut
                   | NetworkOnline | NetworkOffline
                   | Heartbeat | Manual
-PresenceTransition { actor_ptid, from, to, trigger,
+PresenceTransition { actor_id, from, to, trigger,
                      reconciled_count, affected_sessions }
 ```
 
-`Reconciling` is intentionally not a third state — it is a transient
-`in_flight` flag inside the supervisor. The domain stays binary so
-consumers (UI badges, tests) don't have to handle a third state.
+`Reconciling` is intentionally not a fourth state. It is a transient
+`in_flight` flag inside the supervisor. `Unknown` is a query result, not a
+self-presence transition: it means the authoritative Home Station could not be
+resolved or reached and MUST NOT be displayed as offline.
 
 ### 2.3 Reconcile pipeline
 
@@ -75,24 +77,47 @@ caller never blocks the UI:
 1. `POST /presence/heartbeat` — renews the actor/session presence lease;
    failure
    short-circuits the rest (kept Offline).
-2. Notify the Messaging runtime to reconcile the canonical Conversation
-   projection through Device Inbox claim/ack.
-3. The Messaging runtime applies ordered events idempotently and advances its
-   device-lane cursor only after durable local commit.
-4. Emit `presence.transition` Tauri event with `reconciled_count` and
+2. `GET /friend-chat/pending` — drains the in-memory queue station kept
+   for us while we were offline.
+3. For each unique `session_ulid` in the pending payload, run
+   `friend_chat_sync_from_station` (page-limit 50, 1 page) to bring those
+   sessions' local cursor up to date.
+4. `POST /friend-chat/message/ack` with the union of pulled ulids.
+   Failure is logged but does not roll back state — the next `/pending`
+   re-serves the same messages, which is fine because step 3 is
+   idempotent (cursor-aware).
+5. Emit `presence.transition` Tauri event with `reconciled_count` and
    `affected_sessions`.
 
-`Online → Offline` is symmetric and trivial: `POST /presence/offline`,
-ignore failures, emit transition. The Station lease TTL remains the
-authoritative safety net when clients crash or lose the network before
-the best-effort offline request arrives.
+While authenticated, Desktop renews the lease every 30 seconds against the
+Station's 90-second TTL. Renewal continues while the app is unfocused or
+minimized because reachability is process/runtime state, not attention state.
+`Online → Offline` is reserved for logout, process shutdown, confirmed network
+loss, revocation, or lease expiry. The Station lease TTL remains the
+authoritative safety net when clients crash or lose the network before the
+best-effort offline request arrives.
+
+`POST /presence/query` is the only client snapshot API. The receiving Station
+resolves every requested PTID through Actor Identity:
+
+- local actor: read the local Presence lease;
+- remote actor: call the actor's verified Home Station through the authenticated
+  Federation peer-query route;
+- unresolved route, failed peer authentication, timeout, or omitted result:
+  return `PRESENCE_STATE_UNSPECIFIED`.
+
+Clients never contact a foreign Station directly.
 
 ### 2.4 Invariants
 
-- **Per-actor, not per-window.** The supervisor keys by canonical PTID. Two
+- **Per-actor, not per-window.** The supervisor keys by `actor_id`. Two
   windows hosting the same actor share one presence; two windows hosting
   different actors are independent. Pending queues at station are
   actor-scoped — anything else would double-pull.
+- **Focus is not reachability.** Blur, minimization, hidden pages, and switching
+  to another application do not transition presence offline.
+- **Renew before expiry.** The renewal interval must remain no greater than one
+  third of the authoritative lease TTL.
 - **At most one reconcile in-flight per actor.** Concurrent triggers
   while a reconcile is running collapse silently.
 - **Cooldown 3 s** for non-bypassing triggers when the target state
@@ -102,25 +127,32 @@ the best-effort offline request arrives.
 - **Failures don't poison state.** A failed `Online` reconcile leaves
   the actor at `Offline` (next trigger retries) and does *not* update
   `last_reconcile_at` (no cooldown punishment).
+- **Unknown is not offline.** Only an authoritative Home Station may report
+  offline. Missing routing or failed remote reads project as unknown.
+- **Events cannot be rolled back by snapshots.** The client records a per-PTID
+  revision before each snapshot and ignores that actor's result if a newer
+  realtime event arrived while the request was in flight.
 
 ### 2.5 Trigger sources
 
 | Trigger              | Producer                                       |
 |----------------------|------------------------------------------------|
 | `app_launch`         | `usePresence` after first `authenticated=true` |
-| `app_foreground`     | `visibilitychange` + `focus`                   |
-| `app_background`     | `visibilitychange(hidden)` + `blur`            |
-| `app_shutdown`       | (reserved — wire to Tauri `RunEvent::ExitRequested`) |
+| `app_foreground`     | `visibilitychange(visible)` + `focus`          |
+| `app_shutdown`       | Tauri `RunEvent::ExitRequested`                 |
 | `identity_restored`  | `services/identity_event` on `unlock`          |
 | `identity_switched`  | `services/identity_event` on `login` / `switch` / `oauth_bridge` |
 | `identity_logged_out`| `services/identity_event` on `logout`          |
 | `network_online`     | `window.online`                                |
 | `network_offline`    | `window.offline`                               |
-| `heartbeat`          | `usePresence` 5-min interval (visible only)    |
+| `heartbeat`          | 30-second authenticated runtime renewal         |
 | `manual`             | tests / debug                                  |
 
 Identity-flow producers fire **after** `runIdentityPipeline` so the
 reconcile sees the new actor's bound session, not the previous one.
+
+Window hidden/blur emits no presence transition. A foreground edge may renew
+early, but the periodic runtime heartbeat remains the liveness owner.
 
 ### 2.6 Frontend reaction
 
@@ -132,6 +164,11 @@ and applies a **minimal fan-out** to the social-chat store:
 - `loadMessages(ulid, 'friend')` only if the user is currently viewing
   one of the affected sessions
 
+The social runtime also refreshes known peer snapshots after realtime
+reconnect, cold resync, inbound conversation activity, and relationship
+changes. Its existing 30-second reconcile is the bounded recovery path for
+missed same-Station events and cross-Station snapshots.
+
 We deliberately do *not* eagerly pull every affected session's full
 message list — most are not on screen, and the existing on-demand
 loading path handles them when the user clicks in.
@@ -140,10 +177,12 @@ loading path handles them when the user clicks in.
 
 | Old mechanism                                        | After PR-presence-1                            |
 |------------------------------------------------------|------------------------------------------------|
-| 60 s `setInterval` polling in `SocialChatPage`       | Kept as last-resort safety net (no longer the primary delivery mechanism). |
-| Per-component message sync calls on focus            | Funnels into the Messaging runtime reconcile entry point. |
-| Hand-rolled pending queue calls in unrelated places  | Device Inbox claim/ack remains owned by the Messaging runtime. |
+| Page-owned presence polling                         | Deleted; runtime reconciliation owns freshness. |
+| Per-component `friend_chat_sync` calls on focus      | Funnels into a single supervisor entry point. |
+| Hand-rolled `/pending` calls in two unrelated places | One reconcile pipeline; sole owner of `/online`/`/pending`/`/ack`. |
 | "Did the user just unlock?" inferred from N stores   | Single `identity_restored` trigger.            |
+| Window blur interpreted as offline                   | Deleted; focus is not reachability.            |
+| Local-only remote actor query                        | Routed to the verified Actor Home Station.     |
 
 ## 4. Non-goals
 
@@ -151,16 +190,14 @@ loading path handles them when the user clicks in.
   realtime channel. The supervisor's reconcile is the *catch-up* path
   for messages that arrived while WebRTC was down or before it was
   established.
-- **Multi-device consensus.** Each device runs its own supervisor; they
-  do not coordinate. Station's pending queue is the shared substrate.
+- **Attention state.** Away, idle, active-window, and last-active labels are
+  not inferred from reachability and require their own accepted product model.
 - **Persisting presence to disk.** Presence is a runtime concept; on
   process restart we always begin at `Offline` and the launch trigger
   drives the first reconcile.
 
 ## 5. Where to extend
 
-- **App shutdown teardown.** Wire Tauri `RunEvent::ExitRequested` to fire
-  `app_shutdown` for each window's bound actor before the process exits.
 - **TURN handshake observation.** The transport-detection added in
   PR-webrtc-2 (`friendChatP2p.startTransportProbe`) could publish a
   presence-adjacent signal — but presence and transport remain
@@ -171,11 +208,11 @@ loading path handles them when the user clicks in.
 
 ## 6. Tests
 
-- `domain::presence::tests` — wire-form round-trip, `target_state`
-  partition, cooldown bypass policy.
+- `domain::presence::tests` — wire-form round-trip, reachability transition
+  partition, cooldown bypass policy, and no background-to-offline transition.
 - `application::presence::tests` — pending payload extraction (dedup &
   field tolerance), per-actor isolation in the state map.
-
-The reconcile thread itself is integration-test territory (it requires
-a station fixture), tracked separately under `tests/e2e/presence-*`
-when the Go fixture work lands.
+- Station Presence tests — local/remote routing, authenticated peer query,
+  unknown preservation, active lease, expiry, and explicit offline.
+- Native two-client Acceptance — both peers remain online across focus changes
+  and beyond one Station lease interval.

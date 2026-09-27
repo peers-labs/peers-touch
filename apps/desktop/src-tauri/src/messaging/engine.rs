@@ -3,7 +3,8 @@ use super::recovery::{
     restore_profile_database_atomically, MessagingRecoveryArchive, RecoveryReconciliation,
 };
 use super::store::{
-    load_storage_retention_policy, CompletedSenderAttachmentSource, DirectAuthorityCheckpoint,
+    load_storage_retention_policy, CompletedSenderAttachmentSource, ConversationCommandCommit,
+    DirectAuthorityCheckpoint,
 };
 use super::{
     verify_device_event_delivery, AttachmentDownloadProjection, AttachmentRetryPolicy,
@@ -19,27 +20,30 @@ use super::{
     StationDeviceTransport, StationGroupGenesisTransport, StationKeyBundleTransport,
     StationMembershipTransitionTransport, StationMlsKeyPackageTransport,
     StationMlsLeaveIntentTransport, StationPreKeyTransport, StationQueueTransport,
-    ThreadCountProjection,
+    SupersededInteractionIntent, ThreadCountProjection,
 };
 use crate::domain::crypto::IdentityKeyPair;
 use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::chat::{
-    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationCommandKind,
-    ConversationEvent, ConversationKind, ConversationPublicHeadSource,
-    CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
-    DeviceConsumptionReceipt, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
-    GetConversationPublicHeadRequest, GetConversationPublicHeadResponse,
-    ListConversationEventsRequest, ListConversationEventsResponse, MemberRole,
-    MessagingMembershipAction, MessagingProjectionKind, MlsLeaveIntent,
-    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    chat_command, ActorReadCursor, AttachmentContentKind, AttachmentTransferState, ChatCommand,
+    Conversation, ConversationCommandKind, ConversationEvent, ConversationKind,
+    ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
+    ConversationPublicHeadSource, CreateDirectConversationRequest,
+    CreateDirectConversationResponse, CryptoEndpoint, DeviceConsumptionReceipt,
+    DeviceEventDelivery, DeviceInboxPayloadType, DissolveConversationIntent,
+    DurableDeviceInboxItem, GetConversationPublicHeadRequest, GetConversationPublicHeadResponse,
+    GetConversationRequest, GetConversationResponse, ListConversationEventsRequest,
+    ListConversationEventsResponse, MemberRole, MessagingMembershipAction, MessagingProjectionKind,
+    MlsLeaveIntent, PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PreparedEndpointPayloadKind, SubmitConversationReadCursorRequest,
-    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest, VoiceNoteMetadata,
+    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest,
+    UpdateConversationIntent,
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::identity::enrollment::load_or_create_device_identity_for_device;
+use messaging_core::identity::enrollment::load_or_create_device_identity_from_seed;
 use messaging_core::identity::{
     is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
     FreshDeviceIdentityState,
@@ -101,6 +105,7 @@ const ATTACHMENT_OPEN_TIMEOUT: Duration = Duration::from_secs(30);
 const ATTACHMENT_OPEN_RETRY_FLOOR: Duration = Duration::from_millis(10);
 const PREKEY_INVENTORY_RECONCILIATION_INTERVAL_MS: i64 = 60_000;
 const SENDER_ATTACHMENT_SOURCE_INVALID: &str = "messaging sender attachment source is invalid";
+const MEMBER_AUTHORITY_COMMAND_LIFETIME_MS: i64 = 5 * 60 * 1_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingProjectionChange {
@@ -180,13 +185,22 @@ pub struct LocalAttachmentIntent {
     pub source_local_ref: String,
     pub filename: String,
     pub mime_type: String,
-    pub voice_note: Option<VoiceNoteMetadata>,
+    pub content_kind: i32,
+    pub duration_ms: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum AttachmentOpenProgress {
     Ready(String),
     Pending { next_attempt_at_unix_ms: i64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum DurableInteraction {
+    Edit(String),
+    Retract,
+    Reaction { reaction: String, remove: bool },
+    Pin { remove: bool },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,6 +278,8 @@ fn direct_authority_checkpoint_projection(
         federation_id: snapshot.federation_id.clone(),
         kind: snapshot.kind,
         name: snapshot.name.clone(),
+        description: snapshot.description.clone(),
+        avatar_object_id: snapshot.avatar_object_id.clone(),
         owner_ptid: snapshot.owner_ptid.clone(),
         members: snapshot
             .active_members
@@ -271,6 +287,14 @@ fn direct_authority_checkpoint_projection(
             .map(|member| ConversationMemberProjection {
                 ptid: member.ptid.clone(),
                 role: MemberRole::Member as i32,
+                home_station_peer_id: member.home_station_peer_id.clone(),
+                muted: member.muted,
+                muted_until_unix_ms: member.muted_until.as_ref().map(|value| {
+                    value
+                        .seconds
+                        .saturating_mul(1_000)
+                        .saturating_add(i64::from(value.nanos) / 1_000_000)
+                }),
             })
             .collect(),
         membership_epoch: snapshot.membership_epoch,
@@ -501,13 +525,10 @@ impl MessagingEngine {
         actor_profile_version: u64,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        let device_id = crate::application::key_exchange::device_install::get_or_create_device_id()
-            .map_err(|error| format!("load canonical installation device identity: {error}"))?;
-        let enrollment = load_or_create_device_identity_for_device(
+        let enrollment = load_or_create_device_identity_from_seed(
             store.as_ref(),
             &ptid,
-            &device_id,
-            *actor_identity_seed,
+            actor_identity_seed,
             actor_profile_version,
         )?;
         let device = enrollment
@@ -2031,6 +2052,147 @@ impl MessagingEngine {
         Ok(true)
     }
 
+    pub fn resume_interaction_intent_once(
+        &self,
+        token: &str,
+        now_unix_ms: i64,
+    ) -> Result<bool, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        let Some(intent) = self.store.next_superseded_interaction_intent()? else {
+            return Ok(false);
+        };
+        self.reprepare_interaction_intent(token, &intent, now_unix_ms)?;
+        Ok(true)
+    }
+
+    fn reprepare_interaction_intent(
+        &self,
+        token: &str,
+        pending: &SupersededInteractionIntent,
+        now_unix_ms: i64,
+    ) -> Result<String, String> {
+        if now_unix_ms <= 0 {
+            return Err("messaging interaction reprepare time is invalid".to_string());
+        }
+        let interaction = decode_superseded_interaction(pending, &self.endpoint)?;
+        let plan = self.prepare_fresh_interaction_plan(token, &pending.conversation_id)?;
+        let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
+            .map_err(|_| "messaging interaction conversation kind is invalid".to_string())?;
+        let command_id = Ulid::new().to_string();
+        match interaction {
+            DurableInteraction::Edit(plaintext) => {
+                let intent = EditTextIntent {
+                    logical_intent_id: &pending.intent_id,
+                    replaces_command_id: Some(&pending.command_id),
+                    command_id: &command_id,
+                    message_id: &pending.target_message_id,
+                    conversation_id: &pending.conversation_id,
+                    plaintext: &plaintext,
+                    client_timestamp_unix_ms: now_unix_ms,
+                };
+                let preparer = SendPreparer::new(
+                    self.store.clone(),
+                    self.endpoint.clone(),
+                    self.mls_manager.clone(),
+                )?;
+                match conversation_kind {
+                    ConversationKind::Direct => {
+                        let actor_identity = self.actor_identity.clone().ok_or_else(|| {
+                            "messaging Direct bootstrap requires profile actor identity".to_string()
+                        })?;
+                        let bootstraps = DirectSessionBootstrapper::new(
+                            self.store.clone(),
+                            CoreCryptoEndpoint {
+                                ptid: self.endpoint.ptid.clone(),
+                                device_id: self.endpoint.device_id.clone(),
+                            },
+                            actor_identity,
+                        )?
+                        .prepare_missing(
+                            &pending.conversation_id,
+                            &plan.required_endpoints,
+                            now_unix_ms,
+                            &StationKeyBundleTransport::new(
+                                token.to_string(),
+                                self.endpoint.device_id.clone(),
+                            )?,
+                        )?;
+                        preparer.prepare_direct_edit_with_bootstraps(
+                            &plan,
+                            &intent,
+                            &bootstraps,
+                        )?;
+                    }
+                    ConversationKind::Group => {
+                        preparer.prepare_group_edit(&plan, &intent)?;
+                    }
+                    ConversationKind::Unspecified => unreachable!(),
+                }
+            }
+            DurableInteraction::Retract => {
+                self.prepare_replacement_metadata_interaction(
+                    &plan,
+                    pending,
+                    &command_id,
+                    MetadataInteraction::Retract,
+                    now_unix_ms,
+                )?;
+            }
+            DurableInteraction::Reaction { reaction, remove } => {
+                self.prepare_replacement_metadata_interaction(
+                    &plan,
+                    pending,
+                    &command_id,
+                    MetadataInteraction::Reaction {
+                        reaction: &reaction,
+                        remove,
+                    },
+                    now_unix_ms,
+                )?;
+            }
+            DurableInteraction::Pin { remove } => {
+                self.prepare_replacement_metadata_interaction(
+                    &plan,
+                    pending,
+                    &command_id,
+                    MetadataInteraction::Pin { remove },
+                    now_unix_ms,
+                )?;
+            }
+        }
+        Ok(command_id)
+    }
+
+    fn prepare_replacement_metadata_interaction(
+        &self,
+        plan: &PrepareConversationCommandResponse,
+        pending: &SupersededInteractionIntent,
+        command_id: &str,
+        interaction: MetadataInteraction<'_>,
+        now_unix_ms: i64,
+    ) -> Result<(), String> {
+        MetadataInteractionPreparer::new(
+            self.store.clone(),
+            CryptoEndpoint {
+                ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            },
+        )?
+        .prepare(
+            plan,
+            &pending.intent_id,
+            Some(&pending.command_id),
+            command_id,
+            &pending.target_message_id,
+            interaction,
+            now_unix_ms,
+        )
+        .map(|_| ())
+    }
+
     fn prepare_message_draft(
         &self,
         token: &str,
@@ -2105,6 +2267,33 @@ impl MessagingEngine {
             }
         };
         Ok(command_id)
+    }
+
+    fn prepare_fresh_interaction_plan(
+        &self,
+        token: &str,
+        conversation_id: &str,
+    ) -> Result<PrepareConversationCommandResponse, String> {
+        self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
+        let plan = self.prepare_send_plan(token, conversation_id)?;
+        for _ in 0..5 {
+            let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
+            if local_sequence == plan.authority_sequence && local_hash == plan.authority_hash {
+                return Ok(plan);
+            }
+            self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
+            .map_err(|_| "messaging interaction conversation kind is invalid".to_string())?;
+        if conversation_kind == ConversationKind::Direct {
+            self.bootstrap_direct_authority_checkpoint(token, &plan)?;
+        }
+        let (local_sequence, local_hash) = self.store.authority_head(conversation_id)?;
+        if local_sequence != plan.authority_sequence || local_hash != plan.authority_hash {
+            return Err("messaging local authority head is behind interaction plan".to_string());
+        }
+        Ok(plan)
     }
 
     fn bootstrap_direct_authority_checkpoint(
@@ -2363,6 +2552,8 @@ impl MessagingEngine {
         let command_id = Ulid::new().to_string();
         let now = now_unix_ms();
         let intent = EditTextIntent {
+            logical_intent_id: &command_id,
+            replaces_command_id: None,
             command_id: &command_id,
             message_id,
             conversation_id,
@@ -2436,7 +2627,15 @@ impl MessagingEngine {
                 device_id: self.endpoint.device_id.clone(),
             },
         )?
-        .prepare(&plan, &command_id, message_id, interaction, now)?;
+        .prepare(
+            &plan,
+            &command_id,
+            None,
+            &command_id,
+            message_id,
+            interaction,
+            now,
+        )?;
         Ok(command_id)
     }
 
@@ -2693,20 +2892,298 @@ impl MessagingEngine {
         Ok(true)
     }
 
+    pub fn update_conversation(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        name: Option<String>,
+        description: Option<String>,
+        avatar_object_id: Option<String>,
+    ) -> Result<String, String> {
+        if name.is_none() && description.is_none() && avatar_object_id.is_none() {
+            return Err("messaging Conversation update is empty".to_string());
+        }
+        if name.as_ref().is_some_and(|value| value.trim().is_empty()) {
+            return Err("messaging Conversation name is empty".to_string());
+        }
+        self.prepare_conversation_mutation(
+            token,
+            conversation_id,
+            ConversationCommandKind::UpdateSettings,
+            chat_command::Payload::UpdateConversation(UpdateConversationIntent {
+                name,
+                description,
+                avatar_object_id,
+                ..Default::default()
+            }),
+        )
+    }
+
+    pub fn dissolve_conversation(
+        &self,
+        token: &str,
+        conversation_id: &str,
+    ) -> Result<String, String> {
+        self.prepare_conversation_mutation(
+            token,
+            conversation_id,
+            ConversationCommandKind::Dissolve,
+            chat_command::Payload::DissolveConversation(DissolveConversationIntent {}),
+        )
+    }
+
+    fn prepare_conversation_mutation(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        command_kind: ConversationCommandKind,
+        payload: chat_command::Payload,
+    ) -> Result<String, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging Conversation command lock poisoned".to_string())?;
+        let plan = self.prepare_command_plan(token, conversation_id, command_kind)?;
+        if ConversationKind::try_from(plan.conversation_kind).ok() != Some(ConversationKind::Group)
+            || plan.authority_sequence <= 0
+            || plan.authority_hash.len() != 32
+            || plan.delivery_plan_sha256.len() != 32
+        {
+            return Err("messaging Conversation mutation plan is invalid".to_string());
+        }
+        let created_at_unix_ms = now_unix_ms();
+        let command = ChatCommand {
+            command_id: Ulid::new().to_string(),
+            conversation_id: conversation_id.to_string(),
+            sender: Some(CryptoEndpoint {
+                ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            }),
+            observed_membership_epoch: plan.membership_epoch,
+            observed_mls_epoch: plan.mls_epoch,
+            client_timestamp: Some(timestamp(created_at_unix_ms)),
+            delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
+            authority_station_peer_id: plan.authority_station_peer_id.clone(),
+            payload: Some(payload),
+        };
+        self.store
+            .persist_conversation_command(&ConversationCommandCommit {
+                command: &command,
+                expected_authority_sequence: plan.authority_sequence,
+                expected_authority_hash: &plan.authority_hash,
+                created_at_unix_ms,
+            })?;
+        Ok(command.command_id)
+    }
+
+    pub fn update_member_authority(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        target_ptid: &str,
+        role: Option<MemberRole>,
+        muted: Option<bool>,
+        muted_until_unix_ms: Option<i64>,
+    ) -> Result<String, String> {
+        self.prepare_member_authority_command(
+            token,
+            conversation_id,
+            target_ptid,
+            ConversationMemberAuthorityAction::UpdateMember,
+            role,
+            muted,
+            muted_until_unix_ms,
+        )
+    }
+
+    pub fn transfer_ownership(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        target_ptid: &str,
+    ) -> Result<String, String> {
+        self.prepare_member_authority_command(
+            token,
+            conversation_id,
+            target_ptid,
+            ConversationMemberAuthorityAction::TransferOwnership,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_member_authority_command(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        target_ptid: &str,
+        action: ConversationMemberAuthorityAction,
+        role: Option<MemberRole>,
+        muted: Option<bool>,
+        muted_until_unix_ms: Option<i64>,
+    ) -> Result<String, String> {
+        let _guard = self
+            .membership_transition_lock
+            .lock()
+            .map_err(|_| "messaging member-authority lock poisoned".to_string())?;
+        let local = self
+            .store
+            .conversation_projections()?
+            .into_iter()
+            .find(|conversation| conversation.conversation_id == conversation_id)
+            .ok_or_else(|| {
+                "messaging member authority requires a local Conversation projection".to_string()
+            })?;
+        let authoritative = self.get_authoritative_conversation(token, conversation_id)?;
+        let (authority_sequence, authority_hash) = self.store.authority_head(conversation_id)?;
+        let created_at_unix_ms = now_unix_ms();
+        if local.kind != ConversationKind::Group as i32
+            || authoritative.kind != ConversationKind::Group as i32
+            || authoritative.status != crate::model::chat::ConversationStatus::Active as i32
+            || !local.active
+            || authoritative.authority_epoch <= 0
+            || authority_sequence <= 0
+            || authority_hash.len() != 32
+            || !target_ptid.starts_with("ptid:")
+            || !local
+                .members
+                .iter()
+                .any(|member| member.ptid == target_ptid)
+            || local.conversation_id != authoritative.conversation_id
+            || local.authority_station_id != authoritative.authority_station_peer_id
+            || local.federation_id != authoritative.federation_id
+            || local.owner_ptid != authoritative.owner_ptid
+            || local.membership_epoch != authoritative.membership_epoch
+            || local.mls_epoch != authoritative.mls_epoch
+        {
+            return Err("messaging member-authority scope is stale or incomplete".to_string());
+        }
+        match action {
+            ConversationMemberAuthorityAction::UpdateMember => {
+                if role.is_none() && muted.is_none() {
+                    return Err("messaging member-authority update is empty".to_string());
+                }
+                if role.is_some_and(|role| !matches!(role, MemberRole::Member | MemberRole::Admin))
+                {
+                    return Err("messaging member-authority role is invalid".to_string());
+                }
+                if muted_until_unix_ms.is_some() && muted != Some(true) {
+                    return Err("messaging mute deadline requires muted=true".to_string());
+                }
+            }
+            ConversationMemberAuthorityAction::TransferOwnership => {
+                if role.is_some() || muted.is_some() || muted_until_unix_ms.is_some() {
+                    return Err(
+                        "messaging ownership transfer does not accept member patches".to_string(),
+                    );
+                }
+            }
+            ConversationMemberAuthorityAction::Unspecified => {
+                return Err("messaging member-authority action is unspecified".to_string());
+            }
+        }
+        let command = ConversationMemberAuthorityCommand {
+            version: 1,
+            command_id: Ulid::new().to_string(),
+            conversation_id: conversation_id.to_string(),
+            operator: Some(CryptoEndpoint {
+                ptid: self.endpoint.ptid.clone(),
+                device_id: self.endpoint.device_id.clone(),
+            }),
+            target_ptid: target_ptid.to_string(),
+            action: action as i32,
+            role: role.map(|role| role as i32),
+            muted,
+            muted_until: muted_until_unix_ms.map(timestamp),
+            federation_id: local.federation_id,
+            authority_station_peer_id: local.authority_station_id,
+            authority_epoch: authoritative.authority_epoch,
+            authority_sequence,
+            authority_hash,
+            observed_membership_epoch: local.membership_epoch,
+            observed_mls_epoch: local.mls_epoch,
+            client_timestamp: Some(timestamp(created_at_unix_ms)),
+            deadline: Some(timestamp(
+                created_at_unix_ms.saturating_add(MEMBER_AUTHORITY_COMMAND_LIFETIME_MS),
+            )),
+        };
+        self.store.persist_member_authority_command(&command)?;
+        Ok(command.command_id)
+    }
+
+    fn get_authoritative_conversation(
+        &self,
+        token: &str,
+        conversation_id: &str,
+    ) -> Result<Conversation, String> {
+        let query = [("conversation_id", conversation_id.to_string())];
+        let response = station_client::request_proto_for_device::<
+            GetConversationRequest,
+            GetConversationResponse,
+        >(
+            Method::GET,
+            "/conversation/get",
+            token,
+            Some(&query),
+            None,
+            &self.endpoint.device_id,
+        )
+        .map_err(|error| error.to_string())?;
+        response
+            .conversation
+            .filter(|conversation| conversation.conversation_id == conversation_id)
+            .ok_or_else(|| "Station returned another Conversation".to_string())
+    }
+
+    pub fn leave_conversation(
+        &self,
+        token: &str,
+        conversation_id: &str,
+    ) -> Result<MlsLeaveIntent, String> {
+        let conversation = self.get_authoritative_conversation(token, conversation_id)?;
+        if conversation.owner_ptid == self.endpoint.ptid {
+            return Err("Conversation owner must transfer ownership or dissolve first".to_string());
+        }
+        let home_station_peer_id = station_client::active_station_peer_id()
+            .ok_or_else(|| "messaging Home Station identity is unavailable".to_string())?;
+        self.submit_mls_leave_intent(
+            token,
+            &MlsLeaveIntentInput {
+                federation_id: conversation.federation_id,
+                authority_station_peer_id: conversation.authority_station_peer_id,
+                authority_epoch: conversation.authority_epoch,
+                home_station_peer_id,
+                conversation_id: conversation_id.to_string(),
+                observed_membership_epoch: conversation.membership_epoch,
+                observed_mls_epoch: conversation.mls_epoch,
+                authority_sequence: 0,
+                authority_hash: Vec::new(),
+            },
+        )
+    }
+
     pub fn submit_mls_leave_intent(
         &self,
         token: &str,
         input: &MlsLeaveIntentInput,
     ) -> Result<MlsLeaveIntent, String> {
-        let transport = StationMlsLeaveIntentTransport::new(token.to_string())?;
-        let identity = self.actor_device_identity();
+        let transport = StationMlsLeaveIntentTransport::new(
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?;
+        let (signing_key_id, signing_key) = self.device_signing_identity()?.ok_or_else(|| {
+            "messaging leave intent device signing identity is unavailable".to_string()
+        })?;
         let (authority_sequence, authority_hash) =
             self.store.authority_head(&input.conversation_id)?;
         let mut bound_input = input.clone();
         bound_input.authority_sequence = authority_sequence;
         bound_input.authority_hash = authority_hash;
         submit_leave_intent(
-            identity.as_ref(),
+            &signing_key_id,
+            &signing_key,
             &CryptoEndpoint {
                 ptid: self.endpoint.ptid.clone(),
                 device_id: self.endpoint.device_id.clone(),
@@ -2722,8 +3199,29 @@ impl MessagingEngine {
         token: &str,
         conversation_id: &str,
     ) -> Result<Vec<MlsLeaveIntent>, String> {
-        let transport = StationMlsLeaveIntentTransport::new(token.to_string())?;
+        let transport = StationMlsLeaveIntentTransport::new(
+            token.to_string(),
+            self.endpoint.device_id.clone(),
+        )?;
         list_leave_intents(conversation_id, &transport)
+    }
+
+    pub fn resume_leave_intent_once(&self, token: &str) -> Result<bool, String> {
+        for conversation in self.store.conversation_projections()? {
+            if !can_commit_pending_leave(&conversation, &self.endpoint.ptid) {
+                continue;
+            }
+            let Some(intent) = self
+                .list_mls_leave_intents(token, &conversation.conversation_id)?
+                .into_iter()
+                .find(|intent| intent.actor_ptid != self.endpoint.ptid)
+            else {
+                continue;
+            };
+            self.prepare_delegated_leave(token, intent)?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     pub fn prepare_delegated_leave(
@@ -2771,21 +3269,6 @@ impl MessagingEngine {
             label,
             &StationDeviceTransport::new(token.to_string(), self.endpoint.device_id.clone())?,
         )
-    }
-
-    pub fn ensure_current_device_enrolled(
-        &self,
-        token: &str,
-        label: String,
-    ) -> Result<ActorDevice, String> {
-        let manager = DeviceEnrollmentManager::new(
-            self.store.clone(),
-            self.endpoint.ptid.clone(),
-            self.endpoint.device_id.clone(),
-        )?;
-        let transport =
-            StationDeviceTransport::new(token.to_string(), self.endpoint.device_id.clone())?;
-        manager.enroll_current(label, &transport)
     }
 
     pub fn recover_stale_enrollment(&self, error: &str) -> bool {
@@ -3303,6 +3786,83 @@ impl EngineRegistry {
     }
 }
 
+fn decode_superseded_interaction(
+    pending: &SupersededInteractionIntent,
+    endpoint: &EngineEndpoint,
+) -> Result<DurableInteraction, String> {
+    let command = ChatCommand::decode(pending.command_bytes.as_slice())
+        .map_err(|error| format!("decode superseded messaging interaction: {error}"))?;
+    if command.encode_to_vec() != pending.command_bytes
+        || command.command_id != pending.command_id
+        || command.conversation_id != pending.conversation_id
+        || command.sender.as_ref().map(|sender| sender.ptid.as_str())
+            != Some(endpoint.ptid.as_str())
+        || command
+            .sender
+            .as_ref()
+            .map(|sender| sender.device_id.as_str())
+            != Some(endpoint.device_id.as_str())
+    {
+        return Err("messaging superseded interaction identity mismatch".to_string());
+    }
+    let interaction = match command.payload {
+        Some(chat_command::Payload::EditMessage(edit))
+            if pending.interaction_kind == "edit"
+                && edit.message_id == pending.target_message_id =>
+        {
+            DurableInteraction::Edit(
+                pending
+                    .edited_text
+                    .clone()
+                    .filter(|plaintext| !plaintext.trim().is_empty())
+                    .ok_or_else(|| {
+                        "messaging superseded edit content is unavailable".to_string()
+                    })?,
+            )
+        }
+        Some(chat_command::Payload::RetractMessage(retract))
+            if pending.interaction_kind == "retract"
+                && retract.message_id == pending.target_message_id =>
+        {
+            DurableInteraction::Retract
+        }
+        Some(chat_command::Payload::Reaction(reaction))
+            if reaction.message_id == pending.target_message_id
+                && pending.interaction_kind
+                    == if reaction.remove {
+                        "reaction-remove"
+                    } else {
+                        "reaction-add"
+                    } =>
+        {
+            DurableInteraction::Reaction {
+                reaction: reaction.reaction,
+                remove: reaction.remove,
+            }
+        }
+        Some(chat_command::Payload::PinMessage(pin))
+            if pin.message_id == pending.target_message_id
+                && pending.interaction_kind == if pin.remove { "unpin" } else { "pin" } =>
+        {
+            DurableInteraction::Pin { remove: pin.remove }
+        }
+        _ => return Err("messaging superseded interaction payload mismatch".to_string()),
+    };
+    Ok(interaction)
+}
+
+fn can_commit_pending_leave(conversation: &ConversationProjection, actor_ptid: &str) -> bool {
+    conversation.active
+        && conversation.kind == ConversationKind::Group as i32
+        && conversation.members.iter().any(|member| {
+            member.ptid == actor_ptid
+                && matches!(
+                    MemberRole::try_from(member.role),
+                    Ok(MemberRole::Admin | MemberRole::Owner)
+                )
+        })
+}
+
 fn validate_identity(profile_id: &str, endpoint: &EngineEndpoint) -> Result<(), String> {
     if profile_id.trim().is_empty()
         || endpoint.ptid.trim().is_empty()
@@ -3329,10 +3889,13 @@ fn prepare_local_attachment_upload(
     {
         return Err("messaging local attachment intent is incomplete".to_string());
     }
-    messaging_core::codec::private_content::validate_voice_note_metadata(
-        &intent.mime_type,
-        intent.voice_note.as_ref(),
-    )?;
+    match AttachmentContentKind::try_from(intent.content_kind) {
+        Ok(AttachmentContentKind::File) if intent.duration_ms == 0 => {}
+        Ok(AttachmentContentKind::VoiceNote)
+            if intent.duration_ms > 0
+                && intent.mime_type.to_ascii_lowercase().starts_with("audio/") => {}
+        _ => return Err("messaging local attachment media intent is invalid".to_string()),
+    }
     let source = std::fs::canonicalize(Path::new(&intent.source_local_ref))
         .map_err(|error| format!("resolve messaging attachment source: {error}"))?;
     let metadata = source
@@ -3384,7 +3947,8 @@ fn prepare_local_attachment_upload(
         filename: intent.filename.clone(),
         mime_type: intent.mime_type.clone(),
         plaintext_sha256: hasher.finalize().to_vec(),
-        voice_note: intent.voice_note.clone(),
+        content_kind: intent.content_kind,
+        duration_ms: intent.duration_ms,
     })
 }
 
@@ -3620,6 +4184,13 @@ pub(crate) fn now_unix_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| i64::try_from(duration.as_millis()).unwrap_or(i64::MAX))
         .unwrap_or_default()
+}
+
+fn timestamp(unix_ms: i64) -> prost_types::Timestamp {
+    prost_types::Timestamp {
+        seconds: unix_ms.div_euclid(1_000),
+        nanos: (unix_ms.rem_euclid(1_000) * 1_000_000) as i32,
+    }
 }
 
 #[cfg(test)]

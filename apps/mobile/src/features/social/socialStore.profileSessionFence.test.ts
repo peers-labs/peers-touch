@@ -369,7 +369,7 @@ function profile(id: string, displayName: string): PeerProfile {
     federatedHandle: '',
     homeStationPeerId: '',
     homeStationDomain: '',
-    discoverability: 'by_handle',
+    discoverability: 'hidden',
   };
 }
 

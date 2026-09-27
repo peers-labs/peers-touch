@@ -25,6 +25,8 @@ pub struct GroupSendTextIntent<'a> {
 }
 
 pub struct GroupEditTextIntent<'a> {
+    pub logical_intent_id: &'a str,
+    pub replaces_command_id: Option<&'a str>,
     pub command_id: &'a str,
     pub message_id: &'a str,
     pub conversation_id: &'a str,
@@ -143,6 +145,8 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
         let command_bytes = command.encode_to_vec();
         self.store
             .persist_mls_outbound_edit(&MlsOutboundEditCommit {
+                logical_intent_id: intent.logical_intent_id,
+                replaces_command_id: intent.replaces_command_id,
                 command_id: intent.command_id,
                 conversation_id: intent.conversation_id,
                 target_message_id: intent.message_id,
@@ -279,6 +283,13 @@ fn validate_edit_context(
     intent: &GroupEditTextIntent<'_>,
     endpoint: &CryptoEndpoint,
 ) -> Result<(), String> {
+    let lineage_is_valid = match intent.replaces_command_id {
+        Some(command_id) => !command_id.trim().is_empty() && command_id != intent.command_id,
+        None => intent.logical_intent_id == intent.command_id,
+    };
+    if intent.logical_intent_id.trim().is_empty() || !lineage_is_valid {
+        return Err("messaging edit intent lineage is invalid".to_string());
+    }
     validate_send_context(
         plan,
         &GroupSendTextIntent {
@@ -575,6 +586,8 @@ mod tests {
             .prepare_edit(
                 &plan(),
                 &GroupEditTextIntent {
+                    logical_intent_id: "edit-command-1",
+                    replaces_command_id: None,
                     command_id: "edit-command-1",
                     message_id: "message-1",
                     conversation_id: "group-1",

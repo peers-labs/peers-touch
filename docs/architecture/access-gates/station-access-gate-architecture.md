@@ -313,33 +313,36 @@ Mobile lifecycle and OAuth refinement:
 
 ## 13. Wire Format Contract
 
-The four canonical Access endpoints are generated protobuf-only:
+The gate chain crosses three runtimes (Go Station, Rust Desktop kernel, TS clients), so the JSON encoding of `AccessDecision` is a hard contract, not an implementation detail.
 
-- `POST /actor/access/start`
-- `POST /actor/access/submit`
-- `POST /actor/access/decision`
-- `POST /actor/access/cancel`
+### 13.1 Station encoding
 
-Requests and responses use `application/protobuf`. Station binds directly into
-generated Go messages; Desktop and Mobile encode/decode generated native
-messages before exposing typed projections to TypeScript. JSON envelopes,
-alternate protobuf MIME values, raw wire objects, dual key casing, dual enum
-forms, compatibility readers, and direct credential fallbacks are not part of
-the contract.
+Station serializes responses with protojson using:
 
-The signed Station identity endpoint is also protobuf-only, but returns its
-generated response directly because it is the trust bootstrap. Access
-endpoints return their generated payload in the standard protobuf
-`PeersResponse.data` envelope.
+```go
+protojson.MarshalOptions{EmitUnpopulated: true, UseProtoNames: true}
+```
 
-Unknown gate/action, expired attempt, identity mismatch, Station/device/
-generation mismatch, and schema revision/digest mismatch are typed fail-closed
-outcomes. Clients must not restart those failures through another transport.
+Consequences every client MUST tolerate:
+
+- Keys are **snake_case** (`attempt_id`, `current_gate_id`, `blocking_reason`, `input_schema_json`).
+- Enums serialize as their **string name** (`ACCESS_DECISION_STATE_GRANTED`, `ACCESS_GATE_TYPE_INVITE_CODE`), not the numeric value.
+- All fields are emitted even when zero/empty.
+
+Station accepts requests with `UnmarshalOptions{DiscardUnknown: true}`, so clients may send either snake_case or camelCase keys and either numeric or string enum values.
+
+### 13.2 Client normalization
+
+Because a future Station build (or a proxy) could emit camelCase or numeric enums, clients normalize defensively:
+
+- Mobile: `normalizeDecision` in [`apps/mobile/src/features/auth/authSession.ts`](../../../apps/mobile/src/features/auth/authSession.ts).
+- Desktop: `normalizeDecision` in [`apps/desktop/src/services/accessGate.ts`](../../../apps/desktop/src/services/accessGate.ts).
+
+Both read `snake_case ?? camelCase` for every field and match enums by **both** the numeric constant and the string name. State/type predicates (`isAccessGranted`, `isInviteCodeGate`, …) MUST keep both forms or the chain silently stalls.
 
 ### 13.3 Schema-driven gate rendering
 
-The `invite.code` gate carries its form as opaque JSON inside the decoded
-protobuf `input_schema_json` field:
+The `invite.code` gate carries its form in `input_schema_json`:
 
 ```json
 { "fields": [ { "name": "invite_code", "type": "text", "required": true, "label": "Invite code" } ] }

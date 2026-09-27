@@ -1,7 +1,7 @@
 use super::types::{
-    EncodedRecoveryRevision, MessagingRecoveryArchive, RecoveryAttachmentMetadata,
-    RecoveryConversationProjection, RecoveryMessageProjection, RecoveryTrustRecord,
-    MESSAGING_RECOVERY_FORMAT_VERSION,
+    DecodedRecoveryRevision, EncodedRecoveryRevision, MessagingRecoveryArchive,
+    RecoveryAttachmentMetadata, RecoveryConversationProjection, RecoveryMessageProjection,
+    RecoveryTrustRecord, MESSAGING_RECOVERY_FORMAT_VERSION,
 };
 use crate::codec::private_content::validate_attachment_plaintext_metadata;
 use crate::proto::actor_ref;
@@ -16,7 +16,7 @@ use rand::{rngs::OsRng, RngCore};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const BACKUP_NONCE_BYTES: usize = 12;
 
@@ -31,29 +31,56 @@ pub trait RecoveryKdf: Send + Sync {
 #[derive(Serialize, Deserialize)]
 struct RecoveryRevisionEnvelope<P> {
     kdf: P,
+    #[serde(default = "initial_recovery_epoch")]
+    recovery_epoch: u64,
     manifest: Vec<u8>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct ActorIdentitySection {
     seed: [u8; 32],
     profile_version: u64,
+    #[serde(default = "initial_recovery_epoch")]
+    recovery_epoch: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct MessageHistorySection {
     conversations: Vec<RecoveryConversationProjection>,
     messages: Vec<RecoveryMessageProjection>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct AttachmentSection {
     attachments: Vec<RecoveryAttachmentMetadata>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
 struct TrustSection {
     trust: Vec<RecoveryTrustRecord>,
+}
+
+#[derive(Serialize)]
+struct ActorIdentitySectionRef<'a> {
+    seed: &'a [u8; 32],
+    profile_version: u64,
+    recovery_epoch: u64,
+}
+
+#[derive(Serialize)]
+struct MessageHistorySectionRef<'a> {
+    conversations: &'a [RecoveryConversationProjection],
+    messages: &'a [RecoveryMessageProjection],
+}
+
+#[derive(Serialize)]
+struct AttachmentSectionRef<'a> {
+    attachments: &'a [RecoveryAttachmentMetadata],
+}
+
+#[derive(Serialize)]
+struct TrustSectionRef<'a> {
+    trust: &'a [RecoveryTrustRecord],
 }
 
 pub fn encode_recovery_revision<K: RecoveryKdf>(
@@ -62,6 +89,7 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
     revision_id: &str,
     created_by_device_id: &str,
     created_at_unix_ms: i64,
+    recovery_epoch: u64,
     archive: &MessagingRecoveryArchive,
 ) -> Result<EncodedRecoveryRevision, String> {
     validate_archive_identity(
@@ -71,8 +99,11 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         created_by_device_id,
         archive,
     )?;
+    if recovery_epoch == 0 || recovery_epoch > i64::MAX as u64 {
+        return Err("messaging recovery epoch is invalid".to_string());
+    }
     let params = kdf_provider.default_params();
-    let mut key = kdf_provider.derive_key(recovery_phrase.as_bytes(), &params)?;
+    let key = Zeroizing::new(kdf_provider.derive_key(recovery_phrase.as_bytes(), &params)?);
 
     let mut sections = Vec::new();
     sections.push(encrypt_section(
@@ -80,9 +111,10 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::ActorIdentity,
-        &ActorIdentitySection {
-            seed: archive.actor_identity_seed,
+        &ActorIdentitySectionRef {
+            seed: &archive.actor_identity_seed,
             profile_version: archive.actor_profile_version,
+            recovery_epoch,
         },
         1,
     )?);
@@ -91,9 +123,9 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::MessageHistory,
-        &MessageHistorySection {
-            conversations: archive.conversations.clone(),
-            messages: archive.messages.clone(),
+        &MessageHistorySectionRef {
+            conversations: &archive.conversations,
+            messages: &archive.messages,
         },
         (archive.conversations.len() + archive.messages.len()) as u64,
     )?);
@@ -102,8 +134,8 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::AttachmentMetadata,
-        &AttachmentSection {
-            attachments: archive.attachments.clone(),
+        &AttachmentSectionRef {
+            attachments: &archive.attachments,
         },
         archive.attachments.len() as u64,
     )?);
@@ -112,13 +144,11 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
         archive,
         revision_id,
         OpaqueRecoveryArchiveSectionKind::Trust,
-        &TrustSection {
-            trust: archive.trust.clone(),
+        &TrustSectionRef {
+            trust: &archive.trust,
         },
         archive.trust.len() as u64,
     )?);
-    key.zeroize();
-
     let mut manifest = OpaqueRecoveryArchiveManifest {
         format_version: MESSAGING_RECOVERY_FORMAT_VERSION,
         actor: Some(actor_ref(&archive.ptid)),
@@ -134,6 +164,7 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
     manifest.archive_sha256 = manifest_hash(&manifest);
     let envelope = RecoveryRevisionEnvelope {
         kdf: params,
+        recovery_epoch,
         manifest: manifest.encode_to_vec(),
     };
     let bytes = serde_json::to_vec(&envelope).map_err(|error| error.to_string())?;
@@ -141,6 +172,7 @@ pub fn encode_recovery_revision<K: RecoveryKdf>(
     Ok(EncodedRecoveryRevision {
         revision_id: revision_id.to_string(),
         format_version: MESSAGING_RECOVERY_FORMAT_VERSION,
+        recovery_epoch,
         bytes,
         sha256,
     })
@@ -153,7 +185,7 @@ pub fn decode_recovery_revision<K: RecoveryKdf>(
     expected_revision_id: &str,
     encoded: &[u8],
     expected_sha256: &[u8],
-) -> Result<MessagingRecoveryArchive, String> {
+) -> Result<DecodedRecoveryRevision, String> {
     kdf_provider.validate_mnemonic(recovery_phrase)?;
     if expected_ptid.trim().is_empty()
         || expected_revision_id.trim().is_empty()
@@ -164,6 +196,9 @@ pub fn decode_recovery_revision<K: RecoveryKdf>(
     }
     let envelope: RecoveryRevisionEnvelope<K::Params> =
         serde_json::from_slice(encoded).map_err(|_| "messaging recovery envelope invalid")?;
+    if envelope.recovery_epoch == 0 || envelope.recovery_epoch > i64::MAX as u64 {
+        return Err("messaging recovery epoch is invalid".to_string());
+    }
     let manifest = OpaqueRecoveryArchiveManifest::decode(envelope.manifest.as_slice())
         .map_err(|_| "messaging recovery manifest invalid")?;
     let manifest_ptid = recovery_manifest_ptid(&manifest)?.to_string();
@@ -175,36 +210,45 @@ pub fn decode_recovery_revision<K: RecoveryKdf>(
     {
         return Err("messaging recovery manifest binding is invalid".to_string());
     }
-    let mut key = kdf_provider.derive_key(recovery_phrase.as_bytes(), &envelope.kdf)?;
-    let identity: ActorIdentitySection = decrypt_required_section(
+    let key = Zeroizing::new(kdf_provider.derive_key(recovery_phrase.as_bytes(), &envelope.kdf)?);
+    let mut identity: ActorIdentitySection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::ActorIdentity,
     )?;
-    let history: MessageHistorySection = decrypt_required_section(
+    if identity.recovery_epoch != envelope.recovery_epoch {
+        return Err("messaging recovery epoch binding is invalid".to_string());
+    }
+    let mut history: MessageHistorySection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::MessageHistory,
     )?;
-    let attachments: AttachmentSection = decrypt_required_section(
+    let mut attachments: AttachmentSection = decrypt_required_section(
         &key,
         &manifest,
         OpaqueRecoveryArchiveSectionKind::AttachmentMetadata,
     )?;
-    let trust: TrustSection =
+    let mut trust: TrustSection =
         decrypt_required_section(&key, &manifest, OpaqueRecoveryArchiveSectionKind::Trust)?;
-    key.zeroize();
     let archive = MessagingRecoveryArchive {
         ptid: manifest_ptid,
-        actor_identity_seed: identity.seed,
+        actor_identity_seed: std::mem::take(&mut identity.seed),
         actor_profile_version: identity.profile_version,
-        conversations: history.conversations,
-        messages: history.messages,
-        attachments: attachments.attachments,
-        trust: trust.trust,
+        conversations: std::mem::take(&mut history.conversations),
+        messages: std::mem::take(&mut history.messages),
+        attachments: std::mem::take(&mut attachments.attachments),
+        trust: std::mem::take(&mut trust.trust),
     };
     validate_archive(&archive)?;
-    Ok(archive)
+    Ok(DecodedRecoveryRevision {
+        recovery_epoch: envelope.recovery_epoch,
+        archive,
+    })
+}
+
+fn initial_recovery_epoch() -> u64 {
+    1
 }
 
 pub fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(), String> {
@@ -221,6 +265,21 @@ pub fn validate_archive(archive: &MessagingRecoveryArchive) -> Result<(), String
                 || conversation.kind == 0
                 || conversation.owner_ptid.trim().is_empty()
                 || conversation.member_ptids.len() < 2
+                || (!conversation.member_roles.is_empty()
+                    && (conversation.member_roles.len() != conversation.member_ptids.len()
+                        || conversation
+                            .member_ptids
+                            .iter()
+                            .any(|ptid| !conversation.member_roles.contains_key(ptid))))
+                || conversation.member_roles.iter().any(|(ptid, role)| {
+                    ptid.trim().is_empty()
+                        || !matches!(
+                            crate::proto::chat::MemberRole::try_from(*role),
+                            Ok(crate::proto::chat::MemberRole::Member
+                                | crate::proto::chat::MemberRole::Admin
+                                | crate::proto::chat::MemberRole::Owner)
+                        )
+                })
                 || conversation.membership_epoch < 0
                 || conversation.mls_epoch < 0
                 || conversation.updated_at_unix_ms <= 0
@@ -279,7 +338,7 @@ fn encrypt_section<T: Serialize>(
     value: &T,
     record_count: u64,
 ) -> Result<OpaqueRecoveryArchiveSection, String> {
-    let plaintext = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+    let plaintext = Zeroizing::new(serde_json::to_vec(value).map_err(|error| error.to_string())?);
     let mut nonce = [0_u8; BACKUP_NONCE_BYTES];
     OsRng.fill_bytes(&mut nonce);
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "recovery AES init failed")?;
@@ -324,19 +383,21 @@ fn decrypt_required_section<T: DeserializeOwned>(
     }
     let (nonce, ciphertext) = section.ciphertext.split_at(BACKUP_NONCE_BYTES);
     let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| "recovery AES init failed")?;
-    let plaintext = cipher
-        .decrypt(
-            Nonce::from_slice(nonce),
-            Payload {
-                msg: ciphertext,
-                aad: &section_aad(
-                    recovery_manifest_ptid(manifest)?,
-                    &manifest.revision_id,
-                    kind,
-                ),
-            },
-        )
-        .map_err(|_| "messaging recovery phrase or section integrity invalid")?;
+    let plaintext = Zeroizing::new(
+        cipher
+            .decrypt(
+                Nonce::from_slice(nonce),
+                Payload {
+                    msg: ciphertext,
+                    aad: &section_aad(
+                        recovery_manifest_ptid(manifest)?,
+                        &manifest.revision_id,
+                        kind,
+                    ),
+                },
+            )
+            .map_err(|_| "messaging recovery phrase or section integrity invalid")?,
+    );
     serde_json::from_slice(&plaintext).map_err(|_| "messaging recovery section invalid".to_string())
 }
 
@@ -419,8 +480,20 @@ mod tests {
                 federation_id: "federation-1".to_string(),
                 kind: 1,
                 name: String::new(),
+                description: "Recovery description".to_string(),
+                avatar_object_id: "oss://chat/avatar-1".to_string(),
                 owner_ptid: "ptid:alice".to_string(),
                 member_ptids: vec!["ptid:alice".to_string(), "ptid:bob".to_string()],
+                member_roles: std::collections::BTreeMap::from([
+                    (
+                        "ptid:alice".to_string(),
+                        crate::proto::chat::MemberRole::Owner as i32,
+                    ),
+                    (
+                        "ptid:bob".to_string(),
+                        crate::proto::chat::MemberRole::Member as i32,
+                    ),
+                ]),
                 membership_epoch: 1,
                 mls_epoch: 0,
                 active: true,
@@ -458,6 +531,7 @@ mod tests {
             "revision-1",
             "alice-device",
             10,
+            7,
             &expected,
         )
         .unwrap();
@@ -470,7 +544,8 @@ mod tests {
             &encoded.sha256,
         )
         .unwrap();
-        assert_eq!(actual, expected);
+        assert_eq!(actual.recovery_epoch, 7);
+        assert_eq!(actual.archive, expected);
     }
 
     #[test]
@@ -480,8 +555,18 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("federation_id");
+        value["conversations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("description");
+        value["conversations"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("avatar_object_id");
         let legacy: MessagingRecoveryArchive = serde_json::from_value(value).unwrap();
         assert!(legacy.conversations[0].federation_id.is_empty());
+        assert!(legacy.conversations[0].description.is_empty());
+        assert!(legacy.conversations[0].avatar_object_id.is_empty());
         assert!(validate_archive(&legacy).is_ok());
     }
 
@@ -493,6 +578,7 @@ mod tests {
             "revision-1",
             "alice-device",
             10,
+            1,
             &archive(),
         )
         .unwrap();
@@ -516,6 +602,7 @@ mod tests {
             "revision-1",
             "alice-device",
             10,
+            1,
             &archive(),
         )
         .unwrap();

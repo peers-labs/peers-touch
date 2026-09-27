@@ -591,8 +591,6 @@ fn main() {
             auth::access_start,
             auth::access_submit_invite_code,
             auth::access_submit_login,
-            auth::access_decision,
-            auth::access_cancel,
             auth::auth_logout,
             #[cfg(feature = "acceptance-webdriver")]
             auth::acceptance_logout_window_session,
@@ -654,7 +652,6 @@ fn main() {
             profile::avatar_resolve_local,
             federation::federation_resolve,
             federation::federation_catalog_search,
-            federation::federation_list_contexts,
             admin::admin_health,
             admin::admin_network_probe,
             admin::admin_execute_action,

@@ -38,7 +38,7 @@ describe('InvokeThrottler', () => {
     it('bypasses allowlisted auth commands immediately', async () => {
       markInteractionStart();
       const fn = vi.fn().mockResolvedValue('auth-result');
-      const { deferred, bypassReason, securityClass, promise } = throttleInvoke('access_start', fn);
+      const { deferred, bypassReason, securityClass, promise } = throttleInvoke('auth_login', fn);
 
       expect(deferred).toBe(false);
       expect(bypassReason).toBeTruthy();

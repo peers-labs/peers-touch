@@ -12,7 +12,7 @@
 //     bespoke JSON shapes (the StubPayload route used by older modules)
 //     creates a parallel schema that drifts. Proto bytes preserve the
 //     contract exactly.
-//   - Matches the messaging module pattern that
+//   - Matches the chat / group_chat module pattern that
 //     the desktop frontend has already standardised on for typed wire
 //     responses.
 //
@@ -573,7 +573,8 @@ pub fn social_list_by_author(
     if input.author_ptid.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "author_ptid is required", None);
     }
-    let mut query: Vec<(&str, String)> = Vec::new();
+    let mut query: Vec<(&str, String)> =
+        vec![("type", "1".to_string()), ("actor_ptid", input.author_ptid)];
     if let Some(c) = input.cursor {
         if !c.is_empty() {
             query.push(("cursor", c));
@@ -582,11 +583,11 @@ pub fn social_list_by_author(
     if let Some(l) = input.limit {
         query.push(("limit", l.to_string()));
     }
-    let path = format!("/api/v1/social/users/{}/posts", input.author_ptid);
-    let resp: model::social::ListPostsResponse = match get_proto(&path, &token, Some(&query)) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "list by author failed"),
-    };
+    let resp: model::social::ListPostsResponse =
+        match get_proto("/api/v1/social/timeline", &token, Some(&query)) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "list by author failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 
@@ -594,10 +595,7 @@ pub fn social_list_by_author(
 // Reactions
 // ---------------------------------------------------------------------------
 
-/// Note: the wire route is `/api/v1/social/posts/:id/react` — the
-/// legacy `/posts/` prefix is retained on the station alongside the
-/// `/moments/` family (handler.go preserves both). Once all clients
-/// are off `/posts/`, P4 will collapse the alias.
+/// Reactions use the canonical Moments route family.
 #[tauri::command]
 pub fn social_react(
     input: SocialReactInput,
@@ -622,7 +620,7 @@ pub fn social_react(
         post_id: input.post_id.clone(),
         kind: input.kind,
     };
-    let path = format!("/api/v1/social/posts/{}/react", input.post_id);
+    let path = format!("/api/v1/social/moments/{}/react", input.post_id);
     let resp: model::social::ReactToPostResponse = match post_proto(&path, &token, &req) {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "react failed"),
@@ -647,7 +645,7 @@ pub fn social_unreact(
         post_id: input.post_id.clone(),
         kind: input.kind,
     };
-    let path = format!("/api/v1/social/posts/{}/unreact", input.post_id);
+    let path = format!("/api/v1/social/moments/{}/unreact", input.post_id);
     let resp: model::social::UnreactToPostResponse = match post_proto(&path, &token, &req) {
         Ok(r) => r,
         Err(e) => return station_error_proto(e, "unreact failed"),
@@ -672,20 +670,27 @@ pub fn social_get_comments(
     if input.post_id.trim().is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "post_id is required", None);
     }
+    let limit = input.limit.unwrap_or(20);
+    if !(1..=100).contains(&limit) {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "comment limit must be between 1 and 100",
+            None,
+        );
+    }
     let mut query: Vec<(&str, String)> = Vec::new();
     if let Some(c) = input.cursor {
         if !c.is_empty() {
             query.push(("cursor", c));
         }
     }
-    if let Some(l) = input.limit {
-        query.push(("limit", l.to_string()));
-    }
+    query.push(("limit", limit.to_string()));
     let path = format!("/api/v1/social/moments/{}/comments", input.post_id);
-    let resp: model::social::GetCommentsResponse = match get_proto(&path, &token, Some(&query)) {
-        Ok(r) => r,
-        Err(e) => return station_error_proto(e, "get comments failed"),
-    };
+    let resp: model::social::ListMomentCommentsResponse =
+        match get_proto(&path, &token, Some(&query)) {
+            Ok(r) => r,
+            Err(e) => return station_error_proto(e, "get comments failed"),
+        };
     AppResult::success(resp.encode_to_vec())
 }
 

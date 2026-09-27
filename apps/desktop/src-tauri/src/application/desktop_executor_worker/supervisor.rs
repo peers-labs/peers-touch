@@ -1,6 +1,19 @@
-use super::fenced_executor::{CapabilityContract, ExecutionLease, FencedExecutor};
+use super::fenced_executor::{
+    CapabilityContract, ExecutionLease, FencedExecutor, ACCEPTANCE_BARRIER_APPLIED_BEFORE_RESULT,
+    ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE, ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT,
+    ACCEPTANCE_WORKER_INTERRUPTED, STATION_TAKEOVER_REQUIRED,
+};
 use super::local_executor::LocalCapabilityExecutor;
 use super::mcp_operation_executor::McpLifecycleExecutor;
+use super::operation_executor::{
+    ACCEPTANCE_BARRIER_BUSINESS_LEASE_BEFORE_TERMINAL as ACCEPTANCE_OPERATION_BUSINESS_LEASE_BEFORE_TERMINAL,
+    ACCEPTANCE_BARRIER_CLEANUP_LEASE_BEFORE_DEADLINE as ACCEPTANCE_OPERATION_CLEANUP_LEASE_BEFORE_DEADLINE,
+    ACCEPTANCE_BARRIER_DEADLINE_BEFORE_TERMINAL as ACCEPTANCE_OPERATION_DEADLINE_BEFORE_TERMINAL,
+    ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED as ACCEPTANCE_OPERATION_EFFECT_BEFORE_APPLIED,
+    ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT,
+    ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT,
+    ACCEPTANCE_BARRIER_STALE_FENCE_BEFORE_EVENT as ACCEPTANCE_OPERATION_STALE_FENCE_BEFORE_EVENT,
+};
 use super::operation_ledger::OperationLedger;
 use super::operation_worker::CapabilityOperationWorker;
 use super::receipt_ledger::{ReceiptLedger, ToolCallSideEffectCount};
@@ -11,9 +24,10 @@ use super::station_transport::{
 use crate::application::oauth2;
 use crate::domain::identity::ActiveSession;
 use crate::model::agent::{
-    CapabilityConstraints, CapabilityPermissionState, ClientCapability,
-    ClientCapabilityAdvertisement, ClientCapabilityLease, ClientCapabilityLeaseRevokeReason,
-    ClientPlatform, TakeOverCapabilityCleanupRequest, TakeOverCapabilityCleanupResponse,
+    CapabilityAcceptanceScenarioFamily, CapabilityConstraints, CapabilityPermissionKind,
+    CapabilityPermissionState, ClientCapability, ClientCapabilityAdvertisement,
+    ClientCapabilityLease, ClientCapabilityLeaseRevokeReason, ClientPlatform,
+    TakeOverCapabilityCleanupRequest, TakeOverCapabilityCleanupResponse,
     TakeOverCapabilityOperationRequest, TakeOverCapabilityOperationResponse,
 };
 use crate::state::AppState;
@@ -25,6 +39,15 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+const ACCEPTANCE_BARRIER_REVOKE_DISPATCH_RACE: &str = "revoke-dispatch-race";
+const ACCEPTANCE_BARRIER_CANCEL_BEFORE_CLEANUP: &str = "cancel-before-cleanup";
+const ACCEPTANCE_BARRIER_BUSINESS_LEASE_TERMINAL: &str = "business-lease-before-terminal";
+const ACCEPTANCE_BARRIER_DEADLINE_BEFORE_TERMINAL: &str = "execution-deadline-before-terminal";
+const ACCEPTANCE_BARRIER_RECEIPT_RECOVERY_TERMINAL: &str = "receipt-recovery-before-terminal";
+const ACCEPTANCE_BARRIER_STALE_FENCE_BEFORE_EVENT: &str = "stale-fence-before-event";
+const ACCEPTANCE_RECOVERY_RESTART_REQUIRED: &str =
+    "CAPABILITY_ACCEPTANCE_RECOVERY_RESTART_REQUIRED";
 
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const PULL_LIMIT: u32 = 32;
@@ -42,6 +65,7 @@ pub struct CapabilityWorkerSupervisor {
     thread: Mutex<Option<JoinHandle<()>>>,
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
     negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
+    acceptance_hooks: Arc<Mutex<HashMap<String, ExecutorAcceptanceHook>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,6 +128,13 @@ pub struct CapabilityOperationTarget {
     pub capability_session_id: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ExecutorAcceptanceHook {
+    scenario_handle: String,
+    barrier: String,
+    family: CapabilityAcceptanceScenarioFamily,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestedCapabilityNegativeControl {
     Unsupported,
@@ -113,6 +144,8 @@ pub enum RequestedCapabilityNegativeControl {
     CrossDevice,
     LeasePause,
     LeaseExpired,
+    PermissionDenied,
+    PermissionGranted,
 }
 
 impl RequestedCapabilityNegativeControl {
@@ -125,6 +158,8 @@ impl RequestedCapabilityNegativeControl {
             Self::CrossDevice => "crossDevice",
             Self::LeasePause => "leasePause",
             Self::LeaseExpired => "leaseExpired",
+            Self::PermissionDenied => "permissionDenied",
+            Self::PermissionGranted => "permissionGranted",
         }
     }
 
@@ -144,9 +179,12 @@ impl RequestedCapabilityNegativeControl {
             Self::Unauthorized => Some(CapabilityNegativeControl::Unauthorized),
             Self::SignatureTamper => Some(CapabilityNegativeControl::SignatureTamper),
             Self::CrossDevice => Some(CapabilityNegativeControl::CrossDevice),
-            Self::Unsupported | Self::SchemaMismatch | Self::LeasePause | Self::LeaseExpired => {
-                None
-            }
+            Self::Unsupported
+            | Self::SchemaMismatch
+            | Self::LeasePause
+            | Self::LeaseExpired
+            | Self::PermissionDenied
+            | Self::PermissionGranted => None,
         }
     }
 }
@@ -198,6 +236,8 @@ struct CapabilityNegativeControlRequest {
     control: RequestedCapabilityNegativeControl,
     capability_session_id_hash: String,
     cross_device_session_id: Option<String>,
+    capability_id: Option<String>,
+    permission_kind: Option<String>,
     response: mpsc::SyncSender<Result<CapabilityNegativeControlFacts, String>>,
 }
 
@@ -210,6 +250,7 @@ impl CapabilityWorkerSupervisor {
             thread: Mutex::new(None),
             snapshot: Arc::new(Mutex::new(Vec::new())),
             negative_controls: Arc::new(Mutex::new(VecDeque::new())),
+            acceptance_hooks: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -226,12 +267,20 @@ impl CapabilityWorkerSupervisor {
         let stopping = self.stopping.clone();
         let snapshot = self.snapshot.clone();
         let negative_controls = self.negative_controls.clone();
+        let acceptance_hooks = self.acceptance_hooks.clone();
         let surface = self.surface;
         *handle = Some(
             thread::Builder::new()
                 .name("client-capability-supervisor".to_string())
                 .spawn(move || {
-                    run_supervisor(state, surface, stopping, snapshot, negative_controls)
+                    run_supervisor(
+                        state,
+                        surface,
+                        stopping,
+                        snapshot,
+                        negative_controls,
+                        acceptance_hooks,
+                    )
                 })
                 .map_err(|error| format!("start client capability supervisor: {error}"))?,
         );
@@ -266,6 +315,64 @@ impl CapabilityWorkerSupervisor {
             .lock()
             .map(|snapshot| snapshot.clone())
             .map_err(|_| "client capability supervisor snapshot lock poisoned".to_string())
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn arm_acceptance_hook(
+        &self,
+        actor_ptid: &str,
+        scenario_handle: &str,
+        barrier: &str,
+        family: i32,
+    ) -> Result<(), String> {
+        let family = CapabilityAcceptanceScenarioFamily::try_from(family)
+            .map_err(|_| "CAPABILITY_ACCEPTANCE_EXECUTOR_HOOK_FAMILY_INVALID".to_string())?;
+        if !actor_ptid.starts_with("ptid:")
+            || scenario_handle.trim().is_empty()
+            || barrier.trim().is_empty()
+            || !matches!(
+                family,
+                CapabilityAcceptanceScenarioFamily::GovernedToolJ03
+                    | CapabilityAcceptanceScenarioFamily::McpJ04
+            )
+        {
+            return Err("CAPABILITY_ACCEPTANCE_EXECUTOR_HOOK_INVALID".to_string());
+        }
+        let mut hooks = self
+            .acceptance_hooks
+            .lock()
+            .map_err(|_| "capability acceptance hook registry lock poisoned".to_string())?;
+        if hooks.contains_key(actor_ptid) {
+            return Err("CAPABILITY_ACCEPTANCE_EXECUTOR_HOOK_ALREADY_ARMED".to_string());
+        }
+        hooks.insert(
+            actor_ptid.to_string(),
+            ExecutorAcceptanceHook {
+                scenario_handle: scenario_handle.to_string(),
+                barrier: barrier.to_string(),
+                family,
+            },
+        );
+        Ok(())
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn clear_acceptance_hook(
+        &self,
+        actor_ptid: &str,
+        scenario_handle: &str,
+    ) -> Result<(), String> {
+        let mut hooks = self
+            .acceptance_hooks
+            .lock()
+            .map_err(|_| "capability acceptance hook registry lock poisoned".to_string())?;
+        if hooks
+            .get(actor_ptid)
+            .is_some_and(|hook| hook.scenario_handle == scenario_handle)
+        {
+            hooks.remove(actor_ptid);
+        }
+        Ok(())
     }
 
     pub fn operation_target(&self, actor_ptid: &str) -> Result<CapabilityOperationTarget, String> {
@@ -324,6 +431,8 @@ impl CapabilityWorkerSupervisor {
         control: RequestedCapabilityNegativeControl,
         capability_session_id_hash: String,
         cross_device_session_id: Option<String>,
+        capability_id: Option<String>,
+        permission_kind: Option<String>,
     ) -> Result<CapabilityNegativeControlFacts, String> {
         if capability_session_id_hash.trim().is_empty() {
             return Err("AS_F10_CAPABILITY_SESSION_HASH_REQUIRED".to_string());
@@ -336,6 +445,8 @@ impl CapabilityWorkerSupervisor {
                 control,
                 capability_session_id_hash,
                 cross_device_session_id,
+                capability_id,
+                permission_kind,
                 response,
             });
         receiver
@@ -439,7 +550,10 @@ impl ActiveWorker {
             && token_digest(&self.context.token) == token_digest(&candidate.token)
     }
 
-    fn tick(&mut self) -> Result<(), String> {
+    fn tick(
+        &mut self,
+        acceptance_hooks: &Mutex<HashMap<String, ExecutorAcceptanceHook>>,
+    ) -> Result<(), String> {
         let now_ms = now_unix_ms();
         match lease_tick_decision(self.paused, lease_expiry_ms(&self.lease)?, now_ms) {
             LeaseTickDecision::Paused => return Ok(()),
@@ -468,6 +582,11 @@ impl ActiveWorker {
             self.operation_ledger.as_ref(),
             self.operation_executor.as_ref(),
         ) {
+            let hook = acceptance_hooks
+                .lock()
+                .map_err(|_| "capability acceptance hook registry lock poisoned".to_string())?
+                .get(&self.context.actor_ptid)
+                .cloned();
             CapabilityOperationWorker::new(
                 &self.context.station_url,
                 &self.context.device_id,
@@ -476,7 +595,22 @@ impl ActiveWorker {
                 operation_executor,
                 &transport,
             )
-            .tick_at(now_ms)?;
+            .tick_at_with_scenario_hook(now_ms, &mut |barrier, _| {
+                let Some(hook) = hook.as_ref() else {
+                    return Ok(false);
+                };
+                if !executor_acceptance_hook_matches(hook.family, &hook.barrier, barrier) {
+                    return Ok(false);
+                }
+                let response = transport
+                    .reach_acceptance_scenario_barrier(&hook.scenario_handle, &hook.barrier)?;
+                if response.scenario_handle != hook.scenario_handle
+                    || response.barrier != hook.barrier
+                {
+                    return Err("CAPABILITY_ACCEPTANCE_EXECUTOR_HOOK_RESPONSE_MISMATCH".to_string());
+                }
+                Ok(response.interrupted)
+            })?;
         }
         let response = transport.pull(
             &self.lease.capability_session_id,
@@ -501,7 +635,30 @@ impl ActiveWorker {
                 executor,
                 &transport,
             );
-            fenced.consume(envelope)?;
+            let hook = acceptance_hooks
+                .lock()
+                .map_err(|_| "capability acceptance hook registry lock poisoned".to_string())?
+                .get(&self.context.actor_ptid)
+                .cloned();
+            let consume_result = fenced.consume_with_scenario_hook(envelope, &mut |barrier, _| {
+                let Some(hook) = hook.as_ref() else {
+                    return Ok(false);
+                };
+                if !executor_acceptance_hook_matches(hook.family, &hook.barrier, barrier) {
+                    return Ok(false);
+                }
+                let response = transport
+                    .reach_acceptance_scenario_barrier(&hook.scenario_handle, &hook.barrier)?;
+                if response.scenario_handle != hook.scenario_handle
+                    || response.barrier != hook.barrier
+                {
+                    return Err("CAPABILITY_ACCEPTANCE_EXECUTOR_HOOK_RESPONSE_MISMATCH".to_string());
+                }
+                Ok(response.interrupted)
+            });
+            if let Err(error) = consume_result {
+                return Err(classify_worker_execution_error(error, hook.as_ref()));
+            }
             previous = advance_pull_cursor(previous, consumed_sequence, response_last_sequence)?;
         }
         self.pull_cursor = finalize_pull_cursor(previous, response_last_sequence, had_requests)?;
@@ -539,12 +696,67 @@ impl ActiveWorker {
     }
 }
 
+fn executor_acceptance_hook_matches(
+    family: CapabilityAcceptanceScenarioFamily,
+    configured: &str,
+    reached: &str,
+) -> bool {
+    match family {
+        CapabilityAcceptanceScenarioFamily::GovernedToolJ03 => {
+            configured == reached
+                || (configured == ACCEPTANCE_BARRIER_REVOKE_DISPATCH_RACE
+                    && reached == ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT)
+                || (configured == ACCEPTANCE_BARRIER_CANCEL_BEFORE_CLEANUP
+                    && reached == ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE)
+                || (matches!(
+                    configured,
+                    ACCEPTANCE_BARRIER_BUSINESS_LEASE_TERMINAL
+                        | ACCEPTANCE_BARRIER_DEADLINE_BEFORE_TERMINAL
+                        | ACCEPTANCE_BARRIER_RECEIPT_RECOVERY_TERMINAL
+                        | ACCEPTANCE_BARRIER_STALE_FENCE_BEFORE_EVENT
+                ) && reached == ACCEPTANCE_BARRIER_APPLIED_BEFORE_RESULT)
+        }
+        CapabilityAcceptanceScenarioFamily::McpJ04 => {
+            configured == reached
+                || (configured == ACCEPTANCE_BARRIER_CANCEL_BEFORE_CLEANUP
+                    && matches!(
+                        reached,
+                        ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE
+                            | ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT
+                    ))
+                || (matches!(
+                    configured,
+                    ACCEPTANCE_BARRIER_BUSINESS_LEASE_TERMINAL
+                        | ACCEPTANCE_BARRIER_DEADLINE_BEFORE_TERMINAL
+                        | ACCEPTANCE_BARRIER_STALE_FENCE_BEFORE_EVENT
+                ) && matches!(
+                    reached,
+                    ACCEPTANCE_OPERATION_BUSINESS_LEASE_BEFORE_TERMINAL
+                        | ACCEPTANCE_OPERATION_DEADLINE_BEFORE_TERMINAL
+                        | ACCEPTANCE_OPERATION_STALE_FENCE_BEFORE_EVENT
+                ))
+                || (configured == ACCEPTANCE_OPERATION_EFFECT_BEFORE_APPLIED
+                    && reached == ACCEPTANCE_OPERATION_EFFECT_BEFORE_APPLIED)
+                || (configured == ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT
+                    && reached == ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT)
+                || (configured == ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT
+                    && reached == ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT)
+                || (configured == ACCEPTANCE_OPERATION_CLEANUP_LEASE_BEFORE_DEADLINE
+                    && reached == ACCEPTANCE_OPERATION_CLEANUP_LEASE_BEFORE_DEADLINE)
+                || (configured == "operation-timeout-before-reconnect"
+                    && reached == ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT)
+        }
+        _ => false,
+    }
+}
+
 fn run_supervisor(
     state: Arc<AppState>,
     surface: ClientSurface,
     stopping: Arc<AtomicBool>,
     snapshot: Arc<Mutex<Vec<CapabilityWorkerSnapshot>>>,
     negative_controls: Arc<Mutex<VecDeque<CapabilityNegativeControlRequest>>>,
+    acceptance_hooks: Arc<Mutex<HashMap<String, ExecutorAcceptanceHook>>>,
 ) {
     let mut workers = HashMap::<String, ActiveWorker>::new();
     let mut enrollment_backoff: HashMap<String, std::time::Instant> = HashMap::new();
@@ -553,7 +765,7 @@ fn run_supervisor(
         process_negative_controls(&negative_controls, &mut workers);
         let mut replace_accounts = Vec::new();
         for worker in workers.values_mut() {
-            if let Err(error) = worker.tick() {
+            if let Err(error) = worker.tick(&acceptance_hooks) {
                 tracing::warn!(
                     actor = %worker.context.actor_ptid,
                     device = %worker.context.device_id,
@@ -656,6 +868,13 @@ fn emit_negative_control_from_worker(
     if request.control == RequestedCapabilityNegativeControl::LeaseExpired {
         return emit_lease_expired_control_from_worker(worker, request);
     }
+    if matches!(
+        request.control,
+        RequestedCapabilityNegativeControl::PermissionDenied
+            | RequestedCapabilityNegativeControl::PermissionGranted
+    ) {
+        return emit_permission_control_from_worker(worker, request);
+    }
 
     let before = execution_counters(worker)?;
     let Some(station_control) = request.control.station_control() else {
@@ -693,6 +912,98 @@ fn emit_negative_control_from_worker(
         lease_transition: None,
         after: execution_counters(worker)?,
     })
+}
+
+fn emit_permission_control_from_worker(
+    worker: &mut ActiveWorker,
+    request: &CapabilityNegativeControlRequest,
+) -> Result<CapabilityNegativeControlFacts, String> {
+    let capability_id = request
+        .capability_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "GFE1_PERMISSION_CAPABILITY_ID_REQUIRED".to_string())?;
+    let permission_kind = parse_permission_kind(
+        request
+            .permission_kind
+            .as_deref()
+            .ok_or_else(|| "GFE1_PERMISSION_KIND_REQUIRED".to_string())?,
+    )?;
+    let before = execution_counters(worker)?;
+    let source_lease = worker.lease.clone();
+    let mut capabilities = source_lease.capabilities.clone();
+    let mut matched = false;
+    for capability in &mut capabilities {
+        if capability.capability_id == capability_id {
+            capability.permission = match request.control {
+                RequestedCapabilityNegativeControl::PermissionDenied => {
+                    CapabilityPermissionState::Denied as i32
+                }
+                RequestedCapabilityNegativeControl::PermissionGranted => {
+                    CapabilityPermissionState::Granted as i32
+                }
+                _ => unreachable!("permission control already matched"),
+            };
+            capability.permission_kind = permission_kind as i32;
+            matched = true;
+        }
+    }
+    if !matched {
+        return Err("GFE1_PERMISSION_CAPABILITY_NOT_FOUND".to_string());
+    }
+
+    let replacement = worker
+        .transport()?
+        .register(advertisement_from_capabilities(
+            &worker.context,
+            capabilities,
+            worker.surface,
+        ))?;
+    ensure_lease_identity(&worker.context, &replacement)?;
+    if replacement.capability_session_id == source_lease.capability_session_id
+        || replacement.lease_id == source_lease.lease_id
+        || replacement.capability_set_hash == source_lease.capability_set_hash
+    {
+        return Err("GFE1_PERMISSION_REPLACEMENT_LEASE_MISMATCH".to_string());
+    }
+    worker.transport()?.revoke(
+        &source_lease,
+        ClientCapabilityLeaseRevokeReason::AdminPolicy,
+    )?;
+    worker.lease = replacement;
+    worker.pull_cursor = 0;
+
+    Ok(CapabilityNegativeControlFacts {
+        control: request.control.as_str(),
+        availability: "available",
+        unavailable_reason: None,
+        capability_session_id_hash: request.capability_session_id_hash.clone(),
+        worker_paused: None,
+        source_expires_at_ms: None,
+        before,
+        station: None,
+        source_station: None,
+        replay_station: None,
+        lease_transition: Some(lease_transition_facts(
+            &source_lease,
+            &worker.lease,
+            worker.pull_cursor,
+        )?),
+        after: execution_counters(worker)?,
+    })
+}
+
+fn parse_permission_kind(value: &str) -> Result<CapabilityPermissionKind, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "clipboard" => Ok(CapabilityPermissionKind::Clipboard),
+        "filesystem" => Ok(CapabilityPermissionKind::Filesystem),
+        "camera" => Ok(CapabilityPermissionKind::Camera),
+        "microphone" => Ok(CapabilityPermissionKind::Microphone),
+        "notifications" => Ok(CapabilityPermissionKind::Notifications),
+        "screen_capture" => Ok(CapabilityPermissionKind::ScreenCapture),
+        _ => Err("GFE1_PERMISSION_KIND_INVALID".to_string()),
+    }
 }
 
 fn matching_worker_account_id(
@@ -1084,15 +1395,15 @@ fn advertisement(
     contracts: &[CapabilityContract],
     surface: ClientSurface,
 ) -> ClientCapabilityAdvertisement {
-    ClientCapabilityAdvertisement {
-        advertisement_id: format!("capability_advertisement_{}", ulid::Ulid::new()),
-        platform: surface.platform() as i32,
-        capabilities: contracts
+    advertisement_from_capabilities(
+        context,
+        contracts
             .iter()
             .map(|contract| ClientCapability {
                 capability_id: contract.capability_id.clone(),
                 schema_version: contract.schema_version.clone(),
                 permission: CapabilityPermissionState::Granted as i32,
+                permission_kind: permission_kind_for_capability(&contract.capability_id) as i32,
                 constraints: Some(CapabilityConstraints {
                     max_request_bytes: contract.max_argument_bytes as u64,
                     max_result_bytes: contract.max_result_bytes as u64,
@@ -1100,6 +1411,19 @@ fn advertisement(
                 }),
             })
             .collect(),
+        surface,
+    )
+}
+
+fn advertisement_from_capabilities(
+    context: &WorkerContext,
+    capabilities: Vec<ClientCapability>,
+    surface: ClientSurface,
+) -> ClientCapabilityAdvertisement {
+    ClientCapabilityAdvertisement {
+        advertisement_id: format!("capability_advertisement_{}", ulid::Ulid::new()),
+        platform: surface.platform() as i32,
+        capabilities,
         connection_id: format!(
             "{}:{}:{}",
             surface.connection_prefix(),
@@ -1108,6 +1432,16 @@ fn advertisement(
         ),
         device_signing_key_id: context.signing_key_id.clone(),
         device_id: context.device_id.clone(),
+    }
+}
+
+fn permission_kind_for_capability(capability_id: &str) -> CapabilityPermissionKind {
+    match capability_id {
+        "filesystem.read" | "filesystem.list" | "shell.execute" => {
+            CapabilityPermissionKind::Filesystem
+        }
+        "clipboard.read" | "clipboard.write" => CapabilityPermissionKind::Clipboard,
+        _ => CapabilityPermissionKind::Unspecified,
     }
 }
 
@@ -1136,7 +1470,8 @@ fn local_contracts(
                 },
                 max_argument_bytes: MAX_ARGUMENT_BYTES,
                 max_result_bytes: MAX_RESULT_BYTES as usize,
-                supports_external_idempotency: false,
+                supports_external_idempotency: cfg!(feature = "acceptance-webdriver")
+                    && capability_id == "clipboard.read",
             }),
         );
     }
@@ -1296,8 +1631,22 @@ fn finalize_pull_cursor(
 fn requires_worker_replacement(error: &str) -> bool {
     error == "CLIENT_CAPABILITY_LEASE_EXPIRED"
         || error == "CLIENT_CAPABILITY_RENEW_RESPONSE_MISMATCH"
+        || error == ACCEPTANCE_RECOVERY_RESTART_REQUIRED
+        || error == STATION_TAKEOVER_REQUIRED
         || error.contains("Station rejected capability pull")
         || error.contains("Station rejected capability lease renewal")
+}
+
+fn classify_worker_execution_error(error: String, hook: Option<&ExecutorAcceptanceHook>) -> String {
+    if error == ACCEPTANCE_WORKER_INTERRUPTED
+        && hook.is_some_and(|hook| {
+            hook.family == CapabilityAcceptanceScenarioFamily::GovernedToolJ03
+                && hook.barrier == ACCEPTANCE_BARRIER_RECEIPT_RECOVERY_TERMINAL
+        })
+    {
+        return ACCEPTANCE_RECOVERY_RESTART_REQUIRED.to_string();
+    }
+    error
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1368,6 +1717,14 @@ mod tests {
         assert!(advance_pull_cursor(7, 11, 9).is_err());
         assert_eq!(finalize_pull_cursor(7, 0, false).unwrap(), 7);
         assert!(finalize_pull_cursor(7, 6, true).is_err());
+    }
+
+    #[test]
+    fn worker_replacement_preserves_station_fenced_recovery() {
+        assert!(requires_worker_replacement(STATION_TAKEOVER_REQUIRED));
+        assert!(requires_worker_replacement(
+            ACCEPTANCE_RECOVERY_RESTART_REQUIRED
+        ));
         assert!(requires_worker_replacement(
             "Station rejected capability pull with command error 30001"
         ));
@@ -1377,12 +1734,114 @@ mod tests {
     }
 
     #[test]
-    fn local_capability_advertisement_has_no_unimplemented_replay_claim() {
+    fn recovery_credential_interruption_restarts_only_that_worker() {
+        let recovery_hook = ExecutorAcceptanceHook {
+            scenario_handle: "scenario-1".to_string(),
+            barrier: ACCEPTANCE_BARRIER_RECEIPT_RECOVERY_TERMINAL.to_string(),
+            family: CapabilityAcceptanceScenarioFamily::GovernedToolJ03,
+        };
+        assert_eq!(
+            classify_worker_execution_error(
+                ACCEPTANCE_WORKER_INTERRUPTED.to_string(),
+                Some(&recovery_hook),
+            ),
+            ACCEPTANCE_RECOVERY_RESTART_REQUIRED,
+        );
+
+        let in_place_hook = ExecutorAcceptanceHook {
+            scenario_handle: "scenario-2".to_string(),
+            barrier: ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT.to_string(),
+            family: CapabilityAcceptanceScenarioFamily::GovernedToolJ03,
+        };
+        assert_eq!(
+            classify_worker_execution_error(
+                ACCEPTANCE_WORKER_INTERRUPTED.to_string(),
+                Some(&in_place_hook),
+            ),
+            ACCEPTANCE_WORKER_INTERRUPTED,
+        );
+    }
+
+    #[test]
+    fn local_capability_advertisement_exposes_only_implemented_replay_claims() {
         let contracts = local_contracts(ClientSurface::Desktop, "ptid:person:test").unwrap();
-        assert!(contracts
-            .iter()
-            .all(|contract| !contract.supports_external_idempotency));
+        assert!(contracts.iter().all(|contract| {
+            contract.supports_external_idempotency
+                == (cfg!(feature = "acceptance-webdriver")
+                    && contract.capability_id == "clipboard.read")
+        }));
         assert_eq!(contracts.len(), 6);
+    }
+
+    #[test]
+    fn acceptance_hook_maps_only_reviewed_tool_and_operation_boundaries() {
+        assert!(executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::GovernedToolJ03,
+            ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT,
+            ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT,
+        ));
+        assert!(executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::GovernedToolJ03,
+            ACCEPTANCE_BARRIER_REVOKE_DISPATCH_RACE,
+            ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT,
+        ));
+        assert!(!executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::GovernedToolJ03,
+            "binding-delete-dispatch-race",
+            ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT,
+        ));
+        assert!(executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::GovernedToolJ03,
+            ACCEPTANCE_BARRIER_CANCEL_BEFORE_CLEANUP,
+            ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE,
+        ));
+        for barrier in [
+            ACCEPTANCE_BARRIER_BUSINESS_LEASE_TERMINAL,
+            ACCEPTANCE_BARRIER_DEADLINE_BEFORE_TERMINAL,
+            ACCEPTANCE_BARRIER_RECEIPT_RECOVERY_TERMINAL,
+            ACCEPTANCE_BARRIER_STALE_FENCE_BEFORE_EVENT,
+        ] {
+            assert!(executor_acceptance_hook_matches(
+                CapabilityAcceptanceScenarioFamily::GovernedToolJ03,
+                barrier,
+                ACCEPTANCE_BARRIER_APPLIED_BEFORE_RESULT,
+            ));
+        }
+        assert!(executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::McpJ04,
+            ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT,
+            ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT,
+        ));
+        assert!(executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::McpJ04,
+            ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT,
+            ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT,
+        ));
+        assert!(executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::McpJ04,
+            ACCEPTANCE_OPERATION_CLEANUP_LEASE_BEFORE_DEADLINE,
+            ACCEPTANCE_OPERATION_CLEANUP_LEASE_BEFORE_DEADLINE,
+        ));
+        assert!(executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::McpJ04,
+            ACCEPTANCE_BARRIER_CANCEL_BEFORE_CLEANUP,
+            ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT,
+        ));
+        assert!(executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::McpJ04,
+            ACCEPTANCE_OPERATION_EFFECT_BEFORE_APPLIED,
+            ACCEPTANCE_OPERATION_EFFECT_BEFORE_APPLIED,
+        ));
+        assert!(!executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::GovernedToolJ03,
+            ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE,
+            ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT,
+        ));
+        assert!(!executor_acceptance_hook_matches(
+            CapabilityAcceptanceScenarioFamily::McpJ04,
+            ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE,
+            ACCEPTANCE_BARRIER_APPLIED_BEFORE_RESULT,
+        ));
     }
 
     #[test]

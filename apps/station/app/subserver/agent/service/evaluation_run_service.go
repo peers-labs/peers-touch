@@ -174,6 +174,9 @@ func (s *EvaluationService) CreateRun(
 			return err
 		},
 	)
+	if err == nil && response.GetRun() != nil && s.acceptance != nil {
+		err = s.acceptance.BindEvaluationRun(ptid, response.GetRun().GetRunId())
+	}
 	return response.GetRun(), err
 }
 
@@ -268,6 +271,14 @@ func (s *EvaluationService) CancelRun(
 		return nil, evaluationInvalid("run_id and expected_revision are required")
 	}
 	response := &model.CancelEvaluationRunResponse{}
+	if err := s.reachAcceptanceBarrier(
+		ctx,
+		ptid,
+		req.GetRunId(),
+		capabilityBarrierEvaluationCancel,
+	); err != nil {
+		return nil, err
+	}
 	err := s.executeMutation(
 		ctx,
 		ptid,
@@ -388,6 +399,14 @@ func (s *EvaluationService) RetryCases(
 	canonicalRequest := proto.Clone(req).(*model.RetryEvaluationCasesRequest)
 	canonicalRequest.CaseIds = selectedCaseIDs
 	response := &model.RetryEvaluationCasesResponse{}
+	if err := s.reachAcceptanceBarrier(
+		ctx,
+		ptid,
+		req.GetParentRunId(),
+		capabilityBarrierEvaluationRetryCreate,
+	); err != nil {
+		return nil, err
+	}
 	err := s.executeMutation(
 		ctx,
 		ptid,
@@ -409,11 +428,12 @@ func (s *EvaluationService) RetryCases(
 			}
 			parentStatus := model.EvaluationRunStatus(parent.Status)
 			if parentStatus != model.EvaluationRunStatus_EVALUATION_RUN_STATUS_FAILED &&
-				parentStatus != model.EvaluationRunStatus_EVALUATION_RUN_STATUS_PARTIAL {
+				parentStatus != model.EvaluationRunStatus_EVALUATION_RUN_STATUS_PARTIAL &&
+				parentStatus != model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCELLED {
 				return evaluationFailure(
 					model.EvaluationErrorCode_EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT,
 					http.StatusConflict,
-					"only failed or partial evaluation runs can be retried",
+					"only failed, partial, or cancelled evaluation runs can be retried",
 					false,
 					true,
 					"reload",
@@ -524,6 +544,22 @@ func (s *EvaluationService) RetryCases(
 			return err
 		},
 	)
+	if err == nil {
+		if err = s.reachAcceptanceBarrier(
+			ctx,
+			ptid,
+			req.GetParentRunId(),
+			capabilityBarrierEvaluationRetryReturn,
+		); err != nil {
+			return nil, err
+		}
+		if response.GetChildRun() != nil && s.acceptance != nil {
+			err = s.acceptance.BindEvaluationRun(
+				ptid,
+				response.GetChildRun().GetRunId(),
+			)
+		}
+	}
 	return response.GetChildRun(), err
 }
 
@@ -898,6 +934,15 @@ func (s *EvaluationService) validateFrozenEvaluationTarget(
 ) error {
 	if run == nil {
 		return evaluationTargetInvalid("", "", "run_snapshot_missing", nil)
+	}
+	if s.acceptance != nil &&
+		s.acceptance.EvaluationTargetInvalid(run.PTID, run.RunID) {
+		return evaluationTargetInvalid(
+			run.TargetAgentID,
+			run.ReadinessSnapshotID,
+			"acceptance_target_snapshot_invalid",
+			nil,
+		)
 	}
 	agent, err := repository.GetOwnedAgent(
 		ctx,
@@ -1362,9 +1407,8 @@ func evaluationRunRevisionConflict(
 		actual = run.Revision
 		runID = run.RunID
 	}
-	return evaluationRevisionConflict(
-		model.EvaluationErrorCode_EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT,
-		"run_id",
+	return errcode.NewVersionConflict(
+		"evaluation_run",
 		runID,
 		expected,
 		actual,

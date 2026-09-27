@@ -28,7 +28,7 @@ func (h *CapabilityAuthorityHandlers) HandleListManifests(
 	ctx context.Context,
 	req *model.ListCapabilityManifestsRequest,
 ) (*model.ListCapabilityManifestsResponse, error) {
-	manifests, err := h.authority.ListManifests(
+	manifests, issues, err := h.authority.ListManifestInventory(
 		ctx,
 		subjectActorID(ctx),
 		req.GetSourceKinds(),
@@ -36,7 +36,10 @@ func (h *CapabilityAuthorityHandlers) HandleListManifests(
 	if err != nil {
 		return nil, toHandlerError(err)
 	}
-	return &model.ListCapabilityManifestsResponse{Manifests: manifests}, nil
+	return &model.ListCapabilityManifestsResponse{
+		Manifests: manifests,
+		Issues:    issues,
+	}, nil
 }
 
 func (h *CapabilityAuthorityHandlers) HandleRetireManifest(

@@ -98,7 +98,37 @@ source "$ENV_FILE"
 
 BRANCH="${BRANCH:-${PT_DEPLOY_BRANCH:-main}}"
 
+acceptance_runtime_env_prefix() {
+  local environment="${PT_ACCEPTANCE_ENVIRONMENT:-}"
+  local scenario_control="${PT_AGENT_CAPABILITY_SCENARIO_CONTROL:-}"
+  local run_id="${PT_ACCEPTANCE_RUN_ID:-}"
+  if [[ -z "$environment" && -z "$scenario_control" && -z "$run_id" ]]; then
+    return
+  fi
+  if [[ "$PT_DEPLOY_ROLE" != "station" ]] \
+    || [[ "$environment" != "home-station" ]] \
+    || [[ "$scenario_control" != "1" ]] \
+    || [[ ! "$run_id" =~ ^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{32}$ ]]; then
+    echo "[ERROR] Invalid capability Acceptance runtime environment." >&2
+    echo "        Require station + home-station + enabled control + valid run ID." >&2
+    return 1
+  fi
+  printf \
+    'PT_ACCEPTANCE_ENVIRONMENT=%s PT_AGENT_CAPABILITY_SCENARIO_CONTROL=%s PT_ACCEPTANCE_RUN_ID=%s ' \
+    "$environment" \
+    "$scenario_control" \
+    "$run_id"
+}
+
 if [[ "$cmd" != "status" && "$cmd" != "logs" ]]; then
+  if ! ACCEPTANCE_RUNTIME_ENV_PREFIX="$(acceptance_runtime_env_prefix)"; then
+    exit 1
+  fi
+  if [[ -n "$ACCEPTANCE_RUNTIME_ENV_PREFIX" ]] \
+    && [[ -z "${PT_DEPLOY_RESTART_CMD:-}" ]]; then
+    echo "[ERROR] Acceptance runtime variables require a reviewed restart command." >&2
+    exit 1
+  fi
   if [[ "$PT_DEPLOY_ROLE" == "station" ]]; then
     machine_dev_script="$PROJECT_ROOT/tooling/scripts/local-dev/machine-dev.mjs"
     env_repo="${PT_ENV_REPO:-$(dirname "$PROJECT_ROOT")/env}"
@@ -166,9 +196,10 @@ case "$cmd" in
     # ═══ Deploy ═══
 
     if [[ "${PT_SOURCE_LEASE_HELD:-0}" != "1" ]]; then
-      echo "[0/4] Synchronizing exact Git source ..."
-      exec env PT_DEPLOY_ENV_FILE="$ENV_FILE" /bin/bash "$SOURCE_SYNC_SCRIPT" \
+      echo "[0/5] Synchronizing exact Git source ..."
+      exec /bin/bash "$SOURCE_SYNC_SCRIPT" \
         "$env_name" \
+        --environment-file "$ENV_FILE" \
         --branch "$BRANCH" \
         -- \
         /bin/bash "$SCRIPT_DIR/deploy.sh" "$@"
@@ -185,12 +216,19 @@ case "$cmd" in
     echo "═══════════════════════════════════════════════"
     echo ""
 
-    echo "[1/4] Verifying synchronized source ..."
+    echo "[1/5] Verifying synchronized source ..."
     ssh_run "git -C \$HOME/$PT_DEPLOY_PATH log --oneline -1"
 
-    echo "[2/4] Building ..."
+    echo "[2/5] Preparing stable dependencies ..."
+    if [[ -n "${PT_DEPLOY_DEPENDENCIES_CMD:-}" ]]; then
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_DEPENDENCIES_CMD"
+    else
+      echo "[INFO] No stable dependencies declared"
+    fi
+
+    echo "[3/5] Building ..."
     if [[ -n "${PT_DEPLOY_BUILD_CMD:-}" ]]; then
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && PEERS_TOUCH_BUILD_COMMIT=\$(git rev-parse --short=12 HEAD) PEERS_TOUCH_BUILD_LABEL=$BRANCH PEERS_TOUCH_BUILD_TIME=\$(date -u +%Y-%m-%dT%H:%M:%SZ) $PT_DEPLOY_BUILD_CMD"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && PEERS_TOUCH_BUILD_COMMIT=\$(git rev-parse HEAD) PEERS_TOUCH_BUILD_LABEL=$BRANCH PEERS_TOUCH_BUILD_TIME=\$(date -u +%Y-%m-%dT%H:%M:%SZ) $PT_DEPLOY_BUILD_CMD"
     else
       case "$PT_DEPLOY_ROLE" in
         station)
@@ -205,14 +243,14 @@ case "$cmd" in
       esac
     fi
 
-    echo "[3/4] Restarting $PT_DEPLOY_ROLE ..."
+    echo "[4/5] Restarting $PT_DEPLOY_ROLE ..."
     if [[ -n "${PT_DEPLOY_RESTART_CMD:-}" ]]; then
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && $PT_DEPLOY_RESTART_CMD"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && ${ACCEPTANCE_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}"
     else
       ssh_run "cd \$HOME/$PT_DEPLOY_PATH && systemctl --user restart peers-${PT_DEPLOY_ROLE}"
     fi
 
-    echo "[4/4] Health check ..."
+    echo "[5/5] Health check ..."
     sleep 2
     if [[ -n "${PT_DEPLOY_HEALTH_URL:-}" ]]; then
       if ssh_run "for i in \$(seq 1 30); do curl -fsS -m 3 $PT_DEPLOY_HEALTH_URL >/dev/null 2>&1 && exit 0; sleep 1; done; exit 1"; then

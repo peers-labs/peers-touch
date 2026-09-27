@@ -65,13 +65,19 @@ import {
   type PermissionKind,
 } from '../runtimes/nativeLifecycleBridge';
 import { reconcileActiveMessagingSession } from '../runtimes/messagingRuntime';
-import { dispatchOpenContactChat } from '../features/social/contactCommands';
 import { mobileCallManager } from '../features/call/callState';
+import { dispatchOpenContactChat } from '../features/social/contactCommands';
+import {
+  publishPrivateTextMoment,
+  readPrivateMomentsSnapshot,
+  readPrivateTextMoment,
+  reconcilePrivateMoments,
+} from '../runtimes/privateMomentsRuntime';
 import {
   acceptSocialFriendRequest,
   applySocialFriendRequestProjectionCheckpoints,
-  readSocialRuntimeProjection,
   readFederationContexts,
+  readSocialRuntimeProjection,
   readCurrentSocialProfile,
   reconcileSocialRuntime,
   searchSocialPeople,
@@ -118,7 +124,6 @@ import {
 import { mobileChatStorageProjectionRuntime } from '../runtimes/chatStorageRuntime';
 import {
   MobileMutationAdmissionError,
-  mobileMutationScopeKey,
   requireMobileMutationAdmission,
 } from '../runtimes/mutationAdmission';
 import {
@@ -149,6 +154,8 @@ import {
   getSecureStorageValue,
   setSecureStorageValue,
   type MessagingAccountInput,
+  type MessagingMutationScopeInput,
+  type PrivateSocialAudience,
 } from '../services/mobileCommands';
 import type { CommandOutcome } from '../services/gateways/gatewayTypes';
 import { readSharedBuildIdentity } from './buildIdentity';
@@ -156,6 +163,9 @@ import type {
   LifecycleWaitReadyInput,
   LifecycleWaitReadyOutput,
   MobileAcceptanceNamespace,
+  PrivateMomentPublishActionOutput,
+  PrivateMomentReadActionOutput,
+  PrivateMomentSnapshotActionOutput,
   PublicRecoveryState,
   PublicReliabilityDraft,
   PublicReliabilitySnapshot,
@@ -476,6 +486,7 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       runtimeStationPeerId: runtime.activeStationPeerId,
       deviceId: runtime.deviceId,
       social: runtime.social,
+      group: runtime.group,
       navigation: runtime.navigation,
     };
   },
@@ -764,20 +775,21 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     federations: await readFederationContexts(),
   }),
 
-  'social.people.search': async ({ query, federationId }) => {
-    const contextId = requireString(
-      federationId,
-      'social.people.search.federationId',
-    );
+  'social.people.search': async ({ query }) => {
     const results = await searchSocialPeople(
       requireString(query, 'social.people.search.query'),
-      contextId,
     );
-    return results.map((result) => ({
-      ptid: result.ptid,
-      federationId: contextId,
-      homeStationPeerId: result.homeStationPeerId,
-    }));
+    return results.map((searchResult) => {
+      const result = {
+        ...searchResult,
+        federationId: searchResult.federation?.handle ?? '',
+      };
+      return {
+        ptid: result.ptid,
+        federationId: result.federationId,
+        homeStationPeerId: result.homeStationPeerId,
+      };
+    });
   },
 
   'reliability.fixture.configure': async (input) => (
@@ -994,12 +1006,12 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
       };
     } else {
       try {
-        requireMobileMutationAdmission(
-          mobileMutationScopeKey(
-            session.session.stationPeerId,
-            session.session.actorPtid,
-          ),
-        );
+        requireMobileMutationAdmission([
+          session.session.stationPeerId,
+          session.session.actorPtid,
+          session.session.deviceId,
+          session.session.lifecycleGeneration,
+        ].join('|'));
         writeAdmission = { open: true, reason: null };
       } catch (error) {
         if (!(error instanceof MobileMutationAdmissionError)) throw error;
@@ -1041,6 +1053,36 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
   'social.reconcile': async () => reconcileSocialRuntime(),
 
   'social.projection.read': async () => readSocialRuntimeProjection(),
+
+  'moments.private.publishText': async (input) => sanitizePrivateMomentPublish(
+    await publishPrivateTextMoment({
+      draftId: requireString(
+        input?.draftId,
+        'moments.private.publishText.draftId',
+      ),
+      draftRevision: requirePositiveInteger(
+        input?.draftRevision,
+        'moments.private.publishText.draftRevision',
+      ),
+      text: requireString(input?.text, 'moments.private.publishText.text'),
+      audience: requirePrivateSocialAudience(input?.audience),
+    }),
+  ),
+
+  'moments.private.readText': async (input) => sanitizePrivateMomentRead(
+    await readPrivateTextMoment(
+      requireString(input?.postId, 'moments.private.readText.postId'),
+    ),
+  ),
+
+  'moments.private.reconcile': async () => {
+    await reconcilePrivateMoments();
+    return sanitizePrivateMomentSnapshot(readPrivateMomentsSnapshot());
+  },
+
+  'moments.private.snapshot': async () => (
+    sanitizePrivateMomentSnapshot(readPrivateMomentsSnapshot())
+  ),
 
   'moments.feed.read': async () => {
     const runtime = requireMomentsRuntime();
@@ -1649,6 +1691,58 @@ function requirePtidList(value: unknown, field: string): string[] {
   return value.map((item, index) => requirePtid(item, `${field}.${index}`));
 }
 
+function requirePrivateSocialAudience(value: unknown): PrivateSocialAudience {
+  if (!value || typeof value !== 'object') {
+    throw new Error('acceptance.mobile.invalidInput:moments.private.audience');
+  }
+  const audience = value as Record<string, unknown>;
+  const kind = requireString(
+    audience.kind,
+    'moments.private.audience.kind',
+  );
+  if (kind === 'FOLLOWERS' || kind === 'FRIENDS' || kind === 'SELF') {
+    return { kind };
+  }
+  if (kind === 'CIRCLE' || kind === 'GROUP') {
+    return {
+      kind,
+      targetId: requireString(
+        audience.targetId,
+        'moments.private.audience.targetId',
+      ),
+    };
+  }
+  if (kind === 'CUSTOM_ALLOW') {
+    return {
+      kind,
+      actorPtids: requirePtidList(
+        audience.actorPtids,
+        'moments.private.audience.actorPtids',
+      ),
+    };
+  }
+  if (kind === 'CUSTOM_DENY') {
+    const baseKind = requireString(
+      audience.baseKind,
+      'moments.private.audience.baseKind',
+    );
+    if (baseKind !== 'PUBLIC' && baseKind !== 'FOLLOWERS') {
+      throw new Error(
+        'acceptance.mobile.invalidInput:moments.private.audience.baseKind',
+      );
+    }
+    return {
+      kind,
+      baseKind,
+      actorPtids: requirePtidList(
+        audience.actorPtids,
+        'moments.private.audience.actorPtids',
+      ),
+    };
+  }
+  throw new Error('acceptance.mobile.invalidInput:moments.private.audience.kind');
+}
+
 function requirePositiveInteger(value: unknown, field: string): number {
   if (!Number.isSafeInteger(value) || Number(value) <= 0) {
     throw new Error(`acceptance.mobile.invalidInput:${field}`);
@@ -1674,6 +1768,75 @@ function requirePermissionKind(value: unknown): PermissionKind {
     return value;
   }
   throw new Error('acceptance.mobile.invalidInput:platform.permission.kind');
+}
+
+async function digestText(value: string | undefined): Promise<string | undefined> {
+  return value === undefined
+    ? undefined
+    : sha256Hex(new TextEncoder().encode(value));
+}
+
+async function sanitizePrivateMomentPublish(
+  value: Awaited<ReturnType<typeof publishPrivateTextMoment>>,
+): Promise<PrivateMomentPublishActionOutput> {
+  return {
+    draftId: value.draftId,
+    draftRevision: value.draftRevision,
+    generation: value.generation,
+    audienceKind: value.audienceKind,
+    state: value.state,
+    ...(value.postId ? { postId: value.postId } : {}),
+    ...(value.text ? { textSha256: await digestText(value.text) } : {}),
+    ...(value.errorCode === undefined ? {} : { errorCode: value.errorCode }),
+  };
+}
+
+async function sanitizePrivateMomentRead(
+  value: Awaited<ReturnType<typeof readPrivateTextMoment>>,
+): Promise<PrivateMomentReadActionOutput> {
+  return {
+    postId: value.postId,
+    contentId: value.contentId,
+    generation: value.generation,
+    authorPtid: value.authorPtid,
+    audienceKind: value.audienceKind,
+    state: value.state,
+    ...(value.content
+      ? {
+        contentKind: value.content.kind,
+        textSha256: await digestText(value.content.text),
+      }
+      : {}),
+    ...(value.errorCode ? { errorCode: value.errorCode } : {}),
+    ...(value.retryAfterSeconds === undefined
+      ? {}
+      : { retryAfterSeconds: value.retryAfterSeconds }),
+  };
+}
+
+function sanitizePrivateMomentSnapshot(
+  value: ReturnType<typeof readPrivateMomentsSnapshot>,
+): Promise<PrivateMomentSnapshotActionOutput> {
+  return Promise.all([
+    Promise.all(value.projections.map(sanitizePrivateMomentPublish)),
+    Promise.all(Object.values(value.postsById).map(sanitizePrivateMomentRead)),
+  ]).then(([publish, reads]) => ({
+    active: value.active,
+    reconciling: value.reconciling,
+    stationPeerId: value.stationPeerId,
+    actorPtid: value.actorPtid,
+    publish,
+    reads,
+    report: value.lastReport
+      ? {
+        endpointPrekeysAvailable: value.lastReport.endpointPrekeysAvailable,
+        submissionsProcessed: value.lastReport.submissionsProcessed,
+        submissionsUnknown: value.lastReport.submissionsUnknown,
+        submissionsTerminal: value.lastReport.submissionsTerminal,
+      }
+      : null,
+    errorPresent: value.errorMessage !== null,
+  }));
 }
 
 function requireNavigationIntent(value: unknown): MobileNavigationIntent {
@@ -2030,7 +2193,7 @@ function requireDevicePreferences(value: unknown): DevicePreferences {
   };
 }
 
-function requireMessagingAccount(): MessagingAccountInput {
+function requireMessagingAccount(): MessagingMutationScopeInput {
   const session = readActiveSessionProjection();
   if (!session?.stationPeerId || !session.actorPtid) {
     throw new Error('acceptance.mobile.activeMessagingSessionRequired');
@@ -2038,6 +2201,8 @@ function requireMessagingAccount(): MessagingAccountInput {
   return {
     stationPeerId: session.stationPeerId,
     actorPtid: session.actorPtid,
+    deviceId: session.deviceId,
+    lifecycleGeneration: session.lifecycleGeneration,
   };
 }
 

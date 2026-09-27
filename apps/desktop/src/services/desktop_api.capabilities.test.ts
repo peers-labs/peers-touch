@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+  AdvanceCapabilityAcceptanceScenarioClockResponseSchema,
   AgentCapabilityBindingSchema,
   CapabilityReadinessState,
   CapabilityReadinessSnapshotSchema,
@@ -236,6 +238,36 @@ describe('Desktop capability authority API', () => {
         error_code: 'AGENT_4009',
       },
     });
+  });
+
+  it('forwards the typed Acceptance scenario clock request', async () => {
+    const request = create(
+      AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+      {
+        scenarioHandle: 'scenario-evaluation-r09',
+        milestone: 'evaluation-cancel-ack-deadline',
+      },
+    );
+    resolveProto(toBinary(
+      AdvanceCapabilityAcceptanceScenarioClockResponseSchema,
+      create(AdvanceCapabilityAcceptanceScenarioClockResponseSchema, {
+        scenarioHandle: request.scenarioHandle,
+        milestone: request.milestone,
+      }),
+    ));
+
+    const response =
+      await api.advanceCapabilityAcceptanceScenarioClock(request);
+
+    expect(response.scenarioHandle).toBe(request.scenarioHandle);
+    expect(response.milestone).toBe(request.milestone);
+    expect(invoke).toHaveBeenCalledWith(
+      'agent_capability_acceptance_scenario_clock_advance',
+      { input: { requestBytes: Array.from(toBinary(
+        AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+        request,
+      )) } },
+    );
   });
 
   it('encodes generated Knowledge descriptor CRUD requests and responses', async () => {

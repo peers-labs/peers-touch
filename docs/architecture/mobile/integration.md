@@ -131,7 +131,7 @@ Delete after cutover:
 - Per-domain JSON compatibility adapters after Proto parity is proven.
 - Direct authenticated Web `fetch`, `MobileAuthSession.accessToken`, and
   caller-selected credential-bearing URLs.
-- Any business caller for a route declared in the CCU legacy inventory.
+- Any `/group-chat/*` or `/friend-chat/*` business caller.
 - Any alias, fallback, or dual-write path that preserves those retired owners.
 
 Deletion is part of the same domain cutover that proves parity. A second
@@ -147,7 +147,7 @@ target state.
 | Access/OAuth chain | `architecture/access-gates/station-access-gate-architecture.md` | Native browser/deep-link adapter and secure attempt material |
 | Runtime graph | `architecture/frontend-runtime/` | hard `dependsOn`, degradable `uses`, suspend/resume |
 | Work admission | Frontend Runtime `InteractionAdmission` | `commandRuntime` and Rust encrypted ledger |
-| Social/group projection | `architecture/social-runtime/` | `messagingRuntime` for Conversation projection under the shared event ingress |
+| Social/group projection | `architecture/social-runtime/` | `groupRuntime` as subordinate descriptor under shared event ingress |
 | Offline/reconcile semantics | `client/mobile/sync-protocol.md` | Mobile lifecycle and native wakeup |
 | Surface lifetime | UI Identity component-tree registry | active-only tabs and descriptor detail routes |
 | Member authority | AO-D10 Conversation member authority | Mobile Group action availability and readback |
@@ -283,8 +283,8 @@ private keys or enrollment state.
 | Boundary | Retain | Required replacement | Delete at the same cutover | Completion evidence |
 |---|---|---|---|---|
 | Access Gate | Station decision chain, typed built-ins, Rust OAuth coordinator | schema-bound generic action envelope and Station validation/finalization | client-selected submit routes and unknown-gate fallback | descriptor/submission hash match, stale-schema rejection, final decision readback |
-| Group member authority | AO-D10 commands, Conversation event/snapshot | Mobile Messaging consumer and generated error mapping | retired member-update and ownership-transfer callers are absent | exact command replay, stale epoch recovery, owner uniqueness, Mobile projection |
-| Social block | Canonical generated block/unblock/list/status, result lookup, durable Mobile resolver, ordered event, and Federation deny projection | retain the same owner contract | inventory-declared retired callers and aliases are absent | source complete; same-Station runtime proof remains in the current Plan, while cross-Station/Relay proof is deferred and unproven |
+| Group member authority | AO-D10 commands, Conversation event/snapshot | Mobile Group consumer and generated error mapping | one member-update and one ownership-transfer `/group-chat/*` caller | exact command replay, stale epoch recovery, owner uniqueness, Mobile projection |
+| Social block | Canonical generated block/unblock/list/status, result lookup, durable Mobile resolver, ordered event, and Federation deny projection | retain the same owner contract | retired `/friend-chat/*` callers and any compatibility alias are absent | source complete; same-Station runtime proof remains in the current Plan, while cross-Station/Relay proof is deferred and unproven |
 | Chat actions | Conversation command resolver, Engine encryption/object plane | actor-hide, moderation remove, and user-forward intents | legacy delete/forward semantics and optimistic shared completion | exact command/event readback, restart, recipient visibility, role denial |
 | Moments | Social audience/block policy, Secure Content encryption/grants | page/detail policy outcomes and Rust media staging | client-derived visibility and Web/native path transfer | filtered-empty versus empty, hidden/deleted, cancel/restart/limited-photo |
 | Settings | Station policy as read-only, device-local Station registry, Actor Profile privacy, Notification preferences, Social blocked users, device settings | dedicated Profile revision; aggregate atomic Notification revision; selected-owner save | generic account owner/placeholder, unrevisioned Profile mutation, single-category Notification mutation, false empty blocked-list projection | typed applied/unchanged/conflict snapshots, lost-response reconcile, restart, second-device behavior |

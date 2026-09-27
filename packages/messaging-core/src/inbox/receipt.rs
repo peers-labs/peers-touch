@@ -44,6 +44,7 @@ pub fn decode_device_receipt_payload(
         if cursor.encode_to_vec() != item.opaque_payload
             || cursor.conversation_id != item.conversation_id
             || cursor.reader_ptid.is_empty()
+            || cursor.reader_ptid == endpoint_ptid
             || cursor.last_read_sequence <= 0
         {
             return Err("messaging actor read cursor payload is invalid".to_string());
@@ -198,23 +199,6 @@ mod tests {
 
         assert!(matches!(
             decode_device_receipt_payload(&item, "ptid:alice", "alice-device").unwrap(),
-            DeviceReceiptPayload::ActorReadCursor(cursor)
-                if cursor.reader_ptid == "ptid:bob" && cursor.last_read_sequence == 7
-        ));
-    }
-
-    #[test]
-    fn decodes_same_actor_companion_read_cursor() {
-        let mut item = read_cursor_item();
-        item.recipient = Some(actor_device_ref("ptid:bob", "bob-companion-device"));
-
-        assert!(matches!(
-            decode_device_receipt_payload(
-                &item,
-                "ptid:bob",
-                "bob-companion-device"
-            )
-            .unwrap(),
             DeviceReceiptPayload::ActorReadCursor(cursor)
                 if cursor.reader_ptid == "ptid:bob" && cursor.last_read_sequence == 7
         ));

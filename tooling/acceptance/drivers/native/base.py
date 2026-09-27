@@ -10,6 +10,7 @@ from pathlib import Path
 class MouseAction(str, Enum):
     MOVE = "move"
     LEFT_DOWN = "left-down"
+    LEFT_DRAG = "left-drag"
     LEFT_UP = "left-up"
 
 
@@ -139,6 +140,36 @@ class NativeDesktopAdapter(ABC):
         self.activate_process(process_id)
         self.post_mouse(actions, point)
 
+    def drag_mouse(
+        self,
+        start: tuple[float, float],
+        end: tuple[float, float],
+        *,
+        duration_seconds: float = 0.3,
+        steps: int = 10,
+    ) -> None:
+        if duration_seconds <= 0:
+            raise ValueError("Native mouse drag duration must be positive")
+        if steps < 1:
+            raise ValueError("Native mouse drag steps must be positive")
+
+        interval_seconds = duration_seconds / (steps + 1)
+        current = start
+        self.post_mouse((MouseAction.MOVE,), start)
+        self.post_mouse((MouseAction.LEFT_DOWN,), start)
+        try:
+            time.sleep(interval_seconds)
+            for step in range(1, steps + 1):
+                fraction = step / steps
+                current = (
+                    start[0] + (end[0] - start[0]) * fraction,
+                    start[1] + (end[1] - start[1]) * fraction,
+                )
+                self.post_mouse((MouseAction.LEFT_DRAG,), current)
+                time.sleep(interval_seconds)
+        finally:
+            self.post_mouse((MouseAction.LEFT_UP,), current)
+
     @abstractmethod
     def post_key(
         self,
@@ -204,6 +235,13 @@ class NativeDesktopAdapter(ABC):
     ) -> NativeControlSnapshot | None:
         del process_id, path
         return None
+
+    def accept_media_capture_permission_to_process(
+        self,
+        process_id: int,
+    ) -> bool:
+        del process_id
+        return False
 
     @abstractmethod
     def focused_control(self, process_id: int) -> NativeControlSnapshot:

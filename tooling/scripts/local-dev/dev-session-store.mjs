@@ -21,6 +21,7 @@ import {
   DevSessionError,
   SESSION_KIND,
   SESSION_SCHEMA_VERSION,
+  TERMINAL_STATES,
   digestEvent,
   sessionFail,
   transitionSessionState,
@@ -33,6 +34,34 @@ export const MAX_SESSION_EVENT_BYTES = 1024 * 1024;
 
 const LOCK_TIMEOUT_MS = 5_000;
 const LOCK_KEYS = new Set(['pid', 'processStart', 'createdAt']);
+const TIMING_PHASES = {
+  implement: new Set([
+    'REPRODUCING',
+    'REPRODUCED',
+    'IMPLEMENTING',
+    'ACCEPTANCE_UPDATING',
+  ]),
+  test: new Set(['FOCUSED_CHECKING']),
+  functional: new Set([
+    'CHECKPOINTING',
+    'CHECKPOINTED',
+    'DEPLOYING',
+    'DEPLOYED',
+    'FUNCTIONAL_RUNNING',
+  ]),
+  acceptance: new Set([
+    'ACCEPTANCE_READY',
+    'FINAL_CHECKPOINTED',
+    'ACCEPTANCE_RUNNING',
+  ]),
+};
+const TIMING_EVIDENCE_CLASSES = [
+  'SOURCE_CHECK',
+  'STRUCTURAL_CHECK',
+  'UX_REVIEW',
+  'FUNCTIONAL_CHECK',
+  'ACCEPTANCE_PROOF',
+];
 
 function exactKeys(value, keys) {
   const actual = Object.keys(value);
@@ -49,6 +78,87 @@ function operationDate(options = {}) {
     sessionFail('INVALID_CLOCK', 'operation clock returned an invalid time');
   }
   return now;
+}
+
+function timingPhase(state) {
+  for (const [phase, states] of Object.entries(TIMING_PHASES)) {
+    if (states.has(state)) return phase;
+  }
+  return 'wait';
+}
+
+export function summarizeSessionJournal(events, observedAt) {
+  if (!Array.isArray(events) || events.length === 0) {
+    sessionFail(
+      'SESSION_JOURNAL_INVALID',
+      'Session timing requires at least one journal event',
+    );
+  }
+  for (const event of events) validateTransitionEvent(event);
+
+  const observed = operationDate({ now: observedAt });
+  const latest = events.at(-1);
+  const latestAt = new Date(latest.at);
+  const terminal = TERMINAL_STATES.has(latest.snapshot.state);
+  const end =
+    terminal || observed.getTime() < latestAt.getTime() ? latestAt : observed;
+  const completeness =
+    events[0].kind === 'COMPACTED_BASELINE' ? 'partial' : 'complete';
+  const phases = {
+    implement: 0,
+    test: 0,
+    functional: 0,
+    acceptance: 0,
+    wait: 0,
+  };
+  const evidence = Object.fromEntries(
+    TIMING_EVIDENCE_CLASSES.map((verificationClass) => [
+      verificationClass,
+      completeness === 'partial' ? 'UNKNOWN' : 'UNPROVEN',
+    ]),
+  );
+  let monotonic = true;
+
+  for (const [index, event] of events.entries()) {
+    const next = events[index + 1];
+    const intervalEnd = next ? new Date(next.at) : end;
+    const durationMs = intervalEnd.getTime() - Date.parse(event.at);
+    if (durationMs < 0) monotonic = false;
+    if (monotonic) phases[timingPhase(event.snapshot.state)] += durationMs;
+
+    const verification = event.snapshot.lastVerification;
+    if (
+      verification &&
+      TIMING_EVIDENCE_CLASSES.includes(verification.verificationClass)
+    ) {
+      evidence[verification.verificationClass] = verification.result;
+    }
+  }
+
+  if (!monotonic) {
+    return {
+      completeness: 'unknown',
+      startedAt: latest.snapshot.startedAt,
+      observedAt: end.toISOString(),
+      elapsedMs: null,
+      phaseMs: Object.fromEntries(
+        Object.keys(phases).map((phase) => [phase, null]),
+      ),
+      evidence,
+    };
+  }
+
+  return {
+    completeness,
+    startedAt: latest.snapshot.startedAt,
+    observedAt: end.toISOString(),
+    elapsedMs: Math.max(
+      0,
+      end.getTime() - Date.parse(latest.snapshot.startedAt),
+    ),
+    phaseMs: phases,
+    evidence,
+  };
 }
 
 function ensurePrivateDirectory(directory) {
@@ -443,6 +553,75 @@ function readAndRepair(paths) {
   return { events, session: reconcileSnapshot(paths, events, snapshot) };
 }
 
+function readWithoutRepair(paths, options = {}) {
+  const deadline = Date.now() + (options.lockTimeoutMs ?? LOCK_TIMEOUT_MS);
+  while (true) {
+    if (existsSync(paths.lock)) {
+      if (Date.now() >= deadline) {
+        sessionFail(
+          'SESSION_LOCKED',
+          'timed out waiting for Session writer',
+        );
+      }
+      sleep(50);
+      continue;
+    }
+
+    const hasEvents = existsSync(paths.events);
+    const hasSnapshot = existsSync(paths.session);
+    if ((!hasEvents || !hasSnapshot) && existsSync(paths.lock)) {
+      if (Date.now() >= deadline) {
+        sessionFail(
+          'SESSION_LOCKED',
+          'timed out waiting for Session writer',
+        );
+      }
+      sleep(50);
+      continue;
+    }
+    if (!hasEvents && !hasSnapshot) {
+      sessionFail('SESSION_UNAVAILABLE', 'Development Session does not exist');
+    }
+    if (!hasEvents) {
+      sessionFail(
+        'SESSION_JOURNAL_INVALID',
+        'Session snapshot exists without its journal',
+      );
+    }
+
+    const before = parseEvents(paths.events);
+    const snapshot = parseSnapshot(paths.session);
+    const after = parseEvents(paths.events);
+    if (
+      existsSync(paths.lock) ||
+      before.at(-1).eventDigest !== after.at(-1).eventDigest
+    ) {
+      if (Date.now() >= deadline) {
+        sessionFail(
+          'SESSION_LOCKED',
+          'timed out waiting for a stable Session read',
+        );
+      }
+      sleep(50);
+      continue;
+    }
+
+    const projected = materialize(after);
+    if (
+      snapshot !== null &&
+      snapshot.eventCount === projected.eventCount &&
+      snapshot.eventDigest === projected.eventDigest &&
+      stateEquals(snapshot.state, projected.state)
+    ) {
+      return { events: after, session: snapshot };
+    }
+    sessionFail(
+      'SESSION_PROJECTION_STALE',
+      'Session snapshot does not match its journal',
+    );
+  }
+}
+
 function assertIdentity(session, expected = {}) {
   const mismatches = {};
   for (const field of [
@@ -582,6 +761,52 @@ export function createSessionStore(initialState, options) {
   });
 }
 
+export function archiveSessionStore(options) {
+  return withSessionLock(options, (paths) => {
+    const { session } = readAndRepair(paths);
+    assertIdentity(session, options.expected);
+    if (!TERMINAL_STATES.has(session.state.state)) {
+      sessionFail(
+        'SESSION_ARCHIVE_INVALID',
+        'Only a terminal Development Session may be archived',
+        { state: session.state.state },
+      );
+    }
+    const archiveDirectory = path.join(
+      paths.directory,
+      'archive',
+      session.state.sessionId,
+    );
+    ensurePrivateDirectory(archiveDirectory);
+    const archivedSession = path.join(archiveDirectory, 'session.json');
+    const archivedEvents = path.join(archiveDirectory, 'events.ndjson');
+    if (existsSync(archivedSession) || existsSync(archivedEvents)) {
+      sessionFail(
+        'SESSION_ARCHIVE_CONFLICT',
+        'Development Session archive already exists',
+        { archiveDirectory },
+      );
+    }
+    renameSync(paths.events, archivedEvents);
+    try {
+      renameSync(paths.session, archivedSession);
+    } catch (error) {
+      renameSync(archivedEvents, paths.events);
+      throw error;
+    }
+    chmodSync(archivedEvents, 0o600);
+    chmodSync(archivedSession, 0o600);
+    syncDirectory(archiveDirectory);
+    syncDirectory(paths.directory);
+    return {
+      archiveDirectory,
+      eventDigest: session.eventDigest,
+      sessionId: session.state.sessionId,
+      state: session.state.state,
+    };
+  });
+}
+
 export function loadSessionStore(options) {
   return withSessionLock(options, (paths) => {
     const { session } = readAndRepair(paths);
@@ -590,7 +815,7 @@ export function loadSessionStore(options) {
   });
 }
 
-export function loadSessionStoreFromPath(sessionPath, options = {}) {
+function explicitSessionStorePaths(sessionPath) {
   const session = path.resolve(sessionPath);
   if (path.basename(session) !== 'session.json') {
     sessionFail(
@@ -598,12 +823,16 @@ export function loadSessionStoreFromPath(sessionPath, options = {}) {
       'Session handoff path must name session.json',
     );
   }
-  const paths = {
+  return {
     directory: path.dirname(session),
     session,
     events: path.join(path.dirname(session), 'events.ndjson'),
     lock: path.join(path.dirname(session), 'session.lock'),
   };
+}
+
+export function loadSessionStoreFromPath(sessionPath, options = {}) {
+  const paths = explicitSessionStorePaths(sessionPath);
   const now = operationDate(options);
   ensurePrivateDirectory(paths.directory);
   const release = acquireLock(paths.lock, now, options.lockTimeoutMs);
@@ -616,12 +845,33 @@ export function loadSessionStoreFromPath(sessionPath, options = {}) {
   }
 }
 
+export function readSessionJournalFromPath(sessionPath, options = {}) {
+  const paths = explicitSessionStorePaths(sessionPath);
+  const now = operationDate(options);
+  ensurePrivateDirectory(paths.directory);
+  const release = acquireLock(paths.lock, now, options.lockTimeoutMs);
+  try {
+    const result = readAndRepair(paths);
+    assertIdentity(result.session, options.expected);
+    return result;
+  } finally {
+    release();
+  }
+}
+
 export function readSessionJournal(options) {
   return withSessionLock(options, (paths) => {
     const { events, session } = readAndRepair(paths);
     assertIdentity(session, options.expected);
     return { events, session };
   });
+}
+
+export function inspectSessionJournal(options) {
+  const paths = sessionStorePaths(options);
+  const result = readWithoutRepair(paths, options);
+  assertIdentity(result.session, options.expected);
+  return result;
 }
 
 export function transitionSessionStore(options) {

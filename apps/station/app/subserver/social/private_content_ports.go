@@ -69,9 +69,7 @@ func newPrivateContentRecipientDirectory(
 	runtime *sharedfederation.Runtime,
 ) (*privateContentRecipientDirectory, error) {
 	if actors == nil || runtime == nil {
-		return nil, errors.New(
-			"Social private recipient directory requires Actor Identity and Federation",
-		)
+		return nil, nil
 	}
 	return &privateContentRecipientDirectory{
 		actors:  actors,
@@ -430,7 +428,8 @@ func (s privateContentStationSigner) AttestContentProofVerificationKey(
 }
 
 type privateContentAuthorSignatureVerifier struct {
-	actors privateContentActorCapabilities
+	actors             privateContentActorCapabilities
+	localStationPeerID string
 }
 
 func (v privateContentAuthorSignatureVerifier) Verify(
@@ -442,6 +441,7 @@ func (v privateContentAuthorSignatureVerifier) Verify(
 	signature []byte,
 ) error {
 	if v.actors == nil ||
+		strings.TrimSpace(v.localStationPeerID) == "" ||
 		sender == nil ||
 		sender.GetActor() == nil ||
 		len(canonical) == 0 ||
@@ -455,6 +455,9 @@ func (v privateContentAuthorSignatureVerifier) Verify(
 	)
 	if err != nil {
 		return err
+	}
+	if homeStationPeerID != v.localStationPeerID {
+		return errors.New("Social private author is not homed on this Station")
 	}
 	key, err := v.actors.ResolveVerifiedActorDeviceSigningKey(
 		ctx,
@@ -490,11 +493,12 @@ func resolvePrivateContentActorCapabilities() (
 	error,
 ) {
 	instance := server.GetOptions().SubserverInstances["actor_identity"]
+	if instance == nil {
+		return nil, nil
+	}
 	provider, ok := instance.(privateContentActorCapabilities)
-	if !ok || provider == nil {
-		return nil, errors.New(
-			"canonical Actor Identity capability is unavailable",
-		)
+	if !ok {
+		return nil, nil
 	}
 	return provider, nil
 }

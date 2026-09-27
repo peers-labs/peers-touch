@@ -253,10 +253,6 @@ message ActorProfile {
   int32 auto_expire_days = 27 [json_name = "auto_expire_days"];
   ActorRef ref = 28 [json_name = "ref"];
   uint64 profile_revision = 29 [json_name = "profile_revision"];
-  string federated_handle = 30 [json_name = "federated_handle"];
-  string home_station_peer_id = 31 [json_name = "home_station_peer_id"];
-  string home_station_domain = 32 [json_name = "home_station_domain"];
-  ActorVisibility discoverability = 33;
 }
 
 message UpdateProfileRequest {
@@ -273,7 +269,6 @@ message UpdateProfileRequest {
   optional string message_permission = 11 [json_name = "message_permission"];
   optional int32 auto_expire_days = 12 [json_name = "auto_expire_days"];
   uint64 observed_revision = 13 [json_name = "observed_revision"];
-  optional ActorVisibility discoverability = 14;
 }
 
 enum ProfileUpdateOutcome {

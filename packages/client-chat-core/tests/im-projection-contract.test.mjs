@@ -1,11 +1,18 @@
 import assert from 'node:assert/strict';
 
 import {
+  chatMediaKindFromMimeFilename,
   createAgentChatCache,
   mergeAgentMessages,
   projectIMConversations,
   projectIMMessages,
 } from '../dist/index.js';
+
+assert.equal(
+  chatMediaKindFromMimeFilename('audio/mp4; codecs=mp4a.40.2', 'voice.webm'),
+  'audio',
+);
+assert.equal(chatMediaKindFromMimeFilename('video/webm', 'voice.m4a'), 'video');
 
 const conversations = projectIMConversations([
   {

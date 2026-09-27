@@ -15,7 +15,7 @@ import {
 import { timestampMillis } from './socialNormalizers';
 import { FriendRequestState } from '../../gen/proto/domain/social/relationship_pb';
 import type {
-  SocialMessage,
+  FriendChatMessage,
   FriendChatSession,
   FriendRequest,
   SocialConversation,
@@ -139,7 +139,7 @@ export function projectMobileSocialIMConversation(conversation: SocialConversati
 
 export function projectMobileSocialIMMessage(
   conversationId: string,
-  message: SocialMessage,
+  message: FriendChatMessage,
 ): IMMessageProjection {
   return projectIMMessage({
     id: message.ulid ?? '',

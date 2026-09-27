@@ -51,7 +51,8 @@ vi.mock('../storage/desktopClientStorage', () => ({
 }));
 
 vi.mock('../services/desktop_api', () => ({
-  AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_ERROR_TYPE: 'TOOL_LOOP_BUDGET_EXHAUSTED',
+  AGENT_TOOL_LOOP_BUDGET_EXHAUSTED_ERROR_TYPE:
+    'TOOL_LOOP_BUDGET_EXHAUSTED',
   classifyAgentTurnTerminalEvent: (event: { event: string; data: Record<string, unknown> }) => {
     if (event.event === 'done') return 'completed';
     if (event.event === 'cancelled') return 'cancelled';

@@ -299,7 +299,7 @@ func (b *eventBus) PublishEphemeral(
 	if typing := cloned.GetTyping(); typing != nil {
 		if payload, err := json.Marshal(map[string]any{"sessionId": "mobile-social-activation", "runId": "typing-pre-fix", "hypothesisId": "J", "location": "apps/station/app/subserver/events/bus.go:PublishEphemeral", "msg": "[DEBUG] Typing event published to live subscribers", "data": map[string]any{"actorPtid": actorPTID, "conversationId": typing.GetSessionUlid(), "fromActorPtid": typing.GetFromActorPtid(), "typing": typing.GetTyping(), "subscriberCount": subscriberCount, "deliveredCount": deliveredCount}, "ts": time.Now().UnixMilli()}); err == nil {
 			go func() {
-				response, _ := http.Post("http://10.0.0.31:7784/event", "application/json", bytes.NewReader(payload))
+				response, _ := http.Post("http://192.0.2.12:7784/event", "application/json", bytes.NewReader(payload))
 				if response != nil {
 					_ = response.Body.Close()
 				}

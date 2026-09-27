@@ -77,15 +77,17 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		return err
 	}
 	composition, err := newCanonicalComposition(ctx, canonicalCompositionConfig{
-		database:                rds,
-		devices:                 newActorDeviceDirectory(rds),
-		actorHomes:              actorHomeStationDirectory{},
-		deviceInbox:             deviceInbox,
-		federation:              federationPort,
-		clock:                   clock,
-		ids:                     uuidGenerator{},
-		localStationID:          localStationID,
-		contentPreKeyPublishers: actorSigningKeyResolver{},
+		database:       rds,
+		devices:        newActorDeviceDirectory(rds),
+		actorHomes:     actorHomeStationDirectory{},
+		deviceInbox:    deviceInbox,
+		federation:     federationPort,
+		clock:          clock,
+		ids:            uuidGenerator{},
+		localStationID: localStationID,
+		contentPreKeyPublishers: actorSigningKeyResolver{
+			localStationID: localStationID,
+		},
 	})
 	if err != nil {
 		return err

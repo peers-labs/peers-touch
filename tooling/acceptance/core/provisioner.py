@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import subprocess
 import urllib.error
 import urllib.request
@@ -29,6 +30,8 @@ from .provisioning import (
     new_manifest,
 )
 
+PROFILE_SECRET_ENV_OVERRIDES = ("PT_AGENT_PROVIDER_API_KEY",)
+
 
 def load_env_file(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
@@ -47,6 +50,12 @@ def resolve_machine_profile_environment(
     require_identity_match: bool = True,
 ) -> tuple[str, Path, int, dict[str, str]]:
     root = (repo_root or REPO_ROOT).resolve()
+    configured_env_repo = os.environ.get("PT_ENV_REPO", "").strip()
+    env_repo = (
+        Path(configured_env_repo).expanduser().resolve()
+        if configured_env_repo
+        else root.parent / "env"
+    )
     machine_dev = (
         root
         / "tooling"
@@ -63,7 +72,7 @@ def resolve_machine_profile_environment(
                 "--workspace-root",
                 str(root),
                 "--env-repo",
-                str(root.parent / "env"),
+                str(env_repo),
             ],
             cwd=root,
             capture_output=True,
@@ -105,6 +114,10 @@ def resolve_machine_profile_environment(
         ) from error
 
     values = load_env_file(profile_file)
+    for field in PROFILE_SECRET_ENV_OVERRIDES:
+        injected = os.environ.get(field, "")
+        if injected:
+            values[field] = injected
     if (
         not isinstance(profile_name, str)
         or not profile_name

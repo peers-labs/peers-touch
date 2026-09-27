@@ -12,6 +12,9 @@ import type {
 import type {
   MobileOAuthProvider,
   OAuthPublicPhase,
+  PrivateSocialAudience,
+  PrivateSocialPublishState,
+  PrivateSocialReadState,
 } from '../services/mobileCommands';
 import type {
   NetworkState,
@@ -80,6 +83,10 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'social.contact.open',
   'social.reconcile',
   'social.projection.read',
+  'moments.private.publishText',
+  'moments.private.readText',
+  'moments.private.reconcile',
+  'moments.private.snapshot',
   'moments.feed.read',
   'moments.publish',
   'moments.react',
@@ -437,6 +444,12 @@ export interface MobileRuntimeScopeProjection {
     requestCount: number;
     messageThreadCount: number;
   };
+  group: {
+    stationPeerId: string | null;
+    actorPtid: string | null;
+    groupCount: number;
+    messageThreadCount: number;
+  };
   navigation: MobileNavigationProjection;
 }
 
@@ -449,6 +462,7 @@ export interface LifecycleScopeReadOutput {
   deviceId: string | null;
   runtimeStationPeerId: string | null;
   social: MobileRuntimeScopeProjection['social'];
+  group: MobileRuntimeScopeProjection['group'];
   navigation: MobileRuntimeScopeProjection['navigation'];
 }
 
@@ -684,13 +698,6 @@ export interface PublicMessagingProjection {
     name: string;
     ownerPtid: string;
     memberPtids: string[];
-    members: Array<{
-      ptid: string;
-      role: number;
-      homeStationPeerId: string;
-      muted: boolean;
-      mutedUntilUnixMs?: number;
-    }>;
     membershipEpoch: number;
     mlsEpoch: number;
     active: boolean;
@@ -894,7 +901,6 @@ export interface SocialRequestSendActionInput {
 
 export interface SocialPeopleSearchActionInput {
   query: string;
-  federationId: string;
 }
 
 export interface FederationContextReadOutput {
@@ -909,6 +915,57 @@ export interface PublicActorSearchResult {
 
 export interface SocialRequestAcceptActionInput {
   requestId: string;
+}
+
+export interface PrivateMomentPublishActionInput {
+  draftId: string;
+  draftRevision: number;
+  text: string;
+  audience: PrivateSocialAudience;
+}
+
+export interface PrivateMomentPublishActionOutput {
+  draftId: string;
+  draftRevision: number;
+  generation: number;
+  audienceKind: PrivateSocialAudience['kind'];
+  state: PrivateSocialPublishState;
+  postId?: string;
+  textSha256?: string;
+  errorCode?: number;
+}
+
+export interface PrivateMomentReadActionInput {
+  postId: string;
+}
+
+export interface PrivateMomentReadActionOutput {
+  postId: string;
+  contentId: string;
+  generation: string;
+  authorPtid: string;
+  audienceKind: string;
+  state: PrivateSocialReadState;
+  contentKind?: 'TEXT';
+  textSha256?: string;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+}
+
+export interface PrivateMomentSnapshotActionOutput {
+  active: boolean;
+  reconciling: boolean;
+  stationPeerId: string | null;
+  actorPtid: string | null;
+  publish: PrivateMomentPublishActionOutput[];
+  reads: PrivateMomentReadActionOutput[];
+  report: {
+    endpointPrekeysAvailable: number;
+    submissionsProcessed: number;
+    submissionsUnknown: number;
+    submissionsTerminal: number;
+  } | null;
+  errorPresent: boolean;
 }
 
 export interface PublicMomentProjection {
@@ -998,6 +1055,7 @@ export interface PublicNotificationPreferences {
 
 export interface SettingsNotificationUpdateActionInput
   extends PublicNotificationPreference {}
+
 
 export interface CleanupOutput {
   oauthPurge: OAuthPurgeOutput;
@@ -1253,6 +1311,22 @@ export interface MobileAcceptanceActionContract {
   'social.projection.read': {
     input: undefined;
     output: PublicSocialRuntimeProjection;
+  };
+  'moments.private.publishText': {
+    input: PrivateMomentPublishActionInput;
+    output: PrivateMomentPublishActionOutput;
+  };
+  'moments.private.readText': {
+    input: PrivateMomentReadActionInput;
+    output: PrivateMomentReadActionOutput;
+  };
+  'moments.private.reconcile': {
+    input: undefined;
+    output: PrivateMomentSnapshotActionOutput;
+  };
+  'moments.private.snapshot': {
+    input: undefined;
+    output: PrivateMomentSnapshotActionOutput;
   };
   'moments.feed.read': {
     input: undefined;

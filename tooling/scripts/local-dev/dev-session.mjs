@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -15,7 +16,7 @@ import path from 'node:path';
 import {
   isDirectInvocation,
   repoRoot,
-  workspaceRuntimePath,
+  workspaceStatePath,
   workspaceWorkflowPath,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
@@ -23,12 +24,14 @@ import { loadPlanPackage } from '../plan/plan-package.mjs';
 import { resolveWorkspacePlanBinding } from '../plan/workspace-plan-binding.mjs';
 import { canonicalize, isObject } from './dev-work-schema.mjs';
 import { requireActiveDeclaration } from './dev-work-ledger.mjs';
+import { inspectGitWorkspace } from './git-workspace.mjs';
 import {
   DevSessionError,
   createInitialSessionState,
   sessionFail,
 } from './dev-session-schema.mjs';
 import {
+  archiveSessionStore,
   createSessionStore,
   loadSessionStore,
   readSessionJournal,
@@ -50,6 +53,7 @@ export {
 export {
   MAX_SESSION_EVENTS,
   MAX_SESSION_EVENT_BYTES,
+  archiveSessionStore,
   createTransitionEvent,
   createSessionStore,
   loadSessionStore,
@@ -365,6 +369,22 @@ export function statusDevelopmentSession(options) {
   });
 }
 
+export function archiveDevelopmentSession(options) {
+  const workspaceRoot = path.resolve(options.workspaceRoot ?? repoRoot);
+  const workspaceId = options.workspaceId ?? workspaceIdForRoot(workspaceRoot);
+  if (typeof options.sessionId !== 'string' || options.sessionId.length === 0) {
+    sessionFail('INVALID_ARGUMENT', 'archive requires --session');
+  }
+  return archiveSessionStore({
+    ...storeOptions({ ...options, workspaceRoot }, workspaceId),
+    expected: {
+      workItemId: options.workItemId,
+      workspaceId,
+      sessionId: options.sessionId,
+    },
+  });
+}
+
 export async function transitionDevelopmentSession(options, dependencies = {}) {
   if (options.to === 'FUNCTIONAL_PASS') {
     sessionFail(
@@ -415,14 +435,22 @@ function functionalPassTransitions(
   ) {
     sessionFail('INVALID_ARGUMENT', 'functional result commit requires a reason');
   }
-  const updates = functionalResultUpdates(
-    current,
-    options,
-    declaration,
-    plan,
-    runnerResult,
-    options.inspectSource ?? actualSource,
-  );
+  const updates = options.taskResultRef
+    ? sealedTaskFunctionalResultUpdates(
+        current,
+        options,
+        declaration,
+        plan,
+        options.inspectSource ?? actualSource,
+      )
+    : functionalResultUpdates(
+        current,
+        options,
+        declaration,
+        plan,
+        runnerResult,
+        options.inspectSource ?? actualSource,
+      );
   const verification = updates.verification;
 
   if (current.state !== 'FUNCTIONAL_RUNNING') {
@@ -486,6 +514,311 @@ function canonicalDigest(value) {
     .digest('hex');
 }
 
+export function validateTaskRuntimeSourceProjection(
+  result,
+  declaration,
+  plan,
+  workspaceRoot,
+) {
+  if (result?.kind !== 'secure-content-development-result-aggregate') {
+    return null;
+  }
+  if (
+    result.controlHead !== declaration.sourceHead ||
+    result.sourceCommit !== declaration.sourceHead ||
+    typeof result.runtimeSourceCommit !== 'string' ||
+    !/^[0-9a-f]{40}$/.test(result.runtimeSourceCommit) ||
+    !Number.isInteger(result.sourceTransitionCount) ||
+    result.sourceTransitionCount < 0 ||
+    typeof result.sourceProjectionDigest !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(result.sourceProjectionDigest)
+  ) {
+    return 'sourceProjection';
+  }
+  const checked = spawnSync(
+    'python3',
+    [
+      '-m',
+      'tooling.scripts.plan_lifecycle_source',
+      '--repo-root',
+      workspaceRoot,
+      '--plan',
+      plan.path,
+      '--runtime-source',
+      result.runtimeSourceCommit,
+      '--control-head',
+      result.controlHead,
+    ],
+    {
+      cwd: workspaceRoot,
+      encoding: 'utf8',
+    },
+  );
+  if (checked.status !== 0) return 'sourceProjection';
+  try {
+    const projection = JSON.parse(checked.stdout);
+    if (
+      projection.runtimeSourceCommit !== result.runtimeSourceCommit ||
+      projection.controlHead !== result.controlHead ||
+      projection.transitionCount !== result.sourceTransitionCount ||
+      projection.transitionDigest !== result.sourceProjectionDigest
+    ) {
+      return 'sourceProjection';
+    }
+  } catch {
+    return 'sourceProjection';
+  }
+  return null;
+}
+
+function sealedTaskFunctionalResultUpdates(
+  current,
+  options,
+  declaration,
+  plan,
+  inspectSource,
+) {
+  const expectedGates =
+    plan.acceptance?.closures?.[plan.currentTask.closureId] ?? [];
+  if (!Array.isArray(expectedGates) || expectedGates.length !== 0) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'task result references are allowed only when the current closure has no formal Gates',
+    );
+  }
+  const resultRef = options.taskResultRef;
+  if (
+    typeof resultRef !== 'string' ||
+    resultRef === '' ||
+    path.isAbsolute(resultRef) ||
+    resultRef.includes('\\') ||
+    resultRef.split('/').some((part) => ['', '.', '..'].includes(part))
+  ) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'task functional result reference is invalid',
+    );
+  }
+  let developmentRoot;
+  try {
+    developmentRoot = realpathSync(path.join(
+      workspaceStatePath({
+        home: options.home,
+        workspaceId: current.workspaceId,
+      }),
+      'development',
+    ));
+  } catch (error) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'workspace development result root is unavailable',
+      { cause: String(error) },
+    );
+  }
+  const expectedPath = path.resolve(developmentRoot, resultRef);
+  let resultPath;
+  let bytes;
+  try {
+    resultPath = realpathSync(expectedPath);
+    const metadata = lstatSync(resultPath);
+    if (
+      resultPath !== expectedPath ||
+      !containedPath(developmentRoot, resultPath) ||
+      !metadata.isFile() ||
+      metadata.isSymbolicLink() ||
+      (process.platform !== 'win32' && metadata.mode & 0o077)
+    ) {
+      sessionFail(
+        'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+        'task functional result is not an owner-only regular file',
+      );
+    }
+    bytes = readFileSync(resultPath);
+  } catch (error) {
+    if (error instanceof DevSessionError) throw error;
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'task functional result is unavailable',
+      { cause: String(error) },
+    );
+  }
+  let result;
+  try {
+    result = JSON.parse(bytes.toString('utf8'));
+  } catch (error) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'task functional result is not valid JSON',
+      { cause: String(error) },
+    );
+  }
+  const field = (camel, snake) => {
+    const camelValue = result?.[camel];
+    const snakeValue = result?.[snake];
+    if (
+      camelValue !== undefined &&
+      snakeValue !== undefined &&
+      camelValue !== snakeValue
+    ) {
+      sessionFail(
+        'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+        `task functional result has conflicting ${camel}/${snake} fields`,
+      );
+    }
+    return camelValue ?? snakeValue;
+  };
+  const resultDigestField =
+    result?.resultDigest !== undefined ? 'resultDigest' : 'result_digest';
+  const resultDigest = result?.[resultDigestField];
+  const unsigned = { ...result };
+  delete unsigned[resultDigestField];
+  const completedAt = field('completedAt', 'completed_at');
+  const verificationClass = field('verificationClass', 'verification_class');
+  const invalid = [];
+  if (!isObject(result)) invalid.push('result');
+  if (typeof result?.kind !== 'string' || result.kind === '') invalid.push('kind');
+  if (field('workspaceId', 'workspace_id') !== current.workspaceId) {
+    invalid.push('workspaceId');
+  }
+  if (field('taskId', 'task_id') !== plan.currentTask.taskId) {
+    invalid.push('taskId');
+  }
+  if (field('workstreamId', 'workstream_id') !== plan.currentTask.workstreamId) {
+    invalid.push('workstreamId');
+  }
+  if (field('sourceCommit', 'source_commit') !== declaration.sourceHead) {
+    invalid.push('sourceCommit');
+  }
+  if (
+    result?.status !== 'PASS' &&
+    result?.result !== 'PASS'
+  ) {
+    invalid.push('result');
+  }
+  if (
+    verificationClass !== undefined &&
+    verificationClass !== 'FUNCTIONAL_CHECK'
+  ) {
+    invalid.push('verificationClass');
+  }
+  if (
+    typeof resultDigest !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(resultDigest) ||
+    canonicalDigest(unsigned) !== resultDigest
+  ) {
+    invalid.push('resultDigest');
+  }
+  const completedAtMilliseconds = Date.parse(completedAt);
+  if (
+    typeof completedAt !== 'string' ||
+    !Number.isFinite(completedAtMilliseconds) ||
+    completedAtMilliseconds < Date.parse(current.startedAt)
+  ) {
+    invalid.push('completedAt');
+  }
+  if (
+    result?.planId !== undefined &&
+    result.planId !== plan.manifest.planId
+  ) {
+    invalid.push('planId');
+  }
+  const projectionFailure = validateTaskRuntimeSourceProjection(
+    result,
+    declaration,
+    plan,
+    path.resolve(options.workspaceRoot ?? repoRoot),
+  );
+  if (projectionFailure !== null) invalid.push(projectionFailure);
+  if (invalid.length > 0) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'task functional result contract or identity is invalid',
+      { invalid },
+    );
+  }
+  const actual = inspectSource(plan.repoRoot);
+  if (
+    actual.commit !== declaration.sourceHead ||
+    actual.branch !== declaration.branch ||
+    actual.clean !== true ||
+    actual.stable !== true
+  ) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'task functional result source no longer matches clean Git',
+      {
+        actualCommit: actual.commit,
+        declarationSourceHead: declaration.sourceHead,
+        actualBranch: actual.branch,
+        declarationBranch: declaration.branch,
+        clean: actual.clean,
+        stable: actual.stable,
+      },
+    );
+  }
+  const sourceArtifactDigest = createHash('sha256').update(bytes).digest('hex');
+  const bundle = {
+    artifactKind: 'development-task-functional-evidence',
+    schemaVersion: 1,
+    workspaceId: current.workspaceId,
+    workItemId: current.workItemId,
+    planId: plan.manifest.planId,
+    taskId: plan.currentTask.taskId,
+    closureId: plan.currentTask.closureId,
+    journeyId: current.journeyId,
+    sourceCommit: declaration.sourceHead,
+    runtimeSourceCommit:
+      result.runtimeSourceCommit ?? declaration.sourceHead,
+    sourceProjectionDigest:
+      result.sourceProjectionDigest ?? null,
+    taskResult: {
+      path: resultRef,
+      sha256: sourceArtifactDigest,
+      resultDigest,
+      kind: result.kind,
+    },
+  };
+  const bundleBytes = Buffer.from(
+    `${JSON.stringify(canonicalize(bundle), null, 2)}\n`,
+  );
+  const artifactDigest = createHash('sha256').update(bundleBytes).digest('hex');
+  const sealedDirectory = path.join(
+    workspaceWorkflowPath(current.workItemId, {
+      home: options.home,
+      repoRoot: plan.repoRoot,
+      workspaceId: current.workspaceId,
+    }),
+    'checks',
+  );
+  return {
+    actualSource: actual,
+    seal: {
+      path: path.join(
+        sealedDirectory,
+        `functional-result-${artifactDigest}.json`,
+      ),
+      bytes: bundleBytes,
+    },
+    source: current.source,
+    runtimeBindingRef: current.runtimeBindingRef,
+    verification: {
+      id: `task-result-${resultDigest.slice(0, 12)}`,
+      verificationClass: 'FUNCTIONAL_CHECK',
+      result: 'PASS',
+      startedAt: new Date(completedAtMilliseconds).toISOString(),
+      durationMs: 0,
+      artifactRefs: [resultRef],
+      commandDigest: resultDigest,
+      sourceCommit: actual.commit,
+      journeyId: current.journeyId,
+      runtimeBindingDigest: canonicalDigest({
+        resultDigest,
+        runtimeBindingRef: current.runtimeBindingRef,
+      }),
+    },
+  };
+}
+
 function resultStartedAt(runId) {
   const match =
     /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{6})Z(?:-[0-9a-f]+)?$/
@@ -506,49 +839,7 @@ function containedPath(root, candidate) {
     relative !== '..' && !path.isAbsolute(relative);
 }
 
-function gitStatus(workspaceRoot) {
-  return execFileSync(
-    'git',
-    ['status', '--porcelain=v2', '--branch', '--untracked-files=all'],
-    {
-      cwd: workspaceRoot,
-      encoding: 'utf8',
-    },
-  );
-}
-
-function actualSource(workspaceRoot) {
-  const firstStatus = gitStatus(workspaceRoot);
-  const [commit, tree] = execFileSync(
-    'git',
-    ['show', '-s', '--format=%H%n%T', 'HEAD'],
-    {
-      cwd: workspaceRoot,
-      encoding: 'utf8',
-    },
-  ).trim().split('\n');
-  const secondStatus = gitStatus(workspaceRoot);
-  const branch =
-    secondStatus
-      .split('\n')
-      .find((line) => line.startsWith('# branch.head '))
-      ?.slice('# branch.head '.length) ?? '';
-  const statusCommit =
-    secondStatus
-      .split('\n')
-      .find((line) => line.startsWith('# branch.oid '))
-      ?.slice('# branch.oid '.length) ?? '';
-  const entries = secondStatus
-    .split('\n')
-    .filter((line) => line !== '' && !line.startsWith('# '));
-  return {
-    commit,
-    tree,
-    branch,
-    clean: entries.length === 0,
-    stable: firstStatus === secondStatus && statusCommit === commit,
-  };
-}
+const actualSource = inspectGitWorkspace;
 
 function sameCanonical(left, right) {
   return JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right));
@@ -667,27 +958,17 @@ function normalizeStandardizedResult(
     );
   }
   const isStaticResult =
+    result.traceability?.status === 'not-required' &&
     result.cleanupStatus === 'not-required' &&
     result.cleanupArtifact === undefined;
   if (isStaticResult) {
     const artifacts = [];
-    const emitsSourceEvidence =
+    if (
       result.sourceArtifact !== undefined ||
       result.sourceArtifactKind !== undefined ||
       result.evidenceGateId !== undefined ||
-      result.evidenceStatus !== undefined;
-    if (
-      (!emitsSourceEvidence &&
-        result.traceability?.status !== 'not-required') ||
-      (emitsSourceEvidence &&
-        result.traceability?.status !== 'complete')
+      result.evidenceStatus !== undefined
     ) {
-      sessionFail(
-        'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
-        'static Development Gate traceability is inconsistent',
-      );
-    }
-    if (emitsSourceEvidence) {
       if (
         result.sourceArtifactKind !== 'acceptance-gate-evidence-report' ||
         result.evidenceGateId !== result.id ||
@@ -811,19 +1092,129 @@ function normalizeStandardizedResult(
 
 const RUNNER_RESULT = Symbol('development-runner-result');
 
+function runTaskFunctionalChecks(
+  options,
+  plan,
+  declaration,
+  workspaceRoot,
+  inspectSource = actualSource,
+  spawnTaskCheck = spawnSync,
+) {
+  const checks = plan.currentTask.checks.filter(
+    (check) => check.verificationClass === 'FUNCTIONAL_CHECK',
+  );
+  if (checks.length === 0) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'current Task has no FUNCTIONAL_CHECK command',
+    );
+  }
+  const before = inspectSource(workspaceRoot);
+  if (
+    before.commit !== declaration.sourceHead ||
+    before.branch !== declaration.branch ||
+    before.stable !== true ||
+    !/^(?:clean|sha256:[0-9a-f]{64})$/.test(before.workspaceDigest ?? '')
+  ) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'Task functional checks require a stable declared workspace',
+      {
+        sourceCommit: before.commit ?? null,
+        declarationSourceHead: declaration.sourceHead,
+        sourceBranch: before.branch ?? null,
+        declarationBranch: declaration.branch,
+        stable: before.stable ?? null,
+        workspaceDigest: before.workspaceDigest ?? null,
+      },
+    );
+  }
+  const startedAt = new Date().toISOString();
+  const started = Date.now();
+  const deadline =
+    started + plan.currentTask.budgets.functionalRunSeconds * 1_000;
+  const results = [];
+  for (const check of checks) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      sessionFail(
+        'FUNCTIONAL_RUN_FAILED',
+        'Task functional check budget was exhausted',
+        { checkId: check.id },
+      );
+    }
+    const result = spawnTaskCheck(check.command, {
+      cwd: workspaceRoot,
+      encoding: 'utf8',
+      env: process.env,
+      maxBuffer: 16 * 1024 * 1024,
+      shell: true,
+      timeout: remainingMs,
+    });
+    const record = {
+      id: check.id,
+      command: check.command,
+      result: result.status === 0 && !result.error ? 'PASS' : 'FAIL',
+      status: result.status ?? null,
+      signal: result.signal ?? null,
+      stdout: String(result.stdout ?? '').slice(-4_000),
+      stderr: String(result.stderr ?? result.error ?? '').slice(-4_000),
+    };
+    results.push(record);
+    if (record.result !== 'PASS') {
+      sessionFail(
+        'FUNCTIONAL_RUN_FAILED',
+        'Task functional check failed',
+        record,
+      );
+    }
+  }
+  const after = inspectSource(workspaceRoot);
+  if (!sameCanonical(before, after)) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'source changed while Task functional checks were running',
+      {
+        beforeWorkspaceDigest: before.workspaceDigest ?? null,
+        afterWorkspaceDigest: after.workspaceDigest ?? null,
+      },
+    );
+  }
+  return {
+    [RUNNER_RESULT]: true,
+    kind: 'task-functional-checks',
+    startedAt,
+    durationMs: Date.now() - started,
+    source: after,
+    results,
+  };
+}
+
 function runDevelopmentClosure(
   options,
   plan,
   declaration,
   workspaceRoot,
   spawnDevelopmentRunner = spawnSync,
+  inspectSource = actualSource,
+  spawnTaskCheck = spawnSync,
 ) {
   const expectedGates =
     plan.acceptance?.closures?.[plan.currentTask.closureId] ?? [];
-  if (!Array.isArray(expectedGates) || expectedGates.length === 0) {
+  if (!Array.isArray(expectedGates)) {
     sessionFail(
       'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
-      'current Task has no Development closure Gates',
+      'current Task Development closure is invalid',
+    );
+  }
+  if (expectedGates.length === 0) {
+    return runTaskFunctionalChecks(
+      options,
+      plan,
+      declaration,
+      workspaceRoot,
+      inspectSource,
+      spawnTaskCheck,
     );
   }
   const controlRoot = path.join(
@@ -840,6 +1231,54 @@ function runDevelopmentClosure(
   );
   const outputFile = path.join(controlDirectory, 'manifest-ref.json');
   try {
+    const stationProfiles = [];
+    const seenStationServices = new Set();
+    const authorizedProfiles = new Set(
+      plan.manifest.authorization?.runtime?.deployProfiles ?? [],
+    );
+    const claimedProfiles = new Set(
+      declaration.runtimeClaims
+        .filter((claim) => claim.kind === 'profile')
+        .map((claim) => claim.resourceId),
+    );
+    for (const binding of options.stationProfiles ?? []) {
+      if (
+        typeof binding !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]*=[A-Za-z0-9][A-Za-z0-9._-]*$/.test(
+          binding,
+        )
+      ) {
+        sessionFail(
+          'INVALID_ARGUMENT',
+          '--station-profile must use canonical SERVICE_ID=PROFILE syntax',
+          { binding },
+        );
+      }
+      const [serviceId, profile] = binding.split('=');
+      if (seenStationServices.has(serviceId)) {
+        sessionFail(
+          'INVALID_ARGUMENT',
+          '--station-profile repeats a service',
+          { serviceId },
+        );
+      }
+      if (!authorizedProfiles.has(profile)) {
+        sessionFail(
+          'SESSION_AUTHORIZATION_REQUIRED',
+          'Station profile is not authorized by the Plan',
+          { serviceId, profile },
+        );
+      }
+      if (!claimedProfiles.has(profile)) {
+        sessionFail(
+          'SESSION_RUNTIME_REQUIRED',
+          'Station profile is not claimed by the ACTIVE declaration',
+          { serviceId, profile },
+        );
+      }
+      seenStationServices.add(serviceId);
+      stationProfiles.push(binding);
+    }
     const arguments_ = [
       'tooling/scripts/acceptance-run.py',
       '--execution-plan',
@@ -856,18 +1295,10 @@ function runDevelopmentClosure(
     if (typeof options.runtimeCell === 'string' && options.runtimeCell !== '') {
       arguments_.push('--runtime-cell', options.runtimeCell);
     }
-    const workspacePython = path.join(
-      workspaceRuntimePath('acceptance-venv', {
-        home: options.home,
-        repoRoot: workspaceRoot,
-        workspaceId: plan.manifest.binding.workspaceId,
-      }),
-      process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python3',
-    );
-    const runnerPython = existsSync(workspacePython)
-      ? workspacePython
-      : 'python3';
-    const completed = spawnDevelopmentRunner(runnerPython, arguments_, {
+    for (const binding of stationProfiles) {
+      arguments_.push('--station-profile', binding);
+    }
+    const completed = spawnDevelopmentRunner('python3', arguments_, {
       cwd: workspaceRoot,
       encoding: 'utf8',
       env: {
@@ -937,95 +1368,97 @@ function validateAggregateReport(report, expectedGates) {
   return results;
 }
 
-function runtimeIdentityMatchesDeclaration(
-  runtime,
-  deployProfiles,
-  runtimeClaims,
+function taskFunctionalResultUpdates(
+  current,
+  options,
+  declaration,
+  plan,
+  runnerResult,
+  inspectSource,
 ) {
-  if (
-    typeof runtime?.profile === 'string' &&
-    deployProfiles.includes(runtime.profile)
-  ) {
-    return true;
-  }
-  if (!isObject(runtime?.services)) return false;
-  const services = Object.values(runtime.services);
-  if (services.length === 0) return false;
-  const declaredResources = new Set(
-    runtimeClaims
-      .filter(
-        (claim) =>
-          isObject(claim) &&
-          typeof claim.kind === 'string' &&
-          typeof claim.resourceId === 'string',
-      )
-      .map((claim) => `${claim.kind}:${claim.resourceId}`),
+  const expectedChecks = plan.currentTask.checks
+    .filter((check) => check.verificationClass === 'FUNCTIONAL_CHECK')
+    .map((check) => ({ id: check.id, command: check.command }));
+  const actualChecks = runnerResult.results.map(
+    ({ id, command, result }) => ({ id, command, result }),
   );
-  return services.every((service) => {
-    if (
-      !isObject(service) ||
-      typeof service.kind !== 'string' ||
-      typeof service.deploymentEnvironment !== 'string' ||
-      service.deploymentEnvironment === ''
-    ) {
-      return false;
-    }
-    return (
-      declaredResources.has(
-        `${service.kind}.connect:${service.deploymentEnvironment}`,
-      ) ||
-      declaredResources.has(
-        `${service.kind}.deploy:${service.deploymentEnvironment}`,
-      )
+  if (
+    runnerResult.kind !== 'task-functional-checks' ||
+    !sameCanonical(
+      actualChecks,
+      expectedChecks.map((check) => ({ ...check, result: 'PASS' })),
+    ) ||
+    !Number.isInteger(runnerResult.durationMs) ||
+    runnerResult.durationMs < 0 ||
+    Number.isNaN(Date.parse(runnerResult.startedAt))
+  ) {
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'Task functional check result is invalid',
     );
-  });
-}
-
-function runtimeIdentityIsLocalClientOnly(runtime) {
+  }
+  const workspaceRoot = realpathSync(options.workspaceRoot ?? repoRoot);
+  const actual = inspectSource(workspaceRoot);
   if (
-    !Array.isArray(runtime?.clientRuntimes) ||
-    runtime.clientRuntimes.length === 0
+    !sameCanonical(actual, runnerResult.source) ||
+    actual.commit !== declaration.sourceHead ||
+    actual.branch !== declaration.branch ||
+    actual.stable !== true ||
+    !/^(?:clean|sha256:[0-9a-f]{64})$/.test(actual.workspaceDigest ?? '')
   ) {
-    return false;
+    sessionFail(
+      'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
+      'Task functional result source does not match the declared workspace',
+      {
+        actualCommit: actual.commit ?? null,
+        declarationSourceHead: declaration.sourceHead,
+        actualBranch: actual.branch ?? null,
+        declarationBranch: declaration.branch,
+        stable: actual.stable ?? null,
+        workspaceDigest: actual.workspaceDigest ?? null,
+      },
+    );
   }
-  return (
-    !isObject(runtime?.services) ||
-    Object.keys(runtime.services).length === 0
+  const bundle = {
+    artifactKind: 'task-functional-evidence-bundle',
+    schemaVersion: 1,
+    workspaceId: current.workspaceId,
+    workItemId: current.workItemId,
+    planId: plan.manifest.planId,
+    taskId: plan.currentTask.taskId,
+    closureId: plan.currentTask.closureId,
+    journeyId: current.journeyId,
+    source: actual,
+    results: runnerResult.results,
+  };
+  const bytes = Buffer.from(
+    `${JSON.stringify(canonicalize(bundle), null, 2)}\n`,
   );
-}
-
-export function runtimeIdentitiesMatchDeclaration(
-  runtimes,
-  deployProfiles,
-  runtimeClaims,
-) {
-  let declaredRuntimeFound = false;
-  for (const runtime of runtimes) {
-    if (
-      runtimeIdentityMatchesDeclaration(
-        runtime,
-        deployProfiles,
-        runtimeClaims,
-      )
-    ) {
-      declaredRuntimeFound = true;
-      continue;
-    }
-    if (!runtimeIdentityIsLocalClientOnly(runtime)) return false;
-  }
-  return declaredRuntimeFound;
-}
-
-function runtimeServiceCommitsMatchSource(runtime, sourceCommit) {
-  if (!isObject(runtime?.services)) return true;
-  return Object.values(runtime.services).every(
-    (service) =>
-      isObject(service) &&
-      (
-        service.liveCommit === undefined ||
-        service.liveCommit === sourceCommit
-      ),
+  const artifactDigest = createHash('sha256').update(bytes).digest('hex');
+  const sealedResult = path.join(
+    workspaceWorkflowPath(current.workItemId, {
+      home: options.home,
+      repoRoot: workspaceRoot,
+      workspaceId: current.workspaceId,
+    }),
+    'checks',
+    `functional-result-${artifactDigest}.json`,
   );
+  return {
+    actualSource: actual,
+    seal: { path: sealedResult, bytes },
+    verification: {
+      id: `task-check-${artifactDigest.slice(0, 16)}`,
+      verificationClass: 'FUNCTIONAL_CHECK',
+      result: 'PASS',
+      startedAt: new Date(runnerResult.startedAt).toISOString(),
+      durationMs: runnerResult.durationMs,
+      artifactRefs: [sealedResult],
+      commandDigest: canonicalDigest(expectedChecks),
+      sourceCommit: actual.commit,
+      journeyId: current.journeyId,
+    },
+  };
 }
 
 function functionalResultUpdates(
@@ -1040,6 +1473,16 @@ function functionalResultUpdates(
     sessionFail(
       'SESSION_EVIDENCE_OUT_OF_SEQUENCE',
       'functional result must come from the owner-started Development runner',
+    );
+  }
+  if (runnerResult.kind === 'task-functional-checks') {
+    return taskFunctionalResultUpdates(
+      current,
+      options,
+      declaration,
+      plan,
+      runnerResult,
+      inspectSource,
     );
   }
   const workspaceRoot = realpathSync(options.workspaceRoot ?? repoRoot);
@@ -1253,18 +1696,13 @@ function functionalResultUpdates(
     'native-mobile',
   ].includes(options.context?.task?.runtimeClass);
   const deployProfiles = options.context?.authorization?.runtime?.deployProfiles;
-  const runtimeClaims = Array.isArray(declaration.runtimeClaims)
-    ? declaration.runtimeClaims
-    : [];
   if (
     runtimeBacked &&
     (
       runtimeIdentities.length === 0 ||
       !Array.isArray(deployProfiles) ||
-      !runtimeIdentitiesMatchDeclaration(
-        runtimeIdentities,
-        deployProfiles,
-        runtimeClaims,
+      runtimeIdentities.some(
+        (runtime) => !deployProfiles.includes(runtime?.profile),
       )
     )
   ) {
@@ -1279,14 +1717,8 @@ function functionalResultUpdates(
   if (
     runtimeIdentities.some(
       (runtime) =>
-        (
-          runtime?.stationBuildCommit !== undefined &&
-          runtime.stationBuildCommit !== declaration.sourceHead
-        ) ||
-        !runtimeServiceCommitsMatchSource(
-          runtime,
-          declaration.sourceHead,
-        ),
+        runtime?.stationBuildCommit !== undefined &&
+        runtime.stationBuildCommit !== declaration.sourceHead,
     )
   ) invalid.push('runtimeIdentity.stationBuildCommit');
   if (
@@ -1464,13 +1896,17 @@ export async function commitFunctionalResult(options, dependencies = {}) {
       { state: preflightSession.state.state },
     );
   }
-  const runnerResult = runDevelopmentClosure(
-    options,
-    plan,
-    declaration,
-    workspaceRoot,
-    dependencies.spawnDevelopmentRunner ?? spawnSync,
-  );
+  const runnerResult = options.taskResultRef
+    ? null
+    : runDevelopmentClosure(
+        options,
+        plan,
+        declaration,
+        workspaceRoot,
+        dependencies.spawnDevelopmentRunner ?? spawnSync,
+        dependencies.inspectSource ?? actualSource,
+        dependencies.spawnTaskCheck ?? spawnSync,
+      );
   let prepared = null;
   return transitionSessionSequenceStore({
     ...store,
@@ -1534,8 +1970,11 @@ const OPTION_NAMES = {
   failure: 'failure',
   'runtime-binding-ref': 'runtimeBindingRef',
   'runtime-cell': 'runtimeCell',
+  'result-ref': 'taskResultRef',
+  'station-profile': 'stationProfiles',
 };
 const JSON_OPTIONS = new Set(['source', 'verification', 'failure']);
+const REPEATABLE_OPTIONS = new Set(['stationProfiles']);
 
 function parseArguments(argv) {
   const [action, ...rest] = argv;
@@ -1566,7 +2005,10 @@ function parseArguments(argv) {
         });
       }
     }
-    if (
+    if (REPEATABLE_OPTIONS.has(optionKey)) {
+      options[optionKey] ??= [];
+      options[optionKey].push(value);
+    } else if (
       ['source', 'verification', 'failure', 'runtimeBindingRef'].includes(
         optionKey,
       )
@@ -1595,6 +2037,9 @@ export async function runCli(argv, io = {}) {
     case 'status':
       session = statusDevelopmentSession(options);
       break;
+    case 'archive':
+      session = archiveDevelopmentSession(options);
+      break;
     case 'transition':
       session = await transitionDevelopmentSession(options, io.dependencies);
       break;
@@ -1604,7 +2049,7 @@ export async function runCli(argv, io = {}) {
     default:
       sessionFail(
         'INVALID_ARGUMENT',
-        'action must be start, status, transition, or functional-result',
+        'action must be start, status, archive, transition, or functional-result',
       );
   }
   const result = { status: 'PASS', action, session };

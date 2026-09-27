@@ -1,8 +1,8 @@
 # Secure Content - Operational Contract
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-13 | **Updated**: 2026-09-15
+> **Version**: v1.8
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Architecture Team
 
 ---
@@ -52,9 +52,9 @@ distributed database transaction:
 
 This chooses safe key loss over unsafe PreKey reuse.
 
-### 2.1 Proposed Client Publication Boundary
+### 2.1 Accepted Client Publication Boundary
 
-Under proposed `SC-D20`, Native publishes and inventories Content PreKeys only
+Under accepted `SC-D20`, Native publishes and inventories Content PreKeys only
 through canonical Key Exchange protobuf routes. Publication uses a deterministic
 proof-free command ID, fresh Station/session/device possession proof and one
 transaction-held `PENDING -> COMPLETED` receipt. A first-time command must add
@@ -72,6 +72,54 @@ EC5A requires PostgreSQL receipt contention, pool/Actor lock ordering,
 profile-rotation and revocation races. Its runner requires a DSN, parses
 `go test -json`, and rejects missing, renamed, zero-match, skipped or non-pass
 mandatory cases.
+
+### 2.2 Proposed Deterministic Lifecycle Choreography
+
+Under accepted `SC-D21`, lifecycle evidence uses barrier release rather than
+timing:
+
+```text
+arm operation
+  -> await persisted-before-send
+  -> assert durable production state digest
+  -> release barrier
+  -> await sent-before-response
+  -> assert dispatch identity
+  -> release barrier
+  -> await response-before-local-commit
+  -> assert local state has not advanced
+  -> release barrier
+  -> await production operation result
+```
+
+Each wait is bounded only as a failure budget. Reaching the budget records a
+typed failure; it is never interpreted as evidence that no event occurred.
+Barrier order, boot identity, session generation, operation ID, and runtime
+manifest digest must match at every step.
+
+A forced restart ends the current scenario invocation:
+
+```text
+scenario -> immutable resume artifact -> restart request -> BLOCKED
+runtime owner -> lease -> restart with retained storage -> child manifest
+scenario continuation -> validate lineage/new boot -> consume resume artifact
+```
+
+Only the runtime owner performs the middle step. The continuation count is one
+per restart request. Reusing the parent manifest, observing the same boot
+identity, changing retained-storage identity, or missing owner acknowledgement
+is terminal evidence failure.
+
+Browser network capture remains finite even when WebSocket/SSE stays open. The
+observer persists all events under monotonic sequence numbers, then persists a
+same-event-loop terminal marker after the production action returns. The
+captured interval ends at the marker sequence. Quiet periods, sleeps, and
+stream closure are forbidden completion rules.
+
+Fixture acquisition occurs before scenario admission. Missing account,
+Station, revocation, or historical-recovery handles return
+`FIXTURE_CAPABILITY_UNAVAILABLE`. A scenario cannot repair that blocker by
+creating state or mutating owner persistence directly.
 
 ## 3. Object State Machine
 
@@ -258,18 +306,226 @@ or legacy `/posts*` API.
 The selected migration is a development-data reset, not a server-side encryption
 migration. Execution requires fresh explicit authorization.
 
+Accepted `SC-D23` defines the only legal reset targets:
+
+| Profile | Deploy environment | Scope |
+|---|---|---|
+| `four` | `station-four` | `station-four-social-private` |
+| `fiveArm` | `station-five-arm` | `station-five-arm-social-private` |
+
+The canonical workspace binding is restored to profile `four`, slot `5`.
+Profile `one`, production targets, and any inferred alias fail closed.
+
+Accepted `SC-D24` defines two reset intents over the same closed operation:
+
+- `SCHEMA_ACTIVATION`: complete the reset on both profiles for the exact
+  source/runtime checkpoint and publish current canonical-schema attestations
+  before any private Social Journey starts;
+- `FINAL_CUT`: execute a fresh reset after hard-cut regression readiness, then
+  run the complete product matrix against newly populated canonical state.
+
+The reset owner accepts intent as a typed manifest field, not a free-form CLI
+flag. Each intent requires its own reset ID, immutable manifest, exact
+declaration, scope authorization, and lease. An activation journal cannot be
+relabelled as final-cut evidence.
+
+SC-D24 replaces only SC-D23's W12-exclusive task restriction.
+Both intents still use exactly the accepted profiles and destructive scopes.
+The Plan must assign each intent to one explicit task; an unplanned task or
+ad-hoc command remains unauthorized.
+
+The non-public maintenance operation runs as an OS-authenticated remote CLI
+through the reviewed deploy transport. The local SSH transport is a direct
+child of the generic `machine-dev` lease wrapper, which retains the inherited
+`station.reset` lock for the full operation. The reset owner passes a typed
+`SecureContentResetInvocationV1` over SSH stdin. The CLI validates source,
+environment, scope, intent, reset-manifest digest, declaration digest, and
+expiry, then acquires a database advisory lock keyed by deployment environment
+and destructive scope. It exposes no network route and accepts no durable
+bearer credential.
+
 Before reset:
 
-- count and hash public rows/objects;
-- count private rows, comments, envelopes, deliveries and old media;
-- record exact Station/profile scope.
+- verify clean exact source, the plan task assigned to the requested reset
+  intent, exact profile/scope authorization, and the live `station.reset` lease;
+- quiesce the selected Station and reject new Social private mutations;
+- snapshot and canonically hash public Posts, public Comments/Reactions, and
+  public Social OSS metadata/object bytes;
+- inventory every canonical private table row, legacy private shared-table row,
+  canonical Social object key, and legacy OSS `(owner,key)` reference;
+- freeze the reviewed table/column/predicate/object allowlist into one immutable
+  reset manifest;
+- reject unknown schema, attachment encoding, ownership, object digest, or
+  cross-domain/shared reference before mutation.
+
+The database mutation is one transaction:
+
+1. clear exactly `social_private_content_plans`,
+   `social_private_content_plan_slots`,
+   `social_private_command_receipts`, `social_private_posts`,
+   `social_private_comments`, `social_private_audience_snapshots`,
+   `social_private_recipient_grants`, `social_private_content_envelopes`,
+   `social_private_delivery_intents`, `social_private_object_uploads`,
+   `social_private_object_parts`, `social_private_objects`,
+   `social_private_object_grants`, and `social_private_commit_proofs`;
+2. delete only `social_comments` and `social_reactions` rows whose
+   `post_class = 'private'`;
+3. clear `social_moment_deliveries`;
+4. drop only `social_private_audience_grants`;
+5. rebuild the emptied `social_private_posts` table to the canonical encrypted
+   model, removing only the retired columns listed by `SC-D23`.
+
+Before the first activation, the reset owner also admits the exact known hybrid
+shape produced when canonical columns were added to the retired table:
+canonical column types must already match, defaults may only be absent or equal
+to the canonical default, no unknown columns are allowed, and the primary key
+must be either retired `id` or canonical `post_id`. The reset still clears all
+private rows before rebuilding the complete canonical constraints and indexes.
+
+Every clear is an exact `DELETE`; `TRUNCATE CASCADE`, wildcard DDL, and
+schema-wide drop are forbidden. Child/shared legacy rows are deleted before
+their parent rows in the dependency order fixed by `SC-D23`. An unexpected
+foreign-key edge fails pre-audit instead of widening the operation.
+
+Object deletion is owner-mediated and idempotent:
+
+- Social's object adapter deletes canonical private object/part/upload bytes;
+- OSS deletes legacy private file metadata and releases blob references;
+- shared CAS bytes remain while another live metadata row references them;
+- direct storage-backend or OSS-table mutation by the reset runner is forbidden.
+
+One monotonic journal records:
+
+```text
+PREPARED
+  -> DATABASE_SCHEMA_COMMITTED
+  -> OBJECTS_DELETED
+  -> STATION_DEPLOYED
+  -> POST_AUDIT_PASSED
+  -> COMPLETE
+
+PREPARED
+  -> SUPERSEDED
+
+OBJECTS_DELETED
+  -> RECOVERY_REPLACED
+
+STATION_DEPLOYED
+  -> RECOVERY_REPLACED
+```
+
+The `station.reset` lease remains held through the whole sequence. A partial
+failure may resume only with the same reset-manifest digest. It never restores
+legacy readers, changes target, or starts Station before deletion/schema
+closure.
+
+Cancellation before database commit rolls back and leaves the journal at
+`PREPARED`. Cancellation, timeout, SSH disconnect, or lease loss after a
+durable transition leaves Station quiesced at the last journal state. Resume
+requires the same reset manifest plus a fresh invocation ID. The journal records
+accepted invocation IDs and digests; exact replay returns its current state,
+while a conflicting digest for one invocation ID fails without advancing the
+journal.
+
+`OBJECTS_DELETED` is returned without error only by the invocation that first
+crosses that boundary, instructing the Development owner to deploy. A later
+invocation beginning at `OBJECTS_DELETED` is a post-deployment verification
+attempt; deployment or attestation verification failure is returned as the
+typed error and must never be collapsed back into another successful
+`needs_deployment` response.
+
+If a source defect invalidates a reset while its journal remains `PREPARED`,
+the first invocation for the fresh source may atomically transition the old
+journal to terminal `SUPERSEDED` and create the new `PREPARED` journal. This
+requires the same workspace, profile, deployment environment, destructive
+scope, and intent, a different source commit, the new exact-source declaration
+and lease, and the same remote advisory lock. Same-source conflicts and every
+post-commit state remain non-supersedable. A superseded reset cannot resume or
+produce successful evidence.
+
+Accepted `SC-D26` handles only two verified source-invalidated boundaries:
+an unfailed `OBJECTS_DELETED` deployment handoff, or `STATION_DEPLOYED`
+followed by canonical schema failure
+`RESET_SCHEMA_TARGET_UNREVIEWED`. The corrected source performs a fresh
+pre-audit. Its immutable manifest includes one `recovery_predecessor` that
+binds the old reset ID, manifest digest, pre-transition journal digest, exact
+state, and corresponding closed replacement reason.
+
+Fresh invocation admission locks the active scope and revalidates:
+
+- equal workspace, profile, deployment environment, destructive scope, reset
+  intent, database identity, and public snapshot;
+- different source commits and reset IDs;
+- exact predecessor manifest and journal digests; and
+- no concurrent journal change since the fresh audit.
+
+Only then may one transaction append
+`OBJECTS_DELETED|STATION_DEPLOYED -> RECOVERY_REPLACED` and create the fresh
+`PREPARED` journal. A deployment-handoff predecessor records
+`RESET_SOURCE_SUPERSEDED`; a post-deploy predecessor retains its schema
+failure. The old reset remains terminal non-success. The fresh reset reruns the complete SC-D23
+database/object operation. Its post-audit additionally loads every object
+target from the bounded, cycle-free predecessor chain's immutable Station
+ledgers and requires the original Social or OSS owner to prove that target
+remains deleted. Only then may it earn its own completion evidence. No other
+post-commit state or failure code is recoverable through this path.
+
+Accepted `SC-D27` additionally admits
+`OBJECTS_DELETED + RESET_PARTIAL_FAILURE`, because that state is persisted only
+after database commit and owner-mediated object deletion complete. It also
+admits `STATION_DEPLOYED + RESET_JOURNAL_STATE_CONFLICT` only when the failed
+manifest already carries a recovery predecessor and the complete inherited
+chain validates under the admission transaction. Both source-defect branches
+use replacement reason `RESET_SOURCE_SUPERSEDED`.
+
+Every recovery replacement writes one append-only Station receipt containing
+the exact predecessor and initial-successor identities, the locked
+pre-transition journal digest, original failure code, replacement reason, and
+replacement time. The predecessor journal retains its original failure fields.
+The journal digest is an admission compare-and-swap token; terminal validation
+requires the immutable receipt and does not reconstruct historical state from
+the changed terminal row.
+
+If source changes again while the recovery successor is still `PREPARED`,
+SC-D25 may supersede that uncommitted reset only when the next manifest inherits
+its exact `recovery_predecessor`. This prevents source churn from truncating
+the predecessor object-proof chain.
 
 After reset:
 
-- all legacy private rows and old private-media objects are absent;
-- public counts and hashes are unchanged;
+- all canonical and legacy private Social rows and private object references
+  are absent;
+- canonical private tables and indexes exactly match the current models;
+- retired table and columns are absent;
+- public counts and hashes are byte-equal to the pre-audit snapshot;
 - new schema rejects plaintext private writes;
-- no rollback/fallback path remains.
+- no rollback/fallback path remains;
+- Station health and live commit equal the immutable reset manifest.
+
+The deployment attestation always carries the full source commit. If the live
+version endpoint exposes the repository's canonical 12-hex abbreviated commit,
+verification accepts it only as a valid hexadecimal prefix of that full
+attested commit; arbitrary or shorter prefixes remain invalid.
+
+Only `POST_AUDIT_PASSED -> COMPLETE` is success. Timeout, cancellation, lease
+loss, object deletion failure, deployment failure, or audit mismatch is a typed
+partial failure and remains non-successful.
+
+After `SCHEMA_ACTIVATION` completes, the reset owner emits one immutable
+`CanonicalPrivateSchemaAttestationV1` per profile. Runtime admission rejects a
+missing attestation, a non-complete journal, source/profile/runtime mismatch,
+service/peer identity mismatch, service-attestation mismatch, retired columns,
+schema digest drift, or reset-time public-snapshot provenance mismatch. Before
+publishing a runtime manifest, the runtime owner sends one read-only
+`schema_verify` request through the OS-authenticated maintenance SSH command.
+That verification does not quiesce Station, migrate control tables, or require
+business tables to remain empty after activation. Any immutable identity or
+schema drift requires a fresh authorized activation for the new exact
+checkpoint. Multi-service runtime owners derive the exact read-only command
+from the attestation's canonical profile and deployment environment through
+the reviewed remote deploy transport. Profile-name, endpoint, caller-supplied
+command, and environment-variable command inference are forbidden. The
+read-only operation cannot carry or inherit a destructive reset declaration.
 
 ## 12. Operational Evidence
 
@@ -282,4 +538,10 @@ After reset:
 - object interruption, restart, corruption, cancellation, quota and GC tests;
 - recovery pagination, restart, never-opened content and revoked-content tests;
 - Native account-switch and crash tests with recursive secret scans;
+- exact lifecycle barrier ordering and stale-token/generation/boot negatives;
+- restart manifest lineage, changed boot identity, retained-storage continuity,
+  and one-shot resume consumption;
+- WebSocket/SSE terminal-marker sequencing with streams remaining open;
+- fixture-owner acknowledgements for account/Station switch, revocation, and
+  historical recovery epoch;
 - tree-wide hard-cut and schema ownership Gates.

@@ -26,6 +26,7 @@ describe('messagingRecoveryService', () => {
             createdAtUnixMs: 10,
             blobSizeBytes: 20,
           },
+          recoveryEpoch: 3,
           messageCount: 1,
           conversationCount: 1,
           attachmentCount: 1,
@@ -37,9 +38,39 @@ describe('messagingRecoveryService', () => {
     const result = await messagingRecoveryService.createRevision('twenty four words');
 
     expect(result.backup.revision).toBe('revision-1');
+    expect(result.recoveryEpoch).toBe(3);
     expect(invokeMock).toHaveBeenCalledWith('messaging_recovery_create_revision', {
       input: { recoveryPhrase: 'twenty four words' },
     });
+  });
+
+  it('creates an Acceptance revision without exposing a recovery phrase', async () => {
+    invokeMock.mockResolvedValue({
+      ok: true,
+      data: {
+        status: JSON.stringify({
+          backup: {
+            backupId: 'revision-acceptance',
+            revision: 'revision-acceptance',
+            formatVersion: 1,
+            createdAtUnixMs: 15,
+            blobSizeBytes: 25,
+          },
+          recoveryEpoch: 4,
+          messageCount: 1,
+          conversationCount: 1,
+          attachmentCount: 1,
+          verifiedFingerprintCount: 1,
+        }),
+      },
+    });
+
+    const result = await messagingRecoveryService.createAcceptanceRevision();
+
+    expect(result.recoveryEpoch).toBe(4);
+    expect(invokeMock).toHaveBeenCalledWith(
+      'messaging_recovery_acceptance_create_revision',
+    );
   });
 
   it('restores the latest canonical revision', async () => {

@@ -85,24 +85,9 @@ impl<R: MlsTransitionRepository> MembershipTransitionPreparer<R> {
         };
         let changes = affected
             .iter()
-            .enumerate()
-            .filter_map(|(index, endpoint)| {
-                let action = match input.action {
-                    MessagingMembershipAction::AddActor if index > 0 => {
-                        MessagingMembershipAction::AddDevice
-                    }
-                    MessagingMembershipAction::RemoveActor | MessagingMembershipAction::Leave
-                        if index > 0 =>
-                    {
-                        return None;
-                    }
-                    action => action,
-                };
-                Some((action, endpoint))
-            })
-            .map(|(action, endpoint)| {
+            .map(|endpoint| {
                 Ok(MessagingMembershipChangeIntent {
-                    action: action as i32,
+                    action: input.action as i32,
                     ptid: actor_device_ptid(endpoint)?.to_string(),
                     device_id: endpoint.device_id.clone(),
                     role: input.role.clone(),
@@ -489,14 +474,6 @@ mod tests {
             _ => panic!("expected membership transition"),
         };
         assert_eq!(transition.changes.len(), 2);
-        assert_eq!(
-            transition.changes[0].action,
-            MessagingMembershipAction::AddActor as i32
-        );
-        assert_eq!(
-            transition.changes[1].action,
-            MessagingMembershipAction::AddDevice as i32
-        );
         assert_eq!(transition.welcome_payloads.len(), 2);
         assert_eq!(transition.authority_plan_id, "plan-add-carol");
         assert_eq!(transition.from_mls_epoch, 1);

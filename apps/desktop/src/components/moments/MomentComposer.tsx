@@ -300,7 +300,10 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
 
     setSubmitting(true);
     try {
-      if (audience.kind === Audience_Kind.FRIENDS) {
+      if (
+        audience.kind !== Audience_Kind.PUBLIC
+        && audience.kind !== Audience_Kind.KIND_UNSPECIFIED
+      ) {
         const publishRevision = checkpointDraft();
         const privateDraft = pending.length > 0
           ? {

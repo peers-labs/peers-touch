@@ -1,8 +1,8 @@
 # Modern Chat Agent
 
 > **Status**: product-accepted / design-accepted / execution-active
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-07-30 | **Updated**: 2026-09-19
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `packages/agent-catalog/`,
 > `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
@@ -80,6 +80,16 @@ A Modern Chat Agent is:
 | [integration.md](./integration.md) | Current-code mapping, product acceptance contract, canonical completion locator, and planning handoff |
 | [MCA-D20A catalog distribution amendment](./proposals/20260917-mca-d20a-catalog-distribution.md) | **ACCEPTED** — replace the unreachable private-GitHub default sync with Station distribution of the same publisher-signed envelope |
 | [MCA-D20A review record](./proposals/20260917-mca-d20a-catalog-distribution-review.md) | Approval criteria and Owner verdict for the catalog distribution amendment |
+| [MCA-D21 runtime-truthful formal evidence amendment](./proposals/20260918-mca-d21-runtime-truthful-formal-evidence.md) | **ACCEPTED** — make J01-J06 attestation profiles, role applicability, and tuple execution identity match the production path |
+| [MCA-D21 review record](./proposals/20260918-mca-d21-runtime-truthful-formal-evidence-review.md) | Approval criteria and Owner verdict for runtime-truthful formal evidence |
+| [MCA-D22 capability scenario control-plane amendment](./proposals/20260918-mca-d22-capability-scenario-control-plane.md) | **ACCEPTED** — make every J02 error, taxonomy, isolation, Mobile, and retirement tuple executable without creating a second capability authority |
+| [MCA-D22 review record](./proposals/20260918-mca-d22-capability-scenario-control-plane-review.md) | Approval criteria and Owner verdict for the J02 execution boundary |
+| [MCA-D23 capability operation scenario control-plane amendment](./proposals/20260919-mca-d23-governed-tool-scenario-control-plane.md) | **ACCEPTED** — extend the single scenario authority across governed ToolCall, MCP, and Connector formal cells |
+| [MCA-D23 review record](./proposals/20260919-mca-d23-governed-tool-scenario-control-plane-review.md) | Approval criteria and delegated Owner verdict for the J03-J05 execution boundary |
+| [MCA-D24 Evaluation scenario control-plane amendment](./proposals/20260919-mca-d24-evaluation-scenario-control-plane.md) | **ACCEPTED** — execute Evaluation races, failures, restart, and tuple evidence through canonical Station owners |
+| [MCA-D24 review record](./proposals/20260919-mca-d24-evaluation-scenario-control-plane-review.md) | Approval criteria and delegated Owner verdict for the J06 execution boundary |
+| [MCA-D25 Tool zero-execution evidence amendment](./proposals/20260919-mca-d25-tool-zero-execution-evidence.md) | **ACCEPTED** — make J03 receipt and zero-execution roles match the boundary that actually ran |
+| [MCA-D26 Connector execution evidence amendment](./proposals/20260921-mca-d26-connector-execution-evidence.md) | **ACCEPTED** — bind executed J05 tuples to the OAuth-owner client and rejected tuples to explicit zero execution |
 | [prototype/README.md](./prototype/README.md) | Peers-owned executable product prototype, review states, and confirmation blockers |
 | [Current V2 Alignment Plan Package](../execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | **CURRENT EXECUTION SOURCE** — V2-J01..V2-J06, X3 trusted catalog, and aggregate Acceptance as bounded vertical Task Slices |
 | [Product plan](../execution-plans/20260817-modern-chat-agent-v2.md) | Active product and scope source; execution tracking moved to the current Plan Package |

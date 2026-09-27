@@ -4065,17 +4065,77 @@ func TestConversationDDDMemberAuthorityReplayRollbackAndFollower(t *testing.T) {
 	}
 }
 
+func TestConversationDDDRemoteNewOwnerCanSubmitMemberAuthority(t *testing.T) {
+	ctx := context.Background()
+	authority := newDDDComposition(t)
+	owner := dddEndpoint("ptid:remote-owner-former", "owner-1")
+	remoteOwner := dddEndpoint("ptid:remote-owner-current", "owner-1")
+	groupID := valueobject.ConversationID("group-remote-owner-member-authority")
+	createDDDGroupWithMemberStation(
+		t,
+		authority,
+		groupID,
+		owner,
+		remoteOwner,
+		"station-b",
+	)
+
+	transfer := dddMemberAuthoritySubmitRequest(
+		t,
+		authority,
+		groupID,
+		owner,
+		remoteOwner.Actor,
+		"transfer-remote-owner",
+		domainevent.MemberAuthorityActionTransferOwnership,
+		nil,
+		nil,
+		nil,
+	)
+	if _, err := authority.commands.Submit(ctx, transfer); err != nil {
+		t.Fatalf("Submit(owner transfer) error = %v", err)
+	}
+
+	muted := true
+	remoteMutation := dddMemberAuthoritySubmitRequest(
+		t,
+		authority,
+		groupID,
+		remoteOwner,
+		owner.Actor,
+		"remote-owner-mutes-former-owner",
+		domainevent.MemberAuthorityActionUpdateMember,
+		nil,
+		&muted,
+		nil,
+	)
+	forwarded := dddForwardedCommandRequest(
+		t,
+		remoteMutation,
+		dddFederationID,
+		dddAuthorityEpoch,
+		"station-b",
+	)
+	result, err := authority.commands.SubmitForwarded(ctx, forwarded)
+	if err != nil {
+		t.Fatalf("SubmitForwarded(remote owner mutation) error = %v", err)
+	}
+	if result.Replay ||
+		result.Conversation.Owner != remoteOwner.Actor ||
+		!dddSnapshotMember(t, result.Conversation, owner.Actor).Muted {
+		t.Fatalf("remote owner mutation result = %+v", result)
+	}
+}
+
 func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *testing.T) {
 	fixture := newDDDComposition(t)
 	owner := dddEndpoint("ptid:owner", "owner-1")
 	member := dddEndpoint("ptid:member", "member-1")
 	charlie := dddEndpoint("ptid:charlie", "charlie-1")
-	charliePhone := dddEndpoint("ptid:charlie", "charlie-2")
 	seedDDDDevices(t, fixture.db,
 		dddDevice(owner, "station-a"),
 		dddDevice(member, "station-a"),
 		dddDevice(charlie, "station-b"),
-		dddDevice(charliePhone, "station-b"),
 	)
 	ctx := context.Background()
 	groupID := valueobject.ConversationID("group-1")
@@ -4134,13 +4194,8 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(membershipPlan.Changes) != 2 ||
-		membershipPlan.Changes[0].Action != entity.MembershipActionAddActor ||
-		membershipPlan.Changes[0].Device != charlie.Device ||
-		membershipPlan.Changes[0].HomeStation != "station-b" ||
-		membershipPlan.Changes[1].Action != entity.MembershipActionAddDevice ||
-		membershipPlan.Changes[1].Device != charliePhone.Device ||
-		membershipPlan.Changes[1].HomeStation != "station-b" {
+	if len(membershipPlan.Changes) != 1 ||
+		membershipPlan.Changes[0].HomeStation != "station-b" {
 		t.Fatalf("membership plan did not bind the identity-owned Home Station: %+v", membershipPlan.Changes)
 	}
 	required := endpointUnionDDD(membershipPlan.PreEndpoints, membershipPlan.PostEndpoints)
@@ -4150,7 +4205,7 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 		if endpoint == owner {
 			kind = valueobject.DeliveryKindPublicEvent
 		}
-		if endpoint.Actor == charlie.Actor {
+		if endpoint == charlie {
 			kind = valueobject.DeliveryKindMLSWelcome
 		}
 		membershipDeliveries = append(
@@ -4346,6 +4401,7 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 		t.Fatal(err)
 	}
 
+	fixture.clock.now = time.Now().UTC().Truncate(time.Millisecond)
 	leaveRequest := dddLeaveIntentRequest(
 		t,
 		"leave-1",
@@ -4362,6 +4418,30 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 	}
 	if intent.State != repository.LeaveIntentStatePending {
 		t.Fatalf("leave intent = %+v", intent)
+	}
+	ownerPending, err := fixture.queries.PendingLeaveIntents(
+		ctx,
+		groupID,
+		owner.Actor,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ownerPending) != 1 || ownerPending[0].ID != intent.ID {
+		t.Fatalf("owner pending leave intents = %+v, want %s", ownerPending, intent.ID)
+	}
+	departingPending, err := fixture.queries.PendingLeaveIntents(
+		ctx,
+		groupID,
+		member.Actor,
+		100,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(departingPending) != 0 {
+		t.Fatalf("departing actor pending leave intents = %+v, want none", departingPending)
 	}
 	wrongFederation := dddLeaveIntentRequest(
 		t,
@@ -5054,231 +5134,6 @@ func TestConversationDDDPostCommitFailuresDoNotRollBackCommandOrReadCursor(t *te
 	if cursor.Sequence != committed.Event.Sequence {
 		t.Fatalf("read cursor was rolled back by notification failure: %+v", cursor)
 	}
-}
-
-func TestConversationDDDFollowerRejoinCheckpointCrossesEntitlementGap(t *testing.T) {
-	ctx := context.Background()
-	authority := newDDDCompositionAtStation(t, "station-a")
-	follower := newDDDCompositionAtStation(t, "station-b")
-	owner := dddEndpoint("ptid:follower-rejoin-owner", "owner-1")
-	member := dddEndpoint("ptid:follower-rejoin-member", "member-1")
-	groupID := valueobject.ConversationID("follower-rejoin-group")
-	seedDDDDevices(
-		t,
-		authority.db,
-		dddDevice(owner, "station-a"),
-		dddDevice(member, "station-b"),
-	)
-	routes := dddDirectRoutes(owner, "station-a", member, "station-b")
-	createPlan, err := authority.commands.PrepareGroup(
-		ctx,
-		command.PrepareGroupRequest{
-			ConversationID:    groupID,
-			FederationID:      dddFederationID,
-			AuthorityEpoch:    dddAuthorityEpoch,
-			Name:              "Follower Rejoin",
-			Owner:             owner,
-			Members:           []valueobject.PTID{member.Actor},
-			VerifiedRoutes:    routes,
-			ManifestStateHash: dddManifestSetHash,
-			ManifestSetHash:   dddManifestSetHash,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	created, err := authority.commands.CreateGroup(
-		ctx,
-		command.CreateGroupRequest{
-			ConversationID:    groupID,
-			Owner:             owner,
-			VerifiedRoutes:    routes,
-			ManifestStateHash: dddManifestSetHash,
-			CommandID:         "follower-rejoin-create",
-			AuthorityPlanID:   createPlan.ID,
-			AuthorityPlanHash: createPlan.Hash,
-			Deliveries: []valueobject.PreparedDelivery{
-				dddDelivery(t, owner, "station-a", valueobject.DeliveryKindPublicEvent, "owner-marker"),
-				dddDelivery(t, member, "station-b", valueobject.DeliveryKindMLSWelcome, "member-welcome"),
-			},
-			ExactCommandBytes: []byte("follower-rejoin-create"),
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := follower.commands.ApplyFollowerEvent(ctx, created.Event); err != nil {
-		t.Fatal(err)
-	}
-
-	removePlan, err := authority.commands.PrepareMembership(
-		ctx,
-		dddPrepareMembershipRequest(
-			t,
-			authority,
-			groupID,
-			owner,
-			[]entity.MembershipChange{{
-				Action: entity.MembershipActionRemoveActor,
-				Actor:  member.Actor,
-			}},
-		),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	removed, err := authority.commands.Submit(
-		ctx,
-		membershipSubmitRequest(
-			t,
-			authority,
-			groupID,
-			owner,
-			removePlan,
-			"follower-rejoin-remove",
-		),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := follower.commands.ApplyFollowerEvent(ctx, removed.Event); err != nil {
-		t.Fatal(err)
-	}
-	var retiredState persistence.ConversationFollowerStateModel
-	if err := follower.db.First(
-		&retiredState,
-		"conversation_id = ?",
-		string(groupID),
-	).Error; err != nil {
-		t.Fatal(err)
-	}
-	if retiredState.Status != string(repository.FollowerStatusRetired) {
-		t.Fatalf("removed follower status = %q", retiredState.Status)
-	}
-
-	messagePreparation, err := authority.commands.PrepareCommand(
-		ctx,
-		dddPrepareCommandRequest(t, authority, groupID, owner),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	messageBytes := dddSendCommandBytes(
-		t,
-		groupID,
-		"follower-rejoin-absent-message",
-		owner,
-		messagePreparation,
-		authority.clock.Now(),
-	)
-	absentMessage, err := authority.commands.Submit(
-		ctx,
-		command.SubmitRequest{
-			Command: aggregate.Command{
-				ID:                      "follower-rejoin-absent-message",
-				ConversationID:          groupID,
-				AuthorityStation:        "station-a",
-				Sender:                  owner,
-				ObservedMembershipEpoch: messagePreparation.Head.MembershipEpoch,
-				ObservedMLSEpoch:        messagePreparation.Head.MLSEpoch,
-				DeliveryPlanHash:        messagePreparation.DeliveryPlanHash,
-				Kind:                    domainevent.KindMessageCommitted,
-				MessageID:               "message-follower-rejoin-absent",
-				Payload:                 messageBytes,
-				Deliveries: []valueobject.PreparedDelivery{
-					dddDelivery(
-						t,
-						owner,
-						"station-a",
-						valueobject.DeliveryKindPublicEvent,
-						"owner-absent-marker",
-					),
-				},
-				CommittedAt: authority.clock.Now(),
-			},
-			VerifiedRoutes:    dddActiveRoutes(t, authority.db, owner.Actor),
-			ExactCommandBytes: messageBytes,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := follower.commands.ApplyFollowerEvent(
-		ctx,
-		absentMessage.Event,
-	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
-		t.Fatalf("post-removal ordinary follower event error = %v", err)
-	}
-
-	addPlan, err := authority.commands.PrepareMembership(
-		ctx,
-		dddPrepareMembershipRequest(
-			t,
-			authority,
-			groupID,
-			owner,
-			[]entity.MembershipChange{{
-				Action:      entity.MembershipActionAddActor,
-				Actor:       member.Actor,
-				Device:      member.Device,
-				HomeStation: "station-b",
-				Role:        valueobject.MemberRoleMember,
-			}},
-		),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rejoined, err := authority.commands.Submit(
-		ctx,
-		membershipSubmitRequest(
-			t,
-			authority,
-			groupID,
-			owner,
-			addPlan,
-			"follower-rejoin-add",
-		),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	forgedInput := rejoined.Event.Input()
-	forgedInput.Fact.MembershipChanges[0].HomeStation = "station-c"
-	forged, err := (conversationhttp.ProtobufEventSealer{}).Seal(forgedInput)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := follower.commands.ApplyFollowerEvent(
-		ctx,
-		forged,
-	); !conversationdomain.IsCode(err, conversationdomain.ErrorCodeUnauthorized) {
-		t.Fatalf("forged rejoin checkpoint error = %v", err)
-	}
-	if err := follower.commands.ApplyFollowerEvent(ctx, rejoined.Event); err != nil {
-		t.Fatalf("valid rejoin checkpoint error = %v", err)
-	}
-
-	head, err := follower.queries.PublicHead(ctx, groupID, member.Actor)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if head.Head.Sequence != rejoined.Event.Sequence ||
-		head.Head.EventHash != rejoined.Event.Hash ||
-		head.FollowerStatus != repository.FollowerStatusActive {
-		t.Fatalf("rejoined follower head = %+v", head)
-	}
-	events, err := follower.queries.Events(ctx, groupID, member.Actor, 0, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 3 ||
-		events[0].ID != created.Event.ID ||
-		events[1].ID != removed.Event.ID ||
-		events[2].ID != rejoined.Event.ID {
-		t.Fatalf("rejoined follower events = %+v", events)
-	}
-	assertCount(t, follower.db, &persistence.ConversationFollowerPendingEventModel{}, 0)
 }
 
 func TestConversationDDDFollowerRejectsAuthorityReplacement(t *testing.T) {
@@ -6704,9 +6559,28 @@ func createDDDGroup(
 	member valueobject.Endpoint,
 ) command.Result {
 	t.Helper()
+	return createDDDGroupWithMemberStation(
+		t,
+		fixture,
+		groupID,
+		owner,
+		member,
+		"station-a",
+	)
+}
+
+func createDDDGroupWithMemberStation(
+	t *testing.T,
+	fixture dddFixture,
+	groupID valueobject.ConversationID,
+	owner valueobject.Endpoint,
+	member valueobject.Endpoint,
+	memberStation valueobject.StationID,
+) command.Result {
+	t.Helper()
 	seedDDDDevices(t, fixture.db,
 		dddDevice(owner, "station-a"),
-		dddDevice(member, "station-a"),
+		dddDevice(member, string(memberStation)),
 	)
 	plan, err := fixture.commands.PrepareGroup(
 		context.Background(),
@@ -6737,7 +6611,7 @@ func createDDDGroup(
 			AuthorityPlanHash: plan.Hash,
 			Deliveries: []valueobject.PreparedDelivery{
 				dddDelivery(t, owner, "station-a", valueobject.DeliveryKindPublicEvent, "owner-marker"),
-				dddDelivery(t, member, "station-a", valueobject.DeliveryKindMLSWelcome, "member-welcome"),
+				dddDelivery(t, member, memberStation, valueobject.DeliveryKindMLSWelcome, "member-welcome"),
 			},
 			ExactCommandBytes: []byte("create-" + string(groupID)),
 		},

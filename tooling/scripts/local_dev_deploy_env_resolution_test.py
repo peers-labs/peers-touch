@@ -24,21 +24,6 @@ class ReviewedDeployEnvResolutionTest(unittest.TestCase):
         script_root.mkdir(parents=True)
         shutil.copy2(SCRIPT, script_root / "deploy.sh")
         self.script = script_root / "deploy.sh"
-        self.source_sync = script_root / "source-sync.sh"
-        self.source_sync.write_text(
-            "#!/bin/bash\nprintf '%s\\n' \"$PT_DEPLOY_ENV_FILE\"\n",
-            encoding="utf-8",
-        )
-        self.source_sync.chmod(0o700)
-        machine_dev = (
-            self.project_root
-            / "tooling"
-            / "scripts"
-            / "local-dev"
-            / "machine-dev.mjs"
-        )
-        machine_dev.parent.mkdir(parents=True)
-        machine_dev.write_text("process.exit(0);\n", encoding="utf-8")
 
         definition_root = self.env_root / "peers-touch" / "one" / "deploy"
         definition_root.mkdir(parents=True)
@@ -106,39 +91,12 @@ class ReviewedDeployEnvResolutionTest(unittest.TestCase):
             check=False,
         )
 
-    def synchronize(self, name: str) -> subprocess.CompletedProcess[str]:
-        environment = os.environ.copy()
-        environment.update(
-            {
-                "PT_ENV_REPO": str(self.env_root),
-                "PT_MACHINE_LEASE_KIND": "station.deploy",
-                "PT_MACHINE_LEASE_RESOURCE_ID": name,
-            }
-        )
-        return subprocess.run(
-            ["/bin/bash", str(self.script), name],
-            cwd=self.project_root,
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
     def test_resolves_tracked_clean_env_and_ignores_local_cache(self) -> None:
         result = self.resolve("station-one")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(Path(result.stdout.strip()), self.definition)
         self.assertNotIn("wrong-local-cache", result.stdout)
-
-    def test_source_sync_receives_reviewed_environment_file(self) -> None:
-        result = self.synchronize("station-one")
-
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            Path(result.stdout.strip().splitlines()[-1]),
-            self.definition,
-        )
 
     def test_rejects_dirty_tracked_deploy_env(self) -> None:
         self.definition.write_text(

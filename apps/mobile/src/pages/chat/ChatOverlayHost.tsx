@@ -28,23 +28,30 @@ import { MobileAvatar } from '../../components/MobileAvatar';
 import {
   CHAT_BACKGROUND_OPTIONS,
   type ChatBackgroundId,
-  type FriendConversationSettings,
-  type UpdateFriendConversationSettingsInput,
 } from '../../features/social/socialApiTypes';
 import type { ChatActionState } from '../../features/chat/chatActionState';
+import type {
+  GroupSettings,
+  UpdateGroupSettingsInput,
+} from '../../services/gateways/groupGateway';
 import type {
   SocialConversation,
   SocialMessage,
   PeerProfile,
 } from '../../features/social/socialTypes';
-import { MemberRole } from '../../gen/proto/domain/chat/conversation_pb';
 import type {
-  MessagingConversationProjection,
-  MessagingMemberAuthorityMemberProjection,
-} from '../../services/mobileCommands';
+  Group,
+  GroupMember,
+  GroupMessage,
+} from '../../gen/proto/domain/chat/group_chat_pb';
+import { GroupRole } from '../../gen/proto/domain/chat/group_chat_pb';
+import {
+  groupMembershipOperationKey,
+  useGroupMembershipOperations,
+} from '../../features/group/groupStore';
 import {
   messageProjectionMetadata,
-} from '../../features/chat/messageProjection';
+} from '../../features/chat/messagingProjectionAdapters';
 import { isOwnChatMessage } from '../../features/chat/chatSelectors';
 import type { ConversationSettingsFeedback } from './conversationSettingsState';
 
@@ -76,7 +83,7 @@ export function MessageActionSheet({
   canModerate,
   onModerate,
 }: {
-  readonly message: SocialMessage | undefined;
+  readonly message: SocialMessage | GroupMessage | undefined;
   readonly currentUserPtid: string | null;
   readonly canEdit: boolean;
   readonly commandBusy: boolean;
@@ -362,21 +369,21 @@ export function ChatActionSheet({
 interface GroupManagementModalProps {
   readonly open: boolean;
   readonly onClose: () => void;
-  readonly conversation: MessagingConversationProjection;
-  readonly members: readonly MessagingMemberAuthorityMemberProjection[];
+  readonly conversation: Group;
+  readonly members: readonly GroupMember[];
   readonly myRole: number;
   readonly canManage: boolean;
   readonly groupNameDraft: string;
   readonly setGroupNameDraft: (value: string) => void;
   readonly groupDescriptionDraft: string;
   readonly setGroupDescriptionDraft: (value: string) => void;
-  readonly conversationSettings: FriendConversationSettings | undefined;
+  readonly conversationSettings: GroupSettings | undefined;
   readonly inviteCandidates: readonly SocialConversation[];
   readonly peerProfiles: Record<string, PeerProfile | null>;
   readonly currentUserPtid: string | null;
   readonly onSaveGroup: (name: string, description: string) => Promise<unknown>;
   readonly onUpdateMySettings: (
-    patch: UpdateFriendConversationSettingsInput,
+    patch: UpdateGroupSettingsInput,
   ) => Promise<unknown> | void;
   readonly onUpdateMemberRole: (
     memberPtid: string,
@@ -419,6 +426,7 @@ export function GroupManagementModal({
   onLeaveGroup,
 }: GroupManagementModalProps) {
   const { t } = useMobileI18n();
+  const membershipOperations = useGroupMembershipOperations();
   const [pendingOperation, setPendingOperation] = useState('');
   const [operationError, setOperationError] = useState('');
   if (!open) return null;
@@ -439,6 +447,34 @@ export function GroupManagementModal({
       setOperationError(t(failureKey));
       setPendingOperation('');
     }
+  };
+
+  const confirmMembershipOperation = (
+    action: 'add' | 'remove',
+    memberPtid: string,
+    memberName: string,
+  ) => {
+    const adding = action === 'add';
+    Modal.confirm({
+      title: t('common.action.confirm'),
+      content: `${t(adding
+        ? 'mobile.group.invite'
+        : 'mobile.group.removeMember')} ${memberName}`,
+      okText: t(adding
+        ? 'mobile.group.invite'
+        : 'mobile.group.removeMember'),
+      cancelText: t('common.action.cancel'),
+      okButtonProps: { danger: !adding },
+      onOk: () => runOperation(
+        `${adding ? 'invite' : 'member'}:${memberPtid}${adding ? '' : ':remove'}`,
+        adding
+          ? 'mobile.group.operationInviteFailed'
+          : 'mobile.group.operationRemoveFailed',
+        () => adding
+          ? onInviteMember(memberPtid)
+          : onRemoveMember(memberPtid),
+      ),
+    });
   };
 
   return (
@@ -473,7 +509,7 @@ export function GroupManagementModal({
 
           <SectionTitle
             title={t('mobile.group.profile')}
-            count={conversation.memberPtids.length}
+            count={conversation.memberCount}
           />
           <Input
             value={groupNameDraft}
@@ -534,7 +570,7 @@ export function GroupManagementModal({
           <SectionTitle title={t('mobile.group.members')} count={members.length} />
           {members.length > 0 ? (
             <BoundedList
-              surfaceKey={`members:${conversation.conversationId}`}
+              surfaceKey={`members:${conversation.ulid}`}
               items={[...members]}
               itemKey={(member) => member.ptid}
             >
@@ -550,17 +586,21 @@ export function GroupManagementModal({
                     const isSelf = member.ptid === currentUserPtid;
                     const canManageTarget = canManage
                       && !isSelf
-                      && member.role !== MemberRole.OWNER
+                      && member.role !== GroupRole.OWNER
                       && (
-                        myRole === MemberRole.OWNER
+                        myRole === GroupRole.OWNER
                         || member.role < myRole
                       );
                     const memberOperation = `member:${member.ptid}`;
+                    const membershipOperation = membershipOperations[
+                      groupMembershipOperationKey(conversation.ulid, member.ptid)
+                    ];
                     return (
                       <List.Item
                         data-scroll-anchor-id={member.ptid}
+                        data-group-membership-state={membershipOperation?.phase ?? 'idle'}
                         actions={[
-                          canManageTarget && myRole === MemberRole.OWNER ? (
+                          canManageTarget && myRole === GroupRole.OWNER ? (
                             <Button
                               key="role"
                               size="small"
@@ -570,18 +610,18 @@ export function GroupManagementModal({
                                 'mobile.group.operationUpdateMemberFailed',
                                 () => onUpdateMemberRole(
                                   member.ptid,
-                                  member.role === MemberRole.ADMIN
+                                  member.role === GroupRole.ADMIN
                                     ? 'member'
                                     : 'admin',
                                 ),
                               )}
                             >
-                              {t(member.role === MemberRole.ADMIN
+                              {t(member.role === GroupRole.ADMIN
                                 ? 'mobile.group.demoteAdmin'
                                 : 'mobile.group.promoteAdmin')}
                             </Button>
                           ) : null,
-                          canManageTarget && myRole === MemberRole.OWNER ? (
+                          canManageTarget && myRole === GroupRole.OWNER ? (
                             <Button
                               key="transfer"
                               size="small"
@@ -627,21 +667,14 @@ export function GroupManagementModal({
                               key="remove"
                               size="small"
                               danger
-                              disabled={Boolean(pendingOperation)}
-                              onClick={() => {
-                                Modal.confirm({
-                                  title: t('common.action.confirm'),
-                                  content: `${t('mobile.group.removeMember')} ${memberName}`,
-                                  okText: t('mobile.group.removeMember'),
-                                  cancelText: t('common.action.cancel'),
-                                  okButtonProps: { danger: true },
-                                  onOk: () => runOperation(
-                                    `${memberOperation}:remove`,
-                                    'mobile.group.operationRemoveFailed',
-                                    () => onRemoveMember(member.ptid),
-                                  ),
-                                });
-                              }}
+                              loading={membershipOperation?.phase === 'pending'}
+                              disabled={Boolean(pendingOperation)
+                                || membershipOperation?.phase === 'pending'}
+                              onClick={() => confirmMembershipOperation(
+                                'remove',
+                                member.ptid,
+                                memberName,
+                              )}
                             >
                               {t('mobile.group.removeMember')}
                             </Button>
@@ -659,6 +692,15 @@ export function GroupManagementModal({
                         />
                         <Tag>{groupRoleLabel(member.role, t)}</Tag>
                         {member.muted ? <Tag color="warning">{t('mobile.group.memberMuted')}</Tag> : null}
+                        {membershipOperation?.phase === 'pending' ? (
+                          <Tag color="processing">
+                            {t('mobile.recovery.command.state.pending')}
+                          </Tag>
+                        ) : membershipOperation?.phase === 'failed' ? (
+                          <Tag color="error">
+                            {t('mobile.recovery.command.state.failed-retryable')}
+                          </Tag>
+                        ) : null}
                       </List.Item>
                     );
                   }}
@@ -678,7 +720,7 @@ export function GroupManagementModal({
           />
           {inviteCandidates.length > 0 ? (
             <BoundedList
-              surfaceKey={`invite:${conversation.conversationId}`}
+              surfaceKey={`invite:${conversation.ulid}`}
               items={[...inviteCandidates]}
               itemKey={(candidate) => candidate.peerPtid}
             >
@@ -686,37 +728,52 @@ export function GroupManagementModal({
                 <List
                   dataSource={rows}
                   rowKey="peerPtid"
-                  renderItem={(candidate) => (
-                    <List.Item
-                      data-scroll-anchor-id={candidate.peerPtid}
-                      actions={[
-                        <Button
-                          key="invite"
-                          size="small"
-                          type="primary"
-                          disabled={Boolean(pendingOperation)}
-                          loading={pendingOperation === `invite:${candidate.peerPtid}`}
-                          onClick={() => void runOperation(
-                            `invite:${candidate.peerPtid}`,
-                            'mobile.group.operationInviteFailed',
-                            () => onInviteMember(candidate.peerPtid),
+                  renderItem={(candidate) => {
+                    const membershipOperation = membershipOperations[
+                      groupMembershipOperationKey(
+                        conversation.ulid,
+                        candidate.peerPtid,
+                      )
+                    ];
+                    return (
+                      <List.Item
+                        data-scroll-anchor-id={candidate.peerPtid}
+                        data-group-membership-state={membershipOperation?.phase ?? 'idle'}
+                        actions={[
+                          <Button
+                            key="invite"
+                            size="small"
+                            type="primary"
+                            disabled={Boolean(pendingOperation)
+                              || membershipOperation?.phase === 'pending'}
+                            loading={membershipOperation?.phase === 'pending'}
+                            onClick={() => confirmMembershipOperation(
+                              'add',
+                              candidate.peerPtid,
+                              candidate.peerName,
+                            )}
+                          >
+                            {t('mobile.group.invite')}
+                          </Button>,
+                        ]}
+                      >
+                        <List.Item.Meta
+                          avatar={(
+                            <MobileAvatar src={candidate.peerAvatar}>
+                              {candidate.peerName.slice(0, 1)}
+                            </MobileAvatar>
                           )}
-                        >
-                          {t('mobile.group.invite')}
-                        </Button>,
-                      ]}
-                    >
-                      <List.Item.Meta
-                        avatar={(
-                          <MobileAvatar src={candidate.peerAvatar}>
-                            {candidate.peerName.slice(0, 1)}
-                          </MobileAvatar>
-                        )}
-                        title={<Text strong>{candidate.peerName}</Text>}
-                        description={<Text type="secondary" copyable>{candidate.peerPtid}</Text>}
-                      />
-                    </List.Item>
-                  )}
+                          title={<Text strong>{candidate.peerName}</Text>}
+                          description={<Text type="secondary" copyable>{candidate.peerPtid}</Text>}
+                        />
+                        {membershipOperation?.phase === 'failed' ? (
+                          <Tag color="error">
+                            {t('mobile.recovery.command.state.failed-retryable')}
+                          </Tag>
+                        ) : null}
+                      </List.Item>
+                    );
+                  }}
                 />
               )}
             </BoundedList>
@@ -734,7 +791,7 @@ export function GroupManagementModal({
               disabled={Boolean(pendingOperation)}
               loading={pendingOperation === 'leave-or-dissolve'}
               onClick={() => {
-                const owner = myRole === MemberRole.OWNER;
+                const owner = myRole === GroupRole.OWNER;
                 Modal.confirm({
                   title: t(owner
                     ? 'mobile.group.dissolveGroupConfirmTitle'
@@ -758,7 +815,7 @@ export function GroupManagementModal({
                 });
               }}
             >
-              {t(myRole === MemberRole.OWNER
+              {t(myRole === GroupRole.OWNER
                 ? 'mobile.group.dissolveGroup'
                 : 'mobile.group.leaveGroup')}
             </Button>
@@ -819,8 +876,8 @@ function groupRoleLabel(
   role: number,
   t: (key: string) => string,
 ): string {
-  if (role >= MemberRole.OWNER) return t('mobile.group.roleOwner');
-  if (role >= MemberRole.ADMIN) return t('mobile.group.roleAdmin');
+  if (role >= GroupRole.OWNER) return t('mobile.group.roleOwner');
+  if (role >= GroupRole.ADMIN) return t('mobile.group.roleAdmin');
   return t('mobile.group.roleMember');
 }
 

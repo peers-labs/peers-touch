@@ -1,6 +1,6 @@
 // Changelog:
 // 2026-08-14 — M11 localStorage→Station migration: persistence models for
-//   EcosystemAgentGroup, EcosystemTopicComment, EcosystemCustomPlugin.
+//   Ecosystem Agent Groups and Topic Comments.
 
 package persistence
 
@@ -30,21 +30,3 @@ type EcosystemTopicComment struct {
 }
 
 func (EcosystemTopicComment) TableName() string { return "ecosystem_topic_comments" }
-
-// EcosystemCustomPlugin defines a user-registered external plugin endpoint.
-type EcosystemCustomPlugin struct {
-	ID             string    `gorm:"primaryKey;type:varchar(36)"`
-	Name           string    `gorm:"not null;type:text"`
-	Description    string    `gorm:"type:text"`
-	Endpoint       string    `gorm:"not null;type:text"`
-	Method         string    `gorm:"type:varchar(10);default:'POST'"`
-	AuthType       string    `gorm:"type:varchar(20);default:'none'"`
-	InputSchema    string    `gorm:"type:text"`
-	OutputSchema   string    `gorm:"type:text"`
-	Enabled        bool      `gorm:"not null;default:true"`
-	OwnerActorPTID string    `gorm:"column:owner_actor_ptid;not null;type:text;index"`
-	CreatedAt      time.Time `gorm:"not null;autoCreateTime"`
-	UpdatedAt      time.Time `gorm:"not null;autoUpdateTime"`
-}
-
-func (EcosystemCustomPlugin) TableName() string { return "ecosystem_custom_plugins" }

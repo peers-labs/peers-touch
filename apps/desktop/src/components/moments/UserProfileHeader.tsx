@@ -121,11 +121,11 @@ export function UserProfileHeader({
   //      runtime self-view. Drops to undefined for everyone else,
   //      which renders just "@username".
   const isSelf = Boolean(viewerActorPtid && id && viewerActorPtid === id);
-  const home = actorHomeOf(actor) ?? (isSelf ? federationSelf?.home_station_domain : undefined);
+  const home = actorHomeOf(actor) ?? (isSelf ? federationSelf?.homeStationDomain : undefined);
   const source = actorSourceLabel({
     id,
     home,
-    selfHome: federationSelf?.home_station_domain,
+    selfHome: federationSelf?.homeStationDomain,
     t,
   });
 

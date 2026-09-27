@@ -202,6 +202,8 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
         void discardNativeMomentMedia({
           stationPeerId: session.stationPeerId,
           actorPtid: session.actorRef.ptid,
+          deviceId: session.deviceId,
+          lifecycleGeneration: session.lifecycleGeneration,
           sessionId: session.sessionId,
           handle: item.stagedHandle.handle,
         });
@@ -209,6 +211,8 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
     });
   }, [
     session.actorRef.ptid,
+    session.deviceId,
+    session.lifecycleGeneration,
     session.sessionId,
     session.stationPeerId,
   ]);
@@ -258,6 +262,8 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
         void discardNativeMomentMedia({
           stationPeerId: session.stationPeerId,
           actorPtid: session.actorRef.ptid,
+          deviceId: session.deviceId,
+          lifecycleGeneration: session.lifecycleGeneration,
           sessionId: session.sessionId,
           handle: item.stagedHandle.handle,
         });
@@ -269,6 +275,8 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
     setPendingDraftRemoval(null);
   }, [
     session.actorRef.ptid,
+    session.deviceId,
+    session.lifecycleGeneration,
     session.sessionId,
     session.stationPeerId,
   ]);
@@ -309,6 +317,8 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
       const image = await uploadNativeMomentMedia({
         stationPeerId: session.stationPeerId,
         actorPtid: session.actorRef.ptid,
+        deviceId: session.deviceId,
+        lifecycleGeneration: session.lifecycleGeneration,
         sessionId: session.sessionId,
         handle: item.stagedHandle.handle,
       });
@@ -390,6 +400,8 @@ export function MomentComposer({ session, gateway, onPublished }: MomentComposer
           void discardNativeMomentMedia({
             stationPeerId: session.stationPeerId,
             actorPtid: session.actorRef.ptid,
+            deviceId: session.deviceId,
+            lifecycleGeneration: session.lifecycleGeneration,
             sessionId: session.sessionId,
             handle: removed.stagedHandle.handle,
           });

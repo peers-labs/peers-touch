@@ -115,11 +115,20 @@ export function requireMobileMutationAdmission(
 export function mobileMutationScopeKey(
   stationPeerId: string,
   actorPtid: string,
+  deviceId: string,
+  lifecycleGeneration: number,
 ): string {
   const station = stationPeerId.trim();
   const actor = actorPtid.trim();
-  if (!station || !actor) {
+  const device = deviceId.trim();
+  if (
+    !station
+    || !actor
+    || !device
+    || !Number.isSafeInteger(lifecycleGeneration)
+    || lifecycleGeneration <= 0
+  ) {
     throw new Error('mobile.auth.missingIdentityScope');
   }
-  return `${station}|${actor}`;
+  return `${station}|${actor}|${device}|${lifecycleGeneration}`;
 }

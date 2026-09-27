@@ -30,6 +30,8 @@ pub struct AgentCapabilityNegativeControlInput {
     pub control: String,
     pub capability_session_id_hash: String,
     pub cross_device_session_id: Option<String>,
+    pub capability_id: Option<String>,
+    pub permission_kind: Option<String>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -273,6 +275,8 @@ pub fn capability_negative_control(
         control,
         input.capability_session_id_hash,
         input.cross_device_session_id,
+        input.capability_id,
+        input.permission_kind,
     ) {
         Ok(facts) => match serde_json::to_value(facts) {
             Ok(value) => success_payload("agent_capability_negative_control", value),
@@ -299,6 +303,8 @@ fn requested_negative_control(value: &str) -> Option<RequestedCapabilityNegative
         "crossDevice" => Some(RequestedCapabilityNegativeControl::CrossDevice),
         "leasePause" => Some(RequestedCapabilityNegativeControl::LeasePause),
         "leaseExpired" => Some(RequestedCapabilityNegativeControl::LeaseExpired),
+        "permissionDenied" => Some(RequestedCapabilityNegativeControl::PermissionDenied),
+        "permissionGranted" => Some(RequestedCapabilityNegativeControl::PermissionGranted),
         _ => None,
     }
 }
@@ -476,6 +482,11 @@ fn capability_session_json(value: &agent::ClientCapabilitySession) -> serde_json
                 "schema_version": capability.schema_version,
                 "permission": agent::CapabilityPermissionState::try_from(capability.permission)
                     .unwrap_or(agent::CapabilityPermissionState::Unspecified)
+                    .as_str_name(),
+                "permission_kind": agent::CapabilityPermissionKind::try_from(
+                    capability.permission_kind,
+                )
+                    .unwrap_or(agent::CapabilityPermissionKind::Unspecified)
                     .as_str_name(),
                 "constraints": capability.constraints.as_ref().map(|constraints| json!({
                     "max_request_bytes": constraints.max_request_bytes,

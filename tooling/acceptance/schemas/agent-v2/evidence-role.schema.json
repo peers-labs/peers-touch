@@ -41,6 +41,16 @@
     },
     "observedAt": {"type": "string", "minLength": 1}
   },
+  "x-common-observation-fields": [
+    "runtimeTupleKey",
+    "scenarioId",
+    "sampleId",
+    "actorIdentityHash",
+    "oracleAssertionId"
+  ],
+  "x-runtime-truthful-observation-fields": [
+    "scenarioExecutionId"
+  ],
   "x-role-contracts": {
     "cell-results": {"requiredObservationFields": ["cellId", "status", "expected", "actual"]},
     "cleanup": {"requiredObservationFields": ["resourceKind", "resourceIdHash", "status"]},
@@ -55,7 +65,7 @@
     "projection-revisions": {"requiredObservationFields": ["slice", "beforeRevision", "afterRevision"]},
     "provider-revoke": {"requiredObservationFields": ["providerId", "status", "idempotencyKeyHash"]},
     "readiness-snapshots": {"requiredObservationFields": ["snapshotId", "state", "authority", "revision"]},
-    "receiver-dom": {"requiredObservationFields": ["scenarioId", "cellId", "selector", "locale", "textHash", "visible"]},
+    "receiver-dom": {"requiredObservationFields": ["scenarioId", "cellId", "selector", "locale", "textHash", "expectedVisible", "visible"]},
     "replay": {"requiredObservationFields": ["sourceHash", "replayHash", "equal"]},
     "runtime-events": {"requiredObservationFields": ["eventId", "sequence", "eventType", "occurredAt"]},
     "side-effect-count": {"requiredObservationFields": ["counterId", "count", "maximum"]},

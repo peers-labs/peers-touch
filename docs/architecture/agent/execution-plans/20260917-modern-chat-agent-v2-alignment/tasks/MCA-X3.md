@@ -78,7 +78,7 @@
     {
       "verificationClass": "FUNCTIONAL_CHECK",
       "result": "BLOCKED",
-      "ref": "profile:two;error:PROFILE_UNAVAILABLE;source:e49b8bdf7d4d51efa115e3f2f041d15a9ae0ae9d;diagnostic:<environment-root>/peers-touch/two/profile.env.example"
+      "ref": "profile:two;error:PROFILE_UNAVAILABLE;source:e49b8bdf7d4d51efa115e3f2f041d15a9ae0ae9d;diagnostic:/Users/developer/Documents/Projects/peers-touch/env/peers-touch/two/profile.env.example"
     },
     {
       "verificationClass": "FUNCTIONAL_CHECK",

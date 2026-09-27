@@ -87,7 +87,7 @@ deterministic sanctioned fixture.
 - Exact-source V2-J03 functional evidence passes on Profile `two`, Slot `1`,
   including authoritative receiver DOM, Station lineage, replay equality,
   exactly one side effect/result/continuation, and clean resource restoration.
-- The formal 86-tuple Gate remains owned by MCA-A01.
+- The 86-tuple candidate is owned by MCA-A04; final proof is owned by MCA-A08.
 - Timeout/disconnect taxonomy and retry-command lineage remain
   `DESIGN_AMENDMENT_REQUIRED` and are not invented by this slice.
 

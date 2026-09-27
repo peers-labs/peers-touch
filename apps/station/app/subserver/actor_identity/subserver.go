@@ -2,7 +2,6 @@ package actor_identity
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -15,7 +14,6 @@ import (
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	httpadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/http"
 	authfed "github.com/peers-labs/peers-touch/station/frame/core/auth/federation"
-	"github.com/peers-labs/peers-touch/station/frame/core/facility/session"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
@@ -348,51 +346,7 @@ func (s *subServer) handleEnrollDevice(
 		return nil, err
 	}
 
-	subject := coreauth.GetSubject(ctx)
-	type sessionDeviceBinding interface {
-		coreauth.SessionDeviceIDResolver
-		BindSessionDeviceID(context.Context, string, string) error
-	}
-	var binding sessionDeviceBinding
-	if subject != nil && subject.SessionID != "" {
-		var ok bool
-		binding, ok = coreauth.GetGlobalSessionValidator().(sessionDeviceBinding)
-		if !ok {
-			return nil, server.InternalError(
-				"session device binding is unavailable",
-			)
-		}
-		persisted := binding.ResolveSessionDeviceID(ctx, subject.SessionID)
-		if persisted != "" && persisted != authenticated.DeviceID {
-			return nil, server.Forbidden(
-				"authenticated session belongs to another device",
-			)
-		}
-	}
-
-	response, err := httpHandler.Enroll(ctx, authenticated, request)
-	if err != nil {
-		return nil, err
-	}
-	if binding == nil {
-		return response, nil
-	}
-	if err := binding.BindSessionDeviceID(
-		ctx,
-		subject.SessionID,
-		authenticated.DeviceID,
-	); err != nil {
-		if errors.Is(err, session.ErrSessionDeviceConflict) {
-			return nil, server.Forbidden(
-				"authenticated session belongs to another device",
-			)
-		}
-		return nil, server.InternalErrorWithCause(
-			"bind authenticated session device",
-			err,
-		)
-	}
-	return response, nil
+	return httpHandler.Enroll(ctx, authenticated, request)
 }
 
 func (s *subServer) handleListDevices(

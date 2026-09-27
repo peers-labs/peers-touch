@@ -2,7 +2,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Empty, Select, Switch, message as antMessage, theme } from 'antd';
+import { Alert, Empty, Select, Switch, message as antMessage, theme } from 'antd';
 import { Button, Tag } from '@lobehub/ui';
 import {
   BookOpen,
@@ -19,6 +19,7 @@ import {
 import {
   CapabilityApprovalPolicy,
   CapabilityAvailability,
+  type CapabilityCatalogIssue,
   CapabilityReadinessState,
   CapabilitySourceKind,
   type AgentCapabilityBinding,
@@ -26,6 +27,7 @@ import {
   type CapabilityReadiness,
 } from '../../gen/proto/domain/agent/capability_pb';
 import type { AgentCapabilityState } from '../../store/agentCapabilities';
+import type { AgentTypedErrorPayload } from '../../services/desktop_api';
 
 interface CapabilitySourcePresentation {
   icon: LucideIcon;
@@ -110,11 +112,16 @@ interface AgentCapabilityInventoryPanelProps {
   manifests: CapabilityManifest[];
   bindings: AgentCapabilityBinding[];
   readiness: CapabilityReadiness[];
+  catalogIssues: CapabilityCatalogIssue[];
+  lastMutationError: AgentTypedErrorPayload | null;
   pendingMutations: AgentCapabilityState['pendingMutations'];
   loading: boolean;
   loadAgent: AgentCapabilityState['loadAgent'];
   upsertBinding: AgentCapabilityState['upsertBinding'];
   deleteBinding: AgentCapabilityState['deleteBinding'];
+  focusCapabilityId?: string;
+  focusPermissionKind?: string;
+  focusRequestId?: string;
 }
 
 function capabilityKey(capabilityId: string, version: string): string {
@@ -196,6 +203,16 @@ export function projectCapabilityInventory(
       if (idDelta !== 0) return idDelta;
       return left.manifest.version.localeCompare(right.manifest.version);
     });
+}
+
+export function resolveFocusedCapabilityKey(
+  items: CapabilityInventoryItem[],
+  capabilityId?: string,
+): string | undefined {
+  if (!capabilityId) return undefined;
+  return items.find(
+    (item) => item.manifest.capabilityId === capabilityId,
+  )?.key;
 }
 
 export function capabilitySourcePresentation(
@@ -348,11 +365,16 @@ export function AgentCapabilityInventoryPanel({
   manifests,
   bindings,
   readiness,
+  catalogIssues,
+  lastMutationError,
   pendingMutations,
   loading,
   loadAgent,
   upsertBinding,
   deleteBinding,
+  focusCapabilityId,
+  focusPermissionKind,
+  focusRequestId,
 }: AgentCapabilityInventoryPanelProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
@@ -360,7 +382,30 @@ export function AgentCapabilityInventoryPanel({
     () => projectCapabilityInventory(manifests, bindings, readiness),
     [bindings, manifests, readiness],
   );
-  const [selectedKey, setSelectedKey] = useState('');
+  const catalogError = catalogIssues[0]?.error;
+  const visibleError = lastMutationError
+    ? {
+        type: lastMutationError.error_type,
+        localeKey: lastMutationError.locale_key,
+      }
+    : catalogError
+      ? {
+          type: catalogError.errorType,
+          localeKey: catalogError.localeKey,
+        }
+      : null;
+  const [selection, setSelection] = useState<{
+    handledFocusRequestId?: string;
+    key: string;
+  }>({ key: '' });
+  const focusedKey = resolveFocusedCapabilityKey(items, focusCapabilityId);
+  const selectedKey = (
+    focusRequestId
+    && focusRequestId !== selection.handledFocusRequestId
+    && focusedKey
+  )
+    ? focusedKey
+    : selection.key;
   const selected = items.find((item) => item.key === selectedKey) ?? items[0];
 
   const pending = selected
@@ -449,13 +494,38 @@ export function AgentCapabilityInventoryPanel({
     }
   }, [agentId, agentVersion, selected, t, upsertBinding]);
 
+  const errorNotice = visibleError ? (
+    <Alert
+      data-pt-agent-capability-error={visibleError.type}
+      type="error"
+      showIcon
+      style={{ gridColumn: '1 / -1' }}
+      message={(
+        <span data-pt-agent-capability-error-text={visibleError.localeKey}>
+          {t(visibleError.localeKey, { defaultValue: visibleError.localeKey })}
+        </span>
+      )}
+      action={(
+        <Button
+          icon={<RefreshCw size={14} />}
+          onClick={() => void refresh()}
+          title={t('agent.profile.capabilityInventory.refresh')}
+          aria-label={t('agent.profile.capabilityInventory.refresh')}
+          size="small"
+        />
+      )}
+    />
+  ) : null;
+
   if (!selected) {
     return (
-      <Empty
-        data-pt-agent-capability-inventory
-        description={t('agent.profile.capabilityInventory.empty')}
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-      />
+      <Flexbox gap={10} data-pt-agent-capability-inventory>
+        {errorNotice}
+        <Empty
+          description={t('agent.profile.capabilityInventory.empty')}
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+        />
+      </Flexbox>
     );
   }
 
@@ -490,6 +560,7 @@ export function AgentCapabilityInventoryPanel({
         minWidth: 0,
       }}
     >
+      {errorNotice}
       <Flexbox gap={8} style={{ minWidth: 0 }}>
         <Flexbox horizontal align="center" justify="space-between" gap={12}>
           <span style={{ color: token.colorText, fontSize: 12, fontWeight: 600 }}>
@@ -513,7 +584,10 @@ export function AgentCapabilityInventoryPanel({
                 key={item.key}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setSelectedKey(item.key)}
+                onClick={() => setSelection({
+                  handledFocusRequestId: focusRequestId,
+                  key: item.key,
+                })}
                 style={{
                   alignItems: 'center',
                   background: active ? token.colorPrimaryBg : 'transparent',
@@ -583,6 +657,11 @@ export function AgentCapabilityInventoryPanel({
 
       <Flexbox
         data-pt-agent-capability-detail={selected.key}
+        data-pt-agent-capability-permission-kind={
+          selected.manifest.capabilityId === focusCapabilityId
+            ? focusPermissionKind
+            : undefined
+        }
         data-pt-agent-capability-source={
           capabilitySourcePresentation(selected.manifest.sourceKind).iconKey
         }
