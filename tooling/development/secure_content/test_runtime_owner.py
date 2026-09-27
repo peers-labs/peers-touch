@@ -1422,6 +1422,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "activeStationPeerId": "station-peer",
                     "activeActorPtid": "ptid:alice",
                 }
+            if action == "moments.private.snapshot":
+                return {
+                    "active": True,
+                    "stationPeerId": "station-peer",
+                    "actorPtid": "ptid:alice",
+                    "errorMessage": None,
+                }
             if action == "build.identity":
                 return {
                     "identity": {
@@ -1456,6 +1463,81 @@ class RuntimeOwnerTest(unittest.TestCase):
             calls[0],
         )
         self.assertNotIn(endpoint.transport_url, json.dumps(calls))
+
+    def test_mobile_start_rejects_inactive_private_runtime_with_cause(
+        self,
+    ) -> None:
+        session = MagicMock()
+        calls: list[str] = []
+
+        def mobile_call(
+            _session: object,
+            action: str,
+            payload: Mapping[str, object] | None = None,
+        ) -> Mapping[str, object]:
+            request = dict(payload or {})
+            calls.append(action)
+            if action == "station.add":
+                return {"verifiedStationPeerId": "station-peer"}
+            if action == "access.submit" and request["kind"] == "start":
+                return {"decision": {"attemptId": "attempt-1"}}
+            if action == "access.submit" and request["kind"] == "login":
+                return {
+                    "session": {
+                        "actorPtid": "ptid:alice",
+                        "stationPeerId": "station-peer",
+                    }
+                }
+            if action == "lifecycle.restart":
+                return {"requested": True, "scope": "webview"}
+            if action == "lifecycle.scope.read":
+                return {
+                    "phase": "ACTIVE",
+                    "activeStationPeerId": "station-peer",
+                    "activeActorPtid": "ptid:alice",
+                }
+            if action == "moments.private.snapshot":
+                return {
+                    "active": False,
+                    "stationPeerId": None,
+                    "actorPtid": None,
+                    "errorMessage": (
+                        "private Social first-use trust requires HTTPS"
+                    ),
+                }
+            raise AssertionError(f"unexpected action {action}")
+
+        endpoint = _StationEndpoint(
+            transport_url="http://127.0.0.1:4101",
+            canonical_origin="http://station.example:18080",
+        )
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._mobile_call",
+                side_effect=mobile_call,
+            ),
+            self.assertRaises(RuntimeOwnerBlocked) as raised,
+        ):
+            _start_mobile_client(
+                session,
+                client_id="ios-alice",
+                account="alice@example.invalid",
+                password="password",
+                station_endpoint=endpoint,
+                station_runtime_identity="station-peer",
+                source_commit=COMMIT,
+                required_actions=("station.add",),
+            )
+
+        self.assertEqual(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            raised.exception.code,
+        )
+        self.assertIn(
+            "private Social first-use trust requires HTTPS",
+            str(raised.exception),
+        )
+        self.assertNotIn("build.identity", calls)
 
     def test_station_tunnel_open_failure_preserves_primary_error(self) -> None:
         primary = MagicMock(local_port=4101)

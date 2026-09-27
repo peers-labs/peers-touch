@@ -19,6 +19,7 @@ from tooling.acceptance.core import (
     EphemeralGateLaunchContext,
     EphemeralHandlerCleanup,
 )
+from tooling.acceptance.core.redaction import redact_text
 from tooling.development.secure_content.runtime_manifest import (
     FIXTURE_MANIFEST_KIND,
 )
@@ -170,8 +171,10 @@ class RuntimeFixtureCapabilityHandler(EphemeralCapabilityHandler):
         except EphemeralCapabilityBlocked:
             raise
         except Exception as error:
+            cause = redact_text(str(error)).strip()
+            detail = f": {cause}" if cause else ""
             raise EphemeralCapabilityBlocked(
-                "Secure Content runtime fixture action failed",
+                f"Secure Content runtime fixture action failed{detail}",
                 resource=f"fixture:{self._binding.capability}:{operation}",
             ) from error
         if not isinstance(outcome, Mapping):

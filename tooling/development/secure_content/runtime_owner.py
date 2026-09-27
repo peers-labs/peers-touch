@@ -1180,6 +1180,42 @@ def _mobile_mapping(
     return value
 
 
+def _require_mobile_private_runtime(
+    session: Any,
+    *,
+    client_id: str,
+    station_runtime_identity: str,
+    actor_ptid: str,
+) -> Mapping[str, Any]:
+    snapshot = _mobile_mapping(
+        _mobile_call(session, "moments.private.snapshot"),
+        "Private Social runtime snapshot",
+        client_id=client_id,
+    )
+    if snapshot.get("active") is not True:
+        detail = snapshot.get("errorMessage")
+        suffix = (
+            f": {redact_text(detail)}"
+            if isinstance(detail, str) and detail.strip()
+            else ""
+        )
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            f"Mobile client {client_id!r} Private Social runtime is inactive{suffix}",
+            resource=f"client:{client_id}",
+        )
+    if (
+        snapshot.get("stationPeerId") != station_runtime_identity
+        or snapshot.get("actorPtid") != actor_ptid
+    ):
+        raise RuntimeOwnerBlocked(
+            "STALE_CLIENT_IDENTITY",
+            f"Mobile client {client_id!r} Private Social runtime identity is stale",
+            resource=f"client:{client_id}",
+        )
+    return snapshot
+
+
 def _mobile_service_for_client(
     client_id: str,
     profiles: Sequence[str],
@@ -1479,6 +1515,12 @@ def _start_mobile_client(
             f"Mobile client {client_id!r} did not reach its bound runtime",
             resource=f"client:{client_id}",
         )
+    _require_mobile_private_runtime(
+        session,
+        client_id=client_id,
+        station_runtime_identity=station_runtime_identity,
+        actor_ptid=actor_ptid,
+    )
     build = _mobile_mapping(
         _mobile_call(session, "build.identity"),
         "build identity",
