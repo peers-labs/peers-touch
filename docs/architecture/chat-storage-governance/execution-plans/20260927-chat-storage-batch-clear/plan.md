@@ -103,6 +103,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/mobile/src/acceptance",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/mobile/src/runtimes",
         "mode": "exclusive-write"
       },
