@@ -249,6 +249,9 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('"seedConversationClear"', runner)
         self.assertIn("data-chat-storage-batch-estimated-bytes", runner)
+        self.assertIn("control?.matches('input')", runner)
+        self.assertIn("Desktop batch selection controls", runner)
+        self.assertIn("self._conversation_selected(", runner)
         self.assertNotIn('"createGroup"', runner)
 
 
