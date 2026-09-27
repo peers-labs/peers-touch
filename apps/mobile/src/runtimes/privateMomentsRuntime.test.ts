@@ -11,6 +11,8 @@ import type {
   PrivateMomentProjection,
   PrivateMomentReadProjection,
 } from '../services/mobileCommands';
+import { MobileLifecycleKernel } from '../app/lifecycle/MobileLifecycleKernel';
+import type { MobileRuntimeDescriptor } from '../app/lifecycle/types';
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
 
@@ -383,6 +385,82 @@ describe('privateMomentsRuntime projection', () => {
       active: false,
       errorMessage: 'private Social first-use trust requires HTTPS',
     }));
+  });
+
+  it('restarts independently of failed degradable messaging and social runtimes', async () => {
+    commandMocks.activate
+      .mockResolvedValueOnce(activeStatus(1))
+      .mockResolvedValueOnce(activeStatus(2));
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    const passiveDescriptor = (
+      id: string,
+      dependsOn: readonly string[] = [],
+    ): MobileRuntimeDescriptor => ({
+      id,
+      title: id,
+      responsibility: id,
+      dependsOn,
+      async bootstrap() {},
+      async suspend() {},
+      async resume() {},
+      async teardown() {
+        return { runtimeId: id, success: true, durationMs: 0 };
+      },
+    });
+    let graphIncarnation = 0;
+    const kernel = new MobileLifecycleKernel();
+    kernel.configureRuntimeGraph({
+      createDescriptors: () => {
+        graphIncarnation += 1;
+        return [
+          passiveDescriptor('session'),
+          passiveDescriptor('secure-storage'),
+          {
+            ...passiveDescriptor('messaging', ['session']),
+            async bootstrap() {
+              if (graphIncarnation === 2) {
+                throw new Error('mobile.messaging.runtimeUnavailable');
+              }
+            },
+          },
+          passiveDescriptor('social', ['messaging']),
+          createPrivateMomentsRuntimeDescriptor(),
+        ];
+      },
+      readGeneration: async () => 1,
+      advanceGeneration: async () => 2,
+      fenceProjections: () => undefined,
+      resolveLaunchState: async () => 'shell',
+    });
+
+    try {
+      await kernel.startRuntimeGraph();
+      expect(readPrivateMomentsSnapshot().active).toBe(true);
+
+      const restarted = await kernel.restartRuntimeGraph();
+
+      expect(restarted.runtimes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: 'messaging', status: 'failed' }),
+        expect.objectContaining({ id: 'social', status: 'failed' }),
+        expect.objectContaining({ id: 'private-social', status: 'ready' }),
+      ]));
+      expect(commandMocks.activate).toHaveBeenCalledTimes(2);
+      expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
+        active: true,
+        stationPeerId: 'station-1',
+        actorPtid: 'ptid:alice',
+        errorMessage: null,
+      }));
+    } finally {
+      await kernel.stopRuntimeGraph();
+    }
   });
 
   it('tears down the exact native generation when post-activation bootstrap fails', async () => {
