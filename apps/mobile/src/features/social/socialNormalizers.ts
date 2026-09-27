@@ -34,6 +34,10 @@ type FederationResolveInput =
     };
   };
 
+type PeerProfileInput =
+  Omit<Partial<PeerProfile>, 'discoverability'>
+  & { discoverability?: unknown };
+
 export function timestampMillis(timestamp?: SocialTimestamp | string): number {
   if (!timestamp) return 0;
   if (typeof timestamp === 'string') {
@@ -219,7 +223,7 @@ export function federationCatalogEntryToResult(entry: FederationCatalogEntry): A
   };
 }
 
-export function normalizePeerProfile(raw: Partial<PeerProfile>): PeerProfile {
+export function normalizePeerProfile(raw: PeerProfileInput): PeerProfile {
   const record = raw as Record<string, unknown>;
   const peersTouch = record.peers_touch as Record<string, unknown> | undefined;
   return {
