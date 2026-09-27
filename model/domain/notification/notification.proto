@@ -113,6 +113,11 @@ message NotificationPreference {
   NotificationType type = 7;
 }
 
+message NotificationPreferencesSnapshot {
+  repeated NotificationPreference preferences = 1;
+  uint64 notification_preferences_revision = 2;
+}
+
 // ============================================================================
 // API Messages
 // ============================================================================
@@ -176,16 +181,133 @@ message GetUnreadCountsResponse {
 message GetNotificationPreferencesRequest {}
 
 message GetNotificationPreferencesResponse {
-  repeated NotificationPreference preferences = 1;
+  reserved 1;
+  reserved "preferences";
+  NotificationPreferencesSnapshot snapshot = 2;
 }
 
-message UpdateNotificationPreferenceRequest {
+message NotificationPreferencePatch {
   NotificationCategory category = 1;
   bool enabled = 2;
   bool push_enabled = 3;
   bool sound_enabled = 4;
 }
 
-message UpdateNotificationPreferenceResponse {
-  NotificationPreference preference = 1;
+message UpdateNotificationPreferencesRequest {
+  repeated NotificationPreferencePatch updates = 1;
+  uint64 observed_revision = 2;
+}
+
+enum NotificationPreferencesUpdateOutcome {
+  NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNSPECIFIED = 0;
+  NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED = 1;
+  NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED = 2;
+  NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT = 3;
+}
+
+message UpdateNotificationPreferencesResponse {
+  NotificationPreferencesUpdateOutcome outcome = 1;
+  NotificationPreferencesSnapshot snapshot = 2;
+}
+
+// ============================================================================
+// Mobile Push Registration
+// ============================================================================
+
+enum PushChannel {
+  PUSH_CHANNEL_UNSPECIFIED = 0;
+  PUSH_CHANNEL_APNS = 1;
+  PUSH_CHANNEL_FCM = 2;
+  PUSH_CHANNEL_UNIFIED_PUSH = 3;
+}
+
+enum PushEnvironment {
+  PUSH_ENVIRONMENT_UNSPECIFIED = 0;
+  PUSH_ENVIRONMENT_DEVELOPMENT = 1;
+  PUSH_ENVIRONMENT_PRODUCTION = 2;
+}
+
+message ActorDeviceRef {
+  string actor_ptid = 1;
+  string device_id = 2;
+}
+
+message ApnsPushBinding {
+  bytes token = 1;
+  string topic = 2;
+}
+
+message FcmPushBinding {
+  string token = 1;
+}
+
+message UnifiedPushBinding {
+  string endpoint = 1;
+  bytes p256dh_key = 2;
+  bytes auth_secret = 3;
+}
+
+// PushRegistration intentionally excludes provider credentials. Native
+// provider bindings are write-only and remain encrypted at rest in Station.
+message PushRegistration {
+  string registration_id = 1;
+  ActorDeviceRef actor_device = 2;
+  PushChannel channel = 3;
+  PushEnvironment environment = 4;
+  bytes app_install_epoch_sha256 = 5;
+  bytes provider_binding_sha256 = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+  google.protobuf.Timestamp last_success_at = 9;
+}
+
+message RegisterPushDeviceRequest {
+  string request_id = 1;
+  string device_id = 2;
+  uint64 lifecycle_generation = 3;
+  bytes app_install_epoch_sha256 = 4;
+  PushEnvironment environment = 5;
+  oneof provider_binding {
+    ApnsPushBinding apns = 6;
+    FcmPushBinding fcm = 7;
+    UnifiedPushBinding unified_push = 8;
+  }
+}
+
+enum RegisterPushDeviceOutcome {
+  REGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED = 0;
+  REGISTER_PUSH_DEVICE_OUTCOME_CREATED = 1;
+  REGISTER_PUSH_DEVICE_OUTCOME_ROTATED = 2;
+  REGISTER_PUSH_DEVICE_OUTCOME_UNCHANGED = 3;
+}
+
+message RegisterPushDeviceResponse {
+  string request_id = 1;
+  RegisterPushDeviceOutcome outcome = 2;
+  PushRegistration registration = 3;
+}
+
+message UnregisterPushDeviceRequest {
+  string request_id = 1;
+  string device_id = 2;
+  uint64 lifecycle_generation = 3;
+  string registration_id = 4;
+  bytes app_install_epoch_sha256 = 5;
+}
+
+enum UnregisterPushDeviceOutcome {
+  UNREGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED = 0;
+  UNREGISTER_PUSH_DEVICE_OUTCOME_REMOVED = 1;
+  UNREGISTER_PUSH_DEVICE_OUTCOME_ALREADY_ABSENT = 2;
+}
+
+message UnregisterPushDeviceResponse {
+  string request_id = 1;
+  UnregisterPushDeviceOutcome outcome = 2;
+}
+
+message ListPushDevicesRequest {}
+
+message ListPushDevicesResponse {
+  repeated PushRegistration registrations = 1;
 }

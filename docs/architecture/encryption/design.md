@@ -1,8 +1,8 @@
 # Chat Encryption - Architecture Design
 
 > **Status**: active
-> **Version**: 1.0.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-08
+> **Version**: 1.1.0
+> **Created**: 2026-08-08 | **Updated**: 2026-09-26
 > **Owner**: Architecture Team
 > **Module**: `model/domain/chat/`, `apps/station/app/subserver/{conversation,envelope,key_exchange}/`, `apps/desktop/`
 
@@ -157,12 +157,18 @@ On reinstall or new device:
 
 1. authenticate to Station;
 2. restore actor identity and history backup;
-3. enroll a new device identity;
+3. retain the fresh device identity already bound to the authenticated session;
 4. publish a fresh bundle;
 5. establish fresh direct sessions and MLS device leaves;
 6. resume device-targeted new traffic.
 
-No old device ratchet is reused on a new device.
+An in-place restore retains the currently authenticated device identity so the
+Station session remains valid. After its worker stops, the restore transfers
+that same endpoint's enrollment, SPK/OPK inventory, MLS bootstrap inventory,
+lane cursor, consumption markers, authority heads, and retired checkpoints
+directly from the live SQLCipher database to staging. This state never enters
+the portable archive or crosses devices. No Direct ratchet, MLS group/session,
+pending transition, command outbox, or attachment transfer state is restored.
 
 ## 8. Group Encryption
 

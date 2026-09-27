@@ -28,10 +28,12 @@ Architecture source:
 | Product Journey and visible states | `pt-product-design-methodology` |
 | Architecture boundaries and contracts | `pt-architecture-design-methodology` |
 | Vertical dependency plan model | `pt-architecture-execution-methodology` |
-| Plan Package persistence and initial `active_work` registration | `pt-plan-and-document` |
-| Ready/Parked selection and concurrency lanes | `pt-trae-goal-orchestrator` |
+| Plan Package persistence and generation-bound workspace Plan binding | `pt-plan-and-document` |
+| Ready/Parked selection and concurrency lanes | `pt-goal-orchestrator` |
 | Whether a proposed action may run | `pt-execution-plan-guardian` |
-| Plan/Task/Session/`active_work` mutation order | `pt-dev-workflow` through their owning commands |
+| Plan/Task/Session/workspace active-work mutation order | `pt-dev-workflow` through their owning commands |
+| Runtime launch, Journey operation and functional result commit | `pt-dev-runtime-handoff` |
+| Optional host tool transport | detected `pt-*-host-adapter` after Guardian admission |
 | Status projection | read-only `pt-context-anchor` |
 | Formal product proof | Acceptance owning Skills |
 | Delivery review | commit, PR, quality, completion, and review Skills |
@@ -70,24 +72,77 @@ A stage may be skipped only when its owning Skill proves it is unnecessary.
 Never enter broad Acceptance while a required Journey is not
 `FUNCTIONAL_PASS`.
 
+## Plan Run Authorization
+
+An explicit `continue`, `resume`, `execute the plan`, `finish the plan`, or
+equivalent request starts one **Plan Run** over the bound Plan's accepted scope
+and authorization envelope.
+
+The Plan Run is the user-facing execution horizon. It may cross Task closures,
+Goal Slices, internal stage reviews, successor activation, and context
+compaction without another confirmation. It does not expand product,
+architecture, Plan, source, runtime, or operation authorization.
+
+Already-authorized operations execute directly:
+
+- an exact grant from the user or the accepted Plan's explicit
+  `authorization` envelope remains valid throughout the Plan Run;
+- Task handoff, context compaction, retries, and a change of agent host do not
+  consume or invalidate that grant;
+- an operation category such as commit, deploy, reset, merge, or release is not
+  by itself a reason to ask again when the exact operation is already granted;
+- mere Plan existence, a declaration, or an unrelated prior command is not an
+  authorization grant.
+
+Stop and ask the user only when the remaining frontier requires:
+
+- an operation outside or explicitly denied by both the user's exact grant and
+  the accepted Plan authorization envelope;
+- an admitted operation that was attempted and returned an actual external
+  permission, credential, or scope failure with no legal in-scope remediation;
+- a destructive or irreversible operation, including force push, history
+  rewrite, merge, release, production mutation, data deletion/reset,
+  environment creation, permission expansion, version/schema bump, worktree
+  add/remove/prune, or secret access, only when its exact grant is absent;
+- a material product, architecture, security, privacy, compatibility, or
+  rollout choice with multiple valid outcomes that accepted sources cannot
+  resolve;
+- an unavailable external resource or credential; or
+- fixed-point exhaustion after every dependency-ready Task and legal
+  remediation has been drained.
+
+For authorization questions specifically, only an out-of-envelope action or an
+observed external permission failure may trigger user confirmation. Do not ask
+preemptively because an operation belongs to a sensitive category.
+
+Task closure, review findings, failed checks, source-backed fixes, mechanical
+plan repair, successor activation, ordinary retries, and Context Anchor output
+are internal Run work, not user approval boundaries.
+
 ## 1. Intake And Binding
 
 Before mutation:
 
-1. Bind one explicitly selected worktree. Never infer it from a Skill path,
-   branch name, plan path, or nearby repository.
-2. Capture and verify canonical root, branch, `workspaceId`, immutable initial
-   HEAD, and current expected HEAD with
-   `tooling/scripts/verify-worktree-binding.py`. Expected HEAD is advancing
-   source identity outside the Plan Package. Unrelated sibling worktree
-   inventory is not execution identity.
-3. Resolve the workspace's immutable Plan binding when present. Repository or
-   PR contents may contain many active Plans; only the bound `planId + planPath`
-   belongs to this workspace. Never scan by branch or rebind in place.
-4. Resolve user intent, authorization envelope, existing accepted sources, and
+1. When the Workflow Kernel reports `ENFORCED`, consume its immutable
+   conversation `executionRoot`; tool `cwd`, target paths, Skill paths, Plan
+   paths and sibling repositories cannot replace it. The binding is not a
+   worktree lease and says nothing about another conversation's ownership.
+2. In `OBSERVE_ONLY`, bind one explicitly selected worktree. Never infer it
+   from a Skill path, branch name, Plan path, or nearby repository.
+3. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
+   and expected HEAD with `tooling/scripts/verify-worktree-binding.py`.
+   Unrelated sibling worktree inventory is not execution identity.
+4. Resolve the workspace's current Plan binding generation when present.
+   Repository or PR contents may contain many active Plans; only the bound
+   `planId + planPath` belongs to this workspace. Never scan by branch. Advance
+   only through the binding owner after the previous generation is completed
+   and quiescent.
+5. Resolve user intent, authorization envelope, existing accepted sources, and
    whether the work is tracked.
-5. Preserve unrelated dirty files. Never switch branches or worktrees
-   implicitly.
+6. Preserve unrelated dirty files. Never switch branches or worktrees
+   implicitly. Never create a worktree to bypass a Plan binding, lifecycle
+   state, or resource conflict; only an explicit user-selected isolation or
+   concurrency operation authorizes worktree creation.
 
 Missing identity returns `WORKTREE_IDENTITY_UNAVAILABLE`; drift returns
 `WORKTREE_IDENTITY_MISMATCH`.
@@ -110,11 +165,9 @@ Rules:
 
 - Run `make dev-check WORK_ITEM=<id>` before each mutation slice.
 - A tracked run must publish `PLAN` and `TASK`; the declaration validates the
-  Plan ID, immutable workspace Plan binding, declaration `sourceHead` against
-  Git, and the active current Task. A blocked/completed Plan may retain only
-  its exact blocked/done Task locator through cleanup and delivery. An unbound
-  workspace may publish untracked pre-Plan work; a bound workspace cannot
-  publish a locator-less declaration.
+  Plan ID, current workspace Plan generation, expected HEAD, and single current
+  Task. An unbound workspace may publish untracked pre-Plan work; a bound
+  workspace cannot publish a locator-less declaration.
 - Run `make dev-update` before expanding scope/resources and after Task handoff.
 - Before a long action crosses half of the current heartbeat-to-expiry window,
   run `make dev-heartbeat`; heartbeat extends liveness but cannot change source,
@@ -129,6 +182,10 @@ Rules:
   `RESOURCE_DECLARATION_CONFLICT`.
 - A declaration is public intent, not a runtime lease or operation
   authorization.
+- `peers-dev-workflow` is the canonical source and rollout owner only. Every
+  installed copy executes from the conversation-bound worktree. Workflow owner
+  state remains worktree-local; the Kernel writes only its separate
+  machine-local binding/Anchor/release receipts.
 
 ## 3. Dispatch Stages
 
@@ -139,7 +196,7 @@ Invoke the owning Skill and consume its typed output:
 | PRODUCT | accepted Journey/state/acceptance contract |
 | DESIGN | accepted ownership/contracts/failure semantics |
 | PLAN model | accepted vertical dependency model |
-| PLAN persistence | validated Plan Package and `active_work` locator |
+| PLAN persistence | validated Plan Package and workspace active-work locator |
 | EXECUTE | scheduler proposal plus Guardian policy decision |
 | ACCEPTANCE | formal evidence for required scope |
 | DELIVER | reviewed commit/PR result |
@@ -152,30 +209,79 @@ specialist's answer in place to bypass a blocked gate.
 For an accepted Plan Package:
 
 1. Validate the package and resolve its current Task.
-2. Verify `active_work.current_task_id`, `current_task_path`, and `dev_state`
-   against the manifest and Development Session.
-3. Ask `pt-trae-goal-orchestrator` for the bounded Ready/Parked schedule and
+2. Verify workspace active-work `currentTaskId`, `currentTaskPath`, and
+   `devState` against the manifest, declaration and Development Session.
+3. Ask `pt-goal-orchestrator` for the bounded Ready/Parked schedule and
    concurrency lanes. The schedule must bind one Progress Slice to the current
    Task's `planctl status.progress.nextProgressBoundary`.
 4. Submit each proposed action to `pt-execution-plan-guardian`.
 5. Execute only `ACTION_ALLOWED` work within declared source/runtime scope.
+   When the schedule carries a Host Capability Request, Dev Workflow invokes
+   the named `pt-*-host-adapter` after admission and remains the sole executor.
 6. Record the first actionable failure in the Session and stop that action.
 7. Persist meaningful results in owner order:
    - Session transition/evidence;
    - Task snapshot and manifest lifecycle through `planctl`;
-   - `active_work` locator/binding projection.
+   - workspace active-work locator projection through
+     `make active-work-sync WORK_ITEM=<id>`.
 8. Recompute and continue the schedule across setup, authorization, diagnostic,
-   checkpoint, deploy, and verification actions until the current Task closes
-   or only a hard boundary remains.
-9. Invoke read-only `pt-context-anchor` when a user-facing projection is due.
+   checkpoint, deploy, verification, and source-backed remediation actions
+   until the current Task closes or only a hard boundary remains.
+9. Run the stage-appropriate Agent Review Loop before accepting the Task or
+   stage gate.
+10. When the Task closes or parks, atomically advance the manifest through its
+    owner command, update the declaration's Task locator and workspace
+    active-work record, ask the scheduler for `NEXT`, and activate a
+    dependency-ready successor.
+11. Repeat steps 1-10 while the Plan Run has a legal frontier. A Goal Slice
+    closes one Task; it does not close the outer Plan Run.
+12. Invoke read-only `pt-context-anchor` when a meaningful user-facing or
+    compaction projection is due, then continue without waiting for
+    confirmation.
 
 The Guardian cannot execute, schedule, mutate a plan, or update tracking.
 The scheduler cannot admit work outside accepted sources or mutate durable
 state. The Anchor cannot repair state.
 
+### Host Transport Failure Loop
+
+Host adapters return transport observations to Dev Workflow:
+
+- `HOST_ADAPTER_READY`: consume the result and continue the action.
+- `HOST_CAPABILITY_UNAVAILABLE`: for optional workers, recompute serial/hybrid;
+  for UI, attempt the repository-native driver once if it has not already been
+  attempted for this request. Persist the unavailable observation and park only
+  when the interaction is mandatory and no legal driver exists.
+- `HOST_TOOL_CALL_FAILED`: if a side effect may remain, submit one idempotent
+  cleanup request with the returned `cleanupHandle`; retry once only when the
+  adapter classifies the failure retryable.
+- `HOST_CLEANUP_QUARANTINED`: never issue recursive cleanup. Persist the bounded
+  lease and continue independent ready Tasks. After expiry, submit one read-only
+  `inspect-quarantine` request.
+- `HOST_CLEANUP_ESCALATION_REQUIRED`: keep the resource branch parked and treat
+  it as an external-resource hard boundary only after independent work drains.
+- `HOST_DIAGNOSTIC_RETAINED`: accept only
+  `blocksPlanRun=false`, `cleanup=retained-bounded`, and a concrete
+  `leaseExpiresAt`. Commit deterministic project evidence, Session transition,
+  Task closure, and successor activation before any host cleanup follow-up.
+  Return from the adapter immediately, retain the host-local lease as a
+  non-blocking observation, never write the transient envelope to Session
+  `currentFailure`, and never wait for its confirmation workflow.
+
+The scheduler and adapter do not persist these transitions. Dev Workflow owns
+retry budgets, parking, cleanup, Session failure records, and reconciliation.
+An unavailable capability without a new external observation cannot enter a
+zero-progress retry loop; recompute serial/hybrid work or park its dependent
+action.
+The only in-place blocked observation changes are
+`UNAVAILABLE -> AVAILABLE` and
+`QUARANTINED -> RELEASED | ESCALATION_REQUIRED`; repeated or pre-expiry
+observations fail closed.
+
 ### Progress-Bearing Continuation
 
-One user-authorized continuation must target one complete Progress Slice:
+Each Goal Slice inside a user-authorized Plan Run targets one complete Progress
+Slice:
 
 ```text
 current Task in_progress
@@ -185,21 +291,20 @@ current Task in_progress
   -> successor frontier recomputed
 ```
 
-Before execution, read the machine-derived baseline and completion effect from
+Before each Slice, read the machine-derived baseline and completion effect from
 `planctl status.progress`. After execution, require the manifest to show that
 effect before reporting successful progress.
 
-Do not return control merely because an internal action succeeded. Continue
-until:
-
-- the Task closes and the declared progress delta is durable; or
-- a hard boundary prevents closure and no other dependency-ready Task can
-  advance.
+Do not return control merely because an internal action, Task, review, or stage
+gate succeeded. Continue until the Plan reaches its accepted terminal state or
+a hard boundary prevents progress and no dependency-ready Task or legal
+remediation remains.
 
 If a successful action produces no Task progress, keep it inside the current
-Slice. If the Task is too large to close within one bounded Slice, return
-`PLAN_AMENDMENT_REQUIRED` so the plan owner can split it; never invent a
-partial percentage.
+Slice. If a completed Task unlocks a successor, activate it inside the same
+Run. If the Task is too large to close within one bounded Slice, return
+`PLAN_AMENDMENT_REQUIRED`; after agent-led amendment review passes, resume
+without asking the user. Never invent a partial percentage.
 
 ## 5. Product-Functional Fence
 
@@ -213,9 +318,16 @@ REPRODUCE
   -> EXACT-SOURCE DEPLOY
   -> REAL JOURNEY
   -> FUNCTIONAL_PASS
-```
 
 - Use the real required runtime and receiver perspective.
+- On failure, return the first actionable failure to implementation.
+- Dispatch runtime work through `pt-dev-runtime-handoff`. Repository-native
+  Make/Harness/WebDriver/Appium paths are authoritative; host adapters supply
+  only missing tool transport.
+- Commit source-bound `FUNCTIONAL_CHECK/PASS` and the matching
+  `FUNCTIONAL_PASS` Session projection through the same owner-controlled result
+  slice. A PASS report with an earlier Session state is
+  `SESSION_PROJECTION_STALE`.
 - On failure, return the first actionable failure to implementation.
 - Park an external/authorization edge without blocking independent ready work.
 - Focused source checks, Gate count, coverage, and test count cannot establish
@@ -236,7 +348,23 @@ Dev Workflow routes the amendment to its owner. `pt-plan-and-document` persists
 an accepted updated plan model. The Guardian and scheduler never self-amend the
 Plan Package.
 
-## 7. Acceptance Promotion
+## 7. Agent Review Loop
+
+Review is an internal quality gate, not a default user handoff:
+
+1. Generate the owning methodology or delivery review prompt.
+2. Invoke the applicable project review path, normally
+   `pt-quality-check` -> `pt-completion-auditor` -> `pt-github-review`.
+3. Treat findings that accepted sources resolve as Run work.
+4. Fix them at the owning layer, rerun affected checks, and repeat review.
+5. Advance automatically when the review passes.
+6. Escalate only the precise unresolved DWF-D20 hard-boundary decision.
+
+An independent subagent may review when available and safely isolated.
+Otherwise the current agent performs a separate findings-first review pass.
+Automation supplies evidence; the reviewing agent owns judgment.
+
+## 8. Acceptance Promotion
 
 After `FUNCTIONAL_PASS`:
 
@@ -251,7 +379,7 @@ After `FUNCTIONAL_PASS`:
 `PROVEN` is reserved for formal Acceptance evidence. Development Session
 records remain diagnostics.
 
-## 8. Delivery And Close
+## 9. Delivery And Close
 
 After required proof:
 
@@ -262,6 +390,7 @@ After required proof:
 
 ```bash
 make dev-release WORK_ITEM=<id> [SESSION=<id>]
+make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>
 ```
 
 5. Persist final owner state, then emit the read-only Context Anchor.
@@ -272,17 +401,22 @@ authorizations.
 
 ## Resume
 
-On resume, verify the persisted worktree and immutable Plan bindings, run
+On resume, verify the persisted worktree and current Plan generation, run
 `make dev-check`, validate the bound Plan Package, reconcile current
-Task/Session/`active_work`, then resume the earliest legal action. Synchronized
-foreign Plans are ignored. Do not pause merely to print the Anchor.
+Task/Session/workspace active-work, then resume the earliest legal action and
+continue the Plan Run. Synchronized foreign Plans are ignored. Do not pause
+merely to print the Anchor or after the first Task closes.
 
 ## Verification
 
 - One Development Run owns the lifecycle.
 - Public declaration preceded mutation and was released at closure.
-- Every successful continuation closed its declared Progress Slice and matched
-  the `planctl status.progress` delta.
+- Every completed Goal Slice closed its declared Progress Slice and matched the
+  `planctl status.progress` delta.
+- One authorized Plan Run drained every dependency-ready successor until Plan
+  completion or a named DWF-D20 hard boundary.
+- Required review was agent-led; source-backed findings were remediated and
+  re-reviewed without delegating ordinary review work to the user.
 - Scheduler, Guardian, persistence, and projection boundaries remained
   separate.
 - Required Journey has current exact-source functional evidence.
@@ -296,11 +430,22 @@ Never:
 - add another complete-development orchestrator;
 - let God View execute or persist workflow state;
 - let the scheduler or Guardian mutate the Plan Package;
-- let Context Anchor repair `active_work`;
+- let Context Anchor repair workspace active-work;
+- write project memory or another workspace's active-work record;
 - write before declaration or outside declared scope;
 - diagnose product behavior with broad Acceptance;
 - return an Anchor after a successful administrative action while its Progress
   Slice remains open;
+- return control after a Task closure, stage review, or Context Anchor while
+  the authorized Plan Run still has dependency-ready work;
+- ask the user to perform routine product, architecture, plan, completion, or
+  code review that project Review Skills can decide;
+- ask the user to re-authorize an operation already granted by the user or the
+  accepted Plan's explicit authorization envelope;
+- require one IDE/agent host for scheduling, app operation, or proof;
+- ask the user to execute a deterministic product Journey that the repository
+  driver or a detected host adapter can operate;
+- let a host adapter own PASS/FAIL, Session state, or cleanup;
 - claim progress from commands, checks, files, commits, declarations, leases,
   or Session transitions that did not close a Task;
 - copy one Journey into separate Development and Acceptance implementations;

@@ -9,6 +9,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 
 import type { LifecycleKernelState } from './types';
 import { getMobileLifecycleKernel } from './MobileLifecycleKernel';
+import { readRuntimeAvailability } from './runtimeAvailability';
 
 /**
  * Subscribe to the full lifecycle kernel state.
@@ -57,8 +58,8 @@ export function useLifecyclePhase(): LifecycleKernelState['phase'] {
 export function useReadyRuntimeIds(): ReadonlySet<string> {
   const state = useLifecycleKernel();
   const readyIds = new Set<string>();
-  for (const [id, entry] of state.runtimes) {
-    if (entry.status === 'ready') {
+  for (const id of state.runtimes.keys()) {
+    if (readRuntimeAvailability(state, id)?.status === 'ready') {
       readyIds.add(id);
     }
   }

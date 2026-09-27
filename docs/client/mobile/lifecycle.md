@@ -84,6 +84,11 @@ The user must not enter the Station shell without passing the Station-driven acc
   identity is blocking and requires explicit Station replacement.
 - Production credentials and OAuth require TLS. HTTP is limited to an explicit
   development profile, is visibly marked, and cannot establish production trust.
+- Debug native Messaging accepts the exact profile origin injected through
+  `PT_MOBILE_DEV_STATION_ORIGIN`. Simulator launches forward it with
+  `SIMCTL_CHILD_PT_MOBILE_DEV_STATION_ORIGIN`; it is not saved in app preferences.
+  Release builds ignore this permission and require HTTPS. An unrelated host,
+  port, credential-bearing URL, or non-root path remains rejected.
 
 ### 4.3 Access Gate Chain
 
@@ -108,6 +113,32 @@ The user must not enter the Station shell without passing the Station-driven acc
 - Pages render projections and user actions; long-lived freshness belongs to runtimes.
 - Runtime dependencies use hard `dependsOn` and degradable `uses`; bootstrap is
   topological and teardown/suspend use reverse order.
+- Cold start, restart, and resume resolve the launch state through the lifecycle
+  kernel after runtime bootstrap/revalidation. React does not auto-advance a
+  restored access decision; the kernel preserves the handshake transition before
+  displaying a pending gate.
+- Auth publishes a new session and its access decision atomically. Only a final
+  grant with an active session clears the Auth-owned expired-session recovery
+  flag; pending gates and unrelated recovery states remain unchanged.
+- Failed bootstrap descriptors and dependency-skipped descriptors are not
+  resumable instances. Resume fences the generation, tears down the old graph
+  in reverse order, and rebuilds it topologically. Incomplete cleanup blocks the
+  rebuild. The failed-capability Retry action delegates to that same lifecycle
+  restart owner; it does not bootstrap a feature from its page.
+- Asynchronous session activation publishes pending/ready/failed readiness into
+  the kernel through an immutable generation-bound context. Readiness tickets
+  are allocated when work is queued and fenced by descriptor incarnation,
+  latest task revision, and the admitted Station/PTID/credential scope. Bootstrap and session
+  callbacks share one serial task path. Session tasks wait for their declared
+  hard dependencies before starting domain work; failed prerequisites reject
+  admission, and suspended or superseded waiters are released. Readiness deadlines are bounded and
+  released on settlement, replacement, suspension, and teardown.
+- Resource lifecycle status remains separate from effective availability.
+  Route, recovery, and public snapshot readers derive availability from the
+  runtime's own readiness and existing hard dependencies. A dependency failure
+  does not overwrite another runtime's own readiness or remove live resources
+  from reverse suspend/teardown. Failed async activation participates in the
+  existing resume rebuild policy.
 - Foreground uses event streams when available.
 - Background uses push, background tasks, or deferred sync according to platform constraints.
 - Resume must treat projections as stale until delta sync or reconciliation has completed.
@@ -162,9 +193,15 @@ Current Mobile code now implements the local owner layer of this lifecycle:
   `app-boot -> station-selection -> station-handshake -> access-gate-chain ->
   runtime-critical -> shell`; `App.tsx` renders that projection and dispatches
   transition intents.
-- The descriptor-backed Mobile navigation store owns primary and Chat/Group
-  detail route identity. Social/Group selection fields remain projection
-  readback context and no longer decide detail visibility.
+- The descriptor-backed Mobile navigation store owns primary, Chat/Group,
+  Contact, Moment, and selected Settings detail route identity plus the
+  selected-only Find People and Create Group overlays. Domain selection fields
+  remain projection readback context and no longer decide route or overlay
+  visibility.
+- The Shell route boundary consumes each descriptor's runtime owner status.
+  A failed or missing owner renders unavailable content rather than an empty
+  domain projection; a starting owner shows preparation. Tab and detail-back
+  navigation remain available, and retry belongs to the lifecycle recovery host.
 - Login is rendered by the top-level access gate host instead of Settings;
   full native gate-chain evidence remains pending.
 - Invite-only and fixed-user gates consume the shared Station gate protocol.
@@ -175,12 +212,20 @@ Current Mobile code now implements the local owner layer of this lifecycle:
   same-device takeover, revocation, Station switching, logout, and old-scope
   isolation through parent-owned Runtime Binding and Fixture operations;
   destructive current-source proof still requires explicit reset
-  authorization. Command admission and remaining sync/device runtime closure
-  are still pending.
+  authorization.
+- The session-scoped Social descriptor owns one realtime supervisor and bounded
+  ingress for Social, Group, Moments, notification, and profile projections.
+  Suspend stops foreground producers and closes write admission; resume
+  revalidates and reconciles stale projections before reopening writes;
+  teardown drains accepted work and releases page-independent projections.
+- Moments feed and Profile/account preference freshness are runtime-owned and
+  survive page unmounts. Pages subscribe to the active session projection and
+  do not create ingress, gateway, or reconciliation owners.
 - The app-level recovery host delegates Station/session actions back to the
-  lifecycle and auth owners. W4 draft/ledger recovery actions and W5
-  overflow/reconcile inputs remain pending and are not replaced by direct
-  projection mutation.
+  lifecycle and auth owners. W5 ingress staleness and write admission now feed
+  that projection. W4 draft/ledger/reconcile/reset actions invoke production
+  Rust/runtime owners, and the Acceptance Harness exposes only sanitized
+  projections; physical recovery UI proof remains pending.
 - Keychain/Keystore and Rust OAuth secure storage pass simulator evidence;
   physical-device cleanup and absence proof remain pending.
 

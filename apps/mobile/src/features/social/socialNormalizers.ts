@@ -1,11 +1,16 @@
 import type {
+  Actor,
+  ActorProfile,
+} from '../../gen/proto/domain/actor/actor_pb';
+import type { FederationCatalogEntry } from '../../gen/proto/domain/federation/federation_discovery_pb';
+import type {
   ActorSearchResult,
   FederationResolveView,
-  FriendChatMessage,
   FriendChatSession,
   FriendRequest,
   PeerProfile,
   PeerProfileLink,
+  SocialMessage,
   SocialNotification,
   SocialTimestamp,
   UnreadCounts,
@@ -18,6 +23,20 @@ const NOTIFICATION_STATUS_UNREAD = 1;
 const NOTIFICATION_TYPE_FRIEND_REQUEST = 200;
 const NOTIFICATION_TYPE_FRIEND_ACCEPTED = 201;
 const NOTIFICATION_TYPE_FRIEND_MESSAGE = 202;
+
+type FederationResolveInput =
+  Partial<Omit<FederationResolveView, 'profile'>>
+  & {
+    profile?: Partial<
+      Pick<ActorProfile, 'avatar' | 'displayName' | 'id' | 'username'>
+    > & {
+      ref?: { ptid?: string };
+    };
+  };
+
+type PeerProfileInput =
+  Omit<Partial<PeerProfile>, 'discoverability'>
+  & { discoverability?: unknown };
 
 export function timestampMillis(timestamp?: SocialTimestamp | string): number {
   if (!timestamp) return 0;
@@ -73,12 +92,12 @@ export function normalizeSession(raw: Partial<FriendChatSession>): FriendChatSes
     lastMessage: raw.lastMessage
       ? normalizeMessage(raw.lastMessage)
       : record.last_message
-        ? normalizeMessage(record.last_message as Partial<FriendChatMessage>)
+        ? normalizeMessage(record.last_message as Partial<SocialMessage>)
         : undefined,
   };
 }
 
-export function normalizeMessage(raw: Partial<FriendChatMessage>): FriendChatMessage {
+export function normalizeMessage(raw: Partial<SocialMessage>): SocialMessage {
   const record = raw as Record<string, unknown>;
   return {
     ...raw,
@@ -92,13 +111,13 @@ export function normalizeMessage(raw: Partial<FriendChatMessage>): FriendChatMes
     replyToUlid: String(raw.replyToUlid ?? record.reply_to_ulid ?? ''),
     threadRootUlid: String(raw.threadRootUlid ?? record.thread_root_ulid ?? ''),
     recalled: Boolean(raw.recalled ?? false),
-    editedAt: (raw.editedAt ?? record.edited_at) as FriendChatMessage['editedAt'],
+    editedAt: (raw.editedAt ?? record.edited_at) as SocialMessage['editedAt'],
     encryptedPayload: bytesValue(raw.encryptedPayload ?? record.encryptedPayload ?? record.encrypted_payload),
     attachments: normalizeMessageAttachments(raw.attachments ?? record.attachments),
   };
 }
 
-function normalizeMessageAttachments(value: unknown): FriendChatMessage['attachments'] {
+function normalizeMessageAttachments(value: unknown): SocialMessage['attachments'] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => {
     const record = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
@@ -148,63 +167,70 @@ export function normalizeUnreadCounts(raw: UnreadCounts): UnreadCounts {
   };
 }
 
-export function normalizeActorSearchResult(raw: Partial<ActorSearchResult>): ActorSearchResult {
-  const record = raw as Record<string, unknown>;
-  const ptid = String(raw.ptid ?? record.actor_ptid ?? '');
+export function normalizeActorSearchResult(raw: Actor): ActorSearchResult {
+  const ptid = raw.ref?.ptid ?? '';
   return {
     id: ptid,
     ptid,
-    federationId: String(raw.federationId ?? record.federation_id ?? ''),
-    homeStationPeerId: String(raw.homeStationPeerId ?? record.home_station_peer_id ?? ''),
-    username: String(raw.username ?? ''),
-    displayName: String(raw.displayName ?? record.display_name ?? ''),
-    avatar: String(raw.avatar ?? ''),
+    homeStationPeerId: raw.homeStationPeerId,
+    username: raw.username,
+    displayName: raw.displayName,
+    avatar: raw.avatar,
   };
 }
 
-export function federationViewToResult(view: FederationResolveView): ActorSearchResult | null {
+export function federationViewToResult(view: FederationResolveInput): ActorSearchResult | null {
   const profile = view.profile;
   if (!profile) return null;
-  const record = profile as Record<string, unknown>;
-  const identityCandidates = [
-    profile.ref?.ptid,
-    profile.peersTouch?.networkId,
-    profile.peers_touch?.network_id,
-    profile.ptid,
-    profile.id,
-  ];
-  const id = String(
-    identityCandidates.find(
-      (value) => typeof value === 'string' && value.startsWith('ptid:'),
-    ) ?? '',
-  );
-  const username = String(profile.username ?? profile.preferredUsername ?? profile.preferred_username ?? '');
-  const displayName = String(profile.displayName ?? profile.display_name ?? username);
-  const avatar = String(profile.avatar ?? '');
-  const federationRecord = view as Record<string, unknown>;
+  const id = profile.ref?.ptid ?? '';
   return {
     id,
     ptid: id,
-    federationId: String(view.federationId ?? view.federation_id ?? ''),
-    homeStationPeerId: String(view.homeStationPeerId ?? view.home_station_peer_id ?? ''),
-    username,
-    displayName,
-    avatar,
+    homeStationPeerId: view.homeStationPeerId ?? '',
+    username: profile.username ?? '',
+    displayName: profile.displayName || profile.username || '',
+    avatar: profile.avatar ?? '',
     federation: {
-      handle: String(view.federatedHandle ?? view.federated_handle ?? ''),
-      homeStationDomain: String(view.homeStationDomain ?? view.home_station_domain ?? ''),
-      fromCache: Boolean(view.fromCache ?? view.from_cache ?? false),
-      isLocal: Boolean(view.isLocal ?? view.is_local ?? false),
-      locatorSeq: Number(view.locatorSeq ?? view.locator_seq ?? federationRecord.locatorSeq ?? 0),
+      handle: view.federatedHandle ?? '',
+      homeStationDomain: view.homeStationDomain ?? '',
+      fromCache: view.fromCache ?? false,
+      isLocal: view.isLocal ?? false,
+      locatorSeq: Number(view.locatorSeq ?? 0n),
     },
   };
 }
 
-export function normalizePeerProfile(raw: Partial<PeerProfile>): PeerProfile {
+export function federationCatalogEntryToResult(entry: FederationCatalogEntry): ActorSearchResult {
+  const handle = entry.federatedHandle.trim();
+  const normalized = handle.replace(/^@/, '');
+  const separator = normalized.indexOf('@');
+  const username = separator >= 0 ? normalized.slice(0, separator) : normalized;
+  const homeStationDomain = separator >= 0 ? normalized.slice(separator + 1) : '';
+  return {
+    id: entry.actorPtid,
+    ptid: entry.actorPtid,
+    homeStationPeerId: entry.homeStationPeerId,
+    username,
+    displayName: entry.displayName || username,
+    avatar: entry.avatarUrl,
+    federation: {
+      handle,
+      homeStationDomain,
+      fromCache: false,
+      isLocal: false,
+      locatorSeq: 0,
+    },
+  };
+}
+
+export function normalizePeerProfile(raw: PeerProfileInput): PeerProfile {
   const record = raw as Record<string, unknown>;
   const peersTouch = record.peers_touch as Record<string, unknown> | undefined;
   return {
     id: String(raw.id ?? ''),
+    profileRevision: normalizePositiveRevision(
+      raw.profileRevision ?? record.profile_revision,
+    ),
     username: String(raw.username ?? ''),
     acct: String(raw.acct ?? ''),
     displayName: String(raw.displayName ?? record.display_name ?? raw.username ?? ''),
@@ -226,7 +252,28 @@ export function normalizePeerProfile(raw: Partial<PeerProfile>): PeerProfile {
     messagePermission: String(raw.messagePermission ?? record.message_permission ?? ''),
     autoExpireDays: Number(raw.autoExpireDays ?? record.auto_expire_days ?? 0),
     networkId: String(raw.networkId ?? peersTouch?.network_id ?? ''),
+    federatedHandle: String(raw.federatedHandle ?? record.federated_handle ?? ''),
+    homeStationPeerId: String(raw.homeStationPeerId ?? record.home_station_peer_id ?? ''),
+    homeStationDomain: String(raw.homeStationDomain ?? record.home_station_domain ?? ''),
+    discoverability: normalizeDiscoverability(raw.discoverability ?? record.discoverability),
   };
+}
+
+function normalizeDiscoverability(value: unknown): PeerProfile['discoverability'] {
+  if (value === 2 || value === 'ACTOR_VISIBILITY_BY_HANDLE' || value === 'by_handle') {
+    return 'by_handle';
+  }
+  if (value === 3 || value === 'ACTOR_VISIBILITY_INDEXED' || value === 'indexed') return 'indexed';
+  return 'hidden';
+}
+
+function normalizePositiveRevision(value: unknown): bigint {
+  try {
+    const revision = BigInt(value as string | number | bigint);
+    return revision > 0n ? revision : 0n;
+  } catch {
+    return 0n;
+  }
 }
 
 function normalizeFriendRequestStatus(status: unknown): number {

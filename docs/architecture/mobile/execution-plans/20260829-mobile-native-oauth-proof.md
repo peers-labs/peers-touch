@@ -1,20 +1,26 @@
-# W2-E2 Mobile Native OAuth Proof — 执行计划
+# W2-E2 Mobile Native OAuth Diagnostics — 历史执行计划
 
-> **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-29 | **Updated**: 2026-09-09
+> **Status**: retained optional diagnostic plan
+> **Created**: 2026-08-29 | **Updated**: 2026-09-20
 > **Owner**: Mobile Architecture Team
 
 ***
 
+> **MS-D26 supersession notice**: this plan no longer owns required Mobile
+> completion. It is retained to preserve the physical-device/live-provider
+> diagnostic design and historical source work. Its open slices, external
+> resources, and physical run are optional; they never block W2, another Mobile
+> Task, W8, W9, or the simulator-canonical Acceptance bundle.
+
 ## 1. Objective
 
-完成 W2-E2 physical Mobile OAuth proof，使
+若显式执行本可选诊断，则完成 W2-E2 physical Mobile OAuth proof，使
 `mobile-native-access-e2e` 在同一 source-bound run 中完成 iOS 与 Android
 physical cells、全部 16 个 required variants、Station authoritative readback、
 browser/account isolation、build provenance 和 zero-residue cleanup。
 
-本计划完成不代表 W2 之外的 Mobile workstreams 已完成，也不授权进入 W3。
+本计划的完成或未完成都不改变当前 Mobile 主计划的 Task 状态，也不构成进入后续
+workstream、W8 或 W9 的前置条件。
 
 ## 2. Accepted Inputs
 
@@ -652,7 +658,7 @@ Target areas:
 
 * `tooling/acceptance/tests/test_mobile_native_preflight.py`;
 
-* `docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation.md`;
+* `docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/W2-PROOF.md`;
 
 * `apps/mobile/src-tauri/src/commands/mod.rs`;
 
@@ -1298,8 +1304,8 @@ cannot satisfy any runtime condition above.
 | E2-2 Station Fixture/proof          | done | Go Station adapter/CLI gates and 10 Python Fixture tests PASS |
 | E2-3 Provider/browser leases        | done | machine-global authority, canonical ArtifactRecord projection and bounded heartbeat owner; 88 lease + 47 frozen-contract tests PASS |
 | E2-4 Rust negative input/purge      | done | 17 default + 24 Acceptance Rust tests, 9 TS tests, Mobile check and linked release absence scan PASS |
-| E2-5 Atomic Gate cutover            | blocked | D-18 capability cutover is implemented; D-19 finalization, heartbeat cleanup ordering, neutral contract migration, discriminator closure and final 19-role judgment remain |
-| E2-6 Physical 16-cell proof         | unproven / not started | E2-5 is incomplete; physical devices/accounts/services are also unavailable |
+| E2-5 Atomic Gate cutover            | optional source incomplete | D-18 capability cutover is implemented; D-19 finalization, heartbeat cleanup ordering, neutral contract migration, discriminator closure and final 19-role judgment remain in the diagnostic path |
+| E2-6 Physical 16-cell proof         | optional / not run | Physical devices/accounts/services are not required by the simulator-canonical Mobile Plan |
 
 ### 14.1 W2-E2B Completion Reopen — 2026-08-30
 
@@ -2105,9 +2111,10 @@ The final exact-snapshot double review returned
 the already documented principal-loss availability consequence. The Owner
 accepted D-19 and that v1 fail-closed consequence on 2026-08-31.
 
-## 15. Goal Slices
+## 15. Historical Goal Slices
 
-The plan is not one TRAE Goal:
+These slices are retained as historical diagnostic decomposition. None is an
+active Mobile completion Goal:
 
 | Slice   | Closures    | Completion boundary                                                |
 | ------- | ----------- | ------------------------------------------------------------------ |
@@ -2282,7 +2289,7 @@ E2-5 executes the following in one atomic closure:
 | A5-8 | Add Mobile Feature/Capability contract for finalizer registration | `apps/mobile/src/acceptance/contracts.ts` |
 | A5-9 | Update `apps/mobile/src-tauri/src/commands/mod.rs` if command surface changes | conditional |
 | A5-10 | Add focused tests for finalizer integration | `gates/mobile/cleanup_evidence_finalizer_test.py` |
-| A5-11 | Update `20260827-mobile-shell-implementation.md` W2 status | main plan |
+| A5-11 | Update `20260827-mobile-shell-implementation/tasks/W2-PROOF.md` snapshot | main plan |
 
 ### A.6 Consumer Inventory And Cutover Matrix
 

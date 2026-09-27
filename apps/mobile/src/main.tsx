@@ -74,6 +74,9 @@ class RootErrorBoundary extends Component<{ children: ReactNode }, RootErrorStat
             <div className="root-error-message">
               <strong>{mobileRootT(recovery.summaryKey)}</strong>
               <span>{recovery.detail}</span>
+              {import.meta.env.VITE_ACCEPTANCE_HARNESS === '1' && this.state.error.stack ? (
+                <pre data-acceptance-root-error-stack>{this.state.error.stack}</pre>
+              ) : null}
               {this.state.componentStack ? (
                 <details className="root-error-details">
                   <summary>{mobileRootT('mobile.error.technicalDetails')}</summary>

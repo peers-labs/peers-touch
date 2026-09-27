@@ -130,8 +130,7 @@ export function SocialChatPage() {
     markAsRead,
     hideConversation,
     deleteConversation,
-    clearConversationHistory,
-    restoreConversationHistory,
+    clearConversationData,
     setConversationBackgroundImage,
     sendMessage,
     renameGroup,
@@ -186,7 +185,6 @@ export function SocialChatPage() {
           messages={messages}
           onToggleDetail={toggleDetail}
           onSendMessage={sendMessage}
-          onRestoreHistory={restoreConversationHistory}
           backgroundImageUrl={activeConversation?.backgroundImage}
           compact={compact}
         />
@@ -199,8 +197,7 @@ export function SocialChatPage() {
               groupMembers={groupMembers}
               onClose={toggleDetail}
               onDeleteConversation={deleteConversation}
-              onClearHistory={clearConversationHistory}
-              onRestoreHistory={restoreConversationHistory}
+              onClearHistory={clearConversationData}
               onSelectBackgroundImage={setConversationBackgroundImage}
               onRemoveMember={removeGroupMember}
               onRenameGroup={renameGroup}
@@ -216,8 +213,7 @@ export function SocialChatPage() {
             groupMembers={groupMembers}
             onClose={toggleDetail}
             onDeleteConversation={deleteConversation}
-            onClearHistory={clearConversationHistory}
-            onRestoreHistory={restoreConversationHistory}
+            onClearHistory={clearConversationData}
             onSelectBackgroundImage={setConversationBackgroundImage}
             onRemoveMember={removeGroupMember}
             onRenameGroup={renameGroup}

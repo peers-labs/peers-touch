@@ -18,6 +18,9 @@ const (
 	KindMessageCommitted      Kind = "message_committed"
 	KindMessageEdited         Kind = "message_edited"
 	KindMessageRetracted      Kind = "message_retracted"
+	KindMessageHiddenForActor Kind = "message_hidden_for_actor"
+	KindMessageModerated      Kind = "message_moderated"
+	KindMessageForwarded      Kind = "message_forwarded"
 	KindReactionCommitted     Kind = "reaction_committed"
 	KindMessagePinCommitted   Kind = "message_pin_committed"
 	KindMembershipCommitted   Kind = "membership_transition_committed"
@@ -512,11 +515,10 @@ func cloneConversationState(state *ConversationState) *ConversationState {
 
 func cloneSettingsPatch(patch valueobject.SettingsPatch) valueobject.SettingsPatch {
 	return valueobject.SettingsPatch{
-		Name:                  cloneStringPointer(patch.Name),
-		Description:           cloneStringPointer(patch.Description),
-		AvatarObjectID:        cloneStringPointer(patch.AvatarObjectID),
-		Visibility:            cloneVisibilityPointer(patch.Visibility),
-		DisappearTimerSeconds: cloneUint32Pointer(patch.DisappearTimerSeconds),
+		Name:           cloneStringPointer(patch.Name),
+		Description:    cloneStringPointer(patch.Description),
+		AvatarObjectID: cloneStringPointer(patch.AvatarObjectID),
+		Visibility:     cloneVisibilityPointer(patch.Visibility),
 	}
 }
 
@@ -531,14 +533,6 @@ func cloneStringPointer(value *string) *string {
 func cloneVisibilityPointer(
 	value *valueobject.ConversationVisibility,
 ) *valueobject.ConversationVisibility {
-	if value == nil {
-		return nil
-	}
-	copy := *value
-	return &copy
-}
-
-func cloneUint32Pointer(value *uint32) *uint32 {
 	if value == nil {
 		return nil
 	}
@@ -576,13 +570,6 @@ func settingsBytes(patch valueobject.SettingsPatch) []byte {
 		fields = append(fields, optionalFieldBytes(false, nil))
 	} else {
 		fields = append(fields, optionalFieldBytes(true, []byte(*patch.Visibility)))
-	}
-	if patch.DisappearTimerSeconds == nil {
-		fields = append(fields, optionalFieldBytes(false, nil))
-	} else {
-		var encoded [4]byte
-		binary.BigEndian.PutUint32(encoded[:], *patch.DisappearTimerSeconds)
-		fields = append(fields, optionalFieldBytes(true, encoded[:]))
 	}
 	return valueobject.CanonicalTuple(fields...)
 }
@@ -626,7 +613,6 @@ func conversationStateBytes(state *ConversationState) []byte {
 		[]byte(state.Settings.Description),
 		[]byte(state.Settings.AvatarObjectID),
 		[]byte(state.Settings.Visibility),
-		uint64Bytes(uint64(state.Settings.DisappearTimerSeconds)),
 		uint64Bytes(uint64(state.MembershipEpoch)),
 		uint64Bytes(uint64(state.MLSEpoch)),
 	}

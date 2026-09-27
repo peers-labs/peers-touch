@@ -21,7 +21,7 @@ import {
 } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { callP2p } from '../../modules/p2p/callP2p';
-import { api } from '../../services/desktop_api';
+import { messagingInteractions } from '../../messaging/runtime';
 import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError, type PresentedError } from '../../services/errorPresenter';
@@ -93,7 +93,7 @@ export function ChatMessageArea({
   const { t } = useTranslation('chat');
   const {
     activeTab, activeSessionUlid, activeGroupUlid,
-    loadMessages, loadOlderMessages, sendFriendMessage, sendGroupMessage, toggleDetail,
+    loadMessages, loadOlderMessages, retryMessage, sendFriendMessage, sendGroupMessage, toggleDetail,
     deleteMessage, recallFriendMessage, editFriendMessage,
     recallGroupMessage, editGroupMessage, openThread,
     conversationLocalState,
@@ -104,6 +104,8 @@ export function ChatMessageArea({
     getIMSenderProfile,
     messageHasMore,
     messageLoadingMore,
+    markFriendRead,
+    markGroupRead,
     currentUserPtid,
     loadGroupMembers,
     scrollToMessageUlid,
@@ -124,6 +126,7 @@ export function ChatMessageArea({
     activeGroupUlid: s.activeGroupUlid,
     loadMessages: s.loadMessages,
     loadOlderMessages: s.loadOlderMessages,
+    retryMessage: s.retryMessage,
     sendFriendMessage: s.sendFriendMessage,
     sendGroupMessage: s.sendGroupMessage,
     toggleDetail: s.toggleDetail,
@@ -141,6 +144,8 @@ export function ChatMessageArea({
     getIMSenderProfile: s.getIMSenderProfile,
     messageHasMore: s.messageHasMore,
     messageLoadingMore: s.messageLoadingMore,
+    markFriendRead: s.markFriendRead,
+    markGroupRead: s.markGroupRead,
     currentUserPtid: s.currentUserPtid,
     loadGroupMembers: s.loadGroupMembers,
     scrollToMessageUlid: s.scrollToMessageUlid,
@@ -156,13 +161,9 @@ export function ChatMessageArea({
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
   }));
-  const {
-    actorStationEntries,
-    memberStationsByFederation,
-  } = useActiveChatFederationSlice((state) => ({
-    actorStationEntries: state.actorStationEntries,
-    memberStationsByFederation: state.memberStationsByFederation,
-  }));
+  const actorStationEntries = useActiveChatFederationSlice(
+    (state) => state.actorStationEntries,
+  );
   const [inputValue, setInputValue] = useState('');
   const draftsRef = useRef<Record<string, string>>({});
   const prevActiveRef = useRef<string | null>(null);
@@ -199,6 +200,10 @@ export function ChatMessageArea({
   const currentMessages = activeUlid ? getIMMessages(activeKind, activeUlid) : [];
   const mainTimelineMessages = currentMessages.filter((message) => !messageThreadRootUlid(message));
   const activeLocalState = activeUlid ? conversationLocalState[`${activeTab}:${activeUlid}`] : undefined;
+  const newestAuthoritySequence = currentMessages.reduce(
+    (maximum, message) => Math.max(maximum, message.eventSequence),
+    0,
+  );
   const activeBackground = activeLocalState?.background;
   const activeBackgroundImageUrl = useOssAttachmentUrl(activeLocalState?.backgroundImage || undefined);
   const activeBackgroundPreview = activeUlid
@@ -209,10 +214,8 @@ export function ChatMessageArea({
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
-    federationId: activeConversation?.federationId,
     stationPeerId: authorityStationId,
     actorStationEntries,
-    memberStationsByFederation,
   });
 
   const subtitle = (() => {
@@ -224,24 +227,6 @@ export function ChatMessageArea({
   // header presence dot to decide whether the friend is reachable on
   // station, separate from whether our P2P channel happens to be up.
   const activePeerDid = activeTab === 'friend' ? activeConversation?.peerPtid || null : null;
-
-  useEffect(() => {
-    // #region debug-point A:conversation-header-projection
-    void fetch('http://127.0.0.1:7778/event', { method: 'POST', body: JSON.stringify({ sessionId: 'chat-experience-failures', runId: 'post-fix', hypothesisId: 'A', location: 'ChatMessageArea.tsx:conversation-header-projection', msg: '[DEBUG] Conversation header projection', data: { activeTab, activeUlid, currentUserPtid, currentName, federationId: activeConversation?.federationId || '', authorityStationId, authorityStationName, activePeerDid, actorStationEntryCount: Object.keys(actorStationEntries).length, memberStationCount: Object.values(memberStationsByFederation).flat().length, presenceKnown: Boolean(activePeerDid && activePeerDid in peerOnline), presenceOnline: activePeerDid ? peerOnline[activePeerDid] ?? null : null }, ts: Date.now() }) }).catch(() => {});
-    // #endregion
-  }, [
-    activeConversation?.federationId,
-    activePeerDid,
-    activeTab,
-    activeUlid,
-    actorStationEntries,
-    authorityStationId,
-    authorityStationName,
-    currentName,
-    currentUserPtid,
-    memberStationsByFederation,
-    peerOnline,
-  ]);
 
   // Peer-presence indicator. Truth source: Station's PresenceFlip
   // events carried by the unified `/events/stream` runtime.
@@ -355,7 +340,7 @@ export function ChatMessageArea({
 
   const fireTyping = (typing: boolean) => {
     if (!activeUlid) return;
-    api.messagingTypingSend(activeUlid, typing).catch((err) => {
+    messagingInteractions.sendTyping(activeUlid, typing).catch((err) => {
       // Typing is best-effort; debug-level only so a temporarily
       // unreachable station does not spam the user-visible log.
       log.debug('chat', 'typing pulse failed', { typing, error: err });
@@ -416,7 +401,9 @@ export function ChatMessageArea({
         ref.idleTimer = null;
       }
       if (ref.lastTrueAt > 0 && lastTypingConversationRef.current) {
-        api.messagingTypingSend(lastTypingConversationRef.current, false).catch(() => {});
+        messagingInteractions.sendTyping(lastTypingConversationRef.current, false).catch((error) => {
+          log.debug('chat', 'typing stop pulse failed', { error });
+        });
         ref.lastTrueAt = 0;
       }
     };
@@ -452,6 +439,23 @@ export function ChatMessageArea({
     });
     return () => cancelAnimationFrame(raf);
   }, [scrollToMessageUlid, activeUlid, currentMessages, setScrollToMessageUlid]);
+
+  useEffect(() => {
+    if (!activeUlid || newestAuthoritySequence <= 0) return;
+    const markRead = activeKind === 'friend' ? markFriendRead : markGroupRead;
+    void markRead(activeUlid).catch((error) => {
+      log.warn('chat', 'active conversation read cursor refresh failed', {
+        conversationId: activeUlid,
+        error,
+      });
+    });
+  }, [
+    activeKind,
+    activeUlid,
+    markFriendRead,
+    markGroupRead,
+    newestAuthoritySequence,
+  ]);
 
   const handleScroll = async () => {
     if (!activeUlid || !scrollContainerRef.current) return;
@@ -678,6 +682,20 @@ export function ChatMessageArea({
     const mutation = reactionMutations[message.ulid];
     if (!mutation || mutation.phase !== 'error') return;
     void handleReaction(message, mutation.emoji);
+  };
+
+  const retryFailedMessage = async (message: ChatMessage) => {
+    if (!activeUlid) return;
+    try {
+      await retryMessage(activeUlid, message.ulid, activeKind);
+    } catch (error) {
+      log.error('chat', 'message retry failed', {
+        conversationId: activeUlid,
+        messageId: message.ulid,
+        error,
+      });
+      toast.error(t('chat.social.messageArea.retryFailed'));
+    }
   };
 
   const confirmDeleteMessage = (target: ChatMessage) => {
@@ -1063,6 +1081,9 @@ export function ChatMessageArea({
             onReply={(messageUlid) => {
               setEditingUlid(null);
               setReplyToUlid(messageUlid);
+            }}
+            onRetryMessage={(message) => {
+              void retryFailedMessage(message);
             }}
             onRetryReaction={retryReaction}
             reactionMutationFor={(message) => {

@@ -1,0 +1,42 @@
+{
+  "id": "chat-storage-governance-integrity",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "docs/architecture/chat-storage-governance/legacy-inventory.json",
+    "tooling/acceptance/gates/chat_storage/**"
+  ],
+  "truth_sources": [
+    "Chat storage governance legacy inventory",
+    "Acceptance Evidence Store latest manifests for every CSG Gate",
+    "source-bound Desktop and Mobile native build artifacts"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "operator-report",
+      "route": "CSG-06 exact-source aggregate"
+    }
+  ],
+  "required_gates": [
+    "chat-storage-zero-legacy-e2e",
+    "desktop-release-build",
+    "mobile-native-build",
+    "chat-storage-governance-aggregate-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "all nine legacy inventory dimensions contain zero current-source matches",
+      "Desktop release and Mobile native applications build from the same clean source",
+      "every preceding CSG Gate has current exact-source DONE and PROVEN evidence"
+    ],
+    "visible": [
+      "the final aggregate report identifies every required CSG Gate and its authoritative run",
+      "missing, stale, malformed, or failed evidence remains visibly unproven"
+    ]
+  },
+  "negative": [
+    "dirty source must not be accepted as an aggregate baseline",
+    "stale evidence from an earlier CSG Task must not satisfy final completion",
+    "unit, structural, or build evidence must not replace required native product proof"
+  ]
+}

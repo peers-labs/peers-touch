@@ -290,20 +290,11 @@ function startControlledUpstream(manifest) {
       writeProto(res, protoString(1, 'online'));
       return;
     }
-    if (parsed.pathname === '/friend-chat/sessions') {
+    if (
+      parsed.pathname === '/conversation/list'
+      || parsed.pathname === '/api/v1/social/friend-requests'
+    ) {
       writeProto(res);
-      return;
-    }
-    if (parsed.pathname === '/friend-chat/friend-requests') {
-      writeProto(res);
-      return;
-    }
-    if (parsed.pathname === '/friend-chat/pending') {
-      writeProto(res);
-      return;
-    }
-    if (parsed.pathname === '/group-chat/list') {
-      writeJson(res, 200, { groups: [], total: 0 });
       return;
     }
     if (
@@ -316,7 +307,7 @@ function startControlledUpstream(manifest) {
       writeProto(res);
       return;
     }
-    if (parsed.pathname === '/actor/federation/health' || parsed.pathname === '/actor/federation/me') {
+    if (parsed.pathname === '/actor/federation/health') {
       writeProto(res, peersResponseProto(Buffer.alloc(0)));
       return;
     }
@@ -574,7 +565,8 @@ try {
   const appShellSource = readFileSync(appShellSourcePath, 'utf8');
   assert.ok(!appShellSource.includes('AppletReadinessProbeView'), 'packaged product-window gate must not depend on AppletReadinessProbeView');
   assert.ok(
-    appShellSource.includes('installAppRuntime()') && appShellSource.includes('<View lifecycle={lifecycle} />'),
+    appShellSource.includes('useAppRuntime(lifecycle)')
+      && appShellSource.includes('<View lifecycle={lifecycle} />'),
     'packaged product-window gate must render the normal App lifecycle shell',
   );
 

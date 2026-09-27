@@ -23,13 +23,14 @@ import (
 // services a gatekeeper depends on are captured by the concrete gatekeeper at
 // construction time, keeping this struct free of cross-package wiring.
 type EvalContext struct {
-	AttemptID     string
-	Actor         *actormodel.ActorRef
-	ActorUsername string
-	ActorEmail    string
-	ExpiresAt     time.Time
-	InviteCode    string
-	InvitePassed  bool
+	AttemptID        string
+	Actor            *actormodel.ActorRef
+	ActorUsername    string
+	ActorEmail       string
+	ExpiresAt        time.Time
+	InviteCode       string
+	InvitePassed     bool
+	CompletedActions map[string]bool
 }
 
 // Gatekeeper is a single access gate. Evaluate must be side-effect free with
@@ -95,12 +96,19 @@ func (r *Registry) Decide(ctx context.Context, ec *EvalContext, order []pb.Acces
 	}
 
 	for _, gateType := range order {
+		if !isDefinedGateType(gateType) {
+			return failClosedDecision(decision, gates)
+		}
+
 		gk, ok := r.byType[gateType]
 		if !ok {
-			continue
+			return failClosedDecision(decision, gates)
 		}
 
 		gate := gk.Evaluate(ctx, ec)
+		if gate == nil || gate.GetGateId() == "" || gate.GetGateId() != gk.GateID() || gate.GetType() != gateType {
+			return failClosedDecision(decision, gates)
+		}
 		gates = append(gates, gate)
 
 		if gate.GetState() == pb.AccessGateState_ACCESS_GATE_STATE_PASSED ||
@@ -120,6 +128,21 @@ func (r *Registry) Decide(ctx context.Context, ec *EvalContext, order []pb.Acces
 	if r.grantID != nil && ec.Actor != nil {
 		decision.AccessGrantId = r.grantID(ec.AttemptID, ec.Actor)
 	}
+	return decision
+}
+
+func isDefinedGateType(gateType pb.AccessGateType) bool {
+	if gateType == pb.AccessGateType_ACCESS_GATE_TYPE_UNSPECIFIED {
+		return false
+	}
+	_, ok := pb.AccessGateType_name[int32(gateType)]
+	return ok
+}
+
+func failClosedDecision(decision *pb.AccessDecision, gates []*pb.AccessGate) *pb.AccessDecision {
+	decision.Gates = gates
+	decision.State = pb.AccessDecisionState_ACCESS_DECISION_STATE_BLOCKED
+	decision.Message = "Station access policy contains an unsupported gate"
 	return decision
 }
 

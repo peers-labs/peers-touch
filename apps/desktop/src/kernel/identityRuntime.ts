@@ -322,9 +322,29 @@ class IdentityRuntime {
     });
   };
 
+  private verifySelectedStationBinding = async (): Promise<void> => {
+    const registry = await api.stationList();
+    const selectedUrl = registry.active_url?.trim().replace(/\/+$/, '') ?? '';
+    if (!selectedUrl) {
+      throw new Error('station_access_unselected');
+    }
+    const boundUrl = registry.binding.bound_url?.trim().replace(/\/+$/, '') ?? '';
+    if (
+      boundUrl === selectedUrl
+      && (
+        registry.binding.phase === 'access_gate'
+        || registry.binding.phase === 'bound'
+      )
+    ) {
+      return;
+    }
+    await api.stationSetActive(selectedUrl);
+  };
+
   resolveSession = async (source: 'live' | 'disk' | 'applet'): Promise<void> => {
     this.dispatch({ type: 'SESSION_RESOLVE_STARTED', source });
     try {
+      await this.verifySelectedStationBinding();
       await useSessionStore.getState().restoreSession();
       const user = currentSessionUser();
       if (!user) {

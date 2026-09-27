@@ -1,10 +1,10 @@
-import { GroupRole } from '../../gen/proto/domain/chat/group_chat_pb';
+import { MemberRole } from '../../gen/proto/domain/chat/conversation_pb';
 
 export interface GroupMemberControlStateInput {
   canManageGroupMembers: boolean;
   isSelf: boolean;
   membersLoaded: boolean;
-  myGroupRole: number;
+  myMemberRole: number;
   targetRole: number;
 }
 
@@ -15,8 +15,8 @@ export function getGroupMemberControlState(input: GroupMemberControlStateInput):
   const canManageTarget = input.canManageGroupMembers
     && input.membersLoaded
     && !input.isSelf
-    && input.targetRole !== GroupRole.OWNER
-    && (input.myGroupRole === GroupRole.OWNER || input.targetRole < input.myGroupRole);
+    && input.targetRole !== MemberRole.OWNER
+    && (input.myMemberRole === MemberRole.OWNER || input.targetRole < input.myMemberRole);
 
   if (canManageTarget) return { canManageTarget };
   if (!input.canManageGroupMembers) {
@@ -25,10 +25,10 @@ export function getGroupMemberControlState(input: GroupMemberControlStateInput):
   if (input.isSelf) {
     return { canManageTarget, lockedReasonKey: 'chat.social.detail.memberLockedSelf' };
   }
-  if (input.targetRole === GroupRole.OWNER) {
+  if (input.targetRole === MemberRole.OWNER) {
     return { canManageTarget, lockedReasonKey: 'chat.social.detail.memberLockedOwner' };
   }
-  if (input.myGroupRole !== GroupRole.OWNER && input.targetRole >= GroupRole.ADMIN) {
+  if (input.myMemberRole !== MemberRole.OWNER && input.targetRole >= MemberRole.ADMIN) {
     return { canManageTarget, lockedReasonKey: 'chat.social.detail.memberLockedAdmin' };
   }
   return { canManageTarget };

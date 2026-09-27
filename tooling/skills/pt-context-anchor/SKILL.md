@@ -2,7 +2,7 @@
 name: "pt-context-anchor"
 description: "Reads verified tracked-work sources and renders one copyable chat projection for status, resume, handoff, blockers, readiness, or close. It never repairs or mutates workflow state."
 stage: "cross-stage"
-requires: ["valid Plan Package", "matching active_work locator", "verified worktree identity"]
+requires: ["valid Plan Package", "matching workspace active-work record", "verified worktree identity"]
 produces: ["verified read-only Context Anchor"]
 ---
 
@@ -15,6 +15,10 @@ durable owner state -> validate -> project to chat
 ```
 
 It does not synchronize, repair, or write durable state.
+At a host Stop boundary, `workflow-anchor.mjs` is the rendering owner: the
+Skill emits the exact machine-rendered block and does not reconstruct or edit
+it. The Kernel stores the machine-local receipt and validates response
+completeness before release.
 
 ## Invoke When
 
@@ -23,13 +27,14 @@ It does not synchronize, repair, or write durable state.
 - Preparing for context compaction.
 - A resume needs a verified projection before or after continued execution.
 
-Do not invoke before a formal plan and matching `active_work` row exist.
+Do not invoke before a formal plan and matching workspace active-work record
+exist.
 
 ## Boundary
 
 This Skill may read:
 
-- the matching `active_work` row;
+- the current workspace's `workflow/active-work.json`;
 - compact Plan Package `plan.md`;
 - the manifest's current Task Slice;
 - matching Development `session.json`;
@@ -39,13 +44,14 @@ This Skill may read:
 
 It must not:
 
-- update `active_work`;
+- update active-work state;
 - change Plan Package or Task lifecycle;
 - append Session events;
 - recompute or persist a scheduler queue;
 - acquire resources or execute work;
 - infer missing facts from chat;
 - write a `## Context Anchor` section into any repository document.
+- rewrite, abbreviate, or manually recreate a Kernel-rendered Stop Anchor.
 
 When sources disagree, return `CONTEXT_PROJECTION_STALE` with the mismatched
 fields and their owning writer. `pt-dev-workflow` coordinates repair through
@@ -56,51 +62,49 @@ the owner, then invokes this Skill again.
 | Projected field | Read owner |
 |---|---|
 | Worktree, branch, `workspaceId` | verified Git binding |
-| Initial HEAD | Plan Package immutable baseline |
-| Expected HEAD | `active_work` resume projection verified against Git |
+| Initial HEAD | Plan Package immutable binding |
+| Expected HEAD | workspace active-work projection verified against declaration and Git |
 | Main task, scope, architecture/product decisions | accepted sources |
-| Stage and tracked locator | `active_work` |
+| Stage and tracked locator | workspace active-work record |
 | Task lifecycle/current Task/dependencies | Plan Package manifest |
 | Current transition and first failure | Development Session |
 | Completed delta and evidence | Task snapshot plus referenced evidence |
 | Remaining frontier, lanes, conflict controls, critical path | scheduler output backed by the current graph |
 | Overall progress and next completion effect | `planctl status.progress` |
 | Next Progress Slice | current Task plus scheduler horizon |
+| Plan Run queue | ordered dependency-ready successor frontier from the Plan DAG and scheduler |
+| Execution mandate and autonomous horizon | verified Plan Run input supplied by `pt-dev-workflow` plus accepted Plan authorization |
+| Stop conditions | DWF-D20 hard boundaries plus current verified blockers |
 | ETA | remaining critical path plus observed throughput |
 
 No global precedence rule exists. Each field comes from its owner.
 
 ## Active Work Locator
 
-Tracked work uses:
+Tracked work reads exactly:
 
-```markdown
-## active_work
-
-| id | plan | stage | current_task_id | current_task_path | dev_state | branch | workspace_id | initial_head | expected_head | blocked | last_session |
-|----|------|-------|-----------------|-------------------|-----------|--------|--------------|--------------|---------------|---------|--------------|
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/active-work.json
 ```
 
 Validation rules:
 
-- `plan` resolves to package `plan.md`.
-- `current_task_id/current_task_path` mirror the manifest or are both `NONE`.
-- `dev_state` mirrors `session.json` or is `NONE`.
-- branch, workspace, and expected HEAD match verified Git state.
-- initial HEAD is immutable.
-- the obsolete sibling-topology digest column is absent; if present, report
-  `CONTEXT_PROJECTION_STALE` for Dev Workflow migration.
-- one workspace has at most one non-complete row.
-- `blocked=true` requires an empty Ready Queue and source-backed exhaustion.
+- schema, revision and digest validate;
+- `planId/planPath` match the current workspace Plan generation;
+- `currentTaskId/currentTaskPath/taskStatus` mirror the manifest-selected Task;
+- `devState` mirrors `session.json` or is `null`;
+- branch, workspace and expected HEAD match declaration and verified Git state;
+- initial HEAD matches the Plan's immutable baseline.
 
-The Anchor reports a mismatch; it never rewrites the row.
+The Anchor reports a mismatch; it never rewrites the record. Project memory is
+not an input.
 
 ## Read Procedure
 
-1. Resolve the workspace's immutable machine Plan binding, then select the one
-   matching non-complete `active_work` row. Ignore synchronized foreign rows.
-2. Verify the persisted worktree and Plan bindings. Do not recapture a new
-   baseline or rebind the workspace.
+1. Resolve the workspace's current machine Plan generation and read only that
+   workspace's active-work record with `make active-work-status`.
+2. Verify the persisted worktree and Plan generation. Do not recapture a new
+   baseline or replace an unfinished generation.
 3. Run `planctl validate`, `planctl current`, and `planctl status`.
 4. Read compact `plan.md`, only `current_task_path`, and matching
    `session.json`.
@@ -108,9 +112,17 @@ The Anchor reports a mismatch; it never rewrites the row.
 6. Use `unknown` for ETA when critical-path or throughput evidence is
    insufficient.
 7. Require one source-backed Next Progress Slice for an active non-blocked
-   package. It must target the current Task's `in_progress -> done` boundary and
-   state the exact completed-count, percentage-point, and unlock delta.
+   package. It must target the current Task's `in_progress -> done` boundary,
+   copy `completedAfter` and `percentageAfter` from
+   `planctl status.progress.nextProgressBoundary`, state the exact
+   percentage-point and unlock delta, and identify the post-closure successor
+   frontier or the Plan terminal state. Never derive the target by adding a
+   rounded percentage or by counting unlocked Tasks as complete.
 8. Render one final chat block.
+
+When invoked by the Workflow Kernel at Stop, steps 1-8 are already represented
+by the supplied receipt. Emit its `content` byte-for-byte; do not append fields
+or replace unknown values.
 
 Do not scan archive files, every Task body, raw command logs, or conversation
 history.
@@ -123,6 +135,8 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 ```markdown
 **Context Anchor**
 - **Main task**:
+- **Execution mandate**: <status-only or authorized Plan Run>
+- **Autonomous horizon**: <Plan terminal state or named hard boundary>
 - **Execution horizon**:
 - **Current closure / state**:
 - **Worktree / branch / workspace**:
@@ -131,13 +145,15 @@ Every user-facing Context Anchor is one fenced `markdown` block exactly like:
 - **Progress**: <done>/<total> Task closures (<percentage>%)
 - **Completed delta**:
 - **Next Progress Slice**: <Task ID, outcome, and completion boundary>
-- **Expected progress effect**: <done/total -> done+1/total, percentage-point delta, unlocked Task IDs>
+- **Projected progress after Next**: <completedAfter>/<total> Task closures (<percentageAfter>%)
+- **Expected progress effect**: <+1 closure, percentage-point delta, unlocked Task IDs>
+- **Plan Run queue**: <ordered dependency-ready successor Tasks/Slices after the current closure>
 - **Remaining frontier**:
 - **Execution mode / lanes**:
 - **Conflict controls**:
 - **Critical path / ETA**:
 - **Evidence**:
-- **Hard boundaries / decisions**:
+- **Stop conditions / decisions**:
 - **Tracking document**:
 ```
 ````
@@ -154,8 +170,10 @@ For `continue`/`resume`, projection must not pause execution. `pt-dev-workflow`
 continues first and invokes this Skill at the next meaningful report boundary.
 A successful declaration, authorization, status check, diagnostic, checkpoint,
 deploy, or focused check is internal Slice activity and must not trigger a new
-Anchor while the Task remains open. A zero-delta Anchor is valid only at a hard
-boundary after the complete ready frontier is exhausted.
+Anchor while the Task remains open. Task closure, review success, and Anchor
+emission are also internal Plan Run boundaries when a dependency-ready
+successor exists. A zero-delta Anchor is valid only at a hard boundary after the
+complete ready frontier is exhausted.
 
 ## Output Errors
 
@@ -172,24 +190,31 @@ Each error names the mismatched field and owning writer.
 
 - The Plan Package and matching locator exist.
 - Git identity matches persisted binding.
-- `planctl current`, current Task, Session, and `active_work` agree.
-- Progress, completed delta, Next Progress Slice, expected progress effect,
-  remaining frontier, lanes, conflict controls, and critical path are
-  source-backed.
+- `planctl current`, current Task, Session, declaration, Git and workspace
+  active-work agree.
+- Progress, completed delta, Next Progress Slice, projected progress after
+  Next, expected progress effect, Plan Run queue, remaining frontier,
+  execution mandate, autonomous horizon, stop conditions, lanes, conflict
+  controls, and critical path are source-backed.
 - Evidence distinguishes `PASS`, `FAIL`, `NOT RUN`, and `UNPROVEN`.
 - No file, registry, plan, Session, or runtime state was mutated.
 - The response ends with one fenced chat projection.
+- A terminal or blocked host Stop has a matching machine-local Anchor receipt
+  and create-once release receipt.
 
 ## Anti-Patterns
 
 Never:
 
 - repair stale owner state;
-- create or update `active_work`;
+- create or update active-work state;
+- read project memory as runtime truth;
 - reconstruct state from chat;
 - recapture Git identity during resume;
 - invent progress or ETA;
 - emit a free-text administrative `Next action`;
+- end an authorized Plan Run with `Continue?` or imply that Anchor output needs
+  user confirmation;
 - emit a successful zero-delta continuation while the current Task remains
   closable;
 - report stale agent metadata as a live lane;

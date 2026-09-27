@@ -39,6 +39,7 @@ pub(super) fn test_attachment_metadata(
             nonce_strategy: AttachmentNonceStrategy::Counter32Be as i32,
             chunk_ciphertext_sha256: vec![Sha256::digest(&ciphertext).to_vec()],
         }),
+        voice_note: None,
     }
 }
 

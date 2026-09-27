@@ -14,16 +14,13 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/valueobject"
 )
 
-const historyRestoreWindow = 24 * time.Hour
-
 type MemberSettingsPatch struct {
-	Nickname            *string
-	Muted               *bool
-	Pinned              *bool
-	AlertEnabled        *bool
-	Background          *string
-	BackgroundImage     *string
-	ClearedAtUnixMillis *int64
+	Nickname        *string
+	Muted           *bool
+	Pinned          *bool
+	AlertEnabled    *bool
+	Background      *string
+	BackgroundImage *string
 }
 
 type ReadCursorResult struct {
@@ -75,23 +72,6 @@ func (s *Service) UpdateMemberSettings(
 		}
 		if patch.BackgroundImage != nil {
 			current.BackgroundImage = *patch.BackgroundImage
-		}
-		if patch.ClearedAtUnixMillis != nil {
-			requested := *patch.ClearedAtUnixMillis
-			restoreRequested := requested == 0 && current.ClearedAtUnixMillis > 0
-			restoreExpired := restoreRequested && !s.clock.Now().Before(
-				time.UnixMilli(current.ClearedAtUnixMillis).Add(historyRestoreWindow),
-			)
-			if requested < 0 || restoreExpired ||
-				(requested > 0 && requested < current.ClearedAtUnixMillis) {
-				return conversationdomain.NewError(
-					conversationdomain.ErrorCodeStaleAuthorityHead,
-					"application.update_member_settings",
-					"cleared_at_unix_ms",
-					"cannot move backwards outside the restore window",
-				)
-			}
-			current.ClearedAtUnixMillis = requested
 		}
 		current.UpdatedAt = s.clock.Now()
 		if err := transaction.Repositories.MemberSettings.Save(ctx, current); err != nil {
@@ -585,8 +565,33 @@ func (s *Service) ApplyFollowerEvent(
 				rejection = followerForkError()
 				return nil
 			}
+			rejoinCheckpoint, checkpointErr := followerRejoinCheckpoint(
+				current,
+				exists,
+				event,
+				s.localStation,
+			)
+			if checkpointErr != nil {
+				if err := transaction.Repositories.Followers.SetStatus(
+					ctx,
+					event.ConversationID,
+					repository.FollowerStatusReadOnly,
+				); err != nil {
+					return err
+				}
+				rejection = checkpointErr
+				return nil
+			}
+			if exists &&
+				current.Status == repository.FollowerStatusRetired &&
+				!rejoinCheckpoint {
+				rejection = followerRetiredError()
+				return nil
+			}
 			if (!exists && event.Sequence > 1) ||
-				(exists && event.Sequence > current.Head.Sequence.Next()) {
+				(exists &&
+					event.Sequence > current.Head.Sequence.Next() &&
+					!rejoinCheckpoint) {
 				if err := transaction.Repositories.Followers.Buffer(ctx, event); err != nil {
 					if conversationdomain.IsCode(err, conversationdomain.ErrorCodeHashChainInvalid) {
 						rejection = err
@@ -645,6 +650,7 @@ func (s *Service) ApplyFollowerEvent(
 				current,
 				exists,
 				event,
+				rejoinCheckpoint,
 			)
 			if deriveErr != nil {
 				if conversationdomain.IsCode(
@@ -662,6 +668,17 @@ func (s *Service) ApplyFollowerEvent(
 					return nil
 				}
 				return deriveErr
+			}
+			projection.Status = followerProjectionStatus(
+				current,
+				exists,
+				projection.Conversation,
+				event,
+				s.localStation,
+				rejoinCheckpoint,
+			)
+			if rejoinCheckpoint {
+				projection.Checkpoint = repository.FollowerCheckpointRejoin
 			}
 			applyErr := transaction.Repositories.Followers.Apply(ctx, projection, event)
 			if conversationdomain.IsCode(applyErr, conversationdomain.ErrorCodeHashChainInvalid) ||
@@ -704,10 +721,14 @@ func (s *Service) drainFollowerBuffer(
 			current.Head.Sequence,
 		)
 		if conversationdomain.IsCode(err, conversationdomain.ErrorCodeNotFound) {
+			status := current.Status
+			if status == repository.FollowerStatusResyncRequired {
+				status = repository.FollowerStatusActive
+			}
 			return transaction.Repositories.Followers.SetStatus(
 				ctx,
 				current.Conversation.ID,
-				repository.FollowerStatusActive,
+				status,
 			)
 		}
 		if conversationdomain.IsCode(err, conversationdomain.ErrorCodeHashChainInvalid) {
@@ -735,7 +756,11 @@ func (s *Service) drainFollowerBuffer(
 			*rejection = followerGapError()
 			return nil
 		}
-		projection, err := deriveFollowerProjection(current, true, next)
+		if current.Status == repository.FollowerStatusRetired {
+			*rejection = followerRetiredError()
+			return nil
+		}
+		projection, err := deriveFollowerProjection(current, true, next, false)
 		if err != nil {
 			if conversationdomain.IsCode(err, conversationdomain.ErrorCodeHashChainInvalid) {
 				if statusErr := transaction.Repositories.Followers.SetStatus(
@@ -750,6 +775,14 @@ func (s *Service) drainFollowerBuffer(
 			}
 			return err
 		}
+		projection.Status = followerProjectionStatus(
+			current,
+			true,
+			projection.Conversation,
+			next,
+			s.localStation,
+			false,
+		)
 		if err := transaction.Repositories.Followers.Apply(ctx, projection, next); err != nil {
 			if conversationdomain.IsCode(err, conversationdomain.ErrorCodeHashChainInvalid) ||
 				conversationdomain.IsCode(err, conversationdomain.ErrorCodeStaleAuthorityHead) {
@@ -799,6 +832,15 @@ func followerReadOnlyError() error {
 	)
 }
 
+func followerRetiredError() error {
+	return conversationdomain.NewError(
+		conversationdomain.ErrorCodeUnauthorized,
+		"application.apply_follower_event",
+		"event",
+		"retired follower accepts only a matching local rejoin checkpoint",
+	)
+}
+
 func sameFollowerEvent(left domainevent.Record, right domainevent.Record) bool {
 	return left.ID == right.ID &&
 		left.ConversationID == right.ConversationID &&
@@ -808,10 +850,125 @@ func sameFollowerEvent(left domainevent.Record, right domainevent.Record) bool {
 		bytes.Equal(left.Bytes(), right.Bytes())
 }
 
+func followerRejoinCheckpoint(
+	current repository.FollowerProjection,
+	exists bool,
+	event domainevent.Record,
+	localStation valueobject.StationID,
+) (bool, error) {
+	if !exists || current.Status != repository.FollowerStatusRetired ||
+		event.Fact.Kind != domainevent.KindMembershipCommitted {
+		return false, nil
+	}
+	if event.Fact.PostState == nil {
+		return false, followerStateShapeError(
+			"rejoin checkpoint requires a complete post-transition state",
+		)
+	}
+	if followerSnapshotHasActiveHome(current.Conversation, localStation) {
+		return false, followerStateShapeError(
+			"retired follower still contains an active local member",
+		)
+	}
+	for _, change := range event.Fact.MembershipChanges {
+		if change.Action != entity.MembershipActionAddActor ||
+			change.HomeStation != localStation ||
+			change.Device == "" {
+			continue
+		}
+		if !followerStateHasActiveMember(
+			*event.Fact.PostState,
+			change.Actor,
+			localStation,
+		) || !followerStateHasActiveEndpoint(
+			*event.Fact.PostState,
+			valueobject.Endpoint{Actor: change.Actor, Device: change.Device},
+			localStation,
+		) {
+			return false, followerStateShapeError(
+				"rejoin ADD and post-state do not bind the local actor endpoint",
+			)
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func followerProjectionStatus(
+	current repository.FollowerProjection,
+	exists bool,
+	next aggregate.Snapshot,
+	event domainevent.Record,
+	localStation valueobject.StationID,
+	rejoinCheckpoint bool,
+) repository.FollowerStatus {
+	if !exists {
+		return repository.FollowerStatusActive
+	}
+	currentHasLocalMember := followerSnapshotHasActiveHome(
+		current.Conversation,
+		localStation,
+	)
+	nextHasLocalMember := followerSnapshotHasActiveHome(next, localStation)
+	switch {
+	case rejoinCheckpoint && nextHasLocalMember:
+		return repository.FollowerStatusActive
+	case event.Fact.Kind == domainevent.KindMembershipCommitted &&
+		currentHasLocalMember &&
+		!nextHasLocalMember:
+		return repository.FollowerStatusRetired
+	default:
+		return current.Status
+	}
+}
+
+func followerSnapshotHasActiveHome(
+	snapshot aggregate.Snapshot,
+	homeStation valueobject.StationID,
+) bool {
+	for _, member := range snapshot.Members {
+		if member.Active() && member.HomeStation == homeStation {
+			return true
+		}
+	}
+	return false
+}
+
+func followerStateHasActiveMember(
+	state domainevent.ConversationState,
+	actor valueobject.PTID,
+	homeStation valueobject.StationID,
+) bool {
+	for _, member := range state.ActiveMembers {
+		if member.Actor == actor &&
+			member.HomeStation == homeStation &&
+			member.Active() {
+			return true
+		}
+	}
+	return false
+}
+
+func followerStateHasActiveEndpoint(
+	state domainevent.ConversationState,
+	endpoint valueobject.Endpoint,
+	homeStation valueobject.StationID,
+) bool {
+	for _, device := range state.ActiveDevices {
+		if device.Endpoint == endpoint &&
+			device.HomeStation == homeStation &&
+			device.Active {
+			return true
+		}
+	}
+	return false
+}
+
 func deriveFollowerProjection(
 	current repository.FollowerProjection,
 	exists bool,
 	event domainevent.Record,
+	rejoinCheckpoint bool,
 ) (repository.FollowerProjection, error) {
 	eventHead := valueobject.AuthorityHead{
 		Sequence:        event.Sequence,
@@ -907,8 +1064,13 @@ func deriveFollowerProjection(
 			return repository.FollowerProjection{}, err
 		}
 		if event.Fact.Kind == domainevent.KindMembershipCommitted {
+			reconciliationBase := current.Conversation
+			if rejoinCheckpoint {
+				reconciliationBase.Head.Sequence = event.Sequence - 1
+				reconciliationBase.Head.EventHash = event.PreviousHash
+			}
 			snapshot, err = aggregate.ReconcileCommittedMembershipProjection(
-				current.Conversation,
+				reconciliationBase,
 				event.Fact.MembershipChanges,
 				snapshot,
 			)
@@ -1014,8 +1176,11 @@ func validateFollowerEventStateShape(event domainevent.Record) error {
 			)
 		}
 	case domainevent.KindMessageCommitted,
+		domainevent.KindMessageForwarded,
 		domainevent.KindMessageEdited,
 		domainevent.KindMessageRetracted,
+		domainevent.KindMessageHiddenForActor,
+		domainevent.KindMessageModerated,
 		domainevent.KindReactionCommitted,
 		domainevent.KindMessagePinCommitted,
 		domainevent.KindConversationSettings,

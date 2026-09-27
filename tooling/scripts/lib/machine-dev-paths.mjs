@@ -70,6 +70,10 @@ export function machineLeaseRoot(home) {
   return path.join(machineDevRoot(home), 'leases');
 }
 
+export function machineWorkspacesPath(home) {
+  return path.join(machineDevRoot(home), 'workspaces');
+}
+
 export function machineLeasePath(resourceKind, resourceId, home = homedir()) {
   const kind = requireIdentifier(resourceKind, 'lease resource kind');
   const id = requireIdentifier(resourceId, 'lease resource id');
@@ -77,20 +81,37 @@ export function machineLeasePath(resourceKind, resourceId, home = homedir()) {
 }
 
 export function workspaceStatePath(options = {}) {
-  return path.join(
-    machineDevRoot(options.home),
-    'workspaces',
-    resolveWorkspaceId(options),
-  );
+  return path.join(machineWorkspacesPath(options.home), resolveWorkspaceId(options));
+}
+
+export function workspaceWorkflowRootPath(options = {}) {
+  return path.join(workspaceStatePath(options), 'workflow');
+}
+
+export function workspaceActiveWorkPath(options = {}) {
+  return path.join(workspaceWorkflowRootPath(options), 'active-work.json');
+}
+
+export function workspaceActiveWorkLockPath(options = {}) {
+  return path.join(workspaceWorkflowRootPath(options), 'active-work.lock');
+}
+
+export function workspaceObservationsRootPath(options = {}) {
+  return path.join(workspaceStatePath(options), 'observations');
+}
+
+export function workspaceObservationPath(options = {}) {
+  return path.join(workspaceObservationsRootPath(options), 'worktree.json');
+}
+
+export function workspaceObservationLockPath(options = {}) {
+  return path.join(workspaceObservationsRootPath(options), 'worktree.lock');
 }
 
 export function workspaceWorkflowPath(workItemId, options = {}) {
   requireIdentifier(workItemId, 'development work item');
   return path.join(
-    machineDevRoot(options.home),
-    'workspaces',
-    resolveWorkspaceId(options),
-    'workflow',
+    workspaceWorkflowRootPath(options),
     workItemId,
   );
 }

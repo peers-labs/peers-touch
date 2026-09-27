@@ -8,12 +8,13 @@ pub mod secure_content;
 mod station_origin;
 
 use messaging::lifecycle::MobileMessagingRuntime;
+use platform::push_bridge::PushBridgeRuntime;
 #[cfg(not(target_os = "android"))]
 use platform::secure_storage::SecureStorage;
 use platform::MobilePlatform;
-use runtime::command_ledger::CommandLedger;
-use runtime::draft_store::DraftStore;
 use runtime::oauth::OAuthCoordinator;
+use runtime::reliability::ReliabilityRuntime;
+use runtime::station_transport::StationTransportRuntime;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,8 +25,9 @@ pub fn run() {
         .manage(MobilePlatform::ios_first())
         .manage(OAuthCoordinator::new().expect("failed to initialize the native OAuth coordinator"))
         .manage(MobileMessagingRuntime::default())
-        .manage(CommandLedger::new())
-        .manage(DraftStore::new());
+        .manage(PushBridgeRuntime::default())
+        .manage(ReliabilityRuntime::default())
+        .manage(StationTransportRuntime::default());
 
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_peers_secure_storage::init());

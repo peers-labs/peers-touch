@@ -324,6 +324,113 @@ func TestFederatedFriendRequestListReadsCanonicalProjections(t *testing.T) {
 	}
 }
 
+func TestFederatedFriendRequestCommandResultLookupIsActorAndHashBound(
+	t *testing.T,
+) {
+	fixture := newFederatedFriendRequestFixture(t)
+	command := fixture.command(
+		t,
+		model.FriendRequestAction_FRIEND_REQUEST_ACTION_SEND,
+		"command-lookup",
+		"request-lookup",
+		stationA,
+		stationB,
+		fixture.clock.Now(),
+	)
+	payloadHash, err := domain.FriendRequestCommandPayloadSHA256(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup := &model.LookupFriendRequestCommandResultRequest{
+		CommandId:            command.GetBody().GetCommandId(),
+		CommandPayloadSha256: payloadHash,
+	}
+
+	notFound, err := fixture.a.service.LookupFriendRequestCommandResult(
+		context.Background(),
+		alicePTID,
+		lookup,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if notFound.GetState() !=
+		model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_NOT_FOUND ||
+		notFound.GetCommandId() != lookup.GetCommandId() ||
+		!bytes.Equal(
+			notFound.GetCommandPayloadSha256(),
+			lookup.GetCommandPayloadSha256(),
+		) {
+		t.Fatalf("not-found lookup = %+v", notFound)
+	}
+
+	if _, err := fixture.a.service.SubmitFriendRequestCommand(
+		context.Background(),
+		command,
+	); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := fixture.a.service.LookupFriendRequestCommandResult(
+		context.Background(),
+		alicePTID,
+		lookup,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pending.GetState() !=
+		model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING ||
+		pending.GetTerminalResult() != nil ||
+		!bytes.Equal(pending.GetCommandPayloadSha256(), payloadHash) {
+		t.Fatalf("accepted-pending lookup = %+v", pending)
+	}
+
+	wrongHash := proto.Clone(lookup).(*model.LookupFriendRequestCommandResultRequest)
+	wrongHash.CommandPayloadSha256 = bytes.Repeat([]byte{0x91}, sha256.Size)
+	unresolved, err := fixture.a.service.LookupFriendRequestCommandResult(
+		context.Background(),
+		alicePTID,
+		wrongHash,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unresolved.GetState() !=
+		model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED ||
+		unresolved.GetTerminalResult() != nil {
+		t.Fatalf("hash-mismatch lookup = %+v", unresolved)
+	}
+
+	if _, err := fixture.a.service.LookupFriendRequestCommandResult(
+		context.Background(),
+		bobPTID,
+		lookup,
+	); domain.FederationErrorCodeOf(err) != domain.FederationErrorUnauthorized {
+		t.Fatalf("cross-actor lookup error = %v", err)
+	}
+
+	fixture.dispatchOnce(t, fixture.a)
+	fixture.dispatchOnce(t, fixture.b)
+	terminal, err := fixture.a.service.LookupFriendRequestCommandResult(
+		context.Background(),
+		alicePTID,
+		lookup,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal.GetState() !=
+		model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_TERMINAL_RESULT ||
+		terminal.GetTerminalResult() == nil ||
+		terminal.GetTerminalResult().GetCommandId() != lookup.GetCommandId() ||
+		!bytes.Equal(
+			terminal.GetTerminalResult().GetCommandPayloadSha256(),
+			payloadHash,
+		) {
+		t.Fatalf("terminal lookup = %+v", terminal)
+	}
+}
+
 func TestFederatedFriendRequestRejectReturnsWithoutRelationshipOrEffect(t *testing.T) {
 	fixture := newFederatedFriendRequestFixture(t)
 	requestID := "request-reject"
@@ -454,13 +561,16 @@ func TestFederatedFriendRequestAcceptRechecksReceiverBlockPolicy(t *testing.T) {
 	fixture.dispatchOnce(t, fixture.b)
 
 	now := fixture.clock.Now()
-	if err := fixture.b.db.Table("friend_chat_friendships").Create(
+	if err := fixture.b.db.Table("social_directional_relationships").Create(
 		map[string]any{
-			"actor_ptid": bobPTID,
-			"peer_ptid":  alicePTID,
-			"status":     int32(3),
-			"created_at": now,
-			"updated_at": now,
+			"actor_ptid":                  bobPTID,
+			"target_actor_ptid":           alicePTID,
+			"actor_home_station_peer_id":  stationB,
+			"target_home_station_peer_id": stationA,
+			"blocked":                     true,
+			"revision":                    int64(1),
+			"blocked_at":                  now,
+			"updated_at":                  now,
 		},
 	).Error; err != nil {
 		t.Fatal(err)
@@ -598,13 +708,16 @@ func TestReceiverRejectsSendPolicyBeforePendingMaterialization(t *testing.T) {
 			seed: func(t *testing.T, station *friendRequestStation) {
 				t.Helper()
 				now := station.clock.Now()
-				if err := station.db.Table("friend_chat_friendships").Create(
+				if err := station.db.Table("social_directional_relationships").Create(
 					map[string]any{
-						"actor_ptid": bobPTID,
-						"peer_ptid":  alicePTID,
-						"status":     int32(3),
-						"created_at": now,
-						"updated_at": now,
+						"actor_ptid":                  bobPTID,
+						"target_actor_ptid":           alicePTID,
+						"actor_home_station_peer_id":  stationB,
+						"target_home_station_peer_id": stationA,
+						"blocked":                     true,
+						"revision":                    int64(1),
+						"blocked_at":                  now,
+						"updated_at":                  now,
 					},
 				).Error; err != nil {
 					t.Fatal(err)
@@ -1625,13 +1738,16 @@ func TestReceiverPolicyRejectionRollsBackCommandWhenResultOutboxConflicts(
 ) {
 	fixture := newFederatedFriendRequestFixture(t)
 	now := fixture.clock.Now()
-	if err := fixture.b.db.Table("friend_chat_friendships").Create(
+	if err := fixture.b.db.Table("social_directional_relationships").Create(
 		map[string]any{
-			"actor_ptid": bobPTID,
-			"peer_ptid":  alicePTID,
-			"status":     int32(3),
-			"created_at": now,
-			"updated_at": now,
+			"actor_ptid":                  bobPTID,
+			"target_actor_ptid":           alicePTID,
+			"actor_home_station_peer_id":  stationB,
+			"target_home_station_peer_id": stationA,
+			"blocked":                     true,
+			"revision":                    int64(1),
+			"blocked_at":                  now,
+			"updated_at":                  now,
 		},
 	).Error; err != nil {
 		t.Fatal(err)
@@ -1868,6 +1984,7 @@ type friendRequestStation struct {
 	deliveryStore  *delivery.GORMRepository
 	store          *infrastructure.GORMFederatedFriendRequestStore
 	service        *application.FederatedFriendRequestService
+	relationship   *application.FederatedRelationshipService
 	receiver       *delivery.DeliveryReceiver
 	localTransport delivery.Transport
 	stationSigner  stationSigner
@@ -2009,10 +2126,54 @@ func newFriendRequestStation(
 			ValidFromUnixMs:    clock.Now().UnixMilli(),
 		}}, nil
 	}))
+	relationshipService, err := application.NewFederatedRelationshipService(
+		socialStore,
+		signer,
+		stationID,
+		clock,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relationshipService.WithActorDeviceKeyResolver(
+		friendRequestActorKeyResolverFunc(func(
+			_ context.Context,
+			actorPTID string,
+			homeStationPeerID string,
+		) ([]*model.VerifiedActorDeviceSigningKey, error) {
+			key, ok := actorKeys[actorPTID]
+			if !ok {
+				return nil, nil
+			}
+			expectedHome := stationA
+			if actorPTID == bobPTID {
+				expectedHome = stationB
+			}
+			if homeStationPeerID != expectedHome {
+				return nil, nil
+			}
+			return []*model.VerifiedActorDeviceSigningKey{{
+				ActorPtid:          actorPTID,
+				ActorDeviceId:      actorPTID + ":device",
+				HomeStationPeerId:  homeStationPeerID,
+				SigningKeyId:       key.keyID,
+				Ed25519PublicKey:   append([]byte(nil), key.publicKey...),
+				ProfileVersion:     1,
+				VerificationSource: model.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+				ValidFromUnixMs:    clock.Now().UnixMilli(),
+			}}, nil
+		}),
+	)
 	registry := delivery.NewRegistry()
 	if err := infrastructure.RegisterFederatedFriendRequestReceivers(
 		registry,
 		service,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := infrastructure.RegisterFederatedRelationshipReceiver(
+		registry,
+		relationshipService,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -2036,6 +2197,7 @@ func newFriendRequestStation(
 		deliveryStore:  deliveryStore,
 		store:          socialStore,
 		service:        service,
+		relationship:   relationshipService,
 		receiver:       receiver,
 		localTransport: localTransport,
 		stationSigner:  signer,

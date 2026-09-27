@@ -315,6 +315,58 @@ func (ActorSigningKeyVerificationSource) EnumDescriptor() ([]byte, []int) {
 	return file_domain_actor_actor_proto_rawDescGZIP(), []int{4}
 }
 
+type ProfileUpdateOutcome int32
+
+const (
+	ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_UNSPECIFIED ProfileUpdateOutcome = 0
+	ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_APPLIED     ProfileUpdateOutcome = 1
+	ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_UNCHANGED   ProfileUpdateOutcome = 2
+	ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_CONFLICT    ProfileUpdateOutcome = 3
+)
+
+// Enum value maps for ProfileUpdateOutcome.
+var (
+	ProfileUpdateOutcome_name = map[int32]string{
+		0: "PROFILE_UPDATE_OUTCOME_UNSPECIFIED",
+		1: "PROFILE_UPDATE_OUTCOME_APPLIED",
+		2: "PROFILE_UPDATE_OUTCOME_UNCHANGED",
+		3: "PROFILE_UPDATE_OUTCOME_CONFLICT",
+	}
+	ProfileUpdateOutcome_value = map[string]int32{
+		"PROFILE_UPDATE_OUTCOME_UNSPECIFIED": 0,
+		"PROFILE_UPDATE_OUTCOME_APPLIED":     1,
+		"PROFILE_UPDATE_OUTCOME_UNCHANGED":   2,
+		"PROFILE_UPDATE_OUTCOME_CONFLICT":    3,
+	}
+)
+
+func (x ProfileUpdateOutcome) Enum() *ProfileUpdateOutcome {
+	p := new(ProfileUpdateOutcome)
+	*p = x
+	return p
+}
+
+func (x ProfileUpdateOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProfileUpdateOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_actor_actor_proto_enumTypes[5].Descriptor()
+}
+
+func (ProfileUpdateOutcome) Type() protoreflect.EnumType {
+	return &file_domain_actor_actor_proto_enumTypes[5]
+}
+
+func (x ProfileUpdateOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProfileUpdateOutcome.Descriptor instead.
+func (ProfileUpdateOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{5}
+}
+
 type ActorRef struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ptid          string                 `protobuf:"bytes,2,opt,name=ptid,proto3" json:"ptid,omitempty"`
@@ -1727,6 +1779,11 @@ type ActorProfile struct {
 	MessagePermission         string                 `protobuf:"bytes,26,opt,name=message_permission,proto3" json:"message_permission,omitempty"`
 	AutoExpireDays            int32                  `protobuf:"varint,27,opt,name=auto_expire_days,proto3" json:"auto_expire_days,omitempty"`
 	Ref                       *ActorRef              `protobuf:"bytes,28,opt,name=ref,proto3" json:"ref,omitempty"`
+	ProfileRevision           uint64                 `protobuf:"varint,29,opt,name=profile_revision,proto3" json:"profile_revision,omitempty"`
+	FederatedHandle           string                 `protobuf:"bytes,30,opt,name=federated_handle,proto3" json:"federated_handle,omitempty"`
+	HomeStationPeerId         string                 `protobuf:"bytes,31,opt,name=home_station_peer_id,proto3" json:"home_station_peer_id,omitempty"`
+	HomeStationDomain         string                 `protobuf:"bytes,32,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
+	Discoverability           ActorVisibility        `protobuf:"varint,33,opt,name=discoverability,proto3,enum=peers_touch.model.actor.v1.ActorVisibility" json:"discoverability,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -1957,6 +2014,41 @@ func (x *ActorProfile) GetRef() *ActorRef {
 	return nil
 }
 
+func (x *ActorProfile) GetProfileRevision() uint64 {
+	if x != nil {
+		return x.ProfileRevision
+	}
+	return 0
+}
+
+func (x *ActorProfile) GetFederatedHandle() string {
+	if x != nil {
+		return x.FederatedHandle
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetHomeStationDomain() string {
+	if x != nil {
+		return x.HomeStationDomain
+	}
+	return ""
+}
+
+func (x *ActorProfile) GetDiscoverability() ActorVisibility {
+	if x != nil {
+		return x.Discoverability
+	}
+	return ActorVisibility_ACTOR_VISIBILITY_UNSPECIFIED
+}
+
 type UpdateProfileRequest struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName               *string                `protobuf:"bytes,1,opt,name=display_name,proto3,oneof" json:"display_name,omitempty"`
@@ -1971,6 +2063,8 @@ type UpdateProfileRequest struct {
 	ManuallyApprovesFollowers *bool                  `protobuf:"varint,10,opt,name=manually_approves_followers,proto3,oneof" json:"manually_approves_followers,omitempty"`
 	MessagePermission         *string                `protobuf:"bytes,11,opt,name=message_permission,proto3,oneof" json:"message_permission,omitempty"`
 	AutoExpireDays            *int32                 `protobuf:"varint,12,opt,name=auto_expire_days,proto3,oneof" json:"auto_expire_days,omitempty"`
+	ObservedRevision          uint64                 `protobuf:"varint,13,opt,name=observed_revision,proto3" json:"observed_revision,omitempty"`
+	Discoverability           *ActorVisibility       `protobuf:"varint,14,opt,name=discoverability,proto3,enum=peers_touch.model.actor.v1.ActorVisibility,oneof" json:"discoverability,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -2089,6 +2183,72 @@ func (x *UpdateProfileRequest) GetAutoExpireDays() int32 {
 	return 0
 }
 
+func (x *UpdateProfileRequest) GetObservedRevision() uint64 {
+	if x != nil {
+		return x.ObservedRevision
+	}
+	return 0
+}
+
+func (x *UpdateProfileRequest) GetDiscoverability() ActorVisibility {
+	if x != nil && x.Discoverability != nil {
+		return *x.Discoverability
+	}
+	return ActorVisibility_ACTOR_VISIBILITY_UNSPECIFIED
+}
+
+type UpdateProfileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Outcome       ProfileUpdateOutcome   `protobuf:"varint,1,opt,name=outcome,proto3,enum=peers_touch.model.actor.v1.ProfileUpdateOutcome" json:"outcome,omitempty"`
+	Profile       *ActorProfile          `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateProfileResponse) Reset() {
+	*x = UpdateProfileResponse{}
+	mi := &file_domain_actor_actor_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateProfileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateProfileResponse) ProtoMessage() {}
+
+func (x *UpdateProfileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_actor_actor_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateProfileResponse.ProtoReflect.Descriptor instead.
+func (*UpdateProfileResponse) Descriptor() ([]byte, []int) {
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *UpdateProfileResponse) GetOutcome() ProfileUpdateOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return ProfileUpdateOutcome_PROFILE_UPDATE_OUTCOME_UNSPECIFIED
+}
+
+func (x *UpdateProfileResponse) GetProfile() *ActorProfile {
+	if x != nil {
+		return x.Profile
+	}
+	return nil
+}
+
 type ActorList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Items         []*Actor               `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
@@ -2099,7 +2259,7 @@ type ActorList struct {
 
 func (x *ActorList) Reset() {
 	*x = ActorList{}
-	mi := &file_domain_actor_actor_proto_msgTypes[21]
+	mi := &file_domain_actor_actor_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2111,7 +2271,7 @@ func (x *ActorList) String() string {
 func (*ActorList) ProtoMessage() {}
 
 func (x *ActorList) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[21]
+	mi := &file_domain_actor_actor_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2124,7 +2284,7 @@ func (x *ActorList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActorList.ProtoReflect.Descriptor instead.
 func (*ActorList) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{21}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ActorList) GetItems() []*Actor {
@@ -2151,7 +2311,7 @@ type SearchUsersRequest struct {
 
 func (x *SearchUsersRequest) Reset() {
 	*x = SearchUsersRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[22]
+	mi := &file_domain_actor_actor_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2163,7 +2323,7 @@ func (x *SearchUsersRequest) String() string {
 func (*SearchUsersRequest) ProtoMessage() {}
 
 func (x *SearchUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[22]
+	mi := &file_domain_actor_actor_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2176,7 +2336,7 @@ func (x *SearchUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchUsersRequest.ProtoReflect.Descriptor instead.
 func (*SearchUsersRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{22}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SearchUsersRequest) GetQ() string {
@@ -2195,7 +2355,7 @@ type GetMeRequest struct {
 
 func (x *GetMeRequest) Reset() {
 	*x = GetMeRequest{}
-	mi := &file_domain_actor_actor_proto_msgTypes[23]
+	mi := &file_domain_actor_actor_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2207,7 +2367,7 @@ func (x *GetMeRequest) String() string {
 func (*GetMeRequest) ProtoMessage() {}
 
 func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_actor_actor_proto_msgTypes[23]
+	mi := &file_domain_actor_actor_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2220,7 +2380,7 @@ func (x *GetMeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetMeRequest.ProtoReflect.Descriptor instead.
 func (*GetMeRequest) Descriptor() ([]byte, []int) {
-	return file_domain_actor_actor_proto_rawDescGZIP(), []int{23}
+	return file_domain_actor_actor_proto_rawDescGZIP(), []int{24}
 }
 
 var File_domain_actor_actor_proto protoreflect.FileDescriptor
@@ -2351,7 +2511,8 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x0ePeersTouchInfo\x12\x1e\n" +
 	"\n" +
 	"network_id\x18\x01 \x01(\tR\n" +
-	"network_id\"\x86\b\n" +
+	"network_id\"\x9b\n" +
+	"\n" +
 	"\fActorProfile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\"\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\fdisplay_name\x12\x1a\n" +
@@ -2383,7 +2544,12 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x1bmanually_approves_followers\x18\x19 \x01(\bR\x1bmanually_approves_followers\x12.\n" +
 	"\x12message_permission\x18\x1a \x01(\tR\x12message_permission\x12*\n" +
 	"\x10auto_expire_days\x18\x1b \x01(\x05R\x10auto_expire_days\x126\n" +
-	"\x03ref\x18\x1c \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x03ref\"\xad\x05\n" +
+	"\x03ref\x18\x1c \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x03ref\x12*\n" +
+	"\x10profile_revision\x18\x1d \x01(\x04R\x10profile_revision\x12*\n" +
+	"\x10federated_handle\x18\x1e \x01(\tR\x10federated_handle\x122\n" +
+	"\x14home_station_peer_id\x18\x1f \x01(\tR\x14home_station_peer_id\x120\n" +
+	"\x13home_station_domain\x18  \x01(\tR\x13home_station_domain\x12U\n" +
+	"\x0fdiscoverability\x18! \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityR\x0fdiscoverability\"\xcb\x06\n" +
 	"\x14UpdateProfileRequest\x12'\n" +
 	"\fdisplay_name\x18\x01 \x01(\tH\x00R\fdisplay_name\x88\x01\x01\x12\x17\n" +
 	"\x04note\x18\x02 \x01(\tH\x01R\x04note\x88\x01\x01\x12\x1b\n" +
@@ -2397,7 +2563,10 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x1bmanually_approves_followers\x18\n" +
 	" \x01(\bH\aR\x1bmanually_approves_followers\x88\x01\x01\x123\n" +
 	"\x12message_permission\x18\v \x01(\tH\bR\x12message_permission\x88\x01\x01\x12/\n" +
-	"\x10auto_expire_days\x18\f \x01(\x05H\tR\x10auto_expire_days\x88\x01\x01B\x0f\n" +
+	"\x10auto_expire_days\x18\f \x01(\x05H\tR\x10auto_expire_days\x88\x01\x01\x12,\n" +
+	"\x11observed_revision\x18\r \x01(\x04R\x11observed_revision\x12Z\n" +
+	"\x0fdiscoverability\x18\x0e \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityH\n" +
+	"R\x0fdiscoverability\x88\x01\x01B\x0f\n" +
 	"\r_display_nameB\a\n" +
 	"\x05_noteB\t\n" +
 	"\a_avatarB\t\n" +
@@ -2407,7 +2576,11 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x13_default_visibilityB\x1e\n" +
 	"\x1c_manually_approves_followersB\x15\n" +
 	"\x13_message_permissionB\x13\n" +
-	"\x11_auto_expire_days\"Z\n" +
+	"\x11_auto_expire_daysB\x12\n" +
+	"\x10_discoverability\"\xa7\x01\n" +
+	"\x15UpdateProfileResponse\x12J\n" +
+	"\aoutcome\x18\x01 \x01(\x0e20.peers_touch.model.actor.v1.ProfileUpdateOutcomeR\aoutcome\x12B\n" +
+	"\aprofile\x18\x02 \x01(\v2(.peers_touch.model.actor.v1.ActorProfileR\aprofile\"Z\n" +
 	"\tActorList\x127\n" +
 	"\x05items\x18\x01 \x03(\v2!.peers_touch.model.actor.v1.ActorR\x05items\x12\x14\n" +
 	"\x05total\x18\x02 \x01(\x03R\x05total\"\"\n" +
@@ -2441,7 +2614,12 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"1ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_UNSPECIFIED\x10\x00\x12C\n" +
 	"?ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION\x10\x01\x12:\n" +
 	"6ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE\x10\x02\x12:\n" +
-	"6ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR\x10\x03BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"6ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR\x10\x03*\xad\x01\n" +
+	"\x14ProfileUpdateOutcome\x12&\n" +
+	"\"PROFILE_UPDATE_OUTCOME_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1ePROFILE_UPDATE_OUTCOME_APPLIED\x10\x01\x12$\n" +
+	" PROFILE_UPDATE_OUTCOME_UNCHANGED\x10\x02\x12#\n" +
+	"\x1fPROFILE_UPDATE_OUTCOME_CONFLICT\x10\x03BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_actor_actor_proto_rawDescOnce sync.Once
@@ -2455,80 +2633,86 @@ func file_domain_actor_actor_proto_rawDescGZIP() []byte {
 	return file_domain_actor_actor_proto_rawDescData
 }
 
-var file_domain_actor_actor_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_domain_actor_actor_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_domain_actor_actor_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_domain_actor_actor_proto_goTypes = []any{
 	(ActorKind)(0),                            // 0: peers_touch.model.actor.v1.ActorKind
 	(ActorOrigin)(0),                          // 1: peers_touch.model.actor.v1.ActorOrigin
 	(ActorVisibility)(0),                      // 2: peers_touch.model.actor.v1.ActorVisibility
 	(ActorDeviceStatus)(0),                    // 3: peers_touch.model.actor.v1.ActorDeviceStatus
 	(ActorSigningKeyVerificationSource)(0),    // 4: peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
-	(*ActorRef)(nil),                          // 5: peers_touch.model.actor.v1.ActorRef
-	(*ActorDeviceRef)(nil),                    // 6: peers_touch.model.actor.v1.ActorDeviceRef
-	(*ActorDeviceCertificate)(nil),            // 7: peers_touch.model.actor.v1.ActorDeviceCertificate
-	(*ActorDevice)(nil),                       // 8: peers_touch.model.actor.v1.ActorDevice
-	(*EnrollActorDeviceRequest)(nil),          // 9: peers_touch.model.actor.v1.EnrollActorDeviceRequest
-	(*EnrollActorDeviceResponse)(nil),         // 10: peers_touch.model.actor.v1.EnrollActorDeviceResponse
-	(*ListActorDevicesRequest)(nil),           // 11: peers_touch.model.actor.v1.ListActorDevicesRequest
-	(*ListActorDevicesResponse)(nil),          // 12: peers_touch.model.actor.v1.ListActorDevicesResponse
-	(*RevokeActorDeviceRequest)(nil),          // 13: peers_touch.model.actor.v1.RevokeActorDeviceRequest
-	(*RevokeActorDeviceResponse)(nil),         // 14: peers_touch.model.actor.v1.RevokeActorDeviceResponse
-	(*ActorEndpointManifestEntry)(nil),        // 15: peers_touch.model.actor.v1.ActorEndpointManifestEntry
-	(*ActorEndpointManifestSigningInput)(nil), // 16: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput
-	(*ActorEndpointManifest)(nil),             // 17: peers_touch.model.actor.v1.ActorEndpointManifest
-	(*GetActorEndpointManifestRequest)(nil),   // 18: peers_touch.model.actor.v1.GetActorEndpointManifestRequest
-	(*GetActorEndpointManifestResponse)(nil),  // 19: peers_touch.model.actor.v1.GetActorEndpointManifestResponse
-	(*Actor)(nil),                             // 20: peers_touch.model.actor.v1.Actor
-	(*VerifiedActorDeviceSigningKey)(nil),     // 21: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
-	(*UserLink)(nil),                          // 22: peers_touch.model.actor.v1.UserLink
-	(*PeersTouchInfo)(nil),                    // 23: peers_touch.model.actor.v1.PeersTouchInfo
-	(*ActorProfile)(nil),                      // 24: peers_touch.model.actor.v1.ActorProfile
-	(*UpdateProfileRequest)(nil),              // 25: peers_touch.model.actor.v1.UpdateProfileRequest
-	(*ActorList)(nil),                         // 26: peers_touch.model.actor.v1.ActorList
-	(*SearchUsersRequest)(nil),                // 27: peers_touch.model.actor.v1.SearchUsersRequest
-	(*GetMeRequest)(nil),                      // 28: peers_touch.model.actor.v1.GetMeRequest
-	nil,                                       // 29: peers_touch.model.actor.v1.Actor.EndpointsEntry
-	(*timestamppb.Timestamp)(nil),             // 30: google.protobuf.Timestamp
+	(ProfileUpdateOutcome)(0),                 // 5: peers_touch.model.actor.v1.ProfileUpdateOutcome
+	(*ActorRef)(nil),                          // 6: peers_touch.model.actor.v1.ActorRef
+	(*ActorDeviceRef)(nil),                    // 7: peers_touch.model.actor.v1.ActorDeviceRef
+	(*ActorDeviceCertificate)(nil),            // 8: peers_touch.model.actor.v1.ActorDeviceCertificate
+	(*ActorDevice)(nil),                       // 9: peers_touch.model.actor.v1.ActorDevice
+	(*EnrollActorDeviceRequest)(nil),          // 10: peers_touch.model.actor.v1.EnrollActorDeviceRequest
+	(*EnrollActorDeviceResponse)(nil),         // 11: peers_touch.model.actor.v1.EnrollActorDeviceResponse
+	(*ListActorDevicesRequest)(nil),           // 12: peers_touch.model.actor.v1.ListActorDevicesRequest
+	(*ListActorDevicesResponse)(nil),          // 13: peers_touch.model.actor.v1.ListActorDevicesResponse
+	(*RevokeActorDeviceRequest)(nil),          // 14: peers_touch.model.actor.v1.RevokeActorDeviceRequest
+	(*RevokeActorDeviceResponse)(nil),         // 15: peers_touch.model.actor.v1.RevokeActorDeviceResponse
+	(*ActorEndpointManifestEntry)(nil),        // 16: peers_touch.model.actor.v1.ActorEndpointManifestEntry
+	(*ActorEndpointManifestSigningInput)(nil), // 17: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput
+	(*ActorEndpointManifest)(nil),             // 18: peers_touch.model.actor.v1.ActorEndpointManifest
+	(*GetActorEndpointManifestRequest)(nil),   // 19: peers_touch.model.actor.v1.GetActorEndpointManifestRequest
+	(*GetActorEndpointManifestResponse)(nil),  // 20: peers_touch.model.actor.v1.GetActorEndpointManifestResponse
+	(*Actor)(nil),                             // 21: peers_touch.model.actor.v1.Actor
+	(*VerifiedActorDeviceSigningKey)(nil),     // 22: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey
+	(*UserLink)(nil),                          // 23: peers_touch.model.actor.v1.UserLink
+	(*PeersTouchInfo)(nil),                    // 24: peers_touch.model.actor.v1.PeersTouchInfo
+	(*ActorProfile)(nil),                      // 25: peers_touch.model.actor.v1.ActorProfile
+	(*UpdateProfileRequest)(nil),              // 26: peers_touch.model.actor.v1.UpdateProfileRequest
+	(*UpdateProfileResponse)(nil),             // 27: peers_touch.model.actor.v1.UpdateProfileResponse
+	(*ActorList)(nil),                         // 28: peers_touch.model.actor.v1.ActorList
+	(*SearchUsersRequest)(nil),                // 29: peers_touch.model.actor.v1.SearchUsersRequest
+	(*GetMeRequest)(nil),                      // 30: peers_touch.model.actor.v1.GetMeRequest
+	nil,                                       // 31: peers_touch.model.actor.v1.Actor.EndpointsEntry
+	(*timestamppb.Timestamp)(nil),             // 32: google.protobuf.Timestamp
 }
 var file_domain_actor_actor_proto_depIdxs = []int32{
 	0,  // 0: peers_touch.model.actor.v1.ActorRef.kind:type_name -> peers_touch.model.actor.v1.ActorKind
-	5,  // 1: peers_touch.model.actor.v1.ActorDeviceRef.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	6,  // 2: peers_touch.model.actor.v1.ActorDeviceCertificate.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	6,  // 3: peers_touch.model.actor.v1.ActorDevice.ref:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	6,  // 1: peers_touch.model.actor.v1.ActorDeviceRef.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	7,  // 2: peers_touch.model.actor.v1.ActorDeviceCertificate.device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	7,  // 3: peers_touch.model.actor.v1.ActorDevice.ref:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
 	3,  // 4: peers_touch.model.actor.v1.ActorDevice.status:type_name -> peers_touch.model.actor.v1.ActorDeviceStatus
-	30, // 5: peers_touch.model.actor.v1.ActorDevice.enrolled_at:type_name -> google.protobuf.Timestamp
-	30, // 6: peers_touch.model.actor.v1.ActorDevice.revoked_at:type_name -> google.protobuf.Timestamp
-	7,  // 7: peers_touch.model.actor.v1.EnrollActorDeviceRequest.certificate:type_name -> peers_touch.model.actor.v1.ActorDeviceCertificate
-	8,  // 8: peers_touch.model.actor.v1.EnrollActorDeviceResponse.device:type_name -> peers_touch.model.actor.v1.ActorDevice
-	8,  // 9: peers_touch.model.actor.v1.ListActorDevicesResponse.devices:type_name -> peers_touch.model.actor.v1.ActorDevice
-	8,  // 10: peers_touch.model.actor.v1.RevokeActorDeviceResponse.device:type_name -> peers_touch.model.actor.v1.ActorDevice
-	6,  // 11: peers_touch.model.actor.v1.ActorEndpointManifestEntry.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	5,  // 12: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	15, // 13: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.active_endpoints:type_name -> peers_touch.model.actor.v1.ActorEndpointManifestEntry
-	30, // 14: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.issued_at:type_name -> google.protobuf.Timestamp
-	30, // 15: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.expires_at:type_name -> google.protobuf.Timestamp
-	5,  // 16: peers_touch.model.actor.v1.ActorEndpointManifest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	15, // 17: peers_touch.model.actor.v1.ActorEndpointManifest.active_endpoints:type_name -> peers_touch.model.actor.v1.ActorEndpointManifestEntry
-	30, // 18: peers_touch.model.actor.v1.ActorEndpointManifest.issued_at:type_name -> google.protobuf.Timestamp
-	30, // 19: peers_touch.model.actor.v1.ActorEndpointManifest.expires_at:type_name -> google.protobuf.Timestamp
-	5,  // 20: peers_touch.model.actor.v1.GetActorEndpointManifestRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	17, // 21: peers_touch.model.actor.v1.GetActorEndpointManifestResponse.manifest:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
-	29, // 22: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
+	32, // 5: peers_touch.model.actor.v1.ActorDevice.enrolled_at:type_name -> google.protobuf.Timestamp
+	32, // 6: peers_touch.model.actor.v1.ActorDevice.revoked_at:type_name -> google.protobuf.Timestamp
+	8,  // 7: peers_touch.model.actor.v1.EnrollActorDeviceRequest.certificate:type_name -> peers_touch.model.actor.v1.ActorDeviceCertificate
+	9,  // 8: peers_touch.model.actor.v1.EnrollActorDeviceResponse.device:type_name -> peers_touch.model.actor.v1.ActorDevice
+	9,  // 9: peers_touch.model.actor.v1.ListActorDevicesResponse.devices:type_name -> peers_touch.model.actor.v1.ActorDevice
+	9,  // 10: peers_touch.model.actor.v1.RevokeActorDeviceResponse.device:type_name -> peers_touch.model.actor.v1.ActorDevice
+	7,  // 11: peers_touch.model.actor.v1.ActorEndpointManifestEntry.endpoint:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	6,  // 12: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	16, // 13: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.active_endpoints:type_name -> peers_touch.model.actor.v1.ActorEndpointManifestEntry
+	32, // 14: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.issued_at:type_name -> google.protobuf.Timestamp
+	32, // 15: peers_touch.model.actor.v1.ActorEndpointManifestSigningInput.expires_at:type_name -> google.protobuf.Timestamp
+	6,  // 16: peers_touch.model.actor.v1.ActorEndpointManifest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	16, // 17: peers_touch.model.actor.v1.ActorEndpointManifest.active_endpoints:type_name -> peers_touch.model.actor.v1.ActorEndpointManifestEntry
+	32, // 18: peers_touch.model.actor.v1.ActorEndpointManifest.issued_at:type_name -> google.protobuf.Timestamp
+	32, // 19: peers_touch.model.actor.v1.ActorEndpointManifest.expires_at:type_name -> google.protobuf.Timestamp
+	6,  // 20: peers_touch.model.actor.v1.GetActorEndpointManifestRequest.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	18, // 21: peers_touch.model.actor.v1.GetActorEndpointManifestResponse.manifest:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
+	31, // 22: peers_touch.model.actor.v1.Actor.endpoints:type_name -> peers_touch.model.actor.v1.Actor.EndpointsEntry
 	0,  // 23: peers_touch.model.actor.v1.Actor.kind:type_name -> peers_touch.model.actor.v1.ActorKind
 	2,  // 24: peers_touch.model.actor.v1.Actor.visibility:type_name -> peers_touch.model.actor.v1.ActorVisibility
 	1,  // 25: peers_touch.model.actor.v1.Actor.origin:type_name -> peers_touch.model.actor.v1.ActorOrigin
-	5,  // 26: peers_touch.model.actor.v1.Actor.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	6,  // 26: peers_touch.model.actor.v1.Actor.ref:type_name -> peers_touch.model.actor.v1.ActorRef
 	4,  // 27: peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey.verification_source:type_name -> peers_touch.model.actor.v1.ActorSigningKeyVerificationSource
-	22, // 28: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
-	23, // 29: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
-	5,  // 30: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	22, // 31: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
-	20, // 32: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	33, // [33:33] is the sub-list for method output_type
-	33, // [33:33] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	23, // 28: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
+	24, // 29: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
+	6,  // 30: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
+	2,  // 31: peers_touch.model.actor.v1.ActorProfile.discoverability:type_name -> peers_touch.model.actor.v1.ActorVisibility
+	23, // 32: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
+	2,  // 33: peers_touch.model.actor.v1.UpdateProfileRequest.discoverability:type_name -> peers_touch.model.actor.v1.ActorVisibility
+	5,  // 34: peers_touch.model.actor.v1.UpdateProfileResponse.outcome:type_name -> peers_touch.model.actor.v1.ProfileUpdateOutcome
+	25, // 35: peers_touch.model.actor.v1.UpdateProfileResponse.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
+	21, // 36: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	37, // [37:37] is the sub-list for method output_type
+	37, // [37:37] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }
@@ -2542,8 +2726,8 @@ func file_domain_actor_actor_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_actor_actor_proto_rawDesc), len(file_domain_actor_actor_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   25,
+			NumEnums:      6,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

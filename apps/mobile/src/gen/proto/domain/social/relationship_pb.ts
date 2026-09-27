@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/social/relationship.proto.
  */
 export const file_domain_social_relationship: GenFile = /*@__PURE__*/
-  fileDesc("CiBkb21haW4vc29jaWFsL3JlbGF0aW9uc2hpcC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxIioKDUZvbGxvd1JlcXVlc3QSGQoRdGFyZ2V0X2FjdG9yX3B0aWQYASABKAkiYgoORm9sbG93UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBI/CgxyZWxhdGlvbnNoaXAYAiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIiwKD1VuZm9sbG93UmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSIjChBVbmZvbGxvd1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiMwoWR2V0UmVsYXRpb25zaGlwUmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSJaChdHZXRSZWxhdGlvbnNoaXBSZXNwb25zZRI/CgxyZWxhdGlvbnNoaXAYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIjUKF0dldFJlbGF0aW9uc2hpcHNSZXF1ZXN0EhoKEnRhcmdldF9hY3Rvcl9wdGlkcxgBIAMoCSJcChhHZXRSZWxhdGlvbnNoaXBzUmVzcG9uc2USQAoNcmVsYXRpb25zaGlwcxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5SZWxhdGlvbnNoaXAijgEKDFJlbGF0aW9uc2hpcBIKCgJpZBgBIAEoCRIZChF0YXJnZXRfYWN0b3JfcHRpZBgCIAEoCRIRCglmb2xsb3dpbmcYAyABKAgSEwoLZm9sbG93ZWRfYnkYBCABKAgSLwoLZm9sbG93ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkgKE0dldEZvbGxvd2Vyc1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidAoUR2V0Rm9sbG93ZXJzUmVzcG9uc2USOAoJZm9sbG93ZXJzGAEgAygLMiUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2VyEhMKC25leHRfY3Vyc29yGAIgASgJEg0KBXRvdGFsGAMgASgFIkgKE0dldEZvbGxvd2luZ1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidQoUR2V0Rm9sbG93aW5nUmVzcG9uc2USOQoJZm9sbG93aW5nGAEgAygLMiYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2luZxITCgtuZXh0X2N1cnNvchgCIAEoCRINCgV0b3RhbBgDIAEoBSKdAgoIRm9sbG93ZXISEgoKYWN0b3JfcHRpZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluEjIKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAggASgJUhRob21lX3N0YXRpb25fcGVlcl9pZCKeAgoJRm9sbG93aW5nEhIKCmFjdG9yX3B0aWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEhIKCmF2YXRhcl91cmwYBCABKAkSLwoLZm9sbG93ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEioKEGZlZGVyYXRlZF9oYW5kbGUYBiABKAlSEGZlZGVyYXRlZF9oYW5kbGUSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgHIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhIyChRob21lX3N0YXRpb25fcGVlcl9pZBgIIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQimQQKE1NvY2lhbEZyaWVuZFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRI0CgZzZW5kZXIYAiABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhI2CghyZWNlaXZlchgDIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEg8KB21lc3NhZ2UYBCABKAkSPgoFc3RhdGUYBSABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdFN0YXRlEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDHJlc3BvbmRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGwoTc2VuZGVyX2Rpc3BsYXlfbmFtZRgIIAEoCRIVCg1zZW5kZXJfYXZhdGFyGAkgASgJEh0KFXJlY2VpdmVyX2Rpc3BsYXlfbmFtZRgKIAEoCRIXCg9yZWNlaXZlcl9hdmF0YXIYCyABKAkSFQoNZmVkZXJhdGlvbl9pZBgMIAEoCRIjChtzZW5kZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYDSABKAkSJQodcmVjZWl2ZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYDiABKAkimAEKHlNlbmRTb2NpYWxGcmllbmRSZXF1ZXN0UmVxdWVzdBJCCgdjb21tYW5kGAQgASgLMjEucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RDb21tYW5kSgQIARACSgQIAhADSgQIAxAEUghyZWNlaXZlclIHbWVzc2FnZVINZmVkZXJhdGlvbl9pZCJkCh9TZW5kU29jaWFsRnJpZW5kUmVxdWVzdFJlc3BvbnNlEkEKB3JlcXVlc3QYASABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsRnJpZW5kUmVxdWVzdCJ4CiBBY2NlcHRTb2NpYWxGcmllbmRSZXF1ZXN0UmVxdWVzdBJCCgdjb21tYW5kGAIgASgLMjEucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RDb21tYW5kSgQIARACUgpyZXF1ZXN0X2lkImYKIUFjY2VwdFNvY2lhbEZyaWVuZFJlcXVlc3RSZXNwb25zZRJBCgdyZXF1ZXN0GAEgASgLMjAucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbEZyaWVuZFJlcXVlc3QieAogUmVqZWN0U29jaWFsRnJpZW5kUmVxdWVzdFJlcXVlc3QSQgoHY29tbWFuZBgCIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0Q29tbWFuZEoECAEQAlIKcmVxdWVzdF9pZCJmCiFSZWplY3RTb2NpYWxGcmllbmRSZXF1ZXN0UmVzcG9uc2USQQoHcmVxdWVzdBgBIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Tb2NpYWxGcmllbmRSZXF1ZXN0IoABCh9MaXN0U29jaWFsRnJpZW5kUmVxdWVzdHNSZXF1ZXN0Ej4KBXN0YXRlGAEgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RTdGF0ZRINCgVsaW1pdBgCIAEoBRIOCgZvZmZzZXQYAyABKAUidQogTGlzdFNvY2lhbEZyaWVuZFJlcXVlc3RzUmVzcG9uc2USQgoIcmVxdWVzdHMYASADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsRnJpZW5kUmVxdWVzdBINCgV0b3RhbBgCIAEoBSL3BAoYRnJpZW5kUmVxdWVzdENvbW1hbmRCb2R5EhYKDmZvcm1hdF92ZXJzaW9uGAEgASgNEhIKCmNvbW1hbmRfaWQYAiABKAkSEgoKcmVxdWVzdF9pZBgDIAEoCRJACgZhY3Rpb24YBCABKA4yMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdEFjdGlvbhI0CgZzZW5kZXIYBSABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhI2CghyZWNlaXZlchgGIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEiMKG3NlbmRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgHIAEoCRIlCh1yZWNlaXZlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgIIAEoCRIPCgdtZXNzYWdlGAkgASgJEk8KFm9ic2VydmVkX3JlcXVlc3Rfc3RhdGUYCiABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdFN0YXRlEi4KCmNyZWF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEkYKEmF1dGhvcml6aW5nX2RldmljZRgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEhUKDWZlZGVyYXRpb25faWQYDiABKAkifwogRnJpZW5kUmVxdWVzdENvbW1hbmRTaWduaW5nSW5wdXQSQwoEYm9keRgBIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0Q29tbWFuZEJvZHkSFgoOc2lnbmluZ19rZXlfaWQYAiABKAkikwEKFEZyaWVuZFJlcXVlc3RDb21tYW5kEkMKBGJvZHkYASABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdENvbW1hbmRCb2R5EhYKDnNpZ25pbmdfa2V5X2lkGAIgASgJEh4KFmFjdG9yX2RldmljZV9zaWduYXR1cmUYAyABKAwi8QMKEkZyaWVuZFJlcXVlc3RFdmVudBIQCghldmVudF9pZBgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhIKCmNvbW1hbmRfaWQYAyABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgEIAEoCRI+CgVzdGF0ZRgFIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0U3RhdGUSNAoGc2VuZGVyGAYgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSNgoIcmVjZWl2ZXIYByABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhIjChtzZW5kZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYCCABKAkSJQodcmVjZWl2ZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYCSABKAkSEAoIc2VxdWVuY2UYCiABKAMSMAoMY29tbWl0dGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIVCg1wcmV2aW91c19oYXNoGAwgASgMEhIKCmV2ZW50X2hhc2gYDSABKAwSFQoNZmVkZXJhdGlvbl9pZBgOIAEoCSLSAgoaRnJpZW5kUmVxdWVzdENvbW1hbmRSZXN1bHQSEgoKY29tbWFuZF9pZBgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEh4KFmNvbW1hbmRfcGF5bG9hZF9zaGEyNTYYAyABKAwSSQoEa2luZBgEIAEoDjI7LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0Q29tbWFuZFJlc3VsdEtpbmQSPgoFZXZlbnQYBSABKAsyLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdEV2ZW50Ek4KCmVycm9yX2NvZGUYBiABKA4yOi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdENvbW1hbmRFcnJvckNvZGUSEQoJcmV0cnlhYmxlGAcgASgIKqABChNGcmllbmRSZXF1ZXN0QWN0aW9uEiUKIUZSSUVORF9SRVFVRVNUX0FDVElPTl9VTlNQRUNJRklFRBAAEh4KGkZSSUVORF9SRVFVRVNUX0FDVElPTl9TRU5EEAESIAocRlJJRU5EX1JFUVVFU1RfQUNUSU9OX0FDQ0VQVBACEiAKHEZSSUVORF9SRVFVRVNUX0FDVElPTl9SRUpFQ1QQAyrEAQoSRnJpZW5kUmVxdWVzdFN0YXRlEiQKIEZSSUVORF9SRVFVRVNUX1NUQVRFX1VOU1BFQ0lGSUVEEAASIAocRlJJRU5EX1JFUVVFU1RfU1RBVEVfUEVORElORxABEiEKHUZSSUVORF9SRVFVRVNUX1NUQVRFX0FDQ0VQVEVEEAISIQodRlJJRU5EX1JFUVVFU1RfU1RBVEVfUkVKRUNURUQQAxIgChxGUklFTkRfUkVRVUVTVF9TVEFURV9FWFBJUkVEEAQqmgIKHkZyaWVuZFJlcXVlc3RDb21tYW5kUmVzdWx0S2luZBIyCi5GUklFTkRfUkVRVUVTVF9DT01NQU5EX1JFU1VMVF9LSU5EX1VOU1BFQ0lGSUVEEAASMAosRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9SRVNVTFRfS0lORF9DT01NSVRURUQQARIwCixGUklFTkRfUkVRVUVTVF9DT01NQU5EX1JFU1VMVF9LSU5EX0RVUExJQ0FURRACEi8KK0ZSSUVORF9SRVFVRVNUX0NPTU1BTkRfUkVTVUxUX0tJTkRfUkVKRUNURUQQAxIvCitGUklFTkRfUkVRVUVTVF9DT01NQU5EX1JFU1VMVF9LSU5EX0NPTkZMSUNUEAQqoAQKHUZyaWVuZFJlcXVlc3RDb21tYW5kRXJyb3JDb2RlEjEKLUZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9VTlNQRUNJRklFRBAAEi0KKUZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9JTlZBTElEEAESMgouRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9FUlJPUl9DT0RFX1VOQVVUSE9SSVpFRBACEi0KKUZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9CTE9DS0VEEAMSLworRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9FUlJPUl9DT0RFX05PVF9GT1VORBAEEjUKMUZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9BTFJFQURZX0ZSSUVORFMQBRI0CjBGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfU1RBVEVfQ09ORkxJQ1QQBhI6CjZGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfSURFTVBPVEVOQ1lfQ09ORkxJQ1QQBxItCilGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfRVhQSVJFRBAIEjEKLUZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9SRVRSWV9MQVRFUhAJQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_domain_actor_actor, file_google_protobuf_timestamp]);
+  fileDesc("CiBkb21haW4vc29jaWFsL3JlbGF0aW9uc2hpcC5wcm90bxIbcGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxIioKDUZvbGxvd1JlcXVlc3QSGQoRdGFyZ2V0X2FjdG9yX3B0aWQYASABKAkiYgoORm9sbG93UmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCBI/CgxyZWxhdGlvbnNoaXAYAiABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIiwKD1VuZm9sbG93UmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSIjChBVbmZvbGxvd1Jlc3BvbnNlEg8KB3N1Y2Nlc3MYASABKAgiMwoWR2V0UmVsYXRpb25zaGlwUmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSJaChdHZXRSZWxhdGlvbnNoaXBSZXNwb25zZRI/CgxyZWxhdGlvbnNoaXAYASABKAsyKS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuUmVsYXRpb25zaGlwIjUKF0dldFJlbGF0aW9uc2hpcHNSZXF1ZXN0EhoKEnRhcmdldF9hY3Rvcl9wdGlkcxgBIAMoCSJcChhHZXRSZWxhdGlvbnNoaXBzUmVzcG9uc2USQAoNcmVsYXRpb25zaGlwcxgBIAMoCzIpLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5SZWxhdGlvbnNoaXAijgEKDFJlbGF0aW9uc2hpcBIKCgJpZBgBIAEoCRIZChF0YXJnZXRfYWN0b3JfcHRpZBgCIAEoCRIRCglmb2xsb3dpbmcYAyABKAgSEwoLZm9sbG93ZWRfYnkYBCABKAgSLwoLZm9sbG93ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkgKE0dldEZvbGxvd2Vyc1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidAoUR2V0Rm9sbG93ZXJzUmVzcG9uc2USOAoJZm9sbG93ZXJzGAEgAygLMiUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2VyEhMKC25leHRfY3Vyc29yGAIgASgJEg0KBXRvdGFsGAMgASgFIkgKE0dldEZvbGxvd2luZ1JlcXVlc3QSEgoKYWN0b3JfcHRpZBgBIAEoCRIOCgZjdXJzb3IYAiABKAkSDQoFbGltaXQYAyABKAUidQoUR2V0Rm9sbG93aW5nUmVzcG9uc2USOQoJZm9sbG93aW5nGAEgAygLMiYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZvbGxvd2luZxITCgtuZXh0X2N1cnNvchgCIAEoCRINCgV0b3RhbBgDIAEoBSKdAgoIRm9sbG93ZXISEgoKYWN0b3JfcHRpZBgBIAEoCRIQCgh1c2VybmFtZRgCIAEoCRIUCgxkaXNwbGF5X25hbWUYAyABKAkSEgoKYXZhdGFyX3VybBgEIAEoCRIvCgtmb2xsb3dlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKgoQZmVkZXJhdGVkX2hhbmRsZRgGIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIwChNob21lX3N0YXRpb25fZG9tYWluGAcgASgJUhNob21lX3N0YXRpb25fZG9tYWluEjIKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAggASgJUhRob21lX3N0YXRpb25fcGVlcl9pZCKeAgoJRm9sbG93aW5nEhIKCmFjdG9yX3B0aWQYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSFAoMZGlzcGxheV9uYW1lGAMgASgJEhIKCmF2YXRhcl91cmwYBCABKAkSLwoLZm9sbG93ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEioKEGZlZGVyYXRlZF9oYW5kbGUYBiABKAlSEGZlZGVyYXRlZF9oYW5kbGUSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgHIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhIyChRob21lX3N0YXRpb25fcGVlcl9pZBgIIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQimQQKE1NvY2lhbEZyaWVuZFJlcXVlc3QSEgoKcmVxdWVzdF9pZBgBIAEoCRI0CgZzZW5kZXIYAiABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhI2CghyZWNlaXZlchgDIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEg8KB21lc3NhZ2UYBCABKAkSPgoFc3RhdGUYBSABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdFN0YXRlEi4KCmNyZWF0ZWRfYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDHJlc3BvbmRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGwoTc2VuZGVyX2Rpc3BsYXlfbmFtZRgIIAEoCRIVCg1zZW5kZXJfYXZhdGFyGAkgASgJEh0KFXJlY2VpdmVyX2Rpc3BsYXlfbmFtZRgKIAEoCRIXCg9yZWNlaXZlcl9hdmF0YXIYCyABKAkSFQoNZmVkZXJhdGlvbl9pZBgMIAEoCRIjChtzZW5kZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYDSABKAkSJQodcmVjZWl2ZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYDiABKAkimAEKHlNlbmRTb2NpYWxGcmllbmRSZXF1ZXN0UmVxdWVzdBJCCgdjb21tYW5kGAQgASgLMjEucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RDb21tYW5kSgQIARACSgQIAhADSgQIAxAEUghyZWNlaXZlclIHbWVzc2FnZVINZmVkZXJhdGlvbl9pZCJkCh9TZW5kU29jaWFsRnJpZW5kUmVxdWVzdFJlc3BvbnNlEkEKB3JlcXVlc3QYASABKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsRnJpZW5kUmVxdWVzdCJ4CiBBY2NlcHRTb2NpYWxGcmllbmRSZXF1ZXN0UmVxdWVzdBJCCgdjb21tYW5kGAIgASgLMjEucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RDb21tYW5kSgQIARACUgpyZXF1ZXN0X2lkImYKIUFjY2VwdFNvY2lhbEZyaWVuZFJlcXVlc3RSZXNwb25zZRJBCgdyZXF1ZXN0GAEgASgLMjAucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbEZyaWVuZFJlcXVlc3QieAogUmVqZWN0U29jaWFsRnJpZW5kUmVxdWVzdFJlcXVlc3QSQgoHY29tbWFuZBgCIAEoCzIxLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0Q29tbWFuZEoECAEQAlIKcmVxdWVzdF9pZCJmCiFSZWplY3RTb2NpYWxGcmllbmRSZXF1ZXN0UmVzcG9uc2USQQoHcmVxdWVzdBgBIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Tb2NpYWxGcmllbmRSZXF1ZXN0IoABCh9MaXN0U29jaWFsRnJpZW5kUmVxdWVzdHNSZXF1ZXN0Ej4KBXN0YXRlGAEgASgOMi8ucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RTdGF0ZRINCgVsaW1pdBgCIAEoBRIOCgZvZmZzZXQYAyABKAUidQogTGlzdFNvY2lhbEZyaWVuZFJlcXVlc3RzUmVzcG9uc2USQgoIcmVxdWVzdHMYASADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsRnJpZW5kUmVxdWVzdBINCgV0b3RhbBgCIAEoBSL3BAoYRnJpZW5kUmVxdWVzdENvbW1hbmRCb2R5EhYKDmZvcm1hdF92ZXJzaW9uGAEgASgNEhIKCmNvbW1hbmRfaWQYAiABKAkSEgoKcmVxdWVzdF9pZBgDIAEoCRJACgZhY3Rpb24YBCABKA4yMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdEFjdGlvbhI0CgZzZW5kZXIYBSABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhI2CghyZWNlaXZlchgGIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEiMKG3NlbmRlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgHIAEoCRIlCh1yZWNlaXZlcl9ob21lX3N0YXRpb25fcGVlcl9pZBgIIAEoCRIPCgdtZXNzYWdlGAkgASgJEk8KFm9ic2VydmVkX3JlcXVlc3Rfc3RhdGUYCiABKA4yLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdFN0YXRlEi4KCmNyZWF0ZWRfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEkYKEmF1dGhvcml6aW5nX2RldmljZRgNIAEoCzIqLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yRGV2aWNlUmVmEhUKDWZlZGVyYXRpb25faWQYDiABKAkifwogRnJpZW5kUmVxdWVzdENvbW1hbmRTaWduaW5nSW5wdXQSQwoEYm9keRgBIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0Q29tbWFuZEJvZHkSFgoOc2lnbmluZ19rZXlfaWQYAiABKAkikwEKFEZyaWVuZFJlcXVlc3RDb21tYW5kEkMKBGJvZHkYASABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdENvbW1hbmRCb2R5EhYKDnNpZ25pbmdfa2V5X2lkGAIgASgJEh4KFmFjdG9yX2RldmljZV9zaWduYXR1cmUYAyABKAwi8QMKEkZyaWVuZFJlcXVlc3RFdmVudBIQCghldmVudF9pZBgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEhIKCmNvbW1hbmRfaWQYAyABKAkSIQoZYXV0aG9yaXR5X3N0YXRpb25fcGVlcl9pZBgEIAEoCRI+CgVzdGF0ZRgFIAEoDjIvLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0U3RhdGUSNAoGc2VuZGVyGAYgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSNgoIcmVjZWl2ZXIYByABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhIjChtzZW5kZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYCCABKAkSJQodcmVjZWl2ZXJfaG9tZV9zdGF0aW9uX3BlZXJfaWQYCSABKAkSEAoIc2VxdWVuY2UYCiABKAMSMAoMY29tbWl0dGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIVCg1wcmV2aW91c19oYXNoGAwgASgMEhIKCmV2ZW50X2hhc2gYDSABKAwSFQoNZmVkZXJhdGlvbl9pZBgOIAEoCSLSAgoaRnJpZW5kUmVxdWVzdENvbW1hbmRSZXN1bHQSEgoKY29tbWFuZF9pZBgBIAEoCRISCgpyZXF1ZXN0X2lkGAIgASgJEh4KFmNvbW1hbmRfcGF5bG9hZF9zaGEyNTYYAyABKAwSSQoEa2luZBgEIAEoDjI7LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5GcmllbmRSZXF1ZXN0Q29tbWFuZFJlc3VsdEtpbmQSPgoFZXZlbnQYBSABKAsyLy5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdEV2ZW50Ek4KCmVycm9yX2NvZGUYBiABKA4yOi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdENvbW1hbmRFcnJvckNvZGUSEQoJcmV0cnlhYmxlGAcgASgIIl0KJ0xvb2t1cEZyaWVuZFJlcXVlc3RDb21tYW5kUmVzdWx0UmVxdWVzdBISCgpjb21tYW5kX2lkGAEgASgJEh4KFmNvbW1hbmRfcGF5bG9hZF9zaGEyNTYYAiABKAwi/QEKKExvb2t1cEZyaWVuZFJlcXVlc3RDb21tYW5kUmVzdWx0UmVzcG9uc2USSwoFc3RhdGUYASABKA4yPC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuRnJpZW5kUmVxdWVzdENvbW1hbmRMb29rdXBTdGF0ZRISCgpjb21tYW5kX2lkGAIgASgJEh4KFmNvbW1hbmRfcGF5bG9hZF9zaGEyNTYYAyABKAwSUAoPdGVybWluYWxfcmVzdWx0GAQgASgLMjcucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkZyaWVuZFJlcXVlc3RDb21tYW5kUmVzdWx0Io8ECh1Tb2NpYWxSZWxhdGlvbnNoaXBDb21tYW5kQm9keRIWCg5mb3JtYXRfdmVyc2lvbhgBIAEoDRISCgpjb21tYW5kX2lkGAIgASgJEkUKBmFjdGlvbhgDIAEoDjI1LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Tb2NpYWxSZWxhdGlvbnNoaXBBY3Rpb24SMwoFYWN0b3IYBCABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhI6Cgx0YXJnZXRfYWN0b3IYBSABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhIiChphY3Rvcl9ob21lX3N0YXRpb25fcGVlcl9pZBgGIAEoCRIjCht0YXJnZXRfaG9tZV9zdGF0aW9uX3BlZXJfaWQYByABKAkSGQoRb2JzZXJ2ZWRfcmV2aXNpb24YCCABKAMSLgoKY3JlYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASRgoSYXV0aG9yaXppbmdfZGV2aWNlGAsgASgLMioucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JEZXZpY2VSZWYiiQEKJVNvY2lhbFJlbGF0aW9uc2hpcENvbW1hbmRTaWduaW5nSW5wdXQSSAoEYm9keRgBIAEoCzI6LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Tb2NpYWxSZWxhdGlvbnNoaXBDb21tYW5kQm9keRIWCg5zaWduaW5nX2tleV9pZBgCIAEoCSKdAQoZU29jaWFsUmVsYXRpb25zaGlwQ29tbWFuZBJICgRib2R5GAEgASgLMjoucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcENvbW1hbmRCb2R5EhYKDnNpZ25pbmdfa2V5X2lkGAIgASgJEh4KFmFjdG9yX2RldmljZV9zaWduYXR1cmUYAyABKAwinAMKHFNvY2lhbFJlbGF0aW9uc2hpcFByb2plY3Rpb24SOgoMdGFyZ2V0X2FjdG9yGAEgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSEQoJZm9sbG93aW5nGAIgASgIEhMKC2ZvbGxvd2VkX2J5GAMgASgIEhkKEWJsb2NrZWRfYnlfdmlld2VyGAQgASgIEhsKE2ludGVyYWN0aW9uX2FsbG93ZWQYBSABKAgSUgoNZGVuaWVkX3JlYXNvbhgGIAEoDjI7LnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5Tb2NpYWxSZWxhdGlvbnNoaXBEZW5pZWRSZWFzb24SVQoPYWxsb3dlZF9hY3Rpb25zGAcgAygOMjwucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcEFsbG93ZWRBY3Rpb24SEAoIcmV2aXNpb24YCCABKAMSIwobdGFyZ2V0X2hvbWVfc3RhdGlvbl9wZWVyX2lkGAkgASgJIq0BChZCbG9ja2VkQWN0b3JQcm9qZWN0aW9uEjMKBWFjdG9yGAEgASgLMiQucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JSZWYSEAoIcmV2aXNpb24YAiABKAMSLgoKYmxvY2tlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASHAoUaG9tZV9zdGF0aW9uX3BlZXJfaWQYBCABKAkioAQKF1NvY2lhbFJlbGF0aW9uc2hpcEV2ZW50EhAKCGV2ZW50X2lkGAEgASgJEhIKCmNvbW1hbmRfaWQYAiABKAkSRQoGYWN0aW9uGAMgASgOMjUucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcEFjdGlvbhIzCgVhY3RvchgEIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEjoKDHRhcmdldF9hY3RvchgFIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEiIKGmFjdG9yX2hvbWVfc3RhdGlvbl9wZWVyX2lkGAYgASgJEiMKG3RhcmdldF9ob21lX3N0YXRpb25fcGVlcl9pZBgHIAEoCRIQCghyZXZpc2lvbhgIIAEoAxIPCgdibG9ja2VkGAkgASgIEl4KFGludmFsaWRhdGlvbl9jbGFzc2VzGAogAygOMkAucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcEludmFsaWRhdGlvbkNsYXNzEjAKDGNvbW1pdHRlZF9hdBgLIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFQoNcHJldmlvdXNfaGFzaBgMIAEoDBISCgpldmVudF9oYXNoGA0gASgMIqEDCh9Tb2NpYWxSZWxhdGlvbnNoaXBDb21tYW5kUmVzdWx0EhIKCmNvbW1hbmRfaWQYASABKAkSHgoWY29tbWFuZF9wYXlsb2FkX3NoYTI1NhgCIAEoDBJOCgRraW5kGAMgASgOMkAucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcENvbW1hbmRSZXN1bHRLaW5kEkMKBWV2ZW50GAQgASgLMjQucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcEV2ZW50Ek0KCnByb2plY3Rpb24YBSABKAsyOS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsUmVsYXRpb25zaGlwUHJvamVjdGlvbhJTCgplcnJvcl9jb2RlGAYgASgOMj8ucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcENvbW1hbmRFcnJvckNvZGUSEQoJcmV0cnlhYmxlGAcgASgIImIKF0Jsb2NrU29jaWFsQWN0b3JSZXF1ZXN0EkcKB2NvbW1hbmQYASABKAsyNi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsUmVsYXRpb25zaGlwQ29tbWFuZCJoChhCbG9ja1NvY2lhbEFjdG9yUmVzcG9uc2USTAoGcmVzdWx0GAEgASgLMjwucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcENvbW1hbmRSZXN1bHQiZAoZVW5ibG9ja1NvY2lhbEFjdG9yUmVxdWVzdBJHCgdjb21tYW5kGAEgASgLMjYucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcENvbW1hbmQiagoaVW5ibG9ja1NvY2lhbEFjdG9yUmVzcG9uc2USTAoGcmVzdWx0GAEgASgLMjwucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLlNvY2lhbFJlbGF0aW9uc2hpcENvbW1hbmRSZXN1bHQiYgosTG9va3VwU29jaWFsUmVsYXRpb25zaGlwQ29tbWFuZFJlc3VsdFJlcXVlc3QSEgoKY29tbWFuZF9pZBgBIAEoCRIeChZjb21tYW5kX3BheWxvYWRfc2hhMjU2GAIgASgMIowCCi1Mb29rdXBTb2NpYWxSZWxhdGlvbnNoaXBDb21tYW5kUmVzdWx0UmVzcG9uc2USUAoFc3RhdGUYASABKA4yQS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsUmVsYXRpb25zaGlwQ29tbWFuZExvb2t1cFN0YXRlEhIKCmNvbW1hbmRfaWQYAiABKAkSHgoWY29tbWFuZF9wYXlsb2FkX3NoYTI1NhgDIAEoDBJVCg90ZXJtaW5hbF9yZXN1bHQYBCABKAsyPC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsUmVsYXRpb25zaGlwQ29tbWFuZFJlc3VsdCI5ChhMaXN0QmxvY2tlZEFjdG9yc1JlcXVlc3QSDgoGY3Vyc29yGAEgASgJEg0KBWxpbWl0GAIgASgFIoYBChlMaXN0QmxvY2tlZEFjdG9yc1Jlc3BvbnNlEkIKBWl0ZW1zGAEgAygLMjMucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLkJsb2NrZWRBY3RvclByb2plY3Rpb24SEwoLbmV4dF9jdXJzb3IYAiABKAkSEAoIcmV2aXNpb24YAyABKAMiPwoiR2V0U29jaWFsUmVsYXRpb25zaGlwU3RhdHVzUmVxdWVzdBIZChF0YXJnZXRfYWN0b3JfcHRpZBgBIAEoCSJ2CiNHZXRTb2NpYWxSZWxhdGlvbnNoaXBTdGF0dXNSZXNwb25zZRJPCgxyZWxhdGlvbnNoaXAYASABKAsyOS5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuU29jaWFsUmVsYXRpb25zaGlwUHJvamVjdGlvbiqgAQoTRnJpZW5kUmVxdWVzdEFjdGlvbhIlCiFGUklFTkRfUkVRVUVTVF9BQ1RJT05fVU5TUEVDSUZJRUQQABIeChpGUklFTkRfUkVRVUVTVF9BQ1RJT05fU0VORBABEiAKHEZSSUVORF9SRVFVRVNUX0FDVElPTl9BQ0NFUFQQAhIgChxGUklFTkRfUkVRVUVTVF9BQ1RJT05fUkVKRUNUEAMqxAEKEkZyaWVuZFJlcXVlc3RTdGF0ZRIkCiBGUklFTkRfUkVRVUVTVF9TVEFURV9VTlNQRUNJRklFRBAAEiAKHEZSSUVORF9SRVFVRVNUX1NUQVRFX1BFTkRJTkcQARIhCh1GUklFTkRfUkVRVUVTVF9TVEFURV9BQ0NFUFRFRBACEiEKHUZSSUVORF9SRVFVRVNUX1NUQVRFX1JFSkVDVEVEEAMSIAocRlJJRU5EX1JFUVVFU1RfU1RBVEVfRVhQSVJFRBAEKpoCCh5GcmllbmRSZXF1ZXN0Q29tbWFuZFJlc3VsdEtpbmQSMgouRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9SRVNVTFRfS0lORF9VTlNQRUNJRklFRBAAEjAKLEZSSUVORF9SRVFVRVNUX0NPTU1BTkRfUkVTVUxUX0tJTkRfQ09NTUlUVEVEEAESMAosRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9SRVNVTFRfS0lORF9EVVBMSUNBVEUQAhIvCitGUklFTkRfUkVRVUVTVF9DT01NQU5EX1JFU1VMVF9LSU5EX1JFSkVDVEVEEAMSLworRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9SRVNVTFRfS0lORF9DT05GTElDVBAEKqAECh1GcmllbmRSZXF1ZXN0Q29tbWFuZEVycm9yQ29kZRIxCi1GUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfVU5TUEVDSUZJRUQQABItCilGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfSU5WQUxJRBABEjIKLkZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9VTkFVVEhPUklaRUQQAhItCilGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfQkxPQ0tFRBADEi8KK0ZSSUVORF9SRVFVRVNUX0NPTU1BTkRfRVJST1JfQ09ERV9OT1RfRk9VTkQQBBI1CjFGUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfQUxSRUFEWV9GUklFTkRTEAUSNAowRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9FUlJPUl9DT0RFX1NUQVRFX0NPTkZMSUNUEAYSOgo2RlJJRU5EX1JFUVVFU1RfQ09NTUFORF9FUlJPUl9DT0RFX0lERU1QT1RFTkNZX0NPTkZMSUNUEAcSLQopRlJJRU5EX1JFUVVFU1RfQ09NTUFORF9FUlJPUl9DT0RFX0VYUElSRUQQCBIxCi1GUklFTkRfUkVRVUVTVF9DT01NQU5EX0VSUk9SX0NPREVfUkVUUllfTEFURVIQCSqwAgofRnJpZW5kUmVxdWVzdENvbW1hbmRMb29rdXBTdGF0ZRIzCi9GUklFTkRfUkVRVUVTVF9DT01NQU5EX0xPT0tVUF9TVEFURV9VTlNQRUNJRklFRBAAEjEKLUZSSUVORF9SRVFVRVNUX0NPTU1BTkRfTE9PS1VQX1NUQVRFX05PVF9GT1VORBABEjgKNEZSSUVORF9SRVFVRVNUX0NPTU1BTkRfTE9PS1VQX1NUQVRFX0FDQ0VQVEVEX1BFTkRJTkcQAhI3CjNGUklFTkRfUkVRVUVTVF9DT01NQU5EX0xPT0tVUF9TVEFURV9URVJNSU5BTF9SRVNVTFQQAxIyCi5GUklFTkRfUkVRVUVTVF9DT01NQU5EX0xPT0tVUF9TVEFURV9VTlJFU09MVkVEEAQqlAEKGFNvY2lhbFJlbGF0aW9uc2hpcEFjdGlvbhIqCiZTT0NJQUxfUkVMQVRJT05TSElQX0FDVElPTl9VTlNQRUNJRklFRBAAEiQKIFNPQ0lBTF9SRUxBVElPTlNISVBfQUNUSU9OX0JMT0NLEAESJgoiU09DSUFMX1JFTEFUSU9OU0hJUF9BQ1RJT05fVU5CTE9DSxACKq8CCh9Tb2NpYWxSZWxhdGlvbnNoaXBBbGxvd2VkQWN0aW9uEjIKLlNPQ0lBTF9SRUxBVElPTlNISVBfQUxMT1dFRF9BQ1RJT05fVU5TUEVDSUZJRUQQABItCilTT0NJQUxfUkVMQVRJT05TSElQX0FMTE9XRURfQUNUSU9OX0ZPTExPVxABEjUKMVNPQ0lBTF9SRUxBVElPTlNISVBfQUxMT1dFRF9BQ1RJT05fRlJJRU5EX1JFUVVFU1QQAhI6CjZTT0NJQUxfUkVMQVRJT05TSElQX0FMTE9XRURfQUNUSU9OX0RJUkVDVF9DT05WRVJTQVRJT04QAxI2CjJTT0NJQUxfUkVMQVRJT05TSElQX0FMTE9XRURfQUNUSU9OX1BSSVZBVEVfQ09OVEVOVBAEKrkBCh5Tb2NpYWxSZWxhdGlvbnNoaXBEZW5pZWRSZWFzb24SMQotU09DSUFMX1JFTEFUSU9OU0hJUF9ERU5JRURfUkVBU09OX1VOU1BFQ0lGSUVEEAASKgomU09DSUFMX1JFTEFUSU9OU0hJUF9ERU5JRURfUkVBU09OX05PTkUQARI4CjRTT0NJQUxfUkVMQVRJT05TSElQX0RFTklFRF9SRUFTT05fSU5URVJBQ1RJT05fREVOSUVEEAIq2AIKI1NvY2lhbFJlbGF0aW9uc2hpcEludmFsaWRhdGlvbkNsYXNzEjYKMlNPQ0lBTF9SRUxBVElPTlNISVBfSU5WQUxJREFUSU9OX0NMQVNTX1VOU1BFQ0lGSUVEEAASMQotU09DSUFMX1JFTEFUSU9OU0hJUF9JTlZBTElEQVRJT05fQ0xBU1NfRk9MTE9XEAESRQpBU09DSUFMX1JFTEFUSU9OU0hJUF9JTlZBTElEQVRJT05fQ0xBU1NfRlJJRU5EX1JFUVVFU1RfRUxJR0lCSUxJVFkQAhJACjxTT0NJQUxfUkVMQVRJT05TSElQX0lOVkFMSURBVElPTl9DTEFTU19QUklWQVRFX0NPTlRFTlRfR1JBTlQQAxI9CjlTT0NJQUxfUkVMQVRJT05TSElQX0lOVkFMSURBVElPTl9DTEFTU19DT05WRVJTQVRJT05fRU5UUlkQBCq4AgojU29jaWFsUmVsYXRpb25zaGlwQ29tbWFuZFJlc3VsdEtpbmQSNwozU09DSUFMX1JFTEFUSU9OU0hJUF9DT01NQU5EX1JFU1VMVF9LSU5EX1VOU1BFQ0lGSUVEEAASNQoxU09DSUFMX1JFTEFUSU9OU0hJUF9DT01NQU5EX1JFU1VMVF9LSU5EX0NPTU1JVFRFRBABEjUKMVNPQ0lBTF9SRUxBVElPTlNISVBfQ09NTUFORF9SRVNVTFRfS0lORF9EVVBMSUNBVEUQAhI0CjBTT0NJQUxfUkVMQVRJT05TSElQX0NPTU1BTkRfUkVTVUxUX0tJTkRfUkVKRUNURUQQAxI0CjBTT0NJQUxfUkVMQVRJT05TSElQX0NPTU1BTkRfUkVTVUxUX0tJTkRfQ09ORkxJQ1QQBCqxAwoiU29jaWFsUmVsYXRpb25zaGlwQ29tbWFuZEVycm9yQ29kZRI2CjJTT0NJQUxfUkVMQVRJT05TSElQX0NPTU1BTkRfRVJST1JfQ09ERV9VTlNQRUNJRklFRBAAEjIKLlNPQ0lBTF9SRUxBVElPTlNISVBfQ09NTUFORF9FUlJPUl9DT0RFX0lOVkFMSUQQARI3CjNTT0NJQUxfUkVMQVRJT05TSElQX0NPTU1BTkRfRVJST1JfQ09ERV9VTkFVVEhPUklaRUQQAhI5CjVTT0NJQUxfUkVMQVRJT05TSElQX0NPTU1BTkRfRVJST1JfQ09ERV9TVEFMRV9SRVZJU0lPThADEj8KO1NPQ0lBTF9SRUxBVElPTlNISVBfQ09NTUFORF9FUlJPUl9DT0RFX0lERU1QT1RFTkNZX0NPTkZMSUNUEAQSMgouU09DSUFMX1JFTEFUSU9OU0hJUF9DT01NQU5EX0VSUk9SX0NPREVfRVhQSVJFRBAFEjYKMlNPQ0lBTF9SRUxBVElPTlNISVBfQ09NTUFORF9FUlJPUl9DT0RFX1JFVFJZX0xBVEVSEAYqzgIKJFNvY2lhbFJlbGF0aW9uc2hpcENvbW1hbmRMb29rdXBTdGF0ZRI4CjRTT0NJQUxfUkVMQVRJT05TSElQX0NPTU1BTkRfTE9PS1VQX1NUQVRFX1VOU1BFQ0lGSUVEEAASNgoyU09DSUFMX1JFTEFUSU9OU0hJUF9DT01NQU5EX0xPT0tVUF9TVEFURV9OT1RfRk9VTkQQARI9CjlTT0NJQUxfUkVMQVRJT05TSElQX0NPTU1BTkRfTE9PS1VQX1NUQVRFX0FDQ0VQVEVEX1BFTkRJTkcQAhI8CjhTT0NJQUxfUkVMQVRJT05TSElQX0NPTU1BTkRfTE9PS1VQX1NUQVRFX1RFUk1JTkFMX1JFU1VMVBADEjcKM1NPQ0lBTF9SRUxBVElPTlNISVBfQ09NTUFORF9MT09LVVBfU1RBVEVfVU5SRVNPTFZFRBAEQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_domain_actor_actor, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.social.v1.FollowRequest
@@ -907,6 +907,594 @@ export const FriendRequestCommandResultSchema: GenMessage<FriendRequestCommandRe
   messageDesc(file_domain_social_relationship, 28);
 
 /**
+ * @generated from message peers_touch.model.social.v1.LookupFriendRequestCommandResultRequest
+ */
+export type LookupFriendRequestCommandResultRequest = Message<"peers_touch.model.social.v1.LookupFriendRequestCommandResultRequest"> & {
+  /**
+   * @generated from field: string command_id = 1;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: bytes command_payload_sha256 = 2;
+   */
+  commandPayloadSha256: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.LookupFriendRequestCommandResultRequest.
+ * Use `create(LookupFriendRequestCommandResultRequestSchema)` to create a new message.
+ */
+export const LookupFriendRequestCommandResultRequestSchema: GenMessage<LookupFriendRequestCommandResultRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 29);
+
+/**
+ * @generated from message peers_touch.model.social.v1.LookupFriendRequestCommandResultResponse
+ */
+export type LookupFriendRequestCommandResultResponse = Message<"peers_touch.model.social.v1.LookupFriendRequestCommandResultResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommandLookupState state = 1;
+   */
+  state: FriendRequestCommandLookupState;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: bytes command_payload_sha256 = 3;
+   */
+  commandPayloadSha256: Uint8Array;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.FriendRequestCommandResult terminal_result = 4;
+   */
+  terminalResult?: FriendRequestCommandResult | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.LookupFriendRequestCommandResultResponse.
+ * Use `create(LookupFriendRequestCommandResultResponseSchema)` to create a new message.
+ */
+export const LookupFriendRequestCommandResultResponseSchema: GenMessage<LookupFriendRequestCommandResultResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 30);
+
+/**
+ * @generated from message peers_touch.model.social.v1.SocialRelationshipCommandBody
+ */
+export type SocialRelationshipCommandBody = Message<"peers_touch.model.social.v1.SocialRelationshipCommandBody"> & {
+  /**
+   * @generated from field: uint32 format_version = 1;
+   */
+  formatVersion: number;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipAction action = 3;
+   */
+  action: SocialRelationshipAction;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef actor = 4;
+   */
+  actor?: ActorRef | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef target_actor = 5;
+   */
+  targetActor?: ActorRef | undefined;
+
+  /**
+   * @generated from field: string actor_home_station_peer_id = 6;
+   */
+  actorHomeStationPeerId: string;
+
+  /**
+   * @generated from field: string target_home_station_peer_id = 7;
+   */
+  targetHomeStationPeerId: string;
+
+  /**
+   * @generated from field: int64 observed_revision = 8;
+   */
+  observedRevision: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 9;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 10;
+   */
+  expiresAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorDeviceRef authorizing_device = 11;
+   */
+  authorizingDevice?: ActorDeviceRef | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SocialRelationshipCommandBody.
+ * Use `create(SocialRelationshipCommandBodySchema)` to create a new message.
+ */
+export const SocialRelationshipCommandBodySchema: GenMessage<SocialRelationshipCommandBody> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 31);
+
+/**
+ * @generated from message peers_touch.model.social.v1.SocialRelationshipCommandSigningInput
+ */
+export type SocialRelationshipCommandSigningInput = Message<"peers_touch.model.social.v1.SocialRelationshipCommandSigningInput"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommandBody body = 1;
+   */
+  body?: SocialRelationshipCommandBody | undefined;
+
+  /**
+   * @generated from field: string signing_key_id = 2;
+   */
+  signingKeyId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SocialRelationshipCommandSigningInput.
+ * Use `create(SocialRelationshipCommandSigningInputSchema)` to create a new message.
+ */
+export const SocialRelationshipCommandSigningInputSchema: GenMessage<SocialRelationshipCommandSigningInput> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 32);
+
+/**
+ * @generated from message peers_touch.model.social.v1.SocialRelationshipCommand
+ */
+export type SocialRelationshipCommand = Message<"peers_touch.model.social.v1.SocialRelationshipCommand"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommandBody body = 1;
+   */
+  body?: SocialRelationshipCommandBody | undefined;
+
+  /**
+   * @generated from field: string signing_key_id = 2;
+   */
+  signingKeyId: string;
+
+  /**
+   * @generated from field: bytes actor_device_signature = 3;
+   */
+  actorDeviceSignature: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SocialRelationshipCommand.
+ * Use `create(SocialRelationshipCommandSchema)` to create a new message.
+ */
+export const SocialRelationshipCommandSchema: GenMessage<SocialRelationshipCommand> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 33);
+
+/**
+ * @generated from message peers_touch.model.social.v1.SocialRelationshipProjection
+ */
+export type SocialRelationshipProjection = Message<"peers_touch.model.social.v1.SocialRelationshipProjection"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef target_actor = 1;
+   */
+  targetActor?: ActorRef | undefined;
+
+  /**
+   * @generated from field: bool following = 2;
+   */
+  following: boolean;
+
+  /**
+   * @generated from field: bool followed_by = 3;
+   */
+  followedBy: boolean;
+
+  /**
+   * @generated from field: bool blocked_by_viewer = 4;
+   */
+  blockedByViewer: boolean;
+
+  /**
+   * @generated from field: bool interaction_allowed = 5;
+   */
+  interactionAllowed: boolean;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipDeniedReason denied_reason = 6;
+   */
+  deniedReason: SocialRelationshipDeniedReason;
+
+  /**
+   * @generated from field: repeated peers_touch.model.social.v1.SocialRelationshipAllowedAction allowed_actions = 7;
+   */
+  allowedActions: SocialRelationshipAllowedAction[];
+
+  /**
+   * @generated from field: int64 revision = 8;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: string target_home_station_peer_id = 9;
+   */
+  targetHomeStationPeerId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SocialRelationshipProjection.
+ * Use `create(SocialRelationshipProjectionSchema)` to create a new message.
+ */
+export const SocialRelationshipProjectionSchema: GenMessage<SocialRelationshipProjection> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 34);
+
+/**
+ * @generated from message peers_touch.model.social.v1.BlockedActorProjection
+ */
+export type BlockedActorProjection = Message<"peers_touch.model.social.v1.BlockedActorProjection"> & {
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef actor = 1;
+   */
+  actor?: ActorRef | undefined;
+
+  /**
+   * @generated from field: int64 revision = 2;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp blocked_at = 3;
+   */
+  blockedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: string home_station_peer_id = 4;
+   */
+  homeStationPeerId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.BlockedActorProjection.
+ * Use `create(BlockedActorProjectionSchema)` to create a new message.
+ */
+export const BlockedActorProjectionSchema: GenMessage<BlockedActorProjection> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 35);
+
+/**
+ * @generated from message peers_touch.model.social.v1.SocialRelationshipEvent
+ */
+export type SocialRelationshipEvent = Message<"peers_touch.model.social.v1.SocialRelationshipEvent"> & {
+  /**
+   * @generated from field: string event_id = 1;
+   */
+  eventId: string;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipAction action = 3;
+   */
+  action: SocialRelationshipAction;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef actor = 4;
+   */
+  actor?: ActorRef | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.actor.v1.ActorRef target_actor = 5;
+   */
+  targetActor?: ActorRef | undefined;
+
+  /**
+   * @generated from field: string actor_home_station_peer_id = 6;
+   */
+  actorHomeStationPeerId: string;
+
+  /**
+   * @generated from field: string target_home_station_peer_id = 7;
+   */
+  targetHomeStationPeerId: string;
+
+  /**
+   * @generated from field: int64 revision = 8;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: bool blocked = 9;
+   */
+  blocked: boolean;
+
+  /**
+   * @generated from field: repeated peers_touch.model.social.v1.SocialRelationshipInvalidationClass invalidation_classes = 10;
+   */
+  invalidationClasses: SocialRelationshipInvalidationClass[];
+
+  /**
+   * @generated from field: google.protobuf.Timestamp committed_at = 11;
+   */
+  committedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: bytes previous_hash = 12;
+   */
+  previousHash: Uint8Array;
+
+  /**
+   * @generated from field: bytes event_hash = 13;
+   */
+  eventHash: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SocialRelationshipEvent.
+ * Use `create(SocialRelationshipEventSchema)` to create a new message.
+ */
+export const SocialRelationshipEventSchema: GenMessage<SocialRelationshipEvent> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 36);
+
+/**
+ * @generated from message peers_touch.model.social.v1.SocialRelationshipCommandResult
+ */
+export type SocialRelationshipCommandResult = Message<"peers_touch.model.social.v1.SocialRelationshipCommandResult"> & {
+  /**
+   * @generated from field: string command_id = 1;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: bytes command_payload_sha256 = 2;
+   */
+  commandPayloadSha256: Uint8Array;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommandResultKind kind = 3;
+   */
+  kind: SocialRelationshipCommandResultKind;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipEvent event = 4;
+   */
+  event?: SocialRelationshipEvent | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipProjection projection = 5;
+   */
+  projection?: SocialRelationshipProjection | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommandErrorCode error_code = 6;
+   */
+  errorCode: SocialRelationshipCommandErrorCode;
+
+  /**
+   * @generated from field: bool retryable = 7;
+   */
+  retryable: boolean;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.SocialRelationshipCommandResult.
+ * Use `create(SocialRelationshipCommandResultSchema)` to create a new message.
+ */
+export const SocialRelationshipCommandResultSchema: GenMessage<SocialRelationshipCommandResult> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 37);
+
+/**
+ * @generated from message peers_touch.model.social.v1.BlockSocialActorRequest
+ */
+export type BlockSocialActorRequest = Message<"peers_touch.model.social.v1.BlockSocialActorRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommand command = 1;
+   */
+  command?: SocialRelationshipCommand | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.BlockSocialActorRequest.
+ * Use `create(BlockSocialActorRequestSchema)` to create a new message.
+ */
+export const BlockSocialActorRequestSchema: GenMessage<BlockSocialActorRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 38);
+
+/**
+ * @generated from message peers_touch.model.social.v1.BlockSocialActorResponse
+ */
+export type BlockSocialActorResponse = Message<"peers_touch.model.social.v1.BlockSocialActorResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommandResult result = 1;
+   */
+  result?: SocialRelationshipCommandResult | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.BlockSocialActorResponse.
+ * Use `create(BlockSocialActorResponseSchema)` to create a new message.
+ */
+export const BlockSocialActorResponseSchema: GenMessage<BlockSocialActorResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 39);
+
+/**
+ * @generated from message peers_touch.model.social.v1.UnblockSocialActorRequest
+ */
+export type UnblockSocialActorRequest = Message<"peers_touch.model.social.v1.UnblockSocialActorRequest"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommand command = 1;
+   */
+  command?: SocialRelationshipCommand | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.UnblockSocialActorRequest.
+ * Use `create(UnblockSocialActorRequestSchema)` to create a new message.
+ */
+export const UnblockSocialActorRequestSchema: GenMessage<UnblockSocialActorRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 40);
+
+/**
+ * @generated from message peers_touch.model.social.v1.UnblockSocialActorResponse
+ */
+export type UnblockSocialActorResponse = Message<"peers_touch.model.social.v1.UnblockSocialActorResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommandResult result = 1;
+   */
+  result?: SocialRelationshipCommandResult | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.UnblockSocialActorResponse.
+ * Use `create(UnblockSocialActorResponseSchema)` to create a new message.
+ */
+export const UnblockSocialActorResponseSchema: GenMessage<UnblockSocialActorResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 41);
+
+/**
+ * @generated from message peers_touch.model.social.v1.LookupSocialRelationshipCommandResultRequest
+ */
+export type LookupSocialRelationshipCommandResultRequest = Message<"peers_touch.model.social.v1.LookupSocialRelationshipCommandResultRequest"> & {
+  /**
+   * @generated from field: string command_id = 1;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: bytes command_payload_sha256 = 2;
+   */
+  commandPayloadSha256: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.LookupSocialRelationshipCommandResultRequest.
+ * Use `create(LookupSocialRelationshipCommandResultRequestSchema)` to create a new message.
+ */
+export const LookupSocialRelationshipCommandResultRequestSchema: GenMessage<LookupSocialRelationshipCommandResultRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 42);
+
+/**
+ * @generated from message peers_touch.model.social.v1.LookupSocialRelationshipCommandResultResponse
+ */
+export type LookupSocialRelationshipCommandResultResponse = Message<"peers_touch.model.social.v1.LookupSocialRelationshipCommandResultResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommandLookupState state = 1;
+   */
+  state: SocialRelationshipCommandLookupState;
+
+  /**
+   * @generated from field: string command_id = 2;
+   */
+  commandId: string;
+
+  /**
+   * @generated from field: bytes command_payload_sha256 = 3;
+   */
+  commandPayloadSha256: Uint8Array;
+
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipCommandResult terminal_result = 4;
+   */
+  terminalResult?: SocialRelationshipCommandResult | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.LookupSocialRelationshipCommandResultResponse.
+ * Use `create(LookupSocialRelationshipCommandResultResponseSchema)` to create a new message.
+ */
+export const LookupSocialRelationshipCommandResultResponseSchema: GenMessage<LookupSocialRelationshipCommandResultResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 43);
+
+/**
+ * @generated from message peers_touch.model.social.v1.ListBlockedActorsRequest
+ */
+export type ListBlockedActorsRequest = Message<"peers_touch.model.social.v1.ListBlockedActorsRequest"> & {
+  /**
+   * @generated from field: string cursor = 1;
+   */
+  cursor: string;
+
+  /**
+   * @generated from field: int32 limit = 2;
+   */
+  limit: number;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.ListBlockedActorsRequest.
+ * Use `create(ListBlockedActorsRequestSchema)` to create a new message.
+ */
+export const ListBlockedActorsRequestSchema: GenMessage<ListBlockedActorsRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 44);
+
+/**
+ * @generated from message peers_touch.model.social.v1.ListBlockedActorsResponse
+ */
+export type ListBlockedActorsResponse = Message<"peers_touch.model.social.v1.ListBlockedActorsResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.social.v1.BlockedActorProjection items = 1;
+   */
+  items: BlockedActorProjection[];
+
+  /**
+   * @generated from field: string next_cursor = 2;
+   */
+  nextCursor: string;
+
+  /**
+   * @generated from field: int64 revision = 3;
+   */
+  revision: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.ListBlockedActorsResponse.
+ * Use `create(ListBlockedActorsResponseSchema)` to create a new message.
+ */
+export const ListBlockedActorsResponseSchema: GenMessage<ListBlockedActorsResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 45);
+
+/**
+ * @generated from message peers_touch.model.social.v1.GetSocialRelationshipStatusRequest
+ */
+export type GetSocialRelationshipStatusRequest = Message<"peers_touch.model.social.v1.GetSocialRelationshipStatusRequest"> & {
+  /**
+   * @generated from field: string target_actor_ptid = 1;
+   */
+  targetActorPtid: string;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.GetSocialRelationshipStatusRequest.
+ * Use `create(GetSocialRelationshipStatusRequestSchema)` to create a new message.
+ */
+export const GetSocialRelationshipStatusRequestSchema: GenMessage<GetSocialRelationshipStatusRequest> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 46);
+
+/**
+ * @generated from message peers_touch.model.social.v1.GetSocialRelationshipStatusResponse
+ */
+export type GetSocialRelationshipStatusResponse = Message<"peers_touch.model.social.v1.GetSocialRelationshipStatusResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.social.v1.SocialRelationshipProjection relationship = 1;
+   */
+  relationship?: SocialRelationshipProjection | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.social.v1.GetSocialRelationshipStatusResponse.
+ * Use `create(GetSocialRelationshipStatusResponseSchema)` to create a new message.
+ */
+export const GetSocialRelationshipStatusResponseSchema: GenMessage<GetSocialRelationshipStatusResponse> = /*@__PURE__*/
+  messageDesc(file_domain_social_relationship, 47);
+
+/**
  * @generated from enum peers_touch.model.social.v1.FriendRequestAction
  */
 export enum FriendRequestAction {
@@ -1069,3 +1657,281 @@ export enum FriendRequestCommandErrorCode {
  */
 export const FriendRequestCommandErrorCodeSchema: GenEnum<FriendRequestCommandErrorCode> = /*@__PURE__*/
   enumDesc(file_domain_social_relationship, 3);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.FriendRequestCommandLookupState
+ */
+export enum FriendRequestCommandLookupState {
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_LOOKUP_STATE_NOT_FOUND = 1;
+   */
+  NOT_FOUND = 1,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING = 2;
+   */
+  ACCEPTED_PENDING = 2,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_LOOKUP_STATE_TERMINAL_RESULT = 3;
+   */
+  TERMINAL_RESULT = 3,
+
+  /**
+   * @generated from enum value: FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED = 4;
+   */
+  UNRESOLVED = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.FriendRequestCommandLookupState.
+ */
+export const FriendRequestCommandLookupStateSchema: GenEnum<FriendRequestCommandLookupState> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 4);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.SocialRelationshipAction
+ */
+export enum SocialRelationshipAction {
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_ACTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_ACTION_BLOCK = 1;
+   */
+  BLOCK = 1,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_ACTION_UNBLOCK = 2;
+   */
+  UNBLOCK = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.SocialRelationshipAction.
+ */
+export const SocialRelationshipActionSchema: GenEnum<SocialRelationshipAction> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 5);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.SocialRelationshipAllowedAction
+ */
+export enum SocialRelationshipAllowedAction {
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_ALLOWED_ACTION_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FOLLOW = 1;
+   */
+  FOLLOW = 1,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FRIEND_REQUEST = 2;
+   */
+  FRIEND_REQUEST = 2,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_ALLOWED_ACTION_DIRECT_CONVERSATION = 3;
+   */
+  DIRECT_CONVERSATION = 3,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_ALLOWED_ACTION_PRIVATE_CONTENT = 4;
+   */
+  PRIVATE_CONTENT = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.SocialRelationshipAllowedAction.
+ */
+export const SocialRelationshipAllowedActionSchema: GenEnum<SocialRelationshipAllowedAction> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 6);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.SocialRelationshipDeniedReason
+ */
+export enum SocialRelationshipDeniedReason {
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_DENIED_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_DENIED_REASON_NONE = 1;
+   */
+  NONE = 1,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_DENIED_REASON_INTERACTION_DENIED = 2;
+   */
+  INTERACTION_DENIED = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.SocialRelationshipDeniedReason.
+ */
+export const SocialRelationshipDeniedReasonSchema: GenEnum<SocialRelationshipDeniedReason> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 7);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.SocialRelationshipInvalidationClass
+ */
+export enum SocialRelationshipInvalidationClass {
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FOLLOW = 1;
+   */
+  FOLLOW = 1,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FRIEND_REQUEST_ELIGIBILITY = 2;
+   */
+  FRIEND_REQUEST_ELIGIBILITY = 2,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_PRIVATE_CONTENT_GRANT = 3;
+   */
+  PRIVATE_CONTENT_GRANT = 3,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_CONVERSATION_ENTRY = 4;
+   */
+  CONVERSATION_ENTRY = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.SocialRelationshipInvalidationClass.
+ */
+export const SocialRelationshipInvalidationClassSchema: GenEnum<SocialRelationshipInvalidationClass> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 8);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.SocialRelationshipCommandResultKind
+ */
+export enum SocialRelationshipCommandResultKind {
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_COMMITTED = 1;
+   */
+  COMMITTED = 1,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_DUPLICATE = 2;
+   */
+  DUPLICATE = 2,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_REJECTED = 3;
+   */
+  REJECTED = 3,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_CONFLICT = 4;
+   */
+  CONFLICT = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.SocialRelationshipCommandResultKind.
+ */
+export const SocialRelationshipCommandResultKindSchema: GenEnum<SocialRelationshipCommandResultKind> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 9);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.SocialRelationshipCommandErrorCode
+ */
+export enum SocialRelationshipCommandErrorCode {
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_INVALID = 1;
+   */
+  INVALID = 1,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNAUTHORIZED = 2;
+   */
+  UNAUTHORIZED = 2,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_STALE_REVISION = 3;
+   */
+  STALE_REVISION = 3,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT = 4;
+   */
+  IDEMPOTENCY_CONFLICT = 4,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_EXPIRED = 5;
+   */
+  EXPIRED = 5,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_RETRY_LATER = 6;
+   */
+  RETRY_LATER = 6,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.SocialRelationshipCommandErrorCode.
+ */
+export const SocialRelationshipCommandErrorCodeSchema: GenEnum<SocialRelationshipCommandErrorCode> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 10);
+
+/**
+ * @generated from enum peers_touch.model.social.v1.SocialRelationshipCommandLookupState
+ */
+export enum SocialRelationshipCommandLookupState {
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_NOT_FOUND = 1;
+   */
+  NOT_FOUND = 1,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING = 2;
+   */
+  ACCEPTED_PENDING = 2,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_TERMINAL_RESULT = 3;
+   */
+  TERMINAL_RESULT = 3,
+
+  /**
+   * @generated from enum value: SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNRESOLVED = 4;
+   */
+  UNRESOLVED = 4,
+}
+
+/**
+ * Describes the enum peers_touch.model.social.v1.SocialRelationshipCommandLookupState.
+ */
+export const SocialRelationshipCommandLookupStateSchema: GenEnum<SocialRelationshipCommandLookupState> = /*@__PURE__*/
+  enumDesc(file_domain_social_relationship, 11);

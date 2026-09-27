@@ -31,12 +31,12 @@ The Guardian never:
 - selects or maintains a Ready/Parked queue;
 - chooses concurrency lanes or spawns subagents;
 - edits source, tests, docs, plans, Task snapshots, `session.json`,
-  `active_work`, evidence, or Context Anchors;
+  workspace active-work, evidence, or Context Anchors;
 - acquires runtime resources, deploys, commits, pushes, or opens PRs;
 - self-amends a plan;
 - claims Task, Journey, stage, or product completion.
 
-`pt-trae-goal-orchestrator` proposes **what** to run.
+`pt-goal-orchestrator` proposes **what** to run.
 `pt-execution-plan-guardian` decides **whether** it may run.
 `pt-dev-workflow` executes allowed work and persists results.
 
@@ -75,11 +75,10 @@ Missing required input returns `ACTION_DENIED` with
 Evaluate in this order:
 
 1. **Identity**
-   - canonical worktree, branch, and `workspaceId` match the persisted
-     worktree identity, while declaration `sourceHead` matches Git;
+   - canonical worktree, branch, `workspaceId`, and expected HEAD match the
+     persisted binding;
    - proposed Plan `planId + planPath` matches the workspace's immutable
      machine binding; synchronized foreign Plans and branch scans are ignored;
-   - the Plan contributes only its immutable `initialHead` audit baseline;
    - otherwise `WORKTREE_IDENTITY_MISMATCH`.
 2. **Current ownership**
    - the action belongs to the manifest current Task;
@@ -113,8 +112,27 @@ Evaluate in this order:
    - formal Acceptance uses the current Task closure unless completion/full was
      explicitly authorized.
 9. **Operation authorization**
-   - commit, push, PR, deploy, reset, destructive mutation, and history rewrite
-     each have the required explicit authorization.
+   - consume exact grants from the user and the accepted Plan's explicit
+     `authorization` envelope instead of requesting per-Task confirmation;
+   - already-authorized operations execute directly; operation category,
+     Task handoff, context compaction, retry, or host change cannot turn an
+     existing exact grant into `OPERATION_AUTHORIZATION_REQUIRED`;
+   - commit, push, PR, deploy, reset, destructive mutation, merge, release, and
+     history rewrite each require their own exact grant; one capability never
+     implies another;
+   - mere Plan existence, a declaration, or an unrelated prior command does not
+     grant authority, while an explicit allowed field in the accepted Plan is
+     authorization and must not be ignored;
+   - return `OPERATION_AUTHORIZATION_REQUIRED` only when the proposed action is
+     denied or outside every explicit grant;
+   - Task handoff, successor activation, agent review, source-backed
+     remediation, and Context Anchor projection are not new operations that
+     consume or reset Plan Run authorization.
+
+An actual external permission, credential, or scope failure can be observed
+only after Dev Workflow attempts an `ACTION_ALLOWED` operation. Return that
+observation to Dev Workflow for typed persistence and bounded remediation; do
+not manufacture a preemptive permission question from the operation category.
 
 ## Decisions
 
@@ -154,6 +172,9 @@ Every denial/escalation names:
 Return the decision to `pt-dev-workflow`. The workflow invokes the owning
 methodology and `pt-plan-and-document` persists any accepted plan update.
 The Guardian does not perform the amendment, even when it is mechanical.
+Accepted-source repairs and their agent review remain inside the Plan Run.
+Only an amendment that exposes a DWF-D20 semantic, destructive, authorization,
+or external-resource boundary requires user input.
 
 ## Functional And Acceptance Policy
 
@@ -200,6 +221,10 @@ Reject the lane, not the entire plan, when these conditions fail.
 - Any escalation points to the owning Skill.
 - The strongest permitted claim matches current evidence.
 - Supporting activity and Task-closing progress remain distinct.
+- A legal denial or amendment returns to the Plan Run owner and does not
+  automatically become a user handoff.
+- An explicit user or accepted Plan grant produces `ACTION_ALLOWED` without
+  repeat confirmation when every other policy check passes.
 
 ## Anti-Patterns
 
@@ -208,9 +233,14 @@ Never:
 - execute an allowed action;
 - choose the next action or maintain queues;
 - write or self-amend a plan;
-- update Task lifecycle, Session, `active_work`, or Anchor state;
-- infer authorization from a plan, declaration, or prior command;
+- update Task lifecycle, Session, workspace active-work, or Anchor state;
+- infer authorization from mere Plan existence, a declaration, or an unrelated
+  prior command;
+- ignore an explicit grant in the accepted Plan authorization envelope or ask
+  the user to repeat it;
 - approve a workaround that violates ownership;
 - widen evidence claims;
+- treat routine review, remediation, Task handoff, or successor activation as a
+  new user-authorization boundary;
 - convert one denied action into a plan-wide blocked claim;
 - select or change a worktree.

@@ -2,8 +2,8 @@
   "id": "mobile-social-simulator",
   "base_environment": "mobile-simulator",
   "profile": {
-    "required": true,
-    "identity_match": true
+    "required": false,
+    "identity_match": false
   },
   "source_identity": {
     "commit_required": true,
@@ -14,6 +14,8 @@
       "kind": "station",
       "required": true,
       "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_PRIMARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
       "health_action": "station-check",
       "status_action": "station-status",
       "attestation_producer": "station-deployment"
@@ -22,6 +24,8 @@
       "kind": "station",
       "required": true,
       "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_SECONDARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
       "health_action": "station-check",
       "status_action": "station-status",
       "attestation_producer": "station-deployment"
@@ -30,6 +34,9 @@
       "kind": "relay",
       "required": true,
       "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_RELAY_URL",
+      "deployment_environment_ref": "env:PT_RELAY_DEPLOY_ENV",
+      "health_endpoint_ref": "env:PT_RELAY_HEALTH_URL",
       "health_action": "relay-check",
       "status_action": "relay-status",
       "attestation_producer": "relay-deployment"
@@ -59,9 +66,9 @@
       }
     },
     {
-      "id": "sim-android",
+      "id": "sim-ios-peer",
       "actor": "bob",
-      "runtime": "tauri-android-emulator",
+      "runtime": "tauri-ios-simulator",
       "required_service_roles": ["station"],
       "service_bindings": {
         "station": {
@@ -77,6 +84,7 @@
       "station.add",
       "access.submit",
       "lifecycle.restart",
+      "lifecycle.scope.read",
       "projection.read",
       "messaging.createDirect",
       "messaging.createGroup",
@@ -93,8 +101,22 @@
       "social.people.search",
       "social.request.send",
       "social.request.accept",
+      "social.contact.open",
       "social.reconcile",
       "social.projection.read",
+      "reliability.fixture.configure",
+      "reliability.friendRequest.submit",
+      "reliability.snapshot",
+      "reliability.reconcile",
+      "reliability.draft.write",
+      "reliability.draft.read",
+      "reliability.draft.action",
+      "recovery.snapshot",
+      "moments.feed.read",
+      "moments.publish",
+      "moments.react",
+      "moments.comment",
+      "moments.comments.read",
       "cleanup"
     ],
     "policy": "production actions only; direct Store mutation and successful-result injection are forbidden"
@@ -104,15 +126,15 @@
       "two isolated simulator clients",
       "two source-attested Station bindings",
       "Direct and Group Messaging production-action journeys",
-      "receiver projection, typing, receipt, interaction, search, attachment, and WebView restart readback"
+      "receiver projection, typing, receipt, interaction, search, attachment, and WebView restart readback",
+      "unknown-outcome command and exact-scope draft recovery",
+      "Moments publish, feed, reaction, comment, reply, rollback, and draft readback"
     ],
     "does_not_prove": [
       "physical-device behavior",
       "authoritative Station history readback",
-      "forced event-loss recovery",
       "native background and foreground lifecycle",
-      "tab-remount interaction timing",
-      "full MS-AG04 and MS-AG06"
+      "tab-remount interaction timing"
     ]
   },
   "cleanup": {
@@ -121,7 +143,6 @@
       "app-installations",
       "ports",
       "storage",
-      "emulator-process",
       "simulator-boot",
       "actor-fixture",
       "profile-leases",

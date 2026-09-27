@@ -27,7 +27,6 @@
       "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
       "apps/desktop/src-tauri/src/application/crypto/",
       "apps/desktop/src-tauri/src/domain/crypto/",
-      "apps/desktop/src-tauri/src/infrastructure/local_chat_store.rs",
       "apps/desktop/src-tauri/src/interface/tauri_commands/crypto.rs",
       "apps/desktop/src/services/crypto-service.ts",
       "apps/desktop/src-tauri/src/messaging/"
@@ -55,7 +54,7 @@
     "MP-W07": [
       "apps/desktop/src-tauri/src/interface/tauri_commands/mls.rs",
       "apps/desktop/src-tauri/src/messaging/mls/",
-      "apps/mobile/src/features/group/",
+      "apps/mobile/src/runtimes/messagingRuntime.ts",
       "apps/mobile/src-tauri/src/domain/crypto/sender_keys.rs",
       "apps/mobile/src-tauri/src/domain/crypto/sender_key_store.rs"
     ],

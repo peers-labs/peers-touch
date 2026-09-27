@@ -6,7 +6,7 @@
  * Chat supports full-screen thread with composer, reply, action sheet.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useReducer, useState } from 'react';
 import { ConfigProvider, Select, Typography } from 'antd';
 import type { LaunchState, StationEntry } from './types';
 import { demoStations } from './data';
@@ -18,6 +18,16 @@ import {
 import { LaunchScreen } from './pages/LaunchScreen';
 import { AuthGateScreen } from './pages/AuthGateScreen';
 import { MobileShell } from './MobileShell';
+import {
+  createSocialDemo,
+  socialDemoReducer,
+  socialEvidenceScenarios,
+  type SocialEvidenceScenario,
+} from './socialDemo';
+import { SocialEvidenceControls } from './components/SocialEvidenceControls';
+import { SearchEvidenceControls } from './components/SearchEvidenceControls';
+import { emptySearchDemo, searchDemoReducer } from './searchDemo';
+import { MultiDeviceDemo } from './components/MultiDeviceDemo';
 import './mobilePrototype.css';
 
 const { Text } = Typography;
@@ -25,8 +35,14 @@ const { Text } = Typography;
 type EvidenceScenario =
   | 'journey'
   | 'station-removal'
+  | 'session-revoked'
+  | 'long-lists'
+  | 'search-controlled'
+  | 'multi-device-companion'
+  | 'multi-device-read-cursor'
   | BlockingEvidenceScenario
-  | ShellEvidenceScenario;
+  | ShellEvidenceScenario
+  | SocialEvidenceScenario;
 
 const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }> = [
   { label: 'Default journey', value: 'journey' },
@@ -37,12 +53,20 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'Unknown write outcome', value: 'unknown-write' },
   { label: 'Command ledger full', value: 'ledger-full' },
   { label: 'Draft restored', value: 'draft-restored' },
+  { label: 'Social unavailable / lifecycle retry', value: 'social-unavailable' },
+  { label: 'Find People / no Federation membership', value: 'find-people-no-membership' },
+  { label: 'Find People / active Federation', value: 'find-people-member' },
+  { label: 'Accepted contact / Direct opening', value: 'contact-direct' },
+  { label: 'Friend request / unknown outcome', value: 'request-unknown' },
+  { label: 'Long lists / sample data only', value: 'long-lists' },
+  { label: 'Search / controlled outcomes', value: 'search-controlled' },
+  { label: 'Multi-device: sender companion', value: 'multi-device-companion' },
+  { label: 'Multi-device: read cursor convergence', value: 'multi-device-read-cursor' },
 ];
 
 const blockingScenarios: BlockingEvidenceScenario[] = [
   'station-identity-mismatch',
   'oauth-expired',
-  'session-revoked',
 ];
 
 const shellScenarios: ShellEvidenceScenario[] = [
@@ -83,6 +107,10 @@ export function MobilePrototype() {
   const [evidenceScenario, setEvidenceScenario] = useState<EvidenceScenario>(
     getInitialEvidenceScenario,
   );
+  const [socialDemo, dispatchSocialDemo] = useReducer(socialDemoReducer, evidenceScenario, createSocialDemo);
+  const [searchState, dispatchSearch] = useReducer(searchDemoReducer, emptySearchDemo);
+  const socialScenario = socialEvidenceScenarios.find((scenario) => scenario === evidenceScenario);
+  const longLists = evidenceScenario === 'long-lists' || evidenceScenario === 'search-controlled';
 
   const activeStation = useMemo(
     () => stations.find((s) => s.url === activeUrl),
@@ -100,8 +128,15 @@ export function MobilePrototype() {
   }
 
   function handleBackToLaunch() {
+    selectEvidenceScenario('journey');
     setLaunchState('station-selection');
     setScenes(['Launch']);
+  }
+
+  function selectEvidenceScenario(scenario: EvidenceScenario) {
+    setEvidenceScenario(scenario);
+    dispatchSocialDemo({ type: 'reset', scenario });
+    dispatchSearch({ type: 'reset' });
   }
 
   function handleSelectStation(url: string) {
@@ -127,10 +162,34 @@ export function MobilePrototype() {
   function returnToJourney(nextState: LaunchState) {
     setEvidenceScenario('journey');
     setLaunchState(nextState);
-    setScenes(nextState === 'station-selection' ? ['Launch'] : ['Launch', 'Auth Gate']);
+    setScenes(
+      nextState === 'station-selection'
+        ? ['Launch']
+        : nextState === 'shell'
+          ? ['Launch', 'Auth Gate', 'Shell']
+          : ['Launch', 'Auth Gate'],
+    );
   }
 
   function renderSurface() {
+    if (evidenceScenario === 'multi-device-companion' || evidenceScenario === 'multi-device-read-cursor') {
+      return <MultiDeviceDemo scenario={evidenceScenario} />;
+    }
+
+    if (evidenceScenario === 'session-revoked' && activeStation) {
+      return (
+        <AuthGateScreen
+          stationLabel={activeStation.label}
+          expiredSession={{
+            displayName: 'Alice Chen',
+            email: 'alice@peers.social',
+          }}
+          onBack={handleBackToLaunch}
+          onLogin={() => returnToJourney('shell')}
+        />
+      );
+    }
+
     if (blockingScenarios.includes(evidenceScenario as BlockingEvidenceScenario)) {
       return (
         <BlockingRecoveryScreen
@@ -145,12 +204,20 @@ export function MobilePrototype() {
       );
     }
 
-    if (shellScenarios.includes(evidenceScenario as ShellEvidenceScenario) && activeStation) {
+    const shellRecovery = shellScenarios.find((scenario) => scenario === evidenceScenario);
+    if ((socialScenario || shellRecovery || longLists || launchState === 'shell') && activeStation) {
       return (
         <MobileShell
+          key={longLists ? evidenceScenario : socialScenario ?? 'shell'}
           stationLabel={activeStation.label}
           onChangeStation={handleBackToLaunch}
-          recoveryScenario={evidenceScenario as ShellEvidenceScenario}
+          recoveryScenario={shellRecovery}
+          longLists={longLists}
+          searchDemo={evidenceScenario === 'search-controlled'
+            ? { state: searchState, dispatch: dispatchSearch } : undefined}
+          socialScenario={socialScenario}
+          socialDemo={socialDemo}
+          dispatchSocialDemo={dispatchSocialDemo}
           onRecoveryClose={() => {
             setLaunchState('shell');
             setScenes(['Launch', 'Auth Gate', 'Shell']);
@@ -178,15 +245,10 @@ export function MobilePrototype() {
       return (
         <AuthGateScreen
           stationLabel={activeStation.label}
-          stationUrl={activeStation.url}
           onBack={handleBackToLaunch}
           onLogin={handleLogin}
         />
       );
-    }
-
-    if (launchState === 'shell' && activeStation) {
-      return <MobileShell stationLabel={activeStation.label} onChangeStation={handleBackToLaunch} />;
     }
 
     return null;
@@ -202,9 +264,20 @@ export function MobilePrototype() {
               aria-label="Evidence scenario"
               value={evidenceScenario}
               options={evidenceScenarioOptions}
-              onChange={(value) => setEvidenceScenario(value)}
+              onChange={selectEvidenceScenario}
             />
           </div>
+          {longLists && (
+            <div className="mp-evidence-controls" role="note">
+              <Text>Sample only: 240 conversations / 240 contacts / 240 pending requests / 240 members / 480 messages. No backend or native proof.</Text>
+            </div>
+          )}
+          {evidenceScenario === 'search-controlled' && (
+            <SearchEvidenceControls state={searchState} dispatch={dispatchSearch} />
+          )}
+          {!longLists && (socialScenario || launchState === 'shell') && (
+            <SocialEvidenceControls state={socialDemo} dispatch={dispatchSocialDemo} />
+          )}
           <div className="mp-scene-label">
             {(evidenceScenario === 'journey' ? scenes : ['Evidence', evidenceScenario]).map(
               (scene, index) => (<span key={scene}>{index + 1}. {scene}</span>),

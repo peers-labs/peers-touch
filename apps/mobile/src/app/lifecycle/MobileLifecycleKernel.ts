@@ -17,6 +17,10 @@ import type {
   LifecycleTransitionReason,
   MobileLaunchState,
   MobileRuntimeDescriptor,
+  MobileRuntimeContext,
+  RuntimeReadinessUpdate,
+  RuntimeTeardownContext,
+  DraftDisposition,
   RuntimeOperationResult,
 } from './types';
 import {
@@ -27,6 +31,7 @@ import {
   type LifecycleAction,
 } from './lifecycleReducer';
 import { reverseTeardownOrder, topologicalSortRuntimes } from './topologicalSort';
+import { publicRuntimeErrorKey, readRuntimeAvailability } from './runtimeAvailability';
 
 type RuntimeOperation = 'bootstrap' | 'suspend' | 'resume' | 'teardown';
 
@@ -45,6 +50,10 @@ export class MobileLifecycleKernel {
   private readonly eventListeners = new Set<LifecycleEventListener>();
   private graphDependencies: LifecycleRuntimeGraphDependencies | null = null;
   private operationQueue: Promise<void> = Promise.resolve();
+  private graphIncarnation = 0;
+  private readinessRevision = 0;
+  private readonly readinessUpdates = new Map<string, number>();
+  private readonly readinessTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor() {
     this.state = initialLifecycleState();
@@ -66,11 +75,7 @@ export class MobileLifecycleKernel {
       if (!entry) {
         throw new Error(`mobile.lifecycle.runtimeMissing:${runtimeId}`);
       }
-      return Object.freeze({
-        id: runtimeId,
-        status: entry.status,
-        errorKey: publicLifecycleErrorKey(entry.lastError),
-      });
+      return Object.freeze(readRuntimeAvailability(this.state, runtimeId)!);
     });
 
     return Object.freeze({
@@ -81,6 +86,17 @@ export class MobileLifecycleKernel {
       runtimes: Object.freeze(runtimes),
       errorKey: publicLifecycleErrorKey(this.state.error),
     });
+  }
+
+  getDiagnosticRuntimeErrors(): readonly Readonly<{
+    runtimeId: string;
+    error: string;
+  }>[] {
+    return Object.freeze(this.state.bootOrder.flatMap((runtimeId) => {
+      const entry = this.state.runtimes.get(runtimeId);
+      const error = entry?.lastError ?? entry?.readiness?.diagnosticError;
+      return error ? [Object.freeze({ runtimeId, error })] : [];
+    }));
   }
 
   subscribe(listener: () => void): () => void {
@@ -141,16 +157,17 @@ export class MobileLifecycleKernel {
       );
       this.applyGeneration(generation, reason, false);
       await this.startRuntimeGraphNow();
+      await this.reconcileLaunchStateAfterRuntime(reason);
       return this.getSnapshot();
     });
   }
 
   stopRuntimeGraph(
-    _reason: LifecycleTransitionReason = 'app-unmount',
+    reason: LifecycleTransitionReason = 'app-unmount',
   ): Promise<AggregateTeardownResult> {
     return this.enqueueOperation(async () => {
       if (this.state.phase === 'COLD') return emptyTeardownResult();
-      return this.teardownRuntimes();
+      return this.teardownRuntimes({ reason });
     });
   }
 
@@ -158,7 +175,7 @@ export class MobileLifecycleKernel {
     reason: LifecycleTransitionReason = 'acceptance-restart',
   ): Promise<LifecycleKernelSnapshot> {
     return this.enqueueOperation(async () => {
-      const teardown = await this.fenceAndTeardown(reason);
+      const teardown = await this.fenceAndTeardown({ reason });
       if (!teardown.allSuccessful) {
         throw new Error('mobile.lifecycle.teardownIncomplete');
       }
@@ -179,15 +196,22 @@ export class MobileLifecycleKernel {
       'station-replace' | 'actor-replace' | 'logout' | 'revocation'
     >,
     transition: () => Promise<T>,
-    options: { readonly restart?: boolean } = {},
+    options: {
+      readonly restart?: boolean;
+      readonly draftDisposition?: DraftDisposition;
+    } = {},
   ): Promise<T> {
     return this.enqueueOperation(async () => {
       this.enterScopeLaunchTransition(reason);
-      const teardown = await this.fenceAndTeardown(reason);
-      const result = await transition();
+      const teardown = await this.fenceAndTeardown(
+        options.draftDisposition
+          ? { reason, draftDisposition: options.draftDisposition }
+          : { reason },
+      );
       if (!teardown.allSuccessful) {
         throw new Error('mobile.lifecycle.teardownIncomplete');
       }
+      const result = await transition();
       if (options.restart !== false) {
         this.reset();
         await this.startRuntimeGraphNow();
@@ -233,7 +257,27 @@ export class MobileLifecycleKernel {
         );
       this.applyGeneration(generation, reason, true);
       dependencies.fenceProjections(generation, reason);
-      await this.resumeRuntimes();
+      if ([...this.state.runtimes.values()].some(
+        (entry) => entry.status === 'failed' || entry.readiness?.status === 'failed',
+      )) {
+        const teardown = await this.teardownRuntimes({ reason });
+        if (!teardown.allSuccessful) {
+          throw new Error('mobile.lifecycle.teardownIncomplete');
+        }
+        this.reset();
+        await this.startRuntimeGraphNow();
+      } else {
+        await this.resumeRuntimes();
+      }
+      await this.reconcileLaunchStateAfterRuntime(reason);
+      return this.getSnapshot();
+    });
+  }
+
+  reconcileLaunchState(
+    reason: LifecycleTransitionReason = 'access-granted',
+  ): Promise<LifecycleKernelSnapshot> {
+    return this.enqueueOperation(async () => {
       await this.reconcileLaunchStateAfterRuntime(reason);
       return this.getSnapshot();
     });
@@ -246,6 +290,7 @@ export class MobileLifecycleKernel {
     if (this.state.phase !== 'COLD') {
       throw new Error(`mobile.lifecycle.resetInvalidPhase:${this.state.phase}`);
     }
+    this.invalidateReadinessUpdates();
     this.state = initialLifecycleState(
       this.state.generation,
       this.state.launchState,
@@ -254,6 +299,114 @@ export class MobileLifecycleKernel {
   }
 
   // --- Runtime Graph Internals ---
+
+  private invalidateReadinessUpdates(runtimeId?: string): void {
+    if (runtimeId !== undefined) {
+      clearTimeout(this.readinessTimeouts.get(runtimeId));
+      this.readinessTimeouts.delete(runtimeId);
+      this.readinessUpdates.delete(runtimeId);
+      return;
+    }
+    this.readinessTimeouts.forEach(clearTimeout);
+    this.readinessTimeouts.clear();
+    this.readinessUpdates.clear();
+  }
+
+  private runtimeContext(descriptor: MobileRuntimeDescriptor): MobileRuntimeContext {
+    const generation = this.state.generation;
+    const incarnation = this.graphIncarnation;
+    const isContextCurrent = () => (
+      this.state.generation === generation
+      && this.graphIncarnation === incarnation
+      && this.state.runtimes.get(descriptor.id)?.descriptor === descriptor
+      && ['bootstrapping', 'ready', 'resuming'].includes(
+        this.state.runtimes.get(descriptor.id)?.status ?? '',
+      )
+      && ['BOOTSTRAPPING', 'ACTIVE', 'RESUMING'].includes(this.state.phase)
+    );
+    return Object.freeze({
+      generation,
+      beginReadinessUpdate: (): RuntimeReadinessUpdate => {
+        const revision = ++this.readinessRevision;
+        let settled = false;
+        if (isContextCurrent()) {
+          this.invalidateReadinessUpdates(descriptor.id);
+          this.readinessUpdates.set(descriptor.id, revision);
+          this.dispatch({
+            type: 'RUNTIME_READINESS',
+            runtimeId: descriptor.id,
+            readiness: {
+              status: 'pending',
+              errorKey: null,
+              diagnosticError: null,
+            },
+          });
+        }
+        const isCurrent = () => !settled
+          && isContextCurrent()
+          && this.readinessUpdates.get(descriptor.id) === revision;
+        const settle = (error: unknown, failed: boolean) => {
+          if (!isCurrent()) return;
+          settled = true;
+          clearTimeout(this.readinessTimeouts.get(descriptor.id));
+          this.readinessTimeouts.delete(descriptor.id);
+          const diagnosticError = failed
+            ? error instanceof Error ? error.message : String(error)
+            : null;
+          this.dispatch({
+            type: 'RUNTIME_READINESS',
+            runtimeId: descriptor.id,
+            readiness: {
+              status: failed ? 'failed' : 'ready',
+              errorKey: failed
+                ? publicRuntimeErrorKey(diagnosticError!)
+                : null,
+              diagnosticError,
+            },
+          });
+        };
+        if (isCurrent()) {
+          this.readinessTimeouts.set(descriptor.id, setTimeout(
+            () => settle(new Error('mobile.lifecycle.runtimeTimedOut'), true),
+            RUNTIME_OPERATION_TIMEOUT_MS.bootstrap,
+          ));
+        }
+        return {
+          isCurrent,
+          waitForDependencies: () => new Promise<boolean>((resolve, reject) => {
+            const check = () => {
+              if (!isCurrent()) {
+                unsubscribe();
+                resolve(false);
+                return;
+              }
+              const dependencies = descriptor.dependsOn.map(
+                (id) => readRuntimeAvailability(this.state, id),
+              );
+              const failedIndex = dependencies.findIndex(
+                (dependency) => !dependency || dependency.status === 'failed',
+              );
+              if (failedIndex !== -1) {
+                unsubscribe();
+                reject(new Error(
+                  `mobile.lifecycle.dependencyFailed:${descriptor.dependsOn[failedIndex]}`,
+                ));
+                return;
+              }
+              if (dependencies.every((dependency) => dependency?.status === 'ready')) {
+                unsubscribe();
+                resolve(true);
+              }
+            };
+            const unsubscribe = this.subscribe(check);
+            check();
+          }),
+          ready: () => settle(undefined, false),
+          fail: (error) => settle(error, true),
+        };
+      },
+    });
+  }
 
   private async startRuntimeGraphNow(): Promise<void> {
     if (this.state.phase !== 'COLD') {
@@ -269,6 +422,7 @@ export class MobileLifecycleKernel {
   private registerRuntimes(
     descriptors: readonly MobileRuntimeDescriptor[],
   ): void {
+    this.graphIncarnation += 1;
     const ids = descriptors.map((descriptor) => descriptor.id);
     if (new Set(ids).size !== ids.length) {
       throw new Error('mobile.lifecycle.duplicateRuntime');
@@ -330,7 +484,7 @@ export class MobileLifecycleKernel {
       const result = await runVoidRuntimeOperation(
         runtimeId,
         'bootstrap',
-        () => entry.descriptor.bootstrap(),
+        () => entry.descriptor.bootstrap(this.runtimeContext(entry.descriptor)),
       );
       results.push(result);
       if (result.success) {
@@ -341,6 +495,7 @@ export class MobileLifecycleKernel {
           status: 'ready',
         });
       } else {
+        this.invalidateReadinessUpdates(runtimeId);
         failed.add(runtimeId);
         this.dispatch({
           type: 'RUNTIME_FAILED',
@@ -367,6 +522,7 @@ export class MobileLifecycleKernel {
 
   private async suspendRuntimes(): Promise<void> {
     this.assertPhaseTransition('SUSPENDING');
+    this.invalidateReadinessUpdates();
     this.dispatch({ type: 'BEGIN_SUSPEND' });
 
     const failures: RuntimeOperationResult[] = [];
@@ -439,11 +595,12 @@ export class MobileLifecycleKernel {
       const result = await runVoidRuntimeOperation(
         runtimeId,
         'resume',
-        () => entry.descriptor.resume(),
+        () => entry.descriptor.resume(this.runtimeContext(entry.descriptor)),
       );
       if (result.success) {
         this.dispatch({ type: 'RUNTIME_RESUMED', runtimeId });
       } else {
+        this.invalidateReadinessUpdates(runtimeId);
         failures.push(result);
         failed.add(runtimeId);
         this.dispatch({
@@ -468,9 +625,12 @@ export class MobileLifecycleKernel {
     }
   }
 
-  private async teardownRuntimes(): Promise<AggregateTeardownResult> {
+  private async teardownRuntimes(
+    context: RuntimeTeardownContext,
+  ): Promise<AggregateTeardownResult> {
     const previousPhase = this.state.phase;
     this.assertPhaseTransition('TEARDOWN');
+    this.invalidateReadinessUpdates();
     this.dispatch({ type: 'BEGIN_TEARDOWN' });
 
     const results: RuntimeOperationResult[] = [];
@@ -478,15 +638,21 @@ export class MobileLifecycleKernel {
 
     for (const runtimeId of reverseTeardownOrder(this.state.bootOrder)) {
       const entry = this.state.runtimes.get(runtimeId);
-      if (!entry || entry.status === 'pending') continue;
+      if (!entry || entry.status === 'pending' || entry.status === 'torn-down') continue;
 
       this.dispatch({ type: 'RUNTIME_TEARING_DOWN', runtimeId });
       const result = await runTeardownOperation(
         runtimeId,
-        () => entry.descriptor.teardown(),
+        () => entry.descriptor.teardown(context),
       );
       results.push(result);
-      this.dispatch({ type: 'RUNTIME_TORN_DOWN', runtimeId });
+      this.dispatch(result.success
+        ? { type: 'RUNTIME_TORN_DOWN', runtimeId }
+        : {
+            type: 'RUNTIME_TEARDOWN_FAILED',
+            runtimeId,
+            error: result.errorMessage ?? 'mobile.lifecycle.teardownFailed',
+          });
     }
 
     const aggregateResult: AggregateTeardownResult = {
@@ -496,14 +662,19 @@ export class MobileLifecycleKernel {
     };
 
     this.dispatch({ type: 'TEARDOWN_COMPLETE', result: aggregateResult });
-    this.emitEvent({ kind: 'phase-changed', phase: 'COLD', previousPhase });
+    this.emitEvent({
+      kind: 'phase-changed',
+      phase: this.state.phase,
+      previousPhase,
+    });
     this.emitEvent({ kind: 'teardown-complete', result: aggregateResult });
     return aggregateResult;
   }
 
   private async fenceAndTeardown(
-    reason: LifecycleTransitionReason,
+    context: RuntimeTeardownContext,
   ): Promise<AggregateTeardownResult> {
+    const { reason } = context;
     const dependencies = this.requireGraphDependencies();
     const generation = await withTimeout(
       dependencies.advanceGeneration(),
@@ -514,7 +685,7 @@ export class MobileLifecycleKernel {
     dependencies.fenceProjections(generation, reason);
 
     if (this.state.phase === 'COLD') return emptyTeardownResult();
-    return this.teardownRuntimes();
+    return this.teardownRuntimes(context);
   }
 
   private applyGeneration(
@@ -530,6 +701,7 @@ export class MobileLifecycleKernel {
     ) {
       throw new Error('mobile.lifecycle.invalidGeneration');
     }
+    this.invalidateReadinessUpdates();
     this.dispatch({ type: 'SET_GENERATION', generation });
     this.emitEvent({ kind: 'generation-advanced', generation, reason });
   }
@@ -584,11 +756,8 @@ export class MobileLifecycleKernel {
       this.transitionLaunchState('station-selection');
     }
 
-    if (
-      (this.state.launchState === 'logout'
-        || this.state.launchState === 'app-boot')
-      && target === 'shell'
-    ) {
+    if (this.state.launchState === 'app-boot'
+      || (this.state.launchState === 'logout' && target === 'shell')) {
       this.transitionLaunchState('station-selection');
     }
 
@@ -735,9 +904,7 @@ function aggregateFailureKey(
 
 function publicLifecycleErrorKey(error: string | null): string | null {
   if (!error) return null;
-  return error.startsWith('mobile.lifecycle.')
-    ? error
-    : 'mobile.lifecycle.runtimeFailed';
+  return publicRuntimeErrorKey(error);
 }
 
 function emptyTeardownResult(): AggregateTeardownResult {

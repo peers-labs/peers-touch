@@ -78,16 +78,23 @@ message GetConversationMembersResponse {
 }
 
 message UpdateConversationMemberRequest {
-  ConversationMemberAuthorityCommand command = 1;
+  oneof submission {
+    ConversationMemberAuthorityCommand command = 1;
+    ConversationCommandProposal proposal = 2;
+  }
 }
 
 message UpdateConversationMemberResponse {
   ConversationMember member = 1;
   ConversationEvent event = 2;
+  bool accepted_for_forwarding = 3;
 }
 
 message TransferConversationOwnershipRequest {
-  ConversationMemberAuthorityCommand command = 1;
+  oneof submission {
+    ConversationMemberAuthorityCommand command = 1;
+    ConversationCommandProposal proposal = 2;
+  }
 }
 
 message TransferConversationOwnershipResponse {
@@ -95,6 +102,7 @@ message TransferConversationOwnershipResponse {
   ConversationMember previous_owner = 2;
   ConversationMember new_owner = 3;
   ConversationEvent event = 4;
+  bool accepted_for_forwarding = 5;
 }
 
 // --- Commands & Events ---
@@ -158,6 +166,7 @@ message PrepareConversationCommandRequest {
   string conversation_id = 1;
   peers_touch.model.actor.v1.ActorDeviceRef sender = 2;
   string authority_station_peer_id = 3;
+  ConversationCommandKind command_kind = 4;
 }
 
 message PrepareConversationCommandResponse {
@@ -366,7 +375,7 @@ message MemberSettings {
   bool alert_enabled = 3;
   bool pinned = 4;
   string background = 5;
-  int64 cleared_at_ms = 6;
+  reserved 6;
   string background_image = 7;
 }
 

@@ -123,8 +123,10 @@ fn verify_station_identity_proof(
     if canonical_origin != statement.canonical_origin {
         return Err(identity_error("nonCanonicalOrigin"));
     }
-    if normalize_station_origin(&input.requested_origin, origin_policy).is_err() {
-        return Err(identity_error("invalidRequestedOrigin"));
+    let requested_origin = normalize_station_origin(&input.requested_origin, origin_policy)
+        .map_err(|_| identity_error("invalidRequestedOrigin"))?;
+    if canonical_origin != requested_origin {
+        return Err(identity_error("canonicalOriginMismatch"));
     }
 
     if statement
@@ -300,6 +302,14 @@ mod tests {
         let now = 1_800_000_000_000;
         let (mut input, _) = signed_input(now);
         input.required_capabilities = vec!["unsupported-capability".to_string()];
+        assert!(verify_station_identity_proof(input, now).is_err());
+    }
+
+    #[test]
+    fn rejects_a_valid_proof_for_another_origin() {
+        let now = 1_800_000_000_000;
+        let (mut input, _) = signed_input(now);
+        input.requested_origin = "https://other.example".to_string();
         assert!(verify_station_identity_proof(input, now).is_err());
     }
 }

@@ -204,7 +204,7 @@ New modules introducing in-memory caches MUST follow the same pattern.
 
 ### C-5 · Identity-mutating commands emit `auth.identity_changed`
 
-Every command that successfully mutates the active identity (`auth_login`, `auth_logout`, `account_switch`, `account_unlock`, `ensure_station_session`, `save_oauth_callback`) MUST:
+Every command that successfully mutates the active identity (`access_submit_login`, `auth_logout`, `account_switch`, `account_unlock`, `ensure_station_session`, `save_oauth_callback`) MUST:
 
 1. Update the bound `ActiveSession` (bind / unbind in `WindowSessionRegistry`).
 2. Persist via `session_store::save / delete`.
@@ -238,12 +238,12 @@ adapter, dual-write, or legacy identity reader remains.
 ```
 [ui] LoginPage
   ① markLocalIdentityAction()                  // sets LOCAL_IDENTITY_FLAG
-  ② api.authLogin(window)
-       [rust] auth_login(window)
-         ↳ application::auth::login(token, …)
+  ② api.accessSubmitLogin(window)
+       [rust] access_submit_login(window)
+         ↳ protobuf /actor/access/submit
+         ↳ application::auth::finish_login(...)
          ↳ state.sessions.bind(label, ActiveSession)        — C-2 step 1
          ↳ session_store::save(ptid, token, Password)      — C-3
-         ↳ state.session.lock() = Some(...)                — legacy mirror, C-7
          ↳ identity_event::emit(Login)                     — C-5
   ③ runIdentityPipeline({ reason:'login', actorPtid, … })  — C-6 originator
        ↳ refresh-current-session validates the window-bound token

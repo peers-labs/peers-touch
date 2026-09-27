@@ -1,10 +1,11 @@
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
-    ConversationProjection, ConversationStateReceiveCommit, CryptoEndpoint, ReceiveCommitResult,
+    ConversationAuthorityMemberProjection, ConversationProjection, ConversationStateReceiveCommit,
+    CryptoEndpoint, ReceiveCommitResult,
 };
 use crate::proto::chat::{
     conversation_event, ConversationStateMarker, DeviceConsumptionReceipt, DurableDeviceInboxItem,
-    PreparedEndpointPayloadKind,
+    MemberRole, PreparedEndpointPayloadKind,
 };
 use crate::store::MessagingRepository;
 
@@ -87,11 +88,11 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
         {
             return Err("messaging recipient is not a conversation member".to_string());
         }
-        let member_ptids = created
-            .members
+        let members = post_state
+            .active_members
             .iter()
-            .map(|member| member.ptid.clone())
-            .collect();
+            .map(authority_member_projection)
+            .collect::<Result<Vec<_>, String>>()?;
         let projection = ConversationProjection {
             conversation_id: event.conversation_id.clone(),
             authority_station_id: event.authority_station_peer_id.clone(),
@@ -99,7 +100,7 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
             kind: created.kind,
             name: created.name.clone(),
             owner_ptid: created.owner_ptid.clone(),
-            member_ptids,
+            members,
             membership_epoch: event.membership_epoch,
             mls_epoch: event.mls_epoch,
             active: true,
@@ -143,6 +144,29 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
             ReceiveCommitResult::Committed | ReceiveCommitResult::AlreadyCommitted => Ok(()),
         }
     }
+}
+
+fn authority_member_projection(
+    member: &crate::proto::chat::ConversationAuthorityMember,
+) -> Result<ConversationAuthorityMemberProjection, String> {
+    let role = match member.role.as_str() {
+        "member" | "MEMBER_ROLE_MEMBER" => MemberRole::Member,
+        "admin" | "MEMBER_ROLE_ADMIN" => MemberRole::Admin,
+        "owner" | "MEMBER_ROLE_OWNER" => MemberRole::Owner,
+        _ => return Err("messaging conversation-state member role is invalid".to_string()),
+    };
+    Ok(ConversationAuthorityMemberProjection {
+        ptid: member.ptid.clone(),
+        role: role as i32,
+        home_station_peer_id: member.home_station_peer_id.clone(),
+        muted: member.muted,
+        muted_until_unix_ms: member.muted_until.as_ref().map(|timestamp| {
+            timestamp
+                .seconds
+                .saturating_mul(1_000)
+                .saturating_add(i64::from(timestamp.nanos) / 1_000_000)
+        }),
+    })
 }
 
 impl<R: MessagingRepository> ClaimedItemConsumer for ConversationStateProcessor<R> {

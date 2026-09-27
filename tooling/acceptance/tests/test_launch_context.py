@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+import venv
 from pathlib import Path
 from typing import Mapping
 from unittest.mock import MagicMock, call, patch
@@ -544,6 +545,23 @@ class LaunchContextProtocolTests(unittest.TestCase):
         context.quiesce()
         self.assertTrue(context.close().succeeded)
 
+    def test_idle_between_request_frames_does_not_expire_channel(self) -> None:
+        handler = SyntheticHandler()
+        context = new_context(handler, request_timeout_seconds=0.05)
+        client, _binding = connect_client(context)
+
+        time.sleep(0.1)
+        result = client.invoke(
+            "synthetic.echo",
+            "echo",
+            {"value": 7},
+            timeout_seconds=0.5,
+        )
+
+        self.assertEqual(result, {"echo": {"value": 7}})
+        self.assertIsNone(context.channel_error)
+        self.assertTrue(close_context(context, client).succeeded)
+
     def test_partial_acknowledgement_cannot_stall_close_past_deadline(
         self,
     ) -> None:
@@ -656,8 +674,11 @@ class LaunchContextProtocolTests(unittest.TestCase):
     ) -> None:
         handler = DeadlineRecordingHandler()
         context = new_context(handler, request_timeout_seconds=1_000)
-        context._child_monotonic_offset = 500
         assert context._identity is not None
+        parent_deadline = time.monotonic() + 100
+        child_monotonic_offset = min(500.0, parent_deadline / 2)
+        child_deadline = parent_deadline - child_monotonic_offset
+        context._child_monotonic_offset = child_monotonic_offset
         request: dict[str, object] = {
             "requestId": "cross-process-clock",
             **context._identity,
@@ -665,7 +686,7 @@ class LaunchContextProtocolTests(unittest.TestCase):
             "operation": "echo",
             "payload": {},
             "timeoutSeconds": 1_000,
-            "deadlineMonotonic": 10.0,
+            "deadlineMonotonic": child_deadline,
         }
         request["requestDigest"] = launch_context_module._digest(request)
 
@@ -673,7 +694,8 @@ class LaunchContextProtocolTests(unittest.TestCase):
         response = json.loads(encoded.decode("utf-8"))
 
         self.assertEqual(response["status"], "OK")
-        self.assertEqual(handler.deadlines, [510.0])
+        self.assertGreater(child_deadline, 0)
+        self.assertEqual(handler.deadlines, [parent_deadline])
 
     def test_request_expired_on_arrival_returns_encoded_typed_timeout(
         self,
@@ -1328,7 +1350,7 @@ print(json.dumps({
             environment={"SYNTHETIC": "1"},
         )
         spec = GateLaunchSpec(
-            argv=(sys.executable, "synthetic_gate.py", "--run"),
+            argv=("python3", "synthetic_gate.py", "--run"),
             timeout_seconds=3,
             required_capabilities=("synthetic.echo",),
         )
@@ -1390,6 +1412,14 @@ print(json.dumps({
             os.fstat(inherited_descriptor)
         context.quiesce()
         self.assertTrue(context.close().succeeded)
+
+    def test_isolated_launcher_preserves_explicit_or_versioned_python(self) -> None:
+        for executable in ("./python3", "/trusted/bin/python3", "python3.11"):
+            with self.subTest(executable=executable):
+                launch_argv = launch_context_module._isolated_python_argv(
+                    (executable, "-c", "pass")
+                )
+                self.assertEqual(launch_argv[0], executable)
 
     def test_context_launcher_rejects_parent_redaction_values_before_spawn(
         self,
@@ -1472,6 +1502,71 @@ with EphemeralGateClient.from_environment():
         self.assertNotIn(redaction_canary, completed.stdout)
         self.assertNotIn(credential_canary, completed.stderr)
         self.assertNotIn(redaction_canary, completed.stderr)
+        self.assertTrue(close_context(context).succeeded)
+
+    def test_context_launcher_loads_only_invoked_venv_site_packages(self) -> None:
+        context = new_context(SyntheticHandler())
+        binding = context.bind_child()
+        context.activate()
+        with tempfile.TemporaryDirectory() as directory:
+            venv_root = Path(directory) / "acceptance-venv"
+            venv.EnvBuilder(with_pip=False).create(venv_root)
+            venv_python = venv_root / "bin" / "python"
+            site_packages = (
+                venv_root
+                / "lib"
+                / f"python{sys.version_info.major}.{sys.version_info.minor}"
+                / "site-packages"
+            )
+            site_packages.mkdir(parents=True, exist_ok=True)
+            marker_path = Path(directory) / "sitecustomize-loaded"
+            (site_packages / "sitecustomize.py").write_text(
+                "from pathlib import Path\n"
+                f"Path({str(marker_path)!r}).write_text('loaded', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            (site_packages / "synthetic_gate_dependency.py").write_text(
+                "VALUE = 'trusted-venv-dependency'\n",
+                encoding="utf-8",
+            )
+            script = """
+import json
+import sys
+from synthetic_gate_dependency import VALUE
+from tooling.acceptance.core import EphemeralGateClient
+
+with EphemeralGateClient.from_environment():
+    print(json.dumps({
+        "dependency": VALUE,
+        "siteLoaded": "site" in sys.modules,
+        "sitecustomizeLoaded": "sitecustomize" in sys.modules,
+        "usercustomizeLoaded": "usercustomize" in sys.modules,
+    }))
+"""
+            completed = GateProcessLauncher(
+                cwd=REPO_ROOT,
+                environment=controlled_child_environment(),
+            ).run(
+                GateLaunchSpec(
+                    argv=(str(venv_python), "-c", script),
+                    timeout_seconds=10,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
+
+            self.assertFalse(marker_path.exists())
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {
+                "dependency": "trusted-venv-dependency",
+                "siteLoaded": False,
+                "sitecustomizeLoaded": False,
+                "usercustomizeLoaded": False,
+            },
+        )
         self.assertTrue(close_context(context).succeeded)
 
     def test_context_launcher_rejects_non_python_argv_before_spawn(self) -> None:

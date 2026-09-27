@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -13,6 +15,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
+	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
@@ -62,10 +65,11 @@ func (s *eventsSubServer) Handlers() []server.Handler {
 		// Signaling ingress (contract §2.7.1). WebRTC offer / answer /
 		// ICE candidate / hangup arrive here as opaque ciphertext
 		// (contract §2.7.2 — encrypted with the chat session ratchet)
-		// and Station fan-outs them onto the recipient's SSE stream
-		// plus the sender's stream for multi-device echo. Station
-		// never inspects the payload.
+		// and the sender Home Station routes the typed opaque signal to the
+		// recipient Home Station before both sides fan out over their local
+		// SSE streams. Station never inspects the sealed payload.
 		server.NewHertzHandler("realtime-signal", "/realtime/signal", server.POST, s.handlePostSignal, hertzJWTWrapper),
+		server.NewHertzHandler("realtime-call-resolution", "/realtime/call-resolution", server.GET, s.handleGetCallResolution, hertzJWTWrapper),
 	}
 }
 
@@ -212,6 +216,18 @@ type signalIngressRequest struct {
 	SessionULID   string `json:"session_ulid"`
 	Kind          string `json:"kind"`
 	PayloadB64    string `json:"payload_b64"`
+	CallID        string `json:"call_id,omitempty"`
+	DeviceID      string `json:"device_id,omitempty"`
+}
+
+type callResolutionResponse struct {
+	CallID          string `json:"call_id"`
+	State           string `json:"state"`
+	WinningDeviceID string `json:"winning_device_id,omitempty"`
+	TerminalAction  string `json:"terminal_action,omitempty"`
+	RingDeadlineMs  int64  `json:"ring_deadline_unix_ms"`
+	ResolvedAtMs    int64  `json:"resolved_at_unix_ms,omitempty"`
+	ExpiresAtMs     int64  `json:"expires_at_unix_ms"`
 }
 
 // handlePostSignal ingests a single WebRTC signaling event from the
@@ -267,6 +283,29 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 			return
 		}
 	}
+	if s.actorHomes == nil || s.federatedCallSignals == nil ||
+		s.localStationPeerID == "" {
+		c.JSON(503, map[string]string{
+			"error": "Federation call-signal routing unavailable",
+		})
+		return
+	}
+	senderHome, err := s.actorHomes.ResolveActorHomeStationPeerID(
+		ctx,
+		senderPTID,
+	)
+	if err != nil {
+		c.JSON(503, map[string]string{
+			"error": "sender Home Station resolution unavailable",
+		})
+		return
+	}
+	if senderHome != s.localStationPeerID {
+		c.JSON(403, map[string]string{
+			"error": "signal must be submitted to the sender Home Station",
+		})
+		return
+	}
 
 	// Decode payload purely to length-check it. We never inspect the
 	// plaintext — that is the chat session's per-message ciphertext.
@@ -282,33 +321,94 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 		return
 	}
 
-	bus := GetBus()
-	if bus == nil {
-		// EventBus down means the realtime plane is unreachable;
-		// reject the publish so the client can surface the error
-		// rather than silently dropping the signal. (Unlike the
-		// chat path, signaling has no durable persistence layer
-		// behind it — the EventBus IS the delivery contract.)
+	if isCallLifecycleSignal(kind) {
+		if req.CallID == "" || req.DeviceID == "" {
+			c.JSON(400, map[string]string{
+				"error": "call_id and device_id are required for call lifecycle signals",
+			})
+			return
+		}
+		if _, err := verifiedSignalDeviceID(
+			ctx,
+			subject,
+			req.DeviceID,
+			string(c.GetHeader("X-Device-ID")),
+		); err != nil {
+			writeSignalError(c, err)
+			return
+		}
+	}
+
+	if s.bus == nil {
 		c.JSON(503, map[string]string{"error": "event bus not initialized"})
 		return
 	}
 
-	ev := &realtime.StreamEvent{
-		Kind: &realtime.StreamEvent_Signaling{
-			Signaling: &realtime.CallSignal{
-				SessionUlid:   req.SessionULID,
-				FromActorPtid: senderPTID,
-				Kind:          kind,
-				Payload:       payload,
-			},
-		},
+	signal := &realtime.CallSignal{
+		SessionUlid:   req.SessionULID,
+		FromActorPtid: senderPTID,
+		Kind:          kind,
+		Payload:       payload,
+		CallId:        req.CallID,
 	}
 
-	if _, err := bus.Publish(req.RecipientPTID, ev); err != nil {
-		// Publish errors are operational, not policy. Log and bail
-		// with 502 so the caller knows the routing failed.
-		logger.DefaultHelper.Warnf("events: signal publish to recipient failed actor_ptid=%s: %v", req.RecipientPTID, err)
-		c.JSON(502, map[string]string{"error": "publish failed: " + err.Error()})
+	// The callee is the sender for terminal actions; the caller is the
+	// recipient. The durable record was created before CALL_REQUEST fan-out.
+	if kind == realtime.CallSignal_CALL_ACCEPT || kind == realtime.CallSignal_CALL_REJECT {
+		if s.callResolution == nil {
+			c.JSON(503, map[string]string{"error": "call resolution unavailable"})
+			return
+		}
+		action := "accept"
+		if kind == realtime.CallSignal_CALL_REJECT {
+			action = "reject"
+		}
+		result, err := s.callResolution.resolve(
+			ctx,
+			senderPTID,
+			req.RecipientPTID,
+			req.SessionULID,
+			req.CallID,
+			req.DeviceID,
+			action,
+		)
+		if err != nil {
+			if result.becameNoAnswer {
+				s.fanOutNoAnswer(ctx, result.record)
+			}
+			writeCallResolutionError(c, err, result.record)
+			return
+		}
+		signal.WinningDeviceId = result.record.WinningDeviceID
+	}
+
+	result, err := s.dispatchFederatedSignal(
+		ctx,
+		req.RecipientPTID,
+		signal,
+	)
+	if err != nil {
+		logger.DefaultHelper.Warnf(
+			"events: Federation signal delivery failed recipient_ptid=%s: %v",
+			req.RecipientPTID,
+			err,
+		)
+		c.JSON(502, map[string]string{
+			"error": "Federation signal delivery failed",
+		})
+		return
+	}
+	if result.Disposition != delivery.DispositionAccepted &&
+		result.Disposition != delivery.DispositionDuplicate {
+		if isTerminalCallResolutionRejection(result, kind) {
+			c.JSON(409, map[string]string{
+				"error": "CALL_ALREADY_HANDLED",
+			})
+			return
+		}
+		c.JSON(502, map[string]string{
+			"error": "Federation signal delivery rejected",
+		})
 		return
 	}
 
@@ -318,7 +418,10 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 	// nonsense for voice/video but legal for protocol completeness),
 	// we skip the echo to avoid a duplicate frame.
 	if senderPTID != req.RecipientPTID {
-		if _, err := bus.Publish(senderPTID, ev); err != nil {
+		if _, err := s.bus.Publish(
+			senderPTID,
+			streamEventForSignal(signal),
+		); err != nil {
 			// Sender echo is best-effort — the caller's primary
 			// device already knows it sent the signal because it
 			// got a 204 from us. Don't fail the request.
@@ -327,4 +430,122 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 	}
 
 	c.SetStatusCode(204)
+}
+
+func isTerminalCallResolutionRejection(
+	result delivery.Result,
+	kind realtime.CallSignal_Kind,
+) bool {
+	return result.Disposition == delivery.DispositionTerminal &&
+		result.ErrorCode == delivery.FrameErrorDomainRejected &&
+		isCallLifecycleSignal(kind)
+}
+
+func (s *eventsSubServer) handleGetCallResolution(ctx context.Context, c *app.RequestContext) {
+	subject := hertzadapter.GetSubject(c)
+	if subject == nil {
+		c.JSON(401, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if s.callResolution == nil {
+		c.JSON(503, map[string]string{"error": "call resolution unavailable"})
+		return
+	}
+	callID := string(c.Query("call_id"))
+	peerActorPTID := string(c.Query("peer_actor_ptid"))
+	record, err := s.readCallResolution(
+		ctx,
+		subject.ID,
+		peerActorPTID,
+		callID,
+	)
+	if err != nil {
+		writeCallResolutionError(c, err, record)
+		return
+	}
+	c.JSON(200, callResolutionResponseFromModel(record))
+}
+
+func isCallLifecycleSignal(kind realtime.CallSignal_Kind) bool {
+	switch kind {
+	case realtime.CallSignal_CALL_REQUEST,
+		realtime.CallSignal_CALL_ACCEPT,
+		realtime.CallSignal_CALL_REJECT,
+		realtime.CallSignal_CALL_END,
+		realtime.CallSignal_CALL_NO_ANSWER:
+		return true
+	default:
+		return false
+	}
+}
+
+func verifiedSignalDeviceID(
+	ctx context.Context,
+	subject *coreauth.Subject,
+	requestDeviceID string,
+	assertedDeviceID string,
+) (string, error) {
+	asserted := strings.TrimSpace(assertedDeviceID)
+	if asserted == "" || requestDeviceID == "" || subject.SessionID == "" {
+		return "", errors.New("authenticated device binding is required")
+	}
+	resolver, ok := coreauth.GetGlobalSessionValidator().(coreauth.SessionDeviceIDResolver)
+	if !ok {
+		return "", errors.New("session device binding is unavailable")
+	}
+	persisted := resolver.ResolveSessionDeviceID(ctx, subject.SessionID)
+	if persisted == "" || persisted != asserted || persisted != requestDeviceID {
+		return "", errors.New("authenticated device binding mismatch")
+	}
+	return persisted, nil
+}
+
+func writeSignalError(c *app.RequestContext, err error) {
+	status := 403
+	if err.Error() == "session device binding is unavailable" {
+		status = 503
+	}
+	c.JSON(status, map[string]string{"error": err.Error()})
+}
+
+func writeCallResolutionError(
+	c *app.RequestContext,
+	err error,
+	record callResolutionModel,
+) {
+	switch {
+	case errors.Is(err, errCallResolutionConflict):
+		c.JSON(409, map[string]any{
+			"error":             "CALL_ALREADY_HANDLED",
+			"state":             record.State,
+			"winning_device_id": record.WinningDeviceID,
+			"terminal_action":   record.TerminalAction,
+		})
+	case errors.Is(err, errCallResolutionExpired):
+		c.JSON(409, map[string]any{
+			"error":           "CALL_NO_ANSWER",
+			"state":           callStateNoAnswer,
+			"terminal_action": "no_answer",
+		})
+	case errors.Is(err, errCallResolutionNotFound):
+		c.JSON(409, map[string]string{"error": "CALL_REQUEST_NOT_FOUND"})
+	default:
+		c.JSON(503, map[string]string{"error": "call resolution unavailable"})
+	}
+}
+
+func callResolutionResponseFromModel(record callResolutionModel) callResolutionResponse {
+	var resolvedAt int64
+	if record.ResolvedAt != nil {
+		resolvedAt = record.ResolvedAt.UnixMilli()
+	}
+	return callResolutionResponse{
+		CallID:          record.CallID,
+		State:           record.State,
+		WinningDeviceID: record.WinningDeviceID,
+		TerminalAction:  record.TerminalAction,
+		RingDeadlineMs:  record.RingDeadline.UnixMilli(),
+		ResolvedAtMs:    resolvedAt,
+		ExpiresAtMs:     record.ExpiresAt.UnixMilli(),
+	}
 }

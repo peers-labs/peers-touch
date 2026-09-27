@@ -9,6 +9,7 @@ pub mod outbox;
 pub mod ports;
 pub mod proto;
 pub mod recovery;
+pub mod storage_governance;
 pub mod store;
 
 // Re-export proto sub-modules at crate root so prost-generated cross-package

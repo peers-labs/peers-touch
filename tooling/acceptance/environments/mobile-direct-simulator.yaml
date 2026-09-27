@@ -1,0 +1,140 @@
+{
+  "id": "mobile-direct-simulator",
+  "base_environment": "mobile-simulator",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "source_identity": {
+    "commit_required": true,
+    "workspace_digest_required": true
+  },
+  "services": {
+    "station": {
+      "kind": "station",
+      "required": true,
+      "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_DIRECT_STATION_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_DIRECT_STATION_DEPLOY_ENV",
+      "health_action": "station-check",
+      "status_action": "station-status",
+      "attestation_producer": "station-deployment"
+    }
+  },
+  "fixtures": [
+    {
+      "id": "mobile-social-simulator-actors",
+      "authorization_required": true,
+      "authorization_ref": "env:MOBILE_ACCEPTANCE_RESET",
+      "target_assertion": "the Station is an approved disposable target",
+      "initial_assertion": "Alice and Bob have distinct PTIDs on the same Station"
+    }
+  ],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "sim-ios",
+      "actor": "alice",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station",
+          "required_kind": "station"
+        }
+      }
+    },
+    {
+      "id": "sim-ios-peer",
+      "actor": "bob",
+      "runtime": "tauri-ios-simulator",
+      "required_service_roles": ["station"],
+      "service_bindings": {
+        "station": {
+          "service_id": "station",
+          "required_kind": "station"
+        }
+      }
+    }
+  ],
+  "harness": {
+    "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
+    "required_actions": [
+      "station.add",
+      "access.submit",
+      "lifecycle.restart",
+      "lifecycle.scope.read",
+      "navigation.snapshot",
+      "navigation.apply",
+      "projection.read",
+      "messaging.createDirect",
+      "messaging.createGroup",
+      "messaging.attachment.stage",
+      "messaging.attachment.open",
+      "messaging.send",
+      "messaging.interact",
+      "messaging.read",
+      "messaging.typing",
+      "messaging.reconcile",
+      "messaging.command.read",
+      "messaging.search",
+      "messaging.projection.read",
+      "social.people.search",
+      "social.request.send",
+      "social.request.accept",
+      "social.contact.open",
+      "social.reconcile",
+      "social.projection.read",
+      "reliability.fixture.configure",
+      "reliability.friendRequest.submit",
+      "reliability.snapshot",
+      "reliability.reconcile",
+      "reliability.draft.write",
+      "reliability.draft.read",
+      "reliability.draft.action",
+      "recovery.snapshot",
+      "moments.feed.read",
+      "moments.publish",
+      "moments.react",
+      "moments.comment",
+      "moments.comments.read",
+      "storage.cache.seed",
+      "storage.conversation-clear.seed",
+      "storage.batch.scenario",
+      "storage.retention.seed",
+      "getRealtimeDevice",
+      "cleanup"
+    ],
+    "policy": "production actions only; direct Store mutation and successful-result injection are forbidden"
+  },
+  "proof_scope": {
+    "proves": [
+      "two isolated iOS Simulator clients",
+      "two distinct actors bound to one source-attested Station",
+      "same-Station Direct and Group production-action journeys",
+      "receiver projection, typing, receipt, interaction, search, attachment, and WebView restart readback",
+      "same-Station unknown-outcome command and exact-scope draft recovery",
+      "same-Station Moments publish, feed, reaction, comment, reply, rollback, and draft readback",
+      "explicit multi-conversation selection, serial device-local clear, physical reclamation, and restart-stable absence"
+    ],
+    "does_not_prove": [
+      "cross-Station or Relay delivery",
+      "physical-device behavior",
+      "native background and foreground lifecycle",
+      "tab-remount interaction timing"
+    ]
+  },
+  "cleanup": {
+    "resources": [
+      "appium-process",
+      "app-installations",
+      "ports",
+      "storage",
+      "simulator-boot",
+      "actor-fixture",
+      "profile-leases",
+      "deployment-leases"
+    ],
+    "deterministic": true
+  }
+}

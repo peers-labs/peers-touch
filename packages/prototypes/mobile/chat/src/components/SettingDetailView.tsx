@@ -1,8 +1,17 @@
 import { useState } from 'react';
-import { Avatar, Button, Tag, Typography } from 'antd';
+import {
+  Avatar,
+  Button,
+  InputNumber,
+  Select,
+  Switch,
+  Tag,
+  Typography,
+} from 'antd';
 import { ArrowLeft } from 'lucide-react';
 import type { SettingEntry } from '../types';
 import { GRADIENTS } from '../types';
+import copy from '../../../../../locales/en/common.json';
 
 const { Text } = Typography;
 
@@ -12,6 +21,24 @@ export function SettingDetailView({ setting, onBack }: { setting: SettingEntry; 
   const [toggle3, setToggle3] = useState(true);
   const [toggle4, setToggle4] = useState(true);
   const [toggle5, setToggle5] = useState(true);
+  const [defaultVisibility, setDefaultVisibility] = useState('followers');
+  const [manuallyApprovesFollowers, setManuallyApprovesFollowers] = useState(true);
+  const [messagePermission, setMessagePermission] = useState('friends');
+  const [autoExpireDays, setAutoExpireDays] = useState(30);
+  const [blockedUsers, setBlockedUsers] = useState([
+    {
+      ptid: 'ptid:v1:actor:remote:p:bob:7c21',
+      name: 'Bob Lin',
+      station: 'station-two',
+      initials: 'BL',
+    },
+    {
+      ptid: 'ptid:v1:actor:remote:p:carol:92af',
+      name: 'Carol Wu',
+      station: 'station-three',
+      initials: 'CW',
+    },
+  ]);
 
   function renderContent() {
     if (setting.label === 'Account Info') {
@@ -69,6 +96,135 @@ export function SettingDetailView({ setting, onBack }: { setting: SettingEntry; 
               <span className="mp-setting-detail-label">Vibrate</span>
               <button type="button" className={`mp-toggle ${toggle5 ? 'active' : ''}`} onClick={() => setToggle5(!toggle5)} />
             </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (setting.label === copy['mobile.settings.privacySecurity']) {
+      return (
+        <div className="mp-setting-detail-content">
+          <div className="mp-setting-detail-card">
+            <div className="mp-setting-detail-row">
+              <span className="mp-setting-detail-label">
+                {copy['mobile.settings.privacy.defaultVisibility']}
+              </span>
+              <Select
+                aria-label={copy['mobile.settings.privacy.defaultVisibility']}
+                value={defaultVisibility}
+                data-prototype-privacy-setting="defaultVisibility"
+                onChange={setDefaultVisibility}
+                options={[
+                  {
+                    value: 'public',
+                    label: copy['mobile.settings.privacy.visibility.public'],
+                  },
+                  {
+                    value: 'unlisted',
+                    label: copy['mobile.settings.privacy.visibility.unlisted'],
+                  },
+                  {
+                    value: 'followers',
+                    label: copy['mobile.settings.privacy.visibility.followers'],
+                  },
+                  {
+                    value: 'private',
+                    label: copy['mobile.settings.privacy.visibility.private'],
+                  },
+                ]}
+                style={{ minWidth: 144 }}
+              />
+            </div>
+            <div className="mp-setting-detail-row">
+              <span className="mp-setting-detail-label">
+                {copy['mobile.settings.privacy.manuallyApprovesFollowers']}
+              </span>
+              <Switch
+                aria-label={copy['mobile.settings.privacy.manuallyApprovesFollowers']}
+                checked={manuallyApprovesFollowers}
+                data-prototype-privacy-setting="manuallyApprovesFollowers"
+                onChange={setManuallyApprovesFollowers}
+              />
+            </div>
+            <div className="mp-setting-detail-row">
+              <span className="mp-setting-detail-label">
+                {copy['mobile.settings.privacy.messagePermission']}
+              </span>
+              <Select
+                aria-label={copy['mobile.settings.privacy.messagePermission']}
+                value={messagePermission}
+                data-prototype-privacy-setting="messagePermission"
+                onChange={setMessagePermission}
+                options={[
+                  {
+                    value: 'everyone',
+                    label: copy['mobile.settings.privacy.message.everyone'],
+                  },
+                  {
+                    value: 'friends',
+                    label: copy['mobile.settings.privacy.message.friends'],
+                  },
+                  {
+                    value: 'none',
+                    label: copy['mobile.settings.privacy.message.none'],
+                  },
+                ]}
+                style={{ minWidth: 144 }}
+              />
+            </div>
+            <div className="mp-setting-detail-row">
+              <span className="mp-setting-detail-label">
+                {copy['mobile.settings.privacy.autoExpire']}
+              </span>
+              <InputNumber
+                aria-label={copy['mobile.settings.privacy.autoExpire']}
+                value={autoExpireDays}
+                min={0}
+                max={2_147_483_647}
+                precision={0}
+                data-prototype-privacy-setting="autoExpireDays"
+                onChange={(value) => {
+                  if (typeof value === 'number') setAutoExpireDays(value);
+                }}
+                style={{ width: 112 }}
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (setting.label === copy['mobile.settings.blockedUsers']) {
+      return (
+        <div className="mp-setting-detail-content">
+          <div className="mp-setting-detail-card">
+            {blockedUsers.length === 0 ? (
+              <div className="mp-setting-detail-row">
+                <span className="mp-setting-detail-label">
+                  {copy['mobile.settings.noBlockedUsers']}
+                </span>
+              </div>
+            ) : blockedUsers.map((user) => (
+              <div className="mp-setting-detail-row mp-blocked-user-row" key={user.ptid}>
+                <Avatar size={40} style={{ background: GRADIENTS[1] }}>
+                  {user.initials}
+                </Avatar>
+                <div className="mp-blocked-user-copy">
+                  <div className="mp-setting-detail-label">{user.name}</div>
+                  <div className="mp-setting-detail-value">{user.ptid}</div>
+                  <div className="mp-setting-detail-value">{user.station}</div>
+                </div>
+                <Button
+                  className="mp-blocked-user-action"
+                  size="small"
+                  onClick={() => setBlockedUsers((current) => (
+                    current.filter((item) => item.ptid !== user.ptid)
+                  ))}
+                >
+                  {copy['mobile.contacts.unblock']}
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
       );

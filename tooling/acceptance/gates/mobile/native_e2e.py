@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -34,6 +35,11 @@ from tooling.acceptance.core.redaction import is_sensitive_key
 from tooling.acceptance.gates.mobile.appium import (
     APPIUM_CAPABILITY_ID,
     AppiumSession,
+)
+from tooling.acceptance.fixtures.chat_native_actors import ACTOR_PASSWORD
+from tooling.acceptance.gates.mobile.messaging_journey import (
+    MessagingActor,
+    MobileMessagingJourney,
 )
 from tooling.acceptance.gates.mobile.proof_contracts import (
     CLIENT_PLATFORM,
@@ -72,89 +78,11 @@ SCENARIO_METADATA = {
         "spec": ["MS-AG02", "MS-AG05"],
         "observed": [
             "physical iOS and Android OS background/foreground delivery with canonical runtime-graph readback",
+            "physical secure-storage delete failure blocks lifecycle entry and a clean retry recovers",
         ],
         "unproven": [
-            "secure-storage deletion failure",
             "physical Station and actor switching",
             "W5 event-ingress reconciliation",
-        ],
-    },
-    "recovery": {
-        "phase": "W4 Command Recovery",
-        "bom": ["W4"],
-        "spec": ["MS-AG04"],
-        "observed": [
-            "physical durable-command convergence across forced disconnect and cold restart",
-        ],
-        "unproven": [
-            "pre-dispatch, post-dispatch, and post-commit disconnect recovery",
-            "ten-trial exactly-once Station commit evidence",
-            "visible unresolved outcome after cold restart",
-        ],
-    },
-    "recovery-ui": {
-        "phase": "W6-D Recovery UI",
-        "bom": ["W6-D"],
-        "spec": ["MS-AG05", "MS-AG08", "MS-AG11"],
-        "observed": [
-            "physical degraded-state and recovery UI across iOS and Android",
-        ],
-        "unproven": [
-            "production-triggered recovery overlays",
-            "native accessibility and focus recovery",
-            "blocking trust-state recovery",
-        ],
-    },
-    "social-convergence": {
-        "phase": "W5 Social Convergence",
-        "bom": ["W5"],
-        "spec": ["MS-AG06"],
-        "observed": [
-            "physical Social projection convergence through realtime and forced reconciliation",
-        ],
-        "unproven": [
-            "five-second realtime convergence",
-            "thirty-second forced-reconcile convergence",
-            "Station readback agreement across both clients",
-        ],
-    },
-    "chat-contacts": {
-        "phase": "W6-A Chat And Contacts",
-        "bom": ["W6-A"],
-        "spec": ["MS-AG04", "MS-AG06", "MS-AG08", "MS-AG09", "MS-AG10"],
-        "observed": [
-            "physical two-actor Chat, contacts, and group journeys",
-        ],
-        "unproven": [
-            "cross-client Direct and Group Messaging readback",
-            "contact-request convergence",
-            "native layout and overload behavior",
-        ],
-    },
-    "moments": {
-        "phase": "W6-B Moments",
-        "bom": ["W6-B"],
-        "spec": ["MS-AG04", "MS-AG06", "MS-AG08", "MS-AG09", "MS-AG10"],
-        "observed": [
-            "physical Moments feed, publish, rollback, and readback",
-        ],
-        "unproven": [
-            "cross-client feed convergence",
-            "publish rollback and Station readback",
-            "native layout and overload behavior",
-        ],
-    },
-    "settings": {
-        "phase": "W6-C Settings",
-        "bom": ["W6-C"],
-        "spec": ["MS-AG04", "MS-AG06", "MS-AG08", "MS-AG09", "MS-AG10"],
-        "observed": [
-            "physical account and local settings conflict/readback behavior",
-        ],
-        "unproven": [
-            "account-setting cross-client convergence",
-            "local-setting isolation",
-            "conflict and Station readback behavior",
         ],
     },
     "platform": {
@@ -171,6 +99,116 @@ SCENARIO_METADATA = {
             "MS-AG07 populated-workload P50/P95/P99 thresholds",
         ],
     },
+    "recovery": {
+        "phase": "W4 Physical Command And Draft Recovery",
+        "bom": ["W4", "W7-C", "W9-F"],
+        "spec": ["MS-AG04", "MS-AG09", "MS-AG10"],
+        "observed": [
+            "physical command outcome convergence and exact-scope draft recovery",
+        ],
+        "unproven": [
+            "real-link disconnect timing beyond the deterministic response-loss fixture",
+            "physical 512-record capacity stress and process-kill storage scan",
+        ],
+    },
+    "recovery-ui": {
+        "phase": "W6D Physical Recovery UI",
+        "bom": ["W4", "W5", "W5-OWNER", "W6D", "W7-C", "W9-F"],
+        "spec": [
+            "MS-AG02",
+            "MS-AG05",
+            "MS-AG06",
+            "MS-AG08",
+            "MS-AG09",
+            "MS-AG10",
+            "MS-AG11",
+        ],
+        "observed": [
+            "physical recovery and degraded-state surfaces with native focus and accessibility evidence",
+        ],
+        "unproven": [
+            "W4 draft and command-ledger recovery action ownership",
+            "physical recovery fault triggering and receiver-visible evidence",
+        ],
+    },
+    "social-convergence": {
+        "phase": "W9-F Physical Social Convergence",
+        "bom": ["W5", "W5-OWNER", "W7-C", "W9-F"],
+        "spec": ["MS-AG04", "MS-AG06"],
+        "observed": [
+            "physical two-actor/two-Station shared Social ingress convergence",
+        ],
+        "unproven": [
+            "W5 owner-contract cutover and physical projection convergence",
+        ],
+    },
+    "chat-contacts": {
+        "phase": "W6A Physical Chat Contacts And Groups",
+        "bom": ["W5", "W5-OWNER", "W6A", "W7-C", "W9-F"],
+        "spec": ["MS-AG04", "MS-AG06", "MS-AG09"],
+        "observed": [
+            "physical Chat, Contacts, and Group receiver journeys with authoritative readback",
+        ],
+        "unproven": [
+            "W5 Group and Social owner-contract cutover",
+            "current-source two-actor/two-Station receiver evidence",
+        ],
+    },
+    "moments": {
+        "phase": "W6B Physical Moments Participation",
+        "bom": ["W5", "W5-OWNER", "W6B", "W7-C", "W9-F"],
+        "spec": ["MS-AG04", "MS-AG06", "MS-AG10"],
+        "observed": [
+            "physical two-actor Moments publish, reaction, comment, rollback, and draft journeys",
+        ],
+        "unproven": [
+            "W5 physical Social projection convergence",
+            "native multi-actor Moments receiver and rollback evidence",
+        ],
+    },
+    "settings": {
+        "phase": "W6C Physical Profile And Settings",
+        "bom": ["W5", "W5-OWNER", "W6C", "W7-C", "W9-F"],
+        "spec": ["MS-AG02", "MS-AG05", "MS-AG06", "MS-AG08", "MS-AG10", "MS-AG11"],
+        "observed": [
+            "physical account/device settings ownership, conflict, persistence, and readback",
+        ],
+        "unproven": [
+            "W5 physical profile and account-preference convergence",
+            "native account/device readback and conflict evidence",
+        ],
+    },
+}
+SCENARIO_DEPENDENCY_BLOCKERS = {
+    "recovery-ui": {
+        "workstream": "W5-OWNER",
+        "reason": (
+            "identity mismatch, revocation, overflow, and deferred-state "
+            "production triggers remain incomplete"
+        ),
+    },
+    "social-convergence": {
+        "workstream": "W5-OWNER",
+        "reason": "Social owner-contract cutover and physical convergence are incomplete",
+    },
+    "chat-contacts": {
+        "workstream": "W5-OWNER",
+        "reason": "Group and Social owner-contract cutover is incomplete",
+    },
+    "moments": {
+        "workstream": "W5-OWNER",
+        "reason": "physical Social projection convergence is incomplete",
+    },
+    "settings": {
+        "workstream": "W5-OWNER",
+        "reason": "physical profile and account-preference convergence is incomplete",
+    },
+}
+RECOVERY_CLIENT_ASSIGNMENTS = {
+    "alice-ios": ("station-primary", "alice"),
+    "bob-ios": ("station-primary", "bob"),
+    "alice-android": ("station-secondary", "alice"),
+    "bob-android": ("station-secondary", "bob"),
 }
 LIFECYCLE_CYCLES = 20
 PLATFORM_PERMISSION_KINDS = (
@@ -320,6 +358,82 @@ def validate_lifecycle_snapshot(
     if value["errorKey"] is not None:
         raise GateError("Mobile lifecycle snapshot contains a transition error")
     return dict(value)
+
+
+def wait_for_lifecycle_snapshot(
+    session: Any,
+    *,
+    minimum_generation: int,
+    expected_boot_order: list[str],
+    timeout_seconds: float = 20.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last_snapshot: Any = None
+    last_error: GateError | None = None
+    while time.monotonic() < deadline:
+        last_snapshot = session.call_action("lifecycle.snapshot")
+        try:
+            return validate_lifecycle_snapshot(
+                last_snapshot,
+                expected_phase="ACTIVE",
+                minimum_generation=minimum_generation,
+                expected_boot_order=expected_boot_order,
+            )
+        except GateError as error:
+            last_error = error
+            time.sleep(0.25)
+    raise GateError(
+        "Mobile lifecycle did not converge: "
+        f"{last_error}; snapshot={last_snapshot!r}"
+    )
+
+
+def validate_secure_storage_delete_failure(
+    value: Any,
+    *,
+    minimum_generation: int,
+    expected_boot_order: list[str],
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "outcome",
+        "errorCode",
+        "blocked",
+        "recovered",
+    }:
+        raise GateError(
+            "Mobile secure-storage deletion failure result has an invalid shape"
+        )
+    if (
+        value["outcome"] != "blocked"
+        or value["errorCode"] != "MOBILE_SECURE_STORAGE"
+    ):
+        raise GateError(
+            "Mobile secure-storage deletion failure was not observed"
+        )
+    blocked = value["blocked"]
+    if (
+        not isinstance(blocked, dict)
+        or blocked.get("phase") != "COLD"
+        or blocked.get("launchState") == "shell"
+        or not isinstance(blocked.get("generation"), int)
+        or isinstance(blocked.get("generation"), bool)
+        or int(blocked["generation"]) < minimum_generation
+    ):
+        raise GateError(
+            "Mobile secure-storage deletion failure did not keep lifecycle blocked"
+        )
+    recovered = validate_lifecycle_snapshot(
+        value["recovered"],
+        expected_phase="ACTIVE",
+        minimum_generation=int(blocked["generation"]) + 1,
+        expected_boot_order=expected_boot_order,
+    )
+    return {
+        "outcome": "blocked",
+        "errorCode": "MOBILE_SECURE_STORAGE",
+        "blocked": dict(blocked),
+        "recovered": recovered,
+    }
 
 
 @dataclass(frozen=True)
@@ -744,6 +858,36 @@ def _required_int(
             f"mobile-runtime:{resource.replace(' ', '-')}",
         )
     return value
+
+
+def _require_observed_network_state(
+    value: Any,
+    client_id: str,
+) -> dict[str, Any]:
+    resource = f"mobile-runtime:network:{client_id}"
+    if not isinstance(value, Mapping):
+        raise MobileNativeBlocked(
+            "Platform network readback is invalid",
+            resource,
+        )
+    connected = value.get("connected")
+    network_type = value.get("networkType")
+    updated_at_ms = value.get("updatedAtMs")
+    if (
+        not isinstance(connected, bool)
+        or network_type
+        not in {"none", "wifi", "cellular", "ethernet", "unknown"}
+        or isinstance(updated_at_ms, bool)
+        or not isinstance(updated_at_ms, int)
+        or updated_at_ms <= 0
+        or (connected and network_type == "none")
+        or (not connected and network_type != "none")
+    ):
+        raise MobileNativeBlocked(
+            "Platform network readback has no native observation",
+            resource,
+        )
+    return dict(value)
 
 
 def _artifact_ref(
@@ -1295,8 +1439,12 @@ class MobileNativeGate(AcceptanceGate):
                     self._validate_final_artifact_roles(artifacts)
                 elif self.scenario == "lifecycle":
                     result = self._run_lifecycle(artifacts)
+                elif self.scenario == "recovery":
+                    result = self._run_recovery(artifacts)
                 elif self.scenario == "platform":
                     result = self._run_platform(artifacts)
+                elif self.scenario in SCENARIO_DEPENDENCY_BLOCKERS:
+                    result = self._run_dependency_blocked_scenario()
                 else:
                     raise MobileNativeBlocked(
                         f"Mobile native scenario {self.scenario!r} is not implemented",
@@ -1400,6 +1548,28 @@ class MobileNativeGate(AcceptanceGate):
             "sourceSpec": list(metadata["spec"]),
             "sourceGate": self.gate_id,
         }
+
+    def _run_dependency_blocked_scenario(self) -> dict[str, Any]:
+        blocker = SCENARIO_DEPENDENCY_BLOCKERS[self.scenario]
+        workstream = blocker["workstream"]
+        reason = blocker["reason"]
+        raise MobileNativeBlocked(
+            (
+                f"Mobile native scenario {self.scenario!r} requires "
+                f"incomplete {workstream} product dependencies: {reason}; "
+                "physical product proof remains BLOCKED/UNPROVEN"
+            ),
+            f"mobile-product-dependency:{workstream.lower()}",
+            evidence_gaps=[
+                {
+                    "scenario": self.scenario,
+                    "dependency": workstream,
+                    "status": "BLOCKED",
+                    "proofStatus": "UNPROVEN",
+                    "reason": reason,
+                }
+            ],
+        )
 
     def _write_final_judgment_inputs(
         self,
@@ -1532,18 +1702,31 @@ class MobileNativeGate(AcceptanceGate):
             "clients",
             "Mobile runtime manifest",
         )
-        if set(clients) != set(source_clients) or len(clients) != 2:
+        expected_clients = (
+            set(RECOVERY_CLIENT_ASSIGNMENTS)
+            if self.scenario in {"recovery", "recovery-ui"}
+            else {"alice-ios", "alice-android"}
+        )
+        if (
+            set(clients) != set(source_clients)
+            or set(clients) != expected_clients
+        ):
             raise MobileNativeBlocked(
-                "Mobile physical scenario requires exactly one client per platform",
+                "Mobile physical scenario client allocation is incomplete",
                 "mobile-runtime:scenario-clients",
             )
-        platforms = {
+        platforms = [
             _required_text(client, "platform", f"Mobile client {client_id}")
             for client_id, client in clients.items()
-        }
-        if platforms != {"ios", "android"}:
+        ]
+        expected_platforms = (
+            ["android", "android", "ios", "ios"]
+            if self.scenario in {"recovery", "recovery-ui"}
+            else ["android", "ios"]
+        )
+        if sorted(platforms) != expected_platforms:
             raise MobileNativeBlocked(
-                "Mobile physical scenario requires iOS and Android clients",
+                "Mobile physical scenario platform allocation is incomplete",
                 "mobile-runtime:scenario-platforms",
             )
         harness = _required_object(
@@ -1658,7 +1841,7 @@ class MobileNativeGate(AcceptanceGate):
         clients: dict[str, Any] = {}
         for client_id, session in sessions.items():
             initial = validate_lifecycle_snapshot(
-                session.call_action("lifecycle.snapshot"),
+                session.call_action("lifecycle.waitReady"),
                 expected_phase="ACTIVE",
             )
             previous = initial
@@ -1667,9 +1850,8 @@ class MobileNativeGate(AcceptanceGate):
                 session.switch_to_native()
                 session.background_app(1.0)
                 session.switch_to_app_webview()
-                resumed = validate_lifecycle_snapshot(
-                    session.call_action("lifecycle.snapshot"),
-                    expected_phase="ACTIVE",
+                resumed = wait_for_lifecycle_snapshot(
+                    session,
                     minimum_generation=int(previous["generation"]) + 1,
                     expected_boot_order=list(initial["bootOrder"]),
                 )
@@ -1683,10 +1865,14 @@ class MobileNativeGate(AcceptanceGate):
             restart = session.call_action("lifecycle.restart")
             if restart != {"requested": True, "scope": "webview"}:
                 raise GateError("lifecycle.restart returned invalid data")
-            restarted = validate_lifecycle_snapshot(
-                session.call_action("lifecycle.snapshot"),
-                expected_phase="ACTIVE",
+            restarted = wait_for_lifecycle_snapshot(
+                session,
                 minimum_generation=int(previous["generation"]) + 1,
+                expected_boot_order=list(initial["bootOrder"]),
+            )
+            secure_storage_delete_failure = validate_secure_storage_delete_failure(
+                session.call_action("lifecycle.secureStorageDeleteFailure"),
+                minimum_generation=int(restarted["generation"]) + 1,
                 expected_boot_order=list(initial["bootOrder"]),
             )
             session.switch_to_native()
@@ -1699,11 +1885,495 @@ class MobileNativeGate(AcceptanceGate):
                 "initial": initial,
                 "cycles": cycles,
                 "restarted": restarted,
+                "secureStorageDeleteFailure": secure_storage_delete_failure,
                 "accessibility": accessibility.to_dict(),
                 "screenshot": screenshot.to_dict(),
                 "dom": dom.to_dict(),
             }
         return {**self._result_base("PASS"), "clients": clients}
+
+    def _run_recovery(self, artifacts: ArtifactSession) -> dict[str, Any]:
+        manifest = self._load_manifest()
+        sessions = self._start_device_scenario_sessions(artifacts, manifest)
+        actors = self._load_recovery_actors(artifacts, manifest)
+        journey = MobileMessagingJourney(timeout_seconds=30)
+        authentication = {
+            client_id: journey.authenticate(
+                sessions[client_id],
+                actor,
+                password=ACTOR_PASSWORD,
+            )
+            for client_id, actor in actors.items()
+        }
+        platform_results: dict[str, Any] = {}
+        try:
+            for platform in ("ios", "android"):
+                sender_id = f"alice-{platform}"
+                receiver_id = f"bob-{platform}"
+                platform_results[platform] = self._run_recovery_platform(
+                    artifacts,
+                    sender_session=sessions[sender_id],
+                    receiver_session=sessions[receiver_id],
+                    sender=actors[sender_id],
+                    receiver=actors[receiver_id],
+                    case_id=f"recovery-{platform}",
+                )
+        finally:
+            for session in sessions.values():
+                try:
+                    session.call_action(
+                        "reliability.fixture.configure",
+                        {"mode": "none"},
+                    )
+                except (DriverError, GateError):
+                    pass
+        return {
+            **self._result_base("PASS"),
+            "authentication": authentication,
+            "platforms": platform_results,
+        }
+
+    def _run_recovery_platform(
+        self,
+        artifacts: ArtifactSession,
+        *,
+        sender_session: AppiumSession,
+        receiver_session: AppiumSession,
+        sender: MessagingActor,
+        receiver: MessagingActor,
+        case_id: str,
+    ) -> dict[str, Any]:
+        chat_draft = sender_session.call_action(
+            "reliability.draft.write",
+            {
+                "kind": "chat",
+                "targetId": f"{case_id}-chat",
+                "text": f"{case_id}-chat-draft",
+            },
+        )
+        moment_draft = sender_session.call_action(
+            "reliability.draft.write",
+            {
+                "kind": "moment",
+                "targetId": f"{case_id}-moment",
+                "text": f"{case_id}-moment-draft",
+                "audienceKind": 1,
+            },
+        )
+        draft_before = self._reliability_snapshot(
+            sender_session.call_action("reliability.snapshot"),
+            f"{case_id} draft before restart",
+        )
+        self._require_draft_identity(
+            draft_before,
+            (chat_draft, moment_draft),
+            f"{case_id} initial drafts",
+        )
+        restart = sender_session.call_action("lifecycle.restart")
+        if restart != {"requested": True, "scope": "webview"}:
+            raise GateError(f"{case_id} lifecycle restart was not acknowledged")
+        draft_after = sender_session.call_action(
+            "reliability.draft.read",
+            {},
+        )
+        self._require_draft_identity(
+            {"drafts": draft_after},
+            (chat_draft, moment_draft),
+            f"{case_id} restored drafts",
+        )
+
+        sender_session.call_action(
+            "reliability.fixture.configure",
+            {"mode": "lose-dispatch-response-and-readback"},
+        )
+        federation_id = self._recovery_federation_id(sender, receiver)
+        submission = self._mapping(
+            sender_session.call_action(
+                "reliability.friendRequest.submit",
+                {
+                    "receiverPtid": receiver.ptid,
+                    "receiverHomeStationPeerId": receiver.station_peer_id,
+                    "federationId": federation_id,
+                    "message": f"{case_id}-unknown-outcome",
+                },
+            ),
+            f"{case_id} Friend Request submission",
+        )
+        command = self._mapping(
+            submission.get("command"),
+            f"{case_id} Friend Request command",
+        )
+        command_id = self._text(
+            command.get("commandId"),
+            f"{case_id} Friend Request command ID",
+        )
+        request_id = self._text(
+            command.get("requestId"),
+            f"{case_id} Friend Request request ID",
+        )
+        payload_sha256 = self._sha256(
+            command.get("payloadSha256"),
+            f"{case_id} Friend Request payload hash",
+        )
+        if command.get("state") not in {"unknown-outcome", "reconciling"}:
+            raise GateError(
+                f"{case_id} response-loss fault did not preserve unknown outcome"
+            )
+        unresolved = self._reliability_snapshot(
+            sender_session.call_action("reliability.snapshot"),
+            f"{case_id} unresolved snapshot",
+        )
+        self._require_command_identity(
+            unresolved,
+            command_id=command_id,
+            payload_sha256=payload_sha256,
+            allowed_states={"unknown-outcome", "reconciling"},
+            label=f"{case_id} unresolved command",
+        )
+        recovery = self._await_recovery_kind(
+            sender_session,
+            "command-recovery",
+            label=f"{case_id} recovery projection",
+        )
+
+        sender_session.call_action(
+            "reliability.fixture.configure",
+            {"mode": "none"},
+        )
+        reconciled = self._mapping(
+            sender_session.call_action("reliability.reconcile"),
+            f"{case_id} reliability reconcile",
+        )
+        resolved_commands = reconciled.get("commands")
+        if (
+            not isinstance(resolved_commands, list)
+            or not any(
+                isinstance(value, Mapping)
+                and value.get("commandId") == command_id
+                and value.get("payloadSha256") == payload_sha256
+                and value.get("checkpointReady") is True
+                for value in resolved_commands
+            )
+            or not isinstance(reconciled.get("appliedCheckpoints"), int)
+            or int(reconciled["appliedCheckpoints"]) < 1
+        ):
+            raise GateError(
+                f"{case_id} authoritative readback did not apply its checkpoint"
+            )
+        final_snapshot = self._reliability_snapshot(
+            reconciled.get("snapshot"),
+            f"{case_id} final reliability snapshot",
+        )
+        if any(
+            isinstance(value, Mapping)
+            and value.get("commandId") == command_id
+            for value in final_snapshot["commands"]
+        ):
+            raise GateError(
+                f"{case_id} command remained after authoritative checkpoint"
+            )
+        relationship = self._await_friend_request(
+            receiver_session,
+            request_id=request_id,
+            sender_ptid=sender.ptid,
+            receiver_ptid=receiver.ptid,
+        )
+
+        restored = self._mapping(
+            sender_session.call_action(
+                "reliability.draft.action",
+                {"action": "restore"},
+            ),
+            f"{case_id} draft restore",
+        )
+        self._require_draft_identity(
+            restored,
+            (chat_draft, moment_draft),
+            f"{case_id} retained drafts",
+        )
+        discarded = self._reliability_snapshot(
+            sender_session.call_action(
+                "reliability.draft.action",
+                {"action": "discard"},
+            ),
+            f"{case_id} draft discard",
+        )
+        if discarded["drafts"]:
+            raise GateError(f"{case_id} draft discard did not remove all rows")
+
+        sender_session.switch_to_native()
+        accessibility = sender_session.capture_native_accessibility()
+        screenshot = sender_session.capture_screenshot(f"{case_id}-final")
+        sender_session.switch_to_app_webview()
+        dom = sender_session.capture_web_dom(f"{case_id}-final")
+        evidence = artifacts.write_json(
+            f"evidence/mobile/{case_id}/recovery.json",
+            {
+                "artifactKind": "mobile-reliability-recovery-proof",
+                "runId": artifacts.run_id,
+                "gateId": self.gate_id,
+                "platform": sender_session.platform,
+                "command": {
+                    "commandId": command_id,
+                    "requestId": request_id,
+                    "payloadSha256": payload_sha256,
+                    "initialState": command["state"],
+                    "appliedCheckpoints": reconciled["appliedCheckpoints"],
+                    "localRowAbsentAfterCheckpoint": True,
+                },
+                "relationshipReadback": relationship,
+                "drafts": {
+                    "beforeRestart": [chat_draft, moment_draft],
+                    "afterRestart": draft_after,
+                    "restored": True,
+                    "discarded": True,
+                },
+                "accessibility": accessibility.to_dict(),
+                "screenshot": screenshot.to_dict(),
+                "dom": dom.to_dict(),
+            },
+            role=f"mobile-reliability-recovery-proof/{sender_session.platform}",
+        )
+        return {
+            "senderClientId": sender.client_id,
+            "receiverClientId": receiver.client_id,
+            "commandId": command_id,
+            "requestId": request_id,
+            "payloadSha256": payload_sha256,
+            "checkpointApplied": True,
+            "relationshipReadback": True,
+            "draftRestartReadback": True,
+            "draftDiscarded": True,
+            "evidence": evidence.to_dict(),
+        }
+
+    def _load_recovery_actors(
+        self,
+        artifacts: ArtifactSession,
+        manifest: Mapping[str, Any],
+    ) -> dict[str, MessagingActor]:
+        actor_manifest = self._load_actor_manifest(
+            artifacts.store,
+            manifest.get("actorManifest"),
+            expected_run_id=artifacts.run_id,
+        )
+        stations = self._mapping(
+            actor_manifest.get("stations"),
+            "Mobile recovery actor Stations",
+        )
+        actors: dict[str, MessagingActor] = {}
+        for client_id, (service_id, role) in RECOVERY_CLIENT_ASSIGNMENTS.items():
+            service = require_runtime_service(manifest, service_id, "station")
+            station = self._mapping(
+                stations.get(service_id),
+                f"Mobile recovery actor Station {service_id}",
+            )
+            entries = station.get("actors")
+            if not isinstance(entries, list):
+                raise MobileNativeBlocked(
+                    f"Mobile recovery actor Station {service_id!r} has no actors",
+                    "mobile-runtime:actor-manifest",
+                )
+            actor = next(
+                (
+                    value
+                    for value in entries
+                    if isinstance(value, Mapping)
+                    and value.get("role") == role
+                ),
+                None,
+            )
+            if not isinstance(actor, Mapping):
+                raise MobileNativeBlocked(
+                    f"Mobile recovery actor manifest has no {role!r}",
+                    "mobile-runtime:actor-manifest",
+                )
+            actors[client_id] = MessagingActor(
+                client_id=client_id,
+                role=role,
+                station_url=_required_text(
+                    service,
+                    "endpoint",
+                    f"Mobile recovery service {service_id}",
+                ),
+                station_peer_id=_required_text(
+                    service,
+                    "runtimeIdentity",
+                    f"Mobile recovery service {service_id}",
+                ),
+                ptid=self._text(
+                    actor.get("ptid"),
+                    f"Mobile recovery actor {role} PTID",
+                ),
+                account_ref=self._text(
+                    actor.get("accountRef"),
+                    f"Mobile recovery actor {role} account",
+                ),
+            )
+        return actors
+
+    def _await_friend_request(
+        self,
+        session: AppiumSession,
+        *,
+        request_id: str,
+        sender_ptid: str,
+        receiver_ptid: str,
+        timeout_seconds: float = 30.0,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            projection = self._mapping(
+                session.call_action("social.reconcile"),
+                "Mobile recovery Social projection",
+            )
+            requests = projection.get("friendRequests")
+            if isinstance(requests, list):
+                for value in requests:
+                    if (
+                        isinstance(value, Mapping)
+                        and value.get("requestId") == request_id
+                        and value.get("senderPtid") == sender_ptid
+                        and value.get("receiverPtid") == receiver_ptid
+                    ):
+                        return dict(value)
+            time.sleep(0.25)
+        raise GateError(
+            f"Friend Request {request_id!r} did not reach the receiver projection"
+        )
+
+    def _await_recovery_kind(
+        self,
+        session: AppiumSession,
+        kind: str,
+        *,
+        label: str,
+        timeout_seconds: float = 10.0,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            snapshot = self._mapping(
+                session.call_action("recovery.snapshot"),
+                label,
+            )
+            if kind in self._recovery_kinds(snapshot):
+                return snapshot
+            time.sleep(0.1)
+        raise GateError(f"{label} did not expose {kind!r}")
+
+    @staticmethod
+    def _require_draft_identity(
+        snapshot: Mapping[str, Any],
+        expected: tuple[Any, ...],
+        label: str,
+    ) -> None:
+        drafts = snapshot.get("drafts")
+        if not isinstance(drafts, list):
+            raise GateError(f"{label} are unavailable")
+        expected_rows = {
+            (
+                value.get("kind"),
+                value.get("targetId"),
+                value.get("payloadSha256"),
+            )
+            for value in expected
+            if isinstance(value, Mapping)
+        }
+        actual_rows = {
+            (
+                value.get("kind"),
+                value.get("targetId"),
+                value.get("payloadSha256"),
+            )
+            for value in drafts
+            if isinstance(value, Mapping)
+        }
+        if len(expected_rows) != len(expected) or not expected_rows.issubset(
+            actual_rows
+        ):
+            raise GateError(f"{label} do not preserve exact draft identity")
+
+    @staticmethod
+    def _require_command_identity(
+        snapshot: Mapping[str, Any],
+        *,
+        command_id: str,
+        payload_sha256: str,
+        allowed_states: set[str],
+        label: str,
+    ) -> None:
+        commands = snapshot.get("commands")
+        if not isinstance(commands, list) or not any(
+            isinstance(value, Mapping)
+            and value.get("commandId") == command_id
+            and value.get("payloadSha256") == payload_sha256
+            and value.get("state") in allowed_states
+            for value in commands
+        ):
+            raise GateError(f"{label} is missing or changed")
+
+    @staticmethod
+    def _reliability_snapshot(
+        value: Any,
+        label: str,
+    ) -> dict[str, Any]:
+        snapshot = MobileNativeGate._mapping(value, label)
+        if (
+            not isinstance(snapshot.get("runtime"), Mapping)
+            or not isinstance(snapshot.get("commands"), list)
+            or not isinstance(snapshot.get("drafts"), list)
+            or not isinstance(snapshot.get("checkpoints"), list)
+        ):
+            raise GateError(f"{label} is incomplete")
+        return snapshot
+
+    @staticmethod
+    def _recovery_kinds(snapshot: Mapping[str, Any]) -> set[str]:
+        states = snapshot.get("states")
+        if not isinstance(states, list):
+            raise GateError("Mobile recovery projection states are unavailable")
+        return {
+            str(value["kind"])
+            for value in states
+            if isinstance(value, Mapping)
+            and isinstance(value.get("kind"), str)
+        }
+
+    @staticmethod
+    def _recovery_federation_id(
+        sender: MessagingActor,
+        receiver: MessagingActor,
+    ) -> str:
+        identity = hashlib.sha256(
+            (
+                min(sender.ptid, receiver.ptid)
+                + "\x00"
+                + max(sender.ptid, receiver.ptid)
+            ).encode("utf-8")
+        ).hexdigest()
+        return f"fed_mobile_recovery_{identity[:20]}"
+
+    @staticmethod
+    def _mapping(value: Any, label: str) -> dict[str, Any]:
+        if not isinstance(value, Mapping):
+            raise GateError(f"{label} must be an object")
+        return dict(value)
+
+    @staticmethod
+    def _text(value: Any, label: str) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise GateError(f"{label} must be non-empty")
+        return value
+
+    @staticmethod
+    def _sha256(value: Any, label: str) -> str:
+        if (
+            not isinstance(value, str)
+            or len(value) != 64
+            or any(character not in "0123456789abcdef" for character in value)
+        ):
+            raise GateError(f"{label} must be lowercase SHA-256")
+        return value
 
     def _run_platform(self, artifacts: ArtifactSession) -> dict[str, Any]:
         manifest = self._load_manifest()
@@ -1760,9 +2430,10 @@ class MobileNativeGate(AcceptanceGate):
                     "request": dict(requested) if requested else None,
                     "after": dict(after),
                 }
-            network = session.call_action("platform.network.read")
-            if not isinstance(network, Mapping):
-                raise GateError("platform network readback is invalid")
+            network = _require_observed_network_state(
+                session.call_action("platform.network.read"),
+                client_id,
+            )
             lifecycle = validate_lifecycle_snapshot(
                 session.call_action("lifecycle.snapshot"),
                 expected_phase="ACTIVE",
@@ -1775,7 +2446,7 @@ class MobileNativeGate(AcceptanceGate):
             clients[client_id] = {
                 "platform": session.platform,
                 "permissions": permissions,
-                "network": dict(network),
+                "network": network,
                 "lifecycle": lifecycle,
                 "diagnosticElapsedMs": round(
                     (time.monotonic() - started) * 1000
@@ -2298,7 +2969,7 @@ class MobileNativeGate(AcceptanceGate):
             )
         try:
             manifest = load_runtime_manifest(Path(manifest_path), self.gate_id)
-            if self.scenario == "access":
+            if self.scenario in {"access", "recovery", "recovery-ui"}:
                 require_runtime_service(manifest, "station-primary", "station")
                 require_runtime_service(manifest, "station-secondary", "station")
                 require_runtime_service(manifest, "relay", "relay")
@@ -2321,6 +2992,8 @@ class MobileNativeGate(AcceptanceGate):
         self,
         store: EvidenceStore,
         raw_reference: Any,
+        *,
+        expected_run_id: str | None = None,
     ) -> dict[str, Any]:
         if not isinstance(raw_reference, dict):
             raise MobileNativeBlocked(
@@ -2328,9 +3001,17 @@ class MobileNativeGate(AcceptanceGate):
                 "mobile-runtime:actor-manifest",
             )
         try:
-            actor_manifest = store.read_json(
-                ArtifactRef.from_dict(raw_reference)
-            )
+            reference = ArtifactRef.from_dict(raw_reference)
+            if (
+                reference.workspace_id != store.workspace_id
+                or reference.gate_id != self.gate_id
+                or (
+                    expected_run_id is not None
+                    and reference.run_id != expected_run_id
+                )
+            ):
+                raise ValueError("actor manifest identity mismatch")
+            actor_manifest = store.read_json(reference)
         except Exception as error:
             raise MobileNativeBlocked(
                 f"Mobile actor manifest is unavailable: {type(error).__name__}",
