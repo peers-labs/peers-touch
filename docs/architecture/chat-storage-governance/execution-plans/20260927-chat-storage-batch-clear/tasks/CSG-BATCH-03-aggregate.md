@@ -19,6 +19,7 @@
     "docs/architecture/chat-storage-governance",
     "apps/desktop/src/store/session.ts",
     "apps/desktop/src/store/session.test.ts",
+    "apps/desktop/src/services/appRuntime.ts",
     "apps/desktop/src-tauri/src/main.rs",
     "apps/mobile/src/features/social",
     "apps/mobile/src/runtimes",
