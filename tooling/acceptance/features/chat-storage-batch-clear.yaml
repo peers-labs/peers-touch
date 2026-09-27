@@ -4,8 +4,10 @@
   "product_area": "chat",
   "owners": [
     "packages/client-chat-core/**",
+    "apps/desktop/src-tauri/src/messaging/store.rs",
     "apps/desktop/src/runtimes/chatStorageRuntime.ts",
     "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+    "apps/mobile/src-tauri/src/messaging/adapter.rs",
     "apps/mobile/src/runtimes/chatStorageRuntime.ts",
     "apps/mobile/src/pages/settings/SettingsSections.tsx",
     "packages/locales/**",

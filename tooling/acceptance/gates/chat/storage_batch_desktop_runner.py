@@ -22,6 +22,7 @@ from tooling.acceptance.gates.chat.storage_governance_runner import (
 GATE_ID = "chat-storage-desktop-batch-clear-e2e"
 BATCH_REQUIRED_ASSERTIONS = {
     "storage_batch_explicit_selection",
+    "storage_batch_estimated_reclaimable",
     "storage_batch_canonical_result",
     "storage_batch_physical_reclaim",
     "storage_batch_restart_stable",
@@ -174,16 +175,48 @@ class ChatStorageDesktopBatchGate(ChatStorageAccountingGate):
             and selected.get("clearEnabled") is True,
             json.dumps(selected, sort_keys=True),
         )
+        estimated_reclaimable_bytes = sum(
+            int(item.get("reclaimableBytes") or 0)
+            for item in before.get("conversations", [])
+            if isinstance(item, dict)
+            and str(item.get("conversationId") or "") in selected_ids
+        )
 
-        def confirm() -> bool:
+        def confirm() -> int | None:
             client.find_element("[data-chat-storage-batch-clear]", 10).click()
             button = client.find_element(
                 "[data-chat-storage-batch-confirm-apply]",
                 10,
             )
-            return button.is_displayed() and button.is_enabled()
+            if not button.is_displayed() or not button.is_enabled():
+                return None
+            return client.execute_script(
+                """
+                const confirmation = document.querySelector(
+                  '[data-chat-storage-batch-confirm]'
+                );
+                if (!confirmation) return null;
+                return Number(
+                  confirmation.getAttribute(
+                    'data-chat-storage-batch-estimated-bytes'
+                  ) || '0'
+                );
+                """
+            )
 
-        self.step("storage.batch.confirm", confirm, actor)
+        displayed_estimate = self.step("storage.batch.confirm", confirm, actor)
+        self.assert_condition(
+            "storage_batch_estimated_reclaimable",
+            estimated_reclaimable_bytes > 0
+            and displayed_estimate == estimated_reclaimable_bytes,
+            json.dumps(
+                {
+                    "expected": estimated_reclaimable_bytes,
+                    "displayed": displayed_estimate,
+                },
+                sort_keys=True,
+            ),
+        )
         client.find_element(
             "[data-chat-storage-batch-confirm-apply]",
             10,
@@ -259,6 +292,7 @@ class ChatStorageDesktopBatchGate(ChatStorageAccountingGate):
         self.report.runtime["batchClear"] = {
             "conversationIds": [first_id, second_id],
             "physicalBytesBefore": int(before.get("physicalTotalBytes") or 0),
+            "estimatedReclaimableBytes": estimated_reclaimable_bytes,
             **batch_result,
             "restartStable": True,
         }

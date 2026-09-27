@@ -405,9 +405,10 @@ class MobileChatStorageRuntime {
           return { state: 'scope_changed' };
         }
         const result = await this.clearConversation(conversationId);
-        if (!sameScope(scope, currentMessagingProjectionScope()) || result === null) {
+        if (!sameScope(scope, currentMessagingProjectionScope())) {
           return { state: 'scope_changed' };
         }
+        if (result === null) return { state: 'failed' };
         if (
           result.error
           || result.operation?.state !== ChatStorageOperationState.SUCCEEDED

@@ -28,6 +28,7 @@
     "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
     "apps/desktop/src-tauri/src/main.rs",
     "apps/desktop/src-tauri/src/messaging",
+    "apps/mobile/src-tauri/src/messaging",
     "apps/mobile/src/pages/settings",
     "apps/mobile/src/runtimes",
     "tooling/acceptance"
@@ -35,7 +36,6 @@
   "readSet": [
     "apps/desktop/src/components/chat",
     "apps/mobile/src/pages/ChatPage.tsx",
-    "apps/mobile/src-tauri/src/messaging",
     "packages/messaging-core/src/storage_governance"
   ],
   "budgets": {
@@ -46,7 +46,7 @@
   "checks": [
     {
       "id": "chat-storage-batch-unit",
-      "command": "pnpm --filter @peers-touch/client-chat-core test && pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json --pretty false && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/nativeBridge.test.ts src/components/settings/ChatStorageSettings.test.tsx src/runtimes/chatStorageRuntime.test.ts && pnpm --dir apps/mobile exec tsc --noEmit -p tsconfig.json --pretty false && pnpm --dir apps/mobile exec vitest run src/pages/settings/SettingsSections.test.tsx src/runtimes/chatStorageRuntime.test.ts src/acceptance/registry.test.ts",
+      "command": "pnpm --filter @peers-touch/client-chat-core test && pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json --pretty false && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/nativeBridge.test.ts src/components/settings/ChatStorageSettings.test.tsx src/runtimes/chatStorageRuntime.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml storage_logical_usage_reads_conversation_owned_plaintext_bytes --offline -- --test-threads=1 && pnpm --dir apps/mobile exec tsc --noEmit -p tsconfig.json --pretty false && pnpm --dir apps/mobile exec vitest run src/pages/settings/SettingsSections.test.tsx src/runtimes/chatStorageRuntime.test.ts src/acceptance/registry.test.ts && cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml mobile_storage_logical_usage_reads_conversation_owned_plaintext_bytes --offline -- --test-threads=1",
       "verificationClass": "SOURCE_CHECK"
     },
     {

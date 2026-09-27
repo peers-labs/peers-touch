@@ -406,9 +406,10 @@ class DesktopChatStorageRuntime {
           return { state: 'scope_changed' };
         }
         const result = await this.clearConversation(conversationId);
-        if (!messagingDomainRuntime.isCurrent(scope) || result === null) {
+        if (!messagingDomainRuntime.isCurrent(scope)) {
           return { state: 'scope_changed' };
         }
+        if (result === null) return { state: 'failed' };
         if (
           result.error
           || result.operation?.state !== ChatStorageOperationState.SUCCEEDED

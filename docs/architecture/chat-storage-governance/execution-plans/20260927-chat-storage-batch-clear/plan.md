@@ -106,7 +106,7 @@
       },
       {
         "pathPrefix": "apps/mobile/src-tauri/src/messaging",
-        "mode": "shared-read"
+        "mode": "exclusive-write"
       },
       {
         "pathPrefix": "packages/messaging-core",

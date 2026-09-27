@@ -112,6 +112,42 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ]
         self.assertEqual(offenders, [])
 
+    def test_batch_clear_negative_semantics_are_in_the_formal_gate_commands(
+        self,
+    ) -> None:
+        gates = json.loads(
+            (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")
+        )["gates"]
+        helper_test = (
+            ROOT / "packages/client-chat-core/tests/storage-batch.test.mjs"
+        ).read_text(encoding="utf-8")
+        desktop_ui = (
+            ROOT / "apps/desktop/src/components/settings/ChatStorageSettings.tsx"
+        ).read_text(encoding="utf-8")
+        mobile_ui = (
+            ROOT / "apps/mobile/src/pages/settings/SettingsSections.tsx"
+        ).read_text(encoding="utf-8")
+
+        for gate_id in (
+            "chat-storage-desktop-batch-clear-e2e",
+            "chat-storage-mobile-batch-clear-e2e",
+        ):
+            self.assertIn(
+                "pnpm --filter @peers-touch/client-chat-core test",
+                gates[gate_id]["command"],
+            )
+        for contract in (
+            "maxActiveCalls",
+            "partial_failure",
+            "scope_changed",
+            "remainingIds",
+        ):
+            self.assertIn(contract, helper_test)
+        for source in (desktop_ui, mobile_ui):
+            self.assertIn("batchAttemptRef.current += 1", source)
+            self.assertIn("batchAttemptRef.current !== attempt", source)
+            self.assertIn("data-chat-storage-batch-retry", source)
+
     def test_cache_cleanup_is_shared_scope_fenced_and_native_visible(self) -> None:
         core = (
             ROOT / "packages/messaging-core/src/storage_governance/cache.rs"

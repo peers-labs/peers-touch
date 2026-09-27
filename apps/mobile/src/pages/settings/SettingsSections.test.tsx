@@ -135,14 +135,22 @@ describe('Settings truthful unavailable and permission states', () => {
       'data-chat-storage-conversation-select',
       'data-chat-storage-batch-clear',
       'data-chat-storage-batch-confirm',
+      'data-chat-storage-batch-estimated-bytes',
       'data-chat-storage-batch-confirm-apply',
       'data-chat-storage-batch-progress',
       'data-chat-storage-batch-result',
       'data-chat-storage-batch-retry',
+      'data-chat-storage-reclaimable-bytes',
     ]) {
       expect(source).toContain(selector);
     }
     expect(source).toContain('mobileChatStorageProjectionRuntime.clearConversations(');
+    expect(source).toContain('const batchAttemptRef = useRef(0);');
+    expect(source).toContain('batchAttemptRef.current += 1;');
+    expect(source).toContain('if (batchAttemptRef.current !== attempt) return;');
+    expect(source).toContain(
+      'if (batchAttemptRef.current === attempt) setBatchRunning(false);',
+    );
   });
 
   it('distinguishes unavailable, empty, and owner-backed blocked-user states', () => {

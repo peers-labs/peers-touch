@@ -44,6 +44,7 @@ export function ChatStorageSettings() {
   const [selectedConversationIds, setSelectedConversationIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
+  const batchAttemptRef = useRef(0);
   const snapshot = projection.snapshot;
   const scopeRevisionRef = useRef<string | null>(snapshot?.revision ?? null);
   const confirmingClearCache = clearConfirmationRevision === snapshot?.revision;
@@ -93,6 +94,7 @@ export function ChatStorageSettings() {
   useEffect(() => {
     const revision = snapshot?.revision ?? null;
     if (scopeRevisionRef.current !== null && scopeRevisionRef.current !== revision) {
+      batchAttemptRef.current += 1;
       setBatchMode(false);
       setBatchRunning(false);
       setBatchProgress({ completedCount: 0, totalCount: 0 });
@@ -139,6 +141,8 @@ export function ChatStorageSettings() {
       .map((usage) => usage.conversationId)
       .filter((conversationId) => selectedConversationIds.has(conversationId));
     if (selectedIds.length === 0 || batchRunning) return;
+    const attempt = batchAttemptRef.current + 1;
+    batchAttemptRef.current = attempt;
     setBatchConfirmationRevision(null);
     setBatchResult(null);
     setBatchProgress({ completedCount: 0, totalCount: selectedIds.length });
@@ -147,9 +151,11 @@ export function ChatStorageSettings() {
       const result = await chatStorageProjectionRuntime.clearConversations(
         selectedIds,
         ({ completedCount, totalCount }) => {
+          if (batchAttemptRef.current !== attempt) return;
           setBatchProgress({ completedCount, totalCount });
         },
       );
+      if (batchAttemptRef.current !== attempt) return;
       if (result.status === 'scope_changed') {
         setBatchMode(false);
         setBatchResult(null);
@@ -161,7 +167,7 @@ export function ChatStorageSettings() {
       setSelectedConversationIds(new Set(retryIds));
       if (result.status === 'succeeded') setBatchMode(false);
     } finally {
-      setBatchRunning(false);
+      if (batchAttemptRef.current === attempt) setBatchRunning(false);
     }
   };
 
@@ -511,6 +517,7 @@ export function ChatStorageSettings() {
               <Flexbox
                 gap={10}
                 data-chat-storage-batch-confirm
+                data-chat-storage-batch-estimated-bytes={String(selectedReclaimableBytes)}
                 style={{
                   padding: 12,
                   borderRadius: 8,
@@ -612,6 +619,7 @@ export function ChatStorageSettings() {
               data-chat-storage-conversation={usage.conversationId}
               data-chat-storage-message-bytes={String(usage.messageBytes)}
               data-chat-storage-media-bytes={String(usage.mediaBytes)}
+              data-chat-storage-reclaimable-bytes={String(usage.reclaimableBytes)}
               data-chat-storage-selected={String(
                 selectedConversationIds.has(usage.conversationId),
               )}
