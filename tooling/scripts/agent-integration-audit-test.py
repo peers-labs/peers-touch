@@ -81,6 +81,14 @@ class AgentIntegrationTests(unittest.TestCase):
                 REPO_ROOT / "tooling/scripts/local-dev" / name,
                 self.root / "tooling/scripts/local-dev" / name,
             )
+        architecture_parser = (
+            self.root / "tooling/scripts/architecture/module-governance.mjs"
+        )
+        architecture_parser.parent.mkdir(parents=True)
+        shutil.copy2(
+            REPO_ROOT / "tooling/scripts/architecture/module-governance.mjs",
+            architecture_parser,
+        )
         machine_paths = "tooling/scripts/lib/machine-dev-paths.mjs"
         destination = self.root / machine_paths
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -1127,6 +1135,74 @@ export function processStartIdentity() { return 'fixture'; }
         findings = json.loads(audit.stdout)["integrationReceipt"]["findings"]
         self.assertIn("integrationDigest-mismatch", findings)
         self.assertNotIn("integrationStatusDigest-mismatch", findings)
+
+    def test_integration_catalog_binds_architecture_governance_parser(
+        self,
+    ) -> None:
+        control = load_integration_control()
+        canonical_root = self.root.resolve(strict=True)
+        _, _, before = control.canonical_integration_catalog(canonical_root)
+        parser = (
+            canonical_root
+            / "tooling/scripts/architecture/module-governance.mjs"
+        )
+        parser.write_text(
+            parser.read_text(encoding="utf-8") + "\n// changed\n",
+            encoding="utf-8",
+        )
+        _, _, after = control.canonical_integration_catalog(canonical_root)
+
+        self.assertNotEqual(
+            before["integrationDigest"],
+            after["integrationDigest"],
+        )
+        self.assertEqual(
+            before["integrationEntryCount"],
+            after["integrationEntryCount"],
+        )
+
+    def test_audit_rejects_architecture_parser_drift_after_install(
+        self,
+    ) -> None:
+        environment = self.environment("installing-session")
+        installed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
+        )
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        parser = (
+            self.root.resolve(strict=True)
+            / "tooling/scripts/architecture/module-governance.mjs"
+        )
+        parser.write_text(
+            parser.read_text(encoding="utf-8") + "\n// drift\n",
+            encoding="utf-8",
+        )
+
+        audit = subprocess.run(
+            [
+                "python3",
+                "tooling/scripts/agent-integration-audit.py",
+                "--root",
+                str(self.root),
+                "--host",
+                "codex",
+            ],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment("restarted-session"),
+            check=False,
+        )
+
+        self.assertEqual(audit.returncode, 2, audit.stdout + audit.stderr)
+        findings = json.loads(audit.stdout)["integrationReceipt"]["findings"]
+        self.assertIn("integrationDigest-mismatch", findings)
 
     def test_audit_propagates_registry_parse_failure(self) -> None:
         registry = self.root / "tooling/acceptance/registry.yaml"

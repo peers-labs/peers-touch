@@ -33,7 +33,13 @@ The execution root and the current tool `subjectRoot` are separate:
 - reads may target another worktree;
 - writes may target only the immutable execution root;
 - source writes must also satisfy the active declaration's source claims;
+- admitted source writes load one deterministic architecture and operational
+  knowledge Context Receipt from the immutable execution root;
 - dynamic or unparseable shell structure fails closed.
+
+The Context Receipt is read-only input. It may reject a write when required
+current sources cannot be validated, but it must never grant scope, mutate
+workflow state, or weaken an earlier authorization decision.
 
 If a host supplies no stable conversation ID, or cannot run a blockable
 pre-tool hook, the integration is explicitly `OBSERVE_ONLY`. It must not claim
@@ -60,6 +66,9 @@ one conversation from changing its own write authority.
 - `node --test tooling/scripts/local-dev/workflow-*.test.mjs
   tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs` passes.
 - `python3 -m unittest tooling/scripts/agent-integration-audit-test.py` passes.
+- `node tooling/scripts/architecture/module-governance.mjs context
+  --changed-file tooling/scripts/local-dev/workflow-kernel.mjs` emits one
+  digest-bound receipt.
 - Session start leaves the binding store unchanged.
 - Concurrent first `PreToolUse` calls converge on one binding.
 - A sibling-worktree read passes and the corresponding write is denied.

@@ -49,6 +49,7 @@ next: "pt-dev-workflow agent review loop"
 
 - `docs/README.md`
 - `docs/global/architecture-document-standard.md`
+- `docs/architecture/architecture-module-governance/architecture-modules.json`
 - 最近的模块 `README.md`
 - 对应上游方法论 Skill
 - `docs/knowledge/playbooks/documenting-large-requirements.md`（大需求）
@@ -80,6 +81,11 @@ docs/architecture/<module>/
 ```
 
 每个正式文件保留 status/version/date/owner 元数据和最近 README 导航。
+
+新建 active 架构模块，或修改尚未登记的 active 模块时，必须在同一落盘变更
+中新增其正向 module registry projection。按模块特征推导
+`requiredDocuments`，登记非重叠 `governedPaths`、当前 capability allowlist
+和外部 capability ID 引用；不得登记已删除名称、历史别名或迁移黑名单。
 
 ## 3. 持久化 Plan Package
 
@@ -142,6 +148,7 @@ Context Anchor 只存在于聊天；workspace active-work 只由 Dev Workflow �
 ```bash
 make plan-validate PLAN=<package-plan.md>
 make plan-current PLAN=<package-plan.md>
+node tooling/scripts/architecture/module-governance.mjs validate
 ```
 
 3. 验证明确选定的 worktree binding。
@@ -202,6 +209,7 @@ sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D
 - [ ] 输入模型已被 owning methodology 接受
 - [ ] 文件位置、命名、元数据、导航正确
 - [ ] Plan Package 和所有 Task Slice 通过 `planctl validate`
+- [ ] 涉及的 active 架构模块已登记并通过共享 module governance validator
 - [ ] workspace 的当前 Plan generation 已创建且与 package 匹配
 - [ ] package 为 `prepared` 且无 current Task
 - [ ] `Acceptance Execution` 唯一且 closure 完整
