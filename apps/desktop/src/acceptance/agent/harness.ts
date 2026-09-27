@@ -32809,6 +32809,23 @@ export function installAcceptanceHarness(): void {
                   )
                 ),
               }
+            : cell === 'BASE-CANCELLED'
+              ? {
+                  localProjectionCleared: (
+                    useChatStore.getState().currentSessionKey
+                      !== currentConversationId
+                    && !useChatStore.getState().sessions.some(
+                      (session) => session.id === currentConversationId,
+                    )
+                    && !useChatStore.getState().messages.some(
+                      (message) => message.turnId === preparedTurnId,
+                    )
+                    && useChatStore.getState().operations[currentConversationId]
+                      === undefined
+                    && useChatStore.getState().sessionBuffers[currentConversationId]
+                      === undefined
+                  ),
+                }
             : {}),
           conversationDeleted,
           deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
