@@ -2025,6 +2025,15 @@ class AgentHarnessStaticTest(unittest.TestCase):
                 direct_probe.index(cancellation_cleanup),
             ),
         )
+        self.assertIn("localProjectionCleared:", direct_probe)
+        self.assertIn(
+            "useChatStore.getState().operations[currentConversationId]",
+            direct_probe,
+        )
+        self.assertIn(
+            "useChatStore.getState().sessionBuffers[currentConversationId]",
+            direct_probe,
+        )
         self.assertNotIn("mock", scenario.lower())
 
     def test_context_overflow_uses_pre_admission_product_path(self) -> None:

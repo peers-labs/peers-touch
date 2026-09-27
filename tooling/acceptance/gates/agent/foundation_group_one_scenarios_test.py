@@ -1243,6 +1243,7 @@ def valid_cancelled_capture() -> dict[str, object]:
         "cleanup": {
             "cancellationRequestCount": 1,
             "terminalCleanupCount": 1,
+            "localProjectionCleared": True,
             "conversationDeleted": True,
         },
         "cancellation": {
