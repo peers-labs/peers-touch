@@ -11,7 +11,7 @@
   "title": "Prove governance closure and remove migration-name validation",
   "workClass": "infrastructure",
   "completionClass": "acceptance-aggregate",
-  "executionMode": "fix",
+  "executionMode": "build",
   "closureId": "amg-proof",
   "journeyId": "AMG-J04",
   "runtimeClass": "source-only",
