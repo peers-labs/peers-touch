@@ -1,6 +1,6 @@
 # Architecture Module Governance
 
-> **Status**: active
+> **Status**: completed
 > **Branch**: work/station-access-lifecycle
 > **Workspace ID**: 95620934d3348d95
 > **Initial HEAD**: 4b96c50cd5177a61fb01d2a901a2541fb727b383
@@ -11,7 +11,7 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "AMG-20260927",
-  "status": "active",
+  "status": "completed",
   "binding": {
     "branch": "work/station-access-lifecycle",
     "workspaceId": "95620934d3348d95",
@@ -186,7 +186,7 @@
       "dependsOn": [
         "AMG-03-ENFORCEMENT"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     }
   ],
