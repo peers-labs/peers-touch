@@ -57,5 +57,5 @@
 ## 5. 当前状态
 
 - Architecture：`active`
-- Plan：`active`
+- Plan：生命周期状态以实施 Plan Package 为准
 - Runtime：不适用，全部验证为 source-only

@@ -60,7 +60,7 @@
     "Do not add legacy, retired, alias, denylist or superseded schema fields",
     "Do not make the machine registry a second semantic design source"
   ],
-  "updatedAt": "2026-09-27T03:10:00.000Z",
+  "updatedAt": "2026-09-27T06:54:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "SOURCE_CHECK",
@@ -71,6 +71,11 @@
       "verificationClass": "FUNCTIONAL_CHECK",
       "result": "PASS",
       "ref": "Current registry validates architecture-module-governance and station-access-lifecycle"
+    },
+    {
+      "verificationClass": "ACCEPTANCE_PROOF",
+      "result": "PASS",
+      "ref": "architecture-module-governance run 20260927T055822742825Z-99d703b4680fb411dcc3dd9b830df1ce is DONE/PROVEN at ce11ecff9a9247f970cbdf2b236edb39920b1764"
     }
   ]
 }
@@ -78,5 +83,7 @@
 
 ## Current Snapshot
 
-- State: implementation complete; clean-source workflow proof pending.
+- State: done.
 - Scope: shared parser, strict registry, path matcher and deterministic tests.
+- Proof: current-source architecture-module-governance Acceptance is
+  `DONE/PROVEN`.
