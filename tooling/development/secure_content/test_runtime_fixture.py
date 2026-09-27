@@ -9,8 +9,10 @@ import unittest
 from pathlib import Path
 from typing import Mapping
 
+from tooling.acceptance.core import EphemeralCapabilityBlocked
 from tooling.development.secure_content.runtime_fixture import (
     RuntimeFixtureBinding,
+    RuntimeFixtureCapabilityHandler,
     RuntimeFixtureOwner,
 )
 
@@ -87,6 +89,45 @@ class RuntimeFixtureOwnerTest(unittest.TestCase):
         self.assertTrue(result["outcome"]["completed"])
         self.assertEqual(64, len(result["acknowledgementDigest"]))
         self.assertTrue(cleanup.succeeded)
+
+    def test_action_failure_preserves_redacted_root_cause(self) -> None:
+        def action(*_args: object) -> Mapping[str, object]:
+            raise RuntimeError(
+                "private Social first-use trust requires HTTPS; "
+                "Authorization: Bearer secret-token"
+            )
+
+        binding = RuntimeFixtureBinding(
+            capability="secure-content-mobile-matrix",
+            owner="mobile-product-fixture-owner",
+            opaque_id="mobile-matrix-handle",
+            expected_identity_digest="d" * 64,
+            operations=frozenset({"publish-states"}),
+            action=action,
+        )
+        handler = RuntimeFixtureCapabilityHandler(
+            binding,
+            frozenset({"e" * 64}),
+        )
+
+        with self.assertRaises(EphemeralCapabilityBlocked) as raised:
+            handler.invoke(
+                "publish-states",
+                {
+                    "handleId": "mobile-matrix-handle",
+                    "expectedIdentityDigest": "d" * 64,
+                    "runtimeManifestDigest": "e" * 64,
+                    "actionPayload": {"variant": "ios"},
+                },
+                deadline_monotonic=time.monotonic() + 1,
+                cancellation=threading.Event(),
+            )
+
+        self.assertIn(
+            "private Social first-use trust requires HTTPS",
+            str(raised.exception),
+        )
+        self.assertNotIn("secret-token", str(raised.exception))
 
     def test_owner_writes_private_immutable_manifest(self) -> None:
         binding = RuntimeFixtureBinding(
