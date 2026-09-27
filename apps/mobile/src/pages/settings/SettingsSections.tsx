@@ -748,6 +748,7 @@ export function StorageSection({
           <Input.Search
             allowClear
             aria-label={t('mobile.settings.storage.search')}
+            data-chat-storage-search
             placeholder={t('mobile.settings.storage.search')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}

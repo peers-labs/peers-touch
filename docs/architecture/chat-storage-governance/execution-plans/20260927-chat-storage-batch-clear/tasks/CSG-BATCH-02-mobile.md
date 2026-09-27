@@ -16,23 +16,25 @@
   "journeyId": "CSG-J07",
   "runtimeClass": "native-mobile",
   "writeSet": [
+    "docs/architecture/architecture-module-governance",
     "docs/architecture/chat-storage-governance",
     "packages/client-chat-core",
     "packages/locales",
+    "apps/mobile/package.json",
+    "apps/mobile/scripts/ios-dev-sim.sh",
+    "apps/mobile/src-tauri/src/messaging/adapter.rs",
+    "apps/mobile/src-tauri/src/messaging/storage_governance_test.rs",
     "apps/mobile/src/acceptance",
     "apps/mobile/src/pages/settings",
     "apps/mobile/src/runtimes",
+    "docs/architecture/mobile/mobile-acceptance-environment.md",
+    "docs/client/mobile/acceptance-setup.md",
+    "pnpm-lock.yaml",
     "tooling/acceptance"
   ],
   "readSet": [
-    "apps/mobile/package.json",
-    "apps/mobile/scripts",
     "apps/mobile/src/pages/ChatPage.tsx",
-    "apps/mobile/src-tauri/src/messaging",
-    "docs/architecture/mobile",
-    "docs/client/mobile",
-    "packages/messaging-core/src/storage_governance",
-    "pnpm-lock.yaml"
+    "packages/messaging-core/src/storage_governance"
   ],
   "budgets": {
     "focusedCheckSeconds": 1200,
@@ -69,7 +71,7 @@
     "Do not clear filtered-out or unselected conversations",
     "Do not carry selection or result across a scope change"
   ],
-  "updatedAt": "2026-09-27T13:42:00.000Z",
+  "updatedAt": "2026-09-27T14:16:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "FUNCTIONAL_CHECK",
