@@ -125,6 +125,9 @@ class ChatStorageAccountingGate(NativeTwoClientGate):
               mediaBytes: Number(
                 item.getAttribute('data-chat-storage-media-bytes')
               ),
+              reclaimableBytes: Number(
+                item.getAttribute('data-chat-storage-reclaimable-bytes')
+              ),
               text: item.innerText || '',
             }));
             return {

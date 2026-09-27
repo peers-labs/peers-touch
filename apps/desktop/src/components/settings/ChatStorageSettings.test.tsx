@@ -11,10 +11,12 @@ describe('ChatStorageSettings batch clear surface', () => {
       'data-chat-storage-conversation-select',
       'data-chat-storage-batch-clear',
       'data-chat-storage-batch-confirm',
+      'data-chat-storage-batch-estimated-bytes',
       'data-chat-storage-batch-confirm-apply',
       'data-chat-storage-batch-progress',
       'data-chat-storage-batch-result',
       'data-chat-storage-batch-retry',
+      'data-chat-storage-reclaimable-bytes',
     ]) {
       expect(source).toContain(selector);
     }
@@ -23,5 +25,14 @@ describe('ChatStorageSettings batch clear surface', () => {
   it('delegates deletion to the runtime batch owner', () => {
     expect(source).toContain('chatStorageProjectionRuntime.clearConversations(');
     expect(source).not.toContain('api.chatStorageClearConversation');
+  });
+
+  it('invalidates stale async batch callbacks when the storage scope changes', () => {
+    expect(source).toContain('const batchAttemptRef = useRef(0);');
+    expect(source).toContain('batchAttemptRef.current += 1;');
+    expect(source).toContain('if (batchAttemptRef.current !== attempt) return;');
+    expect(source).toContain(
+      'if (batchAttemptRef.current === attempt) setBatchRunning(false);',
+    );
   });
 });
