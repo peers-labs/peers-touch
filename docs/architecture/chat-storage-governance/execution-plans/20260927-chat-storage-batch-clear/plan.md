@@ -243,15 +243,22 @@
     "acceptance-infra-validation"
   ],
   "full": [
-    "chat-storage-contract",
-    "chat-storage-desktop-batch-clear-e2e",
-    "chat-storage-mobile-batch-clear-e2e",
-    "chat-native-two-client-e2e",
-    "mobile-simulator-chat-contacts-e2e",
-    "desktop-release-build",
-    "mobile-native-build",
-    "acceptance-infra-validation",
-    "chat-storage-batch-clear-aggregate-e2e"
+    "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "acceptance-infra-validation",
+    "agent-marketplace-catalog-e2e", "agent-native-knowledge-binding-e2e", "agent-quick-completion-e2e", "agent-stream-resilience-e2e",
+    "chat-desktop-gateway-e2e", "chat-lifecycle-call-resolution-e2e", "chat-lifecycle-direct-e2e", "chat-lifecycle-mixed-client-cross-station-e2e",
+    "chat-lifecycle-mixed-client-group-mls-e2e", "chat-lifecycle-mixed-client-multi-device-e2e", "chat-lifecycle-mixed-client-same-station-e2e", "chat-lifecycle-onboarding-e2e",
+    "chat-lifecycle-tree-zero-reference-e2e", "chat-native-current-profile-two-client-e2e", "chat-native-group-mls-e2e", "chat-native-interactions-e2e",
+    "chat-native-multi-device-e2e", "chat-native-recovery-e2e", "chat-native-submitted-command-recovery-e2e", "chat-native-typing-e2e",
+    "chat-native-two-client-e2e", "chat-native-visible-static", "chat-storage-contract", "chat-storage-accounting-e2e",
+    "chat-storage-batch-clear-aggregate-e2e", "chat-storage-cache-clear-e2e", "chat-storage-dead-contract-zero-e2e", "chat-storage-delete-reclaim-e2e",
+    "chat-storage-desktop-batch-clear-e2e", "chat-storage-governance-aggregate-e2e", "chat-storage-mobile-batch-clear-e2e", "chat-storage-redaction-recovery-e2e",
+    "chat-storage-retention-e2e", "chat-storage-zero-legacy-e2e", "desktop-check", "desktop-dev-runtime-isolation-static",
+    "desktop-release-build", "dev-ui-browser-e2e", "federation-three-node-e2e", "machine-dev-registry-self",
+    "messaging-platform-contract", "mobile-contract-static", "mobile-hard-cut-static", "mobile-ios-simulator-layout-accessibility-e2e",
+    "mobile-native-build", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-platform-e2e",
+    "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-settings-e2e", "mobile-simulator-social-convergence-e2e",
+    "peers-dev-product", "peers-dev-ui-browser-e2e", "proto-build", "station-access-federation-boundary-e2e",
+    "station-agent-unit", "station-api-ownership", "station-federation-unit", "station-messaging-unit"
   ]
 }
 ```
