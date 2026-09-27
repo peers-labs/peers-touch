@@ -1203,6 +1203,13 @@ return Array.from(document.querySelectorAll(
             ),
             "two selected Mobile storage rows",
         )
+        estimated_reclaimable_bytes = sum(
+            int(before.get("conversationReclaimableBytes", {}).get(
+                conversation_id,
+                0,
+            ))
+            for conversation_id in conversation_ids
+        )
 
         session.execute_script(
             """
@@ -1213,18 +1220,30 @@ if (!button || button.disabled) {
 button.click();
 """
         )
-        self._wait_for_value(
+        displayed_estimate = self._wait_for_value(
             lambda: session.execute_script(
                 """
-const button = document.querySelector(
+const confirmation = document.querySelector(
+  '[data-chat-storage-batch-confirm]'
+);
+const button = confirmation?.querySelector(
   '[data-chat-storage-batch-confirm-apply]'
 );
-return Boolean(button && !button.disabled);
+if (!button || button.disabled) return null;
+return Number(
+  confirmation.getAttribute(
+    'data-chat-storage-batch-estimated-bytes'
+  ) || '0'
+);
 """
-            )
-            or None,
+            ),
             "Mobile batch confirmation",
         )
+        if (
+            estimated_reclaimable_bytes <= 0
+            or displayed_estimate != estimated_reclaimable_bytes
+        ):
+            raise GateError("Mobile batch clear estimate is incomplete")
         session.execute_script(
             """
 document.querySelector(
@@ -1357,6 +1376,7 @@ return true;
             "conversationIds": conversation_ids,
             "messageIds": message_ids,
             "fixtureBytes": fixture_size * 2,
+            "estimatedReclaimableBytes": estimated_reclaimable_bytes,
             "physicalBytesBefore": int(before["physicalTotalBytes"]),
             "physicalBytesAfter": int(after["physicalTotalBytes"]),
             "releasedBytes": int(batch_result["releasedBytes"]),
@@ -1403,6 +1423,16 @@ return {
   conversationIds: Array.from(document.querySelectorAll(
     '[data-chat-storage-conversation]'
   )).map((item) => item.getAttribute('data-chat-storage-conversation') || ''),
+  conversationReclaimableBytes: Object.fromEntries(
+    Array.from(document.querySelectorAll(
+      '[data-chat-storage-conversation]'
+    )).map((item) => [
+      item.getAttribute('data-chat-storage-conversation') || '',
+      Number(
+        item.getAttribute('data-chat-storage-reclaimable-bytes') || '0'
+      ),
+    ])
+  ),
   retentionPreset: retention?.getAttribute('data-chat-storage-retention-preset') || '',
   retentionResultState: retentionResult?.getAttribute(
     'data-chat-storage-retention-result'

@@ -236,6 +236,10 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
             "storage-batch-clear",
         )
         self.assertIn("storage_batch_explicit_selection", BATCH_REQUIRED_ASSERTIONS)
+        self.assertIn(
+            "storage_batch_estimated_reclaimable",
+            BATCH_REQUIRED_ASSERTIONS,
+        )
         self.assertIn("storage.batch.confirm", BATCH_REQUIRED_STEPS)
         self.assertIn("data-chat-storage-batch-manage", desktop_ui)
         self.assertIn("data-chat-storage-batch-confirm-apply", desktop_ui)
@@ -244,6 +248,7 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
             / "tooling/acceptance/gates/chat/storage_batch_desktop_runner.py"
         ).read_text(encoding="utf-8")
         self.assertIn('"seedConversationClear"', runner)
+        self.assertIn("data-chat-storage-batch-estimated-bytes", runner)
         self.assertNotIn('"createGroup"', runner)
 
 

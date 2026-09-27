@@ -39,6 +39,11 @@ fn mobile_storage_logical_usage_reads_conversation_owned_plaintext_bytes() {
     assert_eq!(usage[0].conversation_name, "Alice");
     assert_eq!(usage[0].conversation_kind, 1);
     assert!(usage[0].message_bytes >= 5);
+    assert_eq!(
+        usage[0].reclaimable_bytes,
+        usage[0].message_bytes.saturating_add(usage[0].media_bytes)
+    );
+    assert!(usage[0].reclaimable_bytes > 0);
     assert_eq!(usage[0].last_activity_unix_ms, 200);
     drop(store);
     fs::remove_dir_all(root).unwrap();

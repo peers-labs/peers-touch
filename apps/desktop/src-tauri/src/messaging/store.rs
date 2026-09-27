@@ -866,14 +866,16 @@ impl MessagingStore {
             .query_map([], |row| {
                 let message_bytes = row.get::<_, i64>(3)?;
                 let media_bytes = row.get::<_, i64>(4)?;
+                let message_bytes = u64::try_from(message_bytes.max(0)).unwrap_or(0);
+                let media_bytes = u64::try_from(media_bytes.max(0)).unwrap_or(0);
                 Ok(
                     messaging_core::storage_governance::ConversationLogicalUsage {
                         conversation_id: row.get(0)?,
                         conversation_name: row.get(1)?,
                         conversation_kind: row.get(2)?,
-                        message_bytes: u64::try_from(message_bytes.max(0)).unwrap_or(0),
-                        media_bytes: u64::try_from(media_bytes.max(0)).unwrap_or(0),
-                        reclaimable_bytes: 0,
+                        message_bytes,
+                        media_bytes,
+                        reclaimable_bytes: message_bytes.saturating_add(media_bytes),
                         last_activity_unix_ms: row.get(5)?,
                     },
                 )
@@ -13756,6 +13758,11 @@ mod tests {
         assert_eq!(usage[0].conversation_name, "Family");
         assert_eq!(usage[0].conversation_kind, 2);
         assert!(usage[0].message_bytes >= 5);
+        assert_eq!(
+            usage[0].reclaimable_bytes,
+            usage[0].message_bytes.saturating_add(usage[0].media_bytes)
+        );
+        assert!(usage[0].reclaimable_bytes > 0);
         assert_eq!(usage[0].last_activity_unix_ms, 200);
     }
 
