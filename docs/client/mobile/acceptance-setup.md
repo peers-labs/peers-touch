@@ -61,13 +61,13 @@ appium driver list --installed
 xcrun simctl list devices available
 
 # Boot the preferred device (matches mobile-simulator.yaml selector)
-xcrun simctl boot "iPhone 15 Pro"
+xcrun simctl boot "iPhone 17"
 ```
 
 W9-B layout and accessibility evidence uses the dedicated
-`mobile-ios-layout-simulator` environment. It requires iOS 17.4 with both
-`iPhone SE (3rd generation)` and `iPhone 15 Pro Max`; its Provisioner owns
-boot, install, Appium sessions, uninstall, shutdown, and storage cleanup.
+`mobile-ios-layout-simulator` environment. It requires one iOS 26.5
+`iPhone 17`; its Provisioner owns boot, install, the Appium session, uninstall,
+shutdown, and storage cleanup.
 
 ### 3.2 Build for Simulator
 
@@ -203,7 +203,7 @@ pnpm --dir apps/mobile run check:mobile-shell-contracts
 # Run the callback and restart simulator suite
 python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-access-e2e
 
-# Run W9-B on compact and large iOS Simulator cells
+# Run W9-B on the current iPhone 17 Simulator cell
 python3 tooling/scripts/acceptance-run.py \
   --gate mobile-ios-simulator-layout-accessibility-e2e
 
@@ -247,9 +247,10 @@ The W9-B Gate reads
 `tooling/acceptance/environments/mobile-ios-layout-simulator.yaml`, reuses the
 base iOS build/Appium contract, and records source-bound screenshots, native
 accessibility trees, WebView DOM audits, keyboard avoidance, English/Chinese
-locale state, portrait/landscape bounds, and deterministic cleanup for both
-declared device cells. It does not prove Android, physical displays,
-VoiceOver/TalkBack, authenticated Shell surfaces, or physical performance.
+locale state, portrait/landscape bounds, and deterministic cleanup for the
+declared iPhone 17 cell. It does not prove older iPhone generations, alternate
+viewport sizes, Android, physical displays, VoiceOver/TalkBack, authenticated
+Shell surfaces, or physical performance.
 The W3 lifecycle Gate uses the shared `mobile-simulator` environment and drives
 the production lifecycle kernel through typed Harness actions on isolated iOS
 Simulator clients. It proves runtime-graph start, suspend, resume, restart, monotonic

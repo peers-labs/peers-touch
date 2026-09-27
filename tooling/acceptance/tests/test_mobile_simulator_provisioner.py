@@ -173,21 +173,11 @@ class FakeCommandExecutor:
                                     "isAvailable": True,
                                 },
                                 {
-                                    "name": IOS_LAYOUT_CLIENTS[
-                                        "sim-ios-compact"
-                                    ][0],
-                                    "udid": "ios-compact-udid",
+                                    "name": IOS_PEER_DEVICE_NAME,
+                                    "udid": "ios-peer-simulator-udid",
                                     "state": "Shutdown",
                                     "isAvailable": True,
                                 },
-                                {
-                                    "name": IOS_LAYOUT_CLIENTS[
-                                        "sim-ios-large"
-                                    ][0],
-                                    "udid": "ios-large-udid",
-                                    "state": "Shutdown",
-                                    "isAvailable": True,
-                                }
                             ]
                         },
                     }
@@ -628,7 +618,7 @@ class MobileSimulatorContractTests(unittest.TestCase):
             BASE_SIMULATOR_HARNESS_ACTIONS,
         )
 
-    def test_ios_layout_contract_pins_compact_and_large_cells(self) -> None:
+    def test_ios_layout_contract_pins_current_iphone_cell(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-ios-layout-simulator.yaml"
         contract = EnvironmentContract.from_yaml(path)
         spec = load_mobile_ios_layout_simulator_spec(path)
@@ -3011,19 +3001,19 @@ class MobileSimulatorProvisionerTests(unittest.TestCase):
         self.assertLess(
             completed.index("appium-process"),
             completed.index(
-                "application-uninstall:ios:ios-large-udid:"
+                "application-uninstall:ios:ios-peer-simulator-udid:"
                 "com.peers.touch.mobile"
             ),
         )
         self.assertLess(
             completed.index(
-                "application-uninstall:ios:ios-large-udid:"
+                "application-uninstall:ios:ios-peer-simulator-udid:"
                 "com.peers.touch.mobile"
             ),
-            completed.index("simulator-shutdown:ios-large-udid"),
+            completed.index("simulator-shutdown:ios-peer-simulator-udid"),
         )
         self.assertLess(
-            completed.index("simulator-shutdown:ios-large-udid"),
+            completed.index("simulator-shutdown:ios-peer-simulator-udid"),
             completed.index("simulator-shutdown:ios-simulator-udid"),
         )
         self.assertEqual(
@@ -3298,7 +3288,7 @@ class MobileIOSLayoutSimulatorProvisionerTests(unittest.TestCase):
             MobileIOSLayoutSimulatorProvisioner,
         )
 
-    def test_provision_emits_two_ios_cells_without_android_resources(
+    def test_provision_emits_current_iphone_cell_without_android_resources(
         self,
     ) -> None:
         manifest = self.provisioner.provision(
@@ -3340,14 +3330,10 @@ class MobileIOSLayoutSimulatorProvisionerTests(unittest.TestCase):
                 item.startswith("application-uninstall:ios:")
                 for item in completed
             ),
-            2,
+            1,
         )
         self.assertIn(
-            "simulator-shutdown:ios-compact-udid",
-            completed,
-        )
-        self.assertIn(
-            "simulator-shutdown:ios-large-udid",
+            "simulator-shutdown:ios-simulator-udid",
             completed,
         )
 

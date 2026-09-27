@@ -1417,7 +1417,7 @@
       "environment": "mobile-ios-layout-simulator",
       "provisioner": "mobile-ios-layout-simulator",
       "tier": "env-evidence",
-      "description": "Prove compact and large iOS Simulator launch-surface layout, keyboard avoidance, localization, accessible naming, orientation, and cleanup."
+      "description": "Prove the current iPhone 17 Simulator launch-surface layout, keyboard avoidance, localization, accessible naming, orientation, and cleanup."
     },
     "mobile-simulator-social-convergence-e2e": {
       "command": "python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario social-convergence",
