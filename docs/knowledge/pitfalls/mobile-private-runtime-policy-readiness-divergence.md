@@ -33,6 +33,9 @@ A direct native diagnostic exposed the hidden activation error:
 private Social first-use trust requires HTTPS or loopback HTTP
 ```
 
+The same Journey later reached an authenticated `ACTIVE` scope after a lifecycle
+restart while `private-social` remained inactive with no local error.
+
 ## Root cause
 
 Private Social implemented its own Station-origin policy instead of consuming
@@ -41,6 +44,12 @@ development origin that Messaging and Station identity already admitted.
 Its session-transition queue also caught activation failures internally rather
 than publishing them through the lifecycle readiness owner, so the graph
 reported `private-social` as ready while its business scope was inactive.
+
+Private Social also declared degradable `messaging` and `social` capabilities as
+hard lifecycle dependencies. A timeout or bootstrap failure in either sibling
+therefore skipped `private-social.bootstrap()` entirely during restart. Because
+the descriptor never ran, its module snapshot remained the empty inactive state
+without an activation error.
 
 ## Mitigation
 
@@ -52,6 +61,9 @@ reported `private-social` as ready while its business scope was inactive.
 - Private Social session transitions now use the generation-bound lifecycle
   readiness helper, wait for declared dependencies, and propagate current-scope
   activation failures.
+- Private Social hard dependencies are limited to `session` and
+  `secure-storage`. Messaging and Social remain degradable sibling capabilities;
+  their failure cannot suppress Private Social activation.
 - Focused Rust and TypeScript regressions cover both policy modes and failed
   activation readiness.
 
@@ -61,6 +73,9 @@ reported `private-social` as ready while its business scope was inactive.
   HTTP admission and release HTTP rejection.
 - `publishes activation failure through lifecycle readiness` verifies that a
   failed native activation cannot resolve bootstrap as ready.
+- `restarts independently of failed degradable messaging and social runtimes`
+  verifies that an authenticated restart still activates Private Social when a
+  degradable sibling fails.
 
 ## How to detect a recurrence
 
