@@ -501,6 +501,10 @@ class SimulatorSocialGateTests(unittest.TestCase):
                             "conversation-clear-a",
                             "conversation-clear-b",
                         ],
+                        "conversationReclaimableBytes": {
+                            "conversation-clear-a": 2_100_000,
+                            "conversation-clear-b": 2_100_000,
+                        },
                     },
                     {
                         "physicalTotalBytes": 2_000_000,
@@ -542,6 +546,8 @@ class SimulatorSocialGateTests(unittest.TestCase):
                         "conversation-clear-a",
                         "conversation-clear-b",
                     ]
+                if "data-chat-storage-batch-confirm" in script:
+                    return 4_200_000
                 if "data-chat-storage-batch-result" in script:
                     return {
                         "succeeded": 2,
@@ -568,6 +574,7 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(result["succeeded"], 2)
         self.assertEqual(result["failed"], 0)
         self.assertEqual(result["releasedBytes"], 6_000_000)
+        self.assertEqual(result["estimatedReclaimableBytes"], 4_200_000)
         self.assertTrue(result["restartStable"])
         self.assertTrue(result["messagingIdentityPreserved"])
 
