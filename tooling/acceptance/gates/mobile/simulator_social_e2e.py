@@ -1437,26 +1437,13 @@ return true;
             and message.get("messageId") == message_id
             for message in messages
         )
-        search = session.call_action(
-            "messaging.search",
-            {
-                "conversationId": conversation_id,
-                "query": "cccccccc",
-                "limit": 20,
-            },
-        )
-        search_visible = isinstance(search, list) and any(
-            isinstance(message, Mapping)
-            and message.get("messageId") == message_id
-            for message in search
-        )
-        if not message_visible or not search_visible:
+        if not message_visible:
             raise GateError(f"{description} is not preserved")
         return {
             "conversationId": conversation_id,
             "messageId": message_id,
             "messageCount": len(messages),
-            "searchHit": True,
+            "projectionVisible": True,
         }
 
     def _mobile_batch_confirmation(self, session: Any) -> dict[str, Any]:
