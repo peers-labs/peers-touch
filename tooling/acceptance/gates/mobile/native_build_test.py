@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from tooling.acceptance.core import GateError, REPO_ROOT
-from tooling.acceptance.gates.chat_storage.mobile_native_build import (
+from tooling.acceptance.gates.mobile.native_build import (
     MobileNativeBuildGate,
     validate_mobile_native_build,
 )
@@ -66,7 +66,7 @@ class MobileNativeBuildGateTest(unittest.TestCase):
             },
         )
 
-    def test_catalog_uses_canonical_simulator_provisioner(self) -> None:
+    def test_catalog_uses_shared_mobile_gate(self) -> None:
         catalog = json.loads(
             (REPO_ROOT / "tooling/acceptance/gates.yaml").read_text(
                 encoding="utf-8"
@@ -74,6 +74,14 @@ class MobileNativeBuildGateTest(unittest.TestCase):
         )
         definition = catalog["gates"]["mobile-native-build"]
 
+        self.assertEqual(
+            definition["argv"],
+            [
+                "python3",
+                "-m",
+                "tooling.acceptance.gates.mobile.native_build",
+            ],
+        )
         self.assertEqual(definition["environment"], "mobile-simulator")
         self.assertEqual(definition["provisioner"], "mobile-simulator")
         self.assertNotIn("ephemeralCapabilities", definition)
