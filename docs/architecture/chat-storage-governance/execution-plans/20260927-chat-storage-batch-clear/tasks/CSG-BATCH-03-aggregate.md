@@ -24,6 +24,8 @@
     "apps/desktop/src-tauri/src/interface/tauri_commands/account.rs",
     "apps/mobile/src/features/social",
     "apps/mobile/src/runtimes",
+    "apps/mobile/src-tauri/src/runtime/oauth/mod.rs",
+    "apps/mobile/src-tauri/src/runtime/oauth/session.rs",
     "apps/station/app/subserver/conversation",
     "apps/station/app/subserver/social/infrastructure",
     "packages/sdk/dart/lib/src/gen",
