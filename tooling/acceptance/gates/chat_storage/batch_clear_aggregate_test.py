@@ -59,7 +59,7 @@ class ChatStorageBatchClearAggregateTest(unittest.TestCase):
                 "chat-storage-contract",
                 "chat-storage-desktop-batch-clear-e2e",
                 "chat-storage-mobile-batch-clear-e2e",
-                "chat-native-two-client-e2e",
+                "chat-native-current-profile-two-client-e2e",
                 "mobile-simulator-chat-contacts-e2e",
                 "desktop-release-build",
                 "mobile-native-build",
