@@ -431,6 +431,155 @@ class InvalidResourceHarnessClient:
         raise AssertionError(f"unexpected method: {method}")
 
 
+class PermissionDeniedHarnessClient:
+    def __init__(
+        self,
+        platform: str,
+        *,
+        call_log: list[str],
+        fail_direct: bool = False,
+    ) -> None:
+        self.platform = platform
+        self.call_log = call_log
+        self.fail_direct = fail_direct
+        self.session_id = "session-granted"
+        self.permission = "CAPABILITY_PERMISSION_STATE_GRANTED"
+        self.pending_scenario_key = ""
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        request = payload or {}
+        self.call_log.append(f"{self.platform}:{method}")
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method == "resolveFoundationInvalidResourceExecutorTarget":
+            return {
+                "capabilitySessionId": self.session_id,
+                "capabilitySessionIdHash": hashlib.sha256(
+                    self.session_id.encode("utf-8")
+                ).hexdigest(),
+                "targetDeviceId": "device-native",
+                "targetDeviceIdHash": "4" * 64,
+                "targetCapabilityId": "filesystem.read",
+                "targetPlatform": "desktop",
+                "targetPermission": self.permission,
+                "targetPermissionKind": (
+                    "CAPABILITY_PERMISSION_KIND_FILESYSTEM"
+                ),
+            }
+        if method == "getFoundationClientExecutorCounters":
+            return {
+                "capabilitySessionIdHash": hashlib.sha256(
+                    str(request["targetCapabilitySessionId"]).encode("utf-8")
+                ).hexdigest(),
+                "targetDeviceIdHash": "4" * 64,
+                "targetCapabilityId": "filesystem.read",
+                "targetPlatform": "desktop",
+                "executionAttemptCount": 3,
+                "sideEffectCount": 2,
+            }
+        if method == "runFoundationCapabilityNegativeControl":
+            source_session_id = self.session_id
+            source_hash = hashlib.sha256(
+                source_session_id.encode("utf-8")
+            ).hexdigest()
+            if request.get("capabilitySessionIdHash") != source_hash:
+                raise AssertionError("permission control targeted stale lease")
+            control = str(request["control"])
+            if request.get("capabilityId") != "filesystem.read":
+                raise AssertionError("permission capability changed")
+            if request.get("permissionKind") != "filesystem":
+                raise AssertionError("permission kind changed")
+            if control == "permissionDenied":
+                self.session_id = "session-denied"
+                self.permission = "CAPABILITY_PERMISSION_STATE_DENIED"
+            elif control == "permissionGranted":
+                self.session_id = "session-restored"
+                self.permission = "CAPABILITY_PERMISSION_STATE_GRANTED"
+            else:
+                raise AssertionError(f"unexpected permission control: {control}")
+            current_hash = hashlib.sha256(
+                self.session_id.encode("utf-8")
+            ).hexdigest()
+            return {
+                "control": control,
+                "availability": "available",
+                "capabilitySessionIdHash": source_hash,
+                "before": {
+                    "localExecutionAttemptCount": 3,
+                    "localSideEffectCount": 2,
+                },
+                "leaseTransition": {
+                    "sourceCapabilitySessionIdHash": source_hash,
+                    "sourceLeaseIdHash": "5" * 64,
+                    "sourceLeaseRevision": 1,
+                    "sourceExpiresAtMs": 1,
+                    "currentCapabilitySessionIdHash": current_hash,
+                    "currentLeaseIdHash": "6" * 64,
+                    "currentExpiresAtMs": 2,
+                    "currentLeaseRevision": 1,
+                    "currentPullCursor": 0,
+                },
+                "after": {
+                    "localExecutionAttemptCount": 3,
+                    "localSideEffectCount": 2,
+                },
+            }
+        if method == "runDevelopmentClientPermissionDenied":
+            if request.get("receiverPlatform") != self.platform:
+                raise AssertionError(
+                    "permission receiver platform handoff changed"
+                )
+            self.pending_scenario_key = str(request["scenarioKey"])
+            facts = valid_permission_denied_capture(self.platform)
+            facts["cleanup"]["permissionRestored"] = False
+            facts["cleanup"]["conversationDeleted"] = False
+            facts["cleanup"]["localProjectionCleared"] = False
+            return {
+                "conversationId": "conversation-permission-denied",
+                "turnId": "turn-permission-denied",
+                "durationMs": 10,
+                "runtimeEvent": facts["runtimeEvent"],
+                "facts": facts,
+            }
+        if method == "foundationDirectProbe":
+            if self.fail_direct:
+                raise RuntimeError("permission direct capture failed")
+            prepared = request.get("preparedScenario")
+            if not isinstance(prepared, dict):
+                raise AssertionError("prepared permission scenario is invalid")
+            facts = prepared.get("facts")
+            if not isinstance(facts, dict):
+                raise AssertionError("prepared permission facts are invalid")
+            probe = DirectRuntimeProbeInput(
+                platform=str(request["platform"]),
+                locale=str(request["locale"]),
+                cell=str(request["cell"]),
+                sample_id=str(request["sampleId"]),
+            )
+            result = capture(probe)
+            result["scenarioFacts"] = facts
+            result["assertions"] = evaluate_base_permission_denied(facts)
+            result["runtime-events"] = typed_runtime_role(facts)
+            result["runtimeAttestation"]["actorIdentityHash"] = (
+                facts["runtimeEvent"]["sourcePtidHash"]
+            )
+            self.pending_scenario_key = ""
+            return result
+        if method == "abortFoundationClientPermissionDenied":
+            self.pending_scenario_key = ""
+            return {
+                "conversationDeleted": True,
+                "localProjectionCleared": True,
+            }
+        raise AssertionError(f"unexpected method: {method}")
+
+
 class ForbiddenActorHarnessClient:
     def __init__(
         self,
@@ -3213,6 +3362,99 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     sample_id="sample-001",
                 )
             )
+
+    def test_permission_denied_coordinates_native_lease_for_browser_receiver(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = PermissionDeniedHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = PermissionDeniedHarnessClient(
+            "browser",
+            call_log=call_log,
+        )
+        coordinator = (
+            foundation_scenario_runner.FoundationPermissionDeniedCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+        probe = foundation_scenario_runner._make_direct_probe(
+            browser,
+            permission_denied_coordinator=coordinator,
+        )
+
+        result = probe(
+            DirectRuntimeProbeInput(
+                platform="browser",
+                locale="en",
+                cell="BASE-PERMISSION_DENIED",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertTrue(result["assertions"]["typedPermissionDenied"])
+        self.assertTrue(result["assertions"]["browserCapabilityIsolation"])
+        self.assertTrue(result["assertions"]["cleanupComplete"])
+        self.assertEqual(native.permission, "CAPABILITY_PERMISSION_STATE_GRANTED")
+        self.assertEqual(
+            call_log,
+            [
+                "browser:setFoundationLocale",
+                "desktop_app:resolveFoundationInvalidResourceExecutorTarget",
+                "desktop_app:getFoundationClientExecutorCounters",
+                "desktop_app:runFoundationCapabilityNegativeControl",
+                "desktop_app:resolveFoundationInvalidResourceExecutorTarget",
+                "browser:runDevelopmentClientPermissionDenied",
+                "desktop_app:getFoundationClientExecutorCounters",
+                "desktop_app:runFoundationCapabilityNegativeControl",
+                "desktop_app:resolveFoundationInvalidResourceExecutorTarget",
+                "browser:abortFoundationClientPermissionDenied",
+                "browser:foundationDirectProbe",
+            ],
+        )
+
+    def test_permission_denied_restores_permission_and_cleans_failed_capture(
+        self,
+    ) -> None:
+        call_log: list[str] = []
+        native = PermissionDeniedHarnessClient(
+            "desktop_app",
+            call_log=call_log,
+        )
+        browser = PermissionDeniedHarnessClient(
+            "browser",
+            call_log=call_log,
+            fail_direct=True,
+        )
+        coordinator = (
+            foundation_scenario_runner.FoundationPermissionDeniedCoordinator(
+                SimpleNamespace(native=native, browser=browser)
+            )
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "permission direct capture failed",
+        ):
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="BASE-PERMISSION_DENIED",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(native.permission, "CAPABILITY_PERMISSION_STATE_GRANTED")
+        self.assertEqual(
+            call_log[-2:],
+            [
+                "browser:abortFoundationClientPermissionDenied",
+                "browser:foundationDirectProbe",
+            ],
+        )
 
     def test_forbidden_actor_coordinates_bob_owner_and_browser_receiver(
         self,
