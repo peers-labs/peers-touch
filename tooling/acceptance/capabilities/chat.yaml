@@ -792,7 +792,7 @@
       "synthetic_paths": [
         "docs/architecture/chat-storage-governance/legacy-inventory.json",
         "tooling/acceptance/gates/chat_storage/governance_aggregate.py",
-        "tooling/acceptance/gates/chat_storage/mobile_native_build.py"
+        "tooling/acceptance/gates/mobile/native_build.py"
       ],
       "evidence": {
         "truth_sources": [
