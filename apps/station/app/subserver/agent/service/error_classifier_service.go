@@ -309,7 +309,7 @@ func (s *ErrorClassifierService) classifyByMessagePattern(msg string) (domain.Fa
 	if containsAny(msg, contextOverflowPatterns) {
 		return domain.FailoverReasonContextOverflow, true
 	}
-	if containsAny(msg, modelNotFoundPatterns) {
+	if isModelNotFoundMessage(msg) {
 		return domain.FailoverReasonModelNotFound, true
 	}
 	if containsAny(msg, authPatterns) {
@@ -463,6 +463,14 @@ func containsAny(msg string, patterns []string) bool {
 		}
 	}
 	return false
+}
+
+func isModelNotFoundMessage(msg string) bool {
+	if containsAny(msg, modelNotFoundPatterns) {
+		return true
+	}
+	return (strings.Contains(msg, "model '") && strings.Contains(msg, "' not found")) ||
+		(strings.Contains(msg, `model "`) && strings.Contains(msg, `" not found`))
 }
 
 func isTimeoutError(err error) bool {
