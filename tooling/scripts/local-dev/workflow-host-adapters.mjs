@@ -187,7 +187,14 @@ function renderCursorResponse(result, event) {
   if (result.action === 'CONTINUE') {
     return { followup_message: result.followupMessage ?? message(result) };
   }
-  if (event === 'PRE_TOOL_USE') return { permission: 'allow' };
+  if (event === 'PRE_TOOL_USE') {
+    return {
+      permission: 'allow',
+      ...(result.additionalContext
+        ? { additional_context: result.additionalContext }
+        : {}),
+    };
+  }
   if (event === 'BEFORE_PROMPT') return { continue: true };
   return {};
 }
@@ -222,6 +229,17 @@ function renderClaudeCompatibleResponse(result, hostEvent) {
     return {
       decision: 'block',
       reason: result.followupMessage ?? message(result),
+    };
+  }
+  if (hostEvent === 'PreToolUse' && result.additionalContext) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        permissionDecisionReason:
+          'Architecture and operational knowledge context loaded.',
+        additionalContext: result.additionalContext,
+      },
     };
   }
   return {};

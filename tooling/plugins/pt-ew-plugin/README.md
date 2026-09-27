@@ -4,6 +4,9 @@
 Codex、Cursor 和 TRAE hook payload 归一化后交给宿主中立 Workflow Kernel。
 Kernel 在第一次可阻断 `PreToolUse` 时把 conversation 原子绑定到一个
 `executionRoot`，后续把工具目标作为独立 `subjectRoot` 校验。
+通过身份、declaration 和 source scope 校验的写入，会附带由共享架构治理
+parser 生成的只读 Context Receipt；该回执只提供必读文档与 knowledge
+定位，不改变授权结果。
 
 ## 边界
 

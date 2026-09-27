@@ -9,6 +9,11 @@ import {
   machineDevRoot,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
+import {
+  ArchitectureGovernanceError,
+  DEFAULT_REGISTRY_PATH,
+  validatePlanArchitecture,
+} from '../architecture/module-governance.mjs';
 
 const MANIFEST_MAX_LINES = 300;
 const MANIFEST_MAX_BYTES = 20 * 1024;
@@ -1159,12 +1164,18 @@ async function findRepoRoot(startPath) {
 }
 
 async function resolveRepoRoot(planPath, explicitRoot) {
-  let root;
+  const inferredRoot = await findRepoRoot(path.dirname(planPath));
+  let root = inferredRoot;
   if (explicitRoot !== undefined) {
     assertString(explicitRoot, 'options.repoRoot');
     root = await fsp.realpath(path.resolve(explicitRoot));
-  } else {
-    root = await findRepoRoot(path.dirname(planPath));
+    if (root !== inferredRoot) {
+      fail(
+        'PLAN_REPO_ROOT_MISMATCH',
+        'Explicit repository root does not match the Plan Git root',
+        { explicitRoot: root, inferredRoot },
+      );
+    }
   }
   const realPlan = await fsp.realpath(planPath);
   if (!isNativePathInside(root, realPlan)) {
@@ -1371,6 +1382,43 @@ async function taskMarkdownFiles(tasksDirectory) {
     .sort();
 }
 
+async function validateRegisteredArchitecture(manifest, repoRoot) {
+  const registryPath = DEFAULT_REGISTRY_PATH;
+  if (
+    !fs.existsSync(path.join(repoRoot, ...registryPath.split('/')))
+  ) {
+    const governanceRoot = path.join(
+      repoRoot,
+      'docs/architecture/architecture-module-governance',
+    );
+    if (fs.existsSync(governanceRoot)) {
+      fail(
+        'ARCHITECTURE_REGISTRY_INVALID',
+        'architecture module registry is required by this repository',
+        { path: registryPath },
+      );
+    }
+    return null;
+  }
+  try {
+    return await validatePlanArchitecture({
+      repoRoot,
+      registryPath,
+      sources: manifest.architecture.sources,
+      decisions: manifest.architecture.decisions,
+    });
+  } catch (error) {
+    if (error instanceof ArchitectureGovernanceError || error?.code) {
+      fail(
+        error.code ?? 'ARCHITECTURE_REGISTRY_INVALID',
+        error.message,
+        error.details,
+      );
+    }
+    throw error;
+  }
+}
+
 /**
  * Loads and validates one Plan Package.
  *
@@ -1419,6 +1467,10 @@ export async function loadPlanPackage(planPath, options = {}) {
       `Plan Package.architecture.sources[${index}]`,
     );
   }
+  const architectureGovernance = await validateRegisteredArchitecture(
+    manifest,
+    repoRoot,
+  );
   for (const [index, claim] of manifest.scope.sourceClaims.entries()) {
     await assertRepositoryPathContained(
       repoRoot,
@@ -1506,6 +1558,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     repoRoot,
     manifest,
     acceptance,
+    architectureGovernance,
     taskSlices,
     currentTask,
     readyTasks,

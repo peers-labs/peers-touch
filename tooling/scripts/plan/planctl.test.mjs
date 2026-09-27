@@ -324,6 +324,108 @@ async function makeFixture(
   };
 }
 
+function architectureDocument(owner, body = '') {
+  return [
+    '# Development Workflow',
+    '',
+    '> **Status**: active',
+    '> **Version**: v1.0',
+    '> **Created**: 2026-09-27 | **Updated**: 2026-09-27',
+    `> **Owner**: ${owner}`,
+    '',
+    '---',
+    '',
+    body,
+    '',
+  ].join('\n');
+}
+
+async function installArchitectureGovernanceFixture(fixture) {
+  const owner = 'Workflow Team';
+  const moduleRoot = 'docs/architecture/development-workflow';
+  await fsp.writeFile(
+    path.join(fixture.root, 'docs/README.md'),
+    '- Development Workflow: `architecture/development-workflow/README.md`\n',
+  );
+  await fsp.writeFile(
+    path.join(fixture.root, moduleRoot, 'README.md'),
+    architectureDocument(owner),
+  );
+  await fsp.writeFile(
+    path.join(fixture.root, moduleRoot, 'design.md'),
+    architectureDocument(owner),
+  );
+  await fsp.writeFile(
+    path.join(fixture.root, moduleRoot, 'decisions.md'),
+    architectureDocument(owner, [
+      '## Decision Index',
+      '',
+      '| ID | Decision | Status |',
+      '|---|---|---|',
+      '| DWF-D13 | Keep one plan contract | accepted |',
+      '',
+      '## DWF-D13: Keep one plan contract',
+      '',
+      '**Status**: accepted',
+      '**Date**: 2026-09-27',
+      '',
+      '### Context',
+      '',
+      'One contract is required.',
+      '',
+      '### Decision',
+      '',
+      'Use one contract.',
+      '',
+      '### Rationale',
+      '',
+      'It is deterministic.',
+      '',
+      '### Alternatives Considered',
+      '',
+      '- Multiple contracts.',
+      '',
+      '### Consequences',
+      '',
+      'Validation fails closed.',
+    ].join('\n')),
+  );
+  const registryDirectory = path.join(
+    fixture.root,
+    'docs/architecture/architecture-module-governance',
+  );
+  await fsp.mkdir(registryDirectory, { recursive: true });
+  await fsp.writeFile(
+    path.join(registryDirectory, 'architecture-modules.json'),
+    `${JSON.stringify({
+      kind: 'peers-touch-architecture-module-registry',
+      schemaVersion: 1,
+      modules: [
+        {
+          id: 'development-workflow',
+          root: moduleRoot,
+          status: 'active',
+          owner,
+          characteristics: {
+            protocol: false,
+            stateMachine: false,
+            persistence: false,
+            ownership: false,
+            moduleLayout: false,
+            crossRuntime: false,
+            integration: false,
+          },
+          requiredDocuments: ['README.md', 'design.md', 'decisions.md'],
+          decisionIds: ['DWF-D13'],
+          governedPaths: [moduleRoot, 'tooling/scripts/plan'],
+          capabilities: [],
+          externalCapabilityRegistries: [],
+        },
+      ],
+    }, null, 2)}\n`,
+  );
+}
+
 function planMutationOptions(fixture, overrides = {}) {
   return {
     home: path.join(fixture.root, 'home'),
@@ -614,6 +716,76 @@ for (const status of ['active', 'prepared', 'blocked', 'completed']) {
     }
   });
 }
+
+test('Plan loading validates registered architecture semantics', async (t) => {
+  const fixture = await makeFixture(t);
+  await installArchitectureGovernanceFixture(fixture);
+  const result = await loadPlanPackage(fixture.planPath, {
+    repoRoot: fixture.root,
+  });
+
+  assert.deepEqual(result.architectureGovernance.modules, [
+    'development-workflow',
+  ]);
+});
+
+test('Plan loading preserves shared architecture validation failures', async (t) => {
+  const fixture = await makeFixture(t, {
+    mutateManifest(manifest) {
+      manifest.architecture.decisions = ['DWF-D99'];
+    },
+  });
+  await installArchitectureGovernanceFixture(fixture);
+  await expectPlanError(
+    loadPlanPackage(fixture.planPath, {
+      repoRoot: fixture.root,
+    }),
+    'ARCHITECTURE_DECISION_INVALID',
+  );
+});
+
+test('Plan loading fails closed when a governance-enabled repository loses its registry', async (t) => {
+  const fixture = await makeFixture(t);
+  await fsp.mkdir(
+    path.join(
+      fixture.root,
+      'docs/architecture/architecture-module-governance',
+    ),
+    { recursive: true },
+  );
+  await expectPlanError(
+    loadPlanPackage(fixture.planPath, {
+      repoRoot: fixture.root,
+    }),
+    'ARCHITECTURE_REGISTRY_INVALID',
+  );
+});
+
+test('Plan loading rejects attempts to disable architecture validation', async (t) => {
+  const fixture = await makeFixture(t, {
+    mutateManifest(manifest) {
+      manifest.architecture.decisions = ['DWF-D99'];
+    },
+  });
+  await installArchitectureGovernanceFixture(fixture);
+  await expectPlanError(
+    loadPlanPackage(fixture.planPath, {
+      repoRoot: fixture.root,
+      architectureValidator: () => ({ ok: true }),
+    }),
+    'ARCHITECTURE_DECISION_INVALID',
+  );
+});
+
+test('Plan loading rejects an explicit ancestor below the canonical Git root', async (t) => {
+  const fixture = await makeFixture(t);
+  await expectPlanError(
+    loadPlanPackage(fixture.planPath, {
+      repoRoot: fixture.packageDirectory,
+    }),
+    'PLAN_REPO_ROOT_MISMATCH',
+  );
+});
 
 test('rejects closed-schema additions, duplicate IDs, cycles, current, and exhaustion errors', async (t) => {
   await t.test('unknown manifest field', async (t) => {

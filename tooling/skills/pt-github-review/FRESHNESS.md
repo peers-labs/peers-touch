@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-27
-covered_docs_hash: 1d378c6d76eae4bae2f88e92ddc68a3b373485698d6eb3ed2543f45b882a92ef
+covered_docs_hash: 94d008d7fc5c6ea7df358daafe7e2018d712d171cfce45b9883efcfbca120221
 
 covered_docs:
   - AGENTS.md
@@ -38,6 +38,13 @@ plane, Peers Dev projection, local environment skill, and fixtures now derive
 reset protection from the canonical Profile ID and no longer read the
 superseded control-mode field. The existing review rule already enforces this
 contract, so no GitHub Review `SKILL.md` or fixture change is required.
+
+Architecture Module Governance adds a positive module registry and shared
+changed-path validation to review. `pt-github-review/SKILL.md` now treats
+unregistered, incomplete, overlapping, or capability-inconsistent active
+modules as blocking architecture findings. Parser, Hook, Plan, Review and
+integration-audit regressions provide executable coverage; no generic golden
+review fixture is needed.
 
 ## 2026-09-26 Review
 

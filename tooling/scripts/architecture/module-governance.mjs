@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const REGISTRY_KIND = 'peers-touch-architecture-module-registry';
 export const REGISTRY_SCHEMA_VERSION = 1;
+export const PRE_EDIT_CONTEXT_KIND = 'peers-touch-pre-edit-context';
+export const PRE_EDIT_CONTEXT_SCHEMA_VERSION = 1;
 export const DEFAULT_REGISTRY_PATH =
   'docs/architecture/architecture-module-governance/architecture-modules.json';
 
@@ -226,6 +229,30 @@ function parseJson(text, code, context) {
   } catch (error) {
     fail(code, `${context} is not valid JSON`, { reason: error.message });
   }
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalize(value[key])]),
+  );
+}
+
+function sha256(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function canonicalDigest(value) {
+  return sha256(JSON.stringify(canonicalize(value)));
+}
+
+function compareStrings(left, right) {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
 }
 
 export function deriveRequiredDocuments(characteristics) {
@@ -673,6 +700,227 @@ export function modulesForPaths(registryResult, paths) {
       module.governedPaths.some((prefix) => pathContains(prefix, candidate))));
 }
 
+function normalizeTargetPath(repoRoot, value, context) {
+  assertString(value, context);
+  let absolute = path.isAbsolute(value)
+    ? path.resolve(value)
+    : path.resolve(repoRoot, value);
+  let existing = absolute;
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) break;
+    existing = parent;
+  }
+  if (fs.existsSync(existing)) {
+    absolute = path.join(
+      fs.realpathSync(existing),
+      path.relative(existing, absolute),
+    );
+  }
+  const relative = path.relative(repoRoot, absolute).split(path.sep).join('/');
+  if (
+    relative === ''
+    || relative === '..'
+    || relative.startsWith('../')
+    || path.isAbsolute(relative)
+  ) {
+    fail(
+      'ARCHITECTURE_REGISTRY_INVALID',
+      `${context} must resolve inside the repository`,
+      { value },
+    );
+  }
+  return normalizeRepoPath(relative, context);
+}
+
+function listKnowledgeFiles(repoRoot) {
+  const roots = [
+    'docs/knowledge/invariants',
+    'docs/knowledge/pitfalls',
+    'docs/knowledge/playbooks',
+  ];
+  const files = [];
+  function walk(relative) {
+    const absolute = path.join(repoRoot, relative);
+    if (!fs.existsSync(absolute)) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(absolute, { withFileTypes: true });
+    } catch (error) {
+      fail(
+        'KNOWLEDGE_CONTEXT_UNREADABLE',
+        'knowledge directory is unreadable',
+        { path: relative, reason: error.message },
+      );
+    }
+    for (const entry of entries.sort((left, right) =>
+      compareStrings(left.name, right.name))) {
+      const candidate = `${relative}/${entry.name}`;
+      if (entry.isSymbolicLink()) {
+        fail(
+          'KNOWLEDGE_CONTEXT_UNREADABLE',
+          'knowledge paths must not be symlinks',
+          { path: candidate },
+        );
+      }
+      if (entry.isDirectory()) {
+        walk(candidate);
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        files.push(candidate);
+      }
+    }
+  }
+  roots.forEach(walk);
+  return files.sort();
+}
+
+function knowledgeOwns(source, relative) {
+  const lines = source.split(/\r?\n/);
+  if (lines[0] !== '---') return [];
+  let inOwns = false;
+  const owns = [];
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line === '---') break;
+    if (/^owns:\s*$/.test(line)) {
+      inOwns = true;
+      continue;
+    }
+    if (/^[A-Za-z_-]+:/.test(line)) {
+      inOwns = false;
+      continue;
+    }
+    if (!inOwns) continue;
+    const match = /^\s*-\s+(.+?)\s*$/.exec(line);
+    if (match === null) continue;
+    owns.push(
+      normalizeRepoPath(
+        match[1].replace(/\/+$/, ''),
+        `${relative}.owns[${owns.length}]`,
+      ),
+    );
+  }
+  return owns;
+}
+
+function escapeGlob(value) {
+  return escapePattern(value)
+    .replaceAll('\\*\\*', '.*')
+    .replaceAll('\\*', '[^/]*');
+}
+
+function ownershipMatches(ownedPath, target) {
+  if (ownedPath.includes('*')) {
+    return new RegExp(`^${escapeGlob(ownedPath)}(?:/.*)?$`).test(target);
+  }
+  return pathContains(ownedPath, target);
+}
+
+function matchingKnowledge(repoRoot, targets) {
+  return listKnowledgeFiles(repoRoot)
+    .map((relative) => {
+      const source = readUtf8(
+        repoRoot,
+        relative,
+        'KNOWLEDGE_CONTEXT_UNREADABLE',
+        'knowledge entry',
+      );
+      return {
+        path: relative,
+        source,
+        owns: knowledgeOwns(source, relative),
+      };
+    })
+    .filter((entry) =>
+      entry.owns.some((ownedPath) =>
+        targets.some((target) => ownershipMatches(ownedPath, target))))
+    .map((entry) => ({
+      path: entry.path,
+      digest: sha256(entry.source),
+    }))
+    .sort((left, right) => compareStrings(left.path, right.path));
+}
+
+function architectureContext(repoRoot, module) {
+  const documents = module.requiredDocuments
+    .map((document) => `${module.root}/${document}`)
+    .sort();
+  const documentDigests = documents.map((relative) => ({
+    path: relative,
+    digest: sha256(
+      readUtf8(
+        repoRoot,
+        relative,
+        'ARCHITECTURE_DOCUMENT_REQUIRED',
+        `${module.id} context document`,
+      ),
+    ),
+  }));
+  const capabilityIds = [
+    ...module.capabilities.map((capability) => capability.id),
+    ...module.externalCapabilityRegistries.flatMap(
+      (external) => external.capabilityIds,
+    ),
+  ].sort();
+  return {
+    moduleId: module.id,
+    documents,
+    capabilityIds,
+    digest: canonicalDigest({
+      module,
+      documents: documentDigests,
+    }),
+  };
+}
+
+export function buildPreEditContext({
+  repoRoot = process.cwd(),
+  targets,
+  registry = null,
+  registryPath = DEFAULT_REGISTRY_PATH,
+} = {}) {
+  if (!Array.isArray(targets) || targets.length === 0) {
+    fail(
+      'ARCHITECTURE_REGISTRY_INVALID',
+      'pre-edit context requires at least one target',
+    );
+  }
+  const canonicalRoot = fs.realpathSync(repoRoot);
+  const normalizedTargets = [
+    ...new Set(
+      targets.map((value, index) =>
+        normalizeTargetPath(canonicalRoot, value, `targets[${index}]`)),
+    ),
+  ].sort();
+  const registryResult = validateArchitectureRegistry({
+    repoRoot: canonicalRoot,
+    registry,
+    registryPath,
+  });
+  const receipt = {
+    kind: PRE_EDIT_CONTEXT_KIND,
+    schemaVersion: PRE_EDIT_CONTEXT_SCHEMA_VERSION,
+    targets: normalizedTargets,
+    knowledge: matchingKnowledge(canonicalRoot, normalizedTargets),
+    architecture: modulesForPaths(registryResult, normalizedTargets)
+      .map((module) => architectureContext(canonicalRoot, module))
+      .sort((left, right) => compareStrings(left.moduleId, right.moduleId)),
+    registryDigest: canonicalDigest(registryResult.registry),
+  };
+  return {
+    ...receipt,
+    receiptDigest: canonicalDigest(receipt),
+  };
+}
+
+export function renderPreEditContext(receipt) {
+  return [
+    'PT_PRE_EDIT_CONTEXT',
+    JSON.stringify(canonicalize(receipt)),
+    'This receipt is read-only context and does not grant write authorization.',
+  ].join('\n');
+}
+
 function nearestActiveArchitectureRoot(repoRoot, relative) {
   if (!relative.startsWith('docs/architecture/')) return null;
   const parts = relative.split('/');
@@ -768,10 +1016,47 @@ export function validatePlanArchitecture({
   });
   const normalizedSources = sources.map((value, index) =>
     normalizeRepoPath(value, `architecture.sources[${index}]`));
+  normalizedSources.forEach((source, index) =>
+    requireCurrentPath(
+      canonicalRoot,
+      source,
+      `architecture.sources[${index}]`,
+    ));
   const modules = registryResult.modules.filter((module) =>
     normalizedSources.some((source) => pathContains(module.root, source)));
+  if (modules.length === 0) {
+    return {
+      ok: true,
+      modules: [],
+      sources: [...normalizedSources].sort(),
+      decisions: [...decisions].sort(),
+    };
+  }
+  const selectedRoots = new Set(modules.map((module) => module.root));
+  const unregisteredActiveRoots = [
+    ...new Set(
+      normalizedSources
+        .map((source) => nearestActiveArchitectureRoot(canonicalRoot, source))
+        .filter((root) => root !== null && !selectedRoots.has(root)),
+    ),
+  ];
   const accepted = new Set(modules.flatMap((module) => module.decisionIds));
-  const unknown = decisions.filter((decision) => !accepted.has(decision));
+  const namespaces = new Set(
+    modules.flatMap((module) =>
+      module.decisionIds.map((decision) => {
+        const marker = decision.indexOf('-');
+        return marker === -1 ? decision : decision.slice(0, marker + 1);
+      })),
+  );
+  const unknown = decisions.filter(
+    (decision) =>
+      !accepted.has(decision)
+      && (
+        unregisteredActiveRoots.length === 0
+        || [...namespaces].some((namespace) =>
+          decision.startsWith(namespace))
+      ),
+  );
   if (unknown.length > 0) {
     fail(
       'ARCHITECTURE_DECISION_INVALID',
@@ -779,18 +1064,16 @@ export function validatePlanArchitecture({
       { unknown },
     );
   }
-  for (const source of normalizedSources) {
-    const activeRoot = nearestActiveArchitectureRoot(canonicalRoot, source);
-    if (
-      activeRoot !== null
-      && !modules.some((module) => module.root === activeRoot)
-    ) {
-      fail(
-        'ARCHITECTURE_MODULE_UNREGISTERED',
-        'Plan references an unregistered active architecture module',
-        { source, moduleRoot: activeRoot },
-      );
-    }
+  const missingModules = modules
+    .filter((module) =>
+      !module.decisionIds.some((decision) => decisions.includes(decision)))
+    .map((module) => module.id);
+  if (missingModules.length > 0) {
+    fail(
+      'ARCHITECTURE_DECISION_INVALID',
+      'Plan omits accepted decisions for a registered architecture module',
+      { missingModules },
+    );
   }
   return {
     ok: true,
@@ -802,13 +1085,18 @@ export function validatePlanArchitecture({
 
 function parseCli(argv) {
   const [command = 'validate', ...args] = argv;
-  if (command !== 'validate') {
+  if (!['validate', 'changed-paths', 'plan', 'context'].includes(command)) {
     fail(
       'ARCHITECTURE_REGISTRY_INVALID',
       `unsupported command: ${command}`,
     );
   }
-  const options = {};
+  const options = {
+    command,
+    changedPaths: [],
+    sources: [],
+    decisions: [],
+  };
   for (let index = 0; index < args.length; index += 1) {
     const flag = args[index];
     const value = args[index + 1];
@@ -817,6 +1105,15 @@ function parseCli(argv) {
       index += 1;
     } else if (flag === '--registry' && value) {
       options.registryPath = value;
+      index += 1;
+    } else if (flag === '--changed-file' && value) {
+      options.changedPaths.push(value);
+      index += 1;
+    } else if (flag === '--source' && value) {
+      options.sources.push(value);
+      index += 1;
+    } else if (flag === '--decision' && value) {
+      options.decisions.push(value);
       index += 1;
     } else {
       fail(
@@ -831,12 +1128,31 @@ function parseCli(argv) {
 function main() {
   try {
     const options = parseCli(process.argv.slice(2));
-    const result = validateArchitectureRegistry(options);
-    process.stdout.write(`${JSON.stringify({
-      ok: true,
-      modules: result.moduleIds,
-      capabilities: result.capabilityIds,
-    })}\n`);
+    let output;
+    if (options.command === 'validate') {
+      const result = validateArchitectureRegistry(options);
+      output = {
+        ok: true,
+        modules: result.moduleIds,
+        capabilities: result.capabilityIds,
+      };
+    } else if (options.command === 'changed-paths') {
+      output = validateChangedArchitecturePaths({
+        ...options,
+        changedPaths: options.changedPaths,
+      });
+    } else if (options.command === 'plan') {
+      output = validatePlanArchitecture(options);
+    } else {
+      output = {
+        ok: true,
+        receipt: buildPreEditContext({
+          ...options,
+          targets: options.changedPaths,
+        }),
+      };
+    }
+    process.stdout.write(`${JSON.stringify(output)}\n`);
   } catch (error) {
     const normalized =
       error instanceof ArchitectureGovernanceError

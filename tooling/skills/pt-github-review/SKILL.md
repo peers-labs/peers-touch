@@ -113,7 +113,7 @@ Review in this order:
 
 1. code that owns truth sources, security, privacy, persistence, protocol,
    runtime freshness, or CI gates;
-2. files matched by `docs/knowledge`;
+2. files matched by `docs/knowledge` or a registered architecture module;
 3. acceptance feature/capability contracts selected by the diff;
 4. public APIs and generated contract changes;
 5. tests, fixtures, and reports that claim coverage;
@@ -208,7 +208,8 @@ Scripts are evidence producers:
   plan, gate tiers, and capability proven/unproven scope.
 - `route-change.sh` identifies review profiles.
 - `hard-rules.sh` catches simple blocking patterns.
-- `knowledge-match.sh` finds knowledge entries that must be read.
+- `knowledge-match.sh` finds knowledge entries that must be read and delegates
+  changed-path architecture validation to the shared module-governance parser.
 - The formal execution plan schedules Acceptance Gates.
 - `acceptance-plan.py --active-plan` validates actual diff impact and projects
   the current or completion Gate set without becoming a second plan.
@@ -242,6 +243,7 @@ Treat these as blocking unless the user explicitly asks for exploratory review:
 | `silent-error` | swallowed errors, ignored errors, empty catches, or missing context |
 | `logging-security` | logs tokens, passwords, secrets, or PII |
 | `architecture-boundary` | lower layer redefines architecture or platform ownership |
+| `architecture-module-governance` | a changed active architecture module is unregistered, incomplete, overlaps another module, or references undeclared capabilities |
 | `duplicate-side-effect-import` | same dynamic import path appears 2+ times in a single file |
 | `user-home-absolute-path` | committed documentation-like text contains a developer or CI user-home absolute path instead of a repo-relative path or portable placeholder |
 | `repository-debug-artifact` | repository-root `debug-*`, `.dbg/`, ad-hoc prompt, runtime log, trace, screenshot, DOM dump, or temporary report |
@@ -259,6 +261,13 @@ Run knowledge matching for changed paths and then do semantic review.
 
 Path matching means a knowledge file must enter review context. It does not prove
 the code complies.
+
+For a changed path owned by
+`docs/architecture/architecture-module-governance/architecture-modules.json`,
+review the registered module documents, accepted decisions, positive
+capabilities, consumers, dependencies, and evidence Gates. Reject undocumented
+or overlapping ownership and any attempt to preserve removed names as a
+blacklist.
 
 Knowledge Delta Review:
 

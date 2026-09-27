@@ -294,6 +294,21 @@ Mandatory, not optional, when triggered:
 
 `execution-plans/` is not authored by this skill.
 
+For every new active architecture module, and every existing active module
+whose architecture documents are changed, the accepted model also includes one
+positive registry projection in
+`docs/architecture/architecture-module-governance/architecture-modules.json`:
+
+- module ID, root, status, owner, and characteristics;
+- the exact document set derived from those characteristics;
+- accepted decision IDs and non-overlapping governed paths;
+- current capability owners, contract roots, consumers, allowed dependencies,
+  and evidence Gates;
+- stable capability IDs from any external registry it consumes.
+
+The projection describes only current allowed capabilities. Do not encode
+removed names, aliases, migration blacklists, or compatibility inventories.
+
 ### Step 11. Run The Design Acceptance Gate
 
 Return `DESIGN_READY_FOR_REVIEW` only when:
@@ -307,6 +322,8 @@ Return `DESIGN_READY_FOR_REVIEW` only when:
   lifecycle, security, and large payloads where relevant.
 - Quality outcomes have executable evidence requirements.
 - Required document set is complete and discoverable.
+- The positive module registry projection is complete and validates when the
+  module is persisted.
 - Decisions include negative consequences and alternatives.
 - No execution phases or implementation status are disguised as architecture.
 

@@ -38,6 +38,7 @@ CURSOR_HOOK_EVENTS = (
     ("stop", "stop"),
 )
 WORKFLOW_KERNEL_FILES = (
+    "tooling/scripts/architecture/module-governance.mjs",
     "tooling/scripts/local-dev/workflow-action-store.mjs",
     "tooling/scripts/local-dev/workflow-anchor.mjs",
     "tooling/scripts/local-dev/workflow-conversation-binding.mjs",

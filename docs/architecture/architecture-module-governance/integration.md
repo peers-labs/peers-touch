@@ -59,6 +59,12 @@ Station Access Lifecycle 作为首个回填模块：
 - Review changed-path integration；
 - Station Access 首个模块回填。
 
+### 2.6 Agent Integration
+
+`agent-integration-control.py` 与 `agent-integration-audit.py` 把共享 parser
+纳入 canonical integration catalog。安装回执因此绑定 Hook、Kernel 和 parser
+的同一源码摘要；宿主 adapter 仍只转换输入输出，不解析 registry 或修改回执。
+
 ## 3. Rollout
 
 1. 先落地标准、治理模块和首个 Plan。

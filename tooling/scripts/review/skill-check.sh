@@ -1165,6 +1165,22 @@ if ! grep -q "republisher-broadcast-spam" <<< "$knowledge_dir_output"; then
   fail "knowledge-match.sh must match owns directories with trailing slashes"
 fi
 
+architecture_context_output="$(
+  tooling/scripts/review/knowledge-match.sh \
+    --changed-file tooling/scripts/plan/plan-package.mjs \
+    --strict 2>&1
+)"
+if ! grep -q '"architecture-module-governance"' <<< "$architecture_context_output"; then
+  fail "knowledge-match.sh must delegate changed paths to architecture governance"
+fi
+
+if tooling/scripts/review/knowledge-match.sh \
+  --changed-file docs/architecture/unregistered/design.md \
+  >/tmp/pt-architecture-unregistered.$$ 2>&1; then
+  fail "knowledge-match.sh must reject changed unregistered architecture modules"
+fi
+rm -f /tmp/pt-architecture-unregistered.$$
+
 if rg -n 'ignore (previous|all) instructions|you are now|system:\s*override|curl .*\| *sh|rm -rf /' "$skill_file" "$freshness_file" >/tmp/pt-skill-danger.$$ 2>/dev/null; then
   cat /tmp/pt-skill-danger.$$
   rm -f /tmp/pt-skill-danger.$$

@@ -130,6 +130,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "tooling/skills/pt-github-review",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "tooling/acceptance",
         "mode": "exclusive-write"
       },
@@ -162,7 +166,7 @@
       "dependsOn": [
         "AMG-01-DOCUMENT-CONTRACT"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -172,7 +176,7 @@
       "dependsOn": [
         "AMG-02-MODULE-REGISTRY"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {
@@ -223,14 +227,20 @@
       "architecture-module-governance",
       "acceptance-plan-self",
       "acceptance-infra-validation",
-      "acceptance-workflow-contract"
+      "acceptance-workflow-contract",
+      "development-workflow-control-plane",
+      "peers-dev-product",
+      "workspace-plan-generation-self"
     ]
   },
   "completion": [
     "architecture-module-governance",
     "acceptance-plan-self",
     "acceptance-infra-validation",
-    "acceptance-workflow-contract"
+    "acceptance-workflow-contract",
+    "development-workflow-control-plane",
+    "peers-dev-product",
+    "workspace-plan-generation-self"
   ],
   "full": [
     "architecture-module-governance",
@@ -240,7 +250,9 @@
     "acceptance-workflow-contract",
     "chat-lifecycle-tree-zero-reference-e2e",
     "desktop-release-build",
+    "development-workflow-control-plane",
     "mobile-native-build",
+    "peers-dev-product",
     "proto-build",
     "station-access-auth-e2e",
     "station-access-capability-contract",
@@ -248,7 +260,8 @@
     "station-access-federation-boundary-e2e",
     "station-access-lifecycle-aggregate-e2e",
     "station-access-scope-isolation-e2e",
-    "station-api-ownership"
+    "station-api-ownership",
+    "workspace-plan-generation-self"
   ]
 }
 ```
