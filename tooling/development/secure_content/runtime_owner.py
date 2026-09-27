@@ -1212,13 +1212,12 @@ def _require_mobile_private_runtime(
                     resource=f"client:{client_id}",
                 )
             return snapshot
-        detail = snapshot.get("errorMessage")
-        if isinstance(detail, str) and detail.strip():
+        if snapshot.get("errorPresent") is True:
             raise RuntimeOwnerBlocked(
                 "CLIENT_RUNTIME_UNAVAILABLE",
                 (
                     f"Mobile client {client_id!r} Private Social runtime is "
-                    f"inactive: {redact_text(detail)}"
+                    "inactive because it reported an activation failure"
                 ),
                 resource=f"client:{client_id}",
             )
