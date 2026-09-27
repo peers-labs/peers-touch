@@ -15,6 +15,8 @@ Environment:
     PT_ACCEPTANCE_RUNTIME_MANIFEST   Path to provisioned runtime manifest JSON.
     PT_AGENT_AS_F10_NEGATIVE_CONTROL Set to "1" to mark F10 as negative control.
     PT_FOUNDATION_STARTUP_TIMEOUT    Client startup timeout seconds (default 900).
+    PT_FOUNDATION_DEBUG_TUPLE        Run one canonical group-one tuple first for
+                                     diagnosis, using its JSON tuple key.
 """
 
 from __future__ import annotations
@@ -50,6 +52,7 @@ from tooling.acceptance.gates.agent.foundation_candidate_producer import (
     GATE_ID,
     FoundationAdapters,
     FoundationCandidateProducer,
+    load_foundation_tuples,
 )
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeFoundationAdapter,
@@ -3400,6 +3403,59 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             d11=d11_adapter,
             non_advertisement=non_advertisement_adapter,
         )
+
+        debug_tuple = os.environ.get("PT_FOUNDATION_DEBUG_TUPLE", "").strip()
+        if debug_tuple:
+            try:
+                tuple_fields = json.loads(debug_tuple)
+            except json.JSONDecodeError as error:
+                raise ScenarioRunnerError(
+                    "PT_FOUNDATION_DEBUG_TUPLE must be a JSON tuple key"
+                ) from error
+            if not isinstance(tuple_fields, list) or len(tuple_fields) != 8:
+                raise ScenarioRunnerError(
+                    "PT_FOUNDATION_DEBUG_TUPLE must be a JSON tuple key"
+                )
+            canonical_debug_tuple = json.dumps(
+                tuple_fields,
+                separators=(",", ":"),
+            )
+            matching = tuple(
+                runtime_tuple
+                for runtime_tuple in load_foundation_tuples()
+                if runtime_tuple.key == canonical_debug_tuple
+            )
+            if len(matching) != 1:
+                raise ScenarioRunnerError(
+                    f"PT_FOUNDATION_DEBUG_TUPLE did not resolve exactly once: "
+                    f"{debug_tuple}"
+                )
+            runtime_tuple = matching[0]
+            adapter = (
+                desktop_native_adapter
+                if runtime_tuple.platform == "desktop_app"
+                else browser_adapter
+            )
+            observation = (
+                adapter.observe_desktop_native(runtime_tuple)
+                if runtime_tuple.platform == "desktop_app"
+                else adapter.observe_browser(runtime_tuple)
+            )
+            run.write_json(
+                "runtime/debug-tuple-observation.json",
+                {
+                    "tuple": runtime_tuple.to_dict(),
+                    "observed": observation.observed,
+                    "passed": observation.passed,
+                    "runtimeAttestation": (
+                        observation.runtime_attestation.to_dict()
+                    ),
+                    "roleObservations": dict(observation.role_observations),
+                },
+            )
+            raise ScenarioRunnerError(
+                f"DEBUG_TUPLE_COMPLETE: {debug_tuple}"
+            )
 
         # --- Produce candidate manifest ---
         producer = FoundationCandidateProducer(adapters)
