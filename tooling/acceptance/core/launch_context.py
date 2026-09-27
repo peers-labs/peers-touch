@@ -11,6 +11,7 @@ import signal
 import socket
 import struct
 import subprocess
+import sys
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -795,9 +796,7 @@ class EphemeralGateLaunchContext:
                     endpoint,
                     self._max_frame_bytes,
                     stop=self._stop,
-                    deadline_monotonic=(
-                        time.monotonic() + self._request_timeout_seconds
-                    ),
+                    frame_timeout_seconds=self._request_timeout_seconds,
                 )
                 if request.get("type") == "close":
                     if set(request) != {"type", *identity} or any(
@@ -1032,10 +1031,11 @@ class EphemeralGateLaunchContext:
                 self._blocked_error = projected_blocked
             return projected
         if "error" in outcome:
+            handler_error = outcome["error"]
             return _error_response(
                 request_id,
                 EphemeralLaunchProtocolError.code,
-                "capability handler failed",
+                f"capability handler failed: {type(handler_error).__name__}: {handler_error}",
             )
         return _project_handler_response(
             handler,
@@ -1276,8 +1276,11 @@ class EphemeralGateClient:
                     "ephemeral capability request timed out",
                     operation="invoke",
                 )
+            detail = ""
+            if isinstance(error_data, dict):
+                detail = f": {error_data.get('message', '')}"
             raise EphemeralLaunchProtocolError(
-                "ephemeral capability request was rejected",
+                f"ephemeral capability request was rejected{detail}",
                 operation="invoke",
             )
         result = response.get("result")
@@ -1442,7 +1445,8 @@ def _isolated_python_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
             "context-enabled Gate must use a Python module, script, or -c argv",
             operation="gate_process",
         )
-    return (argv[0], "-I", "-S", bootstrap, *target)
+    executable = sys.executable if argv[0] in {"python", "python3"} else argv[0]
+    return (executable, "-I", "-S", bootstrap, *target)
 
 
 def _project_handler_response(
@@ -1653,13 +1657,31 @@ def _recv_frame(
     *,
     stop: Optional[threading.Event] = None,
     deadline_monotonic: Optional[float] = None,
+    frame_timeout_seconds: Optional[float] = None,
 ) -> Mapping[str, Any]:
-    prefix = _recv_exact(
-        endpoint,
-        _LENGTH_PREFIX.size,
-        stop=stop,
-        deadline_monotonic=deadline_monotonic,
-    )
+    if deadline_monotonic is not None and frame_timeout_seconds is not None:
+        raise ValueError("frame deadline and timeout are mutually exclusive")
+    if frame_timeout_seconds is None:
+        prefix = _recv_exact(
+            endpoint,
+            _LENGTH_PREFIX.size,
+            stop=stop,
+            deadline_monotonic=deadline_monotonic,
+        )
+    else:
+        first_byte = _recv_exact(
+            endpoint,
+            1,
+            stop=stop,
+            deadline_monotonic=None,
+        )
+        deadline_monotonic = time.monotonic() + frame_timeout_seconds
+        prefix = first_byte + _recv_exact(
+            endpoint,
+            _LENGTH_PREFIX.size - 1,
+            stop=stop,
+            deadline_monotonic=deadline_monotonic,
+        )
     (length,) = _LENGTH_PREFIX.unpack(prefix)
     if length < 1 or length > max_frame_bytes:
         raise EphemeralLaunchProtocolError(

@@ -1,0 +1,35 @@
+{
+  "name": "pt-ew-plugin",
+  "version": "0.1.0",
+  "description": "Conversation-bound Peers-Touch workflow hooks for Codex.",
+  "author": {
+    "name": "Peers Labs",
+    "url": "https://github.com/peers-labs"
+  },
+  "homepage": "https://github.com/peers-labs/peers-touch",
+  "repository": "https://github.com/peers-labs/peers-touch",
+  "license": "Apache-2.0",
+  "keywords": [
+    "development-workflow",
+    "worktree",
+    "guardrails"
+  ],
+  "hooks": "./hooks.json",
+  "interface": {
+    "displayName": "Peers-Touch Workflow",
+    "shortDescription": "Conversation-bound workflow admission",
+    "longDescription": "Binds one conversation to one execution root, permits cross-worktree reads, denies cross-worktree writes, and enforces workflow state before mutation.",
+    "developerName": "Peers Labs",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive"
+    ],
+    "websiteURL": "https://github.com/peers-labs/peers-touch",
+    "defaultPrompt": [
+      "Continue the current Peers-Touch development plan.",
+      "Show the current workflow status.",
+      "Start a new Peers-Touch development task."
+    ],
+    "brandColor": "#1677FF"
+  }
+}

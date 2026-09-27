@@ -50,10 +50,6 @@ pub fn wizard_api_execute(input: WizardExecuteApiInput) -> AppResult<StubPayload
     application_system::wizard_api_execute(input)
 }
 #[tauri::command]
-pub fn statistics_get() -> AppResult<StubPayload> {
-    application_system::statistics_get()
-}
-#[tauri::command]
 pub fn preferences_get() -> AppResult<StubPayload> {
     application_system::preferences_get()
 }

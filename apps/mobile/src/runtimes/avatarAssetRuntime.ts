@@ -3,6 +3,10 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { DomainCacheRepository } from '@peers-touch/client-storage';
 
 import type { MobileAuthSession } from '../features/auth/authSession';
+import {
+  executeStationOperation,
+  responseArrayBuffer,
+} from '../services/stationTransport';
 import { useAuthStore } from '../features/auth/authStore';
 import { createMobileClientStorageRuntime } from '../storage/mobileClientStorage';
 import { readableErrorMessage } from '../utils/errorMessage';
@@ -47,14 +51,13 @@ const inflight = new Map<string, AbortController>();
 
 const mobileAvatarAdapter: AvatarAssetPlatformAdapter = {
   download: async ({ displayUrl, session }, signal) => {
-    const response = await fetch(displayUrl, {
-      cache: 'force-cache',
-      headers: { Authorization: `Bearer ${session.accessToken}` },
-      signal,
-    });
-    if (!response.ok) throw new Error(`mobile.avatar.fetchFailed.${response.status}`);
-
-    const blob = await response.blob();
+    const url = new URL(displayUrl);
+    const key = url.pathname === '/sub-oss/file'
+      ? url.searchParams.get('key')?.trim()
+      : '';
+    const blob = key
+      ? await loadStationAvatar(session, key, signal)
+      : await loadPublicAvatar(displayUrl, signal);
     return blobToDataUrl(blob);
   },
 };
@@ -129,7 +132,7 @@ async function ensureAvatarAsset({ displayUrl, session }: EnsureAvatarInput): Pr
     return;
   }
 
-  if (!session?.accessToken) {
+  if (!session) {
     setAvatarProjection(displayUrl, failedProjection(displayUrl, 'mobile.avatar.missingSession'));
     return;
   }
@@ -183,6 +186,36 @@ async function ensureAvatarAsset({ displayUrl, session }: EnsureAvatarInput): Pr
   } finally {
     inflight.delete(displayUrl);
   }
+}
+
+async function loadStationAvatar(
+  session: MobileAuthSession,
+  key: string,
+  signal: AbortSignal,
+): Promise<Blob> {
+  const response = await executeStationOperation(
+    session,
+    { operationId: 'oss_download', key },
+    signal,
+  );
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`mobile.avatar.fetchFailed.${response.status}`);
+  }
+  return new Blob([responseArrayBuffer(response)], {
+    type: response.contentType || 'application/octet-stream',
+  });
+}
+
+async function loadPublicAvatar(
+  displayUrl: string,
+  signal: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(displayUrl, {
+    cache: 'force-cache',
+    signal,
+  });
+  if (!response.ok) throw new Error(`mobile.avatar.fetchFailed.${response.status}`);
+  return response.blob();
 }
 
 async function readCachedAvatar(

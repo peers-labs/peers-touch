@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createServer, request as httpRequest } from 'node:http';
 import path from 'node:path';
@@ -11,12 +10,12 @@ import { Worker } from 'node:worker_threads';
 import {
   isDirectInvocation,
   repoRoot,
-  workspaceIdForRoot,
 } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
+import { inspectGitWorkspace } from '../../../tooling/scripts/local-dev/git-workspace.mjs';
+import { createSnapshotBroker } from './snapshot-broker.mjs';
 import { buildDevSnapshot } from './status.mjs';
 
 export const DEV_SERVER_KIND = 'peers-touch-dev-server';
-export const DEV_SERVER_PROTOCOL_VERSION = 2;
 export const DEV_SERVER_HOST = '127.0.0.1';
 export const DEV_SERVER_PORT = 4177;
 
@@ -64,44 +63,59 @@ function parseArguments(argv) {
   return { action, options };
 }
 
-function gitValue(root, args, field) {
-  try {
-    return execFileSync('git', args, {
-      cwd: root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }).trim();
-  } catch (error) {
-    throw new PeersDevError(
-      'DEV_SERVER_SOURCE_IDENTITY_UNAVAILABLE',
-      `cannot resolve ${field}`,
-      { cause: error?.stderr?.toString().trim() || String(error) },
-    );
-  }
-}
-
 export function buildServerIdentity(options = {}) {
   const sourceRoot = realpathSync(options.sourceRoot ?? repoRoot);
   const host = options.host ?? DEV_SERVER_HOST;
   const port = options.port ?? DEV_SERVER_PORT;
+  const workspace = inspectGitWorkspace(sourceRoot);
+  if (!workspace.stable) {
+    throw new PeersDevError(
+      'DEV_SERVER_SOURCE_IDENTITY_UNAVAILABLE',
+      'source changed while Peers Dev identity was captured',
+    );
+  }
   return {
-    schemaVersion: 1,
     kind: DEV_SERVER_KIND,
-    protocolVersion: DEV_SERVER_PROTOCOL_VERSION,
     endpoint: `http://${host}:${port}`,
     startedAt: (options.startedAt ?? new Date()).toISOString(),
     source: {
-      workspaceId: workspaceIdForRoot(sourceRoot),
-      branch: gitValue(sourceRoot, ['branch', '--show-current'], 'branch'),
-      head: gitValue(sourceRoot, ['rev-parse', 'HEAD'], 'HEAD'),
-      dirty:
-        gitValue(
-          sourceRoot,
-          ['status', '--porcelain', '--untracked-files=normal'],
-          'worktree status',
-        ) !== '',
+      workspaceId: workspace.workspaceId,
+      branch: workspace.branch,
+      head: workspace.commit,
+      dirty: !workspace.clean,
+      workspaceDigest: workspace.workspaceDigest,
     },
   };
+}
+
+export function buildServerFreshness(identity, options = {}) {
+  const checkedAt = (options.now ?? new Date()).toISOString();
+  try {
+    const sourceRoot = realpathSync(options.sourceRoot ?? repoRoot);
+    const workspace = inspectGitWorkspace(sourceRoot);
+    if (!workspace.stable) throw new Error('source changed during capture');
+    const currentSource = {
+      workspaceId: workspace.workspaceId,
+      branch: workspace.branch,
+      head: workspace.commit,
+      dirty: !workspace.clean,
+      workspaceDigest: workspace.workspaceDigest,
+    };
+    return {
+      state:
+        JSON.stringify(currentSource) === JSON.stringify(identity.source)
+          ? 'current'
+          : 'restart-required',
+      checkedAt,
+      currentSource,
+    };
+  } catch {
+    return {
+      state: 'source-unavailable',
+      checkedAt,
+      currentSource: null,
+    };
+  }
 }
 
 function sendJson(response, status, value) {
@@ -154,11 +168,24 @@ function buildDevSnapshotAsync(options) {
 
 export function createDevHttpServer(options) {
   const envRepo = realpathSync(options.envRepo);
+  const sourceRoot = realpathSync(options.sourceRoot ?? repoRoot);
   const assetsRoot = realpathSync(options.assetsRoot ?? DEFAULT_ASSETS_ROOT);
   const identity = options.identity;
   const buildSnapshot = options.buildSnapshot ?? buildDevSnapshotAsync;
+  const broker =
+    options.broker ??
+    createSnapshotBroker({
+      buildSnapshot: () =>
+        buildSnapshot({
+          home: options.home,
+          envRepo,
+          server: identity,
+          serverFreshness: buildServerFreshness(identity, { sourceRoot }),
+        }),
+      ...(options.brokerOptions ?? {}),
+    });
 
-  return createServer(async (request, response) => {
+  const server = createServer(async (request, response) => {
     if (request.method !== 'GET') {
       sendJson(response, 405, { error: 'METHOD_NOT_ALLOWED' });
       return;
@@ -168,17 +195,15 @@ export function createDevHttpServer(options) {
       sendJson(response, 200, identity);
       return;
     }
+    if (pathname === '/api/events') {
+      if (!(await broker.subscribe(request, response))) {
+        sendJson(response, 503, { error: 'DEV_SSE_CAPACITY_REACHED' });
+      }
+      return;
+    }
     if (pathname === '/api/status') {
       try {
-        sendJson(
-          response,
-          200,
-          await buildSnapshot({
-            home: options.home,
-            envRepo,
-            server: identity,
-          }),
-        );
+        sendJson(response, 200, await broker.snapshot());
       } catch (error) {
         sendJson(response, 503, {
           error: error.code ?? 'DEV_STATUS_UNAVAILABLE',
@@ -206,6 +231,9 @@ export function createDevHttpServer(options) {
     });
     response.end(body);
   });
+  server.snapshotBroker = broker;
+  server.once('close', () => broker.close());
+  return server;
 }
 
 function requestServerIdentity(host, port, timeoutMs) {
@@ -264,21 +292,40 @@ function requestServerIdentity(host, port, timeoutMs) {
 }
 
 function compatibleIdentity(probe, host, port) {
-  const source = probe.payload?.source;
+  const payload = probe.payload;
+  const source = payload?.source;
+  const payloadKeys =
+    payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+      ? Object.keys(payload).sort()
+      : [];
+  const sourceKeys =
+    source !== null && typeof source === 'object' && !Array.isArray(source)
+      ? Object.keys(source).sort()
+      : [];
   return (
     probe.state === 'reachable' &&
     probe.status === 200 &&
-    probe.payload?.kind === DEV_SERVER_KIND &&
-    probe.payload?.schemaVersion === 1 &&
-    probe.payload?.protocolVersion === DEV_SERVER_PROTOCOL_VERSION &&
-    probe.payload?.endpoint === `http://${host}:${port}` &&
+    JSON.stringify(payloadKeys) ===
+      JSON.stringify(['endpoint', 'kind', 'source', 'startedAt']) &&
+    JSON.stringify(sourceKeys) ===
+      JSON.stringify([
+        'branch',
+        'dirty',
+        'head',
+        'workspaceDigest',
+        'workspaceId',
+      ]) &&
+    payload.kind === DEV_SERVER_KIND &&
+    payload.endpoint === `http://${host}:${port}` &&
     typeof source?.workspaceId === 'string' &&
     source.workspaceId.length > 0 &&
     typeof source.branch === 'string' &&
     source.branch.length > 0 &&
     typeof source.head === 'string' &&
     /^[0-9a-f]{40}$/.test(source.head) &&
-    typeof source.dirty === 'boolean'
+    typeof source.dirty === 'boolean' &&
+    (source.workspaceDigest === 'clean' ||
+      /^sha256:[0-9a-f]{64}$/.test(source.workspaceDigest))
   );
 }
 

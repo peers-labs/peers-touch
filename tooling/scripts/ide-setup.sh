@@ -6,7 +6,7 @@
 #   ./tooling/scripts/ide-setup.sh <ide-name>
 #   ./tooling/scripts/ide-setup.sh --clean <ide-name>
 #
-# Supported IDEs: trae, cursor
+# Supported agent hosts: trae, cursor, codex
 
 set -euo pipefail
 
@@ -51,6 +51,13 @@ detect_ide() {
   if [[ "${VSCODE_EXTENSIONS_PATH:-}" == *cursor* ]]; then
     echo "cursor"; return
   fi
+  # Codex: explicit product metadata or an active Codex home.
+  if [[ "${TERM_PRODUCT:-}" == *[Cc]odex* ]]; then
+    echo "codex"; return
+  fi
+  if [[ -n "${CODEX_HOME:-}" ]]; then
+    echo "codex"; return
+  fi
   echo ""
 }
 
@@ -60,12 +67,12 @@ if [[ -z "$IDE_NAME" ]]; then
   if [[ -n "$IDE_NAME" ]]; then
     info "Auto-detected IDE: $IDE_NAME"
   else
-    die "Could not auto-detect IDE. Usage: $0 [--clean] <trae|cursor>"
+    die "Could not auto-detect host. Usage: $0 [--clean] <trae|cursor|codex>"
   fi
 fi
 
-if [[ "$IDE_NAME" != "trae" && "$IDE_NAME" != "cursor" ]]; then
-  die "Unsupported IDE: $IDE_NAME (expected: trae or cursor)"
+if [[ "$IDE_NAME" != "trae" && "$IDE_NAME" != "cursor" && "$IDE_NAME" != "codex" ]]; then
+  die "Unsupported host: $IDE_NAME (expected: trae, cursor, or codex)"
 fi
 
 [[ -d "$IDE_SRC" ]] || die "Source directory not found: $IDE_SRC"
@@ -201,6 +208,17 @@ setup_cursor() {
   done
 }
 
+# --- codex setup ---
+
+setup_codex() {
+  local agent_dir="$ROOT_DIR/.agents"
+
+  # Codex reads AGENTS.md directly. Project Skills are linked by setup.mk after
+  # this script returns, so no host-specific rules are copied here.
+  ensure_dir "$agent_dir"
+  info "Codex uses AGENTS.md and .agents/skills"
+}
+
 # --- main ---
 
 echo ""
@@ -210,6 +228,7 @@ echo ""
 case "$IDE_NAME" in
   trae)   setup_trae   ;;
   cursor) setup_cursor ;;
+  codex)  setup_codex  ;;
 esac
 
 echo ""
@@ -225,10 +244,18 @@ print_tree() {
   fi
 }
 
-print_tree "$ROOT_DIR/.$IDE_NAME"
+if [[ "$IDE_NAME" == "codex" ]]; then
+  print_tree "$ROOT_DIR/.agents"
+else
+  print_tree "$ROOT_DIR/.$IDE_NAME"
+fi
 
 for i in "${!SCOPED_NAMES[@]}"; do
-  local_ide="$ROOT_DIR/${SCOPED_PATHS[$i]}/.$IDE_NAME"
+  if [[ "$IDE_NAME" == "codex" ]]; then
+    local_ide="$ROOT_DIR/${SCOPED_PATHS[$i]}/.agents"
+  else
+    local_ide="$ROOT_DIR/${SCOPED_PATHS[$i]}/.$IDE_NAME"
+  fi
   if [[ -d "$local_ide" || -L "$local_ide/rules" ]]; then
     echo ""
     info "Scoped: ${SCOPED_PATHS[$i]}/.$IDE_NAME"

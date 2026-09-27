@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Modal } from 'antd';
 
 import { AppProviders } from './app/AppProviders';
 import {
@@ -7,14 +8,19 @@ import {
 } from './app/lifecycle';
 import { useMobileI18n } from './app/mobileI18n';
 import { MobileShell } from './components/MobileShell';
-import { RecoveryOverlayHost } from './components/recovery';
 import {
+  RecoveryOverlayHost,
+  ScopeExitDraftDecisionOverlay,
+  type ScopeExitDecisionReason,
+} from './components/recovery';
+import {
+  currentAccessGate,
   submitStationLoginGate,
   submitStationInviteCodeGate,
+  submitStationSchemaGate,
   isAccessGranted,
   loadRememberedLoginAccounts,
   rememberLoginAccount,
-  type MobileAuthSession,
   type RememberedLoginAccount,
   type StationLoginInput,
 } from './features/auth/authSession';
@@ -23,9 +29,15 @@ import { useAuthStore } from './features/auth/authStore';
 import { probeStation, verifyStationIdentity, type StationIdentityResult } from './features/station/stationConnection';
 import { StationLaunchScreen } from './features/station/StationLaunchScreen';
 import {
-  logoutAuthRuntimeSession,
-  startStationAccessAttemptWithRecovery,
-} from './runtimes/authRuntime';
+  applyAccessGateRuntimeResult,
+  cancelAccessAttemptForActiveStation,
+  refreshAccessDecisionForActiveStation,
+  startAccessAttemptForActiveStation,
+} from './runtimes/accessRuntime';
+import {
+  activateNativeSessionRuntime,
+  logoutSessionRuntime,
+} from './runtimes/sessionRuntime';
 import {
   getRecoveryProjection,
   type DeviceLocalFlagState,
@@ -36,17 +48,38 @@ import {
   activeStationEntry,
   addStationEntry,
   buildStationUrl,
-  emptyStationRegistry,
-  loadStationRegistry,
-  persistStationRegistry,
   removeStationEntry,
+  replaceStationEntryIdentity,
   requireMatchingStationIdentity,
+  stationEntryAtUrl,
   updateStationEntryStatus,
   type StationProtocol,
   type MobileStationEntry,
   type StoredStationRegistry,
 } from './features/station/stationRegistry';
-import { purgeLegacyMobileIdentityStorage } from './storage/mobileClientStorage';
+import {
+  readStationRegistryProjection,
+  replaceStationRegistryProjection,
+  updateStationRegistryProjection,
+  useStationRegistryProjection,
+} from './runtimes/stationRuntime';
+import {
+  notifyReliabilityCommandChanged,
+  openReliabilityAdmission,
+  prepareReliabilityScopeExit,
+  readReliabilityRuntimeStatus,
+} from './runtimes/commandRuntime';
+import type { DraftDisposition } from './app/lifecycle/types';
+
+interface PendingScopeExitRequest {
+  readonly reason: ScopeExitDecisionReason;
+  readonly draftCount: number;
+  readonly committedDisposition: DraftDisposition | null;
+  readonly run: (disposition: DraftDisposition) => Promise<void>;
+  readonly cancel: () => Promise<void>;
+  readonly canCancel: boolean;
+}
+
 
 /**
  * MobileAppRoot — root renderer for the lifecycle-owned launch-state machine.
@@ -65,22 +98,21 @@ function MobileAppRoot() {
   const lifecycle = useLifecycleKernel();
 
   const launchState = lifecycle.launchState;
-  const [stationRegistry, setStationRegistry] = useState<StoredStationRegistry>(() => emptyStationRegistry());
+  const stationRegistry = useStationRegistryProjection();
   const [stationError, setStationError] = useState<string | null>(null);
   const [stationChecking, setStationChecking] = useState(false);
   const [verifyingStationUrls, setVerifyingStationUrls] = useState<string[]>([]);
   const [rememberedAccounts, setRememberedAccounts] = useState<RememberedLoginAccount[]>([]);
-  const stationRegistryRef = useRef(stationRegistry);
-  const authSession = useAuthStore((state) => state.session);
   const authError = useAuthStore((state) => state.error);
   const authLoading = useAuthStore((state) => state.loading);
-  const authRestored = useAuthStore((state) => state.restored);
   const accessDecision = useAuthStore((state) => state.accessDecision);
-  const setAuthSession = useAuthStore((state) => state.setSession);
   const setAuthError = useAuthStore((state) => state.setError);
   const setAuthLoading = useAuthStore((state) => state.setLoading);
   const setAccessDecision = useAuthStore((state) => state.setAccessDecision);
   const autoVerifiedStationUrls = useRef<Set<string>>(new Set());
+  const pendingScopeExitRef = useRef<PendingScopeExitRequest | null>(null);
+  const [pendingScopeExit, setPendingScopeExit] =
+    useState<PendingScopeExitRequest | null>(null);
   const stationUrlsKey = stationRegistry.entries.map((entry) => entry.url).join('\n');
   const activeStation = activeStationEntry(stationRegistry);
 
@@ -89,47 +121,9 @@ function MobileAppRoot() {
   useEffect(() => {
     if (lifecycle.phase !== 'ACTIVE') return;
 
-    let mounted = true;
-    purgeLegacyMobileIdentityStorage();
 
-    loadStationRegistry()
-      .catch(() => emptyStationRegistry())
-      .then((registry) => {
-        if (!mounted) return;
-        replaceStationRegistry(registry);
-        const kernel = getMobileLifecycleKernel();
-        if (kernel.getState().launchState === 'app-boot') {
-          kernel.transitionLaunchState('station-selection');
-        }
-      });
-
-    return () => {
-      mounted = false;
-    };
   }, [lifecycle.generation, lifecycle.phase]);
 
-  // --- Auto-start access gate chain when session matches station ---
-  useEffect(() => {
-    if (!authRestored) return;
-    if (!activeStation) return;
-    if (launchState !== 'station-selection') return;
-    if (accessDecision) {
-      if (
-        authSession?.stationPeerId === activeStation.stationPeerId
-        && isAccessGranted(accessDecision)
-      ) {
-        enterShell();
-      } else {
-        getMobileLifecycleKernel().transitionLaunchState('access-gate-chain');
-      }
-      return;
-    }
-    if (
-      !authSession
-      || authSession.stationPeerId !== activeStation.stationPeerId
-    ) return;
-    void startAccessGateChain(authSession);
-  }, [accessDecision, activeStation, authRestored, authSession, launchState]);
 
   // --- Auto-probe station URLs ---
   useEffect(() => {
@@ -161,19 +155,13 @@ function MobileAppRoot() {
     };
   }, [activeStation?.stationPeerId]);
 
-  function replaceStationRegistry(registry: StoredStationRegistry) {
-    stationRegistryRef.current = registry;
-    setStationRegistry(registry);
-  }
-
   async function commitStationRegistry(registry: StoredStationRegistry) {
-    replaceStationRegistry(registry);
-    await persistStationRegistry(registry);
+    await replaceStationRegistryProjection(registry);
   }
 
   async function commitStationScope(registry: StoredStationRegistry) {
-    const currentStationPeerId =
-      stationRegistryRef.current.activeStationPeerId;
+    const current = await readStationRegistryProjection();
+    const currentStationPeerId = current.activeStationPeerId;
     if (
       !currentStationPeerId
       || currentStationPeerId === registry.activeStationPeerId
@@ -182,15 +170,117 @@ function MobileAppRoot() {
       return;
     }
 
-    await getMobileLifecycleKernel().transitionScope(
+    const completed = await runUserScopeTransition(
       'station-replace',
       async () => {
-        await logoutAuthRuntimeSession();
-        await persistStationRegistry(registry);
-        replaceStationRegistry(registry);
+        await logoutSessionRuntime();
+        await replaceStationRegistryProjection(registry);
       },
     );
-    showStationSelection();
+    if (completed) showStationSelection();
+  }
+
+  function confirmStationIdentityReplacement(
+    station: MobileStationEntry,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      Modal.confirm({
+        title: t('mobile.launch.stationReplaceConfirmTitle'),
+        content: t('mobile.launch.stationReplaceConfirmBody', {
+          station: station.label,
+        }),
+        okText: t('mobile.launch.stationReplace'),
+        cancelText: t('common.action.cancel'),
+        okButtonProps: { danger: true },
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+  }
+
+  async function runUserScopeTransition(
+    reason: ScopeExitDecisionReason,
+    transition: () => Promise<void>,
+    options: { readonly restart?: boolean } = {},
+  ): Promise<boolean> {
+    if (pendingScopeExitRef.current) {
+      throw new Error('mobile.reliability.scopeExitAlreadyPending');
+    }
+    const observed = await readReliabilityRuntimeStatus();
+    const status = observed.active
+      && observed.stationPeerId
+      && observed.actorPtid
+      ? await prepareReliabilityScopeExit(
+          observed.stationPeerId,
+          observed.actorPtid,
+          observed.runtimeGeneration,
+        )
+      : observed;
+    const execute = async (draftDisposition: DraftDisposition) => {
+      await getMobileLifecycleKernel().transitionScope(
+        reason,
+        transition,
+        options.restart === undefined
+          ? { draftDisposition }
+          : { restart: options.restart, draftDisposition },
+      );
+    };
+
+    if (!status.active) {
+      await execute('discard');
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const request: PendingScopeExitRequest = {
+        reason,
+        draftCount: status.draftCount,
+        committedDisposition: status.draftCount === 0 ? 'discard' : null,
+        canCancel: status.draftCount > 0,
+        run: async (draftDisposition) => {
+          const current = pendingScopeExitRef.current;
+          if (!current) {
+            throw new Error('mobile.reliability.scopeExitMissing');
+          }
+          if (
+            current.committedDisposition
+            && current.committedDisposition !== draftDisposition
+          ) {
+            throw new Error('mobile.reliability.scopeExitDispositionCommitted');
+          }
+          const committedRequest = {
+            ...current,
+            committedDisposition: draftDisposition,
+            canCancel: false,
+          };
+          pendingScopeExitRef.current = committedRequest;
+          setPendingScopeExit(committedRequest);
+          try {
+            await execute(draftDisposition);
+            pendingScopeExitRef.current = null;
+            setPendingScopeExit(null);
+            resolve(true);
+          } catch (error) {
+            throw error;
+          }
+        },
+        cancel: async () => {
+          const current = pendingScopeExitRef.current;
+          if (!current?.canCancel) return;
+          await openReliabilityAdmission(
+            status.stationPeerId!,
+            status.actorPtid!,
+            status.runtimeGeneration,
+          );
+          notifyReliabilityCommandChanged();
+          pendingScopeExitRef.current = null;
+          setPendingScopeExit(null);
+          resolve(false);
+        },
+      };
+      pendingScopeExitRef.current = request;
+      setPendingScopeExit(request);
+    });
   }
 
   function autoProbeStation(url: string) {
@@ -199,8 +289,8 @@ function MobileAppRoot() {
     setVerifyingStationUrls((urls) => (urls.includes(url) ? urls : [...urls, url]));
 
     probeStation(url)
-      .then((probe) => {
-        setStationRegistry((current) => {
+      .then(async (probe) => {
+        await updateStationRegistryProjection((current) => {
           const entry = current.entries.find((candidate) => candidate.url === url);
           if (!entry) return current;
           const next = updateStationEntryStatus(current, entry.stationPeerId, {
@@ -209,8 +299,6 @@ function MobileAppRoot() {
             online: probe.online,
           });
           if (next === current) return current;
-          stationRegistryRef.current = next;
-          void persistStationRegistry(next);
           return next;
         });
       })
@@ -232,18 +320,28 @@ function MobileAppRoot() {
         setAuthError(t('mobile.auth.gateNotReady'));
         return;
       }
+      const gate = currentAccessGate(accessDecision);
+      if (!gate) {
+        setAuthError(t('mobile.auth.gateNotReady'));
+        return;
+      }
 
-      const { session, decision } = await submitStationLoginGate({
+      const { decision } = await submitStationLoginGate({
         stationUrl: activeStation.url,
         stationPeerId: activeStation.stationPeerId,
         attemptId: accessDecision.attemptId,
+        gate,
         ...input,
       });
-      await rememberLoginAccount(session, input.email).catch(() => undefined);
-      setRememberedAccounts(await loadRememberedLoginAccounts(session.stationPeerId).catch(() => []));
-      setAuthSession(session);
-      setAccessDecision(decision);
-      if (isAccessGranted(decision)) enterShell();
+      applyAccessGateRuntimeResult(decision);
+      if (isAccessGranted(decision)) {
+        const activeSession = await activateNativeSessionRuntime(activeStation, decision);
+        await rememberLoginAccount(activeSession, input.email).catch(() => undefined);
+        setRememberedAccounts(
+          await loadRememberedLoginAccounts(activeSession.stationPeerId).catch(() => []),
+        );
+        await reconcileShellAdmission();
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
       setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.loginFailed')));
@@ -253,21 +351,31 @@ function MobileAppRoot() {
   }
 
   async function logout() {
-    const kernel = getMobileLifecycleKernel();
-    await kernel.transitionScope('logout', logoutAuthRuntimeSession);
-    const selectedStation = activeStationEntry(stationRegistryRef.current);
+    const completed = await runUserScopeTransition(
+      'logout',
+      async () => {
+        await logoutSessionRuntime();
+      },
+    );
+    if (!completed) return;
+    const selectedStation = activeStationEntry(
+      await readStationRegistryProjection(),
+    );
     if (!selectedStation) {
       showStationSelection();
       return;
     }
-    await startAccessGateChainFor(selectedStation, null);
+    await startAccessGateChainFor(selectedStation);
   }
 
   async function leaveCurrentStationForSelection() {
-    await getMobileLifecycleKernel().transitionScope(
+    const completed = await runUserScopeTransition(
       'station-replace',
-      logoutAuthRuntimeSession,
+      async () => {
+        await logoutSessionRuntime();
+      },
     );
+    if (!completed) return;
     setAccessDecision(null);
     showStationSelection();
   }
@@ -276,19 +384,24 @@ function MobileAppRoot() {
     if (state.reason === 'session-expired') {
       await getMobileLifecycleKernel().transitionScope(
         'revocation',
-        logoutAuthRuntimeSession,
+        logoutSessionRuntime,
+        { draftDisposition: 'retain' },
       );
-      const selectedStation = activeStationEntry(stationRegistryRef.current);
+      const selectedStation = activeStationEntry(
+        await readStationRegistryProjection(),
+      );
       if (!selectedStation) {
         showStationSelection();
         return;
       }
-      await startAccessGateChainFor(selectedStation, null);
+      await startAccessGateChainFor(selectedStation);
       getRecoveryProjection().clearDeviceLocalFlag(state.reason);
       return;
     }
 
-    const selectedStation = activeStationEntry(stationRegistryRef.current);
+    const selectedStation = activeStationEntry(
+      await readStationRegistryProjection(),
+    );
     if (!selectedStation) {
       throw new Error('mobile.auth.activeStationRequired');
     }
@@ -305,7 +418,9 @@ function MobileAppRoot() {
   async function reAuthenticateSessionMismatch(
     state: SessionMismatchState,
   ) {
-    const selectedStation = activeStationEntry(stationRegistryRef.current);
+    const selectedStation = activeStationEntry(
+      await readStationRegistryProjection(),
+    );
     if (
       !selectedStation
       || selectedStation.stationPeerId !== state.expectedStationPeerId
@@ -316,9 +431,10 @@ function MobileAppRoot() {
     requireMatchingStationIdentity(selectedStation, verified.stationPeerId);
     await getMobileLifecycleKernel().transitionScope(
       'revocation',
-      logoutAuthRuntimeSession,
+      logoutSessionRuntime,
+      { draftDisposition: 'retain' },
     );
-    await startAccessGateChainFor(selectedStation, null);
+    await startAccessGateChainFor(selectedStation);
     getRecoveryProjection().clearSessionMismatch();
   }
 
@@ -331,17 +447,27 @@ function MobileAppRoot() {
       setAuthError(t('mobile.auth.gateNotReady'));
       return;
     }
+    const gate = currentAccessGate(accessDecision);
+    if (!gate) {
+      setAuthError(t('mobile.auth.gateNotReady'));
+      return;
+    }
 
     setAuthLoading(true);
     setAuthError(null);
     try {
-      const decision = await submitStationInviteCodeGate({
+      const { decision } = await submitStationInviteCodeGate({
+        stationPeerId: activeStation.stationPeerId,
         stationUrl: activeStation.url,
         attemptId: accessDecision.attemptId,
+        gate,
         inviteCode: code,
       });
-      setAccessDecision(decision);
-      if (isAccessGranted(decision)) enterShell();
+      applyAccessGateRuntimeResult(decision);
+      if (isAccessGranted(decision)) {
+        await activateNativeSessionRuntime(activeStation, decision);
+        await reconcileShellAdmission();
+      }
     } catch (error) {
       const msg = error instanceof Error ? error.message : '';
       setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.inviteCodeRejected')));
@@ -350,13 +476,59 @@ function MobileAppRoot() {
     }
   }
 
-  async function startAccessGateChain(session?: MobileAuthSession | null) {
-    const selectedStation = activeStationEntry(stationRegistryRef.current);
-    if (!selectedStation) return;
-    await startAccessGateChainFor(selectedStation, session);
+  async function submitSchemaGate(values: Record<string, string | boolean | number>) {
+    if (!activeStation || !accessDecision?.attemptId) {
+      setAuthError(t('mobile.auth.gateNotReady'));
+      return;
+    }
+    const gate = currentAccessGate(accessDecision);
+    if (!gate) {
+      setAuthError(t('mobile.auth.gateNotReady'));
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      const { decision } = await submitStationSchemaGate({
+        stationPeerId: activeStation.stationPeerId,
+        stationUrl: activeStation.url,
+        attemptId: accessDecision.attemptId,
+        gate,
+        values,
+      });
+      applyAccessGateRuntimeResult(decision);
+      if (isAccessGranted(decision)) {
+        await activateNativeSessionRuntime(activeStation, decision);
+        await reconcileShellAdmission();
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : '';
+      setAuthError(t(msg) !== msg ? t(msg) : (msg || t('mobile.auth.gateUnavailable')));
+    } finally {
+      setAuthLoading(false);
+    }
   }
 
-  async function startAccessGateChainFor(station: MobileStationEntry, session?: MobileAuthSession | null) {
+  async function refreshAccessGateDecision() {
+    try {
+      const decision = await refreshAccessDecisionForActiveStation();
+      if (isAccessGranted(decision)) await reconcileShellAdmission();
+    } catch {
+      // The auth runtime preserves the attempt and projects the inline error.
+    }
+  }
+
+  async function cancelAccessGateAttemptAndChangeStation() {
+    try {
+      await cancelAccessAttemptForActiveStation();
+    } catch {
+      return;
+    }
+    showStationSelection();
+  }
+
+  async function startAccessGateChainFor(station: MobileStationEntry) {
     getMobileLifecycleKernel().transitionLaunchState('station-handshake');
     setAuthLoading(true);
     setAuthError(null);
@@ -366,14 +538,10 @@ function MobileAppRoot() {
       observedStationPeerId = verified.stationPeerId;
       requireMatchingStationIdentity(station, verified.stationPeerId);
       getRecoveryProjection().clearSessionMismatch();
-      const decision = await startStationAccessAttemptWithRecovery(
-        station.stationPeerId,
-        station.url,
-        session,
-      );
-      setAccessDecision(decision);
+      const decision = await startAccessAttemptForActiveStation();
+      applyAccessGateRuntimeResult(decision);
       if (isAccessGranted(decision)) {
-        enterShell();
+        await reconcileShellAdmission();
         return;
       }
       getMobileLifecycleKernel().transitionLaunchState('access-gate-chain');
@@ -395,10 +563,8 @@ function MobileAppRoot() {
     }
   }
 
-  function enterShell() {
-    const kernel = getMobileLifecycleKernel();
-    kernel.transitionLaunchState('runtime-critical');
-    kernel.transitionLaunchState('shell');
+  async function reconcileShellAdmission() {
+    await getMobileLifecycleKernel().reconcileLaunchState('access-granted');
   }
 
   function showStationSelection() {
@@ -420,6 +586,17 @@ function MobileAppRoot() {
           onSwitchStation={leaveCurrentStationForSelection}
           onRetryDeviceLocal={retryDeviceLocalRecovery}
         />
+        {pendingScopeExit && (
+          <ScopeExitDraftDecisionOverlay
+            reason={pendingScopeExit.reason}
+            draftCount={pendingScopeExit.draftCount}
+            committedDisposition={pendingScopeExit.committedDisposition}
+            t={t}
+            onDecision={pendingScopeExit.run}
+            onCancel={pendingScopeExit.cancel}
+            canCancel={pendingScopeExit.canCancel}
+          />
+        )}
       </>
     );
   }
@@ -428,7 +605,7 @@ function MobileAppRoot() {
     return renderWithRecovery(
       <MobileShell
         stationRegistry={stationRegistry}
-        onChangeStation={showStationSelection}
+        onChangeStation={leaveCurrentStationForSelection}
         onLogout={logout}
       />,
     );
@@ -443,12 +620,11 @@ function MobileAppRoot() {
         error={authError}
         loading={authLoading}
         rememberedAccounts={rememberedAccounts}
-        onBack={() => {
-          setAccessDecision(null);
-          showStationSelection();
-        }}
+        onBack={cancelAccessGateAttemptAndChangeStation}
+        onRefresh={refreshAccessGateDecision}
         onLogin={login}
         onInviteCode={submitInviteCode}
+        onSchemaSubmit={submitSchemaGate}
       />,
     );
   }
@@ -476,13 +652,42 @@ function MobileAppRoot() {
           }
 
           const identity = await verifyStationIdentity(normalizedUrl);
+          const current = await readStationRegistryProjection();
           const next = addStationEntry(
-            stationRegistryRef.current,
+            current,
             { stationPeerId: identity.stationPeerId, url: normalizedUrl },
             { checkedAt: probe.checkedAt, label: probe.label, online: probe.online },
             identity.identityVerified,
           );
           if (!next.ok) {
+            const conflictingStation = stationEntryAtUrl(current, normalizedUrl);
+            if (
+              next.error === 'mobile.launch.stationIdentityMismatch'
+              && conflictingStation
+              && await confirmStationIdentityReplacement(conflictingStation)
+            ) {
+              const replacement = replaceStationEntryIdentity(
+                current,
+                conflictingStation.stationPeerId,
+                {
+                  stationPeerId: identity.stationPeerId,
+                  url: normalizedUrl,
+                },
+                {
+                  checkedAt: probe.checkedAt,
+                  label: probe.label,
+                  online: probe.online,
+                },
+              );
+              if (!replacement.ok) {
+                setStationError(t(replacement.error));
+                return false;
+              }
+              autoVerifiedStationUrls.current.add(normalizedUrl);
+              setStationError(null);
+              await commitStationScope(replacement.registry);
+              return true;
+            }
             setStationError(t(next.error));
             return false;
           }
@@ -500,16 +705,19 @@ function MobileAppRoot() {
       }}
       onSelectStation={async (stationPeerId) => {
         setStationError(null);
-        const next = activateStationEntry(stationRegistryRef.current, stationPeerId);
+        const current = await readStationRegistryProjection();
+        const next = activateStationEntry(current, stationPeerId);
         await commitStationScope(next);
       }}
       onRemoveStation={async (stationPeerId) => {
         setStationError(null);
-        const next = removeStationEntry(stationRegistryRef.current, stationPeerId);
-        if (next !== stationRegistryRef.current) await commitStationScope(next);
+        const current = await readStationRegistryProjection();
+        const next = removeStationEntry(current, stationPeerId);
+        if (next !== current) await commitStationScope(next);
       }}
       onContinue={async () => {
-        const selectedStation = activeStationEntry(stationRegistryRef.current);
+        const current = await readStationRegistryProjection();
+        const selectedStation = activeStationEntry(current);
         if (!selectedStation || stationChecking) return;
 
         setStationChecking(true);
@@ -521,10 +729,34 @@ function MobileAppRoot() {
             return;
           }
           const identity = await verifyStationIdentity(selectedStation.url);
-          if (identity.identityVerified) {
+          let verifiedRegistry = current;
+          let verifiedStation = selectedStation;
+          if (identity.stationPeerId !== selectedStation.stationPeerId) {
+            if (!await confirmStationIdentityReplacement(selectedStation)) return;
+            const replacement = replaceStationEntryIdentity(
+              current,
+              selectedStation.stationPeerId,
+              {
+                stationPeerId: identity.stationPeerId,
+                url: selectedStation.url,
+              },
+              {
+                checkedAt: probe.checkedAt,
+                label: probe.label,
+                online: probe.online,
+              },
+            );
+            if (!replacement.ok) {
+              setStationError(t(replacement.error));
+              return;
+            }
+            verifiedRegistry = replacement.registry;
+            verifiedStation = activeStationEntry(replacement.registry)!;
+            await commitStationScope(replacement.registry);
+          } else {
             requireMatchingStationIdentity(selectedStation, identity.stationPeerId);
           }
-          const next = activateStationEntry(stationRegistryRef.current, selectedStation.stationPeerId, {
+          const next = activateStationEntry(verifiedRegistry, verifiedStation.stationPeerId, {
             checkedAt: probe.checkedAt,
             label: probe.label,
             online: probe.online,
@@ -532,10 +764,7 @@ function MobileAppRoot() {
           await commitStationRegistry(next);
           const nextStation = activeStationEntry(next);
           if (!nextStation) throw new Error('mobile.launch.stationIdentityInvalid');
-          await startAccessGateChainFor(
-            nextStation,
-            authSession?.stationPeerId === nextStation.stationPeerId ? authSession : null,
-          );
+          await startAccessGateChainFor(nextStation);
         } catch (error) {
           const msg = error instanceof Error ? error.message : '';
           setStationError(t(msg) !== msg ? t(msg) : (msg || t('mobile.launch.stationUnavailable')));

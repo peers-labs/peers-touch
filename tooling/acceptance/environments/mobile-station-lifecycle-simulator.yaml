@@ -2,8 +2,8 @@
   "id": "mobile-station-lifecycle-simulator",
   "base_environment": "mobile-simulator",
   "profile": {
-    "required": true,
-    "identity_match": true
+    "required": false,
+    "identity_match": false
   },
   "source_identity": {
     "commit_required": true,
@@ -14,6 +14,8 @@
       "kind": "station",
       "required": true,
       "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_PRIMARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV",
       "health_action": "station-check",
       "status_action": "station-status",
       "attestation_producer": "station-deployment"
@@ -22,6 +24,8 @@
       "kind": "station",
       "required": true,
       "runtime_identity_required": true,
+      "endpoint_ref": "env:PT_MOBILE_STATION_SECONDARY_URL",
+      "deployment_environment_ref": "env:PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV",
       "health_action": "station-check",
       "status_action": "station-status",
       "attestation_producer": "station-deployment"
@@ -58,9 +62,9 @@
       }
     },
     {
-      "id": "sim-android",
+      "id": "sim-ios-peer",
       "actor": "alice",
-      "runtime": "tauri-android-emulator",
+      "runtime": "tauri-ios-simulator",
       "required_service_roles": [
         "station-primary"
       ],
@@ -76,9 +80,16 @@
     "namespace": "__PEERS_MOBILE_ACCEPTANCE__",
     "required_actions": [
       "lifecycle.snapshot",
+      "lifecycle.waitReady",
       "lifecycle.suspend",
       "lifecycle.resume",
       "lifecycle.restart",
+      "navigation.snapshot",
+      "navigation.apply",
+      "platform.permission.check",
+      "platform.permission.request",
+      "platform.permission.checkAll",
+      "platform.network.read",
       "native.deliverDeepLink",
       "projection.read",
       "cleanup",
@@ -86,14 +97,21 @@
       "station.select",
       "access.submit",
       "lifecycle.scope.read",
-      "session.logout"
+      "session.logout",
+      "settings.profile.read",
+      "settings.profile.update",
+      "settings.notifications.read",
+      "settings.notifications.update",
+      "settings.device.read",
+      "settings.device.update"
     ],
     "policy": "production actions only; Station endpoints and Appium authority remain parent-owned"
   },
   "proof_scope": {
     "proves": [
       "AS-04 simulator valid-session restore and same-account revocation",
-      "AS-10 simulator Station switching, generation fencing, old-scope absence, and logout"
+      "AS-10 simulator Station switching, generation fencing, old-scope absence, and logout",
+      "MS-J06 independent second-iOS-simulator Profile and Notification convergence with device-local settings isolation"
     ],
     "does_not_prove": [
       "physical-device lifecycle behavior",
@@ -110,7 +128,6 @@
       "app-installations",
       "ports",
       "storage",
-      "emulator-process",
       "simulator-boot",
       "actor-fixture",
       "profile-leases",

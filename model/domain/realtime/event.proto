@@ -126,6 +126,20 @@ message CallSignal {
   Kind   kind          = 3;
   bytes  payload       = 4;
 
+  // Plaintext call identifier visible to Station for multi-device
+  // arbitration (CCU-D06). Populated on every signal belonging to an
+  // active call. A pre-call transport handshake may leave it empty.
+  // Station uses this for atomic first-terminal-action-wins without
+  // decrypting the payload.
+  string call_id       = 5;
+
+  // Populated by Station in the fan-out frame after a terminal action
+  // (CALL_ACCEPT or CALL_REJECT) wins the first-terminal-action-wins
+  // arbitration for this call_id. Allows sibling devices to
+  // distinguish "I won" from "handled elsewhere" without relying on
+  // heuristic echo detection.
+  string winning_device_id = 6;
+
   enum Kind {
     KIND_UNSPECIFIED = 0;
     OFFER            = 1;
@@ -143,7 +157,36 @@ message CallSignal {
     CALL_ACCEPT      = 6;
     CALL_REJECT      = 7;
     CALL_END         = 8;
+    // Station-authored terminal control event emitted when the shared
+    // ring deadline wins before any endpoint accepts or rejects.
+    CALL_NO_ANSWER   = 9;
   }
+}
+
+// FederatedCallSignal is the typed, Station-signed cross-Station envelope for
+// one opaque CallSignal. Federation authenticates Station identity while
+// Realtime retains actor authorization and call-resolution ownership.
+message FederatedCallSignal {
+  string recipient_actor_ptid = 1;
+  CallSignal signal = 2;
+}
+
+// GetFederatedCallResolutionRequest proxies a caller-side readback to the
+// callee Home Station, which is the only call-resolution authority.
+message GetFederatedCallResolutionRequest {
+  string requesting_actor_ptid = 1;
+  string call_id = 2;
+  string peer_actor_ptid = 3;
+}
+
+message GetFederatedCallResolutionResponse {
+  string call_id = 1;
+  string state = 2;
+  string winning_device_id = 3;
+  string terminal_action = 4;
+  int64 ring_deadline_unix_ms = 5;
+  int64 resolved_at_unix_ms = 6;
+  int64 expires_at_unix_ms = 7;
 }
 
 // MessageMutation notifies a peer that a previously-delivered message
@@ -348,7 +391,7 @@ message LedgerEventDelivered {
 
 // SocialGraphEvent signals a change in the social relationship graph:
 // friend requests sent/accepted/rejected, new conversations created by
-// the social layer, or unfriend actions. Clients use this to refresh
+// the social layer, unfriend actions, or relationship deny changes. Clients use this to refresh
 // the friend request list and conversation list immediately, replacing
 // indirect notification-based polling.
 message SocialGraphEvent {
@@ -359,6 +402,8 @@ message SocialGraphEvent {
     FRIEND_REQUEST_REJECTED = 3;
     CONVERSATION_CREATED = 4;
     UNFRIENDED = 5;
+    RELATIONSHIP_BLOCKED = 6;
+    RELATIONSHIP_UNBLOCKED = 7;
   }
 
   Kind   kind = 1;

@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -35,12 +36,13 @@ type subServer struct {
 	jwtWrapper        server.Wrapper
 	federationWrapper server.Wrapper
 
-	federationSvc *application.FederationService
-	ledgerSvc     *application.LedgerService
-	projectionSvc *application.ProjectionService
-	actorKeySvc   *domain.ActorKeyService
-	syncManager   *LedgerSyncManager
-	govClient     RemoteGovernanceClient
+	federationSvc  *application.FederationService
+	ledgerSvc      *application.LedgerService
+	projectionSvc  *application.ProjectionService
+	membershipRepo domain.MembershipRepository
+	actorKeySvc    *domain.ActorKeyService
+	syncManager    *LedgerSyncManager
+	govClient      RemoteGovernanceClient
 
 	deliveryRuntime *federationruntime.Runtime
 	deliveryCancel  context.CancelFunc
@@ -158,6 +160,7 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		repos.ActorRole,
 		repos.SyncCursor,
 	)
+	s.membershipRepo = repos.Membership
 
 	publisher := NewLedgerEventPublisher(repos.ActorRole)
 	s.ledgerSvc.SetOnAppended(func(ctx context.Context, event *pb.LedgerEvent) {
@@ -261,6 +264,8 @@ func (s *subServer) Handlers() []server.Handler {
 	fw := s.federationWrapper
 
 	handlers := []server.Handler{
+		server.NewStrictTypedHandler("fed-list-contexts", "/sub-federation/contexts", server.GET, s.handleListFederationContexts, jw),
+		server.NewStrictTypedHandler("fed-resolve-actor", "/actor/federation/resolve", server.GET, s.handleResolveFederationActor, jw),
 		server.NewTypedHandler("fed-list-federations", "/sub-federation/federations", server.GET, s.handleListFederations, jw),
 		server.NewTypedHandler("fed-create-federation", "/sub-federation/federations", server.POST, s.handleCreateFederation, jw),
 		server.NewTypedHandler("fed-list-members", "/sub-federation/federations/:federation_id/stations", server.GET, s.handleListMemberStations, jw),
@@ -277,6 +282,25 @@ func (s *subServer) Handlers() []server.Handler {
 	}
 
 	return handlers
+}
+
+func (s *subServer) IsActiveMember(
+	ctx context.Context,
+	federationID string,
+	stationPeerID string,
+) (bool, error) {
+	if s.membershipRepo == nil {
+		return false, errors.New("Federation membership repository unavailable")
+	}
+	membership, err := s.membershipRepo.GetByStation(
+		ctx,
+		strings.TrimSpace(federationID),
+		strings.TrimSpace(stationPeerID),
+	)
+	if err != nil {
+		return false, err
+	}
+	return membership != nil && membership.Status == "active", nil
 }
 
 func (s *subServer) runDeliveryRuntime(ctx context.Context) {

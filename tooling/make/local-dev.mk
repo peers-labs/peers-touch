@@ -1,10 +1,14 @@
 # ─── Local Worktree Dev ──────────────────────────────────────────
 # Profile-based, worktree-isolated development environment.
 
-.PHONY: env-register env-update env-check env-status-all dev-ui dev-ui-snapshot \
+.PHONY: env-register env-update env-unregister env-check env-status-all dev-ui dev-ui-snapshot dev-observe workflow-snapshot workflow-doctor \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
-        plan-bind plan-binding plan-validate plan-status plan-current plan-next \
+        dev-session-start dev-session-status dev-transition dev-functional-result \
+        active-work-sync active-work-status active-work-status-all active-work-close \
+        completion-review-prepare completion-review-submit completion-review-status \
+        plan-bind plan-binding plan-binding-advance plan-validate plan-status plan-current plan-next \
+        plan-activate plan-advance plan-reopen \
         station station-check station-status station-logs station-stop station-restart \
         relay relay-check relay-status relay-logs relay-stop relay-restart \
         desktop desktop-stop desktop-restart \
@@ -16,6 +20,8 @@ DEVCTL := node tooling/devctl/index.mjs
 LOCAL_DEV_SCRIPTS := tooling/scripts/local-dev
 MACHINE_DEV_SCRIPT := $(LOCAL_DEV_SCRIPTS)/machine-dev.mjs
 DEV_APP_SCRIPT := apps/dev/server/index.mjs
+WORKFLOW_SNAPSHOT_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-snapshot.mjs
+WORKFLOW_DOCTOR_SCRIPT := $(LOCAL_DEV_SCRIPTS)/workflow-doctor.mjs
 PLANCTL_SCRIPT := tooling/scripts/plan/planctl.mjs
 PLAN_BINDING_SCRIPT := tooling/scripts/plan/workspace-plan-binding.mjs
 ENV_REPO_ARG := $(or $(ENV_REPO),$(abspath ../env))
@@ -38,6 +44,10 @@ DEV_RUNTIME_CLAIMS_ARG := $(or $(RUNTIME_CLAIMS),$(DEV_RUNTIME_CLAIMS))
 DEV_RUNTIME_CLAIMS_SPECIFIED := $(if $(filter undefined,$(origin RUNTIME_CLAIMS)),$(if $(filter undefined,$(origin DEV_RUNTIME_CLAIMS)),,1),1)
 DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
+DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
+ACTIVE_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/active-work.mjs
+WORKTREE_OBSERVE_SCRIPT := $(LOCAL_DEV_SCRIPTS)/worktree-observe.mjs
+COMPLETION_REVIEW_SCRIPT := $(LOCAL_DEV_SCRIPTS)/completion-review.mjs
 
 env-register:
 	@if [ -z "$(PROFILE)" ] || [ -z "$(SLOT)" ] || [ -z "$(ENV_CAPABILITIES_ARG)" ] || [ -z "$(ENV_PURPOSE_ARG)" ]; then \
@@ -59,6 +69,10 @@ env-update:
 		$(if $(ENV_PURPOSE_ARG),--purpose "$(ENV_PURPOSE_ARG)",) \
 		$(if $(OWNER),--owner "$(OWNER)",)
 
+env-unregister:
+	@node $(MACHINE_DEV_SCRIPT) unregister \
+		--owner "$(ENV_OWNER_ARG)"
+
 env-check:
 	@node $(MACHINE_DEV_SCRIPT) check \
 		$(if $(WORKSPACE_ID),--workspace-id "$(WORKSPACE_ID)",) \
@@ -76,6 +90,15 @@ dev-ui:
 dev-ui-snapshot:
 	@node $(DEV_APP_SCRIPT) snapshot --env-repo "$(ENV_REPO_ARG)"
 
+dev-observe:
+	@node $(WORKTREE_OBSERVE_SCRIPT) --workspace-root "$(CURDIR)" --host cli --event manual
+
+workflow-snapshot:
+	@node $(WORKFLOW_SNAPSHOT_SCRIPT)
+
+workflow-doctor:
+	@node $(WORKFLOW_DOCTOR_SCRIPT) --host "$(or $(IDE),trae)"
+
 plan-bind:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-bind PLAN=<package-plan.md>"; exit 1; fi
 	@node $(PLAN_BINDING_SCRIPT) bind \
@@ -85,6 +108,14 @@ plan-bind:
 
 plan-binding:
 	@node $(PLAN_BINDING_SCRIPT) resolve --repo-root "$(CURDIR)"
+
+plan-binding-advance:
+	@if [ -z "$(PLAN)" ] || [ -z "$(EXPECTED_GENERATION)" ]; then echo "Usage: make plan-binding-advance PLAN=<package-plan.md> EXPECTED_GENERATION=<n>"; exit 1; fi
+	@node $(PLAN_BINDING_SCRIPT) advance \
+		--repo-root "$(CURDIR)" \
+		--plan "$(PLAN)" \
+		--expected-generation "$(EXPECTED_GENERATION)" \
+		--owner "$(DEV_OWNER_ARG)"
 
 plan-validate:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-validate PLAN=<package-plan.md>"; exit 1; fi
@@ -101,6 +132,37 @@ plan-current:
 plan-next:
 	@if [ -z "$(PLAN)" ]; then echo "Usage: make plan-next PLAN=<package-plan.md>"; exit 1; fi
 	@node $(PLANCTL_SCRIPT) next --plan "$(PLAN)" --repo-root "$(CURDIR)"
+
+plan-activate:
+	@if [ -z "$(PLAN)" ] || [ -z "$(TASK)" ]; then echo "Usage: make plan-activate PLAN=<package-plan.md> TASK=<ready-id>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) activate \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--task "$(TASK)"
+
+plan-advance:
+	@if [ -z "$(PLAN)" ] || [ -z "$(TO)" ] || [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make plan-advance PLAN=<package-plan.md> WORK_ITEM=<id> TO=<done|blocked|reactivate> [TASK=<current-id>] [SESSION=<session.json>] [NEXT=<ready-id>]"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) advance \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--to "$(TO)" \
+		$(if $(TASK),--task "$(TASK)",) \
+		$(if $(SESSION),--session "$(SESSION)",) \
+		$(if $(NEXT),--next "$(NEXT)",) \
+		$(if $(BLOCKER_CODE),--blocker-code "$(BLOCKER_CODE)",) \
+		$(if $(BLOCKER_OWNER),--blocker-owner "$(BLOCKER_OWNER)",) \
+		$(if $(BLOCKER_EVIDENCE_REF),--blocker-evidence-ref "$(BLOCKER_EVIDENCE_REF)",) \
+		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
+		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
+		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
+
+plan-reopen:
+	@if [ -z "$(PLAN)" ] || [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make plan-reopen PLAN=<package-plan.md> WORK_ITEM=<id>"; exit 1; fi
+	@node $(PLANCTL_SCRIPT) reopen \
+		--plan "$(PLAN)" \
+		--repo-root "$(CURDIR)" \
+		--work-item "$(DEV_WORK_ITEM_ARG)"
 
 profile:
 	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile <name>  or  make profile PROFILE=<name>"; exit 1; fi
@@ -175,6 +237,89 @@ dev-release:
 	@node $(DEV_WORK_SCRIPT) release \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
+
+dev-session-start:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_TASK_ARG)" ] || [ -z "$(DEV_JOURNEY_ARG)" ]; then \
+		echo "Usage: make dev-session-start WORK_ITEM=<id> TASK=<id> JOURNEY=<id> [PLAN=<path>]"; \
+		exit 1; \
+	fi
+	@node $(DEV_SESSION_SCRIPT) start \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--task "$(DEV_TASK_ARG)" \
+		--journey "$(DEV_JOURNEY_ARG)" \
+		$(if $(DEV_PLAN_ARG),--plan "$(DEV_PLAN_ARG)",)
+
+dev-session-status:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-session-status WORK_ITEM=<id>"; exit 1; fi
+	@node $(DEV_SESSION_SCRIPT) status --work-item "$(DEV_WORK_ITEM_ARG)"
+
+dev-transition:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(TO)" ] || [ -z "$(REASON)" ]; then \
+		echo "Usage: make dev-transition WORK_ITEM=<id> TO=<state> REASON='<text>' [SOURCE='<json>'] [VERIFICATION='<json>'] [FAILURE='<json>'] [RUNTIME_BINDING_REF=<ref>]"; \
+		exit 1; \
+	fi
+	@node $(DEV_SESSION_SCRIPT) transition \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--to "$(TO)" \
+		--reason "$(REASON)" \
+		$(if $(SOURCE),--source '$(SOURCE)',) \
+		$(if $(VERIFICATION),--verification '$(VERIFICATION)',) \
+		$(if $(FAILURE),--failure '$(FAILURE)',) \
+		$(if $(RUNTIME_BINDING_REF),--runtime-binding-ref "$(RUNTIME_BINDING_REF)",)
+
+dev-functional-result:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(REASON)" ]; then \
+		echo "Usage: make dev-functional-result WORK_ITEM=<id> REASON='<text>' [RUNTIME_CELL=<cell>]"; \
+		exit 1; \
+	fi
+	@node $(DEV_SESSION_SCRIPT) functional-result \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--reason "$(REASON)" \
+		$(if $(RUNTIME_CELL),--runtime-cell "$(RUNTIME_CELL)",)
+
+active-work-sync:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make active-work-sync WORK_ITEM=<id> [EXPECTED_REVISION=<n>]"; exit 1; fi
+	@node $(ACTIVE_WORK_SCRIPT) sync \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		$(if $(EXPECTED_REVISION),--expected-revision "$(EXPECTED_REVISION)",)
+
+active-work-status:
+	@node $(ACTIVE_WORK_SCRIPT) status
+
+active-work-status-all:
+	@node $(ACTIVE_WORK_SCRIPT) status-all
+
+active-work-close:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(EXPECTED_REVISION)" ]; then \
+		echo "Usage: make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>"; \
+		exit 1; \
+	fi
+	@node $(ACTIVE_WORK_SCRIPT) close \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--expected-revision "$(EXPECTED_REVISION)"
+
+completion-review-prepare:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-prepare WORK_ITEM=<id> [SCOPE=<task|plan>] [NEXT=<ready-id>]"; exit 1; fi
+	@node $(COMPLETION_REVIEW_SCRIPT) prepare \
+		--repo-root "$(CURDIR)" \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		$(if $(SCOPE),--scope "$(SCOPE)",) \
+		$(if $(NEXT),--next "$(NEXT)",)
+
+completion-review-submit:
+	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> [NEXT=<ready-id>]"; exit 1; fi
+	@node $(COMPLETION_REVIEW_SCRIPT) submit \
+		--repo-root "$(CURDIR)" \
+		--review "$(REVIEW)" \
+		--verdict "$(VERDICT)" \
+		--assessment "$(ASSESSMENT)" \
+		$(if $(NEXT),--next "$(NEXT)",)
+
+completion-review-status:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-status WORK_ITEM=<id>"; exit 1; fi
+	@node $(COMPLETION_REVIEW_SCRIPT) status \
+		--repo-root "$(CURDIR)" \
+		--work-item "$(DEV_WORK_ITEM_ARG)"
 
 station:
 	@$(DEVCTL) station start

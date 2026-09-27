@@ -7,6 +7,7 @@ pub const MOBILE_PUSH_EVENT: &str = "mobile:push";
 pub const MOBILE_DEEP_LINK_EVENT: &str = "mobile:deep-link";
 pub const MOBILE_OAUTH_PROJECTION_EVENT: &str = "mobile:oauth-projection";
 pub const MOBILE_NOTIFICATION_TAP_EVENT: &str = "mobile:notification-tap";
+#[cfg(feature = "acceptance-harness")]
 pub const MOBILE_RESUME_EVENT: &str = "mobile:resume";
 pub const MOBILE_NATIVE_EVENT_ERROR: &str = "mobile:native-event-error";
 
@@ -21,6 +22,12 @@ pub struct NativeRuntimeEventPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     notification_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lifecycle_generation: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     url: Option<String>,
@@ -32,6 +39,7 @@ struct NativeRuntimeEventError<'a> {
     message: &'a str,
 }
 
+#[cfg(feature = "acceptance-harness")]
 pub fn emit_resume<R: Runtime>(
     app: &AppHandle<R>,
     reason: impl Into<String>,
@@ -42,6 +50,7 @@ pub fn emit_resume<R: Runtime>(
     )
 }
 
+#[cfg(feature = "acceptance-harness")]
 pub fn emit_push<R: Runtime>(
     app: &AppHandle<R>,
     notification_id: Option<String>,
@@ -68,6 +77,7 @@ pub fn emit_oauth_projection<R: Runtime>(
     app.emit(MOBILE_OAUTH_PROJECTION_EVENT, projection)
 }
 
+#[cfg(feature = "acceptance-harness")]
 pub fn emit_notification_tap<R: Runtime>(
     app: &AppHandle<R>,
     notification_id: Option<String>,
@@ -77,6 +87,46 @@ pub fn emit_notification_tap<R: Runtime>(
     app.emit(
         MOBILE_NOTIFICATION_TAP_EVENT,
         NativeRuntimeEventPayload::notification_tap(notification_id, session_ulid, target),
+    )
+}
+
+pub fn emit_push_reconcile<R: Runtime>(
+    app: &AppHandle<R>,
+    notification_id: String,
+    category: i32,
+    target: String,
+    lifecycle_generation: u64,
+    native_sequence: u64,
+) -> Result<(), tauri::Error> {
+    app.emit(
+        MOBILE_PUSH_EVENT,
+        NativeRuntimeEventPayload::push_reconcile(
+            notification_id,
+            category,
+            target,
+            lifecycle_generation,
+            native_sequence,
+        ),
+    )
+}
+
+pub fn emit_notification_tap_reconcile<R: Runtime>(
+    app: &AppHandle<R>,
+    notification_id: String,
+    category: i32,
+    target: String,
+    lifecycle_generation: u64,
+    native_sequence: u64,
+) -> Result<(), tauri::Error> {
+    app.emit(
+        MOBILE_NOTIFICATION_TAP_EVENT,
+        NativeRuntimeEventPayload::notification_tap_reconcile(
+            notification_id,
+            category,
+            target,
+            lifecycle_generation,
+            native_sequence,
+        ),
     )
 }
 
@@ -92,6 +142,7 @@ pub fn emit_native_event_error<R: Runtime>(
 }
 
 impl NativeRuntimeEventPayload {
+    #[cfg(feature = "acceptance-harness")]
     fn resume(reason: impl Into<String>) -> Self {
         Self {
             kind: "resume",
@@ -100,6 +151,7 @@ impl NativeRuntimeEventPayload {
         }
     }
 
+    #[cfg(feature = "acceptance-harness")]
     fn push(
         notification_id: Option<String>,
         session_ulid: Option<String>,
@@ -122,6 +174,7 @@ impl NativeRuntimeEventPayload {
         }
     }
 
+    #[cfg(feature = "acceptance-harness")]
     fn notification_tap(
         notification_id: Option<String>,
         session_ulid: Option<String>,
@@ -132,6 +185,42 @@ impl NativeRuntimeEventPayload {
             target,
             session_ulid,
             notification_id,
+            ..Self::default()
+        }
+    }
+
+    fn push_reconcile(
+        notification_id: String,
+        category: i32,
+        target: String,
+        lifecycle_generation: u64,
+        native_sequence: u64,
+    ) -> Self {
+        Self {
+            kind: "push",
+            target: Some(target),
+            notification_id: Some(notification_id),
+            category: Some(category),
+            lifecycle_generation: Some(lifecycle_generation),
+            native_sequence: Some(native_sequence),
+            ..Self::default()
+        }
+    }
+
+    fn notification_tap_reconcile(
+        notification_id: String,
+        category: i32,
+        target: String,
+        lifecycle_generation: u64,
+        native_sequence: u64,
+    ) -> Self {
+        Self {
+            kind: "notification-tap",
+            target: Some(target),
+            notification_id: Some(notification_id),
+            category: Some(category),
+            lifecycle_generation: Some(lifecycle_generation),
+            native_sequence: Some(native_sequence),
             ..Self::default()
         }
     }

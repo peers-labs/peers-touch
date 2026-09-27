@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-18
-covered_docs_hash: f970f74b60fc70e411a2928f9b53eb5a9677e2499afbecf4c34f74a4f8d78ce1
+last_verified_at: 2026-09-27
+covered_docs_hash: 94d008d7fc5c6ea7df358daafe7e2018d712d171cfce45b9883efcfbca120221
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,35 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-09-27 Review
+
+LDCP-D15 remains the governing profile reset-policy contract. The control
+plane, Peers Dev projection, local environment skill, and fixtures now derive
+reset protection from the canonical Profile ID and no longer read the
+superseded control-mode field. The existing review rule already enforces this
+contract, so no GitHub Review `SKILL.md` or fixture change is required.
+
+Architecture Module Governance adds a positive module registry and shared
+changed-path validation to review. `pt-github-review/SKILL.md` now treats
+unregistered, incomplete, overlapping, or capability-inconsistent active
+modules as blocking architecture findings. Parser, Hook, Plan, Review and
+integration-audit regressions provide executable coverage; no generic golden
+review fixture is needed.
+
+The `peers-touch-git` integration adds the reviewed Worktree Governance product,
+state, experience, Acceptance and execution contracts under the existing Local
+Dev Control Plane. Existing review rules already cover owner-state isolation,
+worktree identity, destructive-operation authorization and evidence freshness,
+so no `SKILL.md`, fixture or knowledge change is required.
+
+## 2026-09-26 Review
+
+The current upstream source set retains the existing review behavior for
+runtime identity, profile authorization, Development Session evidence, and
+continuous Plan execution. No `SKILL.md`, fixture, or knowledge change is
+required; this refresh records the post-history-migration source bytes and the
+Station Access coverage projection after its completion proof.
 
 The 2026-08-29 refresh covers execution-status and evidence updates under the
 Acceptance framework. It does not change review behavior, so no `SKILL.md`
@@ -224,9 +253,11 @@ required.
 
 The Development Skill responsibility refinement makes `pt-god-view` a thin
 router, `pt-dev-workflow` the sole Development Run application service,
-`pt-trae-goal-orchestrator` the scheduler, `pt-execution-plan-guardian` a
-read-only policy guard, and `pt-context-anchor` a read-only projection. PLAN is
-split between vertical dependency modeling and repository persistence.
+`pt-goal-orchestrator` the host-neutral scheduler,
+`pt-execution-plan-guardian` a read-only policy guard, and
+`pt-context-anchor` a read-only projection. Host-specific worker and UI tools
+are isolated behind `pt-*-host-adapter` Skills. PLAN is split between vertical
+dependency modeling and repository persistence.
 Review severity is unchanged, but review must reject any change that lets the
 router, scheduler, policy guard, or projection mutate durable workflow state,
 or that restores a generic five-variant Acceptance requirement.
@@ -287,7 +318,7 @@ Python, PR-input and Development declaration regressions cover the contract, so
 no new golden review fixture is required.
 
 DWF-D19 removes advancing `expectedHead` from tracked Plan Packages. Review
-must reject schema-v1 packages and any attempt to move current source identity
+must reject workflow version labels and any attempt to move current source identity
 back into `plan.md`; declarations, Sessions and `active_work` retain their
 separate source-identity duties. The review Skill now states this hard cut, and
 the Plan, migration, Session and dashboard regressions provide executable
@@ -295,3 +326,95 @@ coverage without a new golden fixture. A declaration may retain only its exact
 blocked/done Task locator while the corresponding Plan is blocked/completed so
 cleanup and delivery can finish; this terminal allowance must not select a new
 Task or reopen execution.
+
+## 2026-09-19 Review
+
+DWF-D20 makes one user-authorized Plan Run continuous across Task closures,
+Goal Slices, internal stage reviews, Context Anchors, and context compaction.
+Review verifies the Plan Run mandate, autonomous horizon, stop conditions,
+successor continuation, and agent-led remediation loop.
+
+DWF-D21 makes host-neutral ownership, complete current-closure Development
+evidence, bounded host cleanup quarantine, and worktree-scoped Agent integration
+review requirements. Review rejects caller-authored functional PASS files,
+partial Gate promotion, direct Runtime-Handoff-to-adapter invocation,
+repository-native fallback inside an adapter, live-session Skill replacement,
+escaped Skill projections, and integration receipts not bound to a distinct host
+session.
+
+DWF-D22 separates the distributed implementation from consuming-worktree
+runtime state. Review rejects any source or projection that turns
+`peers-dev-workflow`, project memory, or chat into a mutable cross-workspace
+progress owner.
+
+DWF-D23 removes synthetic workflow releases and exposed Plan/Task/integration
+schema numbers. Review rejects `vN`, `schemaVersion`, `_v2`, `_v3`, and
+`next-gen` labels in current Development Workflow contracts while preserving
+independently governed external protocol, package, Acceptance evidence, and
+live machine-record integrity formats.
+
+The DWF-D20 authorization refinement makes exact user grants and explicit
+accepted Plan authorization reusable across Task, Goal, retry, context, and
+host boundaries. Review must reject workflow rules that ask again solely
+because an operation is sensitive, while preserving fail-closed denial for
+out-of-envelope actions and typed handling of actual external permission
+failures. Existing-profile deploy/reset behavior now consumes exact Plan
+`deployProfiles` / `destructiveResetScopes` grants without weakening
+environment-creation, declaration, capability, scope, or lease guards.
+`pt-dev-workflow`, `pt-execution-plan-guardian`, `pt-local-dev-env`, the
+continuous-Plan invariant, and `review/skill-check.sh` own direct enforcement;
+no new generic review fixture or `pt-github-review/SKILL.md` behavior is
+required.
+
+The progress projection refinement makes `planctl` the sole calculator of the
+post-Next completed count and percentage. Review now rejects Anchor or
+dashboard consumers that add rounded percentages locally or count unlocked
+pending Tasks as completed. `pt-github-review/SKILL.md`,
+`pt-context-anchor/SKILL.md`, PlanCTL boundary tests, Peers Dev tests, and the
+canonical Skill marker check cover the behavior; no generic review fixture is
+required.
+
+## 2026-09-21 Review
+
+Host diagnostics now run only through an adapter-owned isolated sidecar. A
+confirmation-retained diagnostic is a bounded, non-blocking host observation;
+the deterministic project result, Session transition, Task closure, and
+successor activation happen before host cleanup follow-up. This tightens the
+existing DWF-D20/DWF-D21 review boundary without changing review severity or
+requiring a new fixture. `review/skill-check.sh` rejects direct host-debugger
+coupling in the parent workflow owners and pins the transient return contract.
+
+DWF-D25 separates user interaction policy from canonical project Skills.
+Review must reject personal behavior embedded in `pt-ew`, mutable-source
+Overlay loading, symlinked packages, modified installed copies, user Overlay
+projection through `make skills`, or Overlay instructions that change project
+execution semantics. The dedicated control-plane tests and
+`user-skill-overlays-are-interaction-only` invariant provide deterministic
+coverage; no generic review fixture is required.
+
+## 2026-09-22 Review
+
+DWF-D26 adds a conversation-bound IDE integration boundary. Review must reject
+global hook mutation, mutable execution-root pointers, treating tool `cwd` as
+conversation identity, copied Skill corpora, project owner-state mutation
+inside `workflow-kernel.mjs`, direct runtime-owner execution, regex-only shell
+admission, or cross-worktree writes. Codex, Cursor and TRAE projection tests,
+payload normalization tests, immutable binding races, subject-root isolation,
+Anchor release, and typed denial tests provide deterministic coverage.
+
+Acceptance D-20 now projects package `sourceClaims` through `planctl` and limits
+registry impact to the bound Plan's exclusive-write closure. Review must reject
+full-branch impact scans that reattach synchronized foreign work to this Plan,
+while preserving undeclared-Gate drift checks inside owned paths.
+
+## 2026-09-23 Review
+
+LDCP-D15 adds workspace-local diagnostic observations and bounded Git worktree
+reconciliation to Peers Dev. Review must reject promoting either source into
+registration, runtime activity, authorization, workflow progression, or
+Acceptance evidence, and must reject stale Owner branch/HEAD values overriding
+current Git identity. Existing source-of-truth and runtime-projection review
+rules already cover these judgments. The new worktree-observation invariant
+and dedicated discovery, projection, hook, and Journey tests provide
+deterministic regression coverage, so no Review Skill or fixture change is
+required.

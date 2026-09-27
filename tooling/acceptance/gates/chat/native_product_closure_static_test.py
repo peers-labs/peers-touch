@@ -59,6 +59,7 @@ CREATE_GROUP_MODAL = (
     ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
 )
 HTTP_GATEWAY = ROOT / "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs"
+CHAT_HARNESS = ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
 
 
 class SyntheticLinuxRuntimeBinding:
@@ -137,7 +138,22 @@ class NativeProductClosureStaticTests(unittest.TestCase):
         )
         self.create_group_modal = CREATE_GROUP_MODAL.read_text(encoding="utf-8")
         self.http_gateway = HTTP_GATEWAY.read_text(encoding="utf-8")
+        self.chat_harness = CHAT_HARNESS.read_text(encoding="utf-8")
         self.tree = ast.parse(self.source)
+
+    def test_chat_login_does_not_wait_for_deferred_app_runtimes(self) -> None:
+        self.assertNotIn(
+            "installDeferredAppRuntimeProjections",
+            self.chat_harness,
+        )
+        self.assertIn(
+            "await installAuthenticatedCriticalRuntimes(actorPtid);",
+            self.chat_harness,
+        )
+        self.assertIn(
+            "await hydrateSocialForActiveActor();",
+            self.chat_harness,
+        )
 
     def test_client_specs_are_keyed_by_stable_client_id(self) -> None:
         self.assertIn('str(client.get("id")): client', self.source)
@@ -532,7 +548,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "background_upload_recovery",
             "background_rendered",
             "background_second_device_recovery",
-            "clear_cursor_station_readback",
+            "conversation_local_clear",
             "offline_recovery_exact",
             "restart_exact",
             "attachment_failure_draft_retained",
@@ -587,7 +603,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
                 "attachments.ui",
                 "bob.offline.recovery.ui",
                 "client.restart.ui",
-                "clear.cursor.restart.ui",
+                "conversation.local-clear.restart.ui",
                 "alice.second-device.recovery.ui",
                 "localization.visible",
             ],
@@ -1300,7 +1316,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "cleanup_storage_released",
             "offline_recovery_exact",
             "restart_exact",
-            "clear_cursor_station_readback",
+            "conversation_local_clear",
             "background_rendered",
             "background_second_device_recovery",
             "runtime_logs_clean",
@@ -1351,14 +1367,16 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             group_journey,
         )
 
-    def test_second_device_and_clear_cursor_are_real_runtime_paths(self) -> None:
+    def test_second_device_and_local_clear_are_real_runtime_paths(self) -> None:
         self.assertIn(
             '"chat-native-product-closure-e2e": ("alice", "bob", "alice2")',
             self.home_station_provisioner,
         )
         self.assertIn('"alice2": "alice"', self.source)
         self.assertIn('data-chat-history-action="clear"', self.chat_detail_panel)
-        self.assertIn('data-chat-history-action="restore"', self.chat_detail_panel)
+        self.assertNotIn('data-chat-history-action="restore"', self.chat_detail_panel)
+        self.assertIn('"conversation_local_clear"', self.source)
+        self.assertIn('"post-clear-', self.source)
         self.assertIn('"conversationMemberSettings"', self.source)
         self.assertNotIn("conversation_get_member_settings", self.source)
         self.assertIn("commits_match(source_commit, station_commit)", self.source)
@@ -1370,7 +1388,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             "    def click_confirmation(",
             maxsplit=1,
         )[1].split(
-            "    def prove_clear_cursor(",
+            "    def prove_local_conversation_clear(",
             maxsplit=1,
         )[0]
 
@@ -1463,7 +1481,8 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
         ).read_text(encoding="utf-8")
         self.assertIn("data-chat-attachment-picker", composer)
-        self.assertIn("imServiceV1.messaging.pickAttachmentSource()", composer)
+        self.assertIn("messagingCommands.pickAttachmentSource()", composer)
+        self.assertNotIn("imServiceV1.messaging.pickAttachmentSource", composer)
         self.assertIn("appendPickedAttachment", composer)
         self.assertIn("data-chat-send-outcome-revision", composer)
         self.assertNotIn("data-chat-attachment-input", composer)
@@ -2121,7 +2140,7 @@ class NativeProductClosureStaticTests(unittest.TestCase):
             '"attachments", ("alice", "bob")',
             '"offline", ("alice", "bob")',
             '"restart", ("alice", "bob")',
-            '"clear-cursor", ("alice", "bob")',
+            '"conversation-local-clear", ("alice", "bob")',
             '"recovery-create", (actor,)',
             '"recovery-restore", (actor,)',
             '"alice2", ("alice2",)',

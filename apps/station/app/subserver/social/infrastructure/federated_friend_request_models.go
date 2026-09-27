@@ -4,7 +4,6 @@ import "time"
 
 const (
 	friendRequestPolicyRelationshipAccepted int32 = 2
-	friendRequestPolicyRelationshipBlocked  int32 = 3
 )
 
 type federatedFriendRequestCommandModel struct {

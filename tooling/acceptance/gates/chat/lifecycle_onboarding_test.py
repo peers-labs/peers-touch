@@ -188,6 +188,24 @@ class LifecycleOnboardingContractTest(unittest.TestCase):
             shared_runner,
         )
 
+    def test_find_people_close_targets_its_visible_modal(self) -> None:
+        source = (
+            REPO_ROOT
+            / "tooling/acceptance/gates/chat/lifecycle_onboarding.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("visible_close_buttons", source)
+        self.assertIn("len(visible_close_buttons) != 1", source)
+        self.assertIn(
+            '".ant-modal-close"',
+            source,
+        )
+        self.assertIn("invisibility_of_element_located", source)
+        self.assertNotIn(
+            'client.find_element(".ant-modal-close", 10).click()',
+            source,
+        )
+
     def test_find_people_uses_canonical_pending_and_station_scope(self) -> None:
         source = (
             REPO_ROOT

@@ -8,8 +8,12 @@ use crate::contracts::{
 };
 use crate::domain::profile::{ProfileError, UploadKind};
 use crate::error::{AppResult, ErrorCode};
+use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
 use crate::infrastructure::{avatar_cache, profile_store, station_client};
-use crate::model::actor::{ActorProfile, UpdateProfileRequest, UserLink};
+use crate::model::actor::{
+    ActorProfile, ActorVisibility, ProfileUpdateOutcome, UpdateProfileRequest,
+    UpdateProfileResponse, UserLink,
+};
 use reqwest::Method;
 use serde_json::{json, Value};
 
@@ -69,26 +73,16 @@ pub fn peer_profile_get(token: &str, peer_ptid: &str) -> AppResult<StubPayload> 
 }
 
 pub fn profile_update(input: ProfileUpdateInput, token: &str) -> AppResult<StubPayload> {
-    let body = profile_input_to_proto(&input);
-    match station_client::request_peers_proto_no_payload(
-        Method::POST,
-        "/actor/profile",
-        token,
-        None,
-        Some(&body),
-    ) {
-        Ok(()) => match station_client::request_peers_proto_no_body::<ActorProfile>(
-            Method::GET,
-            "/actor/profile",
-            token,
+    if input.observed_revision == 0 {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "profile_update: observed_revision is required",
             None,
-        ) {
-            Ok(p) => success_with_data("profile_update", actor_profile_to_value(&p)),
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to fetch profile after update");
-                map_station_error("profile_update", "fetch profile", e)
-            }
-        },
+        );
+    }
+    let body = profile_input_to_proto(&input);
+    match execute_profile_update(&input, &body, token) {
+        Ok(response) => profile_update_success("profile_update", response),
         Err(e) => {
             tracing::error!(error = %e, "Failed to update profile");
             map_station_error("profile_update", "update profile", e)
@@ -112,6 +106,25 @@ fn upload_and_set_profile_image(
     field: &str,
 ) -> AppResult<StubPayload> {
     tracing::info!(file_path = %file_path, field = %field, "Starting profile image upload");
+
+    let current_profile = match station_client::request_peers_proto_no_body::<ActorProfile>(
+        Method::GET,
+        "/actor/profile",
+        token,
+        None,
+    ) {
+        Ok(profile) if profile.profile_revision > 0 => profile,
+        Ok(_) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Profile snapshot is missing its revision",
+                None,
+            )
+        }
+        Err(error) => {
+            return map_station_error("profile_upload_image_oss", "fetch profile revision", error)
+        }
+    };
 
     // Step 1: Upload to OSS
     tracing::info!(file_path = %file_path, "Uploading image to OSS");
@@ -156,10 +169,21 @@ fn upload_and_set_profile_image(
     };
 
     // Step 2: Update profile with the relative URL (Station stores relative paths)
-    let mut body = UpdateProfileRequest::default();
+    let mut input = ProfileUpdateInput {
+        display_name: None,
+        note: None,
+        avatar: None,
+        header: None,
+        region: None,
+        timezone: None,
+        tags: None,
+        links: None,
+        discoverability: None,
+        observed_revision: current_profile.profile_revision,
+    };
     match field {
-        "avatar" => body.avatar = Some(url.clone()),
-        "header" => body.header = Some(url.clone()),
+        "avatar" => input.avatar = Some(url.clone()),
+        "header" => input.header = Some(url.clone()),
         _ => {
             return AppResult::fail(
                 ErrorCode::InvalidArgument,
@@ -168,34 +192,22 @@ fn upload_and_set_profile_image(
             )
         }
     };
+    let body = profile_input_to_proto(&input);
 
-    match station_client::request_peers_proto_no_payload(
-        Method::POST,
-        "/actor/profile",
-        token,
-        None,
-        Some(&body),
-    ) {
-        Ok(()) => {
+    match execute_profile_update(&input, &body, token) {
+        Ok(response) => {
+            let outcome = ProfileUpdateOutcome::try_from(response.outcome)
+                .unwrap_or(ProfileUpdateOutcome::Unspecified);
             // Sync avatar to local auth identity and download to local cache.
-            if field == "avatar" {
+            if field == "avatar"
+                && matches!(
+                    outcome,
+                    ProfileUpdateOutcome::Applied | ProfileUpdateOutcome::Unchanged
+                )
+            {
                 let _ = sync_avatar_with_download(token, &absolute_url);
             }
-            match station_client::request_peers_proto_no_body::<ActorProfile>(
-                Method::GET,
-                "/actor/profile",
-                token,
-                None,
-            ) {
-                Ok(p) => success_with_data(
-                    &format!("profile_upload_{}_oss", field),
-                    actor_profile_to_value(&p),
-                ),
-                Err(e) => {
-                    tracing::error!(error = %e, "Failed to fetch profile after image upload");
-                    map_station_error("profile_upload_image_oss", "fetch profile", e)
-                }
-            }
+            profile_update_success(&format!("profile_upload_{}_oss", field), response)
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to update profile after image upload");
@@ -310,6 +322,11 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
         "manually_approves_followers": p.manually_approves_followers,
         "message_permission": p.message_permission,
         "auto_expire_days": p.auto_expire_days,
+        "profile_revision": p.profile_revision,
+        "federated_handle": p.federated_handle,
+        "home_station_peer_id": p.home_station_peer_id,
+        "home_station_domain": p.home_station_domain,
+        "discoverability": discoverability_label(p.discoverability),
     });
     resolve_profile_urls(&mut data);
     data
@@ -362,7 +379,177 @@ fn profile_input_to_proto(input: &ProfileUpdateInput) -> UpdateProfileRequest {
             })
             .collect();
     }
+    if let Some(value) = input.discoverability.as_deref() {
+        r.discoverability = Some(discoverability_value(value));
+    }
+    r.observed_revision = input.observed_revision;
     r
+}
+
+fn execute_profile_update(
+    input: &ProfileUpdateInput,
+    body: &UpdateProfileRequest,
+    token: &str,
+) -> Result<UpdateProfileResponse, StationClientError> {
+    match station_client::request_peers_proto::<UpdateProfileRequest, UpdateProfileResponse>(
+        Method::POST,
+        "/actor/profile",
+        token,
+        None,
+        Some(body),
+    ) {
+        Ok(response) if valid_profile_update_response(&response) => Ok(response),
+        Ok(_) => reconcile_profile_update(input, token).ok_or_else(|| {
+            StationClientError::new(
+                StationClientErrorKind::InvalidResponse,
+                "Station returned an invalid profile update response",
+                None,
+            )
+        }),
+        Err(error) if ambiguous_profile_update_error(&error) => {
+            reconcile_profile_update(input, token).ok_or(error)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn valid_profile_update_response(response: &UpdateProfileResponse) -> bool {
+    response
+        .profile
+        .as_ref()
+        .is_some_and(|profile| profile.profile_revision > 0)
+        && !matches!(
+            ProfileUpdateOutcome::try_from(response.outcome),
+            Ok(ProfileUpdateOutcome::Unspecified) | Err(_)
+        )
+}
+
+fn reconcile_profile_update(
+    input: &ProfileUpdateInput,
+    token: &str,
+) -> Option<UpdateProfileResponse> {
+    let profile = station_client::request_peers_proto_no_body::<ActorProfile>(
+        Method::GET,
+        "/actor/profile",
+        token,
+        None,
+    )
+    .ok()?;
+    let outcome = if profile_matches_input(&profile, input) {
+        if profile.profile_revision == input.observed_revision {
+            ProfileUpdateOutcome::Unchanged
+        } else if profile.profile_revision > input.observed_revision {
+            ProfileUpdateOutcome::Applied
+        } else {
+            return None;
+        }
+    } else if profile.profile_revision > input.observed_revision {
+        ProfileUpdateOutcome::Conflict
+    } else {
+        return None;
+    };
+    Some(UpdateProfileResponse {
+        outcome: outcome as i32,
+        profile: Some(profile),
+    })
+}
+
+fn ambiguous_profile_update_error(error: &StationClientError) -> bool {
+    matches!(
+        error.kind,
+        StationClientErrorKind::Network
+            | StationClientErrorKind::Decode
+            | StationClientErrorKind::InvalidResponse
+    )
+}
+
+fn profile_matches_input(profile: &ActorProfile, input: &ProfileUpdateInput) -> bool {
+    input
+        .display_name
+        .as_ref()
+        .is_none_or(|value| value == &profile.display_name)
+        && input
+            .note
+            .as_ref()
+            .is_none_or(|value| value == &profile.note)
+        && input
+            .avatar
+            .as_ref()
+            .is_none_or(|value| value == &profile.avatar)
+        && input
+            .header
+            .as_ref()
+            .is_none_or(|value| value == &profile.header)
+        && input
+            .region
+            .as_ref()
+            .is_none_or(|value| value == &profile.region)
+        && input
+            .timezone
+            .as_ref()
+            .is_none_or(|value| value == &profile.timezone)
+        && input
+            .tags
+            .as_ref()
+            .is_none_or(|value| value == &profile.tags)
+        && input.links.as_ref().is_none_or(|links| {
+            links.len() == profile.links.len()
+                && links
+                    .iter()
+                    .zip(&profile.links)
+                    .all(|(left, right)| left.label == right.label && left.url == right.url)
+        })
+        && input
+            .discoverability
+            .as_deref()
+            .is_none_or(|value| discoverability_value(value) == profile.discoverability)
+}
+
+fn discoverability_value(value: &str) -> i32 {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "hidden" => ActorVisibility::Hidden as i32,
+        "by_handle" => ActorVisibility::ByHandle as i32,
+        "indexed" => ActorVisibility::Indexed as i32,
+        _ => ActorVisibility::Unspecified as i32,
+    }
+}
+
+fn discoverability_label(value: i32) -> &'static str {
+    match ActorVisibility::try_from(value).unwrap_or(ActorVisibility::Unspecified) {
+        ActorVisibility::Hidden => "hidden",
+        ActorVisibility::ByHandle => "by_handle",
+        ActorVisibility::Indexed => "indexed",
+        ActorVisibility::Unspecified => "hidden",
+    }
+}
+
+fn profile_update_success(
+    command: &str,
+    response: UpdateProfileResponse,
+) -> AppResult<StubPayload> {
+    let outcome = ProfileUpdateOutcome::try_from(response.outcome)
+        .unwrap_or(ProfileUpdateOutcome::Unspecified);
+    let Some(profile) = response.profile else {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("{command}: Station response omitted profile"),
+            None,
+        );
+    };
+    if matches!(outcome, ProfileUpdateOutcome::Unspecified) || profile.profile_revision == 0 {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            format!("{command}: Station returned an invalid profile outcome"),
+            None,
+        );
+    }
+    success_with_data(
+        command,
+        json!({
+            "outcome": outcome.as_str_name(),
+            "profile": actor_profile_to_value(&profile),
+        }),
+    )
 }
 
 /// Resolve relative avatar/header URLs (e.g. `/sub-oss/file?key=...`) to absolute URLs

@@ -8,6 +8,7 @@ import {
   CheckCheck,
   MessagesSquare,
   Pin,
+  RotateCcw,
 } from 'lucide-react';
 import {
   chatMessageRowMaxWidth,
@@ -16,8 +17,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { UserSquareAvatar } from '../../common/UserSquareAvatar';
-import type { FriendMessageStatus } from '../../../gen/proto/domain/chat/friend_chat_pb';
-import { FriendMessageStatus as FMS } from '../../../gen/proto/domain/chat/friend_chat_pb';
+import { MessageStatus } from '../../../gen/proto/domain/chat/chat_pb';
 import type { DesktopIMSenderProfileProjection } from '../../../store/socialProjection';
 import { ChatMessageContent } from './ChatMessageContent';
 import {
@@ -58,6 +58,7 @@ interface ChatMessageRowProps {
   onOpenThread: (rootUlid: string) => void;
   onPin: (message: ChatMessage) => void;
   onReact: (message: ChatMessage, emoji: string) => void;
+  onRetryMessage: (message: ChatMessage) => void;
   onRetryReaction: (message: ChatMessage) => void;
   reactionMutationEmoji?: string;
   reactionMutationPhase?: 'pending' | 'awaiting-projection' | 'error';
@@ -78,24 +79,24 @@ function formatMsgTime(sentAtMs: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function ReadReceipt({ status }: { status: FriendMessageStatus }) {
+function ReadReceipt({ status }: { status: MessageStatus }) {
   const { token } = theme.useToken();
-  if (status === FMS.READ) {
+  if (status === MessageStatus.READ) {
     return <CheckCheck size={14} style={{ color: token.colorPrimary }} />;
   }
-  if (status === FMS.DELIVERED) {
+  if (status === MessageStatus.DELIVERED) {
     return <CheckCheck size={14} style={{ color: token.colorTextQuaternary }} />;
   }
-  if (status === FMS.SENT) {
+  if (status === MessageStatus.SENT) {
     return <Check size={14} style={{ color: token.colorTextQuaternary }} />;
   }
   return null;
 }
 
-function receiptEvidenceStatus(status: FriendMessageStatus): string {
-  if (status === FMS.READ) return 'read';
-  if (status === FMS.DELIVERED) return 'delivered';
-  if (status === FMS.SENT) return 'sent';
+function receiptEvidenceStatus(status: MessageStatus): string {
+  if (status === MessageStatus.READ) return 'read';
+  if (status === MessageStatus.DELIVERED) return 'delivered';
+  if (status === MessageStatus.SENT) return 'sent';
   return 'unknown';
 }
 
@@ -348,6 +349,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   onOpenThread,
   onPin,
   onReact,
+  onRetryMessage,
   onRetryReaction,
   reactionMutationEmoji,
   reactionMutationPhase,
@@ -387,6 +389,18 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   const messageActionAnchorRef = useRef<HTMLDivElement>(null);
   const messageActionsAvailable = showHoverActions
     && !blocksMessageActionOverlay(reactionMutationPhase);
+  const retryableFailure = isOwn
+    && message.deliveryState === 'failed'
+    && !isRecalled;
+  const pendingStateLabel = isOwn && !isRecalled
+    ? {
+        draft: t('chat.social.messageArea.stateQueued'),
+        pending: t('chat.social.messageArea.stateQueued'),
+        retry_wait: t('chat.social.messageArea.stateRetrying'),
+        submitted: t('chat.social.messageArea.stateSubmitted'),
+        failed: t('chat.social.messageArea.stateFailed'),
+      }[message.deliveryState]
+    : undefined;
 
   const bubbleBg = mediaOnlyMessage
     ? 'transparent'
@@ -705,9 +719,31 @@ export const ChatMessageRow = memo(function ChatMessageRow({
             </Text>
           )}
           {isOwn && isFriendMessage(message) && !isRecalled && (
-            <span data-message-receipt={receiptEvidenceStatus(message.status as FriendMessageStatus)}>
-              <ReadReceipt status={message.status as FriendMessageStatus} />
+            <span data-message-receipt={receiptEvidenceStatus(message.status as MessageStatus)}>
+              <ReadReceipt status={message.status as MessageStatus} />
             </span>
+          )}
+          {pendingStateLabel && (
+            <Text
+              data-message-delivery-state={message.deliveryState}
+              type={retryableFailure ? 'danger' : 'secondary'}
+              style={{ fontSize: compact ? 10 : 11, lineHeight: 1.2 }}
+            >
+              {pendingStateLabel}
+            </Text>
+          )}
+          {retryableFailure && (
+            <Button
+              data-message-retry={message.ulid}
+              aria-label={t('chat.message.action.retry')}
+              type="text"
+              size="small"
+              icon={<RotateCcw size={12} />}
+              onClick={() => onRetryMessage(message)}
+              style={{ height: 24, paddingInline: 5 }}
+            >
+              {t('chat.message.action.retry')}
+            </Button>
           )}
         </Flexbox>
       </Flexbox>

@@ -125,7 +125,6 @@ func (r *authorityRepository) Save(
 			"description":               model.Description,
 			"avatar_object_id":          model.AvatarObjectID,
 			"visibility":                model.Visibility,
-			"disappear_timer_seconds":   model.DisappearTimerSeconds,
 			"updated_at":                model.UpdatedAt,
 		})
 	if result.Error != nil {
@@ -260,11 +259,10 @@ func (r *authorityRepository) loadSnapshot(
 			MLSEpoch:        valueobject.Epoch(model.MLSEpoch),
 		},
 		Settings: valueobject.ConversationSettings{
-			Name:                  model.Name,
-			Description:           model.Description,
-			AvatarObjectID:        model.AvatarObjectID,
-			Visibility:            valueobject.ConversationVisibility(model.Visibility),
-			DisappearTimerSeconds: model.DisappearTimerSeconds,
+			Name:           model.Name,
+			Description:    model.Description,
+			AvatarObjectID: model.AvatarObjectID,
+			Visibility:     valueobject.ConversationVisibility(model.Visibility),
 		},
 		Members:   members,
 		Devices:   devices,
@@ -383,7 +381,8 @@ func (r *eventRepository) Append(ctx context.Context, event domainevent.Record) 
 	}
 	var messageID *string
 	var messageAuthor string
-	if rehydrated.Fact.Kind == domainevent.KindMessageCommitted {
+	if rehydrated.Fact.Kind == domainevent.KindMessageCommitted ||
+		rehydrated.Fact.Kind == domainevent.KindMessageForwarded {
 		value := string(rehydrated.Fact.MessageID)
 		messageID = &value
 		messageAuthor = string(rehydrated.Actor.Actor)
@@ -679,10 +678,13 @@ func (r *eventRepository) listMessageModels(
 	var models []ConversationEventModel
 	if err := r.db.WithContext(ctx).
 		Where(
-			"conversation_id = ? AND sequence > ? AND event_kind = ?",
+			"conversation_id = ? AND sequence > ? AND event_kind IN ?",
 			string(conversationID),
 			uint64(after),
-			string(domainevent.KindMessageCommitted),
+			[]string{
+				string(domainevent.KindMessageCommitted),
+				string(domainevent.KindMessageForwarded),
+			},
 		).
 		Order("sequence ASC, event_id ASC").
 		Limit(limit).
@@ -707,7 +709,8 @@ func (r *eventRepository) eventsFromModels(
 }
 
 func canonicalThreadRoot(event domainevent.Record) (valueobject.MessageID, error) {
-	if event.Fact.Kind != domainevent.KindMessageCommitted {
+	if event.Fact.Kind != domainevent.KindMessageCommitted &&
+		event.Fact.Kind != domainevent.KindMessageForwarded {
 		return "", conversationdomain.NewError(
 			conversationdomain.ErrorCodeHashChainInvalid,
 			"persistence.decode_message_query_index",
@@ -723,14 +726,39 @@ func canonicalThreadRoot(event domainevent.Record) (valueobject.MessageID, error
 			fmt.Errorf("decode canonical source command: %w", err),
 		)
 	}
-	message := source.GetSendMessage()
-	if message == nil ||
-		valueobject.ConversationID(source.GetConversationId()) != event.ConversationID ||
+	messageID := ""
+	threadRootMessageID := ""
+	switch event.Fact.Kind {
+	case domainevent.KindMessageCommitted:
+		message := source.GetSendMessage()
+		if message == nil {
+			return "", conversationdomain.NewError(
+				conversationdomain.ErrorCodeHashChainInvalid,
+				"persistence.decode_message_query_index",
+				"message",
+				"canonical source command has no send payload",
+			)
+		}
+		messageID = message.GetMessageId()
+		threadRootMessageID = message.GetThreadRootMessageId()
+	case domainevent.KindMessageForwarded:
+		message := source.GetForwardMessage()
+		if message == nil {
+			return "", conversationdomain.NewError(
+				conversationdomain.ErrorCodeHashChainInvalid,
+				"persistence.decode_message_query_index",
+				"message",
+				"canonical source command has no forward payload",
+			)
+		}
+		messageID = message.GetDestinationMessageId()
+	}
+	if valueobject.ConversationID(source.GetConversationId()) != event.ConversationID ||
 		valueobject.CommandID(source.GetCommandId()) != event.CommandID ||
 		source.GetSender() == nil ||
 		valueobject.PTID(source.GetSender().GetPtid()) != event.Actor.Actor ||
 		valueobject.DeviceID(source.GetSender().GetDeviceId()) != event.Actor.Device ||
-		valueobject.MessageID(message.GetMessageId()) != event.Fact.MessageID {
+		valueobject.MessageID(messageID) != event.Fact.MessageID {
 		return "", conversationdomain.NewError(
 			conversationdomain.ErrorCodeHashChainInvalid,
 			"persistence.decode_message_query_index",
@@ -738,7 +766,7 @@ func canonicalThreadRoot(event domainevent.Record) (valueobject.MessageID, error
 			"canonical source command disagrees with the domain event",
 		)
 	}
-	return valueobject.MessageID(message.GetThreadRootMessageId()), nil
+	return valueobject.MessageID(threadRootMessageID), nil
 }
 
 func normalizeThreadRootIDs(
@@ -800,7 +828,8 @@ func (r *eventRepository) eventFromModel(
 		)
 	}
 	switch {
-	case rehydrated.Fact.Kind == domainevent.KindMessageCommitted &&
+	case (rehydrated.Fact.Kind == domainevent.KindMessageCommitted ||
+		rehydrated.Fact.Kind == domainevent.KindMessageForwarded) &&
 		(model.MessageID == nil ||
 			rehydrated.Fact.MessageID != valueobject.MessageID(*model.MessageID) ||
 			rehydrated.Actor.Actor != valueobject.PTID(model.MessageAuthor)):
@@ -811,6 +840,7 @@ func (r *eventRepository) eventFromModel(
 			"indexed message identity disagrees with canonical event bytes",
 		)
 	case rehydrated.Fact.Kind != domainevent.KindMessageCommitted &&
+		rehydrated.Fact.Kind != domainevent.KindMessageForwarded &&
 		(model.MessageID != nil || model.MessageAuthor != ""):
 		return domainevent.Record{}, conversationdomain.NewError(
 			conversationdomain.ErrorCodeHashChainInvalid,
@@ -1077,16 +1107,15 @@ func (r *memberSettingsRepository) Save(
 	settings repository.MemberSettings,
 ) error {
 	model := ConversationMemberSettingsModel{
-		ConversationID:      string(settings.ConversationID),
-		PTID:                string(settings.Actor),
-		Nickname:            settings.Nickname,
-		Muted:               settings.Muted,
-		Pinned:              settings.Pinned,
-		AlertEnabled:        settings.AlertEnabled,
-		Background:          settings.Background,
-		BackgroundImage:     settings.BackgroundImage,
-		ClearedAtUnixMillis: settings.ClearedAtUnixMillis,
-		UpdatedAt:           settings.UpdatedAt.UTC(),
+		ConversationID:  string(settings.ConversationID),
+		PTID:            string(settings.Actor),
+		Nickname:        settings.Nickname,
+		Muted:           settings.Muted,
+		Pinned:          settings.Pinned,
+		AlertEnabled:    settings.AlertEnabled,
+		Background:      settings.Background,
+		BackgroundImage: settings.BackgroundImage,
+		UpdatedAt:       settings.UpdatedAt.UTC(),
 	}
 	return r.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
@@ -1098,7 +1127,6 @@ func (r *memberSettingsRepository) Save(
 				"alert_enabled",
 				"background",
 				"background_image",
-				"cleared_at_unix_ms",
 				"updated_at",
 			}),
 		}).
@@ -1107,16 +1135,15 @@ func (r *memberSettingsRepository) Save(
 
 func memberSettingsFromModel(model ConversationMemberSettingsModel) repository.MemberSettings {
 	return repository.MemberSettings{
-		ConversationID:      valueobject.ConversationID(model.ConversationID),
-		Actor:               valueobject.PTID(model.PTID),
-		Nickname:            model.Nickname,
-		Muted:               model.Muted,
-		Pinned:              model.Pinned,
-		AlertEnabled:        model.AlertEnabled,
-		Background:          model.Background,
-		BackgroundImage:     model.BackgroundImage,
-		ClearedAtUnixMillis: model.ClearedAtUnixMillis,
-		UpdatedAt:           model.UpdatedAt,
+		ConversationID:  valueobject.ConversationID(model.ConversationID),
+		Actor:           valueobject.PTID(model.PTID),
+		Nickname:        model.Nickname,
+		Muted:           model.Muted,
+		Pinned:          model.Pinned,
+		AlertEnabled:    model.AlertEnabled,
+		Background:      model.Background,
+		BackgroundImage: model.BackgroundImage,
+		UpdatedAt:       model.UpdatedAt,
 	}
 }
 
@@ -1431,6 +1458,29 @@ func (r *followerRepository) Apply(
 		!conversationdomain.IsCode(statusErr, conversationdomain.ErrorCodeNotFound) {
 		return statusErr
 	}
+	rejoinCheckpoint := projection.Checkpoint == repository.FollowerCheckpointRejoin
+	if projection.Checkpoint != repository.FollowerCheckpointNone &&
+		!rejoinCheckpoint {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeHashChainInvalid,
+			"persistence.apply_follower_event",
+			"checkpoint",
+			"is not supported",
+		)
+	}
+	sequenceGap := err == nil && existing.Sequence+1 < uint64(event.Sequence)
+	if rejoinCheckpoint &&
+		(statusErr != nil ||
+			status != repository.FollowerStatusRetired ||
+			event.Fact.Kind != domainevent.KindMembershipCommitted ||
+			projection.Status != repository.FollowerStatusActive) {
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeHashChainInvalid,
+			"persistence.apply_follower_event",
+			"checkpoint",
+			"rejoin does not match the retired follower state",
+		)
+	}
 	switch {
 	case statusErr == nil && status == repository.FollowerStatusReadOnly:
 		return conversationdomain.NewError(
@@ -1446,9 +1496,19 @@ func (r *followerRepository) Apply(
 			"projection",
 			"requires an explicit resynchronization before applying more events",
 		)
+	case statusErr == nil &&
+		status == repository.FollowerStatusRetired &&
+		!rejoinCheckpoint:
+		return conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnauthorized,
+			"persistence.apply_follower_event",
+			"projection",
+			"retired follower accepts only a rejoin checkpoint",
+		)
 	case err == nil &&
 		status == repository.FollowerStatusResyncRequired &&
-		existing.Sequence+1 != uint64(event.Sequence):
+		existing.Sequence+1 != uint64(event.Sequence) &&
+		!rejoinCheckpoint:
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeStaleAuthorityHead,
 			"persistence.apply_follower_event",
@@ -1468,11 +1528,13 @@ func (r *followerRepository) Apply(
 			"sequence",
 			"is older than the durable follower head",
 		)
-	case err == nil && existing.Sequence+1 < uint64(event.Sequence):
+	case sequenceGap && !rejoinCheckpoint:
 		return r.markFollowerResyncRequired(ctx, existing, "authority event sequence has a gap")
 	case err == nil && existing.AuthorityStationPeerID != string(event.AuthorityStation):
 		return r.markFollowerReadOnly(ctx, existing, "authority Station changed without a handover")
-	case err == nil && !bytes.Equal(existing.EventHash, event.PreviousHash[:]):
+	case err == nil &&
+		!bytes.Equal(existing.EventHash, event.PreviousHash[:]) &&
+		!sequenceGap:
 		return r.markFollowerReadOnly(ctx, existing, "authority event previous hash mismatch")
 	case errors.Is(err, gorm.ErrRecordNotFound) && event.Sequence != 1:
 		return conversationdomain.NewError(
@@ -1528,10 +1590,21 @@ func (r *followerRepository) Apply(
 	} else if saveErr := r.db.WithContext(ctx).Save(&model).Error; saveErr != nil {
 		return saveErr
 	}
+	if rejoinCheckpoint {
+		if err := r.db.WithContext(ctx).
+			Where(
+				"conversation_id = ? AND sequence <= ?",
+				string(event.ConversationID),
+				uint64(event.Sequence),
+			).
+			Delete(&ConversationFollowerPendingEventModel{}).Error; err != nil {
+			return err
+		}
+	}
 	if err := r.SetStatus(
 		ctx,
 		event.ConversationID,
-		repository.FollowerStatusActive,
+		projection.Status,
 	); err != nil {
 		return err
 	}
@@ -1772,6 +1845,7 @@ func (r *followerRepository) SetStatus(
 ) error {
 	switch status {
 	case repository.FollowerStatusActive,
+		repository.FollowerStatusRetired,
 		repository.FollowerStatusResyncRequired,
 		repository.FollowerStatusDegraded,
 		repository.FollowerStatusReadOnly:
@@ -1935,7 +2009,6 @@ func conversationModelFromSnapshot(snapshot aggregate.Snapshot) ConversationMode
 		Description:            snapshot.Settings.Description,
 		AvatarObjectID:         snapshot.Settings.AvatarObjectID,
 		Visibility:             string(snapshot.Settings.Visibility),
-		DisappearTimerSeconds:  snapshot.Settings.DisappearTimerSeconds,
 		CreatedAt:              snapshot.CreatedAt.UTC(),
 		UpdatedAt:              snapshot.UpdatedAt.UTC(),
 	}

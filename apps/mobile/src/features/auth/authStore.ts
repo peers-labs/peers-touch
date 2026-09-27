@@ -1,11 +1,6 @@
 import { create } from 'zustand';
 
-import {
-  clearAuthSession,
-  type AccessDecision,
-  type MobileAuthSession,
-} from './authSession';
-import { readableErrorMessage } from '../../utils/errorMessage';
+import type { AccessDecision, MobileAuthSession } from './authSession';
 
 interface AuthState {
   session: MobileAuthSession | null;
@@ -18,6 +13,7 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setRestored: (restored: boolean) => void;
+  hideAccessProjection: () => void;
   hideSessionProjection: () => void;
   clearSession: () => Promise<void>;
 }
@@ -34,29 +30,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   setRestored: (restored) => set({ restored }),
-  hideSessionProjection: () => set({
-    session: null,
+  hideAccessProjection: () => set({
     accessDecision: null,
     loading: false,
     error: null,
+    restored: false,
   }),
+  hideSessionProjection: () => set({ session: null }),
 
   clearSession: async () => {
-    set({
-      session: null,
-      accessDecision: null,
-      loading: false,
-      error: null,
-    });
-    try {
-      await clearAuthSession();
-    } catch (error) {
-      set({ error: errorMessage(error) });
-      throw error;
-    }
+    set({ session: null });
   },
 }));
-
-function errorMessage(error: unknown): string {
-  return readableErrorMessage(error);
-}

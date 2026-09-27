@@ -153,7 +153,7 @@ JOIN social_private_content_plans AS recovery_plan
 		).
 		Where(
 			"NOT "+recoverablePrivateContentBlockExistsSQL("resource.author_ptid"),
-			friendshipStatusBlocked,
+			true,
 			query.ActorPTID,
 			query.ActorPTID,
 		).
@@ -245,7 +245,7 @@ JOIN social_private_content_plans AS recovery_plan
 		).
 		Where(
 			"NOT "+recoverablePrivateContentBlockExistsSQL("resource.author_ptid"),
-			friendshipStatusBlocked,
+			true,
 			query.ActorPTID,
 			query.ActorPTID,
 		).
@@ -254,7 +254,7 @@ JOIN social_private_content_plans AS recovery_plan
 			query.ActorPTID,
 			query.ActorPTID,
 			query.ActorPTID,
-			friendshipStatusBlocked,
+			true,
 			query.ActorPTID,
 			query.ActorPTID,
 		).
@@ -322,12 +322,12 @@ func recoverablePrivateContentBlockExistsSQL(
 	return fmt.Sprintf(`
 EXISTS (
   SELECT 1
-    FROM friend_chat_friendships AS blocked
-   WHERE blocked.status = ?
+    FROM social_directional_relationships AS blocked
+   WHERE blocked.blocked = ?
      AND (
-       (blocked.actor_ptid = %s AND blocked.peer_ptid = ?)
+       (blocked.actor_ptid = %s AND blocked.target_actor_ptid = ?)
        OR
-       (blocked.actor_ptid = ? AND blocked.peer_ptid = %s)
+       (blocked.actor_ptid = ? AND blocked.target_actor_ptid = %s)
      )
 )`,
 		authorColumn,
@@ -384,14 +384,14 @@ func recoverablePrivateContentParentAuthorizationSQL() string {
     )
     AND NOT EXISTS (
       SELECT 1
-        FROM friend_chat_friendships AS parent_block
-       WHERE parent_block.status = ?
+        FROM social_directional_relationships AS parent_block
+       WHERE parent_block.blocked = ?
          AND (
            (parent_block.actor_ptid = parent.author_ptid
-             AND parent_block.peer_ptid = ?)
+             AND parent_block.target_actor_ptid = ?)
            OR
            (parent_block.actor_ptid = ?
-             AND parent_block.peer_ptid = parent.author_ptid)
+             AND parent_block.target_actor_ptid = parent.author_ptid)
          )
     )
   )

@@ -272,17 +272,6 @@ pub fn onboarding_reset() -> AppResult<StubPayload> {
     success_payload("onboarding_reset", json!({ "ok": true }))
 }
 
-pub fn statistics_get() -> AppResult<StubPayload> {
-    success_payload(
-        "statistics_get",
-        json!({
-            "agents":0,
-            "sessions":0,
-            "messages":0
-        }),
-    )
-}
-
 pub fn preferences_get() -> AppResult<StubPayload> {
     success_payload("preferences_get", json!({}))
 }

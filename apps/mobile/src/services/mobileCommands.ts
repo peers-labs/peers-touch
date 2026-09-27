@@ -1,14 +1,49 @@
-import { fromBinary } from '@bufbuild/protobuf';
+import {
+  create,
+  fromBinary,
+  toBinary,
+  type DescMessage,
+  type MessageShape,
+} from '@bufbuild/protobuf';
 import { invoke } from '@tauri-apps/api/core';
 
 import {
   AcceptSocialFriendRequestResponseSchema,
+  BlockSocialActorResponseSchema,
   RejectSocialFriendRequestResponseSchema,
   SendSocialFriendRequestResponseSchema,
   type AcceptSocialFriendRequestResponse,
+  type BlockSocialActorResponse,
   type RejectSocialFriendRequestResponse,
   type SendSocialFriendRequestResponse,
+  type UnblockSocialActorResponse,
+  UnblockSocialActorResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
+import {
+  ImageAttachmentSchema,
+  type ImageAttachment,
+} from '../gen/proto/domain/social/post_pb';
+import {
+  ChatStorageConversationRequestSchema,
+  ChatStorageResultSchema,
+  ChatStorageRetentionRequestSchema,
+  ChatStorageSnapshotRequestSchema,
+  ChatStorageSnapshotSchema,
+  type ChatRetentionPreset,
+  type ChatStorageResult,
+  type ChatStorageSnapshot,
+} from '../gen/proto/domain/chat/storage_pb';
+import {
+  notifyReliabilityCommandChanged,
+  type CommandState,
+  type FriendRequestCommandProjection,
+  type SocialRelationshipCommandProjection,
+} from '../runtimes/commandRuntime';
+import {
+  mobileMutationScopeKey,
+  requireMobileMutationAdmission,
+  type MobileMutationDomain,
+} from '../runtimes/mutationAdmission';
 
 export async function setSecureStorageValue(key: string, value: string): Promise<void> {
   await invoke('secure_storage_set', { key, value });
@@ -22,14 +57,173 @@ export async function removeSecureStorageValue(key: string): Promise<void> {
   await invoke('secure_storage_remove', { key });
 }
 
+export interface NativeMediaPickInput {
+  stationPeerId: string;
+  actorPtid: string;
+  sessionId: string;
+  requestId: string;
+  surfaceKind: 'chat_attachment' | 'moment_media';
+  capability: 'photo_library' | 'camera' | 'document';
+  deadlineMs: number;
+  acceptedMediaKinds: Array<'image' | 'video' | 'file'>;
+  maxItemCount: number;
+  maxTotalBytes: number;
+}
+
+export interface NativeStagedMediaHandle {
+  handle: string;
+  mediaKind: 'image' | 'video' | 'file';
+  mimeType: string;
+  byteLength: number;
+  sha256Base64: string;
+}
+
+export interface NativeMediaPickProjection {
+  requestId: string;
+  lifecycleGeneration: number;
+  outcome:
+    | 'selected'
+    | 'cancelled'
+    | 'permission_required'
+    | 'expired'
+    | 'failed';
+  items: NativeStagedMediaHandle[];
+  errorCode?: string;
+}
+
+export async function pickNativeMedia(
+  input: NativeMediaPickInput,
+): Promise<NativeMediaPickProjection> {
+  return invoke<NativeMediaPickProjection>('media_pick', { input });
+}
+
+export interface NativeMomentMediaInput {
+  stationPeerId: string;
+  actorPtid: string;
+  sessionId: string;
+  handle: string;
+}
+
+export async function uploadNativeMomentMedia(
+  input: NativeMomentMediaInput,
+): Promise<ImageAttachment> {
+  requireMobileMutationAdmission(
+    mobileMutationScopeKey(input.stationPeerId, input.actorPtid),
+    'moments',
+  );
+  const bytes = await invoke<number[]>('moment_media_upload', { input });
+  return fromBinary(ImageAttachmentSchema, Uint8Array.from(bytes));
+}
+
+export async function discardNativeMomentMedia(
+  input: NativeMomentMediaInput,
+): Promise<void> {
+  await invoke('moment_media_discard', { input });
+}
+
 export interface MessagingAccountInput {
   stationPeerId: string;
   actorPtid: string;
 }
 
+export async function chatStorageSnapshot(
+  input: MessagingAccountInput & {
+    deviceId: string;
+    scopeRevision: string;
+  },
+): Promise<ChatStorageSnapshot> {
+  const request = create(ChatStorageSnapshotRequestSchema, {
+    scope: {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      deviceId: input.deviceId,
+    },
+    scopeRevision: input.scopeRevision,
+  });
+  const response = await invoke<number[]>('chat_storage_snapshot', {
+    input: {
+      requestBytes: Array.from(toBinary(ChatStorageSnapshotRequestSchema, request)),
+    },
+  });
+  return fromBinary(ChatStorageSnapshotSchema, Uint8Array.from(response));
+}
+
+export async function chatStorageClearCache(
+  input: MessagingAccountInput & {
+    deviceId: string;
+    scopeRevision: string;
+  },
+): Promise<ChatStorageResult> {
+  const request = create(ChatStorageSnapshotRequestSchema, {
+    scope: {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      deviceId: input.deviceId,
+    },
+    scopeRevision: input.scopeRevision,
+  });
+  const response = await invoke<number[]>('chat_storage_clear_cache', {
+    input: {
+      requestBytes: Array.from(toBinary(ChatStorageSnapshotRequestSchema, request)),
+    },
+  });
+  return fromBinary(ChatStorageResultSchema, Uint8Array.from(response));
+}
+
+export async function chatStorageClearConversation(
+  input: MessagingAccountInput & {
+    deviceId: string;
+    scopeRevision: string;
+    conversationId: string;
+  },
+): Promise<ChatStorageResult> {
+  const request = create(ChatStorageConversationRequestSchema, {
+    scope: {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      deviceId: input.deviceId,
+    },
+    scopeRevision: input.scopeRevision,
+    conversationId: input.conversationId,
+  });
+  const response = await invoke<number[]>('chat_storage_clear_conversation', {
+    input: {
+      requestBytes: Array.from(toBinary(ChatStorageConversationRequestSchema, request)),
+    },
+  });
+  return fromBinary(ChatStorageResultSchema, Uint8Array.from(response));
+}
+
+export async function chatStorageSetRetention(
+  input: MessagingAccountInput & {
+    deviceId: string;
+    scopeRevision: string;
+    retentionPreset: ChatRetentionPreset;
+  },
+): Promise<ChatStorageResult> {
+  const request = create(ChatStorageRetentionRequestSchema, {
+    scope: {
+      stationPeerId: input.stationPeerId,
+      actorPtid: input.actorPtid,
+      deviceId: input.deviceId,
+    },
+    scopeRevision: input.scopeRevision,
+    retentionPreset: input.retentionPreset,
+  });
+  const response = await invoke<number[]>('chat_storage_set_retention', {
+    input: {
+      requestBytes: Array.from(toBinary(ChatStorageRetentionRequestSchema, request)),
+    },
+  });
+  return fromBinary(ChatStorageResultSchema, Uint8Array.from(response));
+}
+
+export interface MessagingConversationMutationInput extends MessagingAccountInput {
+  admissionDomain?: Extract<MobileMutationDomain, 'social' | 'group'>;
+}
+
 export interface MessagingActivateInput extends MessagingAccountInput {
-  stationOrigin: string;
-  accessToken: string;
+  sessionId: string;
 }
 
 export interface MessagingRuntimeStatus {
@@ -47,14 +241,33 @@ export interface MessagingRuntimeStatus {
   workerPhase: 'running' | 'suspended' | 'stopping';
 }
 
+export type MobileCallSignalKind =
+  | 'OFFER'
+  | 'ANSWER'
+  | 'CANDIDATE'
+  | 'HANGUP'
+  | 'CALL_REQUEST'
+  | 'CALL_ACCEPT'
+  | 'CALL_REJECT'
+  | 'CALL_END'
+  | 'CALL_NO_ANSWER';
+
+export interface MessagingCallSignalInput extends MessagingAccountInput {
+  peerPtid: string;
+  sessionUlid: string;
+  kind: MobileCallSignalKind;
+}
+
 export interface MessagingConversationProjection {
   conversationId: string;
   authorityStationId: string;
   federationId: string;
   kind: number;
   name: string;
+  description?: string;
   ownerPtid: string;
   memberPtids: string[];
+  members: MessagingMemberAuthorityMemberProjection[];
   membershipEpoch: number;
   mlsEpoch: number;
   active: boolean;
@@ -85,6 +298,67 @@ export interface MessagingCreateGroupResult {
   state: 'pending' | 'projected' | 'failed';
 }
 
+export interface MessagingMembershipTransitionInput extends MessagingAccountInput {
+  conversationId: string;
+  action: 'add_actor' | 'remove_actor' | 'add_device' | 'remove_device';
+  targetPtid: string;
+  targetDeviceId?: string;
+  role?: 'member' | 'admin' | 'owner';
+}
+
+export interface MessagingPendingConversationCommandResult {
+  commandId: string;
+  state: 'pending';
+}
+
+export interface MessagingMemberAuthorityMemberProjection {
+  ptid: string;
+  role: number;
+  homeStationPeerId: string;
+  muted: boolean;
+  mutedUntilUnixMs?: number;
+}
+
+export interface MessagingMemberAuthorityResult {
+  commandId: string;
+  conversationId: string;
+  ownerPtid?: string;
+  members?: MessagingMemberAuthorityMemberProjection[];
+  authoritySequence?: number;
+  authorityHash?: number[];
+  membershipEpoch?: number;
+  mlsEpoch?: number;
+  state: 'pending' | 'projected';
+}
+
+export interface MessagingUpdateMemberAuthorityInput extends MessagingAccountInput {
+  conversationId: string;
+  targetPtid: string;
+  role?: 'member' | 'admin';
+  muted?: boolean;
+  mutedUntilUnixMs?: number;
+}
+
+export interface MessagingTransferOwnershipInput extends MessagingAccountInput {
+  conversationId: string;
+  nextOwnerPtid: string;
+}
+
+export interface MessagingUpdateConversationInput extends MessagingAccountInput {
+  conversationId: string;
+  name?: string;
+  description?: string;
+}
+
+export interface MessagingSubmitLeaveIntentInput extends MessagingAccountInput {
+  conversationId: string;
+}
+
+export interface MessagingLeaveIntentSubmissionResult {
+  intentId: string;
+  state: 'pending';
+}
+
 export interface SocialFriendRequestSendInput extends MessagingAccountInput {
   receiverPtid: string;
   receiverHomeStationPeerId: string;
@@ -101,6 +375,30 @@ export interface SocialFriendRequestDecisionInput extends MessagingAccountInput 
   federationId: string;
 }
 
+export interface ReliableFriendRequestResult<Response> {
+  commandId: string;
+  requestId: string;
+  payloadSha256: readonly number[];
+  state: CommandState;
+  response: Response | null;
+  checkpointReady: boolean;
+}
+
+export interface SocialRelationshipMutationInput extends MessagingAccountInput {
+  targetPtid: string;
+  targetHomeStationPeerId: string;
+  observedRevision: number;
+}
+
+export interface ReliableRelationshipResult<Response> {
+  commandId: string;
+  targetPtid: string;
+  payloadSha256: readonly number[];
+  state: CommandState;
+  response: Response | null;
+  checkpointReady: boolean;
+}
+
 export interface MessagingAttachmentProjection {
   attachmentId: string;
   filename: string;
@@ -110,6 +408,13 @@ export interface MessagingAttachmentProjection {
   storageRef?: string;
   ciphertextSize?: number;
   availabilityState?: 'remote' | 'local';
+  voiceNote?: MessagingVoiceNoteMetadata;
+}
+
+export interface MessagingVoiceNoteMetadata {
+  durationMs: number;
+  codec: string;
+  waveform: number[];
 }
 
 export interface MessagingReactionProjection {
@@ -143,6 +448,8 @@ export interface MessagingMessageProjection {
   editedText?: string;
   editedAtUnixMs?: number;
   retracted: boolean;
+  moderated: boolean;
+  moderationReasonCode?: string;
   reactions: MessagingReactionProjection[];
   pinnedByPtid?: string;
   pinnedAtUnixMs?: number;
@@ -154,6 +461,11 @@ export interface MessagingPendingCommandResult {
   messageId: string;
   attachmentIds: string[];
   state: 'pending';
+}
+
+export interface MessagingConversationSummary {
+  lastMessage: MessagingMessageProjection | null;
+  unreadCount: number;
 }
 
 export type MessagingSubmitCommandResult =
@@ -169,6 +481,7 @@ export interface MessagingAttachmentStageProjection {
   filename: string;
   mimeType: string;
   plaintextSize: number;
+  voiceNote?: MessagingVoiceNoteMetadata;
   completed: boolean;
   maxChunkBytes: number;
 }
@@ -192,6 +505,8 @@ export interface MessagingCommandStatusProjection {
 
 export type MessagingMetadataInteraction =
   | { kind: 'retract' }
+  | { kind: 'hideForActor' }
+  | { kind: 'moderate'; reasonCode: string }
   | { kind: 'reaction'; reaction: string; remove: boolean }
   | { kind: 'pin'; remove: boolean };
 
@@ -223,37 +538,205 @@ export async function messagingStatus(): Promise<MessagingRuntimeStatus> {
   return invoke<MessagingRuntimeStatus>('messaging_status');
 }
 
+export async function messagingCallSignalSeal(
+  input: MessagingCallSignalInput & { plaintext: string },
+): Promise<string> {
+  const result = await invoke<{ payloadBase64: string }>(
+    'messaging_call_signal_seal',
+    { input },
+  );
+  return result.payloadBase64;
+}
+
+export async function messagingCallSignalOpen(
+  input: MessagingCallSignalInput & { payload: number[] },
+): Promise<string> {
+  const result = await invoke<{ plaintext: string }>(
+    'messaging_call_signal_open',
+    { input },
+  );
+  return result.plaintext;
+}
+
 export async function socialFriendRequestSend(
   input: SocialFriendRequestSendInput,
-): Promise<SendSocialFriendRequestResponse> {
-  const bytes = await invoke<number[]>('social_friend_request_send', { input });
-  return fromBinary(SendSocialFriendRequestResponseSchema, Uint8Array.from(bytes));
+): Promise<ReliableFriendRequestResult<SendSocialFriendRequestResponse>> {
+  requireMessagingMutation(input, 'social');
+  const projection = await invoke<FriendRequestCommandProjection>(
+    'social_friend_request_send',
+    { input },
+  );
+  notifyReliabilityCommandChanged();
+  return decodeReliableFriendRequestResult(
+    projection,
+    SendSocialFriendRequestResponseSchema,
+  );
 }
 
 export async function socialFriendRequestAccept(
   input: SocialFriendRequestDecisionInput,
-): Promise<AcceptSocialFriendRequestResponse> {
-  const bytes = await invoke<number[]>('social_friend_request_accept', { input });
-  return fromBinary(AcceptSocialFriendRequestResponseSchema, Uint8Array.from(bytes));
+): Promise<ReliableFriendRequestResult<AcceptSocialFriendRequestResponse>> {
+  requireMessagingMutation(input, 'social');
+  const projection = await invoke<FriendRequestCommandProjection>(
+    'social_friend_request_accept',
+    { input },
+  );
+  notifyReliabilityCommandChanged();
+  return decodeReliableFriendRequestResult(
+    projection,
+    AcceptSocialFriendRequestResponseSchema,
+  );
 }
 
 export async function socialFriendRequestReject(
   input: SocialFriendRequestDecisionInput,
-): Promise<RejectSocialFriendRequestResponse> {
-  const bytes = await invoke<number[]>('social_friend_request_reject', { input });
-  return fromBinary(RejectSocialFriendRequestResponseSchema, Uint8Array.from(bytes));
+): Promise<ReliableFriendRequestResult<RejectSocialFriendRequestResponse>> {
+  requireMessagingMutation(input, 'social');
+  const projection = await invoke<FriendRequestCommandProjection>(
+    'social_friend_request_reject',
+    { input },
+  );
+  notifyReliabilityCommandChanged();
+  return decodeReliableFriendRequestResult(
+    projection,
+    RejectSocialFriendRequestResponseSchema,
+  );
+}
+
+function decodeReliableFriendRequestResult<Desc extends DescMessage>(
+  projection: FriendRequestCommandProjection,
+  schema: Desc,
+): ReliableFriendRequestResult<MessageShape<Desc>> {
+  return {
+    commandId: projection.commandId,
+    requestId: projection.requestId,
+    payloadSha256: projection.payloadSha256,
+    state: projection.state,
+    response: projection.responseBytes
+      ? fromBinary(schema, Uint8Array.from(projection.responseBytes))
+      : null,
+    checkpointReady: projection.checkpointReady,
+  };
+}
+
+export async function socialRelationshipBlock(
+  input: SocialRelationshipMutationInput,
+): Promise<ReliableRelationshipResult<BlockSocialActorResponse>> {
+  requireMessagingMutation(input, 'social');
+  const projection = await invoke<SocialRelationshipCommandProjection>(
+    'social_relationship_block',
+    { input },
+  );
+  notifyReliabilityCommandChanged();
+  return decodeReliableRelationshipResult(
+    projection,
+    BlockSocialActorResponseSchema,
+  );
+}
+
+export async function socialRelationshipUnblock(
+  input: SocialRelationshipMutationInput,
+): Promise<ReliableRelationshipResult<UnblockSocialActorResponse>> {
+  requireMessagingMutation(input, 'social');
+  const projection = await invoke<SocialRelationshipCommandProjection>(
+    'social_relationship_unblock',
+    { input },
+  );
+  notifyReliabilityCommandChanged();
+  return decodeReliableRelationshipResult(
+    projection,
+    UnblockSocialActorResponseSchema,
+  );
+}
+
+function decodeReliableRelationshipResult<Desc extends DescMessage>(
+  projection: SocialRelationshipCommandProjection,
+  schema: Desc,
+): ReliableRelationshipResult<MessageShape<Desc>> {
+  return {
+    commandId: projection.commandId,
+    targetPtid: projection.targetPtid,
+    payloadSha256: projection.payloadSha256,
+    state: projection.state,
+    response: projection.responseBytes
+      ? fromBinary(schema, Uint8Array.from(projection.responseBytes))
+      : null,
+    checkpointReady: projection.checkpointReady,
+  };
 }
 
 export async function messagingCreateDirect(
   input: MessagingCreateDirectInput,
 ): Promise<MessagingCreateDirectResult> {
+  requireMessagingMutation(input, 'social');
   return invoke<MessagingCreateDirectResult>('messaging_create_direct', { input });
 }
 
 export async function messagingCreateGroup(
   input: MessagingCreateGroupInput,
 ): Promise<MessagingCreateGroupResult> {
+  requireMessagingMutation(input, 'group');
   return invoke<MessagingCreateGroupResult>('messaging_create_group', { input });
+}
+
+export async function messagingMembershipTransition(
+  input: MessagingMembershipTransitionInput,
+): Promise<MessagingPendingConversationCommandResult> {
+  requireMessagingMutation(input, 'group');
+  return invoke<MessagingPendingConversationCommandResult>(
+    'messaging_membership_transition',
+    { input },
+  );
+}
+
+export async function messagingUpdateConversation(
+  input: MessagingUpdateConversationInput,
+): Promise<MessagingPendingConversationCommandResult> {
+  requireMessagingMutation(input, 'group');
+  return invoke<MessagingPendingConversationCommandResult>(
+    'messaging_update_conversation',
+    { input },
+  );
+}
+
+export async function messagingDissolveConversation(
+  input: MessagingAccountInput & { conversationId: string },
+): Promise<MessagingPendingConversationCommandResult> {
+  requireMessagingMutation(input, 'group');
+  return invoke<MessagingPendingConversationCommandResult>(
+    'messaging_dissolve_conversation',
+    { input },
+  );
+}
+
+export async function messagingUpdateMemberAuthority(
+  input: MessagingUpdateMemberAuthorityInput,
+): Promise<MessagingMemberAuthorityResult> {
+  requireMessagingMutation(input, 'group');
+  return invoke<MessagingMemberAuthorityResult>(
+    'messaging_update_member_authority',
+    { input },
+  );
+}
+
+export async function messagingTransferOwnership(
+  input: MessagingTransferOwnershipInput,
+): Promise<MessagingMemberAuthorityResult> {
+  requireMessagingMutation(input, 'group');
+  return invoke<MessagingMemberAuthorityResult>(
+    'messaging_transfer_ownership',
+    { input },
+  );
+}
+
+export async function messagingSubmitLeaveIntent(
+  input: MessagingSubmitLeaveIntentInput,
+): Promise<MessagingLeaveIntentSubmissionResult> {
+  requireMessagingMutation(input, 'group');
+  return invoke<MessagingLeaveIntentSubmissionResult>(
+    'messaging_submit_leave_intent',
+    { input },
+  );
 }
 
 export async function messagingListConversations(
@@ -266,6 +749,12 @@ export async function messagingListMessages(
   input: MessagingAccountInput & { conversationId: string },
 ): Promise<MessagingMessageProjection[]> {
   return invoke<MessagingMessageProjection[]>('messaging_list_messages', { input });
+}
+
+export async function messagingConversationSummary(
+  input: MessagingAccountInput & { conversationId: string },
+): Promise<MessagingConversationSummary> {
+  return invoke<MessagingConversationSummary>('messaging_conversation_summary', { input });
 }
 
 export async function messagingListThreadMessages(
@@ -287,7 +776,10 @@ export async function messagingSearchMessages(
 }
 
 export async function messagingStageAttachment(
-  input: MessagingAccountInput & { file: File },
+  input: MessagingAccountInput & {
+    file: File;
+    voiceNote?: MessagingVoiceNoteMetadata;
+  },
 ): Promise<MessagingAttachmentStageProjection> {
   const stage = await invoke<MessagingAttachmentStageProjection>(
     'messaging_attachment_stage_begin',
@@ -298,6 +790,7 @@ export async function messagingStageAttachment(
         filename: input.file.name,
         mimeType: input.file.type || 'application/octet-stream',
         plaintextSize: input.file.size,
+        voiceNote: input.voiceNote,
       },
     },
   );
@@ -341,7 +834,7 @@ export async function messagingDiscardAttachmentStage(
 }
 
 export async function messagingSendMessage(
-  input: MessagingAccountInput & {
+  input: MessagingConversationMutationInput & {
     conversationId: string;
     plaintext: string;
     replyToMessageId?: string;
@@ -349,7 +842,27 @@ export async function messagingSendMessage(
     attachmentStageIds?: string[];
   },
 ): Promise<MessagingSubmitCommandResult> {
-  return invoke<MessagingSubmitCommandResult>('messaging_send_message', { input });
+  requireMessagingMutation(input, input.admissionDomain);
+  const { admissionDomain: _admissionDomain, ...commandInput } = input;
+  return invoke<MessagingSubmitCommandResult>(
+    'messaging_send_message',
+    { input: commandInput },
+  );
+}
+
+export async function messagingForwardMessage(
+  input: MessagingConversationMutationInput & {
+    sourceConversationId: string;
+    sourceMessageId: string;
+    destinationConversationId: string;
+  },
+): Promise<MessagingSubmitCommandResult> {
+  requireMessagingMutation(input, input.admissionDomain);
+  const { admissionDomain: _admissionDomain, ...commandInput } = input;
+  return invoke<MessagingSubmitCommandResult>(
+    'messaging_forward_message',
+    { input: commandInput },
+  );
 }
 
 export async function messagingOpenAttachment(
@@ -365,38 +878,71 @@ export async function messagingCancelAttachment(
 }
 
 export async function messagingSubmitEdit(
-  input: MessagingAccountInput & {
+  input: MessagingConversationMutationInput & {
     conversationId: string;
     messageId: string;
     plaintext: string;
   },
 ): Promise<MessagingPendingCommandResult> {
-  return invoke<MessagingPendingCommandResult>('messaging_submit_edit', { input });
+  requireMessagingMutation(input, input.admissionDomain);
+  const { admissionDomain: _admissionDomain, ...commandInput } = input;
+  return invoke<MessagingPendingCommandResult>(
+    'messaging_submit_edit',
+    { input: commandInput },
+  );
 }
 
 export async function messagingSubmitMetadataInteraction(
-  input: MessagingAccountInput & {
+  input: MessagingConversationMutationInput & {
     conversationId: string;
     messageId: string;
     interaction: MessagingMetadataInteraction;
   },
 ): Promise<MessagingPendingCommandResult> {
-  return invoke<MessagingPendingCommandResult>('messaging_submit_metadata_interaction', { input });
+  requireMessagingMutation(input, input.admissionDomain);
+  const { admissionDomain: _admissionDomain, ...commandInput } = input;
+  return invoke<MessagingPendingCommandResult>(
+    'messaging_submit_metadata_interaction',
+    { input: commandInput },
+  );
 }
 
 export async function messagingSubmitReadCursor(
-  input: MessagingAccountInput & {
+  input: MessagingConversationMutationInput & {
     conversationId: string;
     lastReadSequence: number;
   },
 ): Promise<{ submitted: boolean }> {
-  return invoke<{ submitted: boolean }>('messaging_submit_read_cursor', { input });
+  requireMessagingMutation(input, input.admissionDomain);
+  const { admissionDomain: _admissionDomain, ...commandInput } = input;
+  return invoke<{ submitted: boolean }>(
+    'messaging_submit_read_cursor',
+    { input: commandInput },
+  );
 }
 
 export async function messagingSubmitTyping(
-  input: MessagingAccountInput & { conversationId: string; isTyping: boolean },
+  input: MessagingConversationMutationInput & {
+    conversationId: string;
+    isTyping: boolean;
+  },
 ): Promise<{ submitted: boolean }> {
-  return invoke<{ submitted: boolean }>('messaging_submit_typing', { input });
+  requireMessagingMutation(input, input.admissionDomain);
+  const { admissionDomain: _admissionDomain, ...commandInput } = input;
+  return invoke<{ submitted: boolean }>(
+    'messaging_submit_typing',
+    { input: commandInput },
+  );
+}
+
+function requireMessagingMutation(
+  input: MessagingAccountInput,
+  domain?: MobileMutationDomain,
+): void {
+  requireMobileMutationAdmission(
+    mobileMutationScopeKey(input.stationPeerId, input.actorPtid),
+    domain,
+  );
 }
 
 export async function messagingCommandStatus(
@@ -481,6 +1027,8 @@ export interface OAuthGateActionProjection {
   actionId: string;
   actionType: string;
   submitAction: string;
+  schemaRevision: number;
+  schemaDigest: string;
 }
 
 export interface OAuthGateProjection {
@@ -493,6 +1041,9 @@ export interface OAuthGateProjection {
   submitAction: string;
   inputSchemaJson: string;
   alternativeActions: OAuthGateActionProjection[];
+  actionId: string;
+  schemaRevision: number;
+  schemaDigest: string;
 }
 
 export interface OAuthAccessDecisionProjection {
@@ -509,6 +1060,8 @@ export interface OAuthAccessDecisionProjection {
 export interface OAuthSessionProjection {
   sessionId: string;
   actorPtid: string;
+  deviceId: string;
+  lifecycleGeneration: number;
   expiresAt: string;
 }
 
@@ -524,6 +1077,77 @@ export interface OAuthPublicProjection {
   candidate?: OAuthCandidateProjection;
   accessDecision?: OAuthAccessDecisionProjection;
   session?: OAuthSessionProjection;
+}
+
+export interface NativeAccessStartInput {
+  stationOrigin: string;
+  stationPeerId: string;
+  locale?: string;
+  sessionId?: string;
+}
+
+export interface NativeAccessDecisionInput {
+  stationOrigin: string;
+  stationPeerId: string;
+  attemptId: string;
+}
+
+export type NativeGenericScalar =
+  | { kind: 'string'; value: string }
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'integer'; value: number }
+  | { kind: 'number'; value: number };
+
+export interface NativeGenericFieldValue {
+  fieldName: string;
+  value: NativeGenericScalar;
+}
+
+export type NativeAccessGateInput =
+  | { kind: 'login'; email: string; password: string }
+  | { kind: 'invite_code'; inviteCode: string }
+  | { kind: 'session_restore'; sessionId: string }
+  | { kind: 'device_trust'; attestationHandle: string }
+  | { kind: 'generic'; fields: NativeGenericFieldValue[] };
+
+export interface NativeAccessSubmitInput extends NativeAccessDecisionInput {
+  gateId: string;
+  gateType: number;
+  actionId: string;
+  schemaRevision: number;
+  schemaDigest: string;
+  submissionId: string;
+  input: NativeAccessGateInput;
+}
+
+export interface NativeAccessProjection {
+  decision: OAuthAccessDecisionProjection;
+  stationLabel?: string;
+  session?: OAuthSessionProjection;
+}
+
+export async function accessStart(
+  input: NativeAccessStartInput,
+): Promise<NativeAccessProjection> {
+  return invoke<NativeAccessProjection>('access_start', { input });
+}
+
+export async function accessDecision(
+  input: NativeAccessDecisionInput,
+): Promise<NativeAccessProjection> {
+  return invoke<NativeAccessProjection>('access_decision', { input });
+}
+
+export async function accessSubmit(
+  input: NativeAccessSubmitInput,
+): Promise<NativeAccessProjection> {
+  return invoke<NativeAccessProjection>('access_submit', { input });
+}
+
+export async function accessCancel(
+  input: NativeAccessDecisionInput,
+): Promise<boolean> {
+  return invoke<boolean>('access_cancel', { input });
 }
 
 export async function oauthStart(input: OAuthStartInput): Promise<OAuthPublicProjection> {

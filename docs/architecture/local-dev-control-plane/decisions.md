@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -21,11 +21,12 @@
 | LDCP-D07 | Place Acceptance Evidence under the machine Dev root | accepted |
 | LDCP-D08 | Registration is explicit and activity is runtime-derived | accepted |
 | LDCP-D09 | Require human authorization for environment creation | accepted |
-| LDCP-D10 | Declare Agent control mode in each profile | accepted |
+| LDCP-D10 | Declare Agent control mode in each profile | superseded by LDCP-D15 |
 | LDCP-D11 | Provide one read-only Development Control Plane dashboard | accepted |
 | LDCP-D12 | Run one machine-wide Peers Dev application | accepted |
 | LDCP-D13 | Project Plan progress separately from environment health | accepted |
 | LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | accepted |
+| LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -324,55 +325,36 @@ ownership decision, not an implementation convenience.
 
 ## LDCP-D10: Profile-Declared Agent Control
 
-**Status**: accepted
+**Status**: superseded by LDCP-D15
 **Date**: 2026-09-17
 
 ### Context
 
-The current model knows a workspace's allowed Station capabilities but does not
-say whether a reviewed profile is intended for autonomous Agent operation.
-Agents therefore repeatedly ask for profile selection, registration, deploy,
-restart, or reset approval even when the environment was created specifically
-for automated development.
+This decision introduced a second profile policy field to distinguish levels of
+Agent operation.
 
 ### Decision
 
-Every profile must declare:
-
-```env
-PT_AGENT_CONTROL_MODE=human-gated|managed|disposable
-```
-
-- `human-gated` requires human approval for binding changes and Station
-  mutation.
-- `managed` authorizes Agent registration, binding, deploy, restart and cleanup
-  within the existing declaration/capability/lease envelope.
-- `disposable` additionally authorizes exact-scope reset when the work
-  declaration, workspace capability and reset lease all agree.
-
-The field is a maximum policy. It never grants a lease, expands a declaration,
-creates topology, supplies credentials, authorizes history rewrite, or bypasses
-source identity.
+Superseded. No runtime reader or environment definition may consume the former
+control metadata. LDCP-D15 is the sole reset-policy contract.
 
 ### Rationale
 
-One reviewed profile policy is safer and less disruptive than repeating
-operation-by-operation prompts that do not change the underlying authority.
+The extra field duplicated intent already encoded in canonical Profile identity
+and produced contradictory policy, repeated permission prompts, and stalled
+execution.
 
 ### Alternatives Considered
 
-- A boolean `agentManaged`: rejected because it cannot distinguish deploy from
-  destructive reset.
-- Infer policy from profile names such as `disposable`: rejected because names
-  are not authority.
-- Keep all operations human-gated: rejected because it makes long-running
-  development non-progressing administrative work.
+- Retain the field as a compatibility alias: rejected because it preserves two
+  policy sources.
+- Migrate old values into registry state: rejected because it moves the
+  contradiction instead of removing it.
 
 ### Consequences
 
-- Every profile must be updated atomically; missing mode fails closed.
-- Skills may proceed without repeated prompts only within the declared mode.
-- Changing a profile's control mode remains a reviewed human action.
+- All definitions and readers remove the old metadata in one hard cut.
+- Historical values have no fallback or compatibility meaning.
 
 ## LDCP-D11: Read-Only Development Control Plane Dashboard
 
@@ -573,3 +555,69 @@ mutable environment registry preserves both concerns' lifecycle.
   binding; no normal command rebinding path exists.
 - Local Dev status may project the binding but cannot use it as environment or
   runtime authority.
+
+## LDCP-D15: Canonical Profile-ID Reset Protection
+
+**Status**: accepted
+**Date**: 2026-09-21
+
+### Context
+
+The superseded profile control field created a second policy source and blocked
+reset on existing development Profiles even when the operator's naming rule was
+already clear: only Profiles whose canonical ID contains `stable` are protected.
+The resulting capability failure was incorrectly surfaced as a request for
+human authorization and interrupted autonomous Plan execution.
+
+### Decision
+
+The canonical Profile ID is the sole reset-policy input. After the environment
+directory name and `PT_DEV_PROFILE` value match exactly, the control plane
+applies an ASCII case-insensitive substring test:
+
+```text
+lowercase(profileId) contains "stable"
+  -> stable-protected
+otherwise
+  -> agent-resettable
+```
+
+A `stable-protected` Profile rejects `station.reset` with
+`PROFILE_RESET_PROTECTED`. An `agent-resettable` Profile allows the Agent to
+choose and bind `station.reset` without human involvement.
+
+Reset execution still requires all independent runtime guards:
+
+- `station.reset` in the current workspace binding;
+- one live Development declaration for the same Profile and exact exclusive
+  reset scope;
+- the same scope at the command boundary;
+- matching tracked-clean remote topology and source identity;
+- one OS-held reset lease.
+
+Missing capability returns `WORKSPACE_CAPABILITY_MISSING`; a scope mismatch
+returns `RESET_SCOPE_MISMATCH`. Neither is an authorization request.
+
+### Rationale
+
+One visible naming convention gives operators an immediate safety signal and
+eliminates policy drift between environment metadata, skills, dashboards, and
+runtime code. Independent intent and lease guards continue to bound every
+actual mutation.
+
+### Alternatives Considered
+
+- Keep both the name rule and a field: rejected as split-brain policy.
+- Infer from Station mode or deploy environment: rejected because those fields
+  describe topology, not reset protection.
+- Make all Profiles resettable: rejected because stable daily-use environments
+  need a durable, visible protection boundary.
+
+### Consequences
+
+- Renaming a Profile across the `stable` boundary is a reviewed topology
+  change.
+- Existing non-stable Profiles can progress through reset without an approval
+  loop.
+- Existing stable Profiles remain usable for non-reset operations under their
+  normal capability and declaration guards.

@@ -68,6 +68,11 @@ make -w run-prototype
 
 Prototype Portal 内部提供 `desktop` / `mobile` / `dashboard` 站点切换。禁止把 `pnpm dev` / Vite 原生命令作为对用户或 Agent 的正式运行方式。原生命令只允许作为 Makefile 内部实现细节。
 
+The Portal stacks its navigation and wraps worktree controls on narrow screens
+so Mobile previews keep their usable width. The Mobile render regression is
+`mobile/chat/scripts/check-layout.mjs`; run it against the Make-started Portal
+with `PROTOTYPE_URL`. See the Mobile prototype README for evidence and limits.
+
 跨 worktree / branch 预览：
 
 - 当前 worktree 信息由 `make run-prototype` 自动注入 Portal。

@@ -90,10 +90,19 @@ type FriendRequestProjectionStore interface {
 	) ([]domain.FriendRequestProjection, int64, error)
 }
 
-// FederatedFriendRequestStore combines command atomicity with projection reads.
+// FriendRequestCommandQueryStore exposes actor-authorized command outcome readback.
+type FriendRequestCommandQueryStore interface {
+	LoadOutgoingFriendRequestCommand(
+		ctx context.Context,
+		commandID string,
+	) (*domain.FriendRequestCommandRecord, error)
+}
+
+// FederatedFriendRequestStore combines command atomicity with projection and command reads.
 type FederatedFriendRequestStore interface {
 	FederatedFriendRequestUnitOfWork
 	FriendRequestProjectionStore
+	FriendRequestCommandQueryStore
 }
 
 // DirectConversationEffectClaim is a lease-fenced durable integration effect.
@@ -157,6 +166,8 @@ func (s *GORMFederatedFriendRequestStore) Migrate(ctx context.Context) error {
 		&federatedFriendRequestProjectionModel{},
 		&federatedRelationshipProjectionModel{},
 		&directConversationEffectModel{},
+		&socialRelationshipCommandModel{},
+		&socialDirectionalRelationshipModel{},
 	); err != nil {
 		return domain.WrapFederationError(
 			domain.FederationErrorPersistence,
@@ -164,7 +175,7 @@ func (s *GORMFederatedFriendRequestStore) Migrate(ctx context.Context) error {
 			err,
 		)
 	}
-	return nil
+	return s.migrateLegacyBlockedRelationships(ctx)
 }
 
 // Execute binds Social writes and the shared Federation outbox to one SQL transaction.
@@ -278,6 +289,48 @@ func (s *GORMFederatedFriendRequestStore) ListFriendRequestProjections(
 		projections = append(projections, projection)
 	}
 	return projections, total, nil
+}
+
+// LoadOutgoingFriendRequestCommand returns the unique sender-side record for a command ID.
+func (s *GORMFederatedFriendRequestStore) LoadOutgoingFriendRequestCommand(
+	ctx context.Context,
+	commandID string,
+) (*domain.FriendRequestCommandRecord, error) {
+	const operation = "social.load_outgoing_friend_request_command"
+	if commandID == "" || commandID != strings.TrimSpace(commandID) {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorInvalidArgument,
+			operation,
+			"command_id",
+			"is required and must be canonical",
+		)
+	}
+
+	var persisted []federatedFriendRequestCommandModel
+	if err := s.db.WithContext(ctx).
+		Where(
+			"role = ? AND command_id = ?",
+			string(domain.FriendRequestCommandRoleOutgoing),
+			commandID,
+		).
+		Order("authority_station_peer_id ASC").
+		Limit(2).
+		Find(&persisted).Error; err != nil {
+		return nil, mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+	if len(persisted) == 0 {
+		return nil, nil
+	}
+	if len(persisted) != 1 {
+		return nil, domain.NewFederationError(
+			domain.FederationErrorIdempotencyConflict,
+			operation,
+			"command_id",
+			"is ambiguous across outgoing authority scopes",
+		)
+	}
+	record := commandRecordFromModel(persisted[0])
+	return &record, nil
 }
 
 // Command returns one exact command record for query adapters and tests.
@@ -537,8 +590,9 @@ func (s *GORMFederatedFriendRequestStore) updateClaimedEffect(
 }
 
 type federatedFriendRequestTransaction struct {
-	db     *gorm.DB
-	outbox delivery.OutboxWriter
+	db          *gorm.DB
+	outbox      delivery.OutboxWriter
+	afterCommit delivery.AfterCommitRegistrar
 }
 
 func (t *federatedFriendRequestTransaction) VerifyFriendRequestCommandSignature(
@@ -579,10 +633,10 @@ func (t *federatedFriendRequestTransaction) LoadReceiverFriendRequestPolicy(
 		)
 	}
 
-	var friendshipStates []int32
+	var acceptedRelationshipCount int64
 	if err := t.db.WithContext(ctx).
 		Model(&friendshipModel{}).
-		Select("status").
+		Where("status = ?", friendRequestPolicyRelationshipAccepted).
 		Where(
 			"(actor_ptid = ? AND peer_ptid = ?) OR (actor_ptid = ? AND peer_ptid = ?)",
 			receiverPTID,
@@ -590,19 +644,31 @@ func (t *federatedFriendRequestTransaction) LoadReceiverFriendRequestPolicy(
 			senderPTID,
 			receiverPTID,
 		).
-		Find(&friendshipStates).Error; err != nil {
+		Count(&acceptedRelationshipCount).Error; err != nil {
 		return domain.ReceiverFriendRequestPolicy{},
 			mapFederatedFriendRequestPersistenceError(operation, err)
 	}
 
-	policy := domain.ReceiverFriendRequestPolicy{}
-	for _, state := range friendshipStates {
-		switch state {
-		case friendRequestPolicyRelationshipBlocked:
-			policy.Blocked = true
-		case friendRequestPolicyRelationshipAccepted:
-			policy.ExistingRelationship = true
-		}
+	var blockCount int64
+	if err := t.db.WithContext(ctx).
+		Model(&socialDirectionalRelationshipModel{}).
+		Where("blocked = ?", true).
+		Where(
+			"(actor_ptid = ? AND target_actor_ptid = ?) OR "+
+				"(actor_ptid = ? AND target_actor_ptid = ?)",
+			receiverPTID,
+			senderPTID,
+			senderPTID,
+			receiverPTID,
+		).
+		Count(&blockCount).Error; err != nil {
+		return domain.ReceiverFriendRequestPolicy{},
+			mapFederatedFriendRequestPersistenceError(operation, err)
+	}
+
+	policy := domain.ReceiverFriendRequestPolicy{
+		Blocked:              blockCount > 0,
+		ExistingRelationship: acceptedRelationshipCount > 0,
 	}
 	if policy.Blocked {
 		return policy, nil
@@ -1255,4 +1321,5 @@ func describeCommandConflict(
 
 var _ FederatedFriendRequestUnitOfWork = (*GORMFederatedFriendRequestStore)(nil)
 var _ FriendRequestProjectionStore = (*GORMFederatedFriendRequestStore)(nil)
+var _ FriendRequestCommandQueryStore = (*GORMFederatedFriendRequestStore)(nil)
 var _ DirectConversationEffectStore = (*GORMFederatedFriendRequestStore)(nil)

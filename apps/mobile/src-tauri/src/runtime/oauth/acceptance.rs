@@ -1,5 +1,8 @@
 use std::collections::HashSet;
-use std::sync::MutexGuard;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    MutexGuard,
+};
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
@@ -12,9 +15,41 @@ use super::{
     GetOAuthAttemptResponse, OAuthAttemptResult, OAuthCoordinator, OAuthPublicPhase,
     OAuthPublicProjection, PersistedOAuthAttempt, SecretStore, ValidatedScope, STATUS_PATH,
 };
-use crate::error::MobileResult;
+use crate::error::{MobileError, MobileResult};
 
 const ACCEPTANCE_GATE_ID: &str = "mobile-native-access-e2e";
+static FAIL_NEXT_SECURE_STORAGE_REMOVE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SecureStorageFaultProjection {
+    pub mode: String,
+}
+
+pub fn configure_secure_storage_fault(mode: &str) -> MobileResult<SecureStorageFaultProjection> {
+    let armed = match mode {
+        "none" => false,
+        "fail-next-remove" => true,
+        _ => {
+            return Err(MobileError::invalid_input(
+                "unsupported secure-storage Acceptance fault",
+            ))
+        }
+    };
+    FAIL_NEXT_SECURE_STORAGE_REMOVE.store(armed, Ordering::SeqCst);
+    Ok(SecureStorageFaultProjection {
+        mode: mode.to_string(),
+    })
+}
+
+pub(super) fn fail_next_secure_storage_remove() -> MobileResult<()> {
+    if FAIL_NEXT_SECURE_STORAGE_REMOVE.swap(false, Ordering::SeqCst) {
+        return Err(MobileError::secure_storage(
+            "Acceptance fault: secure-storage remove unavailable",
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -637,6 +672,21 @@ mod tests {
     use crate::runtime::oauth::tests::{bound_attempt, MemoryStore};
     use crate::runtime::oauth::{write_attempt, write_attempt_and_index};
 
+    #[test]
+    fn secure_storage_fault_is_closed_and_one_shot() {
+        assert_eq!(
+            configure_secure_storage_fault("fail-next-remove")
+                .expect("arm fault")
+                .mode,
+            "fail-next-remove"
+        );
+        let failure = fail_next_secure_storage_remove().expect_err("first remove must fail");
+        assert_eq!(failure.code, "MOBILE_SECURE_STORAGE");
+        fail_next_secure_storage_remove().expect("fault must be consumed");
+        assert!(configure_secure_storage_fault("unknown").is_err());
+        configure_secure_storage_fault("none").expect("reset fault");
+    }
+
     fn context(client_id: &str) -> AcceptanceRuntimeContext {
         let client = ClientBinding::new(client_id).expect("supported client");
         let refs = client.required_lease_refs();
@@ -757,7 +807,7 @@ mod tests {
             assert!(headers.starts_with("POST /oauth/mobile/status HTTP/1.1\r\n"));
             assert!(headers
                 .to_ascii_lowercase()
-                .contains("content-type: application/x-protobuf"));
+                .contains("content-type: application/protobuf"));
             let content_length = headers
                 .lines()
                 .find_map(|line| {
@@ -784,7 +834,7 @@ mod tests {
             .encode_to_vec();
             write!(
                 stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
             )
             .expect("write OAuth response headers");

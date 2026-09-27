@@ -3,6 +3,9 @@ pub mod attachment_blob;
 pub mod commands;
 pub mod engine;
 pub mod lifecycle;
+pub mod mls_leave_intent;
+#[cfg(test)]
+mod storage_governance_test;
 pub mod transport;
 
 pub use messaging_core::crypto::{

@@ -328,7 +328,6 @@ pub fn messaging_recovery_restore_latest(
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     let device_id = engine.endpoint().device_id.clone();
-    drop(engine);
     let revision = match latest_revision(&session, &device_id) {
         Ok(revision) => revision,
         Err(error) => return error.into_app_result("failed to fetch latest recovery revision"),
@@ -361,6 +360,18 @@ pub fn messaging_recovery_restore_latest(
         );
     }
     let archive = decoded.archive;
+    let reconciliation =
+        match engine.reconcile_recovery_archive_redactions(&session.token, &archive) {
+            Ok(reconciliation) => reconciliation,
+            Err(error) => {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    format!("failed to reconcile recovery redactions: {error}"),
+                    None,
+                )
+            }
+        };
+    drop(engine);
 
     let key_ref = identity_key_ref(&session.ptid);
     let previous_seed = match crypto::load_identity_key(&key_ref) {
@@ -380,10 +391,11 @@ pub fn messaging_recovery_restore_latest(
             None,
         );
     }
-    let enrollment = match state
-        .messaging_engines
-        .restore_profile(&session.account_id, &archive)
-    {
+    let enrollment = match state.messaging_engines.restore_profile(
+        &session.account_id,
+        &archive,
+        &reconciliation,
+    ) {
         Ok(enrollment) => enrollment,
         Err(error) => {
             let rollback_result = match previous_seed {

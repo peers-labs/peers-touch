@@ -750,8 +750,12 @@ func (x *GetConversationMembersResponse) GetMembers() []*ConversationMember {
 }
 
 type UpdateConversationMemberRequest struct {
-	state         protoimpl.MessageState              `protogen:"open.v1"`
-	Command       *ConversationMemberAuthorityCommand `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Submission:
+	//
+	//	*UpdateConversationMemberRequest_Command
+	//	*UpdateConversationMemberRequest_Proposal
+	Submission    isUpdateConversationMemberRequest_Submission `protobuf_oneof:"submission"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -786,19 +790,54 @@ func (*UpdateConversationMemberRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_conversation_api_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *UpdateConversationMemberRequest) GetCommand() *ConversationMemberAuthorityCommand {
+func (x *UpdateConversationMemberRequest) GetSubmission() isUpdateConversationMemberRequest_Submission {
 	if x != nil {
-		return x.Command
+		return x.Submission
 	}
 	return nil
 }
 
+func (x *UpdateConversationMemberRequest) GetCommand() *ConversationMemberAuthorityCommand {
+	if x != nil {
+		if x, ok := x.Submission.(*UpdateConversationMemberRequest_Command); ok {
+			return x.Command
+		}
+	}
+	return nil
+}
+
+func (x *UpdateConversationMemberRequest) GetProposal() *ConversationCommandProposal {
+	if x != nil {
+		if x, ok := x.Submission.(*UpdateConversationMemberRequest_Proposal); ok {
+			return x.Proposal
+		}
+	}
+	return nil
+}
+
+type isUpdateConversationMemberRequest_Submission interface {
+	isUpdateConversationMemberRequest_Submission()
+}
+
+type UpdateConversationMemberRequest_Command struct {
+	Command *ConversationMemberAuthorityCommand `protobuf:"bytes,1,opt,name=command,proto3,oneof"`
+}
+
+type UpdateConversationMemberRequest_Proposal struct {
+	Proposal *ConversationCommandProposal `protobuf:"bytes,2,opt,name=proposal,proto3,oneof"`
+}
+
+func (*UpdateConversationMemberRequest_Command) isUpdateConversationMemberRequest_Submission() {}
+
+func (*UpdateConversationMemberRequest_Proposal) isUpdateConversationMemberRequest_Submission() {}
+
 type UpdateConversationMemberResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Member        *ConversationMember    `protobuf:"bytes,1,opt,name=member,proto3" json:"member,omitempty"`
-	Event         *ConversationEvent     `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Member                *ConversationMember    `protobuf:"bytes,1,opt,name=member,proto3" json:"member,omitempty"`
+	Event                 *ConversationEvent     `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
+	AcceptedForForwarding bool                   `protobuf:"varint,3,opt,name=accepted_for_forwarding,json=acceptedForForwarding,proto3" json:"accepted_for_forwarding,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *UpdateConversationMemberResponse) Reset() {
@@ -845,9 +884,20 @@ func (x *UpdateConversationMemberResponse) GetEvent() *ConversationEvent {
 	return nil
 }
 
+func (x *UpdateConversationMemberResponse) GetAcceptedForForwarding() bool {
+	if x != nil {
+		return x.AcceptedForForwarding
+	}
+	return false
+}
+
 type TransferConversationOwnershipRequest struct {
-	state         protoimpl.MessageState              `protogen:"open.v1"`
-	Command       *ConversationMemberAuthorityCommand `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Submission:
+	//
+	//	*TransferConversationOwnershipRequest_Command
+	//	*TransferConversationOwnershipRequest_Proposal
+	Submission    isTransferConversationOwnershipRequest_Submission `protobuf_oneof:"submission"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -882,21 +932,58 @@ func (*TransferConversationOwnershipRequest) Descriptor() ([]byte, []int) {
 	return file_domain_chat_conversation_api_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *TransferConversationOwnershipRequest) GetCommand() *ConversationMemberAuthorityCommand {
+func (x *TransferConversationOwnershipRequest) GetSubmission() isTransferConversationOwnershipRequest_Submission {
 	if x != nil {
-		return x.Command
+		return x.Submission
 	}
 	return nil
 }
 
+func (x *TransferConversationOwnershipRequest) GetCommand() *ConversationMemberAuthorityCommand {
+	if x != nil {
+		if x, ok := x.Submission.(*TransferConversationOwnershipRequest_Command); ok {
+			return x.Command
+		}
+	}
+	return nil
+}
+
+func (x *TransferConversationOwnershipRequest) GetProposal() *ConversationCommandProposal {
+	if x != nil {
+		if x, ok := x.Submission.(*TransferConversationOwnershipRequest_Proposal); ok {
+			return x.Proposal
+		}
+	}
+	return nil
+}
+
+type isTransferConversationOwnershipRequest_Submission interface {
+	isTransferConversationOwnershipRequest_Submission()
+}
+
+type TransferConversationOwnershipRequest_Command struct {
+	Command *ConversationMemberAuthorityCommand `protobuf:"bytes,1,opt,name=command,proto3,oneof"`
+}
+
+type TransferConversationOwnershipRequest_Proposal struct {
+	Proposal *ConversationCommandProposal `protobuf:"bytes,2,opt,name=proposal,proto3,oneof"`
+}
+
+func (*TransferConversationOwnershipRequest_Command) isTransferConversationOwnershipRequest_Submission() {
+}
+
+func (*TransferConversationOwnershipRequest_Proposal) isTransferConversationOwnershipRequest_Submission() {
+}
+
 type TransferConversationOwnershipResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Conversation  *Conversation          `protobuf:"bytes,1,opt,name=conversation,proto3" json:"conversation,omitempty"`
-	PreviousOwner *ConversationMember    `protobuf:"bytes,2,opt,name=previous_owner,json=previousOwner,proto3" json:"previous_owner,omitempty"`
-	NewOwner      *ConversationMember    `protobuf:"bytes,3,opt,name=new_owner,json=newOwner,proto3" json:"new_owner,omitempty"`
-	Event         *ConversationEvent     `protobuf:"bytes,4,opt,name=event,proto3" json:"event,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	Conversation          *Conversation          `protobuf:"bytes,1,opt,name=conversation,proto3" json:"conversation,omitempty"`
+	PreviousOwner         *ConversationMember    `protobuf:"bytes,2,opt,name=previous_owner,json=previousOwner,proto3" json:"previous_owner,omitempty"`
+	NewOwner              *ConversationMember    `protobuf:"bytes,3,opt,name=new_owner,json=newOwner,proto3" json:"new_owner,omitempty"`
+	Event                 *ConversationEvent     `protobuf:"bytes,4,opt,name=event,proto3" json:"event,omitempty"`
+	AcceptedForForwarding bool                   `protobuf:"varint,5,opt,name=accepted_for_forwarding,json=acceptedForForwarding,proto3" json:"accepted_for_forwarding,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *TransferConversationOwnershipResponse) Reset() {
@@ -955,6 +1042,13 @@ func (x *TransferConversationOwnershipResponse) GetEvent() *ConversationEvent {
 		return x.Event
 	}
 	return nil
+}
+
+func (x *TransferConversationOwnershipResponse) GetAcceptedForForwarding() bool {
+	if x != nil {
+		return x.AcceptedForForwarding
+	}
+	return false
 }
 
 type SubmitConversationAuthorityCommandRequest struct {
@@ -1342,10 +1436,11 @@ func (x *ResolveConversationCommandResultsResponse) GetResults() []*ResolvedConv
 }
 
 type PrepareConversationCommandRequest struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId         string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	Sender                 *model.ActorDeviceRef  `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
-	AuthorityStationPeerId string                 `protobuf:"bytes,3,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
+	state                  protoimpl.MessageState  `protogen:"open.v1"`
+	ConversationId         string                  `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	Sender                 *model.ActorDeviceRef   `protobuf:"bytes,2,opt,name=sender,proto3" json:"sender,omitempty"`
+	AuthorityStationPeerId string                  `protobuf:"bytes,3,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
+	CommandKind            ConversationCommandKind `protobuf:"varint,4,opt,name=command_kind,json=commandKind,proto3,enum=peers_touch.model.chat.v1.ConversationCommandKind" json:"command_kind,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -1399,6 +1494,13 @@ func (x *PrepareConversationCommandRequest) GetAuthorityStationPeerId() string {
 		return x.AuthorityStationPeerId
 	}
 	return ""
+}
+
+func (x *PrepareConversationCommandRequest) GetCommandKind() ConversationCommandKind {
+	if x != nil {
+		return x.CommandKind
+	}
+	return ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED
 }
 
 type PrepareConversationCommandResponse struct {
@@ -3276,7 +3378,6 @@ type MemberSettings struct {
 	AlertEnabled    bool                   `protobuf:"varint,3,opt,name=alert_enabled,json=alertEnabled,proto3" json:"alert_enabled,omitempty"`
 	Pinned          bool                   `protobuf:"varint,4,opt,name=pinned,proto3" json:"pinned,omitempty"`
 	Background      string                 `protobuf:"bytes,5,opt,name=background,proto3" json:"background,omitempty"`
-	ClearedAtMs     int64                  `protobuf:"varint,6,opt,name=cleared_at_ms,json=clearedAtMs,proto3" json:"cleared_at_ms,omitempty"`
 	BackgroundImage string                 `protobuf:"bytes,7,opt,name=background_image,json=backgroundImage,proto3" json:"background_image,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
@@ -3345,13 +3446,6 @@ func (x *MemberSettings) GetBackground() string {
 		return x.Background
 	}
 	return ""
-}
-
-func (x *MemberSettings) GetClearedAtMs() int64 {
-	if x != nil {
-		return x.ClearedAtMs
-	}
-	return 0
 }
 
 func (x *MemberSettings) GetBackgroundImage() string {
@@ -3578,19 +3672,27 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\x1dGetConversationMembersRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"i\n" +
 	"\x1eGetConversationMembersResponse\x12G\n" +
-	"\amembers\x18\x01 \x03(\v2-.peers_touch.model.chat.v1.ConversationMemberR\amembers\"z\n" +
-	"\x1fUpdateConversationMemberRequest\x12W\n" +
-	"\acommand\x18\x01 \x01(\v2=.peers_touch.model.chat.v1.ConversationMemberAuthorityCommandR\acommand\"\xad\x01\n" +
+	"\amembers\x18\x01 \x03(\v2-.peers_touch.model.chat.v1.ConversationMemberR\amembers\"\xe0\x01\n" +
+	"\x1fUpdateConversationMemberRequest\x12Y\n" +
+	"\acommand\x18\x01 \x01(\v2=.peers_touch.model.chat.v1.ConversationMemberAuthorityCommandH\x00R\acommand\x12T\n" +
+	"\bproposal\x18\x02 \x01(\v26.peers_touch.model.chat.v1.ConversationCommandProposalH\x00R\bproposalB\f\n" +
+	"\n" +
+	"submission\"\xe5\x01\n" +
 	" UpdateConversationMemberResponse\x12E\n" +
 	"\x06member\x18\x01 \x01(\v2-.peers_touch.model.chat.v1.ConversationMemberR\x06member\x12B\n" +
-	"\x05event\x18\x02 \x01(\v2,.peers_touch.model.chat.v1.ConversationEventR\x05event\"\x7f\n" +
-	"$TransferConversationOwnershipRequest\x12W\n" +
-	"\acommand\x18\x01 \x01(\v2=.peers_touch.model.chat.v1.ConversationMemberAuthorityCommandR\acommand\"\xda\x02\n" +
+	"\x05event\x18\x02 \x01(\v2,.peers_touch.model.chat.v1.ConversationEventR\x05event\x126\n" +
+	"\x17accepted_for_forwarding\x18\x03 \x01(\bR\x15acceptedForForwarding\"\xe5\x01\n" +
+	"$TransferConversationOwnershipRequest\x12Y\n" +
+	"\acommand\x18\x01 \x01(\v2=.peers_touch.model.chat.v1.ConversationMemberAuthorityCommandH\x00R\acommand\x12T\n" +
+	"\bproposal\x18\x02 \x01(\v26.peers_touch.model.chat.v1.ConversationCommandProposalH\x00R\bproposalB\f\n" +
+	"\n" +
+	"submission\"\x92\x03\n" +
 	"%TransferConversationOwnershipResponse\x12K\n" +
 	"\fconversation\x18\x01 \x01(\v2'.peers_touch.model.chat.v1.ConversationR\fconversation\x12T\n" +
 	"\x0eprevious_owner\x18\x02 \x01(\v2-.peers_touch.model.chat.v1.ConversationMemberR\rpreviousOwner\x12J\n" +
 	"\tnew_owner\x18\x03 \x01(\v2-.peers_touch.model.chat.v1.ConversationMemberR\bnewOwner\x12B\n" +
-	"\x05event\x18\x04 \x01(\v2,.peers_touch.model.chat.v1.ConversationEventR\x05event\"\xd3\x01\n" +
+	"\x05event\x18\x04 \x01(\v2,.peers_touch.model.chat.v1.ConversationEventR\x05event\x126\n" +
+	"\x17accepted_for_forwarding\x18\x05 \x01(\bR\x15acceptedForForwarding\"\xd3\x01\n" +
 	")SubmitConversationAuthorityCommandRequest\x12B\n" +
 	"\acommand\x18\x01 \x01(\v2&.peers_touch.model.chat.v1.ChatCommandH\x00R\acommand\x12T\n" +
 	"\bproposal\x18\x02 \x01(\v26.peers_touch.model.chat.v1.ConversationCommandProposalH\x00R\bproposalB\f\n" +
@@ -3618,11 +3720,12 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\x06result\x18\x05 \x01(\v2<.peers_touch.model.chat.v1.ConversationCommandProposalResultR\x06result\x12h\n" +
 	"\x13terminal_error_code\x18\x06 \x01(\x0e28.peers_touch.model.chat.v1.ConversationCommandRejectCodeR\x11terminalErrorCode\"\x83\x01\n" +
 	")ResolveConversationCommandResultsResponse\x12V\n" +
-	"\aresults\x18\x01 \x03(\v2<.peers_touch.model.chat.v1.ResolvedConversationCommandResultR\aresults\"\xcb\x01\n" +
+	"\aresults\x18\x01 \x03(\v2<.peers_touch.model.chat.v1.ResolvedConversationCommandResultR\aresults\"\xa2\x02\n" +
 	"!PrepareConversationCommandRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12B\n" +
 	"\x06sender\x18\x02 \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x06sender\x129\n" +
-	"\x19authority_station_peer_id\x18\x03 \x01(\tR\x16authorityStationPeerId\"\xef\x04\n" +
+	"\x19authority_station_peer_id\x18\x03 \x01(\tR\x16authorityStationPeerId\x12U\n" +
+	"\fcommand_kind\x18\x04 \x01(\x0e22.peers_touch.model.chat.v1.ConversationCommandKindR\vcommandKind\"\xef\x04\n" +
 	"\"PrepareConversationCommandResponse\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12X\n" +
 	"\x11conversation_kind\x18\x02 \x01(\x0e2+.peers_touch.model.chat.v1.ConversationKindR\x10conversationKind\x12-\n" +
@@ -3763,7 +3866,7 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\x12latest_reply_at_ms\x18\x04 \x01(\x03R\x0flatestReplyAtMs\x12!\n" +
 	"\funread_count\x18\x05 \x01(\x03R\vunreadCount\"^\n" +
 	"\x17GetThreadCountsResponse\x12C\n" +
-	"\x06counts\x18\x01 \x03(\v2+.peers_touch.model.chat.v1.ThreadCountEntryR\x06counts\"\xee\x01\n" +
+	"\x06counts\x18\x01 \x03(\v2+.peers_touch.model.chat.v1.ThreadCountEntryR\x06counts\"\xd0\x01\n" +
 	"\x0eMemberSettings\x12\x1a\n" +
 	"\bnickname\x18\x01 \x01(\tR\bnickname\x12\x14\n" +
 	"\x05muted\x18\x02 \x01(\bR\x05muted\x12#\n" +
@@ -3771,9 +3874,8 @@ const file_domain_chat_conversation_api_proto_rawDesc = "" +
 	"\x06pinned\x18\x04 \x01(\bR\x06pinned\x12\x1e\n" +
 	"\n" +
 	"background\x18\x05 \x01(\tR\n" +
-	"background\x12\"\n" +
-	"\rcleared_at_ms\x18\x06 \x01(\x03R\vclearedAtMs\x12)\n" +
-	"\x10background_image\x18\a \x01(\tR\x0fbackgroundImage\"C\n" +
+	"background\x12)\n" +
+	"\x10background_image\x18\a \x01(\tR\x0fbackgroundImageJ\x04\b\x06\x10\a\"C\n" +
 	"\x18GetMemberSettingsRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"b\n" +
 	"\x19GetMemberSettingsResponse\x12E\n" +
@@ -3887,13 +3989,14 @@ var file_domain_chat_conversation_api_proto_goTypes = []any{
 	(*ConversationCommandProposal)(nil),                 // 67: peers_touch.model.chat.v1.ConversationCommandProposal
 	(ConversationCommandRejectCode)(0),                  // 68: peers_touch.model.chat.v1.ConversationCommandRejectCode
 	(*ConversationCommandProposalResult)(nil),           // 69: peers_touch.model.chat.v1.ConversationCommandProposalResult
-	(ConversationKind)(0),                               // 70: peers_touch.model.chat.v1.ConversationKind
-	(*model.ActorEndpointManifest)(nil),                 // 71: peers_touch.model.actor.v1.ActorEndpointManifest
-	(*model.ActorRef)(nil),                              // 72: peers_touch.model.actor.v1.ActorRef
-	(*timestamppb.Timestamp)(nil),                       // 73: google.protobuf.Timestamp
-	(*model1.MlsKeyPackageReservation)(nil),             // 74: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
-	(MemberRole)(0),                                     // 75: peers_touch.model.chat.v1.MemberRole
-	(*MlsLeaveIntent)(nil),                              // 76: peers_touch.model.chat.v1.MlsLeaveIntent
+	(ConversationCommandKind)(0),                        // 70: peers_touch.model.chat.v1.ConversationCommandKind
+	(ConversationKind)(0),                               // 71: peers_touch.model.chat.v1.ConversationKind
+	(*model.ActorEndpointManifest)(nil),                 // 72: peers_touch.model.actor.v1.ActorEndpointManifest
+	(*model.ActorRef)(nil),                              // 73: peers_touch.model.actor.v1.ActorRef
+	(*timestamppb.Timestamp)(nil),                       // 74: google.protobuf.Timestamp
+	(*model1.MlsKeyPackageReservation)(nil),             // 75: peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	(MemberRole)(0),                                     // 76: peers_touch.model.chat.v1.MemberRole
+	(*MlsLeaveIntent)(nil),                              // 77: peers_touch.model.chat.v1.MlsLeaveIntent
 }
 var file_domain_chat_conversation_api_proto_depIdxs = []int32{
 	60, // 0: peers_touch.model.chat.v1.CreateDirectConversationRequest.creator:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
@@ -3907,70 +4010,73 @@ var file_domain_chat_conversation_api_proto_depIdxs = []int32{
 	61, // 8: peers_touch.model.chat.v1.ListConversationsResponse.conversations:type_name -> peers_touch.model.chat.v1.Conversation
 	65, // 9: peers_touch.model.chat.v1.GetConversationMembersResponse.members:type_name -> peers_touch.model.chat.v1.ConversationMember
 	66, // 10: peers_touch.model.chat.v1.UpdateConversationMemberRequest.command:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
-	65, // 11: peers_touch.model.chat.v1.UpdateConversationMemberResponse.member:type_name -> peers_touch.model.chat.v1.ConversationMember
-	62, // 12: peers_touch.model.chat.v1.UpdateConversationMemberResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	66, // 13: peers_touch.model.chat.v1.TransferConversationOwnershipRequest.command:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
-	61, // 14: peers_touch.model.chat.v1.TransferConversationOwnershipResponse.conversation:type_name -> peers_touch.model.chat.v1.Conversation
-	65, // 15: peers_touch.model.chat.v1.TransferConversationOwnershipResponse.previous_owner:type_name -> peers_touch.model.chat.v1.ConversationMember
-	65, // 16: peers_touch.model.chat.v1.TransferConversationOwnershipResponse.new_owner:type_name -> peers_touch.model.chat.v1.ConversationMember
-	62, // 17: peers_touch.model.chat.v1.TransferConversationOwnershipResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	63, // 18: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandRequest.command:type_name -> peers_touch.model.chat.v1.ChatCommand
-	67, // 19: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandRequest.proposal:type_name -> peers_touch.model.chat.v1.ConversationCommandProposal
-	62, // 20: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	68, // 21: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandResponse.reject_code:type_name -> peers_touch.model.chat.v1.ConversationCommandRejectCode
-	26, // 22: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandResponse.current_plan:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandResponse
-	21, // 23: peers_touch.model.chat.v1.ResolveConversationCommandResultsRequest.commands:type_name -> peers_touch.model.chat.v1.ConversationCommandResultRef
-	0,  // 24: peers_touch.model.chat.v1.ResolvedConversationCommandResult.state:type_name -> peers_touch.model.chat.v1.ConversationCommandResolutionState
-	69, // 25: peers_touch.model.chat.v1.ResolvedConversationCommandResult.result:type_name -> peers_touch.model.chat.v1.ConversationCommandProposalResult
-	68, // 26: peers_touch.model.chat.v1.ResolvedConversationCommandResult.terminal_error_code:type_name -> peers_touch.model.chat.v1.ConversationCommandRejectCode
-	23, // 27: peers_touch.model.chat.v1.ResolveConversationCommandResultsResponse.results:type_name -> peers_touch.model.chat.v1.ResolvedConversationCommandResult
-	60, // 28: peers_touch.model.chat.v1.PrepareConversationCommandRequest.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	70, // 29: peers_touch.model.chat.v1.PrepareConversationCommandResponse.conversation_kind:type_name -> peers_touch.model.chat.v1.ConversationKind
-	60, // 30: peers_touch.model.chat.v1.PrepareConversationCommandResponse.required_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	71, // 31: peers_touch.model.chat.v1.PrepareConversationCommandResponse.endpoint_manifests:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
-	72, // 32: peers_touch.model.chat.v1.PrepareConversationGroupRequest.members:type_name -> peers_touch.model.actor.v1.ActorRef
-	60, // 33: peers_touch.model.chat.v1.PrepareConversationGroupRequest.creator:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	73, // 34: peers_touch.model.chat.v1.PrepareConversationGroupResponse.expires_at:type_name -> google.protobuf.Timestamp
-	60, // 35: peers_touch.model.chat.v1.PrepareConversationGroupResponse.prospective_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	74, // 36: peers_touch.model.chat.v1.PrepareConversationGroupResponse.reserved_key_packages:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
-	71, // 37: peers_touch.model.chat.v1.PrepareConversationGroupResponse.endpoint_manifests:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
-	60, // 38: peers_touch.model.chat.v1.PrepareConversationMembershipRequest.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	1,  // 39: peers_touch.model.chat.v1.PrepareConversationMembershipRequest.action:type_name -> peers_touch.model.chat.v1.ConversationMembershipAction
-	72, // 40: peers_touch.model.chat.v1.PrepareConversationMembershipRequest.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
-	75, // 41: peers_touch.model.chat.v1.PrepareConversationMembershipRequest.role:type_name -> peers_touch.model.chat.v1.MemberRole
-	73, // 42: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.expires_at:type_name -> google.protobuf.Timestamp
-	60, // 43: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.pre_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	60, // 44: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.post_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	60, // 45: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.added_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	60, // 46: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.removed_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	74, // 47: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.reserved_key_packages:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
-	71, // 48: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.endpoint_manifests:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
-	25, // 49: peers_touch.model.chat.v1.PrepareFederatedConversationCommandRequest.request:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandRequest
-	26, // 50: peers_touch.model.chat.v1.PrepareFederatedConversationCommandResponse.plan:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandResponse
-	60, // 51: peers_touch.model.chat.v1.SubmitConversationTypingRequest.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	73, // 52: peers_touch.model.chat.v1.SubmitConversationTypingRequest.expires_at:type_name -> google.protobuf.Timestamp
-	73, // 53: peers_touch.model.chat.v1.SubmitConversationTypingResponse.expires_at:type_name -> google.protobuf.Timestamp
-	2,  // 54: peers_touch.model.chat.v1.FederatedConversationTypingSignal.phase:type_name -> peers_touch.model.chat.v1.FederatedConversationTypingPhase
-	60, // 55: peers_touch.model.chat.v1.FederatedConversationTypingSignal.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	73, // 56: peers_touch.model.chat.v1.FederatedConversationTypingSignal.expires_at:type_name -> google.protobuf.Timestamp
-	76, // 57: peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	76, // 58: peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	76, // 59: peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse.intents:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	76, // 60: peers_touch.model.chat.v1.SubmitFederatedMlsLeaveIntentRequest.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	76, // 61: peers_touch.model.chat.v1.SubmitFederatedMlsLeaveIntentResponse.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	76, // 62: peers_touch.model.chat.v1.ListFederatedMlsLeaveIntentsResponse.intents:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
-	62, // 63: peers_touch.model.chat.v1.ListConversationEventsResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	62, // 64: peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	62, // 65: peers_touch.model.chat.v1.ListConversationMessagesResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	62, // 66: peers_touch.model.chat.v1.ListThreadMessagesResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
-	53, // 67: peers_touch.model.chat.v1.GetThreadCountsResponse.counts:type_name -> peers_touch.model.chat.v1.ThreadCountEntry
-	55, // 68: peers_touch.model.chat.v1.GetMemberSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.MemberSettings
-	55, // 69: peers_touch.model.chat.v1.UpdateMemberSettingsRequest.settings:type_name -> peers_touch.model.chat.v1.MemberSettings
-	70, // [70:70] is the sub-list for method output_type
-	70, // [70:70] is the sub-list for method input_type
-	70, // [70:70] is the sub-list for extension type_name
-	70, // [70:70] is the sub-list for extension extendee
-	0,  // [0:70] is the sub-list for field type_name
+	67, // 11: peers_touch.model.chat.v1.UpdateConversationMemberRequest.proposal:type_name -> peers_touch.model.chat.v1.ConversationCommandProposal
+	65, // 12: peers_touch.model.chat.v1.UpdateConversationMemberResponse.member:type_name -> peers_touch.model.chat.v1.ConversationMember
+	62, // 13: peers_touch.model.chat.v1.UpdateConversationMemberResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	66, // 14: peers_touch.model.chat.v1.TransferConversationOwnershipRequest.command:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
+	67, // 15: peers_touch.model.chat.v1.TransferConversationOwnershipRequest.proposal:type_name -> peers_touch.model.chat.v1.ConversationCommandProposal
+	61, // 16: peers_touch.model.chat.v1.TransferConversationOwnershipResponse.conversation:type_name -> peers_touch.model.chat.v1.Conversation
+	65, // 17: peers_touch.model.chat.v1.TransferConversationOwnershipResponse.previous_owner:type_name -> peers_touch.model.chat.v1.ConversationMember
+	65, // 18: peers_touch.model.chat.v1.TransferConversationOwnershipResponse.new_owner:type_name -> peers_touch.model.chat.v1.ConversationMember
+	62, // 19: peers_touch.model.chat.v1.TransferConversationOwnershipResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	63, // 20: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandRequest.command:type_name -> peers_touch.model.chat.v1.ChatCommand
+	67, // 21: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandRequest.proposal:type_name -> peers_touch.model.chat.v1.ConversationCommandProposal
+	62, // 22: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandResponse.event:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	68, // 23: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandResponse.reject_code:type_name -> peers_touch.model.chat.v1.ConversationCommandRejectCode
+	26, // 24: peers_touch.model.chat.v1.SubmitConversationAuthorityCommandResponse.current_plan:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandResponse
+	21, // 25: peers_touch.model.chat.v1.ResolveConversationCommandResultsRequest.commands:type_name -> peers_touch.model.chat.v1.ConversationCommandResultRef
+	0,  // 26: peers_touch.model.chat.v1.ResolvedConversationCommandResult.state:type_name -> peers_touch.model.chat.v1.ConversationCommandResolutionState
+	69, // 27: peers_touch.model.chat.v1.ResolvedConversationCommandResult.result:type_name -> peers_touch.model.chat.v1.ConversationCommandProposalResult
+	68, // 28: peers_touch.model.chat.v1.ResolvedConversationCommandResult.terminal_error_code:type_name -> peers_touch.model.chat.v1.ConversationCommandRejectCode
+	23, // 29: peers_touch.model.chat.v1.ResolveConversationCommandResultsResponse.results:type_name -> peers_touch.model.chat.v1.ResolvedConversationCommandResult
+	60, // 30: peers_touch.model.chat.v1.PrepareConversationCommandRequest.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	70, // 31: peers_touch.model.chat.v1.PrepareConversationCommandRequest.command_kind:type_name -> peers_touch.model.chat.v1.ConversationCommandKind
+	71, // 32: peers_touch.model.chat.v1.PrepareConversationCommandResponse.conversation_kind:type_name -> peers_touch.model.chat.v1.ConversationKind
+	60, // 33: peers_touch.model.chat.v1.PrepareConversationCommandResponse.required_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	72, // 34: peers_touch.model.chat.v1.PrepareConversationCommandResponse.endpoint_manifests:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
+	73, // 35: peers_touch.model.chat.v1.PrepareConversationGroupRequest.members:type_name -> peers_touch.model.actor.v1.ActorRef
+	60, // 36: peers_touch.model.chat.v1.PrepareConversationGroupRequest.creator:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	74, // 37: peers_touch.model.chat.v1.PrepareConversationGroupResponse.expires_at:type_name -> google.protobuf.Timestamp
+	60, // 38: peers_touch.model.chat.v1.PrepareConversationGroupResponse.prospective_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	75, // 39: peers_touch.model.chat.v1.PrepareConversationGroupResponse.reserved_key_packages:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	72, // 40: peers_touch.model.chat.v1.PrepareConversationGroupResponse.endpoint_manifests:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
+	60, // 41: peers_touch.model.chat.v1.PrepareConversationMembershipRequest.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	1,  // 42: peers_touch.model.chat.v1.PrepareConversationMembershipRequest.action:type_name -> peers_touch.model.chat.v1.ConversationMembershipAction
+	73, // 43: peers_touch.model.chat.v1.PrepareConversationMembershipRequest.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	76, // 44: peers_touch.model.chat.v1.PrepareConversationMembershipRequest.role:type_name -> peers_touch.model.chat.v1.MemberRole
+	74, // 45: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.expires_at:type_name -> google.protobuf.Timestamp
+	60, // 46: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.pre_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	60, // 47: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.post_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	60, // 48: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.added_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	60, // 49: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.removed_endpoints:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	75, // 50: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.reserved_key_packages:type_name -> peers_touch.model.key_exchange.v1.MlsKeyPackageReservation
+	72, // 51: peers_touch.model.chat.v1.PrepareConversationMembershipResponse.endpoint_manifests:type_name -> peers_touch.model.actor.v1.ActorEndpointManifest
+	25, // 52: peers_touch.model.chat.v1.PrepareFederatedConversationCommandRequest.request:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandRequest
+	26, // 53: peers_touch.model.chat.v1.PrepareFederatedConversationCommandResponse.plan:type_name -> peers_touch.model.chat.v1.PrepareConversationCommandResponse
+	60, // 54: peers_touch.model.chat.v1.SubmitConversationTypingRequest.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	74, // 55: peers_touch.model.chat.v1.SubmitConversationTypingRequest.expires_at:type_name -> google.protobuf.Timestamp
+	74, // 56: peers_touch.model.chat.v1.SubmitConversationTypingResponse.expires_at:type_name -> google.protobuf.Timestamp
+	2,  // 57: peers_touch.model.chat.v1.FederatedConversationTypingSignal.phase:type_name -> peers_touch.model.chat.v1.FederatedConversationTypingPhase
+	60, // 58: peers_touch.model.chat.v1.FederatedConversationTypingSignal.sender:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	74, // 59: peers_touch.model.chat.v1.FederatedConversationTypingSignal.expires_at:type_name -> google.protobuf.Timestamp
+	77, // 60: peers_touch.model.chat.v1.SubmitMlsLeaveIntentRequest.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 61: peers_touch.model.chat.v1.SubmitMlsLeaveIntentResponse.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 62: peers_touch.model.chat.v1.ListPendingMlsLeaveIntentsResponse.intents:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 63: peers_touch.model.chat.v1.SubmitFederatedMlsLeaveIntentRequest.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 64: peers_touch.model.chat.v1.SubmitFederatedMlsLeaveIntentResponse.intent:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	77, // 65: peers_touch.model.chat.v1.ListFederatedMlsLeaveIntentsResponse.intents:type_name -> peers_touch.model.chat.v1.MlsLeaveIntent
+	62, // 66: peers_touch.model.chat.v1.ListConversationEventsResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	62, // 67: peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	62, // 68: peers_touch.model.chat.v1.ListConversationMessagesResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	62, // 69: peers_touch.model.chat.v1.ListThreadMessagesResponse.events:type_name -> peers_touch.model.chat.v1.ConversationEvent
+	53, // 70: peers_touch.model.chat.v1.GetThreadCountsResponse.counts:type_name -> peers_touch.model.chat.v1.ThreadCountEntry
+	55, // 71: peers_touch.model.chat.v1.GetMemberSettingsResponse.settings:type_name -> peers_touch.model.chat.v1.MemberSettings
+	55, // 72: peers_touch.model.chat.v1.UpdateMemberSettingsRequest.settings:type_name -> peers_touch.model.chat.v1.MemberSettings
+	73, // [73:73] is the sub-list for method output_type
+	73, // [73:73] is the sub-list for method input_type
+	73, // [73:73] is the sub-list for extension type_name
+	73, // [73:73] is the sub-list for extension extendee
+	0,  // [0:73] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_conversation_api_proto_init() }
@@ -3981,6 +4087,14 @@ func file_domain_chat_conversation_api_proto_init() {
 	file_domain_chat_command_proto_init()
 	file_domain_chat_conversation_proto_init()
 	file_domain_chat_event_proto_init()
+	file_domain_chat_conversation_api_proto_msgTypes[12].OneofWrappers = []any{
+		(*UpdateConversationMemberRequest_Command)(nil),
+		(*UpdateConversationMemberRequest_Proposal)(nil),
+	}
+	file_domain_chat_conversation_api_proto_msgTypes[14].OneofWrappers = []any{
+		(*TransferConversationOwnershipRequest_Command)(nil),
+		(*TransferConversationOwnershipRequest_Proposal)(nil),
+	}
 	file_domain_chat_conversation_api_proto_msgTypes[16].OneofWrappers = []any{
 		(*SubmitConversationAuthorityCommandRequest_Command)(nil),
 		(*SubmitConversationAuthorityCommandRequest_Proposal)(nil),

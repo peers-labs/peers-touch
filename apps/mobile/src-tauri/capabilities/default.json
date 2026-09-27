@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Minimal default permissions for the iOS-first Peers Touch Mobile shell. Native plugins must add explicit capability scopes.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "peers-platform-permissions:allow-register-listener",
+    "peers-platform-permissions:allow-remove-listener"
+  ]
 }

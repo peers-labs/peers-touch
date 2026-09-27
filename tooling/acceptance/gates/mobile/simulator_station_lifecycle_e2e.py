@@ -27,7 +27,7 @@ from tooling.acceptance.gates.mobile.simulator_runtime_binding import (
 GATE_ID = "mobile-simulator-station-lifecycle-e2e"
 ENVIRONMENT_ID = "mobile-station-lifecycle-simulator"
 IOS_CLIENT = "sim-ios"
-ANDROID_CLIENT = "sim-android"
+PEER_IOS_CLIENT = "sim-ios-peer"
 PRIMARY_BINDING = "station-primary"
 SECONDARY_BINDING = "station-secondary"
 SWITCH_COUNT = 10
@@ -39,6 +39,7 @@ PROVEN_SCOPE = (
     ),
 )
 UNPROVEN_SCOPE = (
+    "Android runtime behavior",
     "physical-device lifecycle behavior",
     "physical Keychain or Keystore deletion failure",
     "W4 command and draft recovery",
@@ -153,7 +154,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 proof_status=proof_status,
                 runtime={
                     "environment": ENVIRONMENT_ID,
-                    "runtimeCell": "ios-simulator-and-android-emulator",
+                    "runtimeCell": "dual-ios-simulator",
                     "physicalDeviceClaimed": False,
                     "declaredScenarios": ["AS-04", "AS-10"],
                 },
@@ -202,7 +203,6 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
         )
         if restart_result != {"requested": True, "scope": "webview"}:
             raise GateError("iOS lifecycle.restart response is invalid")
-        binding.refresh_webview(IOS_CLIENT)
         restored_scope = self._wait_for_scope(
             binding,
             IOS_CLIENT,
@@ -225,30 +225,30 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             generation=int(restored_scope["generation"]),
         )
 
-        android_primary = self._launch(
+        peer_primary = self._launch(
             binding,
-            ANDROID_CLIENT,
+            PEER_IOS_CLIENT,
         )
         self._require_launch_bindings(
-            android_primary,
+            peer_primary,
             active_binding_role=PRIMARY_BINDING,
             required_binding_roles={PRIMARY_BINDING},
         )
-        android_alice_ptid = self._authenticate(
+        peer_alice_ptid = self._authenticate(
             binding,
-            ANDROID_CLIENT,
+            PEER_IOS_CLIENT,
             expected_station_peer_id=str(
-                android_primary.scope["activeStationPeerId"]
+                peer_primary.scope["activeStationPeerId"]
             ),
         )
-        if android_alice_ptid != alice_ptid:
+        if peer_alice_ptid != alice_ptid:
             raise GateError(
-                "same-account Android login resolved a different Alice PTID"
+                "same-account peer iOS login resolved a different Alice PTID"
             )
         self._record(
             "same-account-session-replaced",
-            ANDROID_CLIENT,
-            generation=int(android_primary.scope["generation"]),
+            PEER_IOS_CLIENT,
+            generation=int(peer_primary.scope["generation"]),
         )
 
         binding.call_action(IOS_CLIENT, "lifecycle.suspend")
@@ -262,7 +262,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             access = binding.begin_access_gate(IOS_CLIENT)
             revoked_scope = _mapping(
                 access.get("scope"),
-                "revoked iOS access-gate scope",
+                "revoked primary iOS access-gate scope",
             )
         self._assert_cleared_scope(
             revoked_scope,
@@ -275,7 +275,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             restored_scope["generation"]
         ):
             raise GateError(
-                "revoked iOS resume did not advance the lifecycle generation"
+                "revoked primary iOS resume did not advance the lifecycle generation"
             )
         self._record(
             "revoked-session-cleared",
@@ -344,7 +344,8 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 )
             if activation.remote_revocation != "confirmed":
                 raise GateError(
-                    "Station switch did not confirm remote session revocation"
+                    "Station switch did not confirm remote session revocation: "
+                    f"{activation.remote_revocation}"
                 )
             if int(activation.scope["generation"]) <= previous_generation:
                 raise GateError(
@@ -435,7 +436,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             generation=int(logout_scope["generation"]),
         )
 
-        for client_id in (ANDROID_CLIENT, IOS_CLIENT):
+        for client_id in (PEER_IOS_CLIENT, IOS_CLIENT):
             cleanup_result = binding.call_action(client_id, "cleanup")
             if not isinstance(cleanup_result, Mapping):
                 raise GateError(
@@ -450,22 +451,12 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 }
             )
 
-        return {
+        result = {
             "restored": {
                 "clientId": IOS_CLIENT,
                 "generationAdvanced": True,
                 "actorIdentityMatched": True,
                 "bindingProof": ios_primary.binding_proofs[
-                    PRIMARY_BINDING
-                ].to_dict(),
-            },
-            "revocation": {
-                "revokedClientId": IOS_CLIENT,
-                "replacementClientId": ANDROID_CLIENT,
-                "authCleared": True,
-                "accessGateVisible": True,
-                "oldScopeAbsent": True,
-                "bindingProof": android_primary.binding_proofs[
                     PRIMARY_BINDING
                 ].to_dict(),
             },
@@ -482,7 +473,18 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
                 "accessGateVisible": True,
                 "oldScopeAbsent": True,
             },
+            "revocation": {
+                "revokedClientId": IOS_CLIENT,
+                "replacementClientId": PEER_IOS_CLIENT,
+                "authCleared": True,
+                "accessGateVisible": True,
+                "oldScopeAbsent": True,
+                "bindingProof": peer_primary.binding_proofs[
+                    PRIMARY_BINDING
+                ].to_dict(),
+            },
         }
+        return result
 
     def _launch(
         self,
@@ -519,6 +521,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             launchGeneration=selection.launch_generation,
             lifecycleGeneration=int(selection.scope["generation"]),
             bindingProof=selection.binding_proof.to_dict(),
+            remoteRevocation=selection.remote_revocation,
         )
         return selection
 
@@ -671,6 +674,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             and group.get("messageThreadCount") == 0
             and isinstance(navigation, Mapping)
             and navigation.get("detailKeys") == []
+            and navigation.get("overlayRouteId") is None
         )
 
     def _cleanup(
@@ -736,7 +740,7 @@ class SimulatorStationLifecycleGate(AcceptanceGate):
             "gateId": self.gate_id,
             "gate": self.gate_id,
             "environment": ENVIRONMENT_ID,
-            "runtimeCell": "ios-simulator-and-android-emulator",
+            "runtimeCell": "dual-ios-simulator",
             "status": status,
             "completionStatus": "PARTIAL",
             "proofStatus": "UNPROVEN",

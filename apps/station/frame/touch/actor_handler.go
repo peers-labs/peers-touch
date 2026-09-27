@@ -28,7 +28,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	gatepb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
-	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
 )
 
@@ -54,12 +53,6 @@ func GetActorHandlers() []ActorHandlerInfo {
 		{
 			RouterURL: RouterURLActorSignUP,
 			Handler:   ActorSignup,
-			Method:    server.POST,
-			Wrappers:  []server.Wrapper{actorWrapper},
-		},
-		{
-			RouterURL: RouterURLActorLogin,
-			Handler:   ActorLogin,
 			Method:    server.POST,
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
@@ -148,24 +141,6 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Wrappers:  []server.Wrapper{commonWrapper}, // Public — federation surface
 		},
 		{
-			RouterURL: RouterURLFederationMe,
-			Handler:   FederationMe,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLFederationVisibility,
-			Handler:   FederationUpdateVisibility,
-			Method:    server.PUT,
-			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
-		},
-		{
-			RouterURL: RouterURLFederationResolve,
-			Handler:   FederationResolve,
-			Method:    server.GET,
-			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
-		},
-		{
 			RouterURL: RouterURLFederationHealth,
 			Handler:   FederationHealth,
 			Method:    server.GET,
@@ -245,7 +220,7 @@ func StartAccessAttempt(c context.Context, ctx *app.RequestContext) {
 	}
 
 	var req gatepb.StartAccessAttemptRequest
-	if err := ctx.Bind(&req); err != nil {
+	if err := bindAccessProto(ctx, &req); err != nil {
 		log.Warnf(c, "Access attempt bind failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, err.Error())
 		return
@@ -258,13 +233,7 @@ func StartAccessAttempt(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	// Include station_label in the JSON response so clients can display a
-	// human-readable station name instead of raw IP:port.
-	type accessStartResponse struct {
-		Decision     *gatepb.AccessDecision `json:"decision"`
-		StationLabel string                 `json:"station_label,omitempty"`
-	}
-	SuccessResponse(c, ctx, "Access attempt started", &accessStartResponse{
+	SuccessResponse(c, ctx, "Access attempt started", &gatepb.StartAccessAttemptResponse{
 		Decision:     decision,
 		StationLabel: stationLabel(),
 	})
@@ -304,20 +273,12 @@ func SubmitAccessGate(c context.Context, ctx *app.RequestContext) {
 	}
 
 	var req gatepb.SubmitAccessGateRequest
-	if err := ctx.Bind(&req); err != nil {
+	if err := bindAccessProto(ctx, &req); err != nil {
 		log.Warnf(c, "Access gate submit bind failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, err.Error())
 		return
 	}
-
-	switch req.GetType() {
-	case gatepb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN:
-		submitAccessLogin(c, ctx, &req)
-	case gatepb.AccessGateType_ACCESS_GATE_TYPE_INVITE_CODE:
-		submitAccessInviteCode(c, ctx, &req)
-	default:
-		FailedResponse(c, ctx, fmt.Errorf("unsupported access gate type: %s", req.GetType().String()))
-	}
+	submitSchemaBoundAccessGate(c, ctx, &req)
 }
 
 func GetAccessDecision(c context.Context, ctx *app.RequestContext) {
@@ -328,7 +289,7 @@ func GetAccessDecision(c context.Context, ctx *app.RequestContext) {
 	}
 
 	var req gatepb.GetAccessDecisionRequest
-	if err := ctx.Bind(&req); err != nil {
+	if err := bindAccessProto(ctx, &req); err != nil {
 		log.Warnf(c, "Access decision bind failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, err.Error())
 		return
@@ -339,74 +300,37 @@ func GetAccessDecision(c context.Context, ctx *app.RequestContext) {
 		FailedResponse(c, ctx, errors.New("access attempt expired or not found"))
 		return
 	}
-
-	SuccessResponse(c, ctx, "Access decision", &gatepb.GetAccessDecisionResponse{
-		Decision: gate.DecisionForAttempt(c, attempt),
-	})
-}
-
-func ActorLogin(c context.Context, ctx *app.RequestContext) {
-	var loginReq model.LoginRequest
-	if err := ctx.Bind(&loginReq); err != nil {
-		log.Warnf(c, "Login bound params failed: %v", err)
-		ctx.JSON(http.StatusBadRequest, err.Error())
-		return
-	}
-
-	params := model.ActorLoginParams{
-		Email:      loginReq.GetEmail(),
-		Password:   loginReq.GetPassword(),
-		DeviceType: loginReq.GetDeviceType(),
-	}
-	if err := params.Check(); err != nil {
-		log.Warnf(c, "Login checked params failed: %v", err)
+	if err := gate.ValidateDecisionRead(attempt, &req); err != nil {
 		FailedResponse(c, ctx, err)
 		return
 	}
 
-	// Prepare credentials
-	credentials := &auth.Credentials{
-		Email:    params.Email,
-		Password: params.Password,
-	}
-
-	// Get client IP and user agent
-	clientIP := ctx.ClientIP()
-	userAgent := string(ctx.GetHeader("User-Agent"))
-	deviceType := params.DeviceType
-	if deviceType == "" {
-		deviceType = "desktop" // Default to desktop
-	}
-
-	// Use auth service to handle login with session (with kick mechanism)
-	result, err := auth.LoginWithSession(c, credentials, clientIP, userAgent, deviceType)
+	decision, err := gate.RefreshDecision(c, attempt)
 	if err != nil {
-		log.Warnf(c, "Login failed: %v", err)
 		FailedResponse(c, ctx, err)
 		return
 	}
-
-	actorID := result.Actor.ID
-	_ = actor.UpdateActorStatus(c, actorID, db.ActorStatusOnline, userAgent)
-
-	// Set session cookie
-	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
-
-	actorRef := actor.ProtoActorRef(result.Actor, baseURLFrom(ctx))
-	if allowed, reason := gate.CheckActorAllowed(
-		c,
-		actorRef,
-		result.Actor.PreferredUsername,
-		result.Actor.Email,
-	); !allowed {
-		_ = auth.LogoutSession(c, result.SessionID)
-		log.Warnf(c, "Login blocked by access gate policy: ptid=%s reason=%s", actorRef.GetPtid(), reason)
-		FailedResponse(c, ctx, errors.New(reason))
-		return
+	var credential *model.LoginResponse
+	if decision.GetState() == gatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED &&
+		req.GetStationPeerId() != "" {
+		credential, err = gate.FinalizeGrantedSession(
+			c,
+			req.GetAttemptId(),
+			req.GetStationPeerId(),
+			req.GetDeviceId(),
+			req.GetLifecycleGeneration(),
+			ctx.ClientIP(),
+			string(ctx.GetHeader("User-Agent")),
+		)
+		if err != nil {
+			FailedResponse(c, ctx, err)
+			return
+		}
 	}
-
-	loginResp := loginResponseFromSessionResult(result, actorRef)
-	SuccessResponse(c, ctx, "Login successful", loginResp)
+	SuccessResponse(c, ctx, "Access decision", &gatepb.GetAccessDecisionResponse{
+		Decision:      decision,
+		LoginResponse: credential,
+	})
 }
 
 func ActorSessionTakeover(c context.Context, ctx *app.RequestContext) {
@@ -468,90 +392,106 @@ func loginResponseFromSessionResult(result *auth.SessionLoginResult, actorRef *m
 	}
 }
 
-func submitAccessLogin(c context.Context, ctx *app.RequestContext, req *gatepb.SubmitAccessGateRequest) {
-	loginReq := req.GetLogin()
-	if loginReq == nil {
-		FailedResponse(c, ctx, errors.New("login gate requires credentials"))
+func submitSchemaBoundAccessGate(
+	c context.Context,
+	ctx *app.RequestContext,
+	req *gatepb.SubmitAccessGateRequest,
+) {
+	claim, err := gate.BeginSubmission(c, req)
+	if err != nil {
+		log.Warnf(c, "Schema-bound access gate submission rejected: %v", err)
+		FailedResponse(c, ctx, err)
 		return
 	}
 
+	decision := claim.Decision
+	if !claim.Replay {
+		switch req.GetType() {
+		case gatepb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN:
+			decision, err = submitAccessLoginCandidate(c, ctx, req)
+		case gatepb.AccessGateType_ACCESS_GATE_TYPE_INVITE_CODE:
+			decision, err = gate.CompleteInviteCode(c, req.GetAttemptId(), req.GetInviteCode())
+		case gatepb.AccessGateType_ACCESS_GATE_TYPE_TERMS_ACCEPTANCE,
+			gatepb.AccessGateType_ACCESS_GATE_TYPE_CUSTOM:
+			decision, err = gate.CompleteGenericAction(
+				c,
+				req.GetAttemptId(),
+				req.GetActionId(),
+				req.GetGeneric(),
+			)
+		default:
+			err = fmt.Errorf("unsupported schema-bound access gate type: %s", req.GetType().String())
+		}
+		if err != nil {
+			gate.AbandonSubmission(c, req)
+			FailedResponse(c, ctx, err)
+			return
+		}
+	}
+
+	var credential *model.LoginResponse
+	if decision.GetState() == gatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED {
+		credential, err = gate.FinalizeGrantedSession(
+			c,
+			req.GetAttemptId(),
+			req.GetStationPeerId(),
+			req.GetDeviceId(),
+			req.GetLifecycleGeneration(),
+			ctx.ClientIP(),
+			string(ctx.GetHeader("User-Agent")),
+		)
+		if err != nil {
+			FailedResponse(c, ctx, err)
+			return
+		}
+	}
+	if !claim.Replay {
+		if err := gate.CompleteSubmission(c, req, decision); err != nil {
+			FailedResponse(c, ctx, err)
+			return
+		}
+	}
+	if credential != nil {
+		gate.MarkGrantedActorOnline(c, credential, string(ctx.GetHeader("User-Agent")))
+	}
+	SuccessResponse(c, ctx, "Access gate evaluated", &gatepb.SubmitAccessGateResponse{
+		Decision:      decision,
+		LoginResponse: credential,
+	})
+}
+
+func submitAccessLoginCandidate(
+	c context.Context,
+	ctx *app.RequestContext,
+	req *gatepb.SubmitAccessGateRequest,
+) (*gatepb.AccessDecision, error) {
+	loginReq := req.GetLogin()
+	if loginReq == nil {
+		return nil, errors.New("login gate requires credentials")
+	}
 	params := model.ActorLoginParams{
 		Email:      loginReq.GetEmail(),
 		Password:   loginReq.GetPassword(),
 		DeviceType: loginReq.GetDeviceType(),
 	}
 	if err := params.Check(); err != nil {
-		log.Warnf(c, "Access login checked params failed: %v", err)
-		FailedResponse(c, ctx, err)
-		return
+		return nil, err
 	}
-
-	deviceType := params.DeviceType
-	if deviceType == "" {
-		deviceType = "desktop"
-	}
-
-	result, err := auth.LoginWithSession(c, &auth.Credentials{
+	actorRecord, err := auth.AuthenticatePassword(c, &auth.Credentials{
 		Email:    params.Email,
 		Password: params.Password,
-	}, ctx.ClientIP(), string(ctx.GetHeader("User-Agent")), deviceType)
+	})
 	if err != nil {
-		log.Warnf(c, "Access login failed: %v", err)
-		FailedResponse(c, ctx, err)
-		return
+		log.Warnf(c, "Access login authentication failed: %v", err)
+		return nil, err
 	}
-
-	actorRef := actor.ProtoActorRef(result.Actor, baseURLFrom(ctx))
-	decision, err := gate.CompleteLogin(
+	return gate.CompleteLoginCandidate(
 		c,
 		req.GetAttemptId(),
-		actorRef,
-		result.Actor.PreferredUsername,
-		result.Actor.Email,
-		result.SessionID,
+		actor.ProtoActorRef(actorRecord, baseURLFrom(ctx)),
+		actorRecord.PreferredUsername,
+		actorRecord.Email,
 	)
-	if err != nil {
-		_ = auth.LogoutSession(c, result.SessionID)
-		log.Warnf(c, "Access login completion failed: %v", err)
-		FailedResponse(c, ctx, err)
-		return
-	}
-
-	if decision.GetState() != gatepb.AccessDecisionState_ACCESS_DECISION_STATE_GRANTED {
-		_ = auth.LogoutSession(c, result.SessionID)
-		SuccessResponse(c, ctx, "Access blocked", &gatepb.SubmitAccessGateResponse{Decision: decision})
-		return
-	}
-
-	_ = actor.UpdateActorStatus(c, result.Actor.ID, db.ActorStatusOnline, string(ctx.GetHeader("User-Agent")))
-	ctx.SetCookie("session_id", result.SessionID, int(24*time.Hour.Seconds()), "/", "", protocol.CookieSameSiteDisabled, false, true)
-
-	loginResp := loginResponseFromSessionResult(result, actorRef)
-
-	SuccessResponse(c, ctx, "Access granted", &gatepb.SubmitAccessGateResponse{
-		Decision:      decision,
-		LoginResponse: loginResp,
-	})
-}
-
-// submitAccessInviteCode redeems an invite code for the attempt and returns the
-// re-evaluated decision. An invalid code is reported with a single uniform
-// message so a probe cannot distinguish unknown / revoked / expired / exhausted.
-func submitAccessInviteCode(c context.Context, ctx *app.RequestContext, req *gatepb.SubmitAccessGateRequest) {
-	code := req.GetInviteCode()
-	if code == "" {
-		FailedResponse(c, ctx, errors.New("invite code gate requires a code"))
-		return
-	}
-
-	decision, err := gate.CompleteInviteCode(c, req.GetAttemptId(), code)
-	if err != nil {
-		log.Warnf(c, "Access invite code submit failed: %v", err)
-		FailedResponse(c, ctx, err)
-		return
-	}
-
-	SuccessResponse(c, ctx, "Invite code accepted", &gatepb.SubmitAccessGateResponse{Decision: decision})
 }
 
 // CancelAccessAttempt closes a live attempt so an abandoned gate flow leaves a
@@ -564,10 +504,16 @@ func CancelAccessAttempt(c context.Context, ctx *app.RequestContext) {
 	}
 
 	var req gatepb.CancelAccessAttemptRequest
-	if err := ctx.Bind(&req); err != nil {
+	if err := bindAccessProto(ctx, &req); err != nil {
 		log.Warnf(c, "Access cancel bind failed: %v", err)
 		ctx.JSON(http.StatusBadRequest, err.Error())
 		return
+	}
+	if attempt, ok := gate.GetAttempt(c, req.GetAttemptId()); ok {
+		if err := gate.ValidateCancellation(attempt, &req); err != nil {
+			FailedResponse(c, ctx, err)
+			return
+		}
 	}
 
 	cancelled, err := gate.CancelAttempt(c, req.GetAttemptId())
@@ -779,21 +725,16 @@ func GetActorBasicInfo(c context.Context, ctx *app.RequestContext) {
 
 func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 	var protoReq model.UpdateProfileRequest
-	ct := string(ctx.Request.Header.ContentType())
-	if strings.Contains(ct, model.ContentTypeProtobuf) {
-		if err := proto.Unmarshal(ctx.Request.Body(), &protoReq); err != nil {
-			log.Warnf(c, "Update profile proto unmarshal failed: %v", err)
-			ctx.JSON(http.StatusBadRequest, err.Error())
-			return
-		}
-	} else {
-		if err := ctx.Bind(&protoReq); err != nil {
-			log.Warnf(c, "Update profile bound params failed: %v", err)
-			ctx.JSON(http.StatusBadRequest, err.Error())
-			return
-		}
+	if err := bindProtoOrJSON(ctx, &protoReq); err != nil {
+		log.Warnf(c, "Update profile bind failed: %v", err)
+		ctx.JSON(http.StatusBadRequest, err.Error())
+		return
 	}
 	params := actor.UpdateProfileRequestFromProto(&protoReq)
+	if err := actor.ValidateProfileUpdateRequest(params); err != nil {
+		ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 
 	actorID, err := resolveActorID(c, ctx)
 	if err != nil {
@@ -801,12 +742,16 @@ func UpdateActorProfile(c context.Context, ctx *app.RequestContext) {
 		return
 	}
 
-	if err := actor.UpdateProfileByID(c, actorID, params); err != nil {
+	result, err := actor.UpdateProfileByID(c, actorID, baseURLFrom(ctx), params)
+	if err != nil {
 		log.Warnf(c, "Update profile failed: %v", err)
 		FailedResponse(c, ctx, err)
 		return
 	}
-	SuccessResponse(c, ctx, "Profile updated successfully", nil)
+	SuccessResponse(c, ctx, "Profile update resolved", &model.UpdateProfileResponse{
+		Outcome: result.Outcome,
+		Profile: actor.WebProfileToActorProfileProto(result.Profile),
+	})
 }
 
 // ListActors returns actors from preset configuration.

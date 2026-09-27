@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "pnpm run build && node tests/im-projection-contract.test.mjs"
+    "test": "pnpm run build && node tests/im-projection-contract.test.mjs && node tests/storage-batch.test.mjs"
   },
   "dependencies": {
     "@peers-touch/client-storage": "workspace:*"

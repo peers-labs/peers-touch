@@ -9,14 +9,19 @@ from tooling.acceptance.core import (
     RuntimeCellLifecycle,
 )
 
+from .chat_storage_native import ChatStorageNativeProvisioner
+from .dev_ui_local_browser import DevUiLocalBrowserProvisioner
 from .home_station import HomeStationProvisioner
 from .local_desktop_gateway import LocalDesktopGatewayProvisioner
 from .mobile_native import MobileNativeProvisioner
 from .mobile_simulator import (
+    ChatMixedNativeProvisioner,
+    MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
     MobileSimulatorProvisioner,
     MobileSocialSimulatorProvisioner,
     MobileStationLifecycleSimulatorProvisioner,
+    StationAccessNativeProvisioner,
 )
 from .native_desktop_linux import NativeDesktopLinuxProvisioner
 from .native_desktop_macos import NativeDesktopMacOSProvisioner
@@ -30,9 +35,15 @@ from .native_tauri_current_profile import (
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
+    ChatMixedNativeProvisioner.environment_id: ChatMixedNativeProvisioner,
+    ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
+    DevUiLocalBrowserProvisioner.environment_id: DevUiLocalBrowserProvisioner,
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
     MobileNativeProvisioner.environment_id: MobileNativeProvisioner,
+    MobileDirectSimulatorProvisioner.environment_id: (
+        MobileDirectSimulatorProvisioner
+    ),
     MobileIOSLayoutSimulatorProvisioner.environment_id: (
         MobileIOSLayoutSimulatorProvisioner
     ),
@@ -42,6 +53,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     MobileStationLifecycleSimulatorProvisioner.environment_id: (
         MobileStationLifecycleSimulatorProvisioner
+    ),
+    StationAccessNativeProvisioner.environment_id: (
+        StationAccessNativeProvisioner
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
@@ -74,7 +88,12 @@ def get_provisioner(
             contract,
             station_profiles=station_profiles,
         )
-    if provisioner_class is MobileSocialSimulatorProvisioner:
+    if provisioner_class in {
+        ChatMixedNativeProvisioner,
+        MobileDirectSimulatorProvisioner,
+        MobileSocialSimulatorProvisioner,
+        StationAccessNativeProvisioner,
+    }:
         return provisioner_class(
             contract,
             station_profiles=station_profiles,
@@ -103,13 +122,18 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 
 
 __all__ = [
+    "ChatMixedNativeProvisioner",
+    "ChatStorageNativeProvisioner",
+    "DevUiLocalBrowserProvisioner",
     "HomeStationProvisioner",
     "LocalDesktopGatewayProvisioner",
+    "MobileDirectSimulatorProvisioner",
     "MobileIOSLayoutSimulatorProvisioner",
     "MobileNativeProvisioner",
     "MobileSimulatorProvisioner",
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
+    "StationAccessNativeProvisioner",
     "NativeDesktopLinuxProvisioner",
     "NativeDesktopMacOSProvisioner",
     "NativeDesktopWindowsProvisioner",

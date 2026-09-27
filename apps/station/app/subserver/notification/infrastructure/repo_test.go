@@ -110,3 +110,74 @@ func TestMigrateNotificationPTIDColumnsRejectsDualColumnsWithoutPartialRename(t 
 		t.Fatal("migration committed a partial rename before conflict detection")
 	}
 }
+
+func TestNotificationPreferenceBatchCASIsAtomicAndAggregate(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	repo := NewGormRepo(db)
+	if err := repo.AutoMigrate(); err != nil {
+		t.Fatalf("migrate notification schema: %v", err)
+	}
+
+	initial, err := repo.GetPreferencesSnapshot("ptid:alice")
+	if err != nil {
+		t.Fatalf("get initial snapshot: %v", err)
+	}
+	if initial.Revision != 1 || len(initial.Preferences) != 4 {
+		t.Fatalf("initial snapshot = %#v", initial)
+	}
+
+	applied, err := repo.UpdatePreferences("ptid:alice", initial.Revision, []domain.NotificationPreferencePatch{
+		{Category: domain.CategorySocial, Enabled: false, PushEnabled: true, SoundEnabled: false},
+		{Category: domain.CategoryChat, Enabled: true, PushEnabled: false, SoundEnabled: true},
+	})
+	if err != nil {
+		t.Fatalf("apply preference batch: %v", err)
+	}
+	if applied.Outcome != domain.NotificationPreferencesUpdateOutcomeApplied ||
+		applied.Snapshot.Revision != 2 {
+		t.Fatalf("applied result = %#v", applied)
+	}
+
+	stale, err := repo.UpdatePreferences("ptid:alice", initial.Revision, []domain.NotificationPreferencePatch{
+		{Category: domain.CategorySocial, Enabled: true, PushEnabled: true, SoundEnabled: true},
+	})
+	if err != nil {
+		t.Fatalf("resolve stale preference batch: %v", err)
+	}
+	if stale.Outcome != domain.NotificationPreferencesUpdateOutcomeConflict ||
+		stale.Snapshot.Revision != applied.Snapshot.Revision {
+		t.Fatalf("stale result = %#v", stale)
+	}
+	if preferenceByCategory(t, stale.Snapshot, domain.CategorySocial).Enabled {
+		t.Fatal("stale batch changed the social preference")
+	}
+
+	unchanged, err := repo.UpdatePreferences("ptid:alice", applied.Snapshot.Revision, []domain.NotificationPreferencePatch{
+		{Category: domain.CategorySocial, Enabled: false, PushEnabled: true, SoundEnabled: false},
+	})
+	if err != nil {
+		t.Fatalf("apply equal preference batch: %v", err)
+	}
+	if unchanged.Outcome != domain.NotificationPreferencesUpdateOutcomeUnchanged ||
+		unchanged.Snapshot.Revision != applied.Snapshot.Revision {
+		t.Fatalf("unchanged result = %#v", unchanged)
+	}
+}
+
+func preferenceByCategory(
+	t *testing.T,
+	snapshot domain.NotificationPreferencesSnapshot,
+	category int32,
+) domain.NotificationPreference {
+	t.Helper()
+	for _, preference := range snapshot.Preferences {
+		if preference.Category == category {
+			return preference
+		}
+	}
+	t.Fatalf("category %d missing from snapshot", category)
+	return domain.NotificationPreference{}
+}

@@ -1,5 +1,13 @@
 # Desktop Rust 后端架构文档
 
+> **Status**: deprecated
+> **Replaced by**: `docs/client/desktop/base.md`,
+> `docs/client/desktop/runtime-projections.md`, and
+> `docs/architecture/messaging-platform/`
+>
+> 本文以下内容仅保留历史示例，不再作为当前目录、Chat store 或命令 ownership
+> 的实现依据。
+
 ## 概述
 
 Desktop Rust 后端遵循 DDD（领域驱动设计）分层架构，将代码划分为接口层、应用层、领域层、基础设施层四个核心层次，外加模型层和状态层两个辅助层。

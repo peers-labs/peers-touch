@@ -22,13 +22,28 @@ export {
 } from './scrollRestoration';
 
 export {
+  applyMobileNavigationIntent,
   activeMobileDetailRoute,
   navigationLocationKey,
+  readMobileNavigationProjection,
   resetMobileNavigation,
   useMobileNavigationStore,
 } from './navigationStore';
 export type {
   MobileChatDetailRoute,
   MobileDetailRoute,
+  MobileNavigationIntent,
+  MobileNavigationProjection,
+  MobileOverlayRoute,
   MobilePrimaryRouteId,
+  MobileSettingDetailId,
 } from './navigationStore';
+
+export {
+  registerSettingsExitGuard,
+  requestSettingsExit,
+} from './settingsExitGuard';
+export type {
+  SettingsExitAction,
+  SettingsExitRequest,
+} from './settingsExitGuard';

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	domain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
@@ -133,6 +134,30 @@ func (r *privatePostRepo) GetByID(ctx context.Context, id uint64, viewerPTID str
 	}
 
 	return r.hydrateOne(ctx, &row)
+}
+
+func (r *privatePostRepo) ProbeRecordState(
+	ctx context.Context,
+	id uint64,
+) (domain.PostRecordState, error) {
+	var row struct {
+		DeletedAt *time.Time
+	}
+	err := r.legacyPrivateRows(r.db.WithContext(ctx)).
+		Model(&db.SocialPrivatePost{}).
+		Select("deleted_at").
+		Where("id = ?", id).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.PostRecordMissing, nil
+	}
+	if err != nil {
+		return domain.PostRecordMissing, err
+	}
+	if row.DeletedAt != nil {
+		return domain.PostRecordDeleted, nil
+	}
+	return domain.PostRecordLive, nil
 }
 
 func (r *privatePostRepo) Delete(ctx context.Context, id uint64, authorPTID string) error {

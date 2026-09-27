@@ -8,6 +8,7 @@ Tauri app. Uses MockDriver to simulate the BaseDriver contract.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -19,11 +20,16 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import (
+    ARTIFACT_ROOT_ENV,
+    RUN_GATE_ENV,
+    RUN_ID_ENV,
+    RUN_WORKSPACE_ENV,
     AcceptanceGate,
     ActorRuntime,
     BaseDriver,
     BaseFixture,
     DomDriver,
+    EvidenceStore,
     EvidenceReport,
     GateError,
     new_report,
@@ -224,6 +230,110 @@ class AcceptanceGateBaseClassTests(unittest.TestCase):
             self.assertTrue(len(report["assertions"]) >= 1)
             self.assertTrue(report["assertions"][0]["passed"])
             self.assertTrue(gate.driver._stopped, "driver.stop() must be called after pass")
+
+    def test_managed_run_overrides_legacy_report_and_evidence_paths(self):
+        class ManagedGate(AcceptanceGate):
+            gate_id = "unit-test-managed-run"
+
+            def __init__(self, legacy_root: Path):
+                self.legacy_report_path = legacy_root / "report.json"
+                self.legacy_evidence_dir = legacy_root / "evidence"
+                self.report_path = self.legacy_report_path
+                self.evidence_dir = self.legacy_evidence_dir
+                super().__init__()
+                self.driver = MockDriver()
+                self.register_driver(self.driver)
+
+            def run(self):
+                self.driver.start()
+                self.save_dom(self.driver, "actor")
+                return {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            store = EvidenceStore(
+                root / "artifact-root",
+                worktree=CORE_REPO_ROOT,
+            )
+            run = store.begin_run(ManagedGate.gate_id, source={})
+            legacy_root = root / "legacy"
+            try:
+                with patch.dict(
+                    os.environ,
+                    run.subprocess_environment({}),
+                    clear=True,
+                ):
+                    gate = ManagedGate(legacy_root)
+                    self.assertIsNone(gate.report_path)
+                    self.assertIsNone(gate.evidence_dir)
+                    self.assertEqual(gate.execute(), 0)
+
+                self.assertEqual(
+                    gate.report_path,
+                    run.run_dir / "reports" / f"{ManagedGate.gate_id}.json",
+                )
+                report = json.loads(
+                    gate.report_path.read_text(encoding="utf-8")
+                )
+                evidence_ref = report["evidence"]["actor-dom"]
+                self.assertEqual(
+                    evidence_ref["path"],
+                    f"evidence/{ManagedGate.gate_id}-actor-dom.html",
+                )
+                self.assertTrue((run.run_dir / evidence_ref["path"]).is_file())
+                self.assertFalse(legacy_root.exists())
+            finally:
+                run.discard()
+
+    def test_partial_managed_run_context_fails_closed(self):
+        class PartialContextGate(AcceptanceGate):
+            gate_id = "unit-test-partial-run"
+
+            def run(self):
+                return {}
+
+        with patch.dict(
+            os.environ,
+            {RUN_WORKSPACE_ENV: "0" * 16},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(
+                GateError,
+                "Acceptance run context is incomplete",
+            ):
+                PartialContextGate()
+
+    def test_managed_run_gate_mismatch_fails_closed(self):
+        class MismatchedGate(AcceptanceGate):
+            gate_id = "unit-test-context-mismatch"
+
+            def run(self):
+                return {}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = EvidenceStore(
+                Path(tmpdir) / "artifact-root",
+                worktree=CORE_REPO_ROOT,
+            )
+            run = store.begin_run("other-unit-test-gate", source={})
+            try:
+                environment = run.subprocess_environment({})
+                self.assertTrue(
+                    {
+                        RUN_WORKSPACE_ENV,
+                        RUN_GATE_ENV,
+                        RUN_ID_ENV,
+                        ARTIFACT_ROOT_ENV,
+                    }.issubset(environment)
+                )
+                with patch.dict(os.environ, environment, clear=True):
+                    with self.assertRaisesRegex(
+                        GateError,
+                        "Acceptance run context gate mismatch",
+                    ):
+                        MismatchedGate()
+            finally:
+                run.discard()
 
     def test_gate_execute_fail_path_collects_error(self):
         class FailGate(AcceptanceGate):
@@ -495,6 +605,41 @@ class HarnessBridgeTests(unittest.TestCase):
         with self.assertRaises(GateError) as ctx:
             call_async_harness(ErrorDriver(), "loginWithPassword", {}, namespace="chat")
         self.assertIn("chat.loginWithPassword", str(ctx.exception))
+
+    def test_call_async_harness_propagates_only_bounded_safe_error_details(self):
+        class ErrorDriver(MockDriver):
+            def execute_async_script(self, script, *args):
+                return {
+                    "error": "Station request failed",
+                    "errorCode": "INTERNAL_ERROR",
+                    "errorDetails": {
+                        "status": 503,
+                        "error_code": "KEY_EXCHANGE_DEPENDENCY_UNAVAILABLE",
+                        "required_gate": "relay-ready" * 100,
+                        "body": "sensitive response body",
+                        "token": "secret",
+                    },
+                }
+
+        with self.assertRaises(GateError) as ctx:
+            call_async_harness(
+                ErrorDriver(),
+                "peerKeyBundleState",
+                {},
+                namespace="chat",
+            )
+
+        message = str(ctx.exception)
+        self.assertIn("chat.peerKeyBundleState", message)
+        self.assertIn('"code":"INTERNAL_ERROR"', message)
+        self.assertIn('"status":503', message)
+        self.assertIn('"error_code":"KEY_EXCHANGE_DEPENDENCY_UNAVAILABLE"', message)
+        self.assertNotIn("sensitive response body", message)
+        self.assertNotIn("secret", message)
+        self.assertLessEqual(
+            len(json.loads(message[message.index("[{") + 1 : -1])["required_gate"]),
+            256,
+        )
 
     def test_call_async_harness_non_dict_result(self):
         class BadDriver(MockDriver):

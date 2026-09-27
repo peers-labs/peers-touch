@@ -1,0 +1,150 @@
+# Peers Dev 产品定义
+
+> **Status**: active
+> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Owner**: Platform Team
+> **Module**: `apps/dev/`
+
+---
+
+## 1. 产品命题
+
+Peers Dev 是 Peers Touch 面向人类开发者与 Agent 并行研发的操作产品。它把
+已经接受的产品、架构和计划工作投影为一个可观察、有边界、可由当前源码证据
+验证的交付闭环。
+
+目标用户包括：
+
+- 需要判断每个 worktree 实际工作状态的开发者；
+- 需要不可变执行根和当前 Task 边界的 Agent；
+- 需要核对完成声明是否匹配当前源码与义务的 reviewer；
+- 需要通过一份可执行指南理解工作流的维护者。
+
+Peers Dev 不是通用项目管理器、CI 替代品、IDE 或运行时部署平台。
+
+## 2. 产品承诺
+
+开发者从一个明确选定的 worktree 执行规范安装后，应能观察：
+
+1. 哪个 Plan 和 Task 拥有当前工作；
+2. Agent 正在执行什么动作；
+3. 工作是推进、等待、阻塞、停滞、循环还是发生漂移；
+4. 完成声明是否通过独立的当前源码审查；
+5. 每项声明由哪个 owner、命令和证据义务支撑。
+
+Conversation 不得静默改变执行根。Task 或 Plan 不得因聊天文本、陈旧证据或
+实现者自报成功而被判定完成。
+
+## 3. Canonical 决策映射
+
+`decisions.md` 是决策状态的唯一 owner。本表只提供产品追踪关系，不替代 ADR：
+
+| ID | Canonical 含义 | 在本产品中的作用 | 状态 |
+|---|---|---|---|
+| DWF-D24 | Source invalidation | 当前源码证据失效时，由 Plan 声明的单一 owner 重开最早失效闭环 | accepted |
+| DWF-D25 | Machine-local interaction overlay | Overlay 只能改变交互呈现，不能改变执行政策 | accepted |
+| DWF-D26 | Conversation execution binding | 一个 conversation 绑定一个不可变 `executionRoot` | accepted |
+| DWF-D27 | Workflow Snapshot | 跨 owner 的只读一致性投影 | accepted |
+| DWF-D28 | Completion Review | 独立的当前源码完成审查 | accepted |
+| DWF-D29 | Action Receipt | 有界、脱敏的 Agent 动作收据 | accepted |
+| DWF-D30 | Workflow Doctor | 可执行的工作流自诊断 | accepted |
+| DWF-D31 | Plan generation advance | completed 且 quiescent 后复用 canonical owner workspace | accepted |
+
+Accepted 决策定义目标合同，不等于实现或验收已经通过。在当前源码完成验证前，
+消费者仍须把尚未证明的能力投影为 `UNPROVEN`。
+
+## 4. 能力画像
+
+| ID | Capability | Class | Decision | Readiness claim |
+|---|---|---|---|---|
+| DEV-C01 | Conversation-bound execution | required | DWF-D26 | 首个可阻断工具事件绑定一个不可变执行根；缺少强制能力时 fail closed |
+| DEV-C02 | Truthful completion review | required | DWF-D28 | Task 和 Plan 完成需要绑定当前源码与义务的独立审查收据 |
+| DEV-C03 | Live development observability | required | DWF-D27/DWF-D29 | Dev UI 展示 worktree、Plan、Task、活动、阻塞、漂移、循环和停滞 |
+| DEV-C04 | Human and agent operating guide | required | DWF-D30 | 人类指南中的可执行声明均有机器检查 |
+| DEV-C05 | Self-diagnosis | required | DWF-D30 | 一个 Doctor 入口检查安装、Hook、绑定、状态 owner、Dev UI 和完成 Gate |
+| DEV-C06 | Mutation from Dev UI | unsupported | DWF-D27 | Dev UI 保持只读，所有写入由 owner CLI 执行 |
+| DEV-C07 | Cross-worktree writes | unsupported | DWF-D26 | Conversation 可读取其他 worktree，但只能写入自己的不可变执行根 |
+| DEV-C08 | Sequential owner Plans | required | DWF-D31 | completed 且 quiescent 后在同一 canonical owner workspace 推进下一 Plan generation |
+
+## 5. 首次可用结果
+
+目标首次闭环是：
+
+1. 开发者运行 `make skills IDE=trae`；
+2. 运行 `make dev-ui` 打开 Peers Dev；
+3. 当前 worktree 显示一条由 owner state 推导的状态记录；
+4. 安装路径的合成 `PreToolUse` 验证能够绑定新 conversation；
+5. Doctor 对缺失或不一致环节返回 typed failure，而不是伪报
+   `INSTALLED`、`COMPLETE` 或 `HEALTHY`。
+
+这些步骤是产品验收目标，不是本文档对当前实现结果的声明。
+
+## 6. 持续价值
+
+- Agent 动作产生有界且脱敏的活动证据。
+- Plan 百分比只来自 Task closure，Task 不使用虚构百分比。
+- 源码或义务漂移会使完成审查失效；只有 source invalidation 通过 DWF-D24 的
+  owner 路径重开。
+- 每个 worktree 可独立诊断，无需读取其他 conversation。
+- 文档中的操作声明由 Doctor 持续校验。
+
+## 7. Non-Goals
+
+- 自动修改声明 worktree 之外的产品源码。
+- 替代 Git、Plan Package、Development Session、Acceptance 或 CI。
+- 把生成状态、截图或 Agent 摘要当作完成证据。
+- 为旧 Hook、旧 rollout 或 completion bypass 保留兼容路径。
+- 从 Skill 路径、branch 名、工作目录或相邻仓库推断 execution root。
+- 为绕过 Plan binding、lifecycle 或资源冲突而由 Agent 自建 worktree。
+- 让 DWF-D25 Overlay 扩大范围、授权、证据强度或停止条件。
+
+## 8. 产品风险
+
+- IDE Hook 能力可能随宿主而异。安装必须执行宿主级合成回调，并明确报告
+  unsupported contract。
+- Agent 活动可能产生噪声。DWF-D29 只保留有界收据，并由 DWF-D27 reducer
+  归并为稳定状态。
+- 完成审查可能流于形式。DWF-D28 必须绑定 reviewer identity、source digest、
+  obligation digest、findings 和 verdict，并在漂移后失效。
+- Doctor 可能误把局部成功当作整体健康。DWF-D30 必须逐项检查产品承诺并以
+  非零退出码暴露 required failure。
+
+## 9. 平台适配
+
+| Capability | TRAE | Cursor/Codex | Browser |
+|---|---|---|---|
+| Conversation binding | DWF-D26 目标能力；需 installed-path proof | 保留 host adapter 合同；逐宿主证明 | 不适用 |
+| Completion Review | DWF-D28 host-neutral 目标 | 同一 host-neutral 合同 | 只读投影 |
+| Progress and activity | DWF-D29 收据输入 | adapter 能力需单独证明 | DWF-D27 Snapshot 投影 |
+| Workflow Doctor | DWF-D30 完整检查目标 | 未证明能力必须显示 unsupported/unproven | 只展示 server/read-model 状态 |
+
+本文档不宣称任何平台单元已经通过；平台 readiness 必须由当前目标源码和对应
+Acceptance 单元独立证明。
+
+## 10. 可行性闭环
+
+| Capability | Canonical basis | Missing closure | Smallest executable proof |
+|---|---|---|---|
+| DEV-C01 | DWF-D26 已定义 conversation binding 约束 | 对目标源码、安装投影和宿主回调做当前验证 | 临时宿主目录安装加合成 `PreToolUse` |
+| DEV-C02 | Plan、Task、Session 和 lifecycle owner 已定义 | 实现并验证独立 request/receipt 与 closure guard | 缺失/陈旧 receipt 被拒，精确 receipt 通过 |
+| DEV-C03 | `apps/dev/` 是现有只读产品面 | 接入 owner snapshot、action reducer 与 review state | API contract 加桌面/窄屏动态验证 |
+| DEV-C04 | 架构文档和应用 README 已存在 | 确立唯一操作指南并将每条命令纳入 truth audit | 从干净 worktree 执行所有已声明命令 |
+| DEV-C05 | 现有 audit 可作为候选检查输入 | 组合为一个 typed Doctor 并验证公开承诺 | healthy fixture 与故障注入 fixture |
+| DEV-C08 | Workspace binding 已隔离同步进入仓库的外来 Plan | 增加显式 generation CAS、quiescence 与不可变历史 | completed advance、live-resource rejection 与并发测试 |
+
+表中 `Canonical basis` 只说明可继续设计或实现的当前输入，不构成实现完成或
+Acceptance 通过证明。
+
+## 11. UI 证据边界
+
+Peers Dev 已有 `apps/dev/` 产品面，本合同在该产品面上演进信息层级：
+
+```text
+worktree identity
+  -> Plan progress
+      -> current Task progress
+          -> agent activity / blocker / review state
+```
+
+无需创建平行 mock 产品，但最终界面仍须从目标源码重新取得静态、视觉和动态
+证据。其他 worktree 的截图、端口状态、测试计数或历史运行结果不能作为当前证明。

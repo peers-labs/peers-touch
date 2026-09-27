@@ -28,20 +28,23 @@ func (*AccessPolicy) TableName() string { return "access_gate_policies" }
 // chain state machine: pending -> action_required -> granted | blocked | failed,
 // with cancelled and expired as terminal client/timeout outcomes.
 type AccessAttempt struct {
-	ID               string `gorm:"primaryKey;size:64"`
-	Status           string `gorm:"size:32;not null;default:'pending';index"`
-	SessionID        string `gorm:"size:128;index"`
-	StationPeerID    string `gorm:"column:station_peer_id;size:255;not null;index"`
-	ActorPTID        string `gorm:"column:actor_ptid;size:255;index"`
-	ActorKind        int32  `gorm:"column:actor_kind"`
-	ActorUsername    string `gorm:"size:128"`
-	ActorEmail       string `gorm:"size:256"`
-	StationURL       string `gorm:"size:256"`
-	Platform         string `gorm:"size:32"`
-	AppVersion       string `gorm:"size:32"`
-	DeviceID         string `gorm:"size:128"`
-	CurrentGateID    string `gorm:"size:64"`
-	DecisionRevision uint64 `gorm:"column:decision_revision;not null;default:1"`
+	ID                  string `gorm:"primaryKey;size:64"`
+	Status              string `gorm:"size:32;not null;default:'pending';index"`
+	SessionID           string `gorm:"size:128;index"`
+	StationPeerID       string `gorm:"column:station_peer_id;size:255;not null;index"`
+	ActorPTID           string `gorm:"column:actor_ptid;size:255;index"`
+	ActorKind           int32  `gorm:"column:actor_kind"`
+	ActorUsername       string `gorm:"size:128"`
+	ActorEmail          string `gorm:"size:256"`
+	AuthMethod          string `gorm:"column:auth_method;size:32"`
+	StationURL          string `gorm:"size:256"`
+	Platform            string `gorm:"size:32"`
+	AppVersion          string `gorm:"size:32"`
+	DeviceID            string `gorm:"size:128"`
+	LifecycleGeneration uint64 `gorm:"column:lifecycle_generation;not null;default:0"`
+	CompletedActionIDs  string `gorm:"column:completed_action_ids;type:text"`
+	CurrentGateID       string `gorm:"size:64"`
+	DecisionRevision    uint64 `gorm:"column:decision_revision;not null;default:1"`
 	// InvitePassed records that this attempt redeemed a valid invite code, so the
 	// invite.code gate stays satisfied across later decision passes.
 	InvitePassed bool      `gorm:"not null;default:false"`
@@ -51,6 +54,23 @@ type AccessAttempt struct {
 }
 
 func (*AccessAttempt) TableName() string { return "access_gate_attempts" }
+
+// AccessGateSubmission is the durable idempotency record for one exact,
+// schema-bound gate action. PayloadHash is a Station-keyed digest, so exact
+// retries can be compared without exposing low-entropy credentials offline.
+type AccessGateSubmission struct {
+	AttemptID        string    `gorm:"column:attempt_id;primaryKey;size:64"`
+	SubmissionID     string    `gorm:"column:submission_id;primaryKey;size:64"`
+	GateID           string    `gorm:"column:gate_id;size:64;not null"`
+	ActionID         string    `gorm:"column:action_id;size:64;not null"`
+	PayloadHash      string    `gorm:"column:payload_hash;size:64;not null"`
+	State            string    `gorm:"size:24;not null;index"`
+	DecisionRevision uint64    `gorm:"column:decision_revision;not null;default:0"`
+	CreatedAt        time.Time `gorm:"autoCreateTime"`
+	UpdatedAt        time.Time `gorm:"autoUpdateTime"`
+}
+
+func (*AccessGateSubmission) TableName() string { return "access_gate_submissions" }
 
 // OAuthAttempt is the durable, Station-owned binding for one native OAuth
 // authorization. Provider credentials, callback codes, PKCE verifiers, nonces,
