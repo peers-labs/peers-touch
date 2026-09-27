@@ -1,8 +1,8 @@
 # Chat 本机存储治理 - 验收矩阵
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Device Messaging Engine
 
 ---
@@ -17,15 +17,16 @@
 
 ## 2. Capability Crosswalk
 
-| Capability | Journey | 当前差距 | Gate |
+| Capability | Journey | 当前基础 / 剩余差距 | Gate |
 |---|---|---|---|
-| CSG-C01 总览 | CSG-J01 | 无 Chat 真实空间统计 | CSG-G01 |
-| CSG-C02 按会话占用 | CSG-J01/J04 | 无 per-conversation bytes | CSG-G01 |
-| CSG-C03 缓存清理 | CSG-J02/J06 | 双端无统一入口和物理读回 | CSG-G02 |
-| CSG-C04 保留周期 | CSG-J03/J06 | 无本机 TTL/floor | CSG-G03 |
-| CSG-C05 会话清理 | CSG-J04/J06 | 当前只写 `cleared_at` | CSG-G04 |
-| CSG-C06 删除语义 | CSG-J05/J06 | Desktop local-only，Mobile actor-hide | CSG-G05 |
-| CSG-C07 回收与恢复 | CSG-J02-J06 | 无统一 journal/compact/Recovery redaction | CSG-G02-G06 |
+| CSG-C01 总览 | CSG-J01 | 双端已有真实空间统计 | CSG-G01 |
+| CSG-C02 按会话占用 | CSG-J01/J04 | 双端已有 per-conversation bytes | CSG-G01 |
+| CSG-C03 缓存清理 | CSG-J02/J06 | 双端已有统一入口和物理读回 | CSG-G02 |
+| CSG-C04 保留周期 | CSG-J03/J06 | 已有本机 TTL/floor | CSG-G03 |
+| CSG-C05 会话清理 | CSG-J04/J06 | 已切换为 sequence/hash floor | CSG-G04 |
+| CSG-C06 删除语义 | CSG-J05/J06 | 双端已有 canonical hide/retract | CSG-G05 |
+| CSG-C07 回收与恢复 | CSG-J02-J06 | 已有统一 journal/compact/Recovery redaction | CSG-G02-G06 |
+| CSG-C08 批量清理 | CSG-J07 | 存储列表只能查看，会话清理入口分散 | CSG-G07 |
 
 ## 3. Gates
 
@@ -77,6 +78,16 @@
 - Desktop/Mobile、same/cross-Station、多设备、restart、fresh Recovery 全部通过。
 - 九个维度无 allowlist suppression。
 
+### CSG-G07：批量会话清理
+
+- Desktop 与 Mobile 的存储列表都提供管理模式、逐项选择和全选当前搜索结果。
+- 未选择会话时不能提交；确认面展示所选数量、预计可回收量和当前设备范围。
+- 批量执行串行复用 canonical 单会话清理，不新增旁路删除或第二套持久状态。
+- 全部成功显示成功数与实际释放量，并从快照中移除已清理占用。
+- 注入一个单项失败时，已成功项保持删除，失败项保持选择且可重试。
+- scope 切换停止剩余队列，旧结果不得进入新 scope。
+- 双端原生 Journey 均证明至少两个会话的选择、确认、物理回收和重启后不复活。
+
 ## 4. 必需运行单元
 
 | Cell | 证明 |
@@ -87,8 +98,10 @@
 | Mixed cross-Station | retract、Recovery 与 authority sequence/hash |
 | Same actor multi-device | “为我删除”跨本人设备收敛 |
 | Fresh install/reset | 新 schema/archive 无旧兼容依赖 |
+| Desktop native batch | 存储列表多选、确认、进度、结果与重启后不复活 |
+| Mobile native batch | 相同批量语义、窄屏操作和失败项重试 |
 
 ## 5. 完成条件
 
-`CHAT_STORAGE_GOVERNANCE_ACCEPTED` 仅在 CSG-G00..CSG-G06 全部通过、所有 Task
+`CHAT_STORAGE_GOVERNANCE_ACCEPTED` 仅在 CSG-G00..CSG-G07 全部通过、所有 Task
 为 `done`、`CCU-20260922` 保持 completed 且最终工作树干净时成立。

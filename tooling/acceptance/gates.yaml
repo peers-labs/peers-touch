@@ -394,6 +394,22 @@
       "tier": "env-evidence",
       "description": "Prove one sequence/hash-bound current-device conversation clear removes plaintext and search projections, survives restart, preserves messaging identity, and reports bytes measured after physical reclamation."
     },
+    "chat-storage-desktop-batch-clear-e2e": {
+      "command": "pnpm --filter @peers-touch/client-chat-core test && pnpm --dir apps/desktop exec vitest run src/components/settings/ChatStorageSettings.test.tsx src/runtimes/chatStorageRuntime.test.ts && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.storage_governance_contract_test tooling.acceptance.gates.chat.storage_governance_runner_test && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.storage_batch_desktop_runner && PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.storage_batch_desktop_e2e",
+      "timeout_seconds": 3600,
+      "environment": "chat-storage-native",
+      "provisioner": "chat-storage-native",
+      "tier": "env-evidence",
+      "description": "Select and clear two conversations through the native Desktop Storage UI, prove canonical serial execution, physical reclamation, and restart-stable absence."
+    },
+    "chat-storage-mobile-batch-clear-e2e": {
+      "command": "pnpm --filter @peers-touch/client-chat-core test && pnpm --dir apps/mobile exec vitest run src/pages/settings/SettingsSections.test.tsx src/runtimes/chatStorageRuntime.test.ts src/acceptance/registry.test.ts && env -u PT_ACCEPTANCE_WORKSPACE_ID -u PT_ACCEPTANCE_GATE_ID -u PT_ACCEPTANCE_RUN_ID python3 -m unittest tooling.acceptance.gates.chat.storage_governance_contract_test tooling.acceptance.gates.mobile.simulator_social_e2e_test && python3 -m tooling.acceptance.gates.mobile.simulator_social_e2e --scenario storage-batch-clear",
+      "timeout_seconds": 3600,
+      "environment": "mobile-direct-simulator",
+      "provisioner": "mobile-direct-simulator",
+      "tier": "env-evidence",
+      "description": "Select and clear two conversations through the native Mobile Storage UI, prove canonical serial execution, physical reclamation, and restart-stable absence."
+    },
     "chat-storage-dead-contract-zero-e2e": {
       "command": "python3 -m unittest tooling.acceptance.gates.chat_storage.zero_legacy_test && python3 -m tooling.acceptance.gates.chat_storage.zero_legacy --owner-task CSG-05-local-clear-hard-cut",
       "timeout_seconds": 180,

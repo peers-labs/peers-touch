@@ -987,6 +987,19 @@ impl MessagingEngine {
     }
 
     #[cfg(feature = "acceptance-webdriver")]
+    pub fn seed_acceptance_storage_conversation_clear(
+        &self,
+        station_peer_id: &str,
+        plaintext_bytes: usize,
+    ) -> Result<(String, String), String> {
+        self.store.acceptance_seed_conversation_clear_fixture(
+            station_peer_id,
+            plaintext_bytes,
+            now_unix_ms(),
+        )
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
     pub fn seed_acceptance_storage_cache(&self, size_bytes: usize) -> Result<PathBuf, String> {
         if size_bytes == 0 || size_bytes > 16 * 1024 * 1024 {
             return Err("acceptance cache fixture size is invalid".to_string());

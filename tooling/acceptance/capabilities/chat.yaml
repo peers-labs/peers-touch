@@ -735,6 +735,50 @@
       }
     },
     {
+      "id": "chat-storage-batch-clear",
+      "domain": "chat",
+      "direction": "acceptance_validates_product",
+      "features": ["chat-storage-batch-clear"],
+      "required_gates": [
+        "chat-storage-desktop-batch-clear-e2e",
+        "chat-storage-mobile-batch-clear-e2e"
+      ],
+      "synthetic_paths": [
+        "packages/client-chat-core/src/storageBatch.ts",
+        "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+        "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+        "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+        "apps/mobile/src/pages/settings/SettingsSections.tsx",
+        "tooling/acceptance/gates/chat/storage_batch_desktop_runner.py",
+        "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "explicit UI-selected conversation IDs",
+          "shared sequential batch orchestration result",
+          "canonical per-conversation cleanup journals and snapshots"
+        ],
+        "surfaces": [
+          "Desktop Settings > Data > Storage > Select conversations",
+          "Mobile Me > Chat settings > Storage > Select conversations"
+        ],
+        "proven_by": [
+          "chat-storage-desktop-batch-clear-e2e",
+          "chat-storage-mobile-batch-clear-e2e"
+        ],
+        "proven_scope": [
+          "Desktop and Mobile select at least two conversations through visible controls",
+          "Every selected conversation executes the canonical local clear serially",
+          "Terminal UI reports per-batch counts and physically released bytes",
+          "Cleared plaintext remains absent after restart"
+        ],
+        "unproven_scope": [
+          "Browser parity, cross-device deletion and Station authority mutation are intentionally outside this capability",
+          "Cross-conversation atomic rollback is intentionally not provided"
+        ]
+      }
+    },
+    {
       "id": "chat-storage-governance-integrity",
       "domain": "chat",
       "direction": "acceptance_validates_product",

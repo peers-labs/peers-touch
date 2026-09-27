@@ -1,8 +1,8 @@
 # Chat 本机存储治理 - 数据模型
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Device Messaging Engine
 
 ---
@@ -203,3 +203,20 @@ message projection
 | `STORAGE_COMPACTION_PENDING` | 语义删除完成，物理压缩待重试 | 是 |
 | `STORAGE_MEASUREMENT_PARTIAL` | 部分目录无法测量 | 是 |
 | `STORAGE_INVALID_POLICY` | 非四档 policy | 否 |
+
+## 9. Batch Projection
+
+批量清理不新增 Proto 或持久化表。双端页面使用同一临时 projection 语义：
+
+```text
+selected_conversation_ids: ordered unique string[]
+status: idle | confirming | clearing | succeeded | partial_failure
+completed_count: uint32
+total_count: uint32
+succeeded_ids: string[]
+failed_ids: string[]
+released_bytes: uint64
+```
+
+该 projection 不跨 scope 或进程重启持久化。每个成功项的 durable truth 仍是
+对应 `chat_cleanup_journal`、`chat_retention_floor` 与操作后 storage snapshot。

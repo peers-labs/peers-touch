@@ -7,6 +7,11 @@ from tooling.acceptance.core import EnvironmentContract
 from tooling.acceptance.gates.chat.storage_governance_runner import (
     storage_snapshot_is_valid,
 )
+from tooling.acceptance.gates.chat.storage_batch_desktop_runner import (
+    BATCH_REQUIRED_ASSERTIONS,
+    BATCH_REQUIRED_STEPS,
+    GATE_ID as BATCH_GATE_ID,
+)
 from tooling.acceptance.gates.chat.storage_redaction_recovery_runner import (
     GATE_ID as REDACTION_GATE_ID,
     redaction_command_disposition,
@@ -214,6 +219,32 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
             journey_for_gate(REDACTION_GATE_ID),
             "storage-redaction-recovery",
         )
+
+    def test_batch_gate_uses_visible_desktop_storage_controls(self) -> None:
+        contract = EnvironmentContract.from_yaml(
+            ROOT / "tooling/acceptance/environments/chat-storage-native.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        desktop_ui = (
+            ROOT
+            / "apps/desktop/src/components/settings/ChatStorageSettings.tsx"
+        ).read_text(encoding="utf-8")
+
+        self.assertIsInstance(provisioner, ChatStorageNativeProvisioner)
+        self.assertEqual(
+            journey_for_gate(BATCH_GATE_ID),
+            "storage-batch-clear",
+        )
+        self.assertIn("storage_batch_explicit_selection", BATCH_REQUIRED_ASSERTIONS)
+        self.assertIn("storage.batch.confirm", BATCH_REQUIRED_STEPS)
+        self.assertIn("data-chat-storage-batch-manage", desktop_ui)
+        self.assertIn("data-chat-storage-batch-confirm-apply", desktop_ui)
+        runner = (
+            ROOT
+            / "tooling/acceptance/gates/chat/storage_batch_desktop_runner.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"seedConversationClear"', runner)
+        self.assertNotIn('"createGroup"', runner)
 
 
 if __name__ == "__main__":

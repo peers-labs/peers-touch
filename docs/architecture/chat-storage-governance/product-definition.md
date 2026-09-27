@@ -1,8 +1,8 @@
 # Chat 本机存储治理 - 产品定义
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Device Messaging Engine
 
 ---
@@ -32,6 +32,7 @@
 | CSG-C05 | 按会话本机清理 | 删除已确认边界内的投影与媒体，普通同步不恢复 |
 | CSG-C06 | 消息删除语义 | “为我删除”跨本人设备；“撤回”对参与者留痕 |
 | CSG-C07 | 物理回收与恢复 | crash-safe journal、compact、字节读回与 Recovery redaction |
+| CSG-C08 | 批量清理会话 | 从存储列表明确选择多个会话，逐项清理并报告完整或部分结果 |
 
 Desktop 与 Mobile 均为 `required`；Browser 不在本模块声明范围。
 
@@ -44,6 +45,8 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块声明范围。
 - “清理 Chat 缓存”；
 - 四档“保留消息”；
 - 按占用排序、可搜索的会话列表。
+- 对当前搜索结果进入管理模式、全选或逐项选择并批量清理；
+- 批量确认显示会话数与预计可回收空间，结果显示成功数、失败数与实际释放量。
 
 ### 会话详情 > 存储
 
@@ -65,6 +68,7 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块声明范围。
 - 不从 Station 按会话重新下载旧明文；完整加密 Recovery 是独立显式流程。
 - 不实现阅后即焚。
 - 不提供“清空后 24 小时恢复”。
+- 不提供无选择范围的“删除所有聊天”；批量操作必须显式选择。
 - 不修改 Station authority history。
 
 ## 6. 成功指标
@@ -80,7 +84,11 @@ Desktop 与 Mobile 均为 `required`；Browser 不在本模块声明范围。
 
 ## 7. 产品门
 
-当前状态：`PRODUCT_READY_FOR_OWNER_REVIEW`。
+当前状态：`PRODUCT_READY_FOR_ARCHITECTURE`。
 
-Owner 进入执行前确认四档 retention、当前设备作用域、删除旧 24 小时恢复，以及
-不实现阅后即焚。
+Owner 已确认批量清理继续沿用当前设备作用域、不可撤销语义与现有
+sequence/hash floor；批量只是显式选择后的多会话操作，不扩大为全局删除。
+
+本次不新增独立原型。双端已有 Storage Section、会话列表、危险动作确认和
+单会话清理组件；新增管理模式、Checkbox、批量操作栏及结果反馈可由现有生产组件
+直接表达，L2/L3 由最终原生 Journey 截图与交互证据提供。

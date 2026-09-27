@@ -329,6 +329,12 @@ export function installAcceptanceHarness(): void {
       plaintext: string;
     }) => nativeAcceptanceBridge.createRestorableCommand(input),
 
+    seedConversationClear: (input: {
+      actorPtid: string;
+      stationPeerId: string;
+      plaintextBytes: number;
+    }) => nativeAcceptanceBridge.seedConversationClear(input),
+
     resumeMessagingLifecycle: (input: { actorPtid: string }) =>
       nativeAcceptanceBridge.resumeMessagingLifecycle(input),
 

@@ -1,8 +1,8 @@
 # Chat 本机存储治理 - 产品状态模型
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Device Messaging Engine
 
 ---
@@ -71,7 +71,24 @@ available
 
 会话身份、成员关系、authority head、crypto、可靠性状态和新消息始终保留。
 
-## 5. 单条消息
+## 5. 批量会话清理
+
+```text
+idle
+  -> selecting
+  -> confirmation_required
+  -> clearing(current/total)
+  -> succeeded
+  -> partial_failure -> selecting_failed_only -> clearing
+```
+
+- `selecting` 只允许选择当前搜索结果中的会话；退出管理模式清空选择。
+- `clearing` 冻结会话 ID 集合与 scope revision，执行期间禁止改变选择。
+- `succeeded` 必须汇总每个会话的实际释放量。
+- `partial_failure` 保留失败会话，已成功会话不得恢复或重复计入。
+- scope 变化立即终止剩余队列并清除旧 scope 的选择与结果。
+
+## 6. 单条消息
 
 ```text
 visible
@@ -84,12 +101,13 @@ visible
 - 两者都先 durable commit tombstone、内容不可见化、FTS 删除、consumption marker 与
   cursor，再 ACK；文件回收异步完成。
 
-## 6. 禁止状态
+## 7. 禁止状态
 
 - 页面显示成功但 journal 仍有未解释的 terminal failure。
 - cache candidate 包含草稿、未 ACK inbox、密钥或 active transfer。
 - 隐藏消息仍可由搜索或附件缓存访问。
 - retention floor 内历史被普通 reconcile 恢复。
 - 已删除内容从新 Recovery archive 复活。
+- 批量清理未选择的会话，或把部分失败展示成全部成功。
 - 旧 `cleared_at`、24 小时 restore、`deletedMessageUlids` 或
   `disappear_timer_seconds` 继续参与状态机。

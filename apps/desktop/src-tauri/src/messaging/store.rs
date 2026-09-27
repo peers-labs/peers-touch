@@ -8789,6 +8789,109 @@ impl MessagingStore {
     }
 
     #[cfg(any(test, feature = "acceptance-webdriver"))]
+    pub fn acceptance_seed_conversation_clear_fixture(
+        &self,
+        station_peer_id: &str,
+        plaintext_bytes: usize,
+        now_unix_ms: i64,
+    ) -> Result<(String, String), String> {
+        if station_peer_id.trim().is_empty()
+            || !(64 * 1024..=8 * 1024 * 1024).contains(&plaintext_bytes)
+            || now_unix_ms <= 0
+        {
+            return Err("desktop conversation clear acceptance fixture is invalid".to_string());
+        }
+        let suffix = ulid::Ulid::new().to_string();
+        let conversation_id = format!("acceptance-conversation-clear-{suffix}");
+        let message_id = format!("acceptance-conversation-clear-message-{suffix}");
+        let event_id = format!("event-{message_id}");
+        let event_hash = Sha256::digest(event_id.as_bytes()).to_vec();
+        let mut connection = self.connection()?;
+        let actor_ptid: String = connection
+            .query_row(
+                "SELECT ptid FROM messaging_device_identity WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_conversations(
+                    conversation_id, authority_station_id, federation_id,
+                    kind, name, description, owner_ptid, membership_epoch,
+                    mls_epoch, active, updated_at_unix_ms
+                 ) VALUES(?1, ?2, 'acceptance-federation', 1,
+                          'Conversation clear fixture', '', ?3, 1, 0, 1, ?4)",
+                params![conversation_id, station_peer_id, actor_ptid, now_unix_ms,],
+            )
+            .map_err(|error| error.to_string())?;
+        let plaintext = "c".repeat(plaintext_bytes);
+        transaction
+            .execute(
+                "INSERT INTO messaging_authority_events(
+                    conversation_id, event_id, event_sequence, event_hash,
+                    committed_at_unix_ms
+                 ) VALUES(?1, ?2, 1, ?3, ?4)",
+                params![conversation_id, event_id, event_hash, now_unix_ms],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_authority_heads(
+                    conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                 ) VALUES(?1, 1, ?2, ?3)",
+                params![conversation_id, event_hash, now_unix_ms],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext, delivery_state,
+                    committed_at_unix_ms
+                 ) VALUES(?1, ?2, 1, ?3, ?4, 'acceptance-peer-device',
+                          ?5, 'consumed', ?6)",
+                params![
+                    conversation_id,
+                    event_id,
+                    message_id,
+                    actor_ptid,
+                    plaintext,
+                    now_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_consumption_markers(
+                    item_id, event_id, conversation_id, payload_sha256,
+                    consumed_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5)",
+                params![
+                    format!("item-{message_id}"),
+                    event_id,
+                    conversation_id,
+                    Sha256::digest(message_id.as_bytes()).to_vec(),
+                    now_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_message_search_fts(
+                    conversation_id, message_id, plaintext, attachment_filenames
+                 ) VALUES(?1, ?2, ?3, '')",
+                params![conversation_id, message_id, plaintext],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok((conversation_id, message_id))
+    }
+
+    #[cfg(any(test, feature = "acceptance-webdriver"))]
     pub fn acceptance_stage_restorable_command_fixture(
         &self,
         conversation_id: &str,

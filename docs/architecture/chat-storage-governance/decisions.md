@@ -1,8 +1,8 @@
 # Chat 本机存储治理 - 设计决策
 
-> **Status**: draft
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Device Messaging Engine
 
 ---
@@ -11,14 +11,15 @@
 
 | ID | 决策 | 状态 |
 |---|---|---|
-| CSG-D01 | 本机治理不改写 Station authority | proposed |
-| CSG-D02 | 物理总量与会话归属分开计量 | proposed |
-| CSG-D03 | Retention 保护可靠性状态并使用 sequence/hash floor | proposed |
-| CSG-D04 | Shared Rust Core 唯一拥有治理语义 | proposed |
-| CSG-D05 | Hide/Retract 先不可见化再 ACK | proposed |
-| CSG-D06 | 删除旧 clear/restore、local overlay 与 disappear timer | proposed |
-| CSG-D07 | 真实物理字节下降才算回收成功 | proposed |
-| CSG-D08 | 完整 E2E 与九维零引用共同决定完成 | proposed |
+| CSG-D01 | 本机治理不改写 Station authority | accepted |
+| CSG-D02 | 物理总量与会话归属分开计量 | accepted |
+| CSG-D03 | Retention 保护可靠性状态并使用 sequence/hash floor | accepted |
+| CSG-D04 | Shared Rust Core 唯一拥有治理语义 | accepted |
+| CSG-D05 | Hide/Retract 先不可见化再 ACK | accepted |
+| CSG-D06 | 删除旧 clear/restore、local overlay 与 disappear timer | accepted |
+| CSG-D07 | 真实物理字节下降才算回收成功 | accepted |
+| CSG-D08 | 完整 E2E 与九维零引用共同决定完成 | accepted |
+| CSG-D09 | 批量清理串行编排 canonical 单会话命令 | accepted |
 
 ## CSG-D01：本机治理不改写 Station authority
 
@@ -183,3 +184,27 @@ UI 同时展示估算、实际释放量和待压缩状态。
 **Consequences**
 
 最终聚合必须基于同一精确源码。
+
+## CSG-D09：批量清理串行编排 canonical 单会话命令
+
+**Decision**
+
+Desktop 与 Mobile 的批量清理是设备端 UI/runtime orchestration：冻结显式选择与
+scope revision，按确定顺序串行调用 `chat_storage_clear_conversation`，并汇总
+每项 canonical 结果。
+
+**Rationale**
+
+单会话命令已经拥有 immutable journal、sequence/hash floor、保护集、compact 与
+物理读回。批量只是用户选择和结果聚合，不应新增协议、数据库事务或删除 owner。
+
+**Alternatives Considered**
+
+- 新增跨会话原子批量命令：拒绝；会扩大锁范围，并制造无法兑现的全有或全无承诺。
+- 并发调用单会话清理：拒绝；会竞争 cleanup lease 与 compact。
+- UI 直接删除投影：拒绝；绕过 shared Core。
+
+**Consequences**
+
+批量允许部分成功。已成功项保持提交；失败项保留选择供重试。scope 变化时停止
+未开始项，双端必须使用相同状态与结果语义。

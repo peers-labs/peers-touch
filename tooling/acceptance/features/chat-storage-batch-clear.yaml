@@ -1,0 +1,54 @@
+{
+  "id": "chat-storage-batch-clear",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "packages/client-chat-core/**",
+    "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+    "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+    "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+    "apps/mobile/src/pages/settings/SettingsSections.tsx",
+    "packages/locales/**",
+    "tooling/acceptance/gates/chat/storage_batch_desktop_*.py",
+    "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+  ],
+  "truth_sources": [
+    "explicit client-side selected conversation IDs",
+    "canonical per-conversation Device Messaging Engine cleanup results",
+    "post-compaction storage snapshots"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-desktop",
+      "route": "Settings > Data > Storage > Select conversations"
+    },
+    {
+      "type": "native-mobile",
+      "route": "Me > Chat settings > Storage > Select conversations"
+    }
+  ],
+  "required_gates": [
+    "chat-storage-desktop-batch-clear-e2e",
+    "chat-storage-mobile-batch-clear-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "the batch helper freezes ordered unique conversation IDs and executes canonical clear operations serially",
+      "every successful item retains its own immutable journal, sequence/hash floor and physical readback",
+      "partial failure preserves successful commits and returns failed or unstarted IDs for retry",
+      "scope change stops the remaining queue"
+    ],
+    "visible": [
+      "Desktop and Mobile expose manage mode, row selection and select-all for current search results",
+      "confirmation shows selected count, estimated reclaimable bytes and current-device scope",
+      "progress and terminal result show completed, succeeded, failed and physically released values",
+      "failed items remain selectable for retry"
+    ]
+  },
+  "negative": [
+    "batch clear must not include filtered-out or unselected conversations",
+    "batch clear must not run per-conversation compaction concurrently",
+    "batch clear must not mutate Station authority or another device",
+    "partial failure or scope change must not render as complete success"
+  ]
+}

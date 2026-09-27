@@ -1,8 +1,8 @@
 # Chat 本机存储治理 - 架构设计
 
-> **Status**: draft
-> **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.2
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Device Messaging Engine
 > **Module**: `packages/messaging-core/`, `apps/desktop/`, `apps/mobile/`
 
@@ -16,6 +16,7 @@
 4. 可靠性、crypto、草稿和活跃传输优先于空间回收。
 5. 清理边界用 authority sequence/hash 表达，不单独依赖设备墙钟。
 6. 无历史用户，旧 schema、archive 和兼容路径直接硬切。
+7. 批量清理只编排 canonical 单会话命令，不创建第二套删除协议或持久状态。
 
 ## 2. 系统架构
 
@@ -166,6 +167,9 @@ packages/messaging-core/src/
     ├── cleanup
     └── redaction
 
+packages/client-chat-core/src/
+└── storageBatch
+
 apps/{desktop,mobile}/
 ├── storage runtime/UI
 └── src-tauri messaging storage adapter
@@ -173,7 +177,19 @@ apps/{desktop,mobile}/
 
 页面不得拥有长生命周期 scan、retention 或 cleanup worker。
 
-## 12. Failure Semantics
+## 12. 批量编排
+
+- Desktop 与 Mobile 的 Storage Section 只拥有选择、确认、进度与结果 projection。
+- 选择提交时冻结有序去重的 `conversation_id` 列表和当前 scope revision。
+- 客户端按列表顺序串行调用 `chat_storage_clear_conversation`，避免并发 compact 和
+  cleanup lease 竞争。
+- 每项只接受 exact-scope `SUCCEEDED`；`compaction_pending`、typed error、异常或
+  scope stale 均进入失败集合。
+- 已成功项不可回滚；失败项保留供显式重试，未执行项在 scope 变化后停止。
+- 批量结果只汇总单项真实 `physical_bytes_before - physical_bytes_after`，不得用
+  预计值伪装实际释放量。
+
+## 13. Failure Semantics
 
 | Failure | 行为 |
 |---|---|
@@ -184,5 +200,7 @@ apps/{desktop,mobile}/
 | compact 失败 | 语义删除保持，物理回收未证明 |
 | 统计部分失败 | 返回 typed partial，不显示 0 |
 | 磁盘不足 | 停止新清理并保护可靠性状态 |
+| 批量单项失败 | 保留已提交项，报告失败项并允许只重试失败集合 |
+| 批量期间 scope 变化 | 停止未开始项并丢弃旧 scope UI 结果 |
 
-当前状态：`DESIGN_READY_FOR_OWNER_REVIEW`。
+当前状态：`DESIGN_READY_FOR_EXECUTION`。
