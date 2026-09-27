@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@lobehub/ui';
+import type { ConversationClearBatchResult } from '@peers-touch/client-chat-core';
 import { Flexbox } from 'react-layout-kit';
-import { Input, Segmented, Tag, Typography, theme } from 'antd';
+import { Checkbox, Input, Segmented, Tag, Typography, theme } from 'antd';
 import {
+  CheckSquare2,
   Clock3,
   Database,
   FileImage,
@@ -10,6 +12,7 @@ import {
   MessageSquare,
   RefreshCw,
   Trash2,
+  X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -33,8 +36,18 @@ export function ChatStorageSettings() {
   const [query, setQuery] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('size');
   const [clearConfirmationRevision, setClearConfirmationRevision] = useState<string | null>(null);
+  const [batchConfirmationRevision, setBatchConfirmationRevision] = useState<string | null>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ completedCount: 0, totalCount: 0 });
+  const [batchResult, setBatchResult] = useState<ConversationClearBatchResult | null>(null);
+  const [selectedConversationIds, setSelectedConversationIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const snapshot = projection.snapshot;
+  const scopeRevisionRef = useRef<string | null>(snapshot?.revision ?? null);
   const confirmingClearCache = clearConfirmationRevision === snapshot?.revision;
+  const confirmingBatchClear = batchConfirmationRevision === snapshot?.revision;
   const releasedBytes = chatStorageReleasedBytes(projection.cleanup.result);
   const retentionReleasedBytes = chatStorageReleasedBytes(projection.retention.result);
   const cleanupRunning = projection.cleanup.status === 'clearing';
@@ -64,6 +77,93 @@ export function ChatStorageSettings() {
           : rightBytes > leftBytes ? 1 : -1;
       });
   }, [query, snapshot, sortMode]);
+  const selectedConversations = snapshot?.conversations.filter(
+    (usage) => selectedConversationIds.has(usage.conversationId),
+  ) ?? [];
+  const selectedReclaimableBytes = selectedConversations.reduce(
+    (total, usage) => total + usage.reclaimableBytes,
+    0n,
+  );
+  const allVisibleSelected = conversations.length > 0
+    && conversations.every((usage) => selectedConversationIds.has(usage.conversationId));
+  const someVisibleSelected = conversations.some(
+    (usage) => selectedConversationIds.has(usage.conversationId),
+  );
+
+  useEffect(() => {
+    const revision = snapshot?.revision ?? null;
+    if (scopeRevisionRef.current !== null && scopeRevisionRef.current !== revision) {
+      setBatchMode(false);
+      setBatchRunning(false);
+      setBatchProgress({ completedCount: 0, totalCount: 0 });
+      setBatchResult(null);
+      setSelectedConversationIds(new Set());
+      setBatchConfirmationRevision(null);
+    }
+    scopeRevisionRef.current = revision;
+  }, [snapshot?.revision]);
+
+  const toggleBatchMode = () => {
+    if (batchRunning) return;
+    setBatchMode((current) => !current);
+    setSelectedConversationIds(new Set());
+    setBatchConfirmationRevision(null);
+    setBatchResult(null);
+  };
+
+  const toggleConversation = (conversationId: string, checked: boolean) => {
+    setSelectedConversationIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(conversationId);
+      else next.delete(conversationId);
+      return next;
+    });
+    setBatchResult(null);
+  };
+
+  const toggleVisibleConversations = (checked: boolean) => {
+    setSelectedConversationIds((current) => {
+      const next = new Set(current);
+      for (const usage of conversations) {
+        if (checked) next.add(usage.conversationId);
+        else next.delete(usage.conversationId);
+      }
+      return next;
+    });
+    setBatchResult(null);
+  };
+
+  const clearSelectedConversations = async () => {
+    if (!snapshot) return;
+    const selectedIds = snapshot.conversations
+      .map((usage) => usage.conversationId)
+      .filter((conversationId) => selectedConversationIds.has(conversationId));
+    if (selectedIds.length === 0 || batchRunning) return;
+    setBatchConfirmationRevision(null);
+    setBatchResult(null);
+    setBatchProgress({ completedCount: 0, totalCount: selectedIds.length });
+    setBatchRunning(true);
+    try {
+      const result = await chatStorageProjectionRuntime.clearConversations(
+        selectedIds,
+        ({ completedCount, totalCount }) => {
+          setBatchProgress({ completedCount, totalCount });
+        },
+      );
+      if (result.status === 'scope_changed') {
+        setBatchMode(false);
+        setBatchResult(null);
+        setSelectedConversationIds(new Set());
+        return;
+      }
+      setBatchResult(result);
+      const retryIds = [...result.failedIds, ...result.remainingIds];
+      setSelectedConversationIds(new Set(retryIds));
+      if (result.status === 'succeeded') setBatchMode(false);
+    } finally {
+      setBatchRunning(false);
+    }
+  };
 
   if (!snapshot) {
     return (
@@ -341,6 +441,18 @@ export function ChatStorageSettings() {
         subtitle={t('settings.storage.conversationCount', {
           count: conversations.length,
         })}
+        extra={(
+          <Button
+            data-chat-storage-batch-manage
+            icon={batchMode ? <X size={14} /> : <CheckSquare2 size={14} />}
+            disabled={batchRunning || snapshot.conversations.length === 0}
+            onClick={toggleBatchMode}
+          >
+            {batchMode
+              ? t('settings.storage.batchDone')
+              : t('settings.storage.batchManage')}
+          </Button>
+        )}
       >
         <Flexbox horizontal gap={8}>
           <Input.Search
@@ -376,6 +488,119 @@ export function ChatStorageSettings() {
             />
           </div>
         </Flexbox>
+        {batchMode ? (
+          <Flexbox gap={10} data-chat-storage-batch-actions>
+            <Flexbox horizontal align="center" justify="space-between" gap={12}>
+              <Checkbox
+                checked={allVisibleSelected}
+                disabled={batchRunning || conversations.length === 0}
+                indeterminate={!allVisibleSelected && someVisibleSelected}
+                data-chat-storage-batch-select-all
+                onChange={(event) => toggleVisibleConversations(event.target.checked)}
+              >
+                {t('settings.storage.batchSelectAll')}
+              </Checkbox>
+              <Text type="secondary" data-chat-storage-batch-selection>
+                {t('settings.storage.batchSelection', {
+                  bytes: formatBytes(selectedReclaimableBytes),
+                  count: selectedConversations.length,
+                })}
+              </Text>
+            </Flexbox>
+            {confirmingBatchClear ? (
+              <Flexbox
+                gap={10}
+                data-chat-storage-batch-confirm
+                style={{
+                  padding: 12,
+                  borderRadius: 8,
+                  background: token.colorFillQuaternary,
+                }}
+              >
+                <Text>
+                  {t('settings.storage.batchConfirm', {
+                    bytes: formatBytes(selectedReclaimableBytes),
+                    count: selectedConversations.length,
+                  })}
+                </Text>
+                <Flexbox horizontal justify="end" gap={8}>
+                  <Button
+                    disabled={batchRunning}
+                    onClick={() => setBatchConfirmationRevision(null)}
+                  >
+                    {t('settings.storage.batchCancel')}
+                  </Button>
+                  <Button
+                    danger
+                    type="primary"
+                    data-chat-storage-batch-confirm-apply
+                    icon={<Trash2 size={14} />}
+                    loading={batchRunning}
+                    onClick={() => void clearSelectedConversations()}
+                  >
+                    {t('settings.storage.batchConfirmAction')}
+                  </Button>
+                </Flexbox>
+              </Flexbox>
+            ) : (
+              <Button
+                danger
+                data-chat-storage-batch-clear
+                icon={<Trash2 size={14} />}
+                disabled={batchRunning || selectedConversations.length === 0}
+                onClick={() => setBatchConfirmationRevision(snapshot.revision)}
+              >
+                {t('settings.storage.batchClearSelected')}
+              </Button>
+            )}
+          </Flexbox>
+        ) : null}
+        {batchRunning ? (
+          <Text type="secondary" role="status" data-chat-storage-batch-progress>
+            {t('settings.storage.batchProgress', batchProgress)}
+          </Text>
+        ) : null}
+        {batchResult?.status === 'succeeded' ? (
+          <Text
+            type="success"
+            role="status"
+            data-chat-storage-batch-result="succeeded"
+            data-chat-storage-batch-succeeded={String(batchResult.succeededIds.length)}
+            data-chat-storage-batch-failed="0"
+            data-chat-storage-released-bytes={String(batchResult.releasedBytes)}
+          >
+            {t('settings.storage.batchSucceeded', {
+              bytes: formatBytes(batchResult.releasedBytes),
+              count: batchResult.succeededIds.length,
+            })}
+          </Text>
+        ) : null}
+        {batchResult?.status === 'partial_failure' ? (
+          <Flexbox horizontal align="center" justify="space-between" gap={12}>
+            <Text
+              type="danger"
+              role="alert"
+              data-chat-storage-batch-result="partial_failure"
+              data-chat-storage-batch-succeeded={String(batchResult.succeededIds.length)}
+              data-chat-storage-batch-failed={String(batchResult.failedIds.length)}
+              data-chat-storage-released-bytes={String(batchResult.releasedBytes)}
+            >
+              {t('settings.storage.batchPartial', {
+                bytes: formatBytes(batchResult.releasedBytes),
+                failed: batchResult.failedIds.length,
+                succeeded: batchResult.succeededIds.length,
+                total: batchResult.requestedIds.length,
+              })}
+            </Text>
+            <Button
+              data-chat-storage-batch-retry
+              disabled={batchRunning}
+              onClick={() => setBatchConfirmationRevision(snapshot.revision)}
+            >
+              {t('settings.storage.batchRetry')}
+            </Button>
+          </Flexbox>
+        ) : null}
         <Flexbox gap={0} data-chat-storage-conversations>
           {conversations.map((usage) => (
             <Flexbox
@@ -387,12 +612,28 @@ export function ChatStorageSettings() {
               data-chat-storage-conversation={usage.conversationId}
               data-chat-storage-message-bytes={String(usage.messageBytes)}
               data-chat-storage-media-bytes={String(usage.mediaBytes)}
+              data-chat-storage-selected={String(
+                selectedConversationIds.has(usage.conversationId),
+              )}
               style={{
                 minHeight: 56,
                 padding: '10px 0',
                 borderBottom: `1px solid ${token.colorBorderSecondary}`,
               }}
             >
+              {batchMode ? (
+                <Checkbox
+                  aria-label={t('settings.storage.batchSelectConversation', {
+                    name: usage.conversationName || usage.conversationId,
+                  })}
+                  checked={selectedConversationIds.has(usage.conversationId)}
+                  disabled={batchRunning}
+                  data-chat-storage-conversation-select={usage.conversationId}
+                  onChange={(event) => {
+                    toggleConversation(usage.conversationId, event.target.checked);
+                  }}
+                />
+              ) : null}
               <Flexbox gap={2} style={{ minWidth: 0 }}>
                 <Text strong ellipsis>
                   {usage.conversationName || usage.conversationId}

@@ -27,6 +27,7 @@ from .home_station import HomeStationProvisioner
 GATE_IDS = frozenset(
     {
         "chat-storage-accounting-e2e",
+        "chat-storage-desktop-batch-clear-e2e",
         "chat-storage-redaction-recovery-e2e",
     }
 )

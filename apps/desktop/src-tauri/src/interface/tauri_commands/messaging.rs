@@ -267,6 +267,14 @@ pub struct MessagingAcceptanceActorInput {
 
 #[cfg(feature = "acceptance-webdriver")]
 #[derive(Debug, Deserialize)]
+pub struct ChatStorageAcceptanceSeedConversationClearInput {
+    pub expected_actor_ptid: String,
+    pub station_peer_id: String,
+    pub plaintext_bytes: usize,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
 pub struct MessagingAcceptanceInteractionSnapshotInput {
     pub expected_actor_ptid: String,
     pub conversation_id: String,
@@ -1248,6 +1256,73 @@ pub fn messaging_acceptance_current_endpoint(
         "actor_ptid": actor_ptid,
         "device_id": engine.endpoint().device_id.as_str(),
     }))
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn chat_storage_acceptance_seed_conversation_clear(
+    input: ChatStorageAcceptanceSeedConversationClearInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    if std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref()
+        != Some("chat-storage-desktop-batch-clear-e2e")
+    {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.storageFixtureUnauthorized",
+            Some(json!({ "reason": "storage_fixture_unauthorized" })),
+        );
+    }
+    let session = match state.sessions.get(window.label()) {
+        Some(session) => session,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "acceptance.chat.windowSessionMissing",
+                Some(json!({ "reason": "window_session_missing" })),
+            )
+        }
+    };
+    let actor_ptid = match require_acceptance_actor(&input.expected_actor_ptid, &session.actor.ptid)
+    {
+        Ok(actor_ptid) => actor_ptid,
+        Err(error) => return error,
+    };
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "acceptance.chat.messagingEngineInactive",
+                Some(json!({ "reason": "messaging_engine_inactive" })),
+            )
+        }
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("read active messaging engine for acceptance: {error}"),
+                Some(json!({ "reason": "messaging_engine_lookup_failed" })),
+            )
+        }
+    };
+    if engine.endpoint().ptid != actor_ptid {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.messagingEndpointActorMismatch",
+            Some(json!({ "reason": "messaging_endpoint_actor_mismatch" })),
+        );
+    }
+    match engine
+        .seed_acceptance_storage_conversation_clear(&input.station_peer_id, input.plaintext_bytes)
+    {
+        Ok((conversation_id, message_id)) => AppResult::success(json!({
+            "actorPtid": actor_ptid,
+            "conversationId": conversation_id,
+            "messageId": message_id,
+        })),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
 }
 
 #[cfg(feature = "acceptance-webdriver")]

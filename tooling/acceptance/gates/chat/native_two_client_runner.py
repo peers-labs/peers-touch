@@ -53,6 +53,7 @@ SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
 STORAGE_ACCOUNTING_GATE_ID = "chat-storage-accounting-e2e"
+STORAGE_BATCH_DESKTOP_GATE_ID = "chat-storage-desktop-batch-clear-e2e"
 STORAGE_REDACTION_RECOVERY_GATE_ID = "chat-storage-redaction-recovery-e2e"
 CURRENT_PROFILE_GATE_IDS = frozenset(
     {
@@ -133,6 +134,8 @@ def is_current_profile_gate(gate_id: str) -> bool:
 def journey_for_gate(gate_id: str) -> str:
     if gate_id == STORAGE_ACCOUNTING_GATE_ID:
         return "storage-observability"
+    if gate_id == STORAGE_BATCH_DESKTOP_GATE_ID:
+        return "storage-batch-clear"
     if gate_id == STORAGE_REDACTION_RECOVERY_GATE_ID:
         return "storage-redaction-recovery"
     if gate_id == LIFECYCLE_ONBOARDING_GATE_ID:
