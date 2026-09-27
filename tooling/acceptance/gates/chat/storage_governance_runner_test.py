@@ -28,6 +28,24 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 class StorageGovernanceRunnerTest(unittest.TestCase):
+    def test_storage_navigation_waits_for_the_rendered_section(self) -> None:
+        source = (
+            ROOT
+            / "tooling/acceptance/gates/chat/storage_governance_runner.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            """client.find_element(
+                '[data-pt-section-item="storage"]',
+                20,
+            ).click()""",
+            source,
+        )
+        self.assertNotIn(
+            "storage_sections = client.find_elements",
+            source,
+        )
+
     def test_single_station_environment_resolves_its_business_provisioner(
         self,
     ) -> None:
