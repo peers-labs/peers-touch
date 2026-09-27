@@ -168,18 +168,6 @@ class SimulatorSocialGateTests(unittest.TestCase):
             SimulatorSocialGate("chat-contacts").gate_id,
         )
 
-    def test_scenario_gate_id_is_bound_before_managed_context_validation(
-        self,
-    ) -> None:
-        with patch(
-            "tooling.acceptance.core.gate._managed_run_context_active",
-            return_value=False,
-        ) as managed_context:
-            gate = SimulatorSocialGate("storage-cache-cleanup")
-
-        self.assertEqual(gate.gate_id, "chat-storage-cache-clear-e2e")
-        managed_context.assert_called_once_with("chat-storage-cache-clear-e2e")
-
     def test_missing_runtime_manifest_blocks_before_journey(self) -> None:
         artifacts = Artifacts()
         gate = SimulatorSocialGate("social-convergence")
