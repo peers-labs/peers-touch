@@ -2,11 +2,11 @@
   "version": 1,
   "gates": {
     "architecture-module-governance": {
-      "command": "node tooling/scripts/architecture/module-governance.mjs validate",
-      "timeout_seconds": 30,
+      "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/workflow-kernel.test.mjs tooling/scripts/local-dev/workflow-host-adapters.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && tooling/scripts/review/knowledge-match.sh --changed-file tooling/scripts/plan/plan-package.mjs --strict && python3 -m unittest tooling/scripts/agent-integration-audit-test.py",
+      "timeout_seconds": 240,
       "environment": "local",
       "tier": "ci-structure",
-      "description": "Validate registered architecture modules, derived documents, decisions, governed paths, and positive capability references."
+      "description": "Validate registered architecture modules, derived documents, decisions, governed paths, positive capability references, deterministic pre-edit receipts, and shared Hook, Plan, Review, CI, and agent-integration enforcement."
     },
     "acceptance-plan-self": {
       "command": "python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check",

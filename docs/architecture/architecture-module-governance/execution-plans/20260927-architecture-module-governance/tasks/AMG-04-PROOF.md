@@ -41,7 +41,7 @@
   "checks": [
     {
       "id": "governance-source-suite",
-      "command": "node --test tooling/scripts/architecture/module-governance.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/workflow-kernel.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs",
+      "command": "node --test tooling/scripts/architecture/module-governance.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/workflow-kernel.test.mjs tooling/scripts/local-dev/workflow-host-adapters.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -51,7 +51,7 @@
     },
     {
       "id": "workflow-contracts",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-plan-self --gate acceptance-infra-validation --gate acceptance-workflow-contract",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-plan-self --gate acceptance-infra-validation --gate acceptance-workflow-contract --gate development-workflow-control-plane --gate peers-dev-product --gate workspace-plan-generation-self",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],

@@ -22,6 +22,11 @@ import {
   startWorkflowActionHeartbeat,
 } from './workflow-action-store.mjs';
 import { classifyToolIntent } from './workflow-tool-intent.mjs';
+import {
+  buildPreEditContext,
+  DEFAULT_REGISTRY_PATH,
+  renderPreEditContext,
+} from '../architecture/module-governance.mjs';
 
 const STOPPABLE_SESSION_STATES = new Set([
   'BLOCKED',
@@ -103,6 +108,37 @@ function mutationPaths(event, binding, intent) {
       : [path.resolve(event.toolWorkingDirectory)]),
     ...targets.map((target) => absoluteTarget(event, binding, target)),
   ];
+}
+
+async function preEditContext(binding, targets) {
+  const registry = path.join(
+    binding.executionRoot,
+    ...DEFAULT_REGISTRY_PATH.split('/'),
+  );
+  if (!existsSync(registry)) {
+    const governanceRoot = path.join(
+      binding.executionRoot,
+      'docs',
+      'architecture',
+      'architecture-module-governance',
+    );
+    if (existsSync(governanceRoot)) {
+      const error = new Error(
+        'architecture module registry is required by this repository',
+      );
+      error.code = 'ARCHITECTURE_REGISTRY_INVALID';
+      throw error;
+    }
+    return null;
+  }
+  const receipt = await buildPreEditContext({
+    repoRoot: binding.executionRoot,
+    targets,
+  });
+  return {
+    receipt,
+    additionalContext: renderPreEditContext(receipt),
+  };
 }
 
 function contextText(binding, inspection, enforcementMode) {
@@ -317,6 +353,7 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
       );
     }
     const scopedTargets = intent.targets;
+    const relativeTargets = [];
     for (const target of scopedTargets) {
       const relative = repositoryPath(
         binding.executionRoot,
@@ -335,11 +372,28 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
           binding,
         );
       }
+      relativeTargets.push(relative);
+    }
+    let context;
+    try {
+      context = await preEditContext(binding, relativeTargets);
+    } catch (error) {
+      return deny(
+        error.code ?? 'PRE_EDIT_CONTEXT_FAILED',
+        error.message ?? 'Pre-edit architecture context could not be loaded.',
+        binding,
+      );
     }
     return {
       action: 'ALLOW',
       enforcementMode: 'ENFORCED',
       executionRoot: binding.executionRoot,
+      ...(context === null
+        ? {}
+        : {
+            additionalContext: context.additionalContext,
+            contextReceipt: context.receipt,
+          }),
     };
   }
 

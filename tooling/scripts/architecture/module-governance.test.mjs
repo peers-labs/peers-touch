@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 import {
   ArchitectureGovernanceError,
+  buildPreEditContext,
   deriveRequiredDocuments,
+  renderPreEditContext,
   validateArchitectureRegistry,
   validateChangedArchitecturePaths,
   validatePlanArchitecture,
@@ -293,6 +295,52 @@ test('external capability references must resolve', async (t) => {
     }));
 });
 
+test('external YAML capability references must resolve', async (t) => {
+  const value = await fixture(t);
+  await writeFile(
+    path.join(value.root, 'capabilities.yaml'),
+    'capabilities:\n  - id: station.current\n',
+  );
+  value.registry.modules[0].externalCapabilityRegistries.push({
+    path: 'capabilities.yaml',
+    capabilityIds: ['station.missing'],
+    gate: 'station-capability-gate',
+  });
+  rejectsCode('ARCHITECTURE_CAPABILITY_UNKNOWN', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
+test('governed paths cannot overlap across modules', async (t) => {
+  const value = await fixture(t);
+  const second = await createModule(value.root, 'second');
+  await mkdir(path.join(value.root, 'tooling/example/nested'), {
+    recursive: true,
+  });
+  second.governedPaths = [
+    second.root,
+    'tooling/example/nested',
+  ];
+  second.capabilities[0].contractRoots = ['tooling/example/nested'];
+  second.capabilities[0].consumers = ['tooling/example/nested'];
+  value.registry.modules.push(second);
+  await writeFile(
+    path.join(value.root, 'docs', 'README.md'),
+    [
+      '- Example: `architecture/example/README.md`',
+      '- Second: `architecture/second/README.md`',
+      '',
+    ].join('\n'),
+  );
+  rejectsCode('ARCHITECTURE_REGISTRY_INVALID', () =>
+    validateArchitectureRegistry({
+      repoRoot: value.root,
+      registry: value.registry,
+    }));
+});
+
 test('changed paths resolve registered module ownership', async (t) => {
   const value = await fixture(t);
   const result = validateChangedArchitecturePaths({
@@ -304,6 +352,96 @@ test('changed paths resolve registered module ownership', async (t) => {
     ],
   });
   assert.deepEqual(result.modules, ['example']);
+});
+
+test('pre-edit context deterministically matches knowledge and architecture', async (t) => {
+  const value = await fixture(t);
+  const knowledgePath = 'docs/knowledge/invariants/example.md';
+  await mkdir(path.join(value.root, path.dirname(knowledgePath)), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(value.root, knowledgePath),
+    [
+      '---',
+      'kind: invariant',
+      'title: Example',
+      'status: active',
+      'owns:',
+      '  - tooling/example/',
+      'detected: 2026-09-27',
+      '---',
+      '',
+      '# Example',
+      '',
+    ].join('\n'),
+  );
+
+  const first = buildPreEditContext({
+    repoRoot: value.root,
+    registry: value.registry,
+    targets: ['tooling/example/check.mjs'],
+  });
+  const second = buildPreEditContext({
+    repoRoot: value.root,
+    registry: value.registry,
+    targets: [path.join(value.root, 'tooling/example/check.mjs')],
+  });
+
+  assert.deepEqual(first, second);
+  assert.deepEqual(first.targets, ['tooling/example/check.mjs']);
+  assert.deepEqual(
+    first.knowledge.map((entry) => entry.path),
+    [knowledgePath],
+  );
+  assert.deepEqual(
+    first.architecture.map((entry) => entry.moduleId),
+    ['example'],
+  );
+  assert.deepEqual(first.architecture[0].capabilityIds, [
+    'architecture.example.validate',
+  ]);
+  assert.match(first.receiptDigest, /^[0-9a-f]{64}$/);
+  assert.match(renderPreEditContext(first), /PT_PRE_EDIT_CONTEXT/);
+  assert.match(renderPreEditContext(first), /does not grant write authorization/);
+});
+
+test('pre-edit context ordering is independent of locale collation', async (t) => {
+  const value = await fixture(t);
+  const knowledgeRoot = path.join(
+    value.root,
+    'docs/knowledge/invariants',
+  );
+  await mkdir(knowledgeRoot, { recursive: true });
+  for (const name of ['zeta.md', '\u00e4ther.md']) {
+    await writeFile(
+      path.join(knowledgeRoot, name),
+      [
+        '---',
+        'kind: invariant',
+        `title: ${name}`,
+        'status: active',
+        'owns:',
+        '  - tooling/example/',
+        'detected: 2026-09-27',
+        '---',
+        '',
+      ].join('\n'),
+    );
+  }
+
+  const receipt = buildPreEditContext({
+    repoRoot: value.root,
+    registry: value.registry,
+    targets: ['tooling/example/check.mjs'],
+  });
+  assert.deepEqual(
+    receipt.knowledge.map((entry) => entry.path),
+    [
+      'docs/knowledge/invariants/zeta.md',
+      'docs/knowledge/invariants/\u00e4ther.md',
+    ],
+  );
 });
 
 test('changed active architecture modules must be registered', async (t) => {
@@ -342,5 +480,50 @@ test('Plan decisions must belong to selected registered modules', async (t) => {
       registry: value.registry,
       sources: ['docs/architecture/example/design.md'],
       decisions: ['OTHER-D01'],
+    }));
+});
+
+test('Plan validation preserves gradual rollout for unregistered modules', async (t) => {
+  const value = await fixture(t);
+  await mkdir(path.join(value.root, 'docs/architecture/existing'), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(value.root, 'docs/architecture/existing/README.md'),
+    document('Existing Team'),
+  );
+  await writeFile(
+    path.join(value.root, 'docs/architecture/existing/design.md'),
+    document('Existing Team'),
+  );
+
+  const legacyOnly = validatePlanArchitecture({
+    repoRoot: value.root,
+    registry: value.registry,
+    sources: ['docs/architecture/existing/design.md'],
+    decisions: ['EXISTING-D01'],
+  });
+  assert.deepEqual(legacyOnly.modules, []);
+
+  const mixed = validatePlanArchitecture({
+    repoRoot: value.root,
+    registry: value.registry,
+    sources: [
+      'docs/architecture/example/design.md',
+      'docs/architecture/existing/design.md',
+    ],
+    decisions: ['EX-D01', 'EXISTING-D01'],
+  });
+  assert.deepEqual(mixed.modules, ['example']);
+
+  rejectsCode('ARCHITECTURE_DECISION_INVALID', () =>
+    validatePlanArchitecture({
+      repoRoot: value.root,
+      registry: value.registry,
+      sources: [
+        'docs/architecture/example/design.md',
+        'docs/architecture/existing/design.md',
+      ],
+      decisions: ['EX-D99', 'EXISTING-D01'],
     }));
 });
