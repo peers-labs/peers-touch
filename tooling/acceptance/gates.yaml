@@ -318,7 +318,7 @@
       "argv": [
         "python3",
         "-m",
-        "tooling.acceptance.gates.station_access.mobile_native_build"
+        "tooling.acceptance.gates.mobile.native_build"
       ],
       "timeout_seconds": 3600,
       "environment": "mobile-simulator",
@@ -407,25 +407,6 @@
       "environment": "local",
       "tier": "ci-cheap",
       "description": "Scan every Chat storage legacy matcher across all nine declared dimensions and fail on any current tracked or untracked reference."
-    },
-    "desktop-release-build": {
-      "command": "pnpm --dir apps/desktop exec tauri build --ci --no-bundle",
-      "timeout_seconds": 3600,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Build the Desktop Tauri application in release mode from the current clean source without packaging an installer."
-    },
-    "mobile-native-build": {
-      "argv": [
-        "python3",
-        "-m",
-        "tooling.acceptance.gates.chat_storage.mobile_native_build"
-      ],
-      "timeout_seconds": 3600,
-      "environment": "mobile-simulator",
-      "provisioner": "mobile-simulator",
-      "tier": "env-evidence",
-      "description": "Build and verify the source-bound Mobile Tauri iOS Simulator application through the canonical isolated native provisioner."
     },
     "chat-storage-governance-aggregate-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat_storage.governance_aggregate",
