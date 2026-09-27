@@ -813,6 +813,77 @@ class NativeTwoClientGate(AcceptanceGate):
             )
         )
 
+    def restart_client(self, actor: str) -> TauriSession:
+        predecessor = self.clients[actor]
+        self.client_lifecycles.stop_preserving_session(predecessor)
+        client = self.runtime_binding.create_bound_session(
+            actor,
+            NativeLaunchOptions(
+                window_slot=("alice", "bob").index(actor),
+                window_count=2,
+            ),
+        )
+        self.runtime_instances.append(client)
+        expected_ptid = self.ptids[actor]
+        self.client_lifecycles.register(client, expected_ptid)
+        self.client_lifecycles.transfer_preserved_session(
+            predecessor,
+            client,
+        )
+        self.client_lifecycles.mark_live(client)
+        self.register_driver(client)
+        station_url = str(
+            runtime_station_service(
+                self.manifest,
+                actor,
+            ).get("endpoint")
+            or ""
+        ).rstrip("/")
+        bound_station = call_async_harness(
+            client,
+            "bindingState",
+            {},
+            namespace="stationAccess",
+            script_timeout=10,
+        )
+        if (
+            not isinstance(bound_station, dict)
+            or bound_station.get("phase") != "bound"
+            or str(bound_station.get("bound_url") or "").rstrip("/")
+            != station_url
+        ):
+            raise GateError(
+                f"{actor} Station binding did not survive native restart"
+            )
+        device = wait_until(
+            lambda: (
+                current
+                if (
+                    isinstance(
+                        current := async_harness(
+                            client,
+                            "getRealtimeDevice",
+                            {},
+                        ),
+                        dict,
+                    )
+                    and current.get("active") is True
+                    and current.get("actorPtid") == expected_ptid
+                    and current.get("deviceId") == self.device_ids[actor]
+                )
+                else None
+            ),
+            f"{actor} preserved native session",
+            timeout=60,
+        )
+        if not is_native_tauri_url(client.get_current_url()):
+            raise GateError(f"{actor} restart did not use native Tauri")
+        self.client_lifecycles.mark_authenticated(client)
+        self.clients[actor] = client
+        self.device_ids[actor] = str(device["deviceId"])
+        self.station_access[actor]["postRestart"] = bound_station
+        return client
+
     def prove_additional_journey_assertions(self) -> None:
         """Variant hook for assertions that must run before evidence cleanup."""
 
