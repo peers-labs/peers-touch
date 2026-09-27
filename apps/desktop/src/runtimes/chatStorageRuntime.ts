@@ -423,7 +423,7 @@ class DesktopChatStorageRuntime {
         }
         if (scenario?.scopeChangeConversationId === conversationId) {
           this.batchAcceptanceScenario = null;
-          await messagingDomainRuntime.bootstrap(null);
+          messagingDomainRuntime.teardown();
           return { state: 'scope_changed' };
         }
         const result = await this.clearConversation(conversationId);

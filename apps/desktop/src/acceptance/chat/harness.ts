@@ -352,6 +352,7 @@ export function installAcceptanceHarness(): void {
       if (actorPtid !== activeActorPtid()) {
         throw new Error('acceptance.chat.actorPtidMismatch');
       }
+      messagingDomainRuntime.install();
       await messagingDomainRuntime.bootstrap(actorPtid);
       await chatStorageProjectionRuntime.refresh();
       return { restored: true, actorPtid };
