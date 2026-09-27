@@ -1,0 +1,137 @@
+{
+  "kind": "peers-touch-architecture-module-registry",
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "id": "architecture-module-governance",
+      "root": "docs/architecture/architecture-module-governance",
+      "status": "active",
+      "owner": "Architecture Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": false,
+        "persistence": false,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "AMG-D01",
+        "AMG-D02",
+        "AMG-D03",
+        "AMG-D04",
+        "AMG-D05"
+      ],
+      "governedPaths": [
+        "docs/architecture/architecture-module-governance",
+        "docs/global/architecture-document-standard.md",
+        "tooling/acceptance/gates.yaml",
+        "tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs",
+        "tooling/scripts/architecture",
+        "tooling/scripts/local-dev/workflow-kernel.mjs",
+        "tooling/scripts/plan/plan-package.mjs",
+        "tooling/scripts/review/knowledge-match.sh"
+      ],
+      "capabilities": [
+        {
+          "id": "architecture.module.validate",
+          "owner": "architecture.governance",
+          "contractRoots": [
+            "docs/architecture/architecture-module-governance",
+            "tooling/scripts/architecture"
+          ],
+          "consumers": [
+            "tooling/plugins/pt-ew-plugin/scripts/hook-entry.mjs",
+            "tooling/scripts/local-dev/workflow-kernel.mjs",
+            "tooling/scripts/plan/plan-package.mjs",
+            "tooling/scripts/review/knowledge-match.sh"
+          ],
+          "allowedDependencies": [
+            "node.child_process",
+            "node.crypto",
+            "node.fs",
+            "node.path",
+            "python.yaml"
+          ],
+          "evidenceGates": [
+            "architecture-module-governance"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
+      "id": "station-access-lifecycle",
+      "root": "docs/architecture/station-access-lifecycle",
+      "status": "active",
+      "owner": "Identity and Access",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "SAL-D01",
+        "SAL-D02",
+        "SAL-D03",
+        "SAL-D04",
+        "SAL-D05",
+        "SAL-D06"
+      ],
+      "governedPaths": [
+        "apps/desktop/src/services/desktop_api.ts",
+        "apps/desktop/src-tauri/src/application/auth",
+        "apps/desktop/src-tauri/src/application/federation",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/federation.rs",
+        "apps/mobile/src/services/gateways/gatewayTypes.ts",
+        "apps/mobile/src/services/gateways/profileGateway.ts",
+        "apps/mobile/src/services/mobileCommands.ts",
+        "apps/mobile/src/services/stationTransport.ts",
+        "apps/mobile/src-tauri/src/commands/oauth.rs",
+        "apps/mobile/src-tauri/src/runtime/oauth",
+        "apps/mobile/src-tauri/src/runtime/station_transport",
+        "apps/station/frame/touch",
+        "docs/architecture/station-access-lifecycle",
+        "model/domain/access_gate",
+        "model/domain/peer/station_identity.proto",
+        "tooling/acceptance/gates/station_access"
+      ],
+      "capabilities": [],
+      "externalCapabilityRegistries": [
+        {
+          "path": "docs/architecture/api-ownership/station-api-capabilities.yaml",
+          "capabilityIds": [
+            "station.identity.verify",
+            "access.gate.start",
+            "access.gate.submit",
+            "access.gate.decision",
+            "access.gate.cancel"
+          ],
+          "gate": "station-api-ownership"
+        }
+      ]
+    }
+  ]
+}

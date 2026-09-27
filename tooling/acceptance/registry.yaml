@@ -140,7 +140,7 @@
         "station-access-authentication",
         "station-access-scope-isolation",
         "station-access-federation-boundary",
-        "station-access-zero-legacy"
+        "station-access-interface-contract"
       ],
       "when": {
         "paths": [
@@ -159,7 +159,6 @@
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
         "station-access-federation-boundary-e2e",
-        "station-access-zero-legacy-e2e",
         "desktop-release-build",
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e",

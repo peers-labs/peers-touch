@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 体验契约
 
-> **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Identity and Access
 
 ---
@@ -33,12 +33,12 @@
 - 冷启动和 renderer reload 走同一 identity/access 状态机。
 - 已授予且未过期的 Session 恢复后重新校验 scope，再开放业务页面。
 - Access Attempt 过期、未知 gate 或错误响应进入 typed failure。
-- 任一失败均不得调用 `/actor/login` 或其他备用入口。
+- 任一失败均不得调用 capability registry 之外的入口。
 
 ## 4. SAL-J03：切换
 
-1. 停止旧 scope 的长生命周期 runtime。
-2. 清空旧 scope 的前端 projection。
+1. 停止前一 scope 的长生命周期 runtime。
+2. 清空前一 scope 的前端 projection。
 3. 验证目标 Station identity。
 4. 完成目标 Access Gate。
 5. 新 scope 完整 ready 后才开放业务页面。
@@ -59,16 +59,16 @@
 |---|---|
 | URL 不可达 | 保留输入，允许重试或修改 |
 | 签名/challenge/PeerID 不匹配 | 凭据提交前 fail closed |
-| Gate 不支持 | 显示 unsupported，不回退旧登录 |
+| Gate 不支持 | 显示 unsupported，不改用未登记入口 |
 | Attempt 过期 | 重新开始 canonical Access Attempt |
 | Federation context 缺失 | 阻止 scoped action，不猜默认 ID |
-| Scope 切换中断 | 旧 projection 不得重新进入新 scope |
+| Scope 切换中断 | 前一 projection 不得重新进入新 scope |
 | Relay 不可用 | 显示连接诊断，不暴露 Relay 管理 |
 
 ## 7. 禁止体验
 
 - probe 成功即视为可信 Station。
 - Desktop 和 Mobile 对同一 gate 产生不同终态。
-- 接入失败后自动走旧登录接口。
-- 切换账号后短暂显示旧用户或旧 Federation context。
+- 接入失败后自动调用未登记接口。
+- 切换账号后短暂显示前一用户或前一 Federation context。
 - 普通客户端出现 Federation Join/Leave 或 Relay token/mount。
