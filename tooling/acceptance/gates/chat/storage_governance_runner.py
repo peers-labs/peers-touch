@@ -212,11 +212,10 @@ class ChatStorageAccountingGate(NativeTwoClientGate):
                 '[data-pt-secondary-tab="data"]',
                 20,
             ).click()
-            storage_sections = client.find_elements(
-                '[data-pt-section-item="storage"]'
-            )
-            if storage_sections:
-                storage_sections[0].click()
+            client.find_element(
+                '[data-pt-section-item="storage"]',
+                20,
+            ).click()
             wait_until(
                 lambda: (
                     summary
