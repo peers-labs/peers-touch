@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 架构设计
 
-> **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -122,23 +122,23 @@ Actor discoverability 收敛到 Actor Profile canonical visibility。
 所有接入结果携带或解析到：
 
 ```text
-station_peer_id + actor_ptid + device_id + scope_revision
+station_peer_id + actor_ptid + device_id + lifecycle_generation
 ```
 
-账号或 Station 切换时，旧 runtime 先 quiesce，旧 projection 再清除。异步结果返回
-前重新比较 scope revision；不匹配则丢弃。
+账号或 Station 切换时，前一 runtime 先 quiesce，前一 projection 再清除。异步结果返回
+前重新比较 lifecycle generation；不匹配则丢弃。
 
-## 8. 硬切
+## 8. 当前接口约束
 
-- 删除 Desktop `auth_login`、`direct_login_fallback` 和 `/actor/login`。
-- 删除 Station `ValidateLegacySubmission`、legacy login/invite handlers。
-- 删除 JSON key/enum 双形态 normalizer。
-- 删除未限定 Station scope 的账号 key 与运行时兼容清理。
-- 删除普通客户端 Federation governance command/UI chain。
-- 删除普通客户端 Relay topology surface。
-- 删除重复 Actor federation profile/visibility surface。
+- Desktop 与 Mobile 只调用 capability registry 登记的四个 Access Gate 接口。
+- 请求与响应只使用 generated protobuf 类型。
+- 本地账号、Session、runtime 和 projection 均使用完整 scope tuple。
+- 普通客户端只消费 Federation context，不包含 topology mutation。
+- Relay 信息只以 Station 提供的诊断摘要出现。
+- Actor profile 与 visibility 由一个 profile owner 提供。
 
-新代码与旧代码不并行存在；回滚只通过 Git/deployment 回退整组 closure。
+任何未登记 route、command、DTO、parser、storage key 或 client wrapper 都是
+contract violation。回滚只通过 Git/deployment 回退整组 closure。
 
 ## 9. Failure Semantics
 
@@ -146,10 +146,10 @@ station_peer_id + actor_ptid + device_id + scope_revision
 |---|---|
 | Station identity 无法验证 | 凭据提交前 fail closed |
 | URL 对应 identity 变化 | 要求显式替换 |
-| Access Gate 未知类型 | typed unsupported，不调用旧登录 |
+| Access Gate 未知类型 | typed unsupported，不调用其他接入接口 |
 | Attempt 过期 | 重新开始 canonical attempt |
 | Federation context 缺失 | 阻止 scoped action，不猜默认 ID |
-| Scope 切换 | 丢弃旧 scope 的异步结果 |
+| Scope 切换 | 丢弃前一 scope 的异步结果 |
 | Relay 不可用 | 显示诊断状态，不暴露管理能力 |
 
 ## 10. 目标布局

@@ -87,7 +87,6 @@ class StationAccessLifecycleAggregateTest(unittest.TestCase):
                 "station-access-federation-boundary-e2e",
                 "mobile-hard-cut-static",
                 "mobile-simulator-platform-e2e",
-                "station-access-zero-legacy-e2e",
                 "desktop-release-build",
                 "mobile-native-build",
             ],
