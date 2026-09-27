@@ -10,9 +10,9 @@
   },
   "selectors": {
     "ios": {
-      "preferred_runtime": "iOS 17.4",
-      "preferred_device_name": "iPhone 15 Pro",
-      "peer_device_name": "iPhone 15 Pro Max"
+      "preferred_runtime": "iOS 26.5",
+      "preferred_device_name": "iPhone 17",
+      "peer_device_name": "iPhone 17 Pro Max"
     },
     "android": {
       "avd_name": "peers_touch_applet_l3_e2e",

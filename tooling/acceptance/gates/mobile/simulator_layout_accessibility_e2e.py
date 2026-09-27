@@ -42,8 +42,7 @@ ENVIRONMENT_ID = "mobile-ios-layout-simulator"
 PROVEN_SCOPE = "ios-simulator-launch-layout-accessibility"
 REQUIRED_HARNESS_ACTIONS = ("projection.read",)
 EXPECTED_CLIENTS = {
-    "sim-ios-compact": "compact",
-    "sim-ios-large": "large",
+    "sim-ios-current": "current",
 }
 INTERACTIVE_TYPES = {
     "XCUIElementTypeButton",
@@ -350,7 +349,7 @@ class SimulatorLayoutAccessibilityGate(AcceptanceGate):
                 proof_status=proof_status,
                 runtime={
                     "environment": ENVIRONMENT_ID,
-                    "runtimeCell": "ios-simulator-layout-matrix",
+                    "runtimeCell": "ios-simulator-current-device",
                     "viewportRoles": sorted(EXPECTED_CLIENTS.values()),
                     "physicalDeviceClaimed": False,
                 },
@@ -552,7 +551,7 @@ return true;
         )
         if set(clients) != set(EXPECTED_CLIENTS):
             raise SimulatorGateBlocked(
-                "iOS layout runtime requires compact and large clients",
+                "iOS layout runtime requires the current iPhone client",
                 f"{ENVIRONMENT_ID}:clients",
             )
         harness = _required_object(
@@ -743,7 +742,7 @@ return true;
             "gateId": GATE_ID,
             "gate": GATE_ID,
             "environment": ENVIRONMENT_ID,
-            "runtimeCell": "ios-simulator-layout-matrix",
+            "runtimeCell": "ios-simulator-current-device",
             "status": status,
             "phase": "W9-B Layout/A11y",
             "bom": ["W9-B"],
@@ -752,6 +751,7 @@ return true;
             "unprovenScope": [
                 "authenticated Shell surfaces",
                 "Android",
+                "older iPhone generations and alternate viewport sizes",
                 "physical display behavior",
                 "VoiceOver or TalkBack",
                 "physical-device performance",

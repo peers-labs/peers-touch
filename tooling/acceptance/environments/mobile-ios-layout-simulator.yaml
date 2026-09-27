@@ -11,7 +11,7 @@
   },
   "selectors": {
     "ios": {
-      "runtime": "iOS 17.4"
+      "runtime": "iOS 26.5"
     }
   },
   "services": {},
@@ -19,32 +19,18 @@
   "credentials": [],
   "clients": [
     {
-      "id": "sim-ios-compact",
+      "id": "sim-ios-current",
       "platform": "ios",
-      "role": "compact-layout",
+      "role": "current-layout",
       "runtime": "tauri-ios-simulator",
-      "device_name": "iPhone SE (3rd generation)",
-      "viewport_role": "compact",
+      "device_name": "iPhone 17",
+      "viewport_role": "current",
       "port_roles": [
         "wda-local",
         "mjpeg",
         "webview"
       ],
-      "storage_root": "<runtime-home>/acceptance/mobile-ios-layout-simulator/<run-id>/sim-ios-compact"
-    },
-    {
-      "id": "sim-ios-large",
-      "platform": "ios",
-      "role": "large-layout",
-      "runtime": "tauri-ios-simulator",
-      "device_name": "iPhone 15 Pro Max",
-      "viewport_role": "large",
-      "port_roles": [
-        "wda-local",
-        "mjpeg",
-        "webview"
-      ],
-      "storage_root": "<runtime-home>/acceptance/mobile-ios-layout-simulator/<run-id>/sim-ios-large"
+      "storage_root": "<runtime-home>/acceptance/mobile-ios-layout-simulator/<run-id>/sim-ios-current"
     }
   ],
   "harness": {
@@ -57,7 +43,7 @@
   },
   "proof_scope": {
     "proves": [
-      "iOS Simulator launch-surface compact and large viewport layout",
+      "iPhone 17 Simulator launch-surface layout",
       "portrait and landscape bounds",
       "keyboard avoidance",
       "English and Chinese localization",
@@ -67,6 +53,7 @@
     "does_not_prove": [
       "authenticated Shell surfaces",
       "Android",
+      "older iPhone generations and alternate viewport sizes",
       "physical display behavior",
       "VoiceOver or TalkBack",
       "physical-device performance"
