@@ -7,6 +7,7 @@ import { MobileAvatar } from './MobileAvatar';
 import {
   useSocialStore,
 } from '../features/social/socialStore';
+import { requestSocialPeerProfile } from '../features/social/socialRuntime';
 import { timestampMillis } from '../features/social/socialNormalizers';
 import { projectUnreadNotifications } from '../features/social/socialProjection';
 import type { SocialNotification } from '../features/social/socialTypes';
@@ -36,7 +37,6 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
   const loadMoreNotifications = useSocialStore((state) => state.loadMoreNotifications);
   const notificationHasMore = useSocialStore((state) => state.notificationHasMore);
   const selectSession = useSocialStore((state) => state.selectSession);
-  const loadPeerProfile = useSocialStore((state) => state.loadPeerProfile);
   const visibleNotifications = useMemo(
     () => notifications.filter((notification) => !notificationSuppressedBySettings(notification, conversationSettings)),
     [conversationSettings, notifications],
@@ -106,7 +106,7 @@ export function MobileNotificationCenter({ open, onClose, onOpenChat, onOpenCont
                 onDelete={deleteNotification}
                 onMarkRead={markNotificationRead}
                 onOpen={openNotification}
-                onResolveActor={loadPeerProfile}
+                onResolveActor={requestSocialPeerProfile}
                 peerProfiles={peerProfiles}
                 friendRequestNames={friendRequestNames}
                 t={t}

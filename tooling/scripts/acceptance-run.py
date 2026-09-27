@@ -21,6 +21,8 @@ from typing import Any, Mapping
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from tooling.acceptance.core import source_identity, workspace_id
+
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
 AGENT_V2_SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
@@ -61,11 +63,16 @@ def utc_now() -> str:
 def development_artifact_root(work_item: str, workspace: str) -> Path:
     if not DEVELOPMENT_WORK_ITEM_PATTERN.fullmatch(work_item):
         raise SystemExit("--work-item must be a valid development work item ID")
-    home = Path(os.environ.get("HOME") or Path.home())
+    override = os.environ.get("PT_MACHINE_DEV_ROOT", "").strip()
+    if override and not Path(override).is_absolute():
+        raise SystemExit("PT_MACHINE_DEV_ROOT must be absolute")
+    machine_root = (
+        Path(override)
+        if override
+        else Path(os.environ.get("HOME") or Path.home()) / ".peers-touch" / "dev"
+    )
     return (
-        home
-        / ".peers-touch"
-        / "dev"
+        machine_root
         / "workspaces"
         / workspace
         / "workflow"
@@ -1305,19 +1312,31 @@ def standardize_result(
         )
     )
     if execution_policy == "development":
+        declared_completion = standardized.get("completionStatus")
+        declared_proof = standardized.get("proofStatus")
+        declared_incomplete = (
+            declared_completion in {"PARTIAL", "BLOCKED"}
+            or declared_proof == "UNPROVEN"
+        )
         standardized["artifactKind"] = "development-functional-result"
         if status == "blocked":
             standardized["completionStatus"] = "BLOCKED"
-        elif status == "passed" and environment_evidence_valid:
+            standardized["proofStatus"] = "UNPROVEN"
+        elif (
+            status == "passed"
+            and environment_evidence_valid
+            and not declared_incomplete
+        ):
             standardized["completionStatus"] = "DONE"
+            standardized["proofStatus"] = "NOT_APPLICABLE"
         else:
             standardized["completionStatus"] = "PARTIAL"
+            standardized["proofStatus"] = "UNPROVEN"
             if status == "passed" and environment_proof:
                 standardized.setdefault(
                     "reason",
                     "development runtime result lacks complete typed runtime evidence",
                 )
-        standardized["proofStatus"] = "NOT_APPLICABLE"
         standardized["sampleEmissionAllowed"] = False
         standardized["verificationClass"] = "FUNCTIONAL_CHECK"
         standardized["traceability"] = traceability
@@ -1467,11 +1486,12 @@ def record_development_result(
     result: dict[str, Any],
     gate_run: Any,
     plan_path: Any,
+    work_item: str,
     runtime: dict[str, Any] | None = None,
     runtime_cell: str | None = None,
     secret_values: tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    standardized, _ = prepare_gate_result(
+    standardized, redacted_runtime = prepare_gate_result(
         result,
         plan_path,
         runtime,
@@ -1484,9 +1504,100 @@ def record_development_result(
         standardized,
         role="development-result",
     )
+    gate_run.finalize(
+        result={
+            **standardized,
+            "developmentArtifact": reference.to_dict(),
+            "workItemId": work_item,
+        },
+        runtime=redacted_runtime,
+    )
     standardized["developmentArtifact"] = reference.to_dict()
+    standardized["developmentManifest"] = gate_run.manifest_ref.to_dict()
     standardized["developmentRunId"] = gate_run.run_id
     return standardized
+
+
+def finalize_development_run(
+    report: dict[str, Any],
+    aggregate_run: Any,
+    report_reference: Any,
+    plan: dict[str, Any],
+    plan_source: Any,
+    work_item: str,
+    journey_id: str,
+) -> Any:
+    from tooling.acceptance.core import EvidenceManifestInvalid, source_identity
+
+    execution = plan.get("execution")
+    if not isinstance(execution, dict):
+        raise EvidenceManifestInvalid(
+            "development execution requires formal Plan context"
+        )
+    gate_manifests = [
+        result.get("developmentManifest")
+        for result in report.get("results", [])
+        if isinstance(result, dict)
+    ]
+    gate_ids = [
+        result.get("id")
+        for result in report.get("results", [])
+        if isinstance(result, dict)
+    ]
+    if (
+        not gate_ids
+        or any(not isinstance(value, str) or not value for value in gate_ids)
+        or any(not isinstance(value, dict) for value in gate_manifests)
+        or len(gate_manifests) != len(gate_ids)
+    ):
+        raise EvidenceManifestInvalid(
+            "development run is missing Gate manifests"
+        )
+    final_source = source_identity(REPO_ROOT)
+    if final_source != report.get("source"):
+        raise EvidenceManifestInvalid(
+            "development source changed during aggregate finalization"
+        )
+    context_reference = aggregate_run.write_json(
+        "development/manifest.json",
+        {
+            "artifactKind": "development-run-manifest",
+            "schemaVersion": 2,
+            "state": "DURABLE",
+            "workspaceId": report_reference.workspace_id,
+            "gateId": report_reference.gate_id,
+            "runId": report_reference.run_id,
+            "workItemId": work_item,
+            "planId": execution.get("planId"),
+            "planPath": execution.get("formalPlan"),
+            "taskId": execution.get("currentTaskId"),
+            "closureId": execution.get("closure"),
+            "journeyId": journey_id,
+            "gateIds": gate_ids,
+            "gateManifests": gate_manifests,
+            "source": final_source,
+            "result": report_reference.to_dict(),
+            "createdAt": utc_now(),
+        },
+        role="development-run-manifest",
+    )
+    aggregate_run.finalize(
+        result={
+            "status": (
+                "passed" if development_exit_code(report) == 0 else "failed"
+            ),
+            "completionStatus": report.get("completionStatus"),
+            "proofStatus": report.get("proofStatus"),
+            "workItemId": work_item,
+            "journeyId": journey_id,
+        },
+        runtime={
+            "plan": plan_source,
+            "execution": execution,
+            "developmentManifest": context_reference.to_dict(),
+        },
+    )
+    return aggregate_run.manifest_ref
 
 
 def run_issue_breakdown(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1710,11 +1821,7 @@ def build_run_report(
             and not failed
             and not blocked
             and not unproven
-            else (
-                "NOT_APPLICABLE"
-                if execution_policy == "development"
-                else "UNPROVEN"
-            )
+            else "UNPROVEN"
         ),
         "sampleEmissionAllowed": (
             False if execution_policy == "development" else sample_emission_allowed
@@ -1827,9 +1934,7 @@ def main() -> int:
         EvidenceError,
         EvidenceStore,
         new_run_id,
-        source_identity,
         validate_run_id,
-        workspace_id,
     )
 
     parser = argparse.ArgumentParser()
@@ -1850,6 +1955,8 @@ def main() -> int:
     parser.add_argument("--run-id")
     parser.add_argument("--allocate-run-id", action="store_true")
     parser.add_argument("--work-item")
+    parser.add_argument("--development-journey-id")
+    parser.add_argument("--development-manifest-out")
     parser.add_argument(
         "--station-profile",
         action="append",
@@ -1882,6 +1989,8 @@ def main() -> int:
                 args.candidate_manifest_sha_out,
                 args.run_id,
                 args.work_item,
+                args.development_journey_id,
+                args.development_manifest_out,
             )
         ):
             raise SystemExit("--allocate-run-id cannot be combined with execution options")
@@ -1927,8 +2036,29 @@ def main() -> int:
                 "development execution forbids completion/full, dry-run, "
                 "candidate handoff, and formal --run-id"
             )
-    elif args.work_item:
-        raise SystemExit("--work-item is valid only for development execution")
+        if args.development_manifest_out or args.development_journey_id:
+            if (
+                not args.development_manifest_out
+                or not args.development_journey_id
+                or not args.execution_plan
+                or args.plan
+                or args.gate
+                or args.tier
+            ):
+                raise SystemExit(
+                    "Development Session commit requires "
+                    "--development-manifest-out, --development-journey-id, "
+                    "and one formal --execution-plan closure; it forbids "
+                    "--plan, --gate, and --tier"
+                )
+    elif (
+        args.work_item
+        or args.development_journey_id
+        or args.development_manifest_out
+    ):
+        raise SystemExit(
+            "development result options are valid only for development execution"
+        )
     if args.run_id:
         try:
             validate_run_id(args.run_id)
@@ -2659,6 +2789,7 @@ def main() -> int:
                     result,
                     gate_run,
                     plan_source,
+                    str(args.work_item),
                     finalized_runtime,
                     runtime_cell or None,
                     runtime_secrets,
@@ -2702,6 +2833,7 @@ def main() -> int:
             media_type="text/markdown",
             role="run-markdown",
         )
+        development_manifest_ref = None
         if args.execution_policy == "acceptance":
             aggregate_run.finalize(
                 result={
@@ -2720,6 +2852,30 @@ def main() -> int:
                 runtime={"plan": plan_source},
             )
             aggregate_run.publish_latest()
+        elif args.development_manifest_out:
+            development_manifest_ref = finalize_development_run(
+                report,
+                aggregate_run,
+                run_ref,
+                plan,
+                plan_source,
+                str(args.work_item),
+                str(args.development_journey_id),
+            )
+        else:
+            aggregate_run.finalize(
+                result={
+                    "status": (
+                        "passed"
+                        if development_exit_code(report) == 0
+                        else "failed"
+                    ),
+                    "completionStatus": report.get("completionStatus"),
+                    "proofStatus": report.get("proofStatus"),
+                    "workItemId": str(args.work_item),
+                },
+                runtime={"plan": plan_source},
+            )
         print(f"run: {json.dumps(run_ref.to_dict(), sort_keys=True)}")
         exit_code = (
             development_exit_code(report)
@@ -2746,6 +2902,14 @@ def main() -> int:
             sha_path.write_text(
                 candidate_manifest_ref.sha256 + "\n",
                 encoding="utf-8",
+            )
+        if (
+            args.execution_policy == "development"
+            and development_manifest_ref is not None
+        ):
+            write_explicit_json(
+                str(args.development_manifest_out),
+                development_manifest_ref.to_dict(),
             )
         return exit_code
     except EvidenceError as error:

@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-09-03
+> **Created**: 2026-09-03 | **Updated**: 2026-09-20
 > **Owner**: Mobile Team
 > **Module**: `apps/mobile/`
 
@@ -27,6 +27,7 @@ For the architectural contract and environment definitions, see
 ### 2.2 iOS
 
 - Xcode (latest stable) with iOS Simulator runtimes.
+- Two pinned iOS Simulator devices for independent-session and two-actor Gates.
 - Command-line tools: `xcode-select --install`.
 - Appium XCUITest driver 9.10.5: `appium driver install xcuitest@9.10.5`.
 - WebDriverAgent builds automatically with the XCUITest driver. If WDA build
@@ -35,7 +36,7 @@ For the architectural contract and environment definitions, see
 ### 2.3 Android
 
 - Android SDK with platform tools and build tools.
-- Android Emulator with an ARM64 AVD (see below).
+- Android Emulator tooling is optional diagnostic setup only.
 - Appium UiAutomator2 driver 4.2.9: `appium driver install uiautomator2@4.2.9`.
 - Compatible Chromedriver for WebView context switching (see
   `mobile-simulator.yaml` `appium.chromedriver.artifacts` for the pinned
@@ -60,13 +61,13 @@ appium driver list --installed
 xcrun simctl list devices available
 
 # Boot the preferred device (matches mobile-simulator.yaml selector)
-xcrun simctl boot "iPhone 15 Pro"
+xcrun simctl boot "iPhone 17"
 ```
 
 W9-B layout and accessibility evidence uses the dedicated
-`mobile-ios-layout-simulator` environment. It requires iOS 17.4 with both
-`iPhone SE (3rd generation)` and `iPhone 15 Pro Max`; its Provisioner owns
-boot, install, Appium sessions, uninstall, shutdown, and storage cleanup.
+`mobile-ios-layout-simulator` environment. It requires one iOS 26.5
+`iPhone 17`; its Provisioner owns boot, install, the Appium session, uninstall,
+shutdown, and storage cleanup.
 
 ### 3.2 Build for Simulator
 
@@ -103,7 +104,7 @@ xcrun simctl install booted "$APP_PATH"
 xcrun simctl launch booted com.peers.touch.mobile
 ```
 
-## 4. Android Emulator Setup
+## 4. Optional Android Emulator Diagnostics
 
 ### 4.1 Create and Boot an AVD
 
@@ -202,11 +203,11 @@ pnpm --dir apps/mobile run check:mobile-shell-contracts
 # Run the callback and restart simulator suite
 python3 tooling/scripts/acceptance-run.py --gate mobile-simulator-access-e2e
 
-# Run W9-B on compact and large iOS Simulator cells
+# Run W9-B on the current iPhone 17 Simulator cell
 python3 tooling/scripts/acceptance-run.py \
   --gate mobile-ios-simulator-layout-accessibility-e2e
 
-# Run the W3 runtime-graph lifecycle cell on iOS Simulator and Android Emulator
+# Run the W3 runtime-graph lifecycle cell on two isolated iOS Simulators
 python3 tooling/scripts/acceptance-run.py \
   --gate mobile-simulator-runtime-lifecycle-e2e
 
@@ -215,13 +216,28 @@ MOBILE_ACCEPTANCE_RESET=1 \
 python3 tooling/scripts/acceptance-run.py \
   --gate mobile-simulator-station-lifecycle-e2e
 
-# Run supplemental two-actor/two-Station Messaging evidence
+# Run required two-actor same-Station product evidence
 MOBILE_ACCEPTANCE_RESET=1 \
 python3 tooling/scripts/acceptance-run.py \
+  --station-profile station=chat-native-disposable \
   --gate mobile-simulator-social-convergence-e2e
 MOBILE_ACCEPTANCE_RESET=1 \
 python3 tooling/scripts/acceptance-run.py \
+  --station-profile station=chat-native-disposable \
   --gate mobile-simulator-chat-contacts-e2e
+MOBILE_ACCEPTANCE_RESET=1 \
+python3 tooling/scripts/acceptance-run.py \
+  --station-profile station=chat-native-disposable \
+  --gate mobile-simulator-recovery-e2e \
+  --gate mobile-simulator-recovery-ui-e2e \
+  --gate mobile-simulator-moments-e2e
+MOBILE_ACCEPTANCE_RESET=1 \
+python3 tooling/scripts/acceptance-run.py \
+  --gate mobile-simulator-settings-e2e
+
+# Run required iOS Simulator permission/network/accessibility evidence
+python3 tooling/scripts/acceptance-run.py \
+  --gate mobile-simulator-platform-e2e
 ```
 
 The runner reads `tooling/acceptance/environments/mobile-simulator.yaml`,
@@ -231,34 +247,39 @@ The W9-B Gate reads
 `tooling/acceptance/environments/mobile-ios-layout-simulator.yaml`, reuses the
 base iOS build/Appium contract, and records source-bound screenshots, native
 accessibility trees, WebView DOM audits, keyboard avoidance, English/Chinese
-locale state, portrait/landscape bounds, and deterministic cleanup for both
-declared device cells. It does not prove Android, physical displays,
-VoiceOver/TalkBack, authenticated Shell surfaces, or physical performance.
+locale state, portrait/landscape bounds, and deterministic cleanup for the
+declared iPhone 17 cell. It does not prove older iPhone generations, alternate
+viewport sizes, Android, physical displays, VoiceOver/TalkBack, authenticated
+Shell surfaces, or physical performance.
 The W3 lifecycle Gate uses the shared `mobile-simulator` environment and drives
-the production lifecycle kernel through typed Harness actions on both simulator
-platforms. It proves runtime-graph start, suspend, resume, restart, monotonic
+the production lifecycle kernel through typed Harness actions on isolated iOS
+Simulator clients. It proves runtime-graph start, suspend, resume, restart, monotonic
 generation, visible-app survival, and deterministic session cleanup. It does
 not prove Station session revalidation, Station or actor switching, revocation,
 physical background/foreground delivery, or secure-storage failure behavior.
 The Station-bound W3 Gate uses
 `mobile-station-lifecycle-simulator`, two source-attested disposable Stations,
-and the same actor on both simulator clients. It requires explicit reset
+and the same actor on both iOS Simulator clients. It requires explicit reset
 authorization and proves only the AS-04/AS-10 simulator cell; Relay, provider
 credentials, physical background/foreground, and secure-delete failure remain
-outside that Gate.
-The supplemental Social Gates use `mobile-social-simulator`, require an
-approved remote two-Station profile, and remain partial evidence; they do not
-replace physical-device Gates.
+outside that Gate. `mobile-simulator-settings-e2e` reuses this environment and
+its parent-owned Runtime Binding for same-account Profile/Notification
+readback and device-local settings isolation.
+The two-actor Social, Chat/Contacts, Recovery, and Moments Gates use
+`mobile-direct-simulator` and bind both isolated iOS clients to one approved
+disposable Station. They do not acquire Relay and prove only same-Station
+behavior. `mobile-social-simulator` retains the two-Station plus Relay topology
+for a future Desktop/Mobile cross-Station plan and remains unproven here.
 
-### 7.3 Native E2E Gates (Physical Devices)
+### 7.3 Optional Native E2E Diagnostics (Physical Devices)
 
 ```bash
 # Requires physical devices connected and environment variables set
 python3 tooling/scripts/acceptance-run.py --gate mobile-native-access-e2e
 ```
 
-The runner reads `tooling/acceptance/environments/mobile-native.yaml` and
-requires:
+These Gates do not participate in required Mobile completion. The runner reads
+`tooling/acceptance/environments/mobile-native.yaml` and requires:
 - Physical devices connected (`xcrun xctrace list devices` / `adb devices -l`).
 - Environment variables for provider accounts and device configuration.
 - Station services running and healthy.

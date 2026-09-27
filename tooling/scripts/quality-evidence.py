@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -227,6 +228,24 @@ def selected_capability_evidence(root: Path, impacted_features: list[str]) -> di
     }
 
 
+def gate_invocation(gate: dict[str, Any]) -> str:
+    command = gate.get("command")
+    argv = gate.get("argv")
+    if isinstance(command, str) and command.strip() and argv is None:
+        return command
+    if (
+        command is None
+        and isinstance(argv, list)
+        and argv
+        and all(isinstance(argument, str) and argument for argument in argv)
+    ):
+        return shlex.join(argv)
+    gate_id = gate.get("id", "<unknown>")
+    raise ValueError(
+        f"selected Gate {gate_id!r} must contain exactly one valid command or argv"
+    )
+
+
 def classify_gates(gates: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     buckets = {
         "ci_gates": [],
@@ -241,7 +260,7 @@ def classify_gates(gates: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
             "tier": tier,
             "environment": gate.get("environment", "local"),
             "provisioner": gate.get("provisioner", ""),
-            "command": gate.get("command", ""),
+            "command": gate_invocation(gate),
             "required_by": gate.get("required_by", []),
         }
         if tier in {"ci-structure", "ci-cheap"}:

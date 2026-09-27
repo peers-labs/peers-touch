@@ -56,7 +56,7 @@
       "CHAT-UR10: Direct Chat renders authoritative Station names and snapshot-plus-event presence, while keeping raw IDs in expandable technical details",
       "CHAT-UR11: Local background selection previews immediately while upload and durable persistence continue asynchronously, with rollback and retry on failure",
       "CHAT-UR12: Message search targets canonical Conversation projections, finds known durable plaintext, and keeps the clear affordance inside the input boundary",
-      "CHAT-UR13: Clear history and restore within 24 hours converge on the authoritative marker and reproject the same durable messages",
+      "CHAT-UR13: Current-device conversation clearing commits a verified sequence/hash floor, remains effective after restart, leaves peer devices unchanged, and accepts later messages",
       "a persistent current-profile client explicitly authenticates its assigned actor even when a prior session restores",
       "Station and every client record matching commit and canonical proto digest with workspace identity",
       "direct multi-device recovery and MLS journeys emit bounded boundary telemetry and stop on first failure",
@@ -81,7 +81,7 @@
       {"type": "native-desktop", "selector": "[data-chat-presence-tag]"},
       {"type": "native-desktop", "selector": "[data-chat-background-preview]"},
       {"type": "native-desktop", "selector": "[data-chat-message-search-input]"},
-      {"type": "native-desktop", "selector": "[data-chat-history-action=\"restore\"]"},
+      {"type": "native-desktop", "selector": "[data-chat-history-action=\"clear\"]"},
       {"type": "native-desktop", "selector": "[data-chat-contact-message]"},
       {"type": "native-desktop", "selector": "[data-session-security]"},
       {"type": "native-desktop", "selector": "[data-group-security]"}
@@ -103,7 +103,7 @@
     "raw Station peer IDs must not be primary Direct Chat labels and unknown presence must not be rendered as online or offline",
     "local background preview must not wait for upload or persist a local filesystem reference",
     "message search must not derive targets from retired legacy session/group arrays",
-    "history restore must not bypass the 24-hour authority window or report an accepted command as failed because projection refresh lagged",
+    "conversation clearing must not expose undo, mutate Station authority or another device, or report incomplete compaction as success",
     "missing stale partial API-only browser-only or dirty-Station evidence fails closed"
   ]
 }

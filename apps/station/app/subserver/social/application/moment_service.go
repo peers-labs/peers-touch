@@ -449,51 +449,101 @@ func (s *MomentService) buildMomentDeliveries(ctx context.Context, repos *infras
 // filter at the SQL layer + does the third-line CanRead re-check
 // downstream).
 func (s *MomentService) GetMoment(ctx context.Context, postIDStr, viewerPTID string) (*model.Post, error) {
+	post, _, err := s.GetMomentDetail(ctx, postIDStr, viewerPTID)
+	return post, err
+}
+
+// GetMomentDetail returns the owner-authored point-read outcome. Hidden,
+// deleted, and absent rows never carry a Post payload.
+func (s *MomentService) GetMomentDetail(
+	ctx context.Context,
+	postIDStr string,
+	viewerPTID string,
+) (*model.Post, model.PostDetailOutcome, error) {
 	postID := domain.ParseID(postIDStr)
 	if postID == 0 {
-		return nil, fmt.Errorf("invalid post_id %q", postIDStr)
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
+			fmt.Errorf("invalid post_id %q", postIDStr)
 	}
 
 	if p, err := s.repos.PublicPosts.GetByID(ctx, postID); err != nil {
-		return nil, err
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
 	} else if p != nil {
 		viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, []string{p.AuthorPTID})
 		if err != nil {
-			return nil, fmt.Errorf("build viewer: %w", err)
+			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
+				fmt.Errorf("build viewer: %w", err)
 		}
 		if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
-			return nil, nil
+			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
 		}
 		if blocked, err := actorStationModerated(ctx, s.repos.Moderation, p.AuthorPTID); err != nil {
-			return nil, err
+			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
 		} else if blocked {
-			return nil, nil
+			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
 		}
-		return s.hydratePost(ctx, p, viewerPTID)
+		post, err := s.hydratePost(ctx, p, viewerPTID)
+		if err != nil {
+			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
+		}
+		if post == nil {
+			return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, nil
+		}
+		return post, model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE, nil
 	}
 
 	priv, err := s.repos.PrivatePosts.GetByID(ctx, postID, viewerPTID)
 	if err != nil {
-		return nil, err
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
 	}
 	if priv == nil {
-		return nil, nil
+		outcome, err := s.classifyUnreadableMoment(ctx, postID)
+		return nil, outcome, err
 	}
 
 	// Third defense line: re-evaluate CanRead in pure form.
 	viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, []string{priv.AuthorPTID})
 	if err != nil {
-		return nil, fmt.Errorf("build viewer: %w", err)
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
+			fmt.Errorf("build viewer: %w", err)
 	}
 	if ok, _ := domain.CanRead(viewer, priv.AuthorPTID, priv.Audience, priv.IsDeleted()); !ok {
-		return nil, nil
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
 	}
 	if blocked, err := actorStationModerated(ctx, s.repos.Moderation, priv.AuthorPTID); err != nil {
-		return nil, err
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
 	} else if blocked {
-		return nil, nil
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
 	}
-	return s.hydratePost(ctx, priv, viewerPTID)
+	post, err := s.hydratePost(ctx, priv, viewerPTID)
+	if err != nil {
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
+	}
+	if post == nil {
+		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, nil
+	}
+	return post, model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE, nil
+}
+
+func (s *MomentService) classifyUnreadableMoment(
+	ctx context.Context,
+	postID uint64,
+) (model.PostDetailOutcome, error) {
+	publicState, err := s.repos.PublicPosts.ProbeRecordState(ctx, postID)
+	if err != nil {
+		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
+	}
+	privateState, err := s.repos.PrivatePosts.ProbeRecordState(ctx, postID)
+	if err != nil {
+		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
+	}
+	if publicState == domain.PostRecordDeleted || privateState == domain.PostRecordDeleted {
+		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_DELETED, nil
+	}
+	if publicState == domain.PostRecordLive || privateState == domain.PostRecordLive {
+		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
+	}
+	return model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, nil
 }
 
 // DeleteMoment soft-deletes a post. Tries public repo first then
@@ -543,41 +593,62 @@ func (s *MomentService) DeleteMoment(ctx context.Context, postIDStr, authorPTID 
 // ListByAuthor serves a profile page. Public posts are always shown;
 // private posts are filtered per `viewerID`.
 func (s *MomentService) ListByAuthor(ctx context.Context, authorPTID, viewerPTID, cursor string, limit int) ([]*model.Post, string, bool, error) {
+	posts, nextCursor, hasMore, _, err := s.ListByAuthorPage(
+		ctx,
+		authorPTID,
+		viewerPTID,
+		cursor,
+		limit,
+	)
+	return posts, nextCursor, hasMore, err
+}
+
+// ListByAuthorPage also reports the bounded candidate count so timeline
+// callers can distinguish a true empty page from one filtered by policy.
+func (s *MomentService) ListByAuthorPage(
+	ctx context.Context,
+	authorPTID string,
+	viewerPTID string,
+	cursor string,
+	limit int,
+) ([]*model.Post, string, bool, int, error) {
 	c, err := domain.DecodeCursor(cursor)
 	if err != nil {
-		return nil, "", false, fmt.Errorf("invalid cursor: %w", err)
+		return nil, "", false, 0, fmt.Errorf("invalid cursor: %w", err)
 	}
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
-	if blocked, err := actorStationModerated(ctx, s.repos.Moderation, authorPTID); err != nil {
-		return nil, "", false, err
-	} else if blocked {
-		return nil, "", false, nil
+	moderated, err := actorStationModerated(ctx, s.repos.Moderation, authorPTID)
+	if err != nil {
+		return nil, "", false, 0, err
 	}
 
 	pubPosts, err := s.repos.PublicPosts.ListByAuthor(ctx, authorPTID, c, limit+1)
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", false, 0, err
 	}
 
 	privPosts, err := s.repos.PrivatePosts.ListByAuthorVisibleTo(ctx, authorPTID, viewerPTID, c, limit+1)
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", false, 0, err
 	}
 
 	merged, hasMore := mergePostsByCreatedAtDesc(pubPosts, privPosts, limit)
+	scannedCount := len(merged)
 
 	viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, postAuthorPTIDs(merged))
 	if err != nil {
-		return nil, "", false, fmt.Errorf("build viewer: %w", err)
+		return nil, "", false, scannedCount, fmt.Errorf("build viewer: %w", err)
 	}
-	readable := merged[:0]
-	for _, p := range merged {
-		if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
-			continue
+	readable := make([]*domain.Post, 0, len(merged))
+	if !moderated {
+		for _, p := range merged {
+			if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
+				continue
+			}
+			readable = append(readable, p)
 		}
-		readable = append(readable, p)
 	}
 	out := s.hydratePosts(ctx, readable, viewerPTID)
 
@@ -586,7 +657,7 @@ func (s *MomentService) ListByAuthor(ctx context.Context, authorPTID, viewerPTID
 		last := merged[len(merged)-1]
 		nextCursor = domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}.Encode()
 	}
-	return out, nextCursor, hasMore, nil
+	return out, nextCursor, hasMore, scannedCount, nil
 }
 
 func postAuthorPTIDs(posts []*domain.Post) []string {

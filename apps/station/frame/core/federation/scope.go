@@ -30,6 +30,8 @@ const (
 	KeyExchangeMLSFetchScope = "key-exchange-mls-key-package-fetch"
 	// KeyExchangeMLSClaimScope authenticates irreversible MLS KeyPackage claims.
 	KeyExchangeMLSClaimScope = "key-exchange-mls-key-package-claim"
+	// RealtimeCallResolutionScope authenticates caller readback at the callee Home Station.
+	RealtimeCallResolutionScope = "realtime-call-resolution-read"
 
 	ClaimFrameID               = "frame_id"
 	ClaimIdempotencyKey        = "idempotency_key"
@@ -50,6 +52,7 @@ const (
 	ClaimRequesterDeviceID     = "requester_device_id"
 	ClaimAuthorityPlanID       = "authority_plan_id"
 	ClaimPlanExpiresAt         = "plan_expires_at"
+	ClaimCallID                = "call_id"
 )
 
 var peerScopes = []scope.Scope{
@@ -199,6 +202,20 @@ var peerScopes = []scope.Scope{
 				ClaimDeviceID,
 				ClaimRequestID,
 				ClaimPlanExpiresAt,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
+		Name:        RealtimeCallResolutionScope,
+		Description: "read one call resolution from the callee Home Station",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimActorPTID,
+				ClaimCallID,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,
 			},

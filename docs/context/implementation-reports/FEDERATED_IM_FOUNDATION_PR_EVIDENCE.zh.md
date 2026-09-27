@@ -74,7 +74,7 @@ make quality-evidence REVIEW_RANGE=origin/master...HEAD
 Command:
 
 ```bash
-CHAT_GROUP_PRESSURE_STATION_URL=http://10.0.0.10:18080 \
+CHAT_GROUP_PRESSURE_STATION_URL=http://10.0.0.50:18080 \
 CHAT_GROUP_PRESSURE_ACTORS=100 \
 CHAT_GROUP_PRESSURE_SENDERS=10 \
 CHAT_GROUP_PRESSURE_MESSAGES=1000 \
@@ -100,7 +100,7 @@ Evidence:
 Command:
 
 ```bash
-CHAT_PRIVATE_PRESSURE_STATION_URL=http://10.0.0.10:18080 \
+CHAT_PRIVATE_PRESSURE_STATION_URL=http://10.0.0.50:18080 \
 CHAT_PRIVATE_PRESSURE_ACTORS=100 \
 CHAT_PRIVATE_PRESSURE_MESSAGES=1000 \
 CHAT_PRIVATE_PRESSURE_WORKERS=16 \
@@ -158,9 +158,9 @@ Boundary:
 Live 3-Station prerequisite command:
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
@@ -169,11 +169,11 @@ python3 tooling/acceptance/gates/chat/federated_browser_prereq.py
 Observed result:
 
 ```text
-[OK] authority Station peer id: discovered from http://10.0.0.10:18080/actor/federation/health
-[OK] follower Station peer id: discovered from http://10.0.0.10:18082/actor/federation/health
-[OK] authority Station: http://10.0.0.10:18080/sub-oss/healthz
-[OK] follower Station: http://10.0.0.10:18082/sub-oss/healthz
-[OK] Relay: http://10.0.0.10:18081/sub-oss/healthz
+[OK] authority Station peer id: discovered from http://10.0.0.50:18080/actor/federation/health
+[OK] follower Station peer id: discovered from http://10.0.0.50:18082/actor/federation/health
+[OK] authority Station: http://10.0.0.50:18080/sub-oss/healthz
+[OK] follower Station: http://10.0.0.50:18082/sub-oss/healthz
+[OK] Relay: http://10.0.0.50:18081/sub-oss/healthz
 [OK] authority gateway: http://127.0.0.1:3131
 [OK] follower gateway: http://127.0.0.1:3132
 ```
@@ -181,9 +181,9 @@ Observed result:
 Live cross-Station Desktop/browser decrypt command:
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -205,9 +205,9 @@ Observed result:
 Live repeated cross-Station Desktop/browser decrypt command:
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -234,9 +234,9 @@ Observed result:
 Live removed-member cross-Station Desktop/browser negative command:
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -269,9 +269,9 @@ Report evidence:
 Live late-join cross-Station Desktop/browser negative command:
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URL=http://127.0.0.1:3132 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -306,9 +306,9 @@ Report evidence:
 Live 1000-message cross-Station Desktop/browser pressure command:
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_PEER_ID=12D3KooWBsTpWe6x5Kyueq1fLVewkU6B1dsgMPQYHuseWhERXe5D \
 CHAT_FEDERATION_FOLLOWER_PEER_ID=12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6 \
 CHAT_FEDERATION_DOM_OUT_DIR=/tmp/peers-touch-chat-federated-dom-pressure-1000-rerun3 \
@@ -350,9 +350,9 @@ Report evidence:
 Live bounded multi-follower Desktop/browser pressure command:
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.10:18082 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URL=http://10.0.0.50:18082 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URLS=http://127.0.0.1:3132,http://127.0.0.1:3133 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -391,9 +391,9 @@ Report evidence:
 Live distinct follower Stations Desktop/browser pressure command:
 
 ```bash
-CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.10:18080 \
-CHAT_FEDERATION_FOLLOWER_STATION_URLS=http://10.0.0.10:18082,http://10.0.0.10:18083 \
-CHAT_FEDERATION_RELAY_URL=http://10.0.0.10:18081 \
+CHAT_FEDERATION_AUTHORITY_STATION_URL=http://10.0.0.50:18080 \
+CHAT_FEDERATION_FOLLOWER_STATION_URLS=http://10.0.0.50:18082,http://10.0.0.50:18083 \
+CHAT_FEDERATION_RELAY_URL=http://10.0.0.50:18081 \
 CHAT_FEDERATION_AUTHORITY_GATEWAY_URL=http://127.0.0.1:3131 \
 CHAT_FEDERATION_FOLLOWER_GATEWAY_URLS=http://127.0.0.1:3132,http://127.0.0.1:3133 \
 CHAT_FEDERATION_AUTHORITY_WEB_URL=http://localhost:3311/#/chat \
@@ -409,8 +409,8 @@ Observed result:
 
 ```text
 [OK] authority_peer_id: 12D3KooWBsTpWe6x5Kyueq1fLVewkU6B1dsgMPQYHuseWhERXe5D
-[OK] follower_station_1: http://10.0.0.10:18082 peer=12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6 gateway=http://127.0.0.1:3132
-[OK] follower_station_2: http://10.0.0.10:18083 peer=12D3KooWH7pDSUuERrU3gARjRCbGgRa3t3yh1o1xTESbkPi3p9b1 gateway=http://127.0.0.1:3133
+[OK] follower_station_1: http://10.0.0.50:18082 peer=12D3KooWPMCXa3uQJf47nmcyZ9sJYs2PJ3u9gY6dgLpPF4paRPp6 gateway=http://127.0.0.1:3132
+[OK] follower_station_2: http://10.0.0.50:18083 peer=12D3KooWH7pDSUuERrU3gARjRCbGgRa3t3yh1o1xTESbkPi3p9b1 gateway=http://127.0.0.1:3133
 [OK] group: gcg-1783262599893774724
 [OK] follower_count: 2
 [OK] message_count: 100

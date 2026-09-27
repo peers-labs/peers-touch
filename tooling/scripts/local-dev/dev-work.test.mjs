@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   lstatSync,
   mkdtempSync,
   mkdirSync,
@@ -626,6 +627,81 @@ test('malformed ledger and lock metadata fail closed without replacement', () =>
     assert.equal(readFileSync(lockFile, 'utf8'), malformed);
   } finally {
     lockScope.close();
+  }
+});
+
+test('stale ledger recovery is claimed before the lock inode is removed', () => {
+  const scope = fixture();
+  try {
+    const lockFile = path.join(
+      scope.home,
+      '.peers-touch',
+      'dev',
+      'work.lock',
+    );
+    const recoveryFile = `${lockFile}.recovery`;
+    mkdirSync(path.dirname(lockFile), { recursive: true });
+    const stale = `${JSON.stringify({
+      pid: 999999,
+      processStart: 'stale-process',
+      createdAt: FIXED_NOW.toISOString(),
+    })}\n`;
+    writeFileSync(lockFile, stale);
+    const lockStat = statSync(lockFile);
+    const recovery = `${JSON.stringify({
+      pid: process.pid,
+      processStart: processStartIdentity(),
+      createdAt: FIXED_NOW.toISOString(),
+      lockDev: lockStat.dev,
+      lockIno: lockStat.ino,
+    })}\n`;
+    writeFileSync(recoveryFile, recovery);
+    expectCode('MACHINE_WORK_LEDGER_LOCKED', () =>
+      startOrUpdateDeclaration(options(scope, { lockTimeoutMs: 10 })),
+    );
+    assert.equal(readFileSync(lockFile, 'utf8'), stale);
+    assert.equal(readFileSync(recoveryFile, 'utf8'), recovery);
+
+    rmSync(recoveryFile);
+    const declaration = startOrUpdateDeclaration(
+      options(scope, { lockTimeoutMs: 100 }),
+    );
+    assert.equal(declaration.workItemId, 'dwf-b1');
+    assert.equal(existsSync(lockFile), false);
+  } finally {
+    scope.close();
+  }
+});
+
+test('orphaned stale recovery metadata is reclaimed before lock acquisition', () => {
+  const scope = fixture();
+  try {
+    const lockFile = path.join(
+      scope.home,
+      '.peers-touch',
+      'dev',
+      'work.lock',
+    );
+    const recoveryFile = `${lockFile}.recovery`;
+    mkdirSync(path.dirname(lockFile), { recursive: true });
+    writeFileSync(
+      recoveryFile,
+      `${JSON.stringify({
+        pid: 999999,
+        processStart: 'stale-recovery',
+        createdAt: FIXED_NOW.toISOString(),
+        lockDev: 0,
+        lockIno: 0,
+      })}\n`,
+    );
+    const declaration = startOrUpdateDeclaration(
+      options(scope, { lockTimeoutMs: 100 }),
+    );
+    assert.equal(declaration.workItemId, 'dwf-b1');
+    assert.equal(existsSync(recoveryFile), false);
+    assert.equal(existsSync(lockFile), false);
+  } finally {
+    scope.close();
   }
 });
 

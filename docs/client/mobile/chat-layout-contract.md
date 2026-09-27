@@ -176,3 +176,42 @@ When changing `apps/mobile/src/pages/ChatPage.tsx`, `apps/mobile/src/features/ch
 
 - 2026-06-09: Created Mobile-specific Chat layout contract for safe area, keyboard, composer, bottom tab, and touch action boundaries.
 - 2026-06-19: Added `ConversationActionSurface` mobile action sheet rules after a phone-width right drawer regressed the Peers Touch UI identity.
+
+## 12. Bounded History And Restoration
+
+`BoundedList` is a presentation-only SectionBoundary shared by Chat, Contacts,
+and member selections. It does not fetch data or retain hidden page trees.
+Messages mount at most 200 rows; other lists mount at most 100. Previous/Next
+traverse overlapping half-windows, and message targets materialize before focus
+or scrolling. Replacing a window keeps the overlapping row's viewport offset.
+Logical-history selectors own thread counts and local search; submitting search
+uses the existing native indexed-search command and its timestamp/ID cursor.
+
+`app/navigation/scrollRestoration.ts` owns bounded in-memory window/query/scroll
+metadata outside tab lifetime. Each cache retains at most 100 locations; scroll
+snapshots expire after 30 minutes. The actual page or message scroller is used,
+not the Shell's clipping wrapper. Runtime projection fencing clears all
+metadata on account/Station teardown; ordinary suspend must not erase it.
+An older window's bottom is not the live conversation tail.
+
+Source tests and `node apps/mobile/scripts/check-bounded-lists.mjs` exercise
+these mechanics. The latter uses isolated presentation data and closes its
+browser/server. It does not prove native Messaging, Station pagination,
+physical-device accessibility, AS-14 timing, or bounded projection memory.
+Full native history hydration remains separately tracked in the Mobile plan.
+
+Conversation-list freshness uses the native Device Engine's
+`messaging_conversation_summary` read: the last logical message and actor unread
+count are computed from the same visible pending/committed rows as full history.
+Summary queries decode at most one message and enrich only its pins,
+attachments, reactions, and readers. Social and Group list refreshes publish
+these summaries independently of loaded history. Native events refresh full
+history only for active or already-materialized conversations, so an unopened
+conversation does not become an unbounded Web history merely to show a preview
+or unread badge. Scope and refresh-revision fencing preserve valid snapshots
+when reads fail or are superseded.
+
+This refinement does not define general history cursor ordering, pending-row
+promotion between pages, or a retained-history eviction budget. Active and
+previously materialized histories remain complete until those decisions are
+accepted; the native index and DOM windows are not substitutes for them.

@@ -13,7 +13,7 @@ const identityRowSource = readFileSync(
 describe('CreateGroupModal recovery contract', () => {
   it('keeps the dialog draft until Group preparation is accepted', () => {
     const createCall = source.indexOf(
-      'const created = await imServiceV1.messaging.createGroup(',
+      'const created = await messagingCommands.createGroup(',
     );
     const acceptedTracking = source.indexOf(
       'trackPendingGroupCreation(conversationId, created.commandId);',
@@ -34,7 +34,7 @@ describe('CreateGroupModal recovery contract', () => {
 
   it('does not publish Group state before Station accepts the command', () => {
     const createCall = source.indexOf(
-      'const created = await imServiceV1.messaging.createGroup(',
+      'const created = await messagingCommands.createGroup(',
     );
     const acceptedState = source.indexOf(
       "setGroupSecurityState(conversationId, 'establishing')",

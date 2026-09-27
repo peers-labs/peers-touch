@@ -168,7 +168,8 @@ func (s *Sender) EnqueueAuthorityCommand(
 	proposal *chatmodel.ConversationCommandProposal,
 	orderingSequence int64,
 ) (federationdelivery.EnqueueResult, error) {
-	if outbox == nil || proposal == nil || proposal.GetCommand() == nil {
+	command, commandErr := ParseProposalCommand(proposal)
+	if outbox == nil || commandErr != nil {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidArgument,
 			"enqueue Conversation authority command",
@@ -177,7 +178,7 @@ func (s *Sender) EnqueueAuthorityCommand(
 	}
 	if proposal.GetHomeStationPeerId() != s.localStationPeerID ||
 		strings.TrimSpace(proposal.GetAuthorityStationPeerId()) == "" ||
-		proposal.GetCommand().GetAuthorityStationPeerId() != proposal.GetAuthorityStationPeerId() ||
+		command.AuthorityStationPeerID != proposal.GetAuthorityStationPeerId() ||
 		orderingSequence <= 0 {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidFrame,
@@ -195,9 +196,9 @@ func (s *Sender) EnqueueAuthorityCommand(
 		ctx,
 		federationdelivery.PayloadKindConversationAuthorityCommand,
 		proposal.GetAuthorityStationPeerId(),
-		proposal.GetCommand().GetCommandId(),
+		command.CommandID,
 		"",
-		conversationOrderingKey(authorityCommandFrameDomain, proposal.GetCommand().GetConversationId()),
+		conversationOrderingKey(authorityCommandFrameDomain, command.ConversationID),
 		orderingSequence,
 		payload,
 		issuedAt,
@@ -217,12 +218,12 @@ func (s *Sender) EnqueueAuthorityResult(
 	proposal *chatmodel.ConversationCommandProposal,
 	result *chatmodel.ConversationCommandProposalResult,
 ) (federationdelivery.EnqueueResult, error) {
+	command, commandErr := ParseProposalCommand(proposal)
 	if outbox == nil ||
-		proposal == nil ||
-		proposal.GetCommand() == nil ||
+		commandErr != nil ||
 		len(proposal.GetCommandSha256()) != sha256.Size ||
 		result == nil ||
-		result.GetCommandId() != proposal.GetCommand().GetCommandId() {
+		result.GetCommandId() != command.CommandID {
 		return federationdelivery.EnqueueResult{}, federationdelivery.NewError(
 			federationdelivery.FailureInvalidArgument,
 			"enqueue Conversation authority result",
@@ -263,8 +264,8 @@ func (s *Sender) EnqueueAuthorityResult(
 		state = chatmodel.ConversationCommandSubmissionState_CONVERSATION_COMMAND_SUBMISSION_STATE_ACCEPTED
 	}
 	delivery := &chatmodel.ConversationCommandResultDelivery{
-		ConversationId: proposal.GetCommand().GetConversationId(),
-		CommandId:      proposal.GetCommand().GetCommandId(),
+		ConversationId: command.ConversationID,
+		CommandId:      command.CommandID,
 		State:          state,
 		Result:         proto.Clone(result).(*chatmodel.ConversationCommandProposalResult),
 	}

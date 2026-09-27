@@ -1,8 +1,8 @@
 # Local Development Environment
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-07-23 | **Updated**: 2026-09-18
+> **Version**: v1.3
+> **Created**: 2026-07-23 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 
 ---
@@ -122,10 +122,13 @@ This includes `env/peers-touch/<name>/`, `.local/dev/profiles/`,
 `.local/deploy/envs/`, `make profile-authorize`, and `make profile-init`.
 
 A missing profile or deploy environment fails closed and must be reported. A
-task, execution plan, available host, old profile pointer, or Acceptance need
-does not imply creation permission. Untracked env-repository definitions and
-local definitions without a matching consumed authorization receipt cannot
-authorize profile selection, deployment, restart, or reset.
+task, mere Plan existence, available host, old profile pointer, or Acceptance
+need does not imply creation permission. Only an exact user grant or a formal
+Plan field explicitly dedicated to environment creation could authorize it;
+the current `ExecutionAuthorization` schema has no such field. Untracked
+env-repository definitions and local definitions without a matching consumed
+authorization receipt cannot authorize profile selection, deployment, restart,
+or reset.
 
 Human local-profile creation is a two-step, single-use flow:
 
@@ -148,7 +151,28 @@ regular profile file must be directly contained by the absolute
 `PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT`. Normal development resolves reviewed
 env-repository topology or an authorized local compose profile.
 
-### 2.3 Profile Fields
+### 2.3 Existing Profile Operation Admission
+
+The selected directory name and `PT_DEV_PROFILE` value must match exactly. The
+verified canonical ID then determines reset policy:
+
+- case-insensitive ID containing `stable`: `stable-protected`, so autonomous
+  `station.reset` is rejected;
+- every other reviewed ID: `agent-resettable`, so the Agent may choose reset
+  without human involvement.
+
+There is no reset-policy environment field or machine-state override. For
+non-stable Profiles, reset still requires the workspace `station.reset`
+capability, a live declaration for the same Profile and exact exclusive scope,
+the same command scope, matching tracked-clean remote topology and source
+identity, and the OS-held reset lease.
+
+Deploy/restart of an existing reviewed remote Profile continues to consume an
+exact user grant or the accepted Plan's `authorization.runtime.deployProfiles`
+entry. Neither deploy admission nor reset policy authorizes profile or
+deploy-environment creation.
+
+### 2.4 Profile Fields
 
 | Field | Required | Example | Semantics |
 |-------|----------|---------|-----------|
@@ -169,7 +193,7 @@ env-repository topology or an authorized local compose profile.
 | `PT_DESKTOP_WEB_WEB_PORT` | yes | `3211` | Desktop browser web port |
 | `PT_MOBILE_WEB_PORT` | if mobile | `5173` | Mobile dev server port |
 
-### 2.4 Deploy Env Files
+### 2.5 Deploy Env Files
 
 Canonical definitions live at
 `../env/peers-touch/<profile>/deploy/<name>.env.example`. Remote deploy commands
@@ -298,19 +322,20 @@ make env-check \
 ```
 
 Registration does not create or edit an environment definition. A later
-destructive wrapper uses the generic lease API only after separately proving
-the exact reset authorization:
+destructive wrapper uses the generic lease API after deriving Profile reset
+policy and declaring the exact reset scope:
 
 ```bash
 node tooling/scripts/local-dev/machine-dev.mjs lease \
   --resource-kind station.reset \
   --resource-id <station-fixture-scope> \
-  --reset-authorized-scope <station-fixture-scope> \
+  --reset-scope <station-fixture-scope> \
   --budget-seconds <seconds> \
   -- <reset-command>
 ```
 
-The reset API owns lease lifetime only; it does not grant deletion authority.
+The reset API owns scope validation and lease lifetime only; it does not
+implement deletion.
 
 ### Lifecycle
 
@@ -442,3 +467,6 @@ SELECT id, conversation_id, created_at FROM device_queue_lanes ORDER BY created_
 10. **Station deploy lease covers the closure** — `make station` holds
     `station.deploy` across deploy, restart, and health readback, and releases
     on success, failure, signal, or timeout.
+11. **Apply Profile-ID reset policy once** — non-stable Profiles may be reset by
+    the Agent without human confirmation; stable Profiles fail before lease
+    acquisition. Runtime scope and ownership guards still apply.

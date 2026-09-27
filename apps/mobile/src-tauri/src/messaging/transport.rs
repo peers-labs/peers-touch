@@ -10,29 +10,38 @@ use messaging_core::crypto::prekeys::PreKeyTransport;
 use messaging_core::identity::{DeviceEnrollmentTransport, DeviceSigningKey};
 use messaging_core::inbox::QueueTransport;
 use messaging_core::mls::key_packages::MlsKeyPackageTransport;
+use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
 use messaging_core::outbox::{CommandSubmitFailure, CommandTransport, KeyBundleTransport};
 use messaging_core::proto::actor::{
     ActorDeviceRef, EnrollActorDeviceRequest, EnrollActorDeviceResponse,
 };
 use messaging_core::proto::chat::{
-    chat_command, submit_conversation_authority_command_request, AcknowledgeDeviceInboxItemRequest,
-    AcknowledgeDeviceInboxItemResponse, AttachmentTransferError, AttachmentTransferErrorCode,
-    AttachmentTransferState, BeginAttachmentUploadRequest, BeginAttachmentUploadResponse,
-    CancelAttachmentUploadRequest, CancelAttachmentUploadResponse, ChatCommand,
-    ClaimDeviceInboxRequest, ClaimDeviceInboxResponse, CompleteAttachmentUploadRequest,
-    CompleteAttachmentUploadResponse, ConversationCommandKind, ConversationCommandProposal,
-    ConversationCommandProposalSigningInput, ConversationCommandRejectCode, ConversationKind,
-    ConversationPublicHead, ConversationPublicHeadSource, CreateDirectConversationRequest,
-    CreateDirectConversationResponse, CreateGroupConversationRequest,
-    CreateGroupConversationResponse, CryptoEndpoint, DeviceConsumptionReceipt,
-    EncryptedObjectDescriptor, GetConversationPublicHeadRequest, GetConversationPublicHeadResponse,
-    ListConversationsRequest, ListConversationsResponse, PrepareConversationCommandRequest,
-    PrepareConversationCommandResponse, PrepareConversationGroupRequest,
-    PrepareConversationGroupResponse, PutAttachmentChunkRequest, PutAttachmentChunkResponse,
+    chat_command, submit_conversation_authority_command_request,
+    transfer_conversation_ownership_request, update_conversation_member_request,
+    AcknowledgeDeviceInboxItemRequest, AcknowledgeDeviceInboxItemResponse, AttachmentTransferError,
+    AttachmentTransferErrorCode, AttachmentTransferState, BeginAttachmentUploadRequest,
+    BeginAttachmentUploadResponse, CancelAttachmentUploadRequest, CancelAttachmentUploadResponse,
+    ChatCommand, ClaimDeviceInboxRequest, ClaimDeviceInboxResponse,
+    CompleteAttachmentUploadRequest, CompleteAttachmentUploadResponse, Conversation,
+    ConversationCommandKind, ConversationCommandProposal, ConversationCommandProposalSigningInput,
+    ConversationCommandRejectCode, ConversationEvent, ConversationKind,
+    ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
+    ConversationMembershipAction, ConversationPublicHead, ConversationPublicHeadSource,
+    CreateDirectConversationRequest, CreateDirectConversationResponse,
+    CreateGroupConversationRequest, CreateGroupConversationResponse, CryptoEndpoint,
+    DeviceConsumptionReceipt, EncryptedObjectDescriptor, GetConversationPublicHeadRequest,
+    GetConversationPublicHeadResponse, GetConversationRequest, GetConversationResponse,
+    ListConversationsRequest, ListConversationsResponse, MemberRole, MessagingMembershipAction,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    PrepareConversationGroupRequest, PrepareConversationGroupResponse,
+    PrepareConversationMembershipRequest, PrepareConversationMembershipResponse,
+    PutAttachmentChunkRequest, PutAttachmentChunkResponse,
     SubmitConversationAuthorityCommandRequest, SubmitConversationAuthorityCommandResponse,
     SubmitConversationDeliveryReceiptRequest, SubmitConversationDeliveryReceiptResponse,
     SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
     SubmitConversationTypingRequest, SubmitConversationTypingResponse,
+    TransferConversationOwnershipRequest, TransferConversationOwnershipResponse,
+    UpdateConversationMemberRequest, UpdateConversationMemberResponse,
 };
 use messaging_core::proto::key_exchange::{
     DirectKeyBundle, FetchDirectKeyBundlesRequest, FetchDirectKeyBundlesResponse,
@@ -40,11 +49,15 @@ use messaging_core::proto::key_exchange::{
     UploadMlsKeyPackageResponse,
 };
 use messaging_core::proto::social::{
-    AcceptSocialFriendRequestRequest, AcceptSocialFriendRequestResponse, FriendRequestCommand,
-    RejectSocialFriendRequestRequest, RejectSocialFriendRequestResponse,
-    SendSocialFriendRequestRequest, SendSocialFriendRequestResponse,
+    AcceptSocialFriendRequestRequest, AcceptSocialFriendRequestResponse, BlockSocialActorRequest,
+    BlockSocialActorResponse, FriendRequestCommand, LookupFriendRequestCommandResultRequest,
+    LookupFriendRequestCommandResultResponse, LookupSocialRelationshipCommandResultRequest,
+    LookupSocialRelationshipCommandResultResponse, RejectSocialFriendRequestRequest,
+    RejectSocialFriendRequestResponse, SendSocialFriendRequestRequest,
+    SendSocialFriendRequestResponse, SocialRelationshipCommand, UnblockSocialActorRequest,
+    UnblockSocialActorResponse,
 };
-use messaging_core::proto::{actor_device_ptid, actor_device_ref};
+use messaging_core::proto::{actor_device_ptid, actor_device_ref, actor_ref};
 use prost::Message;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, IF_MATCH, RANGE, RETRY_AFTER};
@@ -60,21 +73,43 @@ const GROUP_CREATION_PATH: &str = "/conversation/group";
 const AUTHORITY_COMMAND_PATH: &str = "/conversation/command";
 const COMMAND_PROPOSAL_FORMAT_VERSION: u32 = 1;
 const COMMAND_PROPOSAL_LIFETIME_MS: i64 = 5 * 60 * 1_000;
+const MEMBER_AUTHORITY_ERROR_HEADER: &str = "X-Peers-Error-Code";
 
-enum StationTransportError {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MemberAuthorityTransportError {
+    pub code: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for MemberAuthorityTransportError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "{}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for MemberAuthorityTransportError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StationTransportError {
+    Deadline,
     Network,
     HttpStatus(u16),
     Decode,
+    Invalid,
 }
 
 impl std::fmt::Display for StationTransportError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Deadline => {
+                formatter.write_str("mobile messaging Station request exceeded its deadline")
+            }
             Self::Network => formatter.write_str("mobile messaging Station network request failed"),
             Self::HttpStatus(status) => {
                 write!(formatter, "mobile messaging Station returned HTTP {status}")
             }
             Self::Decode => formatter.write_str("mobile messaging Station response is invalid"),
+            Self::Invalid => formatter.write_str("mobile messaging Station request is invalid"),
         }
     }
 }
@@ -538,14 +573,14 @@ impl DeviceEnrollmentTransport for StationDeviceTransport {
                 "mobile messaging enrollment device does not match engine endpoint".to_string(),
             );
         }
-        post_proto(
+        let result = post_proto(
             &self.station_origin,
             self.access_token.as_str(),
             &self.device_id,
             "/device/enroll",
             request,
-        )
-        .map_err(|error| error.to_string())
+        );
+        result.map_err(|error| error.to_string())
     }
 }
 
@@ -717,14 +752,14 @@ impl QueueTransport for StationQueueTransport {
         {
             return Err("mobile messaging queue claim endpoint mismatch".to_string());
         }
-        post_proto(
+        let result = post_proto(
             &self.station_origin,
             self.access_token.as_str(),
             &self.device_id,
             "/device/inbox/claim",
             &request,
-        )
-        .map_err(|error| error.to_string())
+        );
+        result.map_err(|error| error.to_string())
     }
 
     fn acknowledge(&self, request: AcknowledgeDeviceInboxItemRequest) -> Result<(), String> {
@@ -768,10 +803,10 @@ impl StationSocialTransport {
         })
     }
 
-    pub fn send_friend_request(
+    pub(crate) fn send_friend_request(
         &self,
         request: &SendSocialFriendRequestRequest,
-    ) -> Result<SendSocialFriendRequestResponse, String> {
+    ) -> Result<SendSocialFriendRequestResponse, StationTransportError> {
         self.validate_command(request.command.as_ref())?;
         post_proto(
             &self.station_origin,
@@ -780,13 +815,12 @@ impl StationSocialTransport {
             "/api/v1/social/friend-request/send",
             request,
         )
-        .map_err(|error| error.to_string())
     }
 
-    pub fn accept_friend_request(
+    pub(crate) fn accept_friend_request(
         &self,
         request: &AcceptSocialFriendRequestRequest,
-    ) -> Result<AcceptSocialFriendRequestResponse, String> {
+    ) -> Result<AcceptSocialFriendRequestResponse, StationTransportError> {
         self.validate_command(request.command.as_ref())?;
         post_proto(
             &self.station_origin,
@@ -795,13 +829,12 @@ impl StationSocialTransport {
             "/api/v1/social/friend-request/accept",
             request,
         )
-        .map_err(|error| error.to_string())
     }
 
-    pub fn reject_friend_request(
+    pub(crate) fn reject_friend_request(
         &self,
         request: &RejectSocialFriendRequestRequest,
-    ) -> Result<RejectSocialFriendRequestResponse, String> {
+    ) -> Result<RejectSocialFriendRequestResponse, StationTransportError> {
         self.validate_command(request.command.as_ref())?;
         post_proto(
             &self.station_origin,
@@ -810,16 +843,77 @@ impl StationSocialTransport {
             "/api/v1/social/friend-request/reject",
             request,
         )
-        .map_err(|error| error.to_string())
     }
 
-    fn validate_command(&self, command: Option<&FriendRequestCommand>) -> Result<(), String> {
-        let command = command
-            .ok_or_else(|| "mobile Social Friend Request command is required".to_string())?;
+    pub(crate) fn lookup_friend_request_command_result(
+        &self,
+        request: &LookupFriendRequestCommandResultRequest,
+    ) -> Result<LookupFriendRequestCommandResultResponse, StationTransportError> {
+        if request.command_id.trim().is_empty() || request.command_payload_sha256.len() != 32 {
+            return Err(StationTransportError::Invalid);
+        }
+        post_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/api/v1/social/friend-request/result",
+            request,
+        )
+    }
+
+    pub(crate) fn block_actor(
+        &self,
+        request: &BlockSocialActorRequest,
+    ) -> Result<BlockSocialActorResponse, StationTransportError> {
+        self.validate_relationship_command(request.command.as_ref())?;
+        post_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/api/v1/social/relationships/block",
+            request,
+        )
+    }
+
+    pub(crate) fn unblock_actor(
+        &self,
+        request: &UnblockSocialActorRequest,
+    ) -> Result<UnblockSocialActorResponse, StationTransportError> {
+        self.validate_relationship_command(request.command.as_ref())?;
+        post_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/api/v1/social/relationships/unblock",
+            request,
+        )
+    }
+
+    pub(crate) fn lookup_relationship_command_result(
+        &self,
+        request: &LookupSocialRelationshipCommandResultRequest,
+    ) -> Result<LookupSocialRelationshipCommandResultResponse, StationTransportError> {
+        if request.command_id.trim().is_empty() || request.command_payload_sha256.len() != 32 {
+            return Err(StationTransportError::Invalid);
+        }
+        post_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/api/v1/social/relationships/result",
+            request,
+        )
+    }
+
+    fn validate_command(
+        &self,
+        command: Option<&FriendRequestCommand>,
+    ) -> Result<(), StationTransportError> {
+        let command = command.ok_or(StationTransportError::Invalid)?;
         let body = command
             .body
             .as_ref()
-            .ok_or_else(|| "mobile Social Friend Request command body is required".to_string())?;
+            .ok_or(StationTransportError::Invalid)?;
         if body
             .authorizing_device
             .as_ref()
@@ -831,7 +925,31 @@ impl StationSocialTransport {
             || command.signing_key_id.trim().is_empty()
             || command.actor_device_signature.len() != 64
         {
-            return Err("mobile Social Friend Request command binding is incomplete".to_string());
+            return Err(StationTransportError::Invalid);
+        }
+        Ok(())
+    }
+
+    fn validate_relationship_command(
+        &self,
+        command: Option<&SocialRelationshipCommand>,
+    ) -> Result<(), StationTransportError> {
+        let command = command.ok_or(StationTransportError::Invalid)?;
+        let body = command
+            .body
+            .as_ref()
+            .ok_or(StationTransportError::Invalid)?;
+        if body
+            .authorizing_device
+            .as_ref()
+            .map(|device| device.device_id.as_str())
+            != Some(self.device_id.as_str())
+            || body.actor_home_station_peer_id.trim().is_empty()
+            || body.target_home_station_peer_id.trim().is_empty()
+            || command.signing_key_id.trim().is_empty()
+            || command.actor_device_signature.len() != 64
+        {
+            return Err(StationTransportError::Invalid);
         }
         Ok(())
     }
@@ -874,6 +992,29 @@ impl StationConversationTransport {
             &ListConversationsRequest {},
         )
         .map_err(|error| error.to_string())
+    }
+
+    pub fn get_conversation(&self, conversation_id: &str) -> Result<Conversation, String> {
+        if conversation_id.trim().is_empty() {
+            return Err("mobile messaging Conversation ID is required".to_string());
+        }
+        let response: GetConversationResponse = get_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/conversation/get",
+            &GetConversationRequest {
+                conversation_id: conversation_id.to_string(),
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        let conversation = response
+            .conversation
+            .ok_or_else(|| "mobile messaging Station returned no Conversation".to_string())?;
+        if conversation.conversation_id != conversation_id {
+            return Err("mobile messaging Station returned another Conversation".to_string());
+        }
+        Ok(conversation)
     }
 
     pub fn create_direct(
@@ -942,6 +1083,161 @@ impl StationConversationTransport {
             },
         )
         .map_err(|error| error.to_string())
+    }
+
+    pub fn prepare_membership_transition(
+        &self,
+        input: &MembershipTransitionIntentInput,
+    ) -> Result<PrepareConversationMembershipResponse, String> {
+        post_proto(
+            &self.station_origin,
+            self.access_token.as_str(),
+            &self.device_id,
+            "/conversation/membership/prepare",
+            &PrepareConversationMembershipRequest {
+                conversation_id: input.conversation_id.clone(),
+                sender: Some(actor_device_ref(
+                    self.endpoint.ptid.clone(),
+                    self.endpoint.device_id.clone(),
+                )),
+                action: canonical_membership_action(input.action) as i32,
+                target_actor: Some(actor_ref(input.target_ptid.clone())),
+                target_device_id: input.target_device_id.clone(),
+                role: canonical_member_role(&input.role)? as i32,
+            },
+        )
+        .map_err(|error| error.to_string())
+    }
+}
+
+fn validate_member_authority_command(
+    command: &ConversationMemberAuthorityCommand,
+    endpoint: &CryptoEndpoint,
+    expected_action: ConversationMemberAuthorityAction,
+) -> Result<(), MemberAuthorityTransportError> {
+    if command.version != 1
+        || command.command_id.trim().is_empty()
+        || command.conversation_id.trim().is_empty()
+        || command.operator.as_ref() != Some(endpoint)
+        || !command.target_ptid.starts_with("ptid:")
+        || command.action != expected_action as i32
+        || command.federation_id.trim().is_empty()
+        || command.authority_station_peer_id.trim().is_empty()
+        || command.authority_epoch <= 0
+        || command.authority_sequence <= 0
+        || command.authority_hash.len() != 32
+        || command.observed_membership_epoch <= 0
+        || command.observed_mls_epoch <= 0
+        || command.client_timestamp.is_none()
+        || command.deadline.is_none()
+    {
+        return Err(member_authority_invalid("command"));
+    }
+    Ok(())
+}
+
+fn validate_member_authority_event(
+    command: &ConversationMemberAuthorityCommand,
+    event: &ConversationEvent,
+) -> Result<(), MemberAuthorityTransportError> {
+    let fact = member_authority_fact(event)?;
+    let snapshot = fact
+        .post_state
+        .as_ref()
+        .ok_or_else(|| member_authority_invalid("event_snapshot"))?;
+    if event.command_id != command.command_id
+        || event.conversation_id != command.conversation_id
+        || event.actor != command.operator
+        || event.authority_station_peer_id != command.authority_station_peer_id
+        || event.sequence != command.authority_sequence.saturating_add(1)
+        || event.previous_hash != command.authority_hash
+        || event.event_hash.len() != 32
+        || event.membership_epoch != command.observed_membership_epoch.saturating_add(1)
+        || event.mls_epoch != command.observed_mls_epoch
+        || fact.action != command.action
+        || fact.target_ptid != command.target_ptid
+        || fact.from_membership_epoch != command.observed_membership_epoch
+        || fact.to_membership_epoch != event.membership_epoch
+        || snapshot.membership_epoch != event.membership_epoch
+        || snapshot.mls_epoch != event.mls_epoch
+        || snapshot.federation_id != command.federation_id
+        || snapshot.authority_epoch != command.authority_epoch
+    {
+        return Err(member_authority_invalid("event_binding"));
+    }
+    Ok(())
+}
+
+fn validate_member_authority_submission_response(
+    command: &ConversationMemberAuthorityCommand,
+    accepted_for_forwarding: bool,
+    event: Option<&ConversationEvent>,
+    remote: bool,
+) -> Result<(), CommandSubmitFailure> {
+    if remote {
+        if !accepted_for_forwarding || event.is_some() {
+            return Err(CommandSubmitFailure::Terminal {
+                code: "member_authority_forwarding_response_invalid".to_string(),
+            });
+        }
+        return Ok(());
+    }
+    if accepted_for_forwarding {
+        return Err(CommandSubmitFailure::Terminal {
+            code: "member_authority_local_response_invalid".to_string(),
+        });
+    }
+    validate_member_authority_event(
+        command,
+        event.ok_or_else(|| CommandSubmitFailure::Terminal {
+            code: "missing_member_authority_event".to_string(),
+        })?,
+    )
+    .map_err(classify_member_authority_error)
+}
+
+fn member_authority_fact(
+    event: &ConversationEvent,
+) -> Result<
+    &messaging_core::proto::chat::ConversationMemberAuthorityCommittedFact,
+    MemberAuthorityTransportError,
+> {
+    match event.payload.as_ref() {
+        Some(
+            messaging_core::proto::chat::conversation_event::Payload::MemberAuthorityCommitted(
+                fact,
+            ),
+        ) => Ok(fact),
+        _ => Err(member_authority_invalid("event_payload")),
+    }
+}
+
+fn member_authority_invalid(field: &str) -> MemberAuthorityTransportError {
+    MemberAuthorityTransportError {
+        code: "MOBILE_MEMBER_AUTHORITY_RESPONSE_INVALID".to_string(),
+        message: format!("mobile member-authority {field} is invalid"),
+    }
+}
+
+fn canonical_membership_action(action: MessagingMembershipAction) -> ConversationMembershipAction {
+    match action {
+        MessagingMembershipAction::AddActor => ConversationMembershipAction::AddActor,
+        MessagingMembershipAction::RemoveActor => ConversationMembershipAction::RemoveActor,
+        MessagingMembershipAction::Leave => ConversationMembershipAction::Leave,
+        MessagingMembershipAction::ChangeRole => ConversationMembershipAction::ChangeRole,
+        MessagingMembershipAction::AddDevice => ConversationMembershipAction::AddDevice,
+        MessagingMembershipAction::RemoveDevice => ConversationMembershipAction::RemoveDevice,
+        MessagingMembershipAction::Unspecified => ConversationMembershipAction::Unspecified,
+    }
+}
+
+fn canonical_member_role(role: &str) -> Result<MemberRole, String> {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "" => Ok(MemberRole::Unspecified),
+        "member" => Ok(MemberRole::Member),
+        "admin" => Ok(MemberRole::Admin),
+        "owner" => Ok(MemberRole::Owner),
+        _ => Err("mobile messaging membership role is invalid".to_string()),
     }
 }
 
@@ -1134,6 +1430,49 @@ pub struct StationKeyBundleTransport {
     device_id: String,
 }
 
+pub fn fetch_actor_identity_key(
+    station_origin: &str,
+    access_token: &str,
+    requester_ptid: &str,
+    requester_device_id: &str,
+    peer_ptid: &str,
+) -> Result<String, String> {
+    let peer_ptid = peer_ptid.trim();
+    if peer_ptid.is_empty() || peer_ptid == requester_ptid.trim() {
+        return Err("mobile signaling peer identity is invalid".to_string());
+    }
+    let response = post_proto::<_, FetchDirectKeyBundlesResponse>(
+        station_origin,
+        access_token,
+        requester_device_id,
+        "/key-exchange/keys/bundle/fetch",
+        &FetchDirectKeyBundlesRequest {
+            actor: Some(actor_ref(peer_ptid)),
+            target_device_id: String::new(),
+            home_station_peer_id: String::new(),
+            request_id: ulid::Ulid::new().to_string(),
+            requester: Some(actor_device_ref(requester_ptid, requester_device_id)),
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    let mut bundles = response.bundles.into_iter();
+    let first = bundles
+        .next()
+        .ok_or_else(|| "mobile signaling peer identity is unavailable".to_string())?;
+    let identity_key = first.identity_key_public.trim().to_string();
+    if identity_key.is_empty()
+        || first.device.as_ref().map(actor_device_ptid).transpose()? != Some(peer_ptid)
+    {
+        return Err("mobile signaling peer identity binding mismatch".to_string());
+    }
+    for bundle in bundles {
+        if bundle.identity_key_public.trim() != identity_key {
+            return Err("mobile signaling peer identity is ambiguous".to_string());
+        }
+    }
+    Ok(identity_key)
+}
+
 impl StationKeyBundleTransport {
     pub fn new(
         station_origin: String,
@@ -1203,16 +1542,28 @@ impl KeyBundleTransport for StationKeyBundleTransport {
 
 impl CommandTransport for StationCommandTransport {
     fn submit(&self, exact_command_bytes: &[u8]) -> Result<(), CommandSubmitFailure> {
-        let command = ChatCommand::decode(exact_command_bytes).map_err(|_| {
-            CommandSubmitFailure::Terminal {
-                code: "invalid_command".to_string(),
+        if let Ok(command) = ChatCommand::decode(exact_command_bytes) {
+            if command.encode_to_vec() == exact_command_bytes {
+                return self.submit_chat_command(&command);
             }
-        })?;
+        }
+        let command =
+            ConversationMemberAuthorityCommand::decode(exact_command_bytes).map_err(|_| {
+                CommandSubmitFailure::Terminal {
+                    code: "invalid_command".to_string(),
+                }
+            })?;
         if command.encode_to_vec() != exact_command_bytes {
             return Err(CommandSubmitFailure::Terminal {
                 code: "non_canonical_command".to_string(),
             });
         }
+        self.submit_member_authority_command(&command)
+    }
+}
+
+impl StationCommandTransport {
+    fn submit_chat_command(&self, command: &ChatCommand) -> Result<(), CommandSubmitFailure> {
         let sender = command
             .sender
             .as_ref()
@@ -1294,6 +1645,115 @@ impl CommandTransport for StationCommandTransport {
             return Ok(());
         }
         validate_committed_event(&command, response.event)
+    }
+
+    fn submit_member_authority_command(
+        &self,
+        command: &ConversationMemberAuthorityCommand,
+    ) -> Result<(), CommandSubmitFailure> {
+        let identity =
+            self.remote_identity
+                .as_ref()
+                .ok_or_else(|| CommandSubmitFailure::Terminal {
+                    code: "missing_remote_command_identity".to_string(),
+                })?;
+        let expected_action =
+            ConversationMemberAuthorityAction::try_from(command.action).map_err(|_| {
+                CommandSubmitFailure::Terminal {
+                    code: "invalid_member_authority_action".to_string(),
+                }
+            })?;
+        validate_member_authority_command(
+            command,
+            &CryptoEndpoint {
+                ptid: identity.actor_ptid.clone(),
+                device_id: self.device_id.clone(),
+            },
+            expected_action,
+        )
+        .map_err(classify_member_authority_error)?;
+        let remote = command.authority_station_peer_id != identity.home_station_peer_id;
+        let proposal = if remote {
+            let response = get_proto::<_, GetConversationPublicHeadResponse>(
+                &self.station_origin,
+                self.access_token.as_str(),
+                &self.device_id,
+                "/conversation/public-head",
+                &GetConversationPublicHeadRequest {
+                    conversation_id: command.conversation_id.clone(),
+                },
+            )
+            .map_err(classify_command_error)?;
+            Some(build_remote_member_authority_proposal(
+                command,
+                identity,
+                response
+                    .head
+                    .as_ref()
+                    .ok_or_else(|| CommandSubmitFailure::Terminal {
+                        code: "missing_conversation_public_head".to_string(),
+                    })?,
+            )?)
+        } else {
+            None
+        };
+        match expected_action {
+            ConversationMemberAuthorityAction::UpdateMember => {
+                let submission = match proposal {
+                    Some(proposal) => {
+                        update_conversation_member_request::Submission::Proposal(proposal)
+                    }
+                    None => {
+                        update_conversation_member_request::Submission::Command(command.clone())
+                    }
+                };
+                let response: UpdateConversationMemberResponse = post_member_authority_proto(
+                    &self.station_origin,
+                    self.access_token.as_str(),
+                    &self.device_id,
+                    "/conversation/member/update",
+                    &UpdateConversationMemberRequest {
+                        submission: Some(submission),
+                    },
+                )
+                .map_err(classify_member_authority_error)?;
+                validate_member_authority_submission_response(
+                    command,
+                    response.accepted_for_forwarding,
+                    response.event.as_ref(),
+                    remote,
+                )
+            }
+            ConversationMemberAuthorityAction::TransferOwnership => {
+                let submission = match proposal {
+                    Some(proposal) => {
+                        transfer_conversation_ownership_request::Submission::Proposal(proposal)
+                    }
+                    None => transfer_conversation_ownership_request::Submission::Command(
+                        command.clone(),
+                    ),
+                };
+                let response: TransferConversationOwnershipResponse = post_member_authority_proto(
+                    &self.station_origin,
+                    self.access_token.as_str(),
+                    &self.device_id,
+                    "/conversation/ownership/transfer",
+                    &TransferConversationOwnershipRequest {
+                        submission: Some(submission),
+                    },
+                )
+                .map_err(classify_member_authority_error)?;
+                validate_member_authority_submission_response(
+                    command,
+                    response.accepted_for_forwarding,
+                    response.event.as_ref(),
+                    remote,
+                )
+            }
+            ConversationMemberAuthorityAction::Unspecified => Err(CommandSubmitFailure::Terminal {
+                code: "invalid_member_authority_action".to_string(),
+            }),
+        }
     }
 }
 
@@ -1400,6 +1860,7 @@ fn build_remote_command_proposal(
         actor_device_id: sender.device_id.clone(),
         actor_signing_key_id: identity.signing_key_id.clone(),
         command: Some(command.clone()),
+        member_authority_command: None,
         command_sha256,
         actor_signature: identity
             .signing_key
@@ -1411,11 +1872,96 @@ fn build_remote_command_proposal(
     })
 }
 
+fn build_remote_member_authority_proposal(
+    command: &ConversationMemberAuthorityCommand,
+    identity: &RemoteCommandIdentity,
+    head: &ConversationPublicHead,
+) -> Result<ConversationCommandProposal, CommandSubmitFailure> {
+    let operator = command
+        .operator
+        .as_ref()
+        .ok_or_else(|| CommandSubmitFailure::Terminal {
+            code: "missing_operator".to_string(),
+        })?;
+    let created_at_unix_ms =
+        timestamp_unix_ms(command.client_timestamp.as_ref()).ok_or_else(|| {
+            CommandSubmitFailure::Terminal {
+                code: "invalid_command_timestamp".to_string(),
+            }
+        })?;
+    let expires_at_unix_ms = timestamp_unix_ms(command.deadline.as_ref()).ok_or_else(|| {
+        CommandSubmitFailure::Terminal {
+            code: "invalid_command_deadline".to_string(),
+        }
+    })?;
+    if operator.ptid != identity.actor_ptid
+        || operator.device_id != identity.signing_key.device_id()
+        || command.federation_id != head.federation_id
+        || command.authority_station_peer_id != head.authority_station_peer_id
+        || command.authority_epoch != head.authority_epoch
+        || command.authority_sequence != head.group_seq
+        || command.authority_hash != head.event_hash
+        || command.observed_membership_epoch != head.membership_epoch
+        || command.observed_mls_epoch != head.mls_epoch
+        || head.conversation_id != command.conversation_id
+        || head.authority_station_peer_id == identity.home_station_peer_id
+        || ConversationPublicHeadSource::try_from(head.source).ok()
+            != Some(ConversationPublicHeadSource::Follower)
+        || expires_at_unix_ms <= created_at_unix_ms
+    {
+        return Err(CommandSubmitFailure::Terminal {
+            code: "remote_route_binding".to_string(),
+        });
+    }
+    let command_sha256 = Sha256::digest(command.encode_to_vec()).to_vec();
+    let signing_input = ConversationCommandProposalSigningInput {
+        version: COMMAND_PROPOSAL_FORMAT_VERSION,
+        federation_id: command.federation_id.clone(),
+        authority_station_peer_id: command.authority_station_peer_id.clone(),
+        authority_epoch: command.authority_epoch,
+        home_station_peer_id: identity.home_station_peer_id.clone(),
+        conversation_id: command.conversation_id.clone(),
+        command_id: command.command_id.clone(),
+        command_kind: ConversationCommandKind::MemberAuthority as i32,
+        actor_ptid: identity.actor_ptid.clone(),
+        actor_device_id: operator.device_id.clone(),
+        actor_signing_key_id: identity.signing_key_id.clone(),
+        command_sha256: command_sha256.clone(),
+        created_at_unix_ms,
+        expires_at_unix_ms,
+    };
+    Ok(ConversationCommandProposal {
+        version: COMMAND_PROPOSAL_FORMAT_VERSION,
+        federation_id: command.federation_id.clone(),
+        authority_station_peer_id: command.authority_station_peer_id.clone(),
+        authority_epoch: command.authority_epoch,
+        home_station_peer_id: identity.home_station_peer_id.clone(),
+        actor_ptid: identity.actor_ptid.clone(),
+        actor_device_id: operator.device_id.clone(),
+        actor_signing_key_id: identity.signing_key_id.clone(),
+        command: None,
+        command_sha256,
+        actor_signature: identity
+            .signing_key
+            .sign(&signing_input.encode_to_vec())
+            .to_bytes()
+            .to_vec(),
+        created_at_unix_ms,
+        expires_at_unix_ms,
+        member_authority_command: Some(command.clone()),
+    })
+}
+
 fn command_kind(command: &ChatCommand) -> Option<ConversationCommandKind> {
     match command.payload.as_ref()? {
         chat_command::Payload::SendMessage(_) => Some(ConversationCommandKind::SendMessage),
         chat_command::Payload::EditMessage(_) => Some(ConversationCommandKind::EditMessage),
         chat_command::Payload::RetractMessage(_) => Some(ConversationCommandKind::RetractMessage),
+        chat_command::Payload::HideMessageForActor(_) => {
+            Some(ConversationCommandKind::HideMessageForActor)
+        }
+        chat_command::Payload::ModerateMessage(_) => Some(ConversationCommandKind::ModerateMessage),
+        chat_command::Payload::ForwardMessage(_) => Some(ConversationCommandKind::ForwardMessage),
         chat_command::Payload::Reaction(_) => Some(ConversationCommandKind::React),
         chat_command::Payload::PinMessage(_) => Some(ConversationCommandKind::PinMessage),
         chat_command::Payload::UpdateConversation(_) => {
@@ -1429,7 +1975,11 @@ fn command_kind(command: &ChatCommand) -> Option<ConversationCommandKind> {
 }
 
 fn command_timestamp_unix_ms(command: &ChatCommand) -> Option<i64> {
-    let timestamp = command.client_timestamp.as_ref()?;
+    timestamp_unix_ms(command.client_timestamp.as_ref())
+}
+
+fn timestamp_unix_ms(timestamp: Option<&prost_types::Timestamp>) -> Option<i64> {
+    let timestamp = timestamp?;
     if timestamp.seconds < 0
         || timestamp.nanos < 0
         || timestamp.nanos >= 1_000_000_000
@@ -1481,7 +2031,7 @@ fn validate_group_creation_response(
     validate_committed_event(command, response.event)
 }
 
-fn get_proto<Request, Response>(
+pub(super) fn get_proto<Request, Response>(
     station_origin: &str,
     access_token: &str,
     device_id: &str,
@@ -1495,7 +2045,7 @@ where
     let client = reqwest::blocking::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
-        .map_err(|_| StationTransportError::Network)?;
+        .map_err(classify_request_error)?;
     let response = client
         .get(format!("{}{path}", station_origin.trim_end_matches('/')))
         .bearer_auth(access_token)
@@ -1504,18 +2054,16 @@ where
         .header("Accept", "application/protobuf")
         .body(request.encode_to_vec())
         .send()
-        .map_err(|_| StationTransportError::Network)?;
+        .map_err(classify_request_error)?;
     let status = response.status();
-    let bytes = response
-        .bytes()
-        .map_err(|_| StationTransportError::Decode)?;
+    let bytes = response.bytes().map_err(classify_response_error)?;
     if !status.is_success() {
         return Err(StationTransportError::HttpStatus(status.as_u16()));
     }
     Response::decode(bytes.as_ref()).map_err(|_| StationTransportError::Decode)
 }
 
-fn post_proto<Request, Response>(
+pub(super) fn post_proto<Request, Response>(
     station_origin: &str,
     access_token: &str,
     device_id: &str,
@@ -1529,7 +2077,7 @@ where
     let client = reqwest::blocking::Client::builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
-        .map_err(|_| StationTransportError::Network)?;
+        .map_err(classify_request_error)?;
     let response = client
         .post(format!("{}{path}", station_origin.trim_end_matches('/')))
         .bearer_auth(access_token)
@@ -1538,18 +2086,75 @@ where
         .header("Accept", "application/protobuf")
         .body(request.encode_to_vec())
         .send()
-        .map_err(|_| StationTransportError::Network)?;
+        .map_err(classify_request_error)?;
     let status = response.status();
-    let bytes = response
-        .bytes()
-        .map_err(|_| StationTransportError::Decode)?;
+    let bytes = response.bytes().map_err(classify_response_error)?;
     if !status.is_success() {
         return Err(StationTransportError::HttpStatus(status.as_u16()));
     }
     Response::decode(bytes.as_ref()).map_err(|_| StationTransportError::Decode)
 }
 
-fn validate_transport_scope(
+fn post_member_authority_proto<Request, Response>(
+    station_origin: &str,
+    access_token: &str,
+    device_id: &str,
+    path: &str,
+    request: &Request,
+) -> Result<Response, MemberAuthorityTransportError>
+where
+    Request: Message,
+    Response: Message + Default,
+{
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .build()
+        .map_err(|_| MemberAuthorityTransportError {
+            code: "MOBILE_MEMBER_AUTHORITY_NETWORK".to_string(),
+            message: "build mobile member-authority transport".to_string(),
+        })?;
+    let response = client
+        .post(format!("{}{path}", station_origin.trim_end_matches('/')))
+        .bearer_auth(access_token)
+        .header("X-Device-ID", device_id)
+        .header(CONTENT_TYPE, "application/protobuf")
+        .header(ACCEPT, "application/protobuf")
+        .body(request.encode_to_vec())
+        .send()
+        .map_err(|error| MemberAuthorityTransportError {
+            code: if error.is_timeout() {
+                "MOBILE_MEMBER_AUTHORITY_DEADLINE"
+            } else {
+                "MOBILE_MEMBER_AUTHORITY_NETWORK"
+            }
+            .to_string(),
+            message: error.to_string(),
+        })?;
+    let status = response.status();
+    let error_code = response
+        .headers()
+        .get(MEMBER_AUTHORITY_ERROR_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let bytes = response
+        .bytes()
+        .map_err(|error| MemberAuthorityTransportError {
+            code: "MOBILE_MEMBER_AUTHORITY_RESPONSE_INVALID".to_string(),
+            message: error.to_string(),
+        })?;
+    if !status.is_success() {
+        return Err(MemberAuthorityTransportError {
+            code: error_code
+                .filter(|code| !code.trim().is_empty())
+                .unwrap_or_else(|| format!("MOBILE_MEMBER_AUTHORITY_HTTP_{}", status.as_u16())),
+            message: String::from_utf8_lossy(bytes.as_ref()).into_owned(),
+        });
+    }
+    Response::decode(bytes.as_ref()).map_err(|_| member_authority_invalid("response_decode"))
+}
+
+pub(super) fn validate_transport_scope(
     station_origin: &str,
     access_token: &str,
     device_id: &str,
@@ -1565,6 +2170,9 @@ fn validate_transport_scope(
 
 fn classify_command_error(error: StationTransportError) -> CommandSubmitFailure {
     match error {
+        StationTransportError::Deadline => CommandSubmitFailure::Retryable {
+            code: "deadline".to_string(),
+        },
         StationTransportError::Network => CommandSubmitFailure::Retryable {
             code: "network".to_string(),
         },
@@ -1581,6 +2189,34 @@ fn classify_command_error(error: StationTransportError) -> CommandSubmitFailure 
         StationTransportError::Decode => CommandSubmitFailure::Terminal {
             code: "invalid_response".to_string(),
         },
+        StationTransportError::Invalid => CommandSubmitFailure::Terminal {
+            code: "invalid_request".to_string(),
+        },
+    }
+}
+
+fn classify_member_authority_error(error: MemberAuthorityTransportError) -> CommandSubmitFailure {
+    match error.code.as_str() {
+        "MOBILE_MEMBER_AUTHORITY_NETWORK" | "MOBILE_MEMBER_AUTHORITY_DEADLINE" => {
+            CommandSubmitFailure::Retryable { code: error.code }
+        }
+        _ => CommandSubmitFailure::Terminal { code: error.code },
+    }
+}
+
+fn classify_request_error(error: reqwest::Error) -> StationTransportError {
+    if error.is_timeout() {
+        StationTransportError::Deadline
+    } else {
+        StationTransportError::Network
+    }
+}
+
+fn classify_response_error(error: reqwest::Error) -> StationTransportError {
+    if error.is_timeout() {
+        StationTransportError::Deadline
+    } else {
+        StationTransportError::Decode
     }
 }
 
@@ -1627,6 +2263,38 @@ mod tests {
         }
     }
 
+    fn member_authority_command() -> ConversationMemberAuthorityCommand {
+        ConversationMemberAuthorityCommand {
+            version: 1,
+            command_id: "command-member-authority".to_string(),
+            conversation_id: "conversation-1".to_string(),
+            operator: Some(CryptoEndpoint {
+                ptid: "ptid:bob".to_string(),
+                device_id: "device-1".to_string(),
+            }),
+            target_ptid: "ptid:alice".to_string(),
+            action: ConversationMemberAuthorityAction::UpdateMember as i32,
+            role: Some(MemberRole::Admin as i32),
+            muted: Some(true),
+            muted_until: None,
+            federation_id: "federation-1".to_string(),
+            authority_station_peer_id: "station-four".to_string(),
+            authority_epoch: 3,
+            authority_sequence: 2,
+            authority_hash: vec![8; 32],
+            observed_membership_epoch: 1,
+            observed_mls_epoch: 1,
+            client_timestamp: Some(prost_types::Timestamp {
+                seconds: 1_800_000_000,
+                nanos: 0,
+            }),
+            deadline: Some(prost_types::Timestamp {
+                seconds: 1_800_000_300,
+                nanos: 0,
+            }),
+        }
+    }
+
     fn prepared_group_genesis_command() -> ChatCommand {
         ChatCommand {
             command_id: "command-group".to_string(),
@@ -1659,6 +2327,11 @@ mod tests {
                 },
             )),
         }
+    }
+
+    #[test]
+    fn station_requests_use_the_ms_d15_thirty_second_deadline() {
+        assert_eq!(REQUEST_TIMEOUT, Duration::from_secs(30));
     }
 
     #[test]
@@ -1943,6 +2616,58 @@ mod tests {
     }
 
     #[test]
+    fn remote_member_authority_proposal_is_device_signed_and_exactly_bound() {
+        let identity = remote_command_identity();
+        let command = member_authority_command();
+        let head = ConversationPublicHead {
+            conversation_id: command.conversation_id.clone(),
+            source: ConversationPublicHeadSource::Follower as i32,
+            federation_id: command.federation_id.clone(),
+            authority_station_peer_id: command.authority_station_peer_id.clone(),
+            authority_epoch: command.authority_epoch,
+            group_seq: command.authority_sequence,
+            event_hash: command.authority_hash.clone(),
+            membership_epoch: command.observed_membership_epoch,
+            mls_epoch: command.observed_mls_epoch,
+            status: "active".to_string(),
+            ..Default::default()
+        };
+
+        let first = build_remote_member_authority_proposal(&command, &identity, &head).unwrap();
+        let second = build_remote_member_authority_proposal(&command, &identity, &head).unwrap();
+
+        assert_eq!(first.encode_to_vec(), second.encode_to_vec());
+        assert!(first.command.is_none());
+        assert_eq!(first.member_authority_command.as_ref(), Some(&command));
+        assert_eq!(first.created_at_unix_ms, 1_800_000_000_000);
+        assert_eq!(first.expires_at_unix_ms, 1_800_000_300_000);
+        let signing_input = ConversationCommandProposalSigningInput {
+            version: first.version,
+            federation_id: first.federation_id.clone(),
+            authority_station_peer_id: first.authority_station_peer_id.clone(),
+            authority_epoch: first.authority_epoch,
+            home_station_peer_id: first.home_station_peer_id.clone(),
+            conversation_id: command.conversation_id.clone(),
+            command_id: command.command_id.clone(),
+            command_kind: ConversationCommandKind::MemberAuthority as i32,
+            actor_ptid: first.actor_ptid.clone(),
+            actor_device_id: first.actor_device_id.clone(),
+            actor_signing_key_id: first.actor_signing_key_id.clone(),
+            command_sha256: first.command_sha256.clone(),
+            created_at_unix_ms: first.created_at_unix_ms,
+            expires_at_unix_ms: first.expires_at_unix_ms,
+        };
+        identity
+            .signing_key
+            .verifying_key()
+            .verify(
+                &signing_input.encode_to_vec(),
+                &Signature::from_slice(&first.actor_signature).unwrap(),
+            )
+            .unwrap();
+    }
+
+    #[test]
     fn remote_command_proposal_rejects_non_follower_head() {
         let identity = remote_command_identity();
         let command = reaction_command("station-four");
@@ -1961,6 +2686,28 @@ mod tests {
                 code: "remote_route_binding".to_string(),
             })
         );
+    }
+
+    #[test]
+    fn social_result_lookup_requires_exact_command_identity() {
+        let transport = StationSocialTransport::new(
+            "https://station.example".to_string(),
+            "token".to_string(),
+            "device-1".to_string(),
+        )
+        .unwrap();
+        assert!(transport
+            .lookup_friend_request_command_result(&LookupFriendRequestCommandResultRequest {
+                command_id: String::new(),
+                command_payload_sha256: vec![7; 32],
+            },)
+            .is_err());
+        assert!(transport
+            .lookup_friend_request_command_result(&LookupFriendRequestCommandResultRequest {
+                command_id: "command-1".to_string(),
+                command_payload_sha256: vec![7; 31],
+            },)
+            .is_err());
     }
 
     #[test]

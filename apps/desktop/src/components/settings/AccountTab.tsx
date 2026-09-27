@@ -23,7 +23,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button } from '@lobehub/ui';
-import { api, type AccountProfile, type AccountProfileLink } from '../../services/desktop_api';
+import {
+  api,
+  type AccountProfile,
+  type AccountProfileLink,
+  type ProfileUpdateResult,
+} from '../../services/desktop_api';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { useTranslation } from 'react-i18next';
@@ -114,6 +119,17 @@ function normalizeProfile(profile: AccountProfile): AccountProfile {
     peers_touch: {
       network_id: profile.peers_touch?.network_id || '',
     },
+  };
+}
+
+function applyProfileMutationRevision(
+  current: AccountProfile | null,
+  result: ProfileUpdateResult,
+): AccountProfile | null {
+  if (!current) return current;
+  return {
+    ...current,
+    profile_revision: result.profile.profile_revision,
   };
 }
 
@@ -402,7 +418,7 @@ export function AccountTab() {
     saveTimerRef.current = setTimeout(async () => {
       setSaving(true);
       try {
-        await api.profileUpdate({
+        const result = await api.profileUpdate({
           display_name: nextProfile.display_name.trim(),
           note: nextProfile.note.trim(),
           region: nextProfile.region.trim(),
@@ -411,7 +427,12 @@ export function AccountTab() {
           links: nextProfile.links
             .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
             .filter((l) => l.label || l.url),
+          observed_revision: nextProfile.profile_revision,
         });
+        setProfile((current) => applyProfileMutationRevision(current, result));
+        if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
+          toast.error(t('provider.account.failedToUpdate'));
+        }
         // Do not setProfile here — local state is already up-to-date.
         // Overwriting with the server response causes controlled inputs
         // to re-render and lose cursor position / focus (the "flicker" bug).
@@ -466,7 +487,13 @@ export function AccountTab() {
 
     setUploadingAvatar(true);
     try {
-      const next = normalizeProfile(await api.profileUploadAvatarOss({ file_path: path }));
+      const result = await api.profileUploadAvatarOss({ file_path: path });
+      if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
+        setProfile((current) => applyProfileMutationRevision(current, result));
+        toast.error(t('provider.account.avatarHeader.failedToUploadAvatar'));
+        return;
+      }
+      const next = normalizeProfile(result.profile);
       setProfile(next);
 
       if (next.avatar) {
@@ -488,7 +515,13 @@ export function AccountTab() {
 
     setUploadingHeader(true);
     try {
-      const next = normalizeProfile(await api.profileUploadHeaderOss({ file_path: path }));
+      const result = await api.profileUploadHeaderOss({ file_path: path });
+      if (result.outcome === 'PROFILE_UPDATE_OUTCOME_CONFLICT') {
+        setProfile((current) => applyProfileMutationRevision(current, result));
+        toast.error(t('provider.account.avatarHeader.failedToUploadHeader'));
+        return;
+      }
+      const next = normalizeProfile(result.profile);
       setProfile(next);
       toast.success(t('provider.account.avatarHeader.headerUpdated'));
     } catch (error: any) {

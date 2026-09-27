@@ -163,7 +163,7 @@ REQUIRED_ASSERTIONS = {
     "background_upload_recovery",
     "background_rendered",
     "background_second_device_recovery",
-    "clear_cursor_station_readback",
+    "conversation_local_clear",
     "offline_recovery_exact",
     "restart_exact",
     "attachment_failure_draft_retained",
@@ -216,7 +216,7 @@ REQUIRED_LOCALIZATION_CHECKPOINTS = {
     "attachments": {"alice", "bob"},
     "offline": {"alice", "bob"},
     "restart": {"alice", "bob"},
-    "clear-cursor": {"alice", "bob"},
+    "conversation-local-clear": {"alice", "bob"},
     "recovery-create": {"alice"},
     "recovery-restore": {"alice2"},
     "alice2": {"alice2"},
@@ -3395,9 +3395,6 @@ class NativeProductClosureGate(AcceptanceGate):
               pinned: panel.getAttribute('data-chat-detail-pinned') || '',
               background: panel.getAttribute('data-chat-detail-background') || '',
               backgroundImage: panel.getAttribute('data-chat-detail-background-image') || '',
-              clearedAt: Number(
-                panel.getAttribute('data-chat-detail-cleared-at') || 0
-              ),
               pending: panel.getAttribute('data-chat-detail-action-pending') || '',
               backgroundRetry:
                 panel.getAttribute('data-chat-detail-background-retry') || '',
@@ -4538,12 +4535,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 or ""
             )
             == settings_before["ui"]["backgroundImage"]
-            and int(
-                normalized_station.get("cleared_at_unix_ms")
-                or normalized_station.get("clearedAtUnixMs")
-                or 0
-            )
-            == 0
         )
         self.assert_condition(
             "settings_restart_recovery",
@@ -4583,93 +4574,57 @@ class NativeProductClosureGate(AcceptanceGate):
         )
         self.click_element(actor, confirmation)
 
-    def prove_clear_cursor(self, group_id: str) -> dict[str, Any]:
+    def prove_local_conversation_clear(self, group_id: str) -> dict[str, Any]:
+        bob_before = self.transcript("bob")
         self.open_details("alice")
         self.click("alice", '[data-chat-history-action="clear"]')
         self.click_confirmation("alice")
         cleared = wait_until(
-            lambda: (
-                value
-                if (value := self.setting_state("alice")).get("clearedAt", 0) > 0
-                else None
-            ),
-            "clear cursor projection",
+            lambda: True if self.transcript("alice") == [] else None,
+            "local conversation clear",
             timeout=60,
         )
-        normalized = self.member_settings("alice", group_id)
-        station_value = int(
-            normalized.get("cleared_at_unix_ms")
-            or normalized.get("clearedAtUnixMs")
-            or 0
+        alice_restore_controls = self.clients["alice"].find_elements(
+            '[data-chat-history-action="restore"]'
         )
-        if station_value != int(cleared["clearedAt"]):
-            raise GateError(
-                "clear cursor Station readback diverged: "
-                f"ui={cleared['clearedAt']} station={station_value}"
-            )
+        bob_unchanged = self.transcript("bob") == bob_before
 
         self.restart_actor("alice")
         self.open_existing_group("alice", group_id)
-        restored = wait_until(
-            lambda: (
-                value
-                if (
-                    (value := self.setting_state("alice")).get("clearedAt")
-                    == cleared["clearedAt"]
-                    and self.transcript("alice") == []
-                )
-                else None
-            ),
-            "clear cursor restart recovery",
+        restart_stable = wait_until(
+            lambda: True if self.transcript("alice") == [] else None,
+            "local conversation clear restart",
             timeout=180,
         )
-        self.click("alice", '[data-chat-history-action="restore"]')
-        self.click_confirmation("alice")
-        wait_until(
-            lambda: (
-                value
-                if (value := self.setting_state("alice")).get("clearedAt") == 0
-                else None
-            ),
-            "clear cursor restore",
-            timeout=60,
-        )
-        expected = wait_until(
-            lambda: (
-                value
-                if (value := self.transcript("alice"))
-                == self.transcript("bob")
-                else None
-            ),
-            "restored exact transcript",
-            timeout=180,
-        )
-        restored_settings = self.member_settings("alice", group_id)
-        station_restored_cursor = int(
-            restored_settings.get("cleared_at_unix_ms")
-            or restored_settings.get("clearedAtUnixMs")
-            or 0
-        )
+        self.open_existing_group("bob", group_id)
+        new_text = f"post-clear-{time.time_ns()}"
+        self.composer_send("bob", new_text)
+        new_message = self.wait_message_text("alice", new_text)
         self.assert_condition(
-            "clear_cursor_station_readback",
-            bool(expected) and station_restored_cursor == 0,
+            "conversation_local_clear",
+            cleared is True
+            and not alice_restore_controls
+            and bob_unchanged
+            and restart_stable is True
+            and bool(new_message),
             json.dumps(
                 {
-                    "cleared": cleared,
-                    "station": normalized,
-                    "restart": restored,
-                    "restoredStation": restored_settings,
+                    "aliceCleared": cleared,
+                    "aliceRestoreControlCount": len(alice_restore_controls),
+                    "bobUnchanged": bob_unchanged,
+                    "restartStable": restart_stable,
+                    "newMessage": new_message,
                 },
                 sort_keys=True,
             ),
         )
-        self.capture_visible_localization("clear-cursor", ("alice", "bob"))
+        self.capture_visible_localization("conversation-local-clear", ("alice", "bob"))
         return {
-            "cleared": cleared,
-            "station": normalized,
-            "restart": restored,
-            "restoredStation": restored_settings,
-            "restoredTranscript": expected,
+            "aliceCleared": cleared,
+            "aliceRestoreControlCount": len(alice_restore_controls),
+            "bobUnchanged": bob_unchanged,
+            "restartStable": restart_stable,
+            "newMessage": new_message,
         }
 
     def arm_recovery_feedback_probe(self, actor: str) -> None:
@@ -4862,7 +4817,6 @@ class NativeProductClosureGate(AcceptanceGate):
                     and value.get("background") == "paper"
                     and value.get("backgroundImage")
                     == expected_settings["backgroundImage"]
-                    and value.get("clearedAt") == 0
                 )
                 else None
             ),
@@ -4895,12 +4849,6 @@ class NativeProductClosureGate(AcceptanceGate):
                 or ""
             )
             == expected_settings["backgroundImage"]
-            and int(
-                normalized.get("cleared_at_unix_ms")
-                or normalized.get("clearedAtUnixMs")
-                or 0
-            )
-            == 0
         )
         client_isolated = all(
             self.client_specs["alice"][field]
@@ -5302,9 +5250,9 @@ class NativeProductClosureGate(AcceptanceGate):
                     attachment_messages,
                 ),
             )
-            clear_cursor = self.step(
-                "clear.cursor.restart.ui",
-                lambda: self.prove_clear_cursor(group_id),
+            local_clear = self.step(
+                "conversation.local-clear.restart.ui",
+                lambda: self.prove_local_conversation_clear(group_id),
             )
             second_device = self.step(
                 "alice.second-device.recovery.ui",
@@ -5331,7 +5279,7 @@ class NativeProductClosureGate(AcceptanceGate):
                 "settings-background",
                 {
                     "initial": settings,
-                    "clearCursor": clear_cursor,
+                    "localConversationClear": local_clear,
                     "secondDevice": second_device,
                 },
             )

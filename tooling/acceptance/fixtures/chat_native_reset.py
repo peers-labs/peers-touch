@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import os
@@ -17,12 +17,14 @@ import sqlite3
 import subprocess
 import threading
 import time
-from typing import Iterable
+from typing import Iterable, Mapping
+import urllib.error
 import urllib.parse
 import urllib.request
 
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioner import (
+    resolve_deployment_environment_path,
     resolve_machine_profile_environment,
 )
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
@@ -162,7 +164,7 @@ def load_environment_file(path: Path) -> dict[str, str]:
 
 def deploy_environment(name: str) -> dict[str, str]:
     return load_environment_file(
-        REPO_ROOT / ".local" / "deploy" / "envs" / f"{name}.env"
+        resolve_deployment_environment_path(name, repo_root=REPO_ROOT)
     )
 
 
@@ -641,6 +643,103 @@ def _station_version(station_url: str) -> dict[str, object]:
     if not isinstance(value, dict):
         raise RuntimeError("Chat Acceptance Station version response is invalid")
     return value
+
+
+def refresh_fixture_actor_locator(
+    station_url: str,
+    environment_name: str,
+    actor: FixtureActorRecord,
+) -> FixtureActorRecord:
+    environment = acceptance_station_environment(
+        station_url,
+        environment_name,
+    )
+    verify_disposable_station_runtime(environment)
+    query = urllib.parse.urlencode(
+        {
+            "handle": actor.federated_handle,
+            "timeout": "5s",
+        }
+    )
+    existing_sequence = 0
+    try:
+        with urllib.request.urlopen(
+            f"{station_url.rstrip('/')}/sub-bootstrap/locator/lookup?{query}",
+            timeout=10,
+        ) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        data = payload.get("data") if isinstance(payload, Mapping) else None
+        if isinstance(data, Mapping):
+            existing_sequence = int(data.get("seq") or 0)
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise RuntimeError(
+                "Chat fixture locator lookup failed with "
+                f"HTTP {error.code}"
+            ) from error
+    if existing_sequence >= actor.locator_seq:
+        _set_fixture_actor_locator_sequence(
+            environment,
+            actor.ptid,
+            existing_sequence,
+        )
+
+    request = urllib.request.Request(
+        f"{station_url.rstrip('/')}/sub-bootstrap/locator/publish",
+        data=urllib.parse.urlencode(
+            {"actor_ptid": actor.ptid}
+        ).encode("utf-8"),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=35) as response:
+            published = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(
+            "Chat fixture locator publish failed with "
+            f"HTTP {error.code}"
+        ) from error
+    if (
+        not isinstance(published, Mapping)
+        or str(published.get("code") or "") != "200"
+    ):
+        raise RuntimeError("Chat fixture locator publish was not accepted")
+    return replace(
+        actor,
+        locator_seq=max(actor.locator_seq, existing_sequence) + 1,
+    )
+
+
+def _set_fixture_actor_locator_sequence(
+    environment: Mapping[str, str],
+    actor_ptid: str,
+    sequence: int,
+) -> None:
+    if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
+        with closing(sqlite3.connect(
+            environment["PT_ACCEPTANCE_LOCAL_DATABASE"],
+            timeout=10,
+        )) as connection:
+            connection.execute(
+                """
+UPDATE touch_actor
+SET locator_seq = max(locator_seq, ?)
+WHERE ptid = ?
+  AND origin = 'local'
+""",
+                (sequence, actor_ptid),
+            )
+            connection.commit()
+        return
+    _remote_psql(
+        dict(environment),
+        f"""
+UPDATE touch_actor
+SET locator_seq = GREATEST(locator_seq, {sequence})
+WHERE ptid = {_sql_literal(actor_ptid)}
+  AND origin = 'local';
+""",
+    )
 
 
 def _remote_transport(environment: dict[str, str]) -> SshTransport:
@@ -1391,6 +1490,12 @@ WHERE touch_actor.origin = 'remote_cached'
 """
     sql = f"""
 BEGIN;
+DELETE FROM auth_peer_keys
+WHERE station_id IN (
+      {membership_station_ids}
+    )
+  AND station_id <> {_sql_literal(actor.home_station_peer_id)}
+  AND pinned = FALSE;
 INSERT INTO federation (
   federation_id,
   name,

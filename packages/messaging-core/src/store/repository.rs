@@ -1,9 +1,9 @@
 use crate::contracts::{
     ActorReadReceiveCommit, ConversationProjection, ConversationStateReceiveCommit,
     DeliveryReceiptReceiveCommit, DirectEditCommit, DirectReceiveCommit, InteractionReceiveCommit,
-    MlsApplicationReceiveCommit, MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit,
-    MlsTransitionReceiveCommit, PendingMlsKeyPackage, PendingMlsTransitionState,
-    PublicEventReceiveCommit, ReceiveCommitResult,
+    MemberAuthorityReceiveCommit, MlsApplicationReceiveCommit, MlsRetirementReceiveCommit,
+    MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit, PendingMlsKeyPackage,
+    PendingMlsTransitionState, PublicEventReceiveCommit, ReceiveCommitResult,
 };
 use crate::crypto::double_ratchet::DrSkippedMessageKey;
 use crate::crypto::session::DirectSession;
@@ -260,6 +260,13 @@ pub trait MessagingRepository: Send + Sync {
         &self,
         commit: &ConversationStateReceiveCommit,
     ) -> Result<ReceiveCommitResult, String>;
+
+    fn commit_member_authority_state(
+        &self,
+        commit: &MemberAuthorityReceiveCommit,
+    ) -> Result<ReceiveCommitResult, String> {
+        self.commit_conversation_state(&commit.state)
+    }
 
     fn conversation_projections(&self) -> Result<Vec<ConversationProjection>, String>;
 

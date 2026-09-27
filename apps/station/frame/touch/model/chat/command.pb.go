@@ -539,6 +539,186 @@ func (x *RetractMessageIntent) GetMessageId() string {
 	return ""
 }
 
+type HideMessageForActorIntent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MessageId     string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HideMessageForActorIntent) Reset() {
+	*x = HideMessageForActorIntent{}
+	mi := &file_domain_chat_command_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HideMessageForActorIntent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HideMessageForActorIntent) ProtoMessage() {}
+
+func (x *HideMessageForActorIntent) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_command_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HideMessageForActorIntent.ProtoReflect.Descriptor instead.
+func (*HideMessageForActorIntent) Descriptor() ([]byte, []int) {
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *HideMessageForActorIntent) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+type ModerateMessageIntent struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MessageId     string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
+	ReasonCode    string                 `protobuf:"bytes,2,opt,name=reason_code,json=reasonCode,proto3" json:"reason_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ModerateMessageIntent) Reset() {
+	*x = ModerateMessageIntent{}
+	mi := &file_domain_chat_command_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ModerateMessageIntent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ModerateMessageIntent) ProtoMessage() {}
+
+func (x *ModerateMessageIntent) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_command_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ModerateMessageIntent.ProtoReflect.Descriptor instead.
+func (*ModerateMessageIntent) Descriptor() ([]byte, []int) {
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ModerateMessageIntent) GetMessageId() string {
+	if x != nil {
+		return x.MessageId
+	}
+	return ""
+}
+
+func (x *ModerateMessageIntent) GetReasonCode() string {
+	if x != nil {
+		return x.ReasonCode
+	}
+	return ""
+}
+
+type ForwardMessageIntent struct {
+	state                       protoimpl.MessageState       `protogen:"open.v1"`
+	DestinationMessageId        string                       `protobuf:"bytes,1,opt,name=destination_message_id,json=destinationMessageId,proto3" json:"destination_message_id,omitempty"`
+	ContentKind                 MessagingContentKind         `protobuf:"varint,2,opt,name=content_kind,json=contentKind,proto3,enum=peers_touch.model.chat.v1.MessagingContentKind" json:"content_kind,omitempty"`
+	DestinationAttachments      []*EncryptedObjectDescriptor `protobuf:"bytes,3,rep,name=destination_attachments,json=destinationAttachments,proto3" json:"destination_attachments,omitempty"`
+	DestinationPayloads         []*PreparedEndpointPayload   `protobuf:"bytes,4,rep,name=destination_payloads,json=destinationPayloads,proto3" json:"destination_payloads,omitempty"`
+	MlsApplicationPayload       []byte                       `protobuf:"bytes,5,opt,name=mls_application_payload,json=mlsApplicationPayload,proto3" json:"mls_application_payload,omitempty"`
+	MlsApplicationPayloadSha256 []byte                       `protobuf:"bytes,6,opt,name=mls_application_payload_sha256,json=mlsApplicationPayloadSha256,proto3" json:"mls_application_payload_sha256,omitempty"`
+	unknownFields               protoimpl.UnknownFields
+	sizeCache                   protoimpl.SizeCache
+}
+
+func (x *ForwardMessageIntent) Reset() {
+	*x = ForwardMessageIntent{}
+	mi := &file_domain_chat_command_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForwardMessageIntent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForwardMessageIntent) ProtoMessage() {}
+
+func (x *ForwardMessageIntent) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_chat_command_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForwardMessageIntent.ProtoReflect.Descriptor instead.
+func (*ForwardMessageIntent) Descriptor() ([]byte, []int) {
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ForwardMessageIntent) GetDestinationMessageId() string {
+	if x != nil {
+		return x.DestinationMessageId
+	}
+	return ""
+}
+
+func (x *ForwardMessageIntent) GetContentKind() MessagingContentKind {
+	if x != nil {
+		return x.ContentKind
+	}
+	return MessagingContentKind_MESSAGING_CONTENT_KIND_UNSPECIFIED
+}
+
+func (x *ForwardMessageIntent) GetDestinationAttachments() []*EncryptedObjectDescriptor {
+	if x != nil {
+		return x.DestinationAttachments
+	}
+	return nil
+}
+
+func (x *ForwardMessageIntent) GetDestinationPayloads() []*PreparedEndpointPayload {
+	if x != nil {
+		return x.DestinationPayloads
+	}
+	return nil
+}
+
+func (x *ForwardMessageIntent) GetMlsApplicationPayload() []byte {
+	if x != nil {
+		return x.MlsApplicationPayload
+	}
+	return nil
+}
+
+func (x *ForwardMessageIntent) GetMlsApplicationPayloadSha256() []byte {
+	if x != nil {
+		return x.MlsApplicationPayloadSha256
+	}
+	return nil
+}
+
 type ReactionIntent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	MessageId     string                 `protobuf:"bytes,1,opt,name=message_id,json=messageId,proto3" json:"message_id,omitempty"`
@@ -550,7 +730,7 @@ type ReactionIntent struct {
 
 func (x *ReactionIntent) Reset() {
 	*x = ReactionIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[4]
+	mi := &file_domain_chat_command_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -562,7 +742,7 @@ func (x *ReactionIntent) String() string {
 func (*ReactionIntent) ProtoMessage() {}
 
 func (x *ReactionIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[4]
+	mi := &file_domain_chat_command_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -575,7 +755,7 @@ func (x *ReactionIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReactionIntent.ProtoReflect.Descriptor instead.
 func (*ReactionIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{4}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ReactionIntent) GetMessageId() string {
@@ -609,7 +789,7 @@ type PinMessageIntent struct {
 
 func (x *PinMessageIntent) Reset() {
 	*x = PinMessageIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[5]
+	mi := &file_domain_chat_command_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -621,7 +801,7 @@ func (x *PinMessageIntent) String() string {
 func (*PinMessageIntent) ProtoMessage() {}
 
 func (x *PinMessageIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[5]
+	mi := &file_domain_chat_command_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -634,7 +814,7 @@ func (x *PinMessageIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PinMessageIntent.ProtoReflect.Descriptor instead.
 func (*PinMessageIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{5}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PinMessageIntent) GetMessageId() string {
@@ -652,19 +832,18 @@ func (x *PinMessageIntent) GetRemove() bool {
 }
 
 type UpdateConversationIntent struct {
-	state                 protoimpl.MessageState `protogen:"open.v1"`
-	Name                  *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	Description           *string                `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
-	AvatarObjectId        *string                `protobuf:"bytes,3,opt,name=avatar_object_id,json=avatarObjectId,proto3,oneof" json:"avatar_object_id,omitempty"`
-	DisappearTimerSeconds *uint32                `protobuf:"varint,4,opt,name=disappear_timer_seconds,json=disappearTimerSeconds,proto3,oneof" json:"disappear_timer_seconds,omitempty"`
-	Visibility            *GroupVisibilityV1     `protobuf:"varint,5,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1,oneof" json:"visibility,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           *string                `protobuf:"bytes,1,opt,name=name,proto3,oneof" json:"name,omitempty"`
+	Description    *string                `protobuf:"bytes,2,opt,name=description,proto3,oneof" json:"description,omitempty"`
+	AvatarObjectId *string                `protobuf:"bytes,3,opt,name=avatar_object_id,json=avatarObjectId,proto3,oneof" json:"avatar_object_id,omitempty"`
+	Visibility     *GroupVisibilityV1     `protobuf:"varint,5,opt,name=visibility,proto3,enum=peers_touch.model.chat.v1.GroupVisibilityV1,oneof" json:"visibility,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *UpdateConversationIntent) Reset() {
 	*x = UpdateConversationIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[6]
+	mi := &file_domain_chat_command_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -676,7 +855,7 @@ func (x *UpdateConversationIntent) String() string {
 func (*UpdateConversationIntent) ProtoMessage() {}
 
 func (x *UpdateConversationIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[6]
+	mi := &file_domain_chat_command_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -689,7 +868,7 @@ func (x *UpdateConversationIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateConversationIntent.ProtoReflect.Descriptor instead.
 func (*UpdateConversationIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{6}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *UpdateConversationIntent) GetName() string {
@@ -713,13 +892,6 @@ func (x *UpdateConversationIntent) GetAvatarObjectId() string {
 	return ""
 }
 
-func (x *UpdateConversationIntent) GetDisappearTimerSeconds() uint32 {
-	if x != nil && x.DisappearTimerSeconds != nil {
-		return *x.DisappearTimerSeconds
-	}
-	return 0
-}
-
 func (x *UpdateConversationIntent) GetVisibility() GroupVisibilityV1 {
 	if x != nil && x.Visibility != nil {
 		return *x.Visibility
@@ -739,7 +911,7 @@ type MessagingMembershipChangeIntent struct {
 
 func (x *MessagingMembershipChangeIntent) Reset() {
 	*x = MessagingMembershipChangeIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[7]
+	mi := &file_domain_chat_command_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -751,7 +923,7 @@ func (x *MessagingMembershipChangeIntent) String() string {
 func (*MessagingMembershipChangeIntent) ProtoMessage() {}
 
 func (x *MessagingMembershipChangeIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[7]
+	mi := &file_domain_chat_command_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -764,7 +936,7 @@ func (x *MessagingMembershipChangeIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessagingMembershipChangeIntent.ProtoReflect.Descriptor instead.
 func (*MessagingMembershipChangeIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{7}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *MessagingMembershipChangeIntent) GetAction() MessagingMembershipAction {
@@ -814,7 +986,7 @@ type MembershipTransitionIntent struct {
 
 func (x *MembershipTransitionIntent) Reset() {
 	*x = MembershipTransitionIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[8]
+	mi := &file_domain_chat_command_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -826,7 +998,7 @@ func (x *MembershipTransitionIntent) String() string {
 func (*MembershipTransitionIntent) ProtoMessage() {}
 
 func (x *MembershipTransitionIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[8]
+	mi := &file_domain_chat_command_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -839,7 +1011,7 @@ func (x *MembershipTransitionIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MembershipTransitionIntent.ProtoReflect.Descriptor instead.
 func (*MembershipTransitionIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{8}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MembershipTransitionIntent) GetTransitionId() string {
@@ -927,7 +1099,7 @@ type DissolveConversationIntent struct {
 
 func (x *DissolveConversationIntent) Reset() {
 	*x = DissolveConversationIntent{}
-	mi := &file_domain_chat_command_proto_msgTypes[9]
+	mi := &file_domain_chat_command_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -939,7 +1111,7 @@ func (x *DissolveConversationIntent) String() string {
 func (*DissolveConversationIntent) ProtoMessage() {}
 
 func (x *DissolveConversationIntent) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[9]
+	mi := &file_domain_chat_command_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -952,7 +1124,7 @@ func (x *DissolveConversationIntent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DissolveConversationIntent.ProtoReflect.Descriptor instead.
 func (*DissolveConversationIntent) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{9}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{12}
 }
 
 // Exact authority command for target-member administration. This command is
@@ -983,7 +1155,7 @@ type ConversationMemberAuthorityCommand struct {
 
 func (x *ConversationMemberAuthorityCommand) Reset() {
 	*x = ConversationMemberAuthorityCommand{}
-	mi := &file_domain_chat_command_proto_msgTypes[10]
+	mi := &file_domain_chat_command_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -995,7 +1167,7 @@ func (x *ConversationMemberAuthorityCommand) String() string {
 func (*ConversationMemberAuthorityCommand) ProtoMessage() {}
 
 func (x *ConversationMemberAuthorityCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[10]
+	mi := &file_domain_chat_command_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1008,7 +1180,7 @@ func (x *ConversationMemberAuthorityCommand) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ConversationMemberAuthorityCommand.ProtoReflect.Descriptor instead.
 func (*ConversationMemberAuthorityCommand) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{10}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ConversationMemberAuthorityCommand) GetVersion() uint32 {
@@ -1159,6 +1331,9 @@ type ChatCommand struct {
 	//	*ChatCommand_UpdateConversation
 	//	*ChatCommand_MembershipTransition
 	//	*ChatCommand_DissolveConversation
+	//	*ChatCommand_HideMessageForActor
+	//	*ChatCommand_ModerateMessage
+	//	*ChatCommand_ForwardMessage
 	Payload       isChatCommand_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1166,7 +1341,7 @@ type ChatCommand struct {
 
 func (x *ChatCommand) Reset() {
 	*x = ChatCommand{}
-	mi := &file_domain_chat_command_proto_msgTypes[11]
+	mi := &file_domain_chat_command_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1178,7 +1353,7 @@ func (x *ChatCommand) String() string {
 func (*ChatCommand) ProtoMessage() {}
 
 func (x *ChatCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[11]
+	mi := &file_domain_chat_command_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1191,7 +1366,7 @@ func (x *ChatCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatCommand.ProtoReflect.Descriptor instead.
 func (*ChatCommand) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{11}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ChatCommand) GetCommandId() string {
@@ -1329,6 +1504,33 @@ func (x *ChatCommand) GetDissolveConversation() *DissolveConversationIntent {
 	return nil
 }
 
+func (x *ChatCommand) GetHideMessageForActor() *HideMessageForActorIntent {
+	if x != nil {
+		if x, ok := x.Payload.(*ChatCommand_HideMessageForActor); ok {
+			return x.HideMessageForActor
+		}
+	}
+	return nil
+}
+
+func (x *ChatCommand) GetModerateMessage() *ModerateMessageIntent {
+	if x != nil {
+		if x, ok := x.Payload.(*ChatCommand_ModerateMessage); ok {
+			return x.ModerateMessage
+		}
+	}
+	return nil
+}
+
+func (x *ChatCommand) GetForwardMessage() *ForwardMessageIntent {
+	if x != nil {
+		if x, ok := x.Payload.(*ChatCommand_ForwardMessage); ok {
+			return x.ForwardMessage
+		}
+	}
+	return nil
+}
+
 type isChatCommand_Payload interface {
 	isChatCommand_Payload()
 }
@@ -1365,6 +1567,18 @@ type ChatCommand_DissolveConversation struct {
 	DissolveConversation *DissolveConversationIntent `protobuf:"bytes,27,opt,name=dissolve_conversation,json=dissolveConversation,proto3,oneof"`
 }
 
+type ChatCommand_HideMessageForActor struct {
+	HideMessageForActor *HideMessageForActorIntent `protobuf:"bytes,28,opt,name=hide_message_for_actor,json=hideMessageForActor,proto3,oneof"`
+}
+
+type ChatCommand_ModerateMessage struct {
+	ModerateMessage *ModerateMessageIntent `protobuf:"bytes,29,opt,name=moderate_message,json=moderateMessage,proto3,oneof"`
+}
+
+type ChatCommand_ForwardMessage struct {
+	ForwardMessage *ForwardMessageIntent `protobuf:"bytes,30,opt,name=forward_message,json=forwardMessage,proto3,oneof"`
+}
+
 func (*ChatCommand_SendMessage) isChatCommand_Payload() {}
 
 func (*ChatCommand_EditMessage) isChatCommand_Payload() {}
@@ -1381,30 +1595,37 @@ func (*ChatCommand_MembershipTransition) isChatCommand_Payload() {}
 
 func (*ChatCommand_DissolveConversation) isChatCommand_Payload() {}
 
+func (*ChatCommand_HideMessageForActor) isChatCommand_Payload() {}
+
+func (*ChatCommand_ModerateMessage) isChatCommand_Payload() {}
+
+func (*ChatCommand_ForwardMessage) isChatCommand_Payload() {}
+
 // The only remote durable command wrapper. command_id is both the proposal
 // identity and the authority idempotency identity.
 type ConversationCommandProposal struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	Version                uint32                 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
-	FederationId           string                 `protobuf:"bytes,2,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
-	AuthorityStationPeerId string                 `protobuf:"bytes,3,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
-	AuthorityEpoch         int64                  `protobuf:"varint,4,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
-	HomeStationPeerId      string                 `protobuf:"bytes,5,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
-	ActorPtid              string                 `protobuf:"bytes,6,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
-	ActorDeviceId          string                 `protobuf:"bytes,7,opt,name=actor_device_id,json=actorDeviceId,proto3" json:"actor_device_id,omitempty"`
-	ActorSigningKeyId      string                 `protobuf:"bytes,8,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
-	Command                *ChatCommand           `protobuf:"bytes,9,opt,name=command,proto3" json:"command,omitempty"`
-	CommandSha256          []byte                 `protobuf:"bytes,10,opt,name=command_sha256,json=commandSha256,proto3" json:"command_sha256,omitempty"`
-	ActorSignature         []byte                 `protobuf:"bytes,11,opt,name=actor_signature,json=actorSignature,proto3" json:"actor_signature,omitempty"`
-	CreatedAtUnixMs        int64                  `protobuf:"varint,12,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
-	ExpiresAtUnixMs        int64                  `protobuf:"varint,13,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	state                  protoimpl.MessageState              `protogen:"open.v1"`
+	Version                uint32                              `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	FederationId           string                              `protobuf:"bytes,2,opt,name=federation_id,json=federationId,proto3" json:"federation_id,omitempty"`
+	AuthorityStationPeerId string                              `protobuf:"bytes,3,opt,name=authority_station_peer_id,json=authorityStationPeerId,proto3" json:"authority_station_peer_id,omitempty"`
+	AuthorityEpoch         int64                               `protobuf:"varint,4,opt,name=authority_epoch,json=authorityEpoch,proto3" json:"authority_epoch,omitempty"`
+	HomeStationPeerId      string                              `protobuf:"bytes,5,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	ActorPtid              string                              `protobuf:"bytes,6,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	ActorDeviceId          string                              `protobuf:"bytes,7,opt,name=actor_device_id,json=actorDeviceId,proto3" json:"actor_device_id,omitempty"`
+	ActorSigningKeyId      string                              `protobuf:"bytes,8,opt,name=actor_signing_key_id,json=actorSigningKeyId,proto3" json:"actor_signing_key_id,omitempty"`
+	Command                *ChatCommand                        `protobuf:"bytes,9,opt,name=command,proto3" json:"command,omitempty"`
+	CommandSha256          []byte                              `protobuf:"bytes,10,opt,name=command_sha256,json=commandSha256,proto3" json:"command_sha256,omitempty"`
+	ActorSignature         []byte                              `protobuf:"bytes,11,opt,name=actor_signature,json=actorSignature,proto3" json:"actor_signature,omitempty"`
+	CreatedAtUnixMs        int64                               `protobuf:"varint,12,opt,name=created_at_unix_ms,json=createdAtUnixMs,proto3" json:"created_at_unix_ms,omitempty"`
+	ExpiresAtUnixMs        int64                               `protobuf:"varint,13,opt,name=expires_at_unix_ms,json=expiresAtUnixMs,proto3" json:"expires_at_unix_ms,omitempty"`
+	MemberAuthorityCommand *ConversationMemberAuthorityCommand `protobuf:"bytes,14,opt,name=member_authority_command,json=memberAuthorityCommand,proto3" json:"member_authority_command,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
 
 func (x *ConversationCommandProposal) Reset() {
 	*x = ConversationCommandProposal{}
-	mi := &file_domain_chat_command_proto_msgTypes[12]
+	mi := &file_domain_chat_command_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1416,7 +1637,7 @@ func (x *ConversationCommandProposal) String() string {
 func (*ConversationCommandProposal) ProtoMessage() {}
 
 func (x *ConversationCommandProposal) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[12]
+	mi := &file_domain_chat_command_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1429,7 +1650,7 @@ func (x *ConversationCommandProposal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationCommandProposal.ProtoReflect.Descriptor instead.
 func (*ConversationCommandProposal) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{12}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ConversationCommandProposal) GetVersion() uint32 {
@@ -1523,6 +1744,13 @@ func (x *ConversationCommandProposal) GetExpiresAtUnixMs() int64 {
 	return 0
 }
 
+func (x *ConversationCommandProposal) GetMemberAuthorityCommand() *ConversationMemberAuthorityCommand {
+	if x != nil {
+		return x.MemberAuthorityCommand
+	}
+	return nil
+}
+
 // Exact deterministic protobuf input signed by the actor device.
 type ConversationCommandProposalSigningInput struct {
 	state                  protoimpl.MessageState  `protogen:"open.v1"`
@@ -1546,7 +1774,7 @@ type ConversationCommandProposalSigningInput struct {
 
 func (x *ConversationCommandProposalSigningInput) Reset() {
 	*x = ConversationCommandProposalSigningInput{}
-	mi := &file_domain_chat_command_proto_msgTypes[13]
+	mi := &file_domain_chat_command_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1558,7 +1786,7 @@ func (x *ConversationCommandProposalSigningInput) String() string {
 func (*ConversationCommandProposalSigningInput) ProtoMessage() {}
 
 func (x *ConversationCommandProposalSigningInput) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_chat_command_proto_msgTypes[13]
+	mi := &file_domain_chat_command_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1571,7 +1799,7 @@ func (x *ConversationCommandProposalSigningInput) ProtoReflect() protoreflect.Me
 
 // Deprecated: Use ConversationCommandProposalSigningInput.ProtoReflect.Descriptor instead.
 func (*ConversationCommandProposalSigningInput) Descriptor() ([]byte, []int) {
-	return file_domain_chat_command_proto_rawDescGZIP(), []int{13}
+	return file_domain_chat_command_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ConversationCommandProposalSigningInput) GetVersion() uint32 {
@@ -1700,7 +1928,22 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x1emls_application_payload_sha256\x18\x04 \x01(\fR\x1bmlsApplicationPayloadSha256\"5\n" +
 	"\x14RetractMessageIntent\x12\x1d\n" +
 	"\n" +
-	"message_id\x18\x01 \x01(\tR\tmessageId\"c\n" +
+	"message_id\x18\x01 \x01(\tR\tmessageId\":\n" +
+	"\x19HideMessageForActorIntent\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x01 \x01(\tR\tmessageId\"W\n" +
+	"\x15ModerateMessageIntent\x12\x1d\n" +
+	"\n" +
+	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x1f\n" +
+	"\vreason_code\x18\x02 \x01(\tR\n" +
+	"reasonCode\"\xf3\x03\n" +
+	"\x14ForwardMessageIntent\x124\n" +
+	"\x16destination_message_id\x18\x01 \x01(\tR\x14destinationMessageId\x12R\n" +
+	"\fcontent_kind\x18\x02 \x01(\x0e2/.peers_touch.model.chat.v1.MessagingContentKindR\vcontentKind\x12m\n" +
+	"\x17destination_attachments\x18\x03 \x03(\v24.peers_touch.model.chat.v1.EncryptedObjectDescriptorR\x16destinationAttachments\x12e\n" +
+	"\x14destination_payloads\x18\x04 \x03(\v22.peers_touch.model.chat.v1.PreparedEndpointPayloadR\x13destinationPayloads\x126\n" +
+	"\x17mls_application_payload\x18\x05 \x01(\fR\x15mlsApplicationPayload\x12C\n" +
+	"\x1emls_application_payload_sha256\x18\x06 \x01(\fR\x1bmlsApplicationPayloadSha256\"c\n" +
 	"\x0eReactionIntent\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x1a\n" +
@@ -1709,20 +1952,18 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x10PinMessageIntent\x12\x1d\n" +
 	"\n" +
 	"message_id\x18\x01 \x01(\tR\tmessageId\x12\x16\n" +
-	"\x06remove\x18\x02 \x01(\bR\x06remove\"\xf2\x02\n" +
+	"\x06remove\x18\x02 \x01(\bR\x06remove\"\x9f\x02\n" +
 	"\x18UpdateConversationIntent\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tH\x00R\x04name\x88\x01\x01\x12%\n" +
 	"\vdescription\x18\x02 \x01(\tH\x01R\vdescription\x88\x01\x01\x12-\n" +
-	"\x10avatar_object_id\x18\x03 \x01(\tH\x02R\x0eavatarObjectId\x88\x01\x01\x12;\n" +
-	"\x17disappear_timer_seconds\x18\x04 \x01(\rH\x03R\x15disappearTimerSeconds\x88\x01\x01\x12Q\n" +
+	"\x10avatar_object_id\x18\x03 \x01(\tH\x02R\x0eavatarObjectId\x88\x01\x01\x12Q\n" +
 	"\n" +
-	"visibility\x18\x05 \x01(\x0e2,.peers_touch.model.chat.v1.GroupVisibilityV1H\x04R\n" +
+	"visibility\x18\x05 \x01(\x0e2,.peers_touch.model.chat.v1.GroupVisibilityV1H\x03R\n" +
 	"visibility\x88\x01\x01B\a\n" +
 	"\x05_nameB\x0e\n" +
 	"\f_descriptionB\x13\n" +
-	"\x11_avatar_object_idB\x1a\n" +
-	"\x18_disappear_timer_secondsB\r\n" +
-	"\v_visibility\"\xcb\x01\n" +
+	"\x11_avatar_object_idB\r\n" +
+	"\v_visibilityJ\x04\b\x04\x10\x05\"\xcb\x01\n" +
 	"\x1fMessagingMembershipChangeIntent\x12L\n" +
 	"\x06action\x18\x01 \x01(\x0e24.peers_touch.model.chat.v1.MessagingMembershipActionR\x06action\x12\x12\n" +
 	"\x04ptid\x18\x02 \x01(\tR\x04ptid\x12\x1b\n" +
@@ -1768,7 +2009,7 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"\x10client_timestamp\x18\x11 \x01(\v2\x1a.google.protobuf.TimestampR\x0fclientTimestamp\x126\n" +
 	"\bdeadline\x18\x12 \x01(\v2\x1a.google.protobuf.TimestampR\bdeadlineB\a\n" +
 	"\x05_roleB\b\n" +
-	"\x06_muted\"\xa0\t\n" +
+	"\x06_muted\"\xc8\v\n" +
 	"\vChatCommand\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12'\n" +
@@ -1787,8 +2028,11 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	"pinMessage\x12f\n" +
 	"\x13update_conversation\x18\x19 \x01(\v23.peers_touch.model.chat.v1.UpdateConversationIntentH\x00R\x12updateConversation\x12l\n" +
 	"\x15membership_transition\x18\x1a \x01(\v25.peers_touch.model.chat.v1.MembershipTransitionIntentH\x00R\x14membershipTransition\x12l\n" +
-	"\x15dissolve_conversation\x18\x1b \x01(\v25.peers_touch.model.chat.v1.DissolveConversationIntentH\x00R\x14dissolveConversationB\t\n" +
-	"\apayload\"\xd5\x04\n" +
+	"\x15dissolve_conversation\x18\x1b \x01(\v25.peers_touch.model.chat.v1.DissolveConversationIntentH\x00R\x14dissolveConversation\x12k\n" +
+	"\x16hide_message_for_actor\x18\x1c \x01(\v24.peers_touch.model.chat.v1.HideMessageForActorIntentH\x00R\x13hideMessageForActor\x12]\n" +
+	"\x10moderate_message\x18\x1d \x01(\v20.peers_touch.model.chat.v1.ModerateMessageIntentH\x00R\x0fmoderateMessage\x12Z\n" +
+	"\x0fforward_message\x18\x1e \x01(\v2/.peers_touch.model.chat.v1.ForwardMessageIntentH\x00R\x0eforwardMessageB\t\n" +
+	"\apayload\"\xce\x05\n" +
 	"\x1bConversationCommandProposal\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12#\n" +
 	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x129\n" +
@@ -1804,7 +2048,8 @@ const file_domain_chat_command_proto_rawDesc = "" +
 	" \x01(\fR\rcommandSha256\x12'\n" +
 	"\x0factor_signature\x18\v \x01(\fR\x0eactorSignature\x12+\n" +
 	"\x12created_at_unix_ms\x18\f \x01(\x03R\x0fcreatedAtUnixMs\x12+\n" +
-	"\x12expires_at_unix_ms\x18\r \x01(\x03R\x0fexpiresAtUnixMs\"\x95\x05\n" +
+	"\x12expires_at_unix_ms\x18\r \x01(\x03R\x0fexpiresAtUnixMs\x12w\n" +
+	"\x18member_authority_command\x18\x0e \x01(\v2=.peers_touch.model.chat.v1.ConversationMemberAuthorityCommandR\x16memberAuthorityCommand\"\x95\x05\n" +
 	"'ConversationCommandProposalSigningInput\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\rR\aversion\x12#\n" +
 	"\rfederation_id\x18\x02 \x01(\tR\ffederationId\x129\n" +
@@ -1866,7 +2111,7 @@ func file_domain_chat_command_proto_rawDescGZIP() []byte {
 }
 
 var file_domain_chat_command_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_domain_chat_command_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_domain_chat_command_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_domain_chat_command_proto_goTypes = []any{
 	(MessagingContentKind)(0),                       // 0: peers_touch.model.chat.v1.MessagingContentKind
 	(PreparedEndpointPayloadKind)(0),                // 1: peers_touch.model.chat.v1.PreparedEndpointPayloadKind
@@ -1876,57 +2121,67 @@ var file_domain_chat_command_proto_goTypes = []any{
 	(*SendMessageIntent)(nil),                       // 5: peers_touch.model.chat.v1.SendMessageIntent
 	(*EditMessageIntent)(nil),                       // 6: peers_touch.model.chat.v1.EditMessageIntent
 	(*RetractMessageIntent)(nil),                    // 7: peers_touch.model.chat.v1.RetractMessageIntent
-	(*ReactionIntent)(nil),                          // 8: peers_touch.model.chat.v1.ReactionIntent
-	(*PinMessageIntent)(nil),                        // 9: peers_touch.model.chat.v1.PinMessageIntent
-	(*UpdateConversationIntent)(nil),                // 10: peers_touch.model.chat.v1.UpdateConversationIntent
-	(*MessagingMembershipChangeIntent)(nil),         // 11: peers_touch.model.chat.v1.MessagingMembershipChangeIntent
-	(*MembershipTransitionIntent)(nil),              // 12: peers_touch.model.chat.v1.MembershipTransitionIntent
-	(*DissolveConversationIntent)(nil),              // 13: peers_touch.model.chat.v1.DissolveConversationIntent
-	(*ConversationMemberAuthorityCommand)(nil),      // 14: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
-	(*ChatCommand)(nil),                             // 15: peers_touch.model.chat.v1.ChatCommand
-	(*ConversationCommandProposal)(nil),             // 16: peers_touch.model.chat.v1.ConversationCommandProposal
-	(*ConversationCommandProposalSigningInput)(nil), // 17: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput
-	(*CryptoEndpoint)(nil),                          // 18: peers_touch.model.chat.v1.CryptoEndpoint
-	(*EncryptedObjectDescriptor)(nil),               // 19: peers_touch.model.chat.v1.EncryptedObjectDescriptor
-	(GroupVisibilityV1)(0),                          // 20: peers_touch.model.chat.v1.GroupVisibilityV1
-	(MemberRole)(0),                                 // 21: peers_touch.model.chat.v1.MemberRole
-	(*timestamppb.Timestamp)(nil),                   // 22: google.protobuf.Timestamp
-	(ConversationCommandKind)(0),                    // 23: peers_touch.model.chat.v1.ConversationCommandKind
+	(*HideMessageForActorIntent)(nil),               // 8: peers_touch.model.chat.v1.HideMessageForActorIntent
+	(*ModerateMessageIntent)(nil),                   // 9: peers_touch.model.chat.v1.ModerateMessageIntent
+	(*ForwardMessageIntent)(nil),                    // 10: peers_touch.model.chat.v1.ForwardMessageIntent
+	(*ReactionIntent)(nil),                          // 11: peers_touch.model.chat.v1.ReactionIntent
+	(*PinMessageIntent)(nil),                        // 12: peers_touch.model.chat.v1.PinMessageIntent
+	(*UpdateConversationIntent)(nil),                // 13: peers_touch.model.chat.v1.UpdateConversationIntent
+	(*MessagingMembershipChangeIntent)(nil),         // 14: peers_touch.model.chat.v1.MessagingMembershipChangeIntent
+	(*MembershipTransitionIntent)(nil),              // 15: peers_touch.model.chat.v1.MembershipTransitionIntent
+	(*DissolveConversationIntent)(nil),              // 16: peers_touch.model.chat.v1.DissolveConversationIntent
+	(*ConversationMemberAuthorityCommand)(nil),      // 17: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
+	(*ChatCommand)(nil),                             // 18: peers_touch.model.chat.v1.ChatCommand
+	(*ConversationCommandProposal)(nil),             // 19: peers_touch.model.chat.v1.ConversationCommandProposal
+	(*ConversationCommandProposalSigningInput)(nil), // 20: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput
+	(*CryptoEndpoint)(nil),                          // 21: peers_touch.model.chat.v1.CryptoEndpoint
+	(*EncryptedObjectDescriptor)(nil),               // 22: peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	(GroupVisibilityV1)(0),                          // 23: peers_touch.model.chat.v1.GroupVisibilityV1
+	(MemberRole)(0),                                 // 24: peers_touch.model.chat.v1.MemberRole
+	(*timestamppb.Timestamp)(nil),                   // 25: google.protobuf.Timestamp
+	(ConversationCommandKind)(0),                    // 26: peers_touch.model.chat.v1.ConversationCommandKind
 }
 var file_domain_chat_command_proto_depIdxs = []int32{
-	18, // 0: peers_touch.model.chat.v1.PreparedEndpointPayload.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	21, // 0: peers_touch.model.chat.v1.PreparedEndpointPayload.recipient:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
 	1,  // 1: peers_touch.model.chat.v1.PreparedEndpointPayload.kind:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayloadKind
 	0,  // 2: peers_touch.model.chat.v1.SendMessageIntent.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
-	19, // 3: peers_touch.model.chat.v1.SendMessageIntent.attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	22, // 3: peers_touch.model.chat.v1.SendMessageIntent.attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
 	4,  // 4: peers_touch.model.chat.v1.SendMessageIntent.direct_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
 	4,  // 5: peers_touch.model.chat.v1.EditMessageIntent.direct_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
-	20, // 6: peers_touch.model.chat.v1.UpdateConversationIntent.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibilityV1
-	2,  // 7: peers_touch.model.chat.v1.MessagingMembershipChangeIntent.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
-	11, // 8: peers_touch.model.chat.v1.MembershipTransitionIntent.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeIntent
-	4,  // 9: peers_touch.model.chat.v1.MembershipTransitionIntent.welcome_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
-	18, // 10: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.operator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	3,  // 11: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.action:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityAction
-	21, // 12: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.role:type_name -> peers_touch.model.chat.v1.MemberRole
-	22, // 13: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.muted_until:type_name -> google.protobuf.Timestamp
-	22, // 14: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.client_timestamp:type_name -> google.protobuf.Timestamp
-	22, // 15: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.deadline:type_name -> google.protobuf.Timestamp
-	18, // 16: peers_touch.model.chat.v1.ChatCommand.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
-	22, // 17: peers_touch.model.chat.v1.ChatCommand.client_timestamp:type_name -> google.protobuf.Timestamp
-	5,  // 18: peers_touch.model.chat.v1.ChatCommand.send_message:type_name -> peers_touch.model.chat.v1.SendMessageIntent
-	6,  // 19: peers_touch.model.chat.v1.ChatCommand.edit_message:type_name -> peers_touch.model.chat.v1.EditMessageIntent
-	7,  // 20: peers_touch.model.chat.v1.ChatCommand.retract_message:type_name -> peers_touch.model.chat.v1.RetractMessageIntent
-	8,  // 21: peers_touch.model.chat.v1.ChatCommand.reaction:type_name -> peers_touch.model.chat.v1.ReactionIntent
-	9,  // 22: peers_touch.model.chat.v1.ChatCommand.pin_message:type_name -> peers_touch.model.chat.v1.PinMessageIntent
-	10, // 23: peers_touch.model.chat.v1.ChatCommand.update_conversation:type_name -> peers_touch.model.chat.v1.UpdateConversationIntent
-	12, // 24: peers_touch.model.chat.v1.ChatCommand.membership_transition:type_name -> peers_touch.model.chat.v1.MembershipTransitionIntent
-	13, // 25: peers_touch.model.chat.v1.ChatCommand.dissolve_conversation:type_name -> peers_touch.model.chat.v1.DissolveConversationIntent
-	15, // 26: peers_touch.model.chat.v1.ConversationCommandProposal.command:type_name -> peers_touch.model.chat.v1.ChatCommand
-	23, // 27: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput.command_kind:type_name -> peers_touch.model.chat.v1.ConversationCommandKind
-	28, // [28:28] is the sub-list for method output_type
-	28, // [28:28] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	0,  // 6: peers_touch.model.chat.v1.ForwardMessageIntent.content_kind:type_name -> peers_touch.model.chat.v1.MessagingContentKind
+	22, // 7: peers_touch.model.chat.v1.ForwardMessageIntent.destination_attachments:type_name -> peers_touch.model.chat.v1.EncryptedObjectDescriptor
+	4,  // 8: peers_touch.model.chat.v1.ForwardMessageIntent.destination_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
+	23, // 9: peers_touch.model.chat.v1.UpdateConversationIntent.visibility:type_name -> peers_touch.model.chat.v1.GroupVisibilityV1
+	2,  // 10: peers_touch.model.chat.v1.MessagingMembershipChangeIntent.action:type_name -> peers_touch.model.chat.v1.MessagingMembershipAction
+	14, // 11: peers_touch.model.chat.v1.MembershipTransitionIntent.changes:type_name -> peers_touch.model.chat.v1.MessagingMembershipChangeIntent
+	4,  // 12: peers_touch.model.chat.v1.MembershipTransitionIntent.welcome_payloads:type_name -> peers_touch.model.chat.v1.PreparedEndpointPayload
+	21, // 13: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.operator:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	3,  // 14: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.action:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityAction
+	24, // 15: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.role:type_name -> peers_touch.model.chat.v1.MemberRole
+	25, // 16: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.muted_until:type_name -> google.protobuf.Timestamp
+	25, // 17: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.client_timestamp:type_name -> google.protobuf.Timestamp
+	25, // 18: peers_touch.model.chat.v1.ConversationMemberAuthorityCommand.deadline:type_name -> google.protobuf.Timestamp
+	21, // 19: peers_touch.model.chat.v1.ChatCommand.sender:type_name -> peers_touch.model.chat.v1.CryptoEndpoint
+	25, // 20: peers_touch.model.chat.v1.ChatCommand.client_timestamp:type_name -> google.protobuf.Timestamp
+	5,  // 21: peers_touch.model.chat.v1.ChatCommand.send_message:type_name -> peers_touch.model.chat.v1.SendMessageIntent
+	6,  // 22: peers_touch.model.chat.v1.ChatCommand.edit_message:type_name -> peers_touch.model.chat.v1.EditMessageIntent
+	7,  // 23: peers_touch.model.chat.v1.ChatCommand.retract_message:type_name -> peers_touch.model.chat.v1.RetractMessageIntent
+	11, // 24: peers_touch.model.chat.v1.ChatCommand.reaction:type_name -> peers_touch.model.chat.v1.ReactionIntent
+	12, // 25: peers_touch.model.chat.v1.ChatCommand.pin_message:type_name -> peers_touch.model.chat.v1.PinMessageIntent
+	13, // 26: peers_touch.model.chat.v1.ChatCommand.update_conversation:type_name -> peers_touch.model.chat.v1.UpdateConversationIntent
+	15, // 27: peers_touch.model.chat.v1.ChatCommand.membership_transition:type_name -> peers_touch.model.chat.v1.MembershipTransitionIntent
+	16, // 28: peers_touch.model.chat.v1.ChatCommand.dissolve_conversation:type_name -> peers_touch.model.chat.v1.DissolveConversationIntent
+	8,  // 29: peers_touch.model.chat.v1.ChatCommand.hide_message_for_actor:type_name -> peers_touch.model.chat.v1.HideMessageForActorIntent
+	9,  // 30: peers_touch.model.chat.v1.ChatCommand.moderate_message:type_name -> peers_touch.model.chat.v1.ModerateMessageIntent
+	10, // 31: peers_touch.model.chat.v1.ChatCommand.forward_message:type_name -> peers_touch.model.chat.v1.ForwardMessageIntent
+	18, // 32: peers_touch.model.chat.v1.ConversationCommandProposal.command:type_name -> peers_touch.model.chat.v1.ChatCommand
+	17, // 33: peers_touch.model.chat.v1.ConversationCommandProposal.member_authority_command:type_name -> peers_touch.model.chat.v1.ConversationMemberAuthorityCommand
+	26, // 34: peers_touch.model.chat.v1.ConversationCommandProposalSigningInput.command_kind:type_name -> peers_touch.model.chat.v1.ConversationCommandKind
+	35, // [35:35] is the sub-list for method output_type
+	35, // [35:35] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_domain_chat_command_proto_init() }
@@ -1937,9 +2192,9 @@ func file_domain_chat_command_proto_init() {
 	file_domain_chat_attachment_proto_init()
 	file_domain_chat_conversation_proto_init()
 	file_domain_chat_endpoint_proto_init()
-	file_domain_chat_command_proto_msgTypes[6].OneofWrappers = []any{}
-	file_domain_chat_command_proto_msgTypes[10].OneofWrappers = []any{}
-	file_domain_chat_command_proto_msgTypes[11].OneofWrappers = []any{
+	file_domain_chat_command_proto_msgTypes[9].OneofWrappers = []any{}
+	file_domain_chat_command_proto_msgTypes[13].OneofWrappers = []any{}
+	file_domain_chat_command_proto_msgTypes[14].OneofWrappers = []any{
 		(*ChatCommand_SendMessage)(nil),
 		(*ChatCommand_EditMessage)(nil),
 		(*ChatCommand_RetractMessage)(nil),
@@ -1948,6 +2203,9 @@ func file_domain_chat_command_proto_init() {
 		(*ChatCommand_UpdateConversation)(nil),
 		(*ChatCommand_MembershipTransition)(nil),
 		(*ChatCommand_DissolveConversation)(nil),
+		(*ChatCommand_HideMessageForActor)(nil),
+		(*ChatCommand_ModerateMessage)(nil),
+		(*ChatCommand_ForwardMessage)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -1955,7 +2213,7 @@ func file_domain_chat_command_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_chat_command_proto_rawDesc), len(file_domain_chat_command_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   14,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

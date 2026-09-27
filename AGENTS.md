@@ -3,7 +3,7 @@
 > Single authoritative source for all AI coding agents.
 > `docs/.agent/<platform>.md` is the agent entry layer: use it to find the real source documents, hard constraints, and verification commands.
 >
-> Last updated: 2026-09-13
+> Last updated: 2026-09-19
 
 ---
 
@@ -233,8 +233,11 @@ hours to diagnose.
 - `RESOURCE_DECLARATION_CONFLICT` blocks the overlapping action. Do not evade it
   by changing worktree, Profile, path or resource.
 - A declaration exposes intent only. Runtime exclusivity still requires Local
-  Dev Control Plane leases; destructive/reset/delivery/history operations still
-  require their explicit authorizations.
+  Dev Control Plane leases. Delivery and history operations require their
+  explicit authorizations. Station reset follows the canonical Profile ID
+  policy: IDs containing `stable` case-insensitively are protected; every other
+  reviewed Profile is Agent-resettable when binding capability, exact
+  declaration scope, source identity, topology, and lease all match.
 - `active_work`, branch names, process discovery and private `.local` files are
   not substitutes for public resource intent.
 
@@ -260,18 +263,32 @@ Untracked env-repository definitions and local profiles without a matching
 consumed human authorization receipt cannot authorize profile selection,
 deployment, restart, or reset.
 
+For an existing reviewed Profile, reset policy is derived only after the
+directory name and `PT_DEV_PROFILE` value match exactly. No control-mode field,
+legacy cache, or machine-state override is allowed. A non-stable Profile reset
+never requires human confirmation; a stable Profile fails closed before lease
+acquisition. Creating or renaming a Profile remains human-authorized topology
+work.
+
 ### No Mocking
 
 Frontend-backend collaborative APIs: **NO MOCK** unless the user explicitly says so. Using mock = cheating.
 
-### No Unauthorized Version Bumps
+### No Invented Development Workflow Versions
 
-The project is at its **current stage (v1)**. Do not "upgrade" version numbers on your own initiative.
+The internal Development Workflow does not carry a synthetic `v1/v2/v3` stage
+or release label. Git history and accepted architecture decisions identify its
+current state.
 
-- **Ask the user before bumping ANY version number** — framework, protocol/wire, proto message version, document, dependency/library, package, API, or schema. No exceptions.
-- Do not write speculative "v2 / next-gen / phase-next" version labels into project rules, design docs, or code as if they were the current stage. Describe the current stage as **v1**.
-- Third-party protocol names that happen to contain a version (e.g. an external spec's own "vN") are **references, not our version** — cite them as external names and never let them imply a bump to our own artifacts.
-- If a change genuinely needs a new version, STOP and get explicit approval first; then bump exactly the one artifact approved, and update its changelog/migration notes in the same change.
+- Do not add workflow-stage, Development Workflow document, Plan, Task,
+  rollout, or "next-generation" version numbers.
+- Internal closed records use their `kind` and exact shape as the current
+  contract. Existing machine-state format guards are integrity details, not a
+  project or workflow version, and must never be presented as one.
+- Product protocols, architecture domains, third-party frameworks, and
+  independently released packages retain their separately governed versions.
+- A genuine external wire/package compatibility version still requires explicit
+  approval and a concrete migration contract.
 
 ### Logging Security
 
@@ -302,7 +319,9 @@ This rule exists because compliance drift produces worse outcomes than honest di
 > Activates ONLY when user asks you to fix a problem.
 
 1. **No patch-style fixes** — Analyze root cause from architectural perspective. Remove dead code.
-2. **No silent fixes** — Report root cause → present plan → **wait for user approval**.
+2. **No silent fixes** — Report root cause and the governing plan. An explicit
+   fix/continue/execute request authorizes non-destructive work inside accepted
+   scope; pause only at the hard boundaries in §13.5.
 
 ---
 
@@ -335,7 +354,9 @@ Three dimensions for every piece of generated code:
 - **Comments**: English first, always.
 - **Readability**: Well-structured code with appropriate comments, blank lines, logical grouping.
 - **Change tracking**: Record reason, content, impact in comments for every modification.
-- **Feature iteration**: Confirm business logic & directory architecture with user before generating.
+- **Feature iteration**: Establish accepted business logic and directory
+  architecture before generating. Use project review Skills by default; ask
+  the user only when accepted sources cannot resolve a material semantic choice.
 - **Desktop UI**: LobeUI first, antd fallback.
 - **Subserver code**: Must follow DDD (aggregate root, domain service, domain event).
 
@@ -426,11 +447,14 @@ Current project skills:
 |-------|---------|
 | `pt-dev-workflow` | Own one non-trivial Development Run from verified intake and declaration through stage dispatch, execution, proof, delivery, and resource release |
 | `pt-god-view` | Thin facade: classify intent and route exactly one owning workflow or specialist; never execute or persist state |
-| `pt-trae-goal-orchestrator` | Scheduler: project bounded Ready/Parked work, ordering, and safe concurrency from an owner-supplied graph |
+| `pt-goal-orchestrator` | Host-neutral scheduler: project bounded Ready/Parked work, ordering, and safe concurrency from an owner-supplied graph |
+| `pt-trae-host-adapter` | Bind approved worker/UI actions to capabilities actually exposed by a detected TRAE host |
+| `pt-cursor-host-adapter` | Bind approved worker/UI actions to capabilities actually exposed by a detected Cursor host |
+| `pt-codex-host-adapter` | Bind approved worker/UI actions to capabilities actually exposed by a detected Codex host |
 | `pt-acceptance-infra-engineering` | Optimize and audit Acceptance Infra while enforcing the responsibility firewall against business Domain injection |
 | `pt-acceptance-engineering` | Deterministically add, complete, upgrade, or audit Acceptance contracts, runtime scenarios, gates, and evidence |
 | `pt-acceptance-gap-detector` | Enforce "No Silent Pass" iron law — detect 25+ bypass patterns (mocks, stale evidence, single-actor, hardcoded creds, downgraded gates) before marking any claim proven |
-| `pt-dev-runtime-handoff` | Choose & start the right dev runtime (make targets) for acceptance testing |
+| `pt-dev-runtime-handoff` | Own host-neutral runtime launch, interaction, exact-source Journey verification, Session result projection, and cleanup |
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
 | `pt-architecture-execution-methodology` | Derive vertical Journey/functional closures, dependencies, cutovers, and risk-based verification from accepted architecture |
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
@@ -445,31 +469,48 @@ Current project skills:
 | `pt-github-release` | Semantic versioning, changelog generation, GitHub Release creation |
 | `pt-github-review` | Structured PR code review and comment submission |
 | `pt-local-dev-env` | Select and activate local development environment profiles |
-| `pt-plan-and-document` | Persist accepted models into canonical docs/Plan Packages, validate them, and register initial tracked state |
+| `pt-plan-and-document` | Persist accepted models into canonical docs/Plan Packages, validate them, and create or advance the workspace Plan generation |
 | `pt-prototype-design` | Create, modify, and review executable UI / UX prototypes under the project prototype system |
 | `pt-prototype-sync-guardian` | Keep product implementation and prototypes aligned when visible behavior changes |
 | `pt-completion-auditor` | Audit Peers-Touch work for completion, architecture, code quality, safety, evidence, and overclaim risk |
 | `pt-defect-closure` | Close the defect loop: debug → fix → acceptance injection; ensures every behavioral bug fix leaves behind a regression Gate |
 | `pt-frontend-component-tree-review` | Review frontend component tree structure, boundaries, and UI implementation quality |
+| `pt-debug-space-clean` | Audit and clean generated artifacts by current task, product surface, platform, and rebuild cost |
 | `pt-small-fix-discipline` | Govern small fixes so agents locate the governing spec, fix the correct architectural layer, keep changes surgical, and self-grade before claiming done |
 | `pt-skill-author` | Govern creation, naming, cleanup, and verification of Peers-Touch `pt-*` project skills |
 
 ### 13.2 IDE Sync (Read by Agents on Startup)
 
-IDE-specific skill/rule directories (`.cursor/rules/`, `.cursor/skills/`, `.trae/skills/`, `.windsurf/`, `.zed/`, `.vscode/skills/`, etc.) are **agent-private feature surfaces**, not project storage.
+IDE-specific skill/rule directories (`.cursor/rules/`, `.cursor/skills/`,
+`.trae/skills/`, `.agents/skills/`, `.windsurf/`, `.zed/`,
+`.vscode/skills/`, etc.) are **agent-private feature surfaces**, not project
+storage.
 
 Agent responsibilities at startup:
 
 1. **Discover**: read every `tooling/skills/*/SKILL.md` in the repo.
-2. **Sync**: project the discovered skills into the agent's own feature directory (e.g. Cursor places them under `.cursor/skills/` or its in-memory registry; other IDEs do the equivalent).
+2. **Integrate**: run `make skills IDE=<trae|cursor|codex>` at a durable
+   boundary. It projects Skills plus supported worktree-local hooks.
 3. **Resolve conflicts**: if a same-named skill already exists in the IDE-private directory, the project copy in `tooling/skills/` wins.
 4. **Never write back**: do not edit, generate, or persist project skills inside the IDE-private directory.
+5. **Never mutate global hooks**: host integration writes only this worktree's
+   `.trae`, `.cursor`, or `.agents` projection. The first blockable tool event
+   binds the host conversation to that installed root; later tool `cwd` and
+   targets are subject roots and cannot rebind write authority.
 
 This keeps `tooling/skills/` as the single git-tracked truth and prevents skill drift across IDE instances or contributors.
 
+After a governance-source update, follow
+`docs/architecture/development-workflow/host-neutral-agent-integration.md`.
+Installation rejects an active declaration; persist a Context Anchor, release
+the declaration, run `make skills IDE=<host>`, restart the IDE when hooks
+changed, audit, then resume. Do not hot-swap Skills during an in-flight action.
+
 ### 13.3 Hard Constraints
 
-- **DO NOT** create new agent skills, rules, or behavioral guides directly inside `.cursor/rules/`, `.cursor/skills/`, `.trae/`, `.windsurf/`, `.zed/`, `.vscode/`, or any other IDE/agent-private folder.
+- **DO NOT** create new agent skills, rules, or behavioral guides directly
+  inside `.cursor/rules/`, `.cursor/skills/`, `.trae/`, `.agents/skills/`,
+  `.windsurf/`, `.zed/`, `.vscode/`, or any other IDE/agent-private folder.
 - **DO** create them under `tooling/skills/<skill-name>/SKILL.md`, register them in §13.1 above, and let the IDE agent sync them at startup.
 - **DO NOT** silently mirror project skills into IDE-private folders for "convenience". If the IDE needs a copy, that is the agent's runtime responsibility, not the repo's source-tree responsibility.
 - Skill content is part of the architectural contract — same governance as `docs/`. Updates follow the same review process.
@@ -490,9 +531,9 @@ Any non-trivial development task (cross-module, new feature, architecture change
 | Stage | Entry condition | Skill(s) to invoke | Gate (exit condition) | Artifact |
 |-------|----------------|--------------------|-----------------------|----------|
 | **PRODUCT** | New capability, workflow, user journey, or visible state is undefined | `pt-dev-workflow` → `pt-product-design-methodology` | Product contract accepted; required prototype confirmed or explicitly blocked | Product docs + optional prototype |
-| **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → user initiates review → review passes | `docs/architecture/<module>/` |
-| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + `active_work` registration + review prompt) | Plan review prompt generated → user initiates review → review passes | Plan Package |
-| **EXECUTE** | Plan accepted | `pt-dev-workflow` coordinates scheduler (`pt-trae-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
+| **DESIGN** | New architecture / boundary / ownership decision needed | `pt-dev-workflow` → `pt-architecture-design-methodology` | Architecture review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | `docs/architecture/<module>/` |
+| **PLAN** | Architecture accepted (or trivial enough to skip DESIGN) | `pt-dev-workflow` → `pt-architecture-execution-methodology` (vertical model) → `pt-plan-and-document` (persistence + generation-bound Plan ownership + review prompt) | Plan review prompt generated → agent review/remediation loop passes, or one precise hard-boundary decision is escalated | Plan Package |
+| **EXECUTE** | Plan accepted | `pt-dev-workflow` coordinates host-neutral scheduler (`pt-goal-orchestrator`) + policy guard (`pt-execution-plan-guardian`) | required Journeys reach `FUNCTIONAL_PASS`, formal proof obligations pass, and `pt-completion-auditor` accepts the named scope | Code + tests + functional and formal evidence |
 | **DELIVER** | Code complete, tests pass | `pt-dev-workflow` → `pt-github-commit` → `pt-github-pr` → `pt-github-review` | PR merged | Merged PR |
 
 **Dispatch rules:**
@@ -506,12 +547,21 @@ Any non-trivial development task (cross-module, new feature, architecture change
    Guardian decides whether one proposed action **may** run, and Dev Workflow
    executes allowed work and persists owner state. Context Anchor is read-only.
 4. Each stage MUST pass its gate before entering the next. No skipping gates.
-5. Review pattern is uniform across stages: generate structured review prompt → user decides whether to send → iterate if needed → pass.
+5. Review pattern is uniform across stages: generate a structured review prompt
+   → invoke the applicable project Review Skills → fix source-backed findings
+   → rerun affected checks/review → pass. The user is not the default reviewer.
+   Escalate only an operation absent from the accepted authorization envelope,
+   a destructive/irreversible or separately governed operation (including
+   version/schema bump and worktree topology), a missing external resource, or
+   a material product/architecture/security/privacy/compatibility/rollout
+   choice that accepted sources cannot resolve.
 6. **Small fixes** (single-file bug fix, cosmetic tweak) skip DESIGN + PLAN.
    Mutating fixes enter EXECUTE through `pt-dev-workflow`, which dispatches
    `pt-small-fix-discipline`; only a trivial text-only correction may invoke
    the specialist directly.
-7. **Stage detection**: check `active_work` in project memory → read the referenced execution plan status table → determine current stage.
+7. **Stage detection**: read this workspace's machine-local
+   `workflow/active-work.json` → validate its Plan/Task/Session owners →
+   determine current stage. Project memory and chat are never runtime inputs.
 8. If no active work exists and user's request is ambiguous, ask: "Is this a new architecture decision, or implementation of an existing plan?"
 9. **Acceptance ownership dispatch**:
    - Core/runtime/planner/validator/runner/Evidence Store/framework optimization → `pt-acceptance-infra-engineering`.
@@ -523,93 +573,108 @@ Any non-trivial development task (cross-module, new feature, architecture change
 11. **Acceptance scenario selection**: derive scenarios from product states,
     changed failure semantics, receiver outcomes, and concrete architecture
     risks; never require a generic five-variant matrix for every closure.
-12. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution plan is not tracked work and has no Context Anchor. After `pt-plan-and-document` creates the plan, register `active_work`; only then may `pt-context-anchor` emit a chat projection.
+12. **Anchor creation boundary**: PRODUCT/DESIGN work without a formal execution
+    plan is not tracked work and has no Context Anchor. After
+    `pt-plan-and-document` creates and binds the plan, Dev Workflow derives this
+    workspace's active-work record from owners; only then may
+    `pt-context-anchor` emit a chat projection.
+13. **Continuous Plan Run**: one explicit `continue`, `resume`, `execute the
+    plan`, or equivalent request authorizes `pt-dev-workflow` to continue across
+    Task closures, successor activation, internal review gates, and context
+    compaction within the accepted Plan and authorization envelope. Goal Slice
+    remains a single-Task internal scheduling unit. Do not ask `Continue?`
+    after a Task, review, or Context Anchor while dependency-ready work remains.
+14. **Host-neutral execution**: project Skills own scheduling, runtime
+    verification, Session state, and evidence semantics. Detect TRAE, Cursor,
+    Codex, or another host only when selecting an optional tool transport.
+    `pt-goal-orchestrator` projects the capability request; after Guardian
+    admission, `pt-dev-workflow` dispatches the matching `pt-*-host-adapter`.
+    Repository-native
+    Make/Harness/WebDriver/Appium paths take priority. Missing host capability
+    degrades only that transport and never changes the required proof. Adapters
+    do not execute repository-native fallback. Failed cleanup enters one
+    bounded `HOST_CLEANUP_QUARANTINED` state; it cannot recursively invoke
+    cleanup or block independent ready Tasks. Missing capability and cleanup
+    observations persist immutable request identity in the Development Session.
+    Only `UNAVAILABLE -> AVAILABLE` or post-expiry
+    `QUARANTINED -> RELEASED | ESCALATION_REQUIRED` may update the blocked
+    observation; unchanged requests cannot retry at zero progress.
 
-#### 13.5.1 Execution Worktree Binding Contract
+#### 13.5.1 Conversation And Execution Worktree Binding Contract
 
 This contract is fail-closed and applies before stage dispatch, execution,
 edits, status claims, and completion claims.
 
-1. The path used to load a skill is only the instruction source. It MUST NOT
-   select, replace, or imply an execution worktree. The current verified
-   worktree remains bound.
-2. If the current worktree is ambiguous, including when the session exposes
-   multiple candidate roots without one explicit selection, stop and ask the
-   user to identify the worktree. Do not infer it from a skill path, plan path,
-   branch name, or nearby repository.
-3. From the explicitly selected current worktree root, capture its identity:
+1. A stable host conversation binds exactly once to one canonical
+   `executionRoot`. The first blockable `PreToolUse` creates the binding
+   atomically from the installed project integration root. `SessionStart`,
+   prompts, tool `cwd`, target paths, Plan state, and sibling worktrees cannot
+   create or replace it.
+2. The conversation binding is not a worktree lease or cross-agent lock. It
+   constrains only that conversation: reads may use another `subjectRoot`, while
+   every cross-worktree write is denied.
+3. If the host exposes no stable conversation ID or no blockable pre-tool
+   event, report `OBSERVE_ONLY`; never claim that hook enforcement is active.
+   If a manual execution root remains ambiguous, stop and ask the user rather
+   than inferring it from a Skill path, Plan path, branch name, or nearby repo.
+4. From the bound current worktree root, capture its identity:
    `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --capture`.
-4. Reconcile the captured identity with every worktree identity present in
-   `active_work`, the formal plan, and the latest Context Anchor. Any mismatch,
+5. Reconcile the captured identity with this workspace's active-work record,
+   the formal plan, and the latest Context Anchor. Any mismatch,
    or any later root, branch, HEAD, or `workspaceId` drift,
    returns `WORKTREE_IDENTITY_MISMATCH` and stops. Do not repair a mismatch by
    automatically changing directories, switching branches, or selecting a
    different worktree.
-5. From the same root, immediately verify all captured values:
+6. From the same root, immediately verify all captured values:
    `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>'`.
    Every materialized value must be one POSIX shell-safe argument.
-   Bind the verified canonical root, branch, `workspaceId`, immutable initial
-   HEAD, and current expected HEAD. On first registration, expected HEAD equals
-   initial HEAD; it is not stored in the Plan Package.
+   Bind the verified canonical root, branch, `workspaceId`, initial HEAD,
+   and expected HEAD. On first registration, expected HEAD equals initial HEAD.
    A missing verifier or unresolved field is
    `WORKTREE_IDENTITY_UNAVAILABLE`; a wrong invocation directory, identity
    mismatch, or later drift is `WORKTREE_IDENTITY_MISMATCH`. Both stop work.
-6. Every mutating tool call must carry the bound canonical root as its explicit
+7. Every mutating tool call must carry the bound canonical root as its explicit
    `workdir`. File mutation tools must use absolute paths beneath that same
    root. Subagents inherit the complete immutable binding and must run the
    verifier against it before writing.
-7. Re-run the verifier after resume or context compaction and before every
+8. Re-run the verifier after resume or context compaction and before every
    status, readiness, handoff, or completion report.
-8. The initial HEAD remains the Plan audit baseline. The `active_work` and
-   declaration expected/current HEAD may refresh only after a commit, rebase,
-   or merge that the user explicitly authorized.
+9. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
+   after a commit, rebase, or merge that the user explicitly authorized.
    Resume and context compaction verify the persisted values; they MUST NOT
    recapture current Git state as a replacement baseline. Unrelated sibling
    worktree inventory is machine topology and never part of this binding.
-9. Do not run `git switch`, `git checkout`, `git worktree add`,
+10. Do not run `git switch`, `git checkout`, `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
-10. A repository or PR may contain multiple active Plan Packages. Each
+    A Plan binding or lifecycle conflict is never implicit permission to create
+    another worktree.
+11. A repository or PR may contain multiple active Plan Packages. Each
     workspace resolves only
     `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json`;
     branch scans, directory order, active status and synchronized foreign Plans
     never select execution ownership.
-11. `make plan-bind PLAN=<path>` creates the workspace's `planId + planPath`
-    binding once. The same tuple is idempotent. A different tuple returns
-    `WORKSPACE_PLAN_REBIND_DENIED`; there is no unbind/rebind command. A new
-    Plan requires a new worktree.
-12. Plan manifest, tracked declaration, `active_work`, Session and Context
-    Anchor must match the immutable binding. A bound workspace cannot publish
-    untracked work. CI has no machine binding and must receive an explicit Plan.
+12. `make plan-bind PLAN=<path>` creates the workspace's first
+    `planId + planPath` generation. The same tuple is idempotent; a different
+    tuple returns `WORKSPACE_PLAN_REBIND_DENIED`.
+13. `make plan-binding-advance PLAN=<path> EXPECTED_GENERATION=<n>` is the only
+    next-Plan path for an existing workspace. It requires the current Plan to
+    be completed and the workspace to have no live declaration, active-work
+    projection, or runtime lease. It atomically advances one generation and
+    retains immutable history.
+14. Plan manifest, tracked declaration, workspace active-work record, Session
+    and Context Anchor must match the immutable binding. A bound workspace
+    cannot publish untracked work. CI has no machine binding and must receive
+    an explicit Plan.
 
-Legacy `active_work` rows created before the binding fields existed cannot
-resume directly. They may be migrated exactly once only after the user
-explicitly authorizes that row's migration and identifies its worktree. The
-agent must verify that the legacy `plan` exists and its recorded `branch`
-matches the selected worktree, capture the current identity once, and
-atomically:
-
-1. append an immutable row under `## active_work_binding_migrations` containing
-   the work ID, migration date, prior branch, captured `workspace_id`,
-   baseline HEAD, and authorization reference;
-2. populate the legacy row with that captured `workspace_id`,
-   `initial_head`, and `expected_head`, with both HEAD fields equal to the
-   captured HEAD.
-
-This explicit migration establishes a new auditable baseline; it is not resume
-recapture. Missing authorization, plan mismatch, branch mismatch, ambiguous
-worktree selection, or a partial registry write remains
-`WORKTREE_IDENTITY_UNAVAILABLE` and blocks execution.
-
-Rows that already contain `workspace_id`, both HEAD fields, and the obsolete
-sibling-topology digest use a separate one-time schema migration. Dev Workflow
-must atomically remove the obsolete column and every row value while preserving
-all current-worktree identity fields, then append an
-`active_work_binding_migrations` audit row naming the work ID, migration date,
-`DWF-D17`, unchanged `workspace_id`/HEAD values, and authorization reference.
-This migration does not recapture identity and does not require a worktree
-operation. Context Anchor reports `CONTEXT_PROJECTION_STALE` until the owner
-completes it.
+Legacy shared `project_memory.md ## active_work` rows are not runtime state and
+cannot resume directly. The bounded Plan migration flow may read a declared
+legacy registry to verify a reviewed `NONE -> NONE` or source crosswalk, but no
+compatibility writer updates that Markdown. Resume requires the current
+worktree's Plan binding, declaration and Session owners to validate first, then
+`make active-work-sync WORK_ITEM=<id>` creates the workspace-owned record.
+Missing or contradictory owners fail closed; another workspace's record is
+never read as a fallback.
 
 ### 13.6 Session Continuity Protocol
 
@@ -620,14 +685,19 @@ When a user invokes `pt-god-view` (by saying "继续做" / "接着" / "看看状
 1. `pt-god-view` classifies the intent and selects exactly one owner.
 2. Status/handoff routes to read-only `pt-context-anchor`.
 3. Continue/resume routes to `pt-dev-workflow`, which verifies binding,
-   reconciles Plan/Task/Session/`active_work`, and resumes the next legal action.
-4. Dev Workflow asks `pt-trae-goal-orchestrator` for the Ready/Parked schedule
+   reconciles Plan/Task/Session/workspace active-work, and starts or resumes the
+   authorized Plan Run.
+4. Dev Workflow asks `pt-goal-orchestrator` for the Ready/Parked schedule
    and concurrency lanes.
 5. Every proposed action is evaluated by `pt-execution-plan-guardian`; only
    `ACTION_ALLOWED` work executes.
-6. Dev Workflow persists meaningful results through owner commands, then invokes
-   Context Anchor for the user-facing projection.
-7. Multiple plausible tracked items return `TRACKED_WORK_SELECTION_REQUIRED`.
+6. Dev Workflow persists meaningful results through owner commands, performs
+   required agent review/remediation, activates a dependency-ready successor,
+   and repeats until the Plan is terminal or a hard boundary exhausts the
+   runnable frontier.
+7. Context Anchor may project meaningful progress or support context compaction,
+   but it does not pause the Plan Run or request confirmation.
+8. Multiple plausible tracked items return `TRACKED_WORK_SELECTION_REQUIRED`.
    Empty/completed registries route to new-task intake.
 
 For EXECUTE work, the Goal scheduler applies one explicit concurrency decision
@@ -642,61 +712,78 @@ backend-addressable agents with the same Goal identity conflict. Listed but
 backend-unaddressable entries are stale metadata, not a reason to serialize the
 Goal or persist a blanket no-subagent constraint.
 
-God View, Goal Orchestrator, Execution Plan Guardian, and Context Anchor are
-read-only with respect to Plan/Task/Session/`active_work`. Dev Workflow is the
-application service that coordinates writes through the owning commands.
+God View, Goal Orchestrator, Execution Plan Guardian, Context Anchor and Peers
+Dev are read-only with respect to Plan/Task/Session/workspace active-work.
+Dev Workflow coordinates writes through owner commands.
 
-**active_work registry schema** (maintained in `project_memory.md`):
+**Workspace active-work record**
 
-```markdown
-## active_work
-
-| id | plan | stage | current_task_id | current_task_path | dev_state | branch | workspace_id | initial_head | expected_head | blocked | last_session |
-|----|------|-------|-----------------|-------------------|-----------|--------|--------------|--------------|---------------|---------|--------------|
-| 1 | docs/.../execution-plans/example/plan.md | EXECUTE | TASK-03 | docs/.../execution-plans/example/tasks/TASK-03.md | IMPLEMENTING | main | 0123456789abcdef | `<full-head>` | `<full-head>` | false | 2026-09-16 |
+```text
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/active-work.json
 ```
+
+The closed record contains revision/digest, workspace/work-item identity,
+Plan/Task locator and lifecycle, Session/Journey locator and `devState`, branch,
+immutable initial HEAD, advancing expected HEAD and update time. It is derived
+from owners by `make active-work-sync WORK_ITEM=<id>`; callers cannot submit
+arbitrary replacement JSON.
 
 **Lifecycle rules:**
 
-- **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a placeholder row or fabricate a plan path.
-- **Plan created** → validate it, create the workspace's immutable Plan binding,
-  then append a row with the repository-relative plan path and `stage: PLAN`.
-- **Plan already bound** → the same tuple is idempotent; a different Plan must
-  use another worktree and cannot replace the row in place.
+- **New pre-plan work** → run PRODUCT/DESIGN without an Anchor; do not create a
+  placeholder record or fabricate a plan path.
+- **First Plan created** → validate it, create generation 1, publish the tracked
+  declaration, then derive this workspace's record.
+- **Next Plan created** → after the current Plan is completed and declaration,
+  active-work, and runtime leases are released, explicitly advance the
+  generation with expected-generation CAS. Never create a worktree as an Agent
+  workaround.
 - **Worktree binding created** → record the verified `workspace_id`,
   `initial_head`, and `expected_head`; initially both HEAD fields are
   identical. Never derive identity from a skill path or copy it from another
   worktree.
 - **Task/Session transition** → Dev Workflow updates manifest/Task/Session
-  owners first, then mirrors `current_task_id/current_task_path/dev_state`.
+  owners first, then invokes active-work sync with revision/CAS.
+- **Task done with ready successor** → Dev Workflow advances the manifest,
+  refreshes the declaration locator and active-work record, asks Goal
+  Orchestrator for the successor Slice, and continues the same Plan Run without
+  user confirmation.
 - **Action blocked** → the scheduler parks the action in its projection; Dev
-  Workflow persists only owner-defined blocker state. Do not set the whole row
-  `blocked: true` while a dependency-ready action or legal remediation remains.
-- **Goal blocked** → set `blocked: true` only after a fixed-point exhaustion
-  audit proves the ready queue is empty, every remaining action is behind a
-  hard product/architecture/authorization/ownership/resource boundary, and the
-  repeated-blocker lifecycle threshold is satisfied.
-- **Session end** → update `last_session` date.
-- **Branch merged** → if all phases complete, set `stage: complete`; if subsequent phases remain, update `branch` to target branch (e.g. `main`).
-- **User explicitly closes** → set `stage: complete` regardless of plan status.
-- **Stale detection** → if `last_session` is >14 days old and user hasn't mentioned it, ask on next session: "This work has been idle for N days — still active or should I close it?"
+  Workflow persists only owner-defined blocker state and resynchronizes.
+- **Goal blocked** → Plan/Task/Session owners record fixed-point exhaustion;
+  active-work only mirrors those owners.
+- **Close** → `make active-work-close WORK_ITEM=<id>
+  EXPECTED_REVISION=<n>` removes only this workspace's record with CAS.
+- **Distribution** → `peers-dev-workflow` publishes the implementation; the
+  installed copy derives the consuming worktree's canonical root and
+  `workspaceId`. The source repository owns no consumer runtime state.
 
 Context Anchor rules:
 
-- `active_work` is the durable current-state index; the plan and linked tracking artifacts own scope, detailed progress, and evidence.
+- The workspace active-work file is a durable locator projection; Plan, Task,
+  Session, declaration and Git remain the state owners.
 - Execution plans MUST NOT contain a `## Context Anchor` section.
-- Context Anchor validates and projects; it never writes or repairs
-  `active_work`.
+- Context Anchor validates and projects; it never writes or repairs active-work.
+- The Workflow Kernel renders the exact Anchor at Stop and stores only its
+  machine-local receipt. A terminal or blocked conversation releases only
+  after that exact projection is observable in the assistant response or host
+  transcript.
 - The chat projection records `<worktree-name> (<repo-root>)`, verified branch,
   `workspaceId`, initial HEAD, and expected/verified HEAD.
   It never persists a developer or CI user-home absolute path or an ambiguous
   bare `<repo-root>`.
 - The chat projection also records completed delta, dependency-ready queue,
   execution mode and live backend-addressable lanes, conflict controls,
-  critical path, and an evidence-backed ETA or `unknown`.
+  critical path, Plan Run queue/mandate/autonomous horizon/stop conditions, and
+  an evidence-backed ETA or `unknown`.
 - Resume verification is internal workflow state. It must not interrupt an
   authorized execution turn merely to emit an Anchor.
+- Task closure, review success, Context Anchor output, and context compaction
+  are internal Plan Run boundaries; none consumes the user's continuation
+  authorization.
 - Tracked-work status, resume, handoff, blocker, readiness, and close responses end with the single fenced chat projection required by `pt-context-anchor`.
+- Project memory and chat are outputs only. No normal path writes a shared
+  cross-workspace `active_work` table.
 
 ---
 

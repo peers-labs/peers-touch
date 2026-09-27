@@ -1,0 +1,39 @@
+{
+  "id": "chat-client-unification-integrity",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "docs/architecture/chat-lifecycle/legacy-inventory.json",
+    "apps/desktop/**",
+    "apps/mobile/**",
+    "apps/station/**",
+    "model/domain/chat/**",
+    "packages/messaging-core/**"
+  ],
+  "truth_sources": [
+    "Conversation resource-owner APIs",
+    "Desktop and Mobile Device Messaging Engine projections",
+    "CCU legacy inventory"
+  ],
+  "visible_surfaces": [
+    {"type": "api", "route": "/conversation/*"},
+    {"type": "client", "surface": "Desktop Chat"},
+    {"type": "client", "surface": "Mobile Chat"}
+  ],
+  "required_gates": ["chat-lifecycle-tree-zero-reference-e2e"],
+  "acceptance": {
+    "service": [
+      "all inventory-declared deleted paths remain absent",
+      "all nine CCU zero-reference dimensions are scanned",
+      "legacy Chat imports, routes, commands, schemas, generated artifacts, tests, fixtures, scripts, runtime traces, and current-source docs remain absent"
+    ],
+    "visible": [
+      "Desktop and Mobile continue to use the canonical Conversation and resource-owner paths"
+    ]
+  },
+  "negative": [
+    "a negative assertion fixture must be explicitly listed in the inventory",
+    "historical evidence cannot make an executable legacy owner current",
+    "missing dimension roots or deleted-path regressions fail closed"
+  ]
+}

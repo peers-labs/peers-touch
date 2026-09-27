@@ -49,6 +49,24 @@ func (p *SocialGraphEventPublisher) PublishFriendRequestAccepted(ctx context.Con
 	}
 }
 
+func (p *SocialGraphEventPublisher) PublishRelationshipChanged(
+	ctx context.Context,
+	recipientPTID string,
+	actorPTID string,
+	targetPTID string,
+	blocked bool,
+) {
+	kind := realtime.SocialGraphEvent_RELATIONSHIP_UNBLOCKED
+	if blocked {
+		kind = realtime.SocialGraphEvent_RELATIONSHIP_BLOCKED
+	}
+	p.publish(ctx, recipientPTID, &realtime.SocialGraphEvent{
+		Kind:       kind,
+		ActorPtid:  actorPTID,
+		TargetPtid: targetPTID,
+	})
+}
+
 func (p *SocialGraphEventPublisher) publish(ctx context.Context, targetPTID string, ev *realtime.SocialGraphEvent) {
 	liveBus := p.bus()
 	if liveBus == nil {

@@ -32,12 +32,19 @@ use crate::platform::secure_storage::SecureStorage;
 mod acceptance;
 #[cfg(feature = "acceptance-harness")]
 pub use acceptance::{
-    CallbackReplayHandleProjection, CallbackReplayHandleRequest, NegativeCallbackProjection,
-    NegativeCallbackRequest,
+    configure_secure_storage_fault, CallbackReplayHandleProjection, CallbackReplayHandleRequest,
+    NegativeCallbackProjection, NegativeCallbackRequest, SecureStorageFaultProjection,
 };
+mod access_gate;
 mod credential_envelope;
 mod proto;
+pub(crate) mod session;
 mod transport;
+pub use access_gate::{
+    NativeAccessDecisionInput, NativeAccessGateInput, NativeAccessProjection,
+    NativeAccessStartInput, NativeAccessSubmitInput, NativeGenericFieldValue,
+};
+pub use session::NativeSessionProjection;
 
 const ACTIVE_ATTEMPT_INDEX_KEY: &str = "oauth.active.index";
 const DEVICE_ID_KEY: &str = "oauth.device.id";
@@ -96,6 +103,8 @@ pub enum OAuthPublicPhase {
 pub struct OAuthSessionProjection {
     pub session_id: String,
     pub actor_ptid: String,
+    pub device_id: String,
+    pub lifecycle_generation: u64,
     pub expires_at: String,
 }
 
@@ -119,6 +128,8 @@ pub struct OAuthGateActionProjection {
     pub action_id: String,
     pub action_type: String,
     pub submit_action: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,6 +144,9 @@ pub struct OAuthGateProjection {
     pub submit_action: String,
     pub input_schema_json: String,
     pub alternative_actions: Vec<OAuthGateActionProjection>,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -349,13 +363,34 @@ impl OAuthCoordinator {
             ensure_session_scope_matches(session, identity.as_ref(), scope)?;
         }
 
-        let station_revocation = match active_attempt {
-            Some(mut attempt) => match self.cancel_attempt(storage, &mut attempt).await {
-                Ok(_) => OAuthStationRevocation::Confirmed,
-                Err(_) => OAuthStationRevocation::Unconfirmed,
-            },
-            None if active_session.is_some() => OAuthStationRevocation::Unconfirmed,
-            None => OAuthStationRevocation::NotRequired,
+        let attempt_revoked = match active_attempt {
+            Some(mut attempt) => Some(self.cancel_attempt(storage, &mut attempt).await.is_ok()),
+            None => None,
+        };
+        let session_revoked = match (active_session.as_ref(), scope.as_ref()) {
+            (Some(session), Some(scope))
+                if !session.access_token.is_empty() && !session.session_id.is_empty() =>
+            {
+                Some(
+                    self.transport
+                        .revoke_session(
+                            &scope.station_origin,
+                            &session.access_token,
+                            &session.session_id,
+                        )
+                        .await
+                        .is_ok(),
+                )
+            }
+            (Some(_), _) => Some(false),
+            (None, _) => None,
+        };
+        let station_revocation = match (attempt_revoked, session_revoked) {
+            (None, None) => OAuthStationRevocation::NotRequired,
+            (attempt, session) if attempt.unwrap_or(true) && session.unwrap_or(true) => {
+                OAuthStationRevocation::Confirmed
+            }
+            _ => OAuthStationRevocation::Unconfirmed,
         };
 
         let secure_storage = purge_oauth_secure_storage(
@@ -363,6 +398,7 @@ impl OAuthCoordinator {
             attempt_storage_key.as_deref(),
             current_session_key.as_deref(),
         )?;
+        session::purge_legacy_web_session(storage)?;
         #[cfg(feature = "acceptance-harness")]
         self.clear_callback_replay_vault()?;
 
@@ -1010,6 +1046,7 @@ impl PersistedOAuthAttempt {
 #[serde(rename_all = "camelCase")]
 struct PersistedNativeSession {
     station_peer_id: String,
+    station_origin: String,
     device_id: String,
     lifecycle_generation: u64,
     candidate_id: String,
@@ -1080,6 +1117,8 @@ impl SecretStore for SecureStorage {
     }
 
     fn remove_secret(&self, key: &str) -> MobileResult<()> {
+        #[cfg(feature = "acceptance-harness")]
+        acceptance::fail_next_secure_storage_remove()?;
         self.remove(key).map_err(Into::into)
     }
 }
@@ -1264,6 +1303,7 @@ fn persist_credential_before_ack<S: SecretStore>(
     );
     let session = PersistedNativeSession {
         station_peer_id: attempt.station_peer_id.clone(),
+        station_origin: attempt.station_origin.clone(),
         device_id: attempt.device_id.clone(),
         lifecycle_generation: attempt.lifecycle_generation,
         candidate_id: candidate.candidate_id.clone(),
@@ -1281,6 +1321,8 @@ fn persist_credential_before_ack<S: SecretStore>(
     attempt.public_session = Some(OAuthSessionProjection {
         session_id: session.session_id.clone(),
         actor_ptid: session.actor_ptid.clone(),
+        device_id: session.device_id.clone(),
+        lifecycle_generation: session.lifecycle_generation,
         expires_at: session.expires_at.clone(),
     });
     attempt.phase = OAuthPublicPhase::CredentialDelivery;
@@ -1337,6 +1379,8 @@ fn read_public_projection<S: SecretStore>(storage: &S) -> MobileResult<OAuthPubl
                     session: Some(OAuthSessionProjection {
                         session_id: session.session_id.clone(),
                         actor_ptid: session.actor_ptid.clone(),
+                        device_id: session.device_id.clone(),
+                        lifecycle_generation: session.lifecycle_generation,
                         expires_at: session.expires_at.clone(),
                     }),
                 });
@@ -1397,6 +1441,7 @@ fn ensure_session_scope_matches(
     scope: &ValidatedScope,
 ) -> MobileResult<()> {
     if session.station_peer_id != scope.station_peer_id
+        || session.station_origin != scope.station_origin
         || identity.is_some_and(|identity| {
             session.device_id != identity.device_id
                 || session.lifecycle_generation != identity.generation
@@ -1528,7 +1573,7 @@ fn candidate_projection(
     })
 }
 
-fn access_decision_projection(
+pub(super) fn access_decision_projection(
     decision: &proto::access_gate::v1::AccessDecision,
 ) -> MobileResult<OAuthAccessDecisionProjection> {
     let state = AccessDecisionState::try_from(decision.state)
@@ -1551,6 +1596,8 @@ fn access_decision_projection(
                         action_id: action.action_id.clone(),
                         action_type: action_type.as_str_name().to_string(),
                         submit_action: action.submit_action.clone(),
+                        schema_revision: action.schema_revision,
+                        schema_digest: action.schema_digest.clone(),
                     })
                 })
                 .collect::<MobileResult<Vec<_>>>()?;
@@ -1564,6 +1611,9 @@ fn access_decision_projection(
                 submit_action: gate.submit_action.clone(),
                 input_schema_json: gate.input_schema_json.clone(),
                 alternative_actions,
+                action_id: gate.action_id.clone(),
+                schema_revision: gate.schema_revision,
+                schema_digest: gate.schema_digest.clone(),
             })
         })
         .collect::<MobileResult<Vec<_>>>()?;
@@ -1916,7 +1966,7 @@ mod tests {
         assert_eq!(decoded.action_type, AccessGateType::AuthOauth as i32);
         assert_eq!(decoded.attempt_secret_hash.len(), 32);
         assert_eq!(decoded.credential_delivery_public_key.len(), 32);
-        assert_eq!(PROTOBUF_CONTENT_TYPE, "application/x-protobuf");
+        assert_eq!(PROTOBUF_CONTENT_TYPE, "application/protobuf");
     }
 
     #[test]
@@ -2260,6 +2310,7 @@ mod tests {
             &session_key,
             &PersistedNativeSession {
                 station_peer_id: "12D3KooWStation".to_string(),
+                station_origin: "https://station.example:443".to_string(),
                 device_id: "device-id".to_string(),
                 lifecycle_generation: 7,
                 candidate_id: "candidate".to_string(),
@@ -2287,14 +2338,8 @@ mod tests {
         .expect("persist projection");
 
         let coordinator = OAuthCoordinator::new().expect("coordinator");
-        let result = tauri::async_runtime::block_on(coordinator.logout_purge_inner(
-            &storage,
-            Some(OAuthScopeIntent {
-                station_origin: "https://station.example".to_string(),
-                station_peer_id: "12D3KooWStation".to_string(),
-            }),
-        ))
-        .expect("purge");
+        let result = tauri::async_runtime::block_on(coordinator.logout_purge_inner(&storage, None))
+            .expect("purge");
 
         assert_eq!(
             result.station_revocation,

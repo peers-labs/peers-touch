@@ -1,4 +1,4 @@
-import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
+import type { FriendChatSession } from './socialProjection';
 import type { Conversation, ConversationMember } from '../gen/proto/domain/chat/conversation_pb';
 import { ConversationKind, ConversationStatus, MemberRole, MemberStatus } from '../gen/proto/domain/chat/conversation_pb';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';

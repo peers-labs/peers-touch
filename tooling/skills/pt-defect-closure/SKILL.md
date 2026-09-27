@@ -47,7 +47,12 @@ Before anything else, classify the bug. This determines which path to follow.
    runtime intent through `make dev-start`; use `make dev-update` if scope grows.
 1. **Locate governing spec** — `pt-small-fix-discipline` §1: which layer owns this?
 2. **Layer-ownership audit** — `pt-god-view` §3.3.1: is the fix at the correct layer?
-3. **Debug** — use `TRAE-debugger` workflow: hypothesize → instrument → reproduce → analyze
+3. **Debug** — use the host-neutral evidence loop: hypothesize → instrument →
+   reproduce → analyze. Keep project-native instrumentation and the real
+   Journey as the source of truth. When host tooling is needed, Runtime Handoff
+   reports the missing capability, `pt-goal-orchestrator` projects the Host
+   Capability Request, and Dev Workflow invokes the detected
+   `pt-*-host-adapter` only after Guardian admission.
 4. **Fix** — surgical, at the correct layer, no patches
 
 ---
@@ -136,10 +141,16 @@ Before Acceptance injection:
 3. Deploy and launch only through Local Dev Control Plane / Make owners.
 4. Run the real product Journey in its required runtime and receiver
    perspective.
-5. On failure, return only the first actionable failure to Phase 1.
-6. On runtime or authorization failure, park it as `BLOCKED`; do not classify
+5. Let `pt-dev-runtime-handoff` drive repository-native automation first. For a
+   missing interaction capability, it reports the need so
+   `pt-goal-orchestrator` can project one Host Capability Request; Dev Workflow
+   invokes the detected adapter only after Guardian admission.
+6. On deterministic PASS, require the source-bound result and
+   `FUNCTIONAL_PASS` Session projection to commit in the same workflow slice.
+7. On failure, return only the first actionable failure to Phase 1.
+8. On runtime or authorization failure, park it as `BLOCKED`; do not classify
    the product behavior.
-7. Continue to Phase 2 only after `FUNCTIONAL_PASS`.
+9. Continue to Phase 2 only after `FUNCTIONAL_PASS`.
 
 Static, Harness-only, API-only, browser-only and prototype checks cannot satisfy
 this phase.
@@ -266,6 +277,11 @@ Never:
 - Add a Gate that only checks the happy path (it must verify the bug scenario)
 - Inject or run broad Acceptance before `FUNCTIONAL_PASS`
 - Skip acceptance injection "because it's a small fix"
+- Depend on `TRAE-debugger`, Cursor, Codex, or another host as the defect or
+  verification owner
+- Ask the user to operate a deterministic Journey that the repository driver or
+  detected host adapter can execute
+- Leave a source-bound functional PASS outside the Development Session
 - Use `pt-acceptance-infra-engineering` for business-domain injection
 - Treat product implementation as the design source when it differs from prototype
 - Let the interaction contract format limitation block the fix — record the gap and proceed

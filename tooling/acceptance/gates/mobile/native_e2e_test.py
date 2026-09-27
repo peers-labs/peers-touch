@@ -21,6 +21,7 @@ from tooling.acceptance.gates.mobile.native_e2e import (
     PRODUCTION_OAUTH_PURGE_ACTION,
     PROVIDER_CAPABILITY,
     REQUIRED_ACCESS_VARIANTS,
+    SCENARIO_DEPENDENCY_BLOCKERS,
     SCENARIO_GATES,
     SCENARIO_METADATA,
     SECURE_STORAGE_ABSENCE_FIELDS,
@@ -34,8 +35,13 @@ from tooling.acceptance.gates.mobile.native_e2e import (
     _fixture_target,
     _mobile_projection_summary,
     _negative_oauth_intent,
+    validate_secure_storage_delete_failure,
 )
+from tooling.acceptance.gates.mobile.messaging_journey import MessagingActor
 from tooling.acceptance.gates.mobile.proof_contracts import ProofContractError
+from tooling.acceptance.provisioners.mobile_native import (
+    MOBILE_NATIVE_SCENARIO_GATES,
+)
 
 
 def artifact_ref(path: str) -> dict[str, str]:
@@ -117,6 +123,156 @@ def lifecycle_snapshot(phase: str, generation: int) -> dict[str, Any]:
         ],
         "errorKey": None,
     }
+
+
+class ScenarioContractMatrixTests(unittest.TestCase):
+    def setUp(self) -> None:
+        acceptance_root = Path(__file__).resolve().parents[2]
+        self.environment = json.loads(
+            (
+                acceptance_root / "environments" / "mobile-native.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        self.catalog = json.loads(
+            (acceptance_root / "gates.yaml").read_text(encoding="utf-8")
+        )["gates"]
+
+    def test_catalog_environment_provisioner_runner_and_metadata_match(
+        self,
+    ) -> None:
+        environment_matrix = {
+            scenario: contract["gate_id"]
+            for scenario, contract in self.environment["scenarios"].items()
+        }
+        catalog_matrix = {
+            entry["argv"][-1]: gate_id
+            for gate_id, entry in self.catalog.items()
+            if gate_id in SCENARIO_GATES.values()
+        }
+
+        self.assertEqual(environment_matrix, SCENARIO_GATES)
+        self.assertEqual(MOBILE_NATIVE_SCENARIO_GATES, SCENARIO_GATES)
+        self.assertEqual(catalog_matrix, SCENARIO_GATES)
+        self.assertEqual(set(SCENARIO_METADATA), set(SCENARIO_GATES))
+
+    def test_product_scenarios_keep_d18_without_oauth_resources(self) -> None:
+        for scenario, blocker in SCENARIO_DEPENDENCY_BLOCKERS.items():
+            with self.subTest(scenario=scenario):
+                gate_id = SCENARIO_GATES[scenario]
+                catalog = self.catalog[gate_id]
+                environment = self.environment["scenarios"][scenario]
+
+                self.assertNotIn("command", catalog)
+                self.assertEqual(
+                    catalog["argv"],
+                    [
+                        "python3",
+                        "-m",
+                        "tooling.acceptance.gates.mobile.native_e2e",
+                        "--scenario",
+                        scenario,
+                    ],
+                )
+                self.assertEqual(
+                    catalog["ephemeralCapabilities"],
+                    [APPIUM_CAPABILITY_ID],
+                )
+                self.assertNotIn("evidenceFinalizer", catalog)
+                self.assertEqual(environment["credentials"], [])
+                self.assertEqual(environment["provider_accounts"], [])
+                self.assertEqual(environment["browser_sessions"], [])
+                self.assertEqual(
+                    environment["ephemeral_capabilities"],
+                    [APPIUM_CAPABILITY_ID],
+                )
+                self.assertNotIn("oauth", " ".join(environment["harness_actions"]))
+                self.assertIn(
+                    blocker["workstream"],
+                    SCENARIO_METADATA[scenario]["bom"],
+                )
+
+        access = self.catalog[SCENARIO_GATES["access"]]
+        self.assertIn("evidenceFinalizer", access)
+        self.assertIn(PROVIDER_CAPABILITY, access["ephemeralCapabilities"])
+        self.assertIn(
+            STATION_FIXTURE_CAPABILITY,
+            access["ephemeralCapabilities"],
+        )
+
+    def test_dependency_blocked_scenarios_never_publish_pass(self) -> None:
+        class Store:
+            workspace_id = "a" * 16
+
+        class Artifacts:
+            run_id = artifact_ref("unused")["runId"]
+            store = Store()
+
+            def __init__(self) -> None:
+                self.completed: dict[str, Any] = {}
+                self.reports: list[tuple[str, dict[str, Any]]] = []
+
+            def __enter__(self) -> "Artifacts":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+            def complete(self, **values: object) -> None:
+                self.completed = dict(values)
+
+            def write_json(
+                self,
+                path: str,
+                value: Mapping[str, Any],
+                **_kwargs: object,
+            ) -> None:
+                self.reports.append((path, dict(value)))
+
+        for scenario, blocker in SCENARIO_DEPENDENCY_BLOCKERS.items():
+            with self.subTest(scenario=scenario):
+                artifacts = Artifacts()
+                gate = MobileNativeGate(scenario)
+                with patch(
+                    "tooling.acceptance.gates.mobile.native_e2e."
+                    "ArtifactSession",
+                    return_value=artifacts,
+                ):
+                    exit_code = gate.execute()
+
+                self.assertEqual(exit_code, 2)
+                self.assertEqual(
+                    artifacts.completed,
+                    {
+                        "status": "BLOCKED",
+                        "completion_status": "BLOCKED",
+                        "proof_status": "UNPROVEN",
+                        "runtime": {
+                            "scenario": scenario,
+                            "clientCount": 0,
+                        },
+                    },
+                )
+                report = artifacts.reports[-1][1]
+                self.assertEqual(report["status"], "BLOCKED")
+                self.assertEqual(report["proofStatus"], "UNPROVEN")
+                self.assertEqual(report["observedScope"], [])
+                self.assertEqual(
+                    report["blockedResource"],
+                    "mobile-product-dependency:"
+                    f"{blocker['workstream'].lower()}",
+                )
+                self.assertEqual(
+                    report["evidenceGaps"],
+                    [
+                        {
+                            "scenario": scenario,
+                            "dependency": blocker["workstream"],
+                            "status": "BLOCKED",
+                            "proofStatus": "UNPROVEN",
+                            "reason": blocker["reason"],
+                        }
+                    ],
+                )
 
 
 class AccessVariantLedgerTests(unittest.TestCase):
@@ -664,14 +820,17 @@ class FinalEvidenceJudgmentTests(unittest.TestCase):
         self.assertEqual(artifacts.completed["proof_status"], "UNPROVEN")
 
     def test_scenario_reports_have_independent_traceability(self) -> None:
-        lifecycle = MobileNativeGate("lifecycle")._result_base("BLOCKED")
+        lifecycle = MobileNativeGate("lifecycle")._result_base("PASS")
         platform = MobileNativeGate("platform")._result_base("FAIL")
 
         self.assertEqual(lifecycle["phase"], "W9-C Physical Lifecycle")
         self.assertEqual(lifecycle["bom"], ["W3", "W7-C", "W7-D"])
         self.assertEqual(lifecycle["spec"], ["MS-AG02", "MS-AG05"])
-        self.assertEqual(lifecycle["observedScope"], [])
         self.assertIn(
+            "physical secure-storage delete failure blocks lifecycle entry and a clean retry recovers",
+            lifecycle["observedScope"],
+        )
+        self.assertNotIn(
             "secure-storage deletion failure",
             lifecycle["unprovenScope"],
         )
@@ -710,14 +869,8 @@ class FinalEvidenceJudgmentTests(unittest.TestCase):
             ) -> None:
                 self.report = payload
 
-        for scenario in (
-            "recovery",
-            "recovery-ui",
-            "social-convergence",
-            "chat-contacts",
-            "moments",
-            "settings",
-        ):
+        scenarios = ("recovery", *SCENARIO_DEPENDENCY_BLOCKERS)
+        for scenario in scenarios:
             with self.subTest(scenario=scenario):
                 artifacts = Artifacts()
                 with patch(
@@ -728,9 +881,16 @@ class FinalEvidenceJudgmentTests(unittest.TestCase):
 
                 self.assertEqual(exit_code, 2)
                 self.assertEqual(artifacts.report["status"], "BLOCKED")
+                blocker = SCENARIO_DEPENDENCY_BLOCKERS.get(scenario)
+                expected_resource = (
+                    "mobile-runtime:manifest"
+                    if blocker is None
+                    else "mobile-product-dependency:"
+                    f"{blocker['workstream'].lower()}"
+                )
                 self.assertEqual(
                     artifacts.report["blockedResource"],
-                    f"mobile-scenario:{scenario}",
+                    expected_resource,
                 )
                 self.assertEqual(artifacts.completed["status"], "BLOCKED")
                 self.assertEqual(
@@ -752,6 +912,11 @@ class PhysicalScenarioBranchTests(unittest.TestCase):
             self.platform = platform
             self.generation = 3
             self.calls: list[str] = []
+            self.network_state: dict[str, Any] = {
+                "connected": True,
+                "networkType": "wifi",
+                "updatedAtMs": 1,
+            }
             self.permissions = {
                 kind: "not_determined"
                 for kind in PLATFORM_PERMISSION_KINDS
@@ -763,7 +928,7 @@ class PhysicalScenarioBranchTests(unittest.TestCase):
             payload: Mapping[str, Any] | None = None,
         ) -> Any:
             self.calls.append(action)
-            if action == "lifecycle.snapshot":
+            if action in {"lifecycle.snapshot", "lifecycle.waitReady"}:
                 return lifecycle_snapshot("ACTIVE", self.generation)
             if action == "lifecycle.suspend":
                 return {"snapshot": lifecycle_snapshot(
@@ -779,6 +944,19 @@ class PhysicalScenarioBranchTests(unittest.TestCase):
             if action == "lifecycle.restart":
                 self.generation += 1
                 return {"requested": True, "scope": "webview"}
+            if action == "lifecycle.secureStorageDeleteFailure":
+                self.generation += 1
+                blocked = lifecycle_snapshot("COLD", self.generation)
+                self.generation += 1
+                return {
+                    "outcome": "blocked",
+                    "errorCode": "MOBILE_SECURE_STORAGE",
+                    "blocked": blocked,
+                    "recovered": lifecycle_snapshot(
+                        "ACTIVE",
+                        self.generation,
+                    ),
+                }
             if action == "platform.permission.checkAll":
                 return [
                     {
@@ -804,11 +982,7 @@ class PhysicalScenarioBranchTests(unittest.TestCase):
                     "wasAlreadyGranted": False,
                 }
             if action == "platform.network.read":
-                return {
-                    "connected": True,
-                    "networkType": "wifi",
-                    "updatedAtMs": 1,
-                }
+                return dict(self.network_state)
             raise AssertionError(f"unexpected action: {action}")
 
         def switch_to_native(self) -> None:
@@ -863,6 +1037,30 @@ class PhysicalScenarioBranchTests(unittest.TestCase):
             )
             self.assertNotIn("lifecycle.suspend", session.calls)
             self.assertNotIn("lifecycle.resume", session.calls)
+            self.assertEqual(
+                session.calls.count("lifecycle.secureStorageDeleteFailure"),
+                1,
+            )
+        self.assertTrue(all(
+            client["secureStorageDeleteFailure"]["outcome"] == "blocked"
+            for client in result["clients"].values()
+        ))
+
+    def test_secure_storage_delete_failure_rejects_unblocked_result(self) -> None:
+        with self.assertRaisesRegex(
+            GateError,
+            "deletion failure was not observed",
+        ):
+            validate_secure_storage_delete_failure(
+                {
+                    "outcome": "passed",
+                    "errorCode": "MOBILE_SECURE_STORAGE",
+                    "blocked": lifecycle_snapshot("COLD", 4),
+                    "recovered": lifecycle_snapshot("ACTIVE", 5),
+                },
+                minimum_generation=4,
+                expected_boot_order=["auth", "command"],
+            )
 
     def test_platform_branch_uses_permission_and_network_actions(self) -> None:
         gate = MobileNativeGate("platform")
@@ -892,6 +1090,215 @@ class PhysicalScenarioBranchTests(unittest.TestCase):
                 len(PLATFORM_PERMISSION_KINDS),
             )
             self.assertIn("platform.network.read", session.calls)
+
+    def test_platform_branch_rejects_unobserved_native_network_state(self) -> None:
+        gate = MobileNativeGate("platform")
+        session = self.Session("ios")
+        session.network_state["updatedAtMs"] = 0
+        with (
+            patch.object(gate, "_load_manifest", return_value={}),
+            patch.object(
+                gate,
+                "_start_device_scenario_sessions",
+                return_value={"alice-ios": session},
+            ),
+            self.assertRaises(MobileNativeBlocked) as caught,
+        ):
+            gate._run_platform(object())  # type: ignore[arg-type]
+
+        self.assertIn(
+            "no native observation",
+            str(caught.exception),
+        )
+
+    def test_recovery_branch_joins_command_checkpoint_and_draft_identity(
+        self,
+    ) -> None:
+        network: dict[str, Any] = {}
+
+        class RecoverySession:
+            def __init__(
+                self,
+                platform: str,
+                *,
+                sender: bool,
+            ) -> None:
+                self.platform = platform
+                self.sender = sender
+                self.calls: list[str] = []
+                self.drafts: list[dict[str, Any]] = []
+                self.command: dict[str, Any] | None = None
+
+            def call_action(
+                self,
+                action: str,
+                payload: Mapping[str, Any] | None = None,
+            ) -> Any:
+                body = dict(payload or {})
+                self.calls.append(action)
+                if action == "reliability.draft.write":
+                    kind = body["kind"]
+                    draft = {
+                        "key": f"{kind}:{body['targetId']}",
+                        "kind": "chat" if kind == "chat" else "moments",
+                        "surfaceKind": kind,
+                        "targetId": body["targetId"],
+                        "updatedAtMs": 1,
+                        "payloadSha256": (
+                            "a" * 64 if kind == "chat" else "b" * 64
+                        ),
+                    }
+                    self.drafts.append(draft)
+                    return draft
+                if action == "reliability.snapshot":
+                    return {
+                        "runtime": {},
+                        "commands": [self.command] if self.command else [],
+                        "drafts": list(self.drafts),
+                        "checkpoints": [],
+                    }
+                if action == "lifecycle.restart":
+                    return {"requested": True, "scope": "webview"}
+                if action == "reliability.draft.read":
+                    return list(self.drafts)
+                if action == "reliability.fixture.configure":
+                    return {"mode": body["mode"]}
+                if action == "reliability.friendRequest.submit":
+                    self.command = {
+                        "commandId": f"command-{self.platform}",
+                        "requestId": f"request-{self.platform}",
+                        "payloadSha256": "c" * 64,
+                        "state": "unknown-outcome",
+                        "checkpointReady": False,
+                    }
+                    network[self.platform] = {
+                        "requestId": self.command["requestId"],
+                        "senderPtid": f"ptid:alice-{self.platform}",
+                        "receiverPtid": f"ptid:bob-{self.platform}",
+                    }
+                    return {
+                        "command": dict(self.command),
+                        "projection": {},
+                    }
+                if action == "recovery.snapshot":
+                    return {
+                        "hasActiveRecovery": True,
+                        "isWriteBlocked": False,
+                        "updatedAtMs": 1,
+                        "states": [{"kind": "command-recovery"}],
+                    }
+                if action == "reliability.reconcile":
+                    assert self.command is not None
+                    resolved = {
+                        **self.command,
+                        "state": "committed",
+                        "checkpointReady": True,
+                    }
+                    self.command = None
+                    return {
+                        "commands": [resolved],
+                        "appliedCheckpoints": 1,
+                        "snapshot": {
+                            "runtime": {},
+                            "commands": [],
+                            "drafts": list(self.drafts),
+                            "checkpoints": [],
+                        },
+                    }
+                if action == "social.reconcile":
+                    request = network.get(self.platform)
+                    return {
+                        "friendRequests": [request] if request else [],
+                    }
+                if action == "reliability.draft.action":
+                    if body["action"] == "discard":
+                        self.drafts = []
+                    return {
+                        "runtime": {},
+                        "commands": [],
+                        "drafts": list(self.drafts),
+                        "checkpoints": [],
+                    }
+                raise AssertionError(f"unexpected action: {action}")
+
+            def switch_to_native(self) -> None:
+                self.calls.append("native")
+
+            def switch_to_app_webview(self) -> str:
+                self.calls.append("webview")
+                return "WEBVIEW_app"
+
+            def capture_native_accessibility(
+                self,
+            ) -> "PhysicalScenarioBranchTests.Ref":
+                return PhysicalScenarioBranchTests.Ref("native-ax.xml")
+
+            def capture_screenshot(
+                self,
+                _capture_id: str,
+            ) -> "PhysicalScenarioBranchTests.Ref":
+                return PhysicalScenarioBranchTests.Ref("screenshot.png")
+
+            def capture_web_dom(
+                self,
+                _capture_id: str,
+            ) -> "PhysicalScenarioBranchTests.Ref":
+                return PhysicalScenarioBranchTests.Ref("web-dom.html")
+
+        class Artifacts:
+            run_id = "20260911T120000000000Z-" + ("1" * 32)
+
+            def __init__(self) -> None:
+                self.writes: list[tuple[str, dict[str, Any], str]] = []
+
+            def write_json(
+                self,
+                path: str,
+                value: Mapping[str, Any],
+                *,
+                role: str,
+            ) -> "PhysicalScenarioBranchTests.Ref":
+                self.writes.append((path, dict(value), role))
+                return PhysicalScenarioBranchTests.Ref(path)
+
+        for platform in ("ios", "android"):
+            with self.subTest(platform=platform):
+                sender = RecoverySession(platform, sender=True)
+                receiver = RecoverySession(platform, sender=False)
+                result = MobileNativeGate("recovery")._run_recovery_platform(
+                    Artifacts(),  # type: ignore[arg-type]
+                    sender_session=sender,  # type: ignore[arg-type]
+                    receiver_session=receiver,  # type: ignore[arg-type]
+                    sender=MessagingActor(
+                        client_id=f"alice-{platform}",
+                        role="alice",
+                        station_url="https://station.example",
+                        station_peer_id=f"station-{platform}",
+                        ptid=f"ptid:alice-{platform}",
+                        account_ref="station-account:alice@p.t",
+                        federated_handle="@alice@station.example",
+                        federation_id=f"federation-{platform}",
+                    ),
+                    receiver=MessagingActor(
+                        client_id=f"bob-{platform}",
+                        role="bob",
+                        station_url="https://station.example",
+                        station_peer_id=f"station-{platform}",
+                        ptid=f"ptid:bob-{platform}",
+                        account_ref="station-account:bob@p.t",
+                        federated_handle="@bob@station.example",
+                        federation_id=f"federation-{platform}",
+                    ),
+                    case_id=f"recovery-{platform}",
+                )
+
+                self.assertTrue(result["checkpointApplied"])
+                self.assertTrue(result["relationshipReadback"])
+                self.assertTrue(result["draftRestartReadback"])
+                self.assertTrue(result["draftDiscarded"])
+                self.assertIn("reliability.friendRequest.submit", sender.calls)
+                self.assertIn("reliability.reconcile", sender.calls)
+                self.assertIn("social.reconcile", receiver.calls)
 
 
 class FakeHarnessSession:

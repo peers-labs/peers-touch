@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "station-access-wire-contract",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-wire-contract"],
+      "required_gates": [
+        "proto-build",
+        "station-api-ownership",
+        "station-access-capability-contract"
+      ],
+      "synthetic_paths": [
+        "model/domain/peer/station_identity.proto",
+        "model/domain/access_gate/access_gate.proto",
+        "apps/station/frame/touch/actor_handler.go",
+        "apps/desktop/src-tauri/src/application/auth/service.rs",
+        "apps/mobile/src-tauri/src/runtime/oauth/access_gate.rs"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "signed StationIdentityStatement",
+          "Station AccessAttempt and AccessDecision",
+          "station-api-capabilities.yaml"
+        ],
+        "surfaces": [
+          "Desktop Station selection and Access Gate",
+          "Mobile Station selection and Access Gate"
+        ],
+        "proven_by": [
+          "proto-build",
+          "station-api-ownership",
+          "station-access-capability-contract"
+        ],
+        "proven_scope": [
+          "Station identity and four canonical Access endpoints are generated-protobuf-only",
+          "Desktop and Mobile expose the same closed gate and failure semantics",
+          "direct login aliases and compatibility parsers are absent"
+        ],
+        "unproven_scope": [
+          "Native receiver behavior is proven by station-access-auth-e2e"
+        ]
+      }
+    },
+    {
+      "id": "station-access-authentication",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-authentication"],
+      "required_gates": [
+        "station-access-capability-contract",
+        "station-access-auth-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/pages/login/LoginPage.tsx",
+        "apps/desktop/src/services/accessGate.ts",
+        "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
+        "apps/mobile/src/features/auth/authSession.ts",
+        "apps/mobile/src/features/station/stationConnection.ts",
+        "apps/mobile/src-tauri/src/commands/station.rs"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "signed Station identity verification",
+          "Station AccessDecision",
+          "native client binding proofs"
+        ],
+        "surfaces": [
+          "native macOS Desktop Access Gate",
+          "native iOS Simulator Access Gate"
+        ],
+        "proven_by": ["station-access-auth-e2e"],
+        "proven_scope": [
+          "Desktop and Mobile bind a signed Station identity before authentication",
+          "both native clients obtain an actor session through the canonical Access Gate",
+          "authenticated Station and actor identities match source-bound runtime manifests"
+        ],
+        "unproven_scope": [
+          "Linux, Windows, Android, and physical-device runtime cells"
+        ]
+      }
+    },
+    {
+      "id": "station-access-scope-isolation",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-scope-isolation"],
+      "required_gates": [
+        "station-access-capability-contract",
+        "station-access-scope-isolation-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/kernel/identityRuntime.ts",
+        "apps/desktop/src/store/session.ts",
+        "apps/desktop/src-tauri/src/application/key_exchange/device_install.rs",
+        "apps/desktop/src-tauri/src/messaging/engine.rs",
+        "apps/mobile/src/runtimes/sessionRuntime.ts",
+        "apps/mobile/src/runtimes/messagingRuntime.ts",
+        "apps/mobile/src/storage/mobileClientStorage.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Desktop identity lifecycle and Device Messaging Engine",
+          "MobileLifecycleKernel and Mobile Messaging runtime",
+          "Station-bound native runtime manifests"
+        ],
+        "surfaces": [
+          "Desktop authenticated shell across process restart",
+          "Mobile authenticated shell across WebView restart",
+          "Desktop and Mobile runtime scope projections"
+        ],
+        "proven_by": ["station-access-scope-isolation-e2e"],
+        "proven_scope": [
+          "Station, Actor, and Device scope remain aligned after native restart",
+          "isolated clients do not expose another actor or Station projection",
+          "lifecycle generation fences stale Mobile results"
+        ],
+        "unproven_scope": [
+          "Cross-Station Federation context is proven by the SAL-02 boundary Gate"
+        ]
+      }
+    },
+    {
+      "id": "station-access-federation-context-boundary",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-federation-boundary"],
+      "required_gates": [
+        "station-federation-unit",
+        "station-api-ownership",
+        "station-access-federation-boundary-e2e"
+      ],
+      "synthetic_paths": [
+        "model/domain/actor/actor.proto",
+        "apps/station/frame/touch/actor/profile.go",
+        "apps/station/app/subserver/federation/handler.go",
+        "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+        "apps/desktop/src/components/settings/FederationTab.tsx",
+        "apps/mobile/src/pages/ContactsPage.tsx",
+        "apps/mobile/src/pages/settings/SettingsSections.tsx"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Federation projection",
+          "canonical Actor Profile discoverability",
+          "Station-scoped Federation catalog and resolver"
+        ],
+        "surfaces": [
+          "native macOS Desktop Federation context and people search",
+          "native iOS Simulator Federation context and people search"
+        ],
+        "proven_by": [
+          "station-federation-unit",
+          "station-api-ownership",
+          "station-access-federation-boundary-e2e"
+        ],
+        "proven_scope": [
+          "Desktop and Mobile consume one explicit Station-provided federation_id",
+          "scoped search, resolve, Direct creation, and Group creation use that explicit context",
+          "ordinary clients expose no Federation governance or Relay topology controls",
+          "Actor discoverability has one canonical profile owner"
+        ],
+        "unproven_scope": [
+          "Linux, Windows, Android, and physical-device runtime cells"
+        ]
+      }
+    },
+    {
+      "id": "station-access-interface-integrity",
+      "domain": "station-access",
+      "direction": "acceptance_validates_product",
+      "features": ["station-access-interface-contract"],
+      "required_gates": [
+        "station-access-capability-contract",
+        "desktop-release-build",
+        "mobile-native-build",
+        "station-access-lifecycle-aggregate-e2e"
+      ],
+      "synthetic_paths": [
+        "docs/architecture/station-access-lifecycle/data-model.md",
+        "tooling/acceptance/gates/station_access/capability_contract.py",
+        "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Access current capability inventory",
+          "current-source Station Access Gate contracts",
+          "Desktop and Mobile native build commands"
+        ],
+        "surfaces": [
+          "Desktop release artifact",
+          "Mobile iOS Simulator native artifact"
+        ],
+        "proven_by": [
+          "station-access-capability-contract",
+          "desktop-release-build",
+          "mobile-native-build",
+          "station-access-lifecycle-aggregate-e2e"
+        ],
+        "proven_scope": [
+          "the current Station Access route and consumer inventory is complete",
+          "Desktop release and Mobile native builds complete from one clean source",
+          "all Station Access capability Gates have current-source proof"
+        ],
+        "unproven_scope": [
+          "Linux, Windows, Android, and physical-device release artifacts"
+        ]
+      }
+    }
+  ]
+}

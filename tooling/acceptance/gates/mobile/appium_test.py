@@ -138,6 +138,7 @@ class AppiumChildFacadeTests(unittest.TestCase):
                 "physical_device_lease",
                 "build_attestation",
                 "callback_scheme",
+                "gate_id",
             },
         )
         for forbidden in (

@@ -1,7 +1,14 @@
 import type {
   AuthRuntimeRecovery,
 } from '../runtimes/authRuntime';
-import type { LifecycleKernelSnapshot } from '../app/lifecycle';
+import type {
+  DraftDisposition,
+  LifecycleKernelSnapshot,
+} from '../app/lifecycle';
+import type {
+  MobileNavigationIntent,
+  MobileNavigationProjection,
+} from '../app/navigation';
 import type {
   MobileOAuthProvider,
   OAuthPublicPhase,
@@ -12,10 +19,12 @@ import type {
   PermissionKind,
   PermissionRequestResult,
 } from '../runtimes/nativeLifecycleBridge';
+import type { DevicePreferences } from '../runtimes/deviceSettingsRuntime';
 import type { EmbeddedMobileBuildIdentity } from './buildIdentity';
 
 export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'build.identity',
+  'runtime.prepareActorIdentity',
   'station.add',
   'station.replace',
   'station.select',
@@ -26,10 +35,15 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'oauth.replayHandle',
   'oauth.negativeCallback',
   'lifecycle.snapshot',
+  'lifecycle.waitReady',
   'lifecycle.suspend',
   'lifecycle.resume',
   'lifecycle.restart',
+  'lifecycle.nativeBridgeDiagnostic',
+  'lifecycle.secureStorageDeleteFailure',
   'lifecycle.scope.read',
+  'navigation.snapshot',
+  'navigation.apply',
   'platform.permission.check',
   'platform.permission.request',
   'platform.permission.checkAll',
@@ -37,6 +51,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'session.logout',
   'native.deliverDeepLink',
   'projection.read',
+  'federation.context.read',
   'messaging.createDirect',
   'messaging.createGroup',
   'messaging.attachment.stage',
@@ -50,10 +65,41 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'messaging.search',
   'messaging.projection.read',
   'social.people.search',
+  'reliability.fixture.configure',
+  'reliability.friendRequest.submit',
+  'reliability.snapshot',
+  'reliability.reconcile',
+  'reliability.command.action',
+  'reliability.draft.write',
+  'reliability.draft.read',
+  'reliability.draft.action',
+  'reliability.reset',
+  'recovery.snapshot',
   'social.request.send',
   'social.request.accept',
+  'social.contact.open',
   'social.reconcile',
   'social.projection.read',
+  'moments.feed.read',
+  'moments.publish',
+  'moments.react',
+  'moments.comment',
+  'moments.comments.read',
+  'storage.cache.seed',
+  'storage.conversation-clear.seed',
+  'storage.batch.scenario',
+  'storage.retention.seed',
+  'settings.profile.read',
+  'settings.profile.update',
+  'settings.notifications.read',
+  'settings.notifications.update',
+  'settings.device.read',
+  'settings.device.update',
+  'getRealtimeDevice',
+  'initiateCall',
+  'callResolutionState',
+  'acceptCall',
+  'rejectCall',
   'cleanup',
 ] as const;
 
@@ -62,15 +108,18 @@ export type MobileAcceptanceActionName =
 
 export interface StationAddInput {
   url: string;
+  draftDisposition?: DraftDisposition;
 }
 
 export interface StationReplaceInput {
   stationPeerId: string;
   url: string;
+  draftDisposition?: DraftDisposition;
 }
 
 export interface StationSelectInput {
   stationPeerId: string;
+  draftDisposition?: DraftDisposition;
 }
 
 export interface PublicStationEntry {
@@ -352,7 +401,26 @@ export interface LifecycleRestartOutput {
   scope: 'webview';
 }
 
+export interface LifecycleWaitReadyInput {
+  minimumGeneration?: number;
+  includeDiagnostics?: boolean;
+}
+
 export type PublicLifecycleSnapshot = LifecycleKernelSnapshot;
+
+export interface LifecycleWaitReadyOutput extends LifecycleKernelSnapshot {
+  runtimeErrors?: readonly {
+    runtimeId: string;
+    error: string;
+  }[];
+}
+
+export interface SecureStorageDeleteFailureOutput {
+  outcome: 'blocked';
+  errorCode: 'MOBILE_SECURE_STORAGE';
+  blocked: PublicLifecycleSnapshot;
+  recovered: PublicLifecycleSnapshot;
+}
 
 export interface LifecycleTransitionOutput {
   snapshot: PublicLifecycleSnapshot;
@@ -361,6 +429,7 @@ export interface LifecycleTransitionOutput {
 export interface MobileRuntimeScopeProjection {
   activeStationPeerId: string | null;
   activeActorPtid: string | null;
+  deviceId: string | null;
   social: {
     stationPeerId: string | null;
     actorPtid: string | null;
@@ -368,16 +437,7 @@ export interface MobileRuntimeScopeProjection {
     requestCount: number;
     messageThreadCount: number;
   };
-  group: {
-    stationPeerId: string | null;
-    actorPtid: string | null;
-    groupCount: number;
-    messageThreadCount: number;
-  };
-  navigation: {
-    primaryRouteId: string;
-    detailKeys: string[];
-  };
+  navigation: MobileNavigationProjection;
 }
 
 export interface LifecycleScopeReadOutput {
@@ -386,9 +446,9 @@ export interface LifecycleScopeReadOutput {
   launchState: PublicLifecycleSnapshot['launchState'];
   activeStationPeerId: string;
   activeActorPtid: string | null;
+  deviceId: string | null;
   runtimeStationPeerId: string | null;
   social: MobileRuntimeScopeProjection['social'];
-  group: MobileRuntimeScopeProjection['group'];
   navigation: MobileRuntimeScopeProjection['navigation'];
 }
 
@@ -397,6 +457,10 @@ export interface SessionLogoutOutput {
   decision: PublicAccessDecision;
   lifecycle: PublicLifecycleSnapshot;
   runtime: MobileRuntimeScopeProjection;
+}
+
+export interface SessionLogoutInput {
+  draftDisposition?: DraftDisposition;
 }
 
 export interface NativeDeepLinkInput {
@@ -620,6 +684,13 @@ export interface PublicMessagingProjection {
     name: string;
     ownerPtid: string;
     memberPtids: string[];
+    members: Array<{
+      ptid: string;
+      role: number;
+      homeStationPeerId: string;
+      muted: boolean;
+      mutedUntilUnixMs?: number;
+    }>;
     membershipEpoch: number;
     mlsEpoch: number;
     active: boolean;
@@ -646,6 +717,172 @@ export interface PublicSocialRuntimeProjection {
   }>>;
   peerOnline: Record<string, boolean>;
   lastReconcileAt: number | null;
+  ingress: {
+    lifecycle: 'active' | 'suspended' | 'torn';
+    streamCursor: string;
+    writeAdmissionOpen: boolean;
+    staleDomains: string[];
+    dataQueueDepth: number;
+    controlQueueDepth: number;
+  } | null;
+}
+
+export type PublicReliabilityCommandState =
+  | 'pending'
+  | 'failed-retryable'
+  | 'committed'
+  | 'failed-terminal'
+  | 'unknown-outcome'
+  | 'reconciling'
+  | 'cancelled';
+
+export interface PublicReliabilityCommand {
+  commandId: string;
+  orderingKey: string;
+  payloadSha256: string;
+  state: PublicReliabilityCommandState;
+  attemptCount: number;
+  typedLastError: number;
+  createdAtMs: number;
+  updatedAtMs: number;
+  nextAttemptAtMs: number | null;
+}
+
+export interface PublicReliabilityDraft {
+  key: string;
+  kind: 'chat' | 'moments';
+  surfaceKind: 'chat' | 'moment';
+  targetId: string;
+  updatedAtMs: number;
+  payloadSha256: string;
+}
+
+export interface PublicReliabilityCheckpoint {
+  commandId: string;
+  payloadSha256: string;
+  authoritativeLookupSha256: string;
+  createdAtMs: number;
+}
+
+export interface PublicReliabilitySnapshot {
+  runtime: {
+    active: boolean;
+    stationPeerId?: string;
+    actorPtid?: string;
+    runtimeGeneration: number;
+    admissionOpen: boolean;
+    pendingCommands: number;
+    unknownCommands: number;
+    draftCount: number;
+    recoveryState?: 'legacy-disposition-required' | 'reset-incomplete';
+    archivedLegacyFiles: number;
+  };
+  commands: PublicReliabilityCommand[];
+  drafts: PublicReliabilityDraft[];
+  checkpoints: PublicReliabilityCheckpoint[];
+}
+
+export interface ReliabilityFriendRequestSubmitOutput {
+  command: {
+    commandId: string;
+    requestId: string;
+    payloadSha256: string;
+    state: PublicReliabilityCommandState;
+    checkpointReady: boolean;
+  };
+  projection: PublicSocialRuntimeProjection;
+}
+
+export interface ReliabilityReconcileOutput {
+  commands: Array<{
+    commandId: string;
+    requestId: string;
+    payloadSha256: string;
+    state: PublicReliabilityCommandState;
+    checkpointReady: boolean;
+  }>;
+  appliedCheckpoints: number;
+  snapshot: PublicReliabilitySnapshot;
+}
+
+export interface ReliabilityFixtureConfigureInput {
+  mode:
+    | 'none'
+    | 'hold-before-dispatch'
+    | 'lose-dispatch-response-and-readback'
+    | 'fail-checkpoint-acknowledgement';
+}
+
+export interface ReliabilityFixtureConfigureOutput {
+  mode: ReliabilityFixtureConfigureInput['mode'];
+}
+
+export interface ReliabilityCommandActionInput {
+  commandId: string;
+  action: 'reconcile' | 'cancel' | 'acknowledge' | 'discard-tracking';
+}
+
+export type ReliabilityDraftWriteInput =
+  | {
+    kind: 'chat';
+    targetId: string;
+    text: string;
+    replyToMessageId?: string;
+  }
+  | {
+    kind: 'moment';
+    targetId: string;
+    text: string;
+    audienceKind: number;
+  };
+
+export interface ReliabilityDraftReadInput {
+  kind?: 'chat' | 'moment';
+  targetId?: string;
+}
+
+export interface ReliabilityDraftActionInput
+  extends ReliabilityDraftReadInput {
+  action: 'restore' | 'discard';
+}
+
+export interface ReliabilityResetInput {
+  confirmation: 'reset-all-local-reliability-data';
+}
+
+export interface ReliabilityCleanupOutput {
+  recordsAbsent: boolean;
+  pathsAbsent: boolean;
+  keysAbsent: boolean;
+  securePhysicalDeletionProven: false;
+}
+
+export interface PublicRecoveryState {
+  kind:
+    | 'legacy-reliability-recovery'
+    | 'reliability-reset-recovery'
+    | 'draft-restore-pending'
+    | 'command-recovery'
+    | 'capacity-read-only'
+    | 'write-revocation'
+    | 'session-mismatch'
+    | 'event-overflow-reconcile'
+    | 'deferred-capability'
+    | 'device-local-flag';
+  count?: number;
+  actions?: string[];
+  detail?: Record<string, string | number | boolean | string[]>;
+}
+
+export interface PublicRecoverySnapshot {
+  hasActiveRecovery: boolean;
+  isWriteBlocked: boolean;
+  writeAdmission: {
+    open: boolean;
+    reason: string | null;
+  };
+  updatedAtMs: number;
+  states: PublicRecoveryState[];
 }
 
 export interface SocialRequestSendActionInput {
@@ -657,6 +894,11 @@ export interface SocialRequestSendActionInput {
 
 export interface SocialPeopleSearchActionInput {
   query: string;
+  federationId: string;
+}
+
+export interface FederationContextReadOutput {
+  federations: Array<{ federationId: string; name: string; status: string }>;
 }
 
 export interface PublicActorSearchResult {
@@ -669,16 +911,113 @@ export interface SocialRequestAcceptActionInput {
   requestId: string;
 }
 
+export interface PublicMomentProjection {
+  postId: string;
+  authorPtid: string;
+  text: string;
+  deleted: boolean;
+  reactions: Array<{
+    kind: number;
+    count: string;
+    reactedByViewer: boolean;
+  }>;
+}
+
+export interface PublicMomentCommentProjection {
+  commentId: string;
+  postId: string;
+  authorPtid: string;
+  content: string;
+  replyToCommentId: string;
+  deleted: boolean;
+}
+
+export interface MomentsFeedReadOutput {
+  outcome: number;
+  hasMore: boolean;
+  nextCursor: string;
+  posts: PublicMomentProjection[];
+}
+
+export interface MomentsPublishActionInput {
+  text: string;
+  audienceKind: number;
+}
+
+export interface MomentsReactionActionInput {
+  postId: string;
+  reactionKind: number;
+  active: boolean;
+}
+
+export interface MomentsCommentActionInput {
+  postId: string;
+  content: string;
+  replyToCommentId?: string;
+}
+
+export interface MomentsCommentsReadActionInput {
+  postId: string;
+}
+
+export interface PublicProfileProjection {
+  actorPtid: string;
+  profileRevision: string;
+  displayName: string;
+  note: string;
+  region: string;
+  timezone: string;
+  defaultVisibility: string;
+  manuallyApprovesFollowers: boolean;
+  messagePermission: string;
+  autoExpireDays: number;
+}
+
+export interface SettingsProfileUpdateActionInput {
+  displayName?: string;
+  note?: string;
+  region?: string;
+  timezone?: string;
+  defaultVisibility?: string;
+  manuallyApprovesFollowers?: boolean;
+  messagePermission?: string;
+  autoExpireDays?: number;
+}
+
+export interface PublicNotificationPreference {
+  category: number;
+  enabled: boolean;
+  pushEnabled: boolean;
+  soundEnabled: boolean;
+}
+
+export interface PublicNotificationPreferences {
+  revision: string;
+  preferences: PublicNotificationPreference[];
+}
+
+export interface SettingsNotificationUpdateActionInput
+  extends PublicNotificationPreference {}
+
 export interface CleanupOutput {
   oauthPurge: OAuthPurgeOutput;
   webSessionProjectionCleared: true;
   stationRegistryCleared: true;
 }
 
+export interface PrepareActorIdentityInput {
+  storageKey: string;
+  seedBase64: string;
+}
+
 export interface MobileAcceptanceActionContract {
   'build.identity': {
     input: undefined;
     output: EmbeddedMobileBuildIdentity;
+  };
+  'runtime.prepareActorIdentity': {
+    input: PrepareActorIdentityInput;
+    output: { prepared: true };
   };
   'station.add': {
     input: StationAddInput;
@@ -720,6 +1059,10 @@ export interface MobileAcceptanceActionContract {
     input: undefined;
     output: PublicLifecycleSnapshot;
   };
+  'lifecycle.waitReady': {
+    input: LifecycleWaitReadyInput;
+    output: LifecycleWaitReadyOutput;
+  };
   'lifecycle.suspend': {
     input: undefined;
     output: LifecycleTransitionOutput;
@@ -732,9 +1075,29 @@ export interface MobileAcceptanceActionContract {
     input: undefined;
     output: LifecycleRestartOutput;
   };
+  'lifecycle.nativeBridgeDiagnostic': {
+    input: undefined;
+    output: {
+      code: string;
+      operation: string;
+      message: string;
+    } | null;
+  };
+  'lifecycle.secureStorageDeleteFailure': {
+    input: undefined;
+    output: SecureStorageDeleteFailureOutput;
+  };
   'lifecycle.scope.read': {
     input: undefined;
     output: LifecycleScopeReadOutput;
+  };
+  'navigation.snapshot': {
+    input: undefined;
+    output: MobileNavigationProjection;
+  };
+  'navigation.apply': {
+    input: MobileNavigationIntent;
+    output: MobileNavigationProjection;
   };
   'platform.permission.check': {
     input: PlatformPermissionInput;
@@ -753,7 +1116,7 @@ export interface MobileAcceptanceActionContract {
     output: NetworkState;
   };
   'session.logout': {
-    input: undefined;
+    input: SessionLogoutInput | undefined;
     output: SessionLogoutOutput;
   };
   'native.deliverDeepLink': {
@@ -763,6 +1126,10 @@ export interface MobileAcceptanceActionContract {
   'projection.read': {
     input: undefined;
     output: MobilePublicProjection;
+  };
+  'federation.context.read': {
+    input: undefined;
+    output: FederationContextReadOutput;
   };
   'messaging.createDirect': {
     input: MessagingCreateDirectActionInput;
@@ -827,6 +1194,46 @@ export interface MobileAcceptanceActionContract {
     input: SocialPeopleSearchActionInput;
     output: PublicActorSearchResult[];
   };
+  'reliability.fixture.configure': {
+    input: ReliabilityFixtureConfigureInput;
+    output: ReliabilityFixtureConfigureOutput;
+  };
+  'reliability.friendRequest.submit': {
+    input: SocialRequestSendActionInput;
+    output: ReliabilityFriendRequestSubmitOutput;
+  };
+  'reliability.snapshot': {
+    input: undefined;
+    output: PublicReliabilitySnapshot;
+  };
+  'reliability.reconcile': {
+    input: undefined;
+    output: ReliabilityReconcileOutput;
+  };
+  'reliability.command.action': {
+    input: ReliabilityCommandActionInput;
+    output: PublicReliabilitySnapshot;
+  };
+  'reliability.draft.write': {
+    input: ReliabilityDraftWriteInput;
+    output: PublicReliabilityDraft;
+  };
+  'reliability.draft.read': {
+    input: ReliabilityDraftReadInput | undefined;
+    output: PublicReliabilityDraft[];
+  };
+  'reliability.draft.action': {
+    input: ReliabilityDraftActionInput;
+    output: PublicReliabilitySnapshot;
+  };
+  'reliability.reset': {
+    input: ReliabilityResetInput;
+    output: ReliabilityCleanupOutput;
+  };
+  'recovery.snapshot': {
+    input: undefined;
+    output: PublicRecoverySnapshot;
+  };
   'social.request.send': {
     input: SocialRequestSendActionInput;
     output: PublicSocialRuntimeProjection;
@@ -835,6 +1242,10 @@ export interface MobileAcceptanceActionContract {
     input: SocialRequestAcceptActionInput;
     output: PublicSocialRuntimeProjection;
   };
+  'social.contact.open': {
+    input: MessagingCreateDirectActionInput;
+    output: Pick<MessagingCreateDirectActionOutput, 'conversationId'>;
+  };
   'social.reconcile': {
     input: undefined;
     output: PublicSocialRuntimeProjection;
@@ -842,6 +1253,127 @@ export interface MobileAcceptanceActionContract {
   'social.projection.read': {
     input: undefined;
     output: PublicSocialRuntimeProjection;
+  };
+  'moments.feed.read': {
+    input: undefined;
+    output: MomentsFeedReadOutput;
+  };
+  'moments.publish': {
+    input: MomentsPublishActionInput;
+    output: PublicMomentProjection;
+  };
+  'moments.react': {
+    input: MomentsReactionActionInput;
+    output: PublicMomentProjection['reactions'];
+  };
+  'moments.comment': {
+    input: MomentsCommentActionInput;
+    output: PublicMomentCommentProjection;
+  };
+  'moments.comments.read': {
+    input: MomentsCommentsReadActionInput;
+    output: PublicMomentCommentProjection[];
+  };
+  'storage.cache.seed': {
+    input: { sizeBytes: number };
+    output: { sizeBytes: number };
+  };
+  'storage.conversation-clear.seed': {
+    input: { plaintextBytes: number };
+    output: {
+      conversationId: string;
+      messageId: string;
+    };
+  };
+  'storage.batch.scenario': {
+    input: {
+      delayMs?: number;
+      failureConversationId?: string;
+      scopeChangeConversationId?: string;
+    };
+    output: { configured: boolean };
+  };
+  'storage.retention.seed': {
+    input: { oldPlaintextBytes: number };
+    output: {
+      conversationId: string;
+      prunedMessageId: string;
+      protectedMessageId: string;
+      recentMessageId: string;
+    };
+  };
+  'settings.profile.read': {
+    input: undefined;
+    output: PublicProfileProjection;
+  };
+  'settings.profile.update': {
+    input: SettingsProfileUpdateActionInput;
+    output: {
+      outcome: number;
+      profile: PublicProfileProjection;
+    };
+  };
+  'settings.notifications.read': {
+    input: undefined;
+    output: PublicNotificationPreferences;
+  };
+  'settings.notifications.update': {
+    input: SettingsNotificationUpdateActionInput;
+    output: {
+      outcome: number;
+      snapshot: PublicNotificationPreferences;
+    };
+  };
+  'settings.device.read': {
+    input: undefined;
+    output: DevicePreferences;
+  };
+  'settings.device.update': {
+    input: DevicePreferences;
+    output: DevicePreferences;
+  };
+  getRealtimeDevice: {
+    input: undefined;
+    output: {
+      actorPtid: string;
+      deviceId: string;
+      active: boolean;
+    };
+  };
+  initiateCall: {
+    input: { calleePtid: string; callerDeviceId?: string };
+    output: {
+      callId: string;
+      state: string;
+      winningDeviceId?: string;
+    };
+  };
+  callResolutionState: {
+    input: { callId: string; deviceId?: string };
+    output: {
+      callId: string;
+      state: string;
+      winningDeviceId?: string;
+      terminalAction?: string;
+    } | null;
+  };
+  acceptCall: {
+    input: { callId: string; deviceId?: string };
+    output: {
+      callId: string;
+      state: string;
+      winningDeviceId?: string;
+      conflict?: boolean;
+    };
+  };
+  rejectCall: {
+    input: { callId: string; deviceId?: string };
+    output: {
+      callId: string;
+      state: string;
+      winningDeviceId?: string;
+      conflict?: boolean;
+    };
   };
   cleanup: {
     input: undefined;

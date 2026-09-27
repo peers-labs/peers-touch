@@ -1,12 +1,16 @@
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
-    CryptoEndpoint, InteractionMutation, InteractionReceiveCommit, PublicEventReceiveCommit,
+    ConversationProjection, ConversationStateReceiveCommit, CryptoEndpoint, InteractionMutation,
+    InteractionReceiveCommit, MemberAuthorityReceiveCommit, PublicEventReceiveCommit,
     ReceiveCommitResult,
 };
+use crate::mls::inbound::authority_snapshot_projection;
 use crate::proto::chat::{
-    conversation_event, DeviceConsumptionReceipt, DeviceInboxPayloadType, DurableDeviceInboxItem,
-    MessageEditedFact, MessagePinCommittedFact, MessageRetractedFact, MessagingContentKind,
-    PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
+    conversation_event, ConversationEvent, ConversationMemberAuthorityAction,
+    ConversationMemberAuthorityCommittedFact, DeviceConsumptionReceipt, DeviceInboxPayloadType,
+    DurableDeviceInboxItem, MemberRole, MessageEditedFact, MessageForwardedFact,
+    MessageHiddenForActorFact, MessageModeratedFact, MessagePinCommittedFact, MessageRetractedFact,
+    MessagingContentKind, PreparedEndpointPayloadKind, PublicEventMarker, ReactionCommittedFact,
 };
 use crate::store::MessagingRepository;
 
@@ -107,11 +111,36 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
             Some(conversation_event::Payload::MessageRetracted(fact)) => {
                 self.process_message_retracted(item, event, fact, consumer_epoch, now)
             }
+            Some(conversation_event::Payload::MessageHiddenForActor(fact)) => {
+                self.process_message_hidden_for_actor(item, event, fact, consumer_epoch, now)
+            }
+            Some(conversation_event::Payload::MessageModerated(fact)) => self
+                .process_message_moderated(
+                    item,
+                    event,
+                    fact,
+                    consumer_epoch,
+                    now,
+                    committed_at_unix_ms,
+                ),
+            Some(conversation_event::Payload::MessageForwarded(fact)) => self
+                .process_message_forwarded(
+                    item,
+                    event,
+                    fact,
+                    &delivery,
+                    consumer_epoch,
+                    now,
+                    committed_at_unix_ms,
+                ),
             Some(conversation_event::Payload::ReactionCommitted(fact)) => {
                 self.process_reaction(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
             }
             Some(conversation_event::Payload::MessagePinCommitted(fact)) => {
                 self.process_pin(item, event, fact, consumer_epoch, now, committed_at_unix_ms)
+            }
+            Some(conversation_event::Payload::MemberAuthorityCommitted(fact)) => {
+                self.process_member_authority(item, event, fact, &delivery, consumer_epoch, now)
             }
             _ => Err("messaging public-event payload type is unsupported".to_string()),
         }
@@ -214,6 +243,90 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
         Ok(())
     }
 
+    fn process_message_hidden_for_actor(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &crate::proto::chat::ConversationEvent,
+        fact: &MessageHiddenForActorFact,
+        consumer_epoch: u64,
+        now: i64,
+    ) -> Result<(), String> {
+        if fact.message_id.trim().is_empty() || fact.actor_ptid.trim().is_empty() {
+            return Err("messaging actor-hide event is incomplete".to_string());
+        }
+        let mutation = if fact.actor_ptid == self.endpoint.ptid {
+            InteractionMutation::HideForActor
+        } else {
+            InteractionMutation::ObserveOnly
+        };
+        self.commit_interaction(item, event, consumer_epoch, &fact.message_id, mutation, now)?;
+        Ok(())
+    }
+
+    fn process_message_moderated(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &crate::proto::chat::ConversationEvent,
+        fact: &MessageModeratedFact,
+        consumer_epoch: u64,
+        now: i64,
+        committed_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        let moderator_ptid = fact
+            .moderator
+            .as_ref()
+            .map(|endpoint| endpoint.ptid.as_str())
+            .unwrap_or("");
+        if fact.message_id.trim().is_empty()
+            || moderator_ptid.is_empty()
+            || fact.reason_code.trim().is_empty()
+        {
+            return Err("messaging moderation event is incomplete".to_string());
+        }
+        self.commit_interaction(
+            item,
+            event,
+            consumer_epoch,
+            &fact.message_id,
+            InteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code: &fact.reason_code,
+                moderated_at_unix_ms: committed_at_unix_ms,
+            },
+            now,
+        )?;
+        Ok(())
+    }
+
+    fn process_message_forwarded(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &crate::proto::chat::ConversationEvent,
+        fact: &MessageForwardedFact,
+        delivery: &crate::proto::chat::DeviceEventDelivery,
+        consumer_epoch: u64,
+        now: i64,
+        committed_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        self.process_message_committed(
+            item,
+            event,
+            &crate::proto::chat::MessageCommittedFact {
+                message_id: fact.destination_message_id.clone(),
+                sender: fact.sender.clone(),
+                content_kind: fact.content_kind,
+                reply_to_message_id: String::new(),
+                thread_root_message_id: String::new(),
+                attachments: fact.destination_attachments.clone(),
+                client_timestamp: fact.client_timestamp.clone(),
+            },
+            delivery,
+            consumer_epoch,
+            now,
+            committed_at_unix_ms,
+        )
+    }
+
     fn process_reaction(
         &self,
         item: &DurableDeviceInboxItem,
@@ -276,6 +389,73 @@ impl<R: MessagingRepository> PublicEventProcessor<R> {
             },
             now,
         )?;
+        Ok(())
+    }
+
+    fn process_member_authority(
+        &self,
+        item: &DurableDeviceInboxItem,
+        event: &ConversationEvent,
+        fact: &ConversationMemberAuthorityCommittedFact,
+        delivery: &crate::proto::chat::DeviceEventDelivery,
+        consumer_epoch: u64,
+        now: i64,
+    ) -> Result<(), String> {
+        let marker = PublicEventMarker::decode(delivery.endpoint_payload.as_slice())
+            .map_err(|_| "messaging member-authority marker is invalid".to_string())?;
+        validate_authority_marker_bindings(event, &marker)?;
+        validate_member_authority_fact(event, fact, &self.endpoint.ptid)?;
+        let snapshot = fact
+            .post_state
+            .as_ref()
+            .ok_or_else(|| "messaging member-authority snapshot is missing".to_string())?;
+        let authority = authority_snapshot_projection(event, snapshot, now)?;
+        let projection = ConversationProjection {
+            conversation_id: authority.conversation_id,
+            authority_station_id: authority.authority_station_id,
+            federation_id: authority.federation_id,
+            kind: authority.kind,
+            name: authority.name,
+            owner_ptid: authority.owner_ptid,
+            members: authority.members,
+            membership_epoch: authority.membership_epoch,
+            mls_epoch: authority.mls_epoch,
+            active: authority.active,
+            updated_at_unix_ms: authority.updated_at_unix_ms,
+        };
+        let receipt = self.build_receipt(item, event, now);
+        let receipt_bytes = receipt.encode_to_vec();
+        self.store
+            .commit_member_authority_state(&MemberAuthorityReceiveCommit {
+                state: ConversationStateReceiveCommit {
+                    item_id: &item.item_id,
+                    event_id: &event.event_id,
+                    conversation_id: &event.conversation_id,
+                    event_sequence: event.sequence,
+                    lane_sequence: item.lane_sequence,
+                    consumer_epoch,
+                    payload_sha256: &item.payload_sha256,
+                    event_hash: &event.event_hash,
+                    previous_event_hash: &event.previous_hash,
+                    projection: &projection,
+                    receipt_id: &receipt.receipt_id,
+                    receipt_bytes: &receipt_bytes,
+                    consumed_at_unix_ms: now,
+                },
+                command_id: &event.command_id,
+                operator_ptid: event
+                    .actor
+                    .as_ref()
+                    .map(|actor| actor.ptid.as_str())
+                    .unwrap_or_default(),
+                operator_device_id: event
+                    .actor
+                    .as_ref()
+                    .map(|actor| actor.device_id.as_str())
+                    .unwrap_or_default(),
+                action: fact.action,
+                target_ptid: &fact.target_ptid,
+            })?;
         Ok(())
     }
 
@@ -365,4 +545,93 @@ fn validate_marker_bindings(
         return Err("messaging public-event marker binding mismatch".to_string());
     }
     Ok(())
+}
+
+fn validate_authority_marker_bindings(
+    event: &ConversationEvent,
+    marker: &PublicEventMarker,
+) -> Result<(), String> {
+    if marker.conversation_id != event.conversation_id
+        || marker.event_id != event.event_id
+        || marker.command_id != event.command_id
+        || marker.sending_endpoint.is_none()
+        || marker.sending_endpoint != event.actor
+    {
+        return Err("messaging member-authority marker binding mismatch".to_string());
+    }
+    Ok(())
+}
+
+fn validate_member_authority_fact(
+    event: &ConversationEvent,
+    fact: &ConversationMemberAuthorityCommittedFact,
+    local_ptid: &str,
+) -> Result<(), String> {
+    let action = ConversationMemberAuthorityAction::try_from(fact.action)
+        .map_err(|_| "messaging member-authority action is invalid".to_string())?;
+    let snapshot = fact
+        .post_state
+        .as_ref()
+        .ok_or_else(|| "messaging member-authority snapshot is missing".to_string())?;
+    let target = snapshot
+        .active_members
+        .iter()
+        .find(|member| member.ptid == fact.target_ptid)
+        .ok_or_else(|| "messaging member-authority target is not active".to_string())?;
+    if action == ConversationMemberAuthorityAction::Unspecified
+        || fact.target_ptid.trim().is_empty()
+        || fact.from_membership_epoch <= 0
+        || fact.to_membership_epoch != fact.from_membership_epoch.saturating_add(1)
+        || fact.to_membership_epoch != event.membership_epoch
+        || snapshot.owner_ptid != fact.owner_ptid
+        || snapshot.membership_epoch != event.membership_epoch
+        || snapshot.mls_epoch != event.mls_epoch
+        || !snapshot
+            .active_members
+            .iter()
+            .any(|member| member.ptid == local_ptid)
+    {
+        return Err("messaging member-authority fact is inconsistent".to_string());
+    }
+    match action {
+        ConversationMemberAuthorityAction::UpdateMember => {
+            if fact.previous_owner_ptid != fact.owner_ptid
+                || (fact.role.is_none() && fact.muted.is_none())
+                || fact.role.is_some_and(|role| {
+                    authority_member_role(&target.role)
+                        .ok()
+                        .map(|value| value as i32)
+                        != Some(role)
+                })
+                || fact.muted.is_some_and(|muted| target.muted != muted)
+                || fact.muted_until != target.muted_until
+                || (fact.muted == Some(false) && fact.muted_until.is_some())
+                || (fact.muted_until.is_some() && fact.muted != Some(true))
+            {
+                return Err("messaging member-authority update is incomplete".to_string());
+            }
+        }
+        ConversationMemberAuthorityAction::TransferOwnership => {
+            if fact.previous_owner_ptid == fact.owner_ptid
+                || fact.owner_ptid != fact.target_ptid
+                || fact.role != Some(MemberRole::Owner as i32)
+                || fact.muted != Some(false)
+                || fact.muted_until.is_some()
+                || target.role != "owner"
+            {
+                return Err("messaging ownership-transfer fact is inconsistent".to_string());
+            }
+        }
+        ConversationMemberAuthorityAction::Unspecified => unreachable!(),
+    }
+    Ok(())
+}
+
+fn authority_member_role(role: &str) -> Result<MemberRole, String> {
+    match role {
+        "member" | "MEMBER_ROLE_MEMBER" => Ok(MemberRole::Member),
+        "admin" | "MEMBER_ROLE_ADMIN" => Ok(MemberRole::Admin),
+        "owner" | "MEMBER_ROLE_OWNER" => Ok(MemberRole::Owner),
+        _ => Err("messaging member-authority member role is invalid".to_string()),
+    }
 }

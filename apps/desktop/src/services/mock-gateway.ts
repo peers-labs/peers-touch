@@ -168,7 +168,6 @@ export function mockInvoke(cmd: string, _args?: Record<string, unknown>): unknow
     case 'applet_list':
     case 'oauth2_list_connections':
     case 'notification_list':
-    case 'federation_station_list':
       return { ok: true, data: [] };
 
     case 'context_snapshot_get':

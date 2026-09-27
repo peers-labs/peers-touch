@@ -1,8 +1,8 @@
 # Mobile Shell — 产品状态模型
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-27
+> **Version**: v1.1
+> **Created**: 2026-08-27 | **Updated**: 2026-09-19
 > **Owner**: Mobile Product Team
 
 ---
@@ -109,7 +109,7 @@ all Station mutations stay disabled with an explicit recovery state.
 | Conversation detail | history-loading, ready, sending, upload-progress, failed, unknown-outcome, permission-denied | retry when safe, check status, edit/discard draft, back |
 | Contacts/groups | loading, empty, no-results, request-pending, duplicate, remote-unavailable, role-denied | retry, refine search, inspect profile, back |
 | Moments | loading, empty, filtered-empty, ready, policy-hidden, unavailable, publish-pending, rollback | refresh, retry, edit/discard draft |
-| Me/settings | loading, ready, dirty, saving, saved, conflict, permission-required, failed | save, discard, stay, open system settings, retry |
+| Me/settings | per-owner loading, ready, dirty, saving, saved, conflict, unavailable, permission-required, failed | save selected owner, discard selected draft, stay, reload canonical owner, open system settings, retry |
 | Runtime capacity | command-ledger-full, event-overflow-reconciling | continue read-only, resolve pending work, retry later |
 
 Chat and Moments drafts are device-local durable state. Tab/detail unmount and

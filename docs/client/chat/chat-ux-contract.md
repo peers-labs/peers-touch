@@ -123,7 +123,9 @@ Conversation-level action surfaces are not message actions.
 
 Rules:
 
-- Conversation actions such as search, mute, sticky, alert, background, clear history, group members, block, and unblock belong to `ConversationActionSurface`.
+- Conversation actions such as search, mute, sticky, alert, background,
+  current-device data clearing, group members, block, and unblock belong to
+  `ConversationActionSurface`.
 - `ConversationActionSurface` is anchored to the chat header or conversation detail route, not to a message bubble.
 - Mobile implementations SHOULD use a bottom action sheet or a dedicated chat settings page, not a desktop-style right drawer.
 - Desktop implementations MAY use a side panel when the conversation pane owns the width and the panel does not cover readable messages.

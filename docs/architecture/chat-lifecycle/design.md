@@ -1,8 +1,8 @@
 # Chat Lifecycle - Architecture Design
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-09-16 | **Updated**: 2026-09-17
+> **Version**: v1.3
+> **Created**: 2026-09-16 | **Updated**: 2026-09-22
 > **Owner**: Chat Product Team
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/app/subserver/`
 
@@ -52,6 +52,20 @@ Upstream sources:
 8. No alias, fallback, dual write, legacy owner, or undeclared debug egress is
    permitted.
 
+### 3.1 CCU Engineering Invariants
+
+| ID | Invariant |
+|---|---|
+| CCU-E01 | Model is the only cross-process protocol source |
+| CCU-E02 | `packages/messaging-core` is the only reliable client messaging state machine |
+| CCU-E03 | Conversation is the only public Chat business API owner; Device, Inbox, Recovery, Key Exchange and Federation retain their resource-owned APIs |
+| CCU-E04 | Desktop and Mobile each have exactly one Messaging runtime owner |
+| CCU-E05 | Both clients use the same canonical command, projection notification and reconciliation contract |
+| CCU-E06 | Cutovers add no compatibility shim, fallback read, dual write or long-lived feature flag |
+| CCU-E07 | A legacy owner is deleted in the same behavior closure that removes its final production consumer |
+| CCU-E08 | Final completion requires nine-dimensional tree-wide zero-reference proof |
+| CCU-E09 | Message fan-out/read cursor and call resolution preserve actor/device identity without storing media plaintext at Station |
+
 ## 4. System Topology
 
 ```mermaid
@@ -98,6 +112,8 @@ flowchart LR
 | Typing | Authenticated ephemeral Realtime path | Receiver TTL state |
 | Live call lifecycle | Client call runtime plus sealed signaling facts | Runtime-owned call projection |
 | Live audio/video media | WebRTC peers | No Station media state |
+| Desktop Messaging lifecycle (CCU-D01) | `apps/desktop/src/messaging/runtime.ts` — owns Chat command admission, projection event consumption, reconciliation, actor/Station/endpoint generation and scope reset | Runtime-owned Desktop messaging projection; Kernel descriptor is composition only |
+| Call attempt resolution (CCU-D06) | Callee Home Station Realtime control plane — durable atomic first-terminal-action-wins per `(callee_actor_ptid, call_id)` | `OPEN/ACCEPTED/REJECTED/NO_ANSWER` control record retained beyond the replay window; no media or signaling plaintext |
 
 ## 6. Lifecycle Composition Contracts
 
@@ -156,6 +172,132 @@ flowchart LR
 - Conversation membership identifies the Direct peer but does not own media.
 - Text messaging continues through the durable messaging path during calls.
 
+### 6.6 Desktop Messaging Runtime Owner (CCU-D01)
+
+Desktop must extract a dedicated `messagingRuntime` from `socialRealtime`.
+
+- `apps/desktop/src/messaging/runtime.ts` owns Chat command admission,
+  projection event consumption, periodic reconciliation, and
+  actor/Station/endpoint generation fencing.
+- `apps/desktop/src/runtimes/messagingRuntime.ts` only adapts the domain runtime
+  to the Kernel `RuntimeDescriptor` contract.
+- The runtime is session-scoped. Teardown invalidates queued asynchronous work,
+  timers and dedupe state and clears the old Chat projection before a new actor,
+  Station or endpoint scope is activated.
+- `socialRealtime` retains friendship, contact, profile, presence, and Social
+  notifications.
+- The two Runtimes interact only through typed identity/social projection.
+  They never co-write message, conversation, receipt, typing, or attachment
+  projection.
+- UI and stores submit Chat operations through the domain runtime. Low-level
+  `im-service` and `desktop_api` functions remain transport adapters and are
+  not imported directly by production Chat UI.
+- `docs/client/desktop/runtime-projections.md` must update in the same closure
+  that lands the Runtime extraction; the document must not continue to declare
+  `socialRealtime` as the Chat projection owner.
+
+### 6.7 Canonical Client Contract (CCU-D02)
+
+Proto owns cross-process wire, command, and event definitions. Messaging Core
+owns the local state machine and projection contract. No second truth source
+is permitted.
+
+- Desktop and Mobile share contract fixtures constructed from canonical Proto.
+- TypeScript API facades consume generated types and wrap transport; they do
+  not redefine Friend, Group, Message, or CommandStatus domain models.
+- Platform Rust adapters implement transport, storage, clock, and key-material
+  ports; they do not duplicate Core state machines.
+- Canonical projection notifications carry actor, Home Station, endpoint and
+  cursor scope. Each platform adapter binds them to its local profile and
+  activation generation. They only invalidate local projections; canonical
+  readback supplies business truth.
+- CCU-D02 adds `MessagingProjectionInvalidation` v1 and its typed
+  `ProjectionKind` to `model/domain/chat/event.proto`;
+  `(event_id, lane_sequence)` supplies dedupe and gap detection.
+- Wire/Core states map to the single visible vocabulary in
+  `product-state-model.md §4.1`; unknown values and unsupported versions fail
+  closed.
+
+### 6.8 Per-Closure Hard-Cut (CCU-D03)
+
+Foundation work may establish canonical contracts and runtime owners without
+claiming a user-visible cutover. Each subsequent behavior closure simultaneously
+cuts all affected Desktop and Mobile adapters, runtimes, and consumers — not
+"backend first, frontend later."
+
+- The same closure deletes legacy paths that lost their last consumer.
+- No compatibility shim, fallback read, dual write, or long-term feature flag
+  is introduced.
+
+### 6.9 Unified Projection Event (CCU-D02)
+
+Both platforms use one projection event schema.
+
+- Events hint "which projections changed"; they do not carry business truth.
+- Runtime owns event consumption and periodic reconciliation.
+- Page mount, tab switch, or manual refresh must not be the only refresh path.
+- Actor, Station, or endpoint switch must clear the old identity scope before
+  activating the new scope.
+
+### 6.10 Full Platform Matrix (CCU-D04)
+
+CCU inherits the complete Chat Lifecycle runtime-cell matrix. macOS, Linux and
+Windows Desktop; iOS and Android Mobile; same-Station, cross-Station,
+same-actor multi-device, mixed Group, restart and zero-reference cells remain
+required. A pass from one platform or a `SKIPPED` prerequisite cannot substitute
+for another required cell; every unrun cell remains `UNPROVEN`.
+
+### 6.11 Legacy Deletion Enforcement (CCU-D05)
+
+The zero-reference gate checks source, registry, descriptor, generated
+manifest, runtime trace, store/schema, tests, and docs.
+
+- Renamed wrappers, generic dispatch, aliases, bridges, and compatibility flags
+  are detected and treated as violations.
+- Legacy store, repository, schema owner, and old-table read/write paths must
+  reach zero.
+- Tests, fixtures, mocks, Acceptance Gates, and scripts that import, construct,
+  or invoke legacy contracts must be deleted or rewritten as canonical
+  mixed-client proofs.
+- Current-source documentation must not contain legacy-owner current-state
+  claims; append-only knowledge entries may only carry `superseded-by`.
+- Each of the nine dimensions emits an independent count and evidence
+  reference. Missing evidence fails closed.
+
+### 6.12 Call Resolution Topology (CCU-D06)
+
+Callee Home Station Realtime control plane owns durable atomic
+first-terminal-action-wins resolution per `(callee_actor_ptid, call_id)`.
+
+- The resolver is a database-backed compare-and-set shared by Station replicas.
+- `call_id` is a caller-generated ULID. Home Station validates its timestamp
+  against bounded past/future skew and CALL_REQUEST binds caller, callee,
+  session and request digest while creating the `OPEN` record before fan-out.
+- The authenticated endpoint must belong to the callee and remain eligible at
+  the time of resolution.
+- Cross-Station attempts route to the callee Home Station; no foreign Station
+  may decide the winner.
+- Station holds only bounded control metadata: state, caller/callee PTID,
+  session, `call_id`, request digest, ring deadline, winning device, terminal
+  action, terminal timestamp and expiry. Terminal retention is at least ten
+  minutes after the 45-second ring deadline.
+- No SDP, ICE, media, keys, or sealed signaling plaintext is stored in Station.
+- Accept and explicit reject are both terminal actions. The first terminal
+  action accepted by the control plane wins. Duplicate requests from the winner
+  are idempotent; concurrent or late competing actions receive
+  `CALL_ALREADY_HANDLED`.
+- After one endpoint wins, sibling endpoints immediately stop ringing, release
+  ring timer and temporary media resources, and enter `handled_elsewhere`.
+- The caller observes exactly one accept/reject terminal result. Network
+  replay, Station restart, replica failover, SSE reconnect, and duplicate
+  signals must not change the winning endpoint.
+- After TTL cleanup, the old ULID timestamp is outside admission and cannot
+  recreate an open call. Shared timeout atomically commits `NO_ANSWER` and
+  projects `no_answer` on every endpoint. Resolver unavailability fails closed.
+  Winner media failure
+  ends the call visibly and never reopens arbitration; retry uses a new
+  `call_id`.
+
 ## 7. Failure Semantics
 
 | Failure | Required behavior |
@@ -170,6 +312,9 @@ flowchart LR
 | Camera denied | Preserve the conversation; expose retry or audio-only exit without false video-active state |
 | MLS/membership mismatch | Stop send; reconcile before ready |
 | Call network loss | Enter reconnecting, then recover or terminate visibly |
+| Call resolver duplicate or competing action | Return the committed winner idempotently or `CALL_ALREADY_HANDLED`; never open a second media session |
+| Call resolver restart/failover | Read the same durable CAS record and replay the committed terminal result |
+| Call resolver TTL expiry | Keep the old call terminal; a retry requires a new `call_id` |
 | Station/restart loss | Reopen durable projections and workers |
 | Evidence identity mismatch | Fail the Gate; never substitute fixture values |
 
@@ -192,6 +337,15 @@ Forbidden:
 - Client fixture -> observed identity or success result.
 - Production source -> hard-coded debug/telemetry endpoint.
 - Legacy friend/group Chat route -> fallback business owner.
+- UI, store, or runtime -> direct crypto, ACK, sequence, or replay
+  interpretation (CCU-D02).
+- Desktop and Mobile -> divergent command/message state enums (CCU-D02).
+- Canonical projection -> re-projection into legacy Friend/Group domain
+  model (CCU-D02).
+- New and legacy command owners -> dual registration, dual read, dual write,
+  or mutual fallback (CCU-D03).
+- Typing -> durable queue, history, receipt, or recovery (CCU-D02 / MP-D27).
+- Legacy Chat route call from any current-source consumer (CCU-D05).
 
 ## 9. Quality Gates
 

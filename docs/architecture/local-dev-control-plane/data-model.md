@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -96,7 +96,7 @@ Profile definitions remain references to the sibling environment repository:
 ```ts
 interface ProfileDefinition {
   name: string;
-  agentControlMode: 'human-gated' | 'managed' | 'disposable';
+  resetPolicy: 'stable-protected' | 'agent-resettable';
   stationMode: 'local' | 'compose' | 'remote';
   stationUrl: string;
   stationDeployEnvironment?: string;
@@ -113,22 +113,19 @@ interface ProfileDefinition {
 }
 ```
 
-`PT_AGENT_CONTROL_MODE` is required in every profile definition. Absence or an
-unknown value returns `PROFILE_AGENT_CONTROL_INVALID`; there is no permissive
-default.
+`resetPolicy` is not stored in the profile. The reader first requires the
+profile directory name and `PT_DEV_PROFILE` to match exactly, then applies
+`lowercase(profileId).includes("stable")`:
 
-Operational meaning:
+- `stable-protected`: autonomous `station.reset` is denied with
+  `PROFILE_RESET_PROTECTED`;
+- `agent-resettable`: the Agent may choose reset without human involvement
+  when the workspace capability, live declaration, exact scope, source
+  identity, remote topology, and OS lease all match.
 
-- `human-gated`: Agent binding/deploy/reset requires an explicit human
-  authorization for that operation.
-- `managed`: Agent may register/bind/select/deploy/restart under the normal
-  declaration, capability and lease contracts; reset remains forbidden.
-- `disposable`: Agent may additionally execute exact-scope reset when
-  `station.reset` is present in both the work declaration and workspace
-  capability and the reset lease is held.
-
-The mode is projected into registry status but is not copied into
-`WorkspaceRecord`; the reviewed profile remains its only durable owner.
+The derived policy is projected into status but is not copied into
+`WorkspaceRecord`. No environment variable, Station mode, or legacy cache may
+override it.
 
 Target state removes machine-local slot authority from profile definitions.
 During migration, an observed legacy `PT_DEV_SLOT` may be reported as
@@ -162,8 +159,14 @@ Rules:
   `WorkspaceBinding`.
 - Slot is allocated independently of profile.
 - `station.connect` does not imply deploy or reset.
-- `station.reset` requires explicit run-scoped authorization in addition to the
-  durable allowed capability.
+- `station.deploy` consumes an exact user grant or accepted Plan
+  `authorization.runtime.deployProfiles` entry for the existing reviewed
+  profile.
+- `station.reset` may be added by the Agent for an `agent-resettable` Profile.
+  It still requires an exact exclusive runtime declaration and lease.
+- `station.reset` cannot be added for a `stable-protected` Profile.
+- Missing capability is `WORKSPACE_CAPABILITY_MISSING`, not an authorization
+  request.
 
 ### 4.1 Immutable Workspace Plan Binding
 
@@ -293,11 +296,7 @@ interface DevelopmentDashboardSnapshot {
   server: PeersDevServerIdentity;
   profiles: Array<{
     name: string;
-    agentControlMode:
-      | 'human-gated'
-      | 'managed'
-      | 'disposable'
-      | 'invalid';
+    resetPolicy: 'stable-protected' | 'agent-resettable' | null;
     stationMode: string | null;
     stationUrl: string | null;
     stationDeployEnvironment: string | null;
@@ -350,7 +349,7 @@ interface DevelopmentDashboardSnapshot {
     environment: {
       profile: string | null;
       slot: number | string | null;
-      agentControlMode: string | null;
+      resetPolicy: 'stable-protected' | 'agent-resettable' | null;
       sourceState: string | null;
     };
     resources: {

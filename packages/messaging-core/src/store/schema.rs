@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS messaging_conversations (
     federation_id TEXT NOT NULL,
     kind INTEGER NOT NULL,
     name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
     owner_ptid TEXT NOT NULL,
     membership_epoch INTEGER NOT NULL,
     mls_epoch INTEGER NOT NULL,
@@ -33,6 +34,9 @@ CREATE TABLE IF NOT EXISTS messaging_conversation_members (
     conversation_id TEXT NOT NULL,
     ptid TEXT NOT NULL,
     role INTEGER NOT NULL,
+    home_station_peer_id TEXT NOT NULL DEFAULT '',
+    muted INTEGER NOT NULL DEFAULT 0,
+    muted_until_unix_ms INTEGER,
     active INTEGER NOT NULL,
     PRIMARY KEY(conversation_id, ptid),
     FOREIGN KEY(conversation_id)
@@ -177,6 +181,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uidx_messaging_membership_intents_active_conve
 CREATE TABLE IF NOT EXISTS messaging_pending_messages (
     conversation_id TEXT NOT NULL,
     conversation_kind INTEGER NOT NULL,
+    command_kind INTEGER NOT NULL DEFAULT 1,
     message_id TEXT NOT NULL,
     sender_ptid TEXT NOT NULL,
     sender_device_id TEXT NOT NULL,
@@ -258,6 +263,15 @@ CREATE TABLE IF NOT EXISTS messaging_authority_heads (
     event_hash BLOB NOT NULL CHECK(length(event_hash) = 32),
     updated_at_unix_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS messaging_authority_events (
+    conversation_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    event_sequence INTEGER NOT NULL,
+    event_hash BLOB NOT NULL CHECK(length(event_hash) = 32),
+    committed_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(conversation_id, event_sequence),
+    UNIQUE(conversation_id, event_id)
+);
 CREATE TABLE IF NOT EXISTS messaging_message_projections (
     conversation_id TEXT NOT NULL,
     event_id TEXT NOT NULL,
@@ -273,6 +287,9 @@ CREATE TABLE IF NOT EXISTS messaging_message_projections (
     edited_text TEXT,
     edited_at_unix_ms INTEGER,
     retracted INTEGER NOT NULL DEFAULT 0,
+    hidden_for_actor INTEGER NOT NULL DEFAULT 0,
+    moderated INTEGER NOT NULL DEFAULT 0,
+    moderation_reason_code TEXT,
     PRIMARY KEY(conversation_id, event_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messaging_projection_message
@@ -334,11 +351,11 @@ CREATE TABLE IF NOT EXISTS messaging_attachment_drafts (
     mime_type TEXT NOT NULL,
     plaintext_sha256 BLOB NOT NULL CHECK(length(plaintext_sha256) = 32),
     descriptor_bytes BLOB,
+    voice_note_bytes BLOB NOT NULL DEFAULT X'',
     created_at_unix_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messaging_attachment_drafts_message
     ON messaging_attachment_drafts(message_id, attachment_id);
-DROP TABLE IF EXISTS messaging_attachment_metadata;
 CREATE TABLE IF NOT EXISTS messaging_attachment_projections (
     message_id TEXT NOT NULL,
     attachment_id TEXT NOT NULL,
@@ -351,6 +368,7 @@ CREATE TABLE IF NOT EXISTS messaging_attachment_projections (
     object_key BLOB NOT NULL CHECK(length(object_key) = 32),
     base_nonce BLOB NOT NULL CHECK(length(base_nonce) = 12),
     descriptor_bytes BLOB NOT NULL,
+    voice_note_bytes BLOB NOT NULL DEFAULT X'',
     availability_state TEXT NOT NULL,
     local_cache_path TEXT,
     PRIMARY KEY(message_id, attachment_id)
@@ -362,8 +380,79 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messaging_message_search_fts USING fts5(
     attachment_filenames,
     tokenize = 'unicode61'
 );
-CREATE TABLE IF NOT EXISTS messaging_schema_migrations (
-    migration_id TEXT PRIMARY KEY
+CREATE TABLE IF NOT EXISTS chat_storage_policy (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    station_peer_id TEXT NOT NULL,
+    actor_ptid TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    retention_preset INTEGER NOT NULL CHECK(retention_preset IN (1, 2, 3, 4)),
+    updated_at_unix_ms INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS chat_retention_floor (
+    station_peer_id TEXT NOT NULL,
+    actor_ptid TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    pruned_through_sequence INTEGER NOT NULL,
+    authority_event_hash BLOB NOT NULL CHECK(length(authority_event_hash) = 32),
+    policy_cutoff_unix_ms INTEGER,
+    reason TEXT NOT NULL CHECK (reason IN ('policy', 'manual_clear')),
+    updated_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(station_peer_id, actor_ptid, device_id, conversation_id)
+);
+CREATE TABLE IF NOT EXISTS message_redaction_tombstones (
+    conversation_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('hidden_for_actor', 'retracted')),
+    authority_sequence INTEGER NOT NULL,
+    authority_event_hash BLOB NOT NULL CHECK(length(authority_event_hash) = 32),
+    applied_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(conversation_id, message_id, kind)
+);
+CREATE TABLE IF NOT EXISTS chat_cleanup_journal (
+    operation_id TEXT PRIMARY KEY,
+    scope_kind TEXT NOT NULL CHECK (
+        scope_kind IN ('cache', 'conversation', 'retention', 'actor_hide', 'retract')
+    ),
+    conversation_id TEXT,
+    scope_revision TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (
+        state IN (
+            'planned', 'deleting_rows', 'deleting_files',
+            'compacting', 'compaction_pending', 'paused_scope_inactive',
+            'succeeded', 'failed_retryable', 'failed_terminal', 'cancelled'
+        )
+    ),
+    estimated_reclaimable_bytes INTEGER NOT NULL,
+    physical_bytes_before INTEGER NOT NULL,
+    physical_bytes_after INTEGER,
+    retention_preset INTEGER,
+    policy_cutoff_unix_ms INTEGER,
+    last_error_code TEXT,
+    created_at_unix_ms INTEGER NOT NULL,
+    updated_at_unix_ms INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_cleanup_journal_resume
+    ON chat_cleanup_journal(scope_kind, scope_revision, updated_at_unix_ms DESC);
+CREATE TABLE IF NOT EXISTS chat_cleanup_items (
+    operation_id TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    item_kind TEXT NOT NULL CHECK (
+        item_kind IN ('projection', 'fts', 'interaction', 'transfer', 'file')
+    ),
+    target_ref TEXT NOT NULL,
+    expected_size_bytes INTEGER NOT NULL,
+    expected_digest BLOB CHECK(expected_digest IS NULL OR length(expected_digest) = 32),
+    state TEXT NOT NULL CHECK (
+        state IN (
+            'pending', 'deleted', 'skipped_protected',
+            'failed_retryable', 'failed_terminal'
+        )
+    ),
+    last_error_code TEXT,
+    updated_at_unix_ms INTEGER NOT NULL,
+    PRIMARY KEY(operation_id, item_id),
+    FOREIGN KEY(operation_id) REFERENCES chat_cleanup_journal(operation_id) ON DELETE CASCADE
 );
 CREATE TABLE IF NOT EXISTS messaging_trust (
     peer_ptid TEXT PRIMARY KEY,
@@ -379,239 +468,15 @@ CREATE TABLE IF NOT EXISTS messaging_receipt_outbox (
 );
 "#;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RequiredColumn {
-    pub table: &'static str,
-    pub column: &'static str,
-    pub definition: &'static str,
-}
-
-pub const REQUIRED_COLUMNS: &[RequiredColumn] = &[
-    RequiredColumn {
-        table: "messaging_conversations",
-        column: "authority_station_id",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_conversations",
-        column: "federation_id",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_conversations",
-        column: "recovery_ready",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-    RequiredColumn {
-        table: "messaging_conversation_members",
-        column: "role",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-    RequiredColumn {
-        table: "messaging_conversation_members",
-        column: "active",
-        definition: "INTEGER NOT NULL DEFAULT 1",
-    },
-    RequiredColumn {
-        table: "messaging_membership_intents",
-        column: "action",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-    RequiredColumn {
-        table: "messaging_membership_intents",
-        column: "target_ptid",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_membership_intents",
-        column: "target_device_id",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_membership_intents",
-        column: "role",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_pending_messages",
-        column: "conversation_kind",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-    RequiredColumn {
-        table: "messaging_pending_messages",
-        column: "attempt_count",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-    RequiredColumn {
-        table: "messaging_pending_messages",
-        column: "next_attempt_at_unix_ms",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-    RequiredColumn {
-        table: "messaging_pending_messages",
-        column: "last_error_code",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_pending_messages",
-        column: "reply_to_message_id",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_pending_messages",
-        column: "thread_root_message_id",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_command_outbox",
-        column: "conversation_id",
-        definition: "TEXT NOT NULL DEFAULT ''",
-    },
-    RequiredColumn {
-        table: "messaging_command_outbox",
-        column: "created_at_unix_ms",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-    RequiredColumn {
-        table: "messaging_message_projections",
-        column: "reply_to_message_id",
-        definition: "TEXT",
-    },
-    RequiredColumn {
-        table: "messaging_message_projections",
-        column: "thread_root_message_id",
-        definition: "TEXT",
-    },
-    RequiredColumn {
-        table: "messaging_message_projections",
-        column: "edited_text",
-        definition: "TEXT",
-    },
-    RequiredColumn {
-        table: "messaging_message_projections",
-        column: "edited_at_unix_ms",
-        definition: "INTEGER",
-    },
-    RequiredColumn {
-        table: "messaging_message_projections",
-        column: "retracted",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-    RequiredColumn {
-        table: "messaging_interaction_intents",
-        column: "edited_text",
-        definition: "TEXT",
-    },
-    RequiredColumn {
-        table: "messaging_prekey_bundle",
-        column: "one_time_prekey_high_watermark",
-        definition: "INTEGER NOT NULL DEFAULT 0",
-    },
-];
-
-pub const POST_COLUMN_MIGRATION_SQL: &str = r#"
-UPDATE messaging_prekey_bundle
-SET one_time_prekey_high_watermark = -1
-WHERE one_time_prekey_high_watermark = 0;
-UPDATE messaging_conversation_members
-SET role = 3
-WHERE role = 0
-  AND ptid = (
-      SELECT owner_ptid
-      FROM messaging_conversations
-      WHERE messaging_conversations.conversation_id =
-            messaging_conversation_members.conversation_id
-  );
-UPDATE messaging_pending_messages
-SET conversation_kind = COALESCE(
-    NULLIF(conversation_kind, 0),
-    (
-        SELECT kind
-        FROM messaging_conversations
-        WHERE messaging_conversations.conversation_id =
-              messaging_pending_messages.conversation_id
-    ),
-    0
-);
-UPDATE messaging_command_outbox
-SET conversation_id = COALESCE(
-        NULLIF(conversation_id, ''),
-        (
-            SELECT conversation_id
-            FROM messaging_local_commands
-            WHERE messaging_local_commands.command_id =
-                  messaging_command_outbox.command_id
-        ),
-        ''
-    ),
-    created_at_unix_ms = COALESCE(
-        NULLIF(created_at_unix_ms, 0),
-        (
-            SELECT created_at_unix_ms
-            FROM messaging_local_commands
-            WHERE messaging_local_commands.command_id =
-                  messaging_command_outbox.command_id
-        ),
-        0
-    );
-INSERT INTO messaging_message_search_fts(
-    conversation_id, message_id, plaintext, attachment_filenames
-)
-SELECT
-    message.conversation_id,
-    message.message_id,
-    COALESCE(NULLIF(message.edited_text, ''), message.plaintext),
-    COALESCE(
-        (
-            SELECT group_concat(attachment.filename, char(10))
-            FROM messaging_attachment_projections attachment
-            WHERE attachment.message_id = message.message_id
-        ),
-        ''
-    )
-FROM messaging_message_projections message
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM messaging_schema_migrations
-    WHERE migration_id = 'message-search-backfill-v1'
-)
-AND NOT EXISTS (
-    SELECT 1
-    FROM messaging_message_search_fts search
-    WHERE search.conversation_id = message.conversation_id
-      AND search.message_id = message.message_id
-);
-INSERT OR IGNORE INTO messaging_schema_migrations(migration_id)
-VALUES ('message-search-backfill-v1');
-"#;
-
 pub trait MessagingSchemaBackend {
     fn execute_batch(&self, sql: &str) -> Result<(), String>;
-    fn table_columns(&self, table: &str) -> Result<Vec<String>, String>;
-    fn table_exists(&self, table: &str) -> Result<bool, String>;
-    fn query_i64(&self, sql: &str) -> Result<i64, String>;
-    fn migrate_legacy_attachment_rows(&self) -> Result<(), String>;
 }
 
 pub fn migrate_messaging_schema<B: MessagingSchemaBackend>(backend: &B) -> Result<(), String> {
     backend.execute_batch("PRAGMA foreign_keys = ON; BEGIN IMMEDIATE;")?;
     let migration = (|| {
         backend.execute_batch(MESSAGING_SCHEMA_SQL)?;
-        for required in REQUIRED_COLUMNS {
-            if !backend
-                .table_columns(required.table)?
-                .iter()
-                .any(|column| column == required.column)
-            {
-                backend.execute_batch(&format!(
-                    "ALTER TABLE {} ADD COLUMN {} {};",
-                    required.table, required.column, required.definition
-                ))?;
-            }
-        }
-        backend.execute_batch(POST_COLUMN_MIGRATION_SQL)?;
-        migrate_legacy_mobile_schema(backend)?;
-        validate_migrated_schema(backend)
+        Ok(())
     })();
     match migration {
         Ok(()) => backend.execute_batch("COMMIT;"),
@@ -625,88 +490,4 @@ pub fn migrate_messaging_schema<B: MessagingSchemaBackend>(backend: &B) -> Resul
             }
         }
     }
-}
-
-fn migrate_legacy_mobile_schema<B: MessagingSchemaBackend>(backend: &B) -> Result<(), String> {
-    if backend.table_exists("messaging_read_cursors")? {
-        backend.execute_batch(
-            "INSERT INTO read_cursors(
-                conversation_id, actor_ptid, last_read_sequence, updated_at_unix_ms
-             )
-             SELECT conversation_id, actor_ptid, last_read_sequence, updated_at_unix_ms
-             FROM messaging_read_cursors
-             WHERE true
-             ON CONFLICT(conversation_id, actor_ptid) DO UPDATE SET
-                last_read_sequence=MAX(
-                    read_cursors.last_read_sequence,
-                    excluded.last_read_sequence
-                ),
-                updated_at_unix_ms=CASE
-                    WHEN excluded.last_read_sequence > read_cursors.last_read_sequence
-                    THEN excluded.updated_at_unix_ms
-                    ELSE read_cursors.updated_at_unix_ms
-                END;
-             DROP TABLE messaging_read_cursors;",
-        )?;
-    }
-
-    if backend.table_exists("messaging_prekeys")? {
-        let invalid_kinds = backend.query_i64(
-            "SELECT COUNT(*) FROM messaging_prekeys
-             WHERE kind NOT IN ('signed', 'one_time')",
-        )?;
-        let signed_count =
-            backend.query_i64("SELECT COUNT(*) FROM messaging_prekeys WHERE kind = 'signed'")?;
-        if invalid_kinds != 0 || signed_count > 1 {
-            return Err("legacy Mobile messaging prekey state is ambiguous".to_string());
-        }
-        backend.execute_batch(
-            "INSERT INTO messaging_prekey_bundle(
-                id, signed_prekey_id, signed_prekey_private, state,
-                created_at_unix_ms, one_time_prekey_high_watermark
-             )
-             SELECT 1, prekey_id, private_key, 'published', 1,
-                    -1
-             FROM messaging_prekeys
-             WHERE kind = 'signed'
-             ON CONFLICT(id) DO NOTHING;
-             INSERT INTO messaging_one_time_prekeys(prekey_id, private_key, state)
-             SELECT prekey_id, private_key, 'available'
-             FROM messaging_prekeys
-             WHERE kind = 'one_time'
-             ON CONFLICT(prekey_id) DO NOTHING;
-             DROP TABLE messaging_prekeys;",
-        )?;
-    }
-
-    if backend.table_exists("messaging_pending_attachments")?
-        || backend.table_exists("messaging_message_attachments")?
-    {
-        backend.migrate_legacy_attachment_rows()?;
-        backend.execute_batch(
-            "DROP TABLE IF EXISTS messaging_pending_attachments;
-             DROP TABLE IF EXISTS messaging_message_attachments;",
-        )?;
-    }
-    Ok(())
-}
-
-fn validate_migrated_schema<B: MessagingSchemaBackend>(backend: &B) -> Result<(), String> {
-    let incomplete_membership = backend.query_i64(
-        "SELECT COUNT(*) FROM messaging_membership_intents
-         WHERE state <> '' AND (
-             action <= 0 OR target_ptid = '' OR role = ''
-         )",
-    )?;
-    if incomplete_membership != 0 {
-        return Err("messaging membership intent migration is incomplete".to_string());
-    }
-    let orphan_outbox = backend.query_i64(
-        "SELECT COUNT(*) FROM messaging_command_outbox
-         WHERE conversation_id = '' OR created_at_unix_ms <= 0",
-    )?;
-    if orphan_outbox != 0 {
-        return Err("messaging command outbox migration is incomplete".to_string());
-    }
-    Ok(())
 }

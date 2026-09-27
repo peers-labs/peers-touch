@@ -239,6 +239,35 @@ class EvidenceStoreTests(unittest.TestCase):
             json.loads(latest_path.read_text())["manifest"]["sha256"],
         )
 
+    def test_finalize_preserves_artifact_role_with_sensitive_term(self) -> None:
+        secret = "resolved-secret-value"
+        role = "reports/station-access-auth-e2e.json"
+        run = self.store.begin_run(
+            "artifact-role-redaction-gate",
+            source={"authorization": secret},
+        )
+        run.configure_redaction((secret,))
+
+        report_ref = run.write_json(
+            "reports/station-access-auth-e2e.json",
+            {"detail": secret},
+            role=role,
+        )
+        manifest = run.finalize(
+            result={"status": "passed"},
+            runtime={"authorization": secret},
+        )
+        persisted = json.loads(
+            self.store.resolve(run.manifest_ref).read_text(encoding="utf-8")
+        )
+        run.close()
+
+        self.assertEqual(manifest["artifacts"][role], report_ref.to_dict())
+        self.assertEqual(persisted["artifacts"][role], report_ref.to_dict())
+        self.assertEqual(persisted["runtime"]["authorization"], REDACTED)
+        self.assertEqual(self.store.read_json(report_ref)["detail"], REDACTED)
+        self.assertNotIn(secret, json.dumps(persisted))
+
     def test_finalize_preserves_validated_secret_scan_object(self) -> None:
         secret = "resolved-secret-value"
         secret_scan = {
@@ -760,9 +789,19 @@ class EvidenceStoreTests(unittest.TestCase):
         run.close()
 
     def test_duplicate_run_id_fails(self) -> None:
-        run = self.store.begin_run("unit-gate", source={})
+        run_id = "20260916T120000000000Z-" + ("a" * 32)
+        run = self.store.begin_run("unit-gate", source={}, run_id=run_id)
+        self.assertEqual(run.run_id, run_id)
         with self.assertRaises(EvidenceConflict):
-            self.store.begin_run("unit-gate", source={}, run_id=run.run_id)
+            self.store.begin_run("unit-gate", source={}, run_id=run_id)
+        self.assertEqual(
+            [
+                path.name
+                for path in run.run_dir.parent.iterdir()
+                if path.is_dir()
+            ],
+            [run_id],
+        )
         run.close()
 
     def test_artifact_ref_rejects_wrong_workspace_and_hash(self) -> None:

@@ -1,10 +1,5 @@
-// Desktop access-gate decision model and predicates.
-//
-// Transport lives in the Rust layer (`access_start`, `access_submit_invite_code`,
-// `access_submit_login`); the frontend only normalizes the raw Station
-// `AccessDecision` (snake_case keys, string-or-numeric enums) into a stable
-// shape and decides which gate to render. This mirrors the mobile contract in
-// `apps/mobile/src/features/auth/authSession.ts` so both clients stay aligned.
+// Desktop access-gate projection and predicates. Rust owns protobuf decoding;
+// the renderer receives one stable camelCase, string-enum contract.
 
 export const ACCESS_GATE_TYPE_AUTH_LOGIN = 2;
 export const ACCESS_GATE_TYPE_INVITE_CODE = 5;
@@ -25,71 +20,70 @@ export interface AccessGateField {
 
 export interface AccessGate {
   gateId: string;
-  type: number | string;
-  state: number | string;
-  title?: string;
-  description?: string;
-  blockingReason?: string;
-  submitAction?: string;
-  inputSchemaJson?: string;
+  gateType: string;
+  state: string;
+  title: string;
+  description: string;
+  blockingReason: string;
+  submitAction: string;
+  inputSchemaJson: string;
+  alternativeActions: AccessGateAction[];
+  actionId: string;
+  schemaRevision: number;
+  schemaDigest: string;
+}
+
+export interface AccessGateAction {
+  actionId: string;
+  actionType: string;
+  submitAction: string;
+  schemaRevision: number;
+  schemaDigest: string;
 }
 
 export interface AccessDecision {
-  state: number | string;
+  state: string;
   attemptId: string;
-  currentGateId?: string;
+  currentGateId: string;
   gates: AccessGate[];
-  accessGrantId?: string;
-  message?: string;
+  actorPtid?: string;
+  accessGrantId: string;
+  expiresAtUnixMs?: number;
+  message: string;
 }
 
-interface RawAccessGate {
-  gate_id?: string;
-  gateId?: string;
-  type?: number | string;
-  state?: number | string;
-  title?: string;
-  description?: string;
-  blocking_reason?: string;
-  blockingReason?: string;
-  submit_action?: string;
-  submitAction?: string;
-  input_schema_json?: string;
-  inputSchemaJson?: string;
+export const STATION_ACCESS_UNKNOWN_GATE = 'STATION_ACCESS_UNKNOWN_GATE';
+export const STATION_ACCESS_IDENTITY_MISMATCH = 'STATION_ACCESS_IDENTITY_MISMATCH';
+export const STATION_ACCESS_ATTEMPT_EXPIRED = 'STATION_ACCESS_ATTEMPT_EXPIRED';
+
+export type StationAccessFailureOutcome =
+  | typeof STATION_ACCESS_UNKNOWN_GATE
+  | typeof STATION_ACCESS_IDENTITY_MISMATCH
+  | typeof STATION_ACCESS_ATTEMPT_EXPIRED;
+
+export class StationAccessOutcomeError extends Error {
+  readonly code: StationAccessFailureOutcome;
+
+  constructor(code: StationAccessFailureOutcome) {
+    super(code);
+    this.name = 'StationAccessOutcomeError';
+    this.code = code;
+  }
 }
 
-interface RawAccessDecision {
-  state?: number | string;
-  attempt_id?: string;
-  attemptId?: string;
-  current_gate_id?: string;
-  currentGateId?: string;
-  gates?: RawAccessGate[];
-  access_grant_id?: string;
-  accessGrantId?: string;
-  message?: string;
-}
-
-export function normalizeDecision(raw: unknown): AccessDecision {
-  const decision = (raw ?? {}) as RawAccessDecision;
-  return {
-    state: decision.state ?? 0,
-    attemptId: decision.attempt_id ?? decision.attemptId ?? '',
-    currentGateId: decision.current_gate_id ?? decision.currentGateId,
-    accessGrantId: decision.access_grant_id ?? decision.accessGrantId,
-    message: decision.message,
-    gates: (decision.gates ?? []).map((gate) => ({
-      gateId: gate.gate_id ?? gate.gateId ?? '',
-      type: gate.type ?? 0,
-      state: gate.state ?? 0,
-      title: gate.title,
-      description: gate.description,
-      blockingReason: gate.blocking_reason ?? gate.blockingReason,
-      submitAction: gate.submit_action ?? gate.submitAction,
-      inputSchemaJson: gate.input_schema_json ?? gate.inputSchemaJson,
-    })),
-  };
-}
+const pendingSubmissionIds = new Map<string, string>();
+const KNOWN_GATE_TYPES = new Set([
+  'ACCESS_GATE_TYPE_STATION_CAPABILITY',
+  'ACCESS_GATE_TYPE_AUTH_LOGIN',
+  'ACCESS_GATE_TYPE_AUTH_SESSION_RESTORE',
+  'ACCESS_GATE_TYPE_INVITE_ALLOWLIST',
+  'ACCESS_GATE_TYPE_INVITE_CODE',
+  'ACCESS_GATE_TYPE_DEVICE_TRUST',
+  'ACCESS_GATE_TYPE_MAINTENANCE',
+  'ACCESS_GATE_TYPE_TERMS_ACCEPTANCE',
+  'ACCESS_GATE_TYPE_AUTH_OAUTH',
+  'ACCESS_GATE_TYPE_CUSTOM',
+]);
 
 /** Parse a gate's input_schema_json into a field list. Unparseable schemas
  *  yield an empty list so the host can fall back to its default rendering. */
@@ -108,35 +102,136 @@ export function currentGate(decision: AccessDecision | null): AccessGate | undef
   return decision.gates.find((gate) => gate.gateId === decision.currentGateId);
 }
 
+export function stationAccessFailureOutcome(
+  value: AccessDecision | unknown,
+  now = Date.now(),
+): StationAccessFailureOutcome | null {
+  if (isAccessDecision(value)) {
+    if (
+      value.expiresAtUnixMs !== undefined
+      && (!Number.isFinite(value.expiresAtUnixMs) || value.expiresAtUnixMs <= now)
+    ) {
+      return STATION_ACCESS_ATTEMPT_EXPIRED;
+    }
+    if (value.state === 'ACCESS_DECISION_STATE_ACTION_REQUIRED') {
+      const gate = currentGate(value);
+      if (!gate || !KNOWN_GATE_TYPES.has(gate.gateType)) {
+        return STATION_ACCESS_UNKNOWN_GATE;
+      }
+    }
+  }
+
+  const message = accessFailureText(value);
+  if (/access attempt.*(?:expired|not found)|attempt.*expired/i.test(message)) {
+    return STATION_ACCESS_ATTEMPT_EXPIRED;
+  }
+  if (/station[_ .-]?identity.*mismatch|identity.*mismatch|peer.*mismatch/i.test(message)) {
+    return STATION_ACCESS_IDENTITY_MISMATCH;
+  }
+  if (/unsupported.*(?:access )?gate|unknown.*gate|gate.*unsupported/i.test(message)) {
+    return STATION_ACCESS_UNKNOWN_GATE;
+  }
+  return null;
+}
+
+export function requireSupportedAccessDecision(
+  decision: AccessDecision,
+  now = Date.now(),
+): AccessDecision {
+  const outcome = stationAccessFailureOutcome(decision, now);
+  if (outcome) throw new StationAccessOutcomeError(outcome);
+  return decision;
+}
+
+export function stationAccessError(error: unknown): Error {
+  if (error instanceof StationAccessOutcomeError) return error;
+  const outcome = stationAccessFailureOutcome(error);
+  if (outcome) return new StationAccessOutcomeError(outcome);
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 /** True when the gate type denotes self-service invite-code redemption. */
 export function isInviteCodeGate(gate: AccessGate | undefined): boolean {
-  return gate?.type === ACCESS_GATE_TYPE_INVITE_CODE
-    || gate?.type === 'ACCESS_GATE_TYPE_INVITE_CODE';
+  return gate?.gateType === 'ACCESS_GATE_TYPE_INVITE_CODE';
 }
 
 /** True when the gate type denotes the login credential gate. */
 export function isLoginGate(gate: AccessGate | undefined): boolean {
-  return gate?.type === ACCESS_GATE_TYPE_AUTH_LOGIN
-    || gate?.type === 'ACCESS_GATE_TYPE_AUTH_LOGIN';
+  return gate?.gateType === 'ACCESS_GATE_TYPE_AUTH_LOGIN';
 }
 
 export function isAccessGranted(decision: AccessDecision | null): boolean {
-  return decision?.state === ACCESS_DECISION_GRANTED
-    || decision?.state === 'ACCESS_DECISION_STATE_GRANTED';
+  return decision?.state === 'ACCESS_DECISION_STATE_GRANTED';
 }
 
 export function isAccessActionRequired(decision: AccessDecision | null): boolean {
-  return decision?.state === ACCESS_DECISION_ACTION_REQUIRED
-    || decision?.state === 'ACCESS_DECISION_STATE_ACTION_REQUIRED';
+  return decision?.state === 'ACCESS_DECISION_STATE_ACTION_REQUIRED';
 }
 
 export function isAccessBlocked(decision: AccessDecision | null): boolean {
-  return decision?.state === ACCESS_DECISION_BLOCKED
-    || decision?.state === 'ACCESS_DECISION_STATE_BLOCKED';
+  return decision?.state === 'ACCESS_DECISION_STATE_BLOCKED';
 }
 
 export function accessDecisionMessage(decision: AccessDecision | null): string {
   if (!decision) return '';
   if (decision.message) return decision.message;
   return decision.gates.map((gate) => gate.blockingReason).find(Boolean) ?? '';
+}
+
+export function accessGateTypeNumber(gate: AccessGate): number {
+  if (gate.gateType === 'ACCESS_GATE_TYPE_AUTH_LOGIN') return ACCESS_GATE_TYPE_AUTH_LOGIN;
+  if (gate.gateType === 'ACCESS_GATE_TYPE_INVITE_CODE') return ACCESS_GATE_TYPE_INVITE_CODE;
+  throw new Error('auth.gate.unsupported');
+}
+
+export function newAccessSubmissionId(): string {
+  const value = globalThis.crypto?.randomUUID?.();
+  if (!value) throw new Error('auth.gate.submissionIdentityUnavailable');
+  return value;
+}
+
+export function accessSubmissionDescriptor(attemptId: string, gate: AccessGate) {
+  const key = [attemptId, gate.gateId, gate.actionId, gate.schemaRevision, gate.schemaDigest].join('\0');
+  const submissionId = pendingSubmissionIds.get(key) ?? newAccessSubmissionId();
+  pendingSubmissionIds.set(key, submissionId);
+  return {
+    key,
+    gate_id: gate.gateId,
+    gate_type: accessGateTypeNumber(gate),
+    action_id: gate.actionId,
+    schema_revision: gate.schemaRevision,
+    schema_digest: gate.schemaDigest,
+    submission_id: submissionId,
+  };
+}
+
+export function completeAccessSubmission(key: string): void {
+  pendingSubmissionIds.delete(key);
+}
+
+function isAccessDecision(value: unknown): value is AccessDecision {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && typeof (value as Partial<AccessDecision>).state === 'string'
+    && Array.isArray((value as Partial<AccessDecision>).gates),
+  );
+}
+
+function accessFailureText(value: unknown): string {
+  if (value instanceof Error) {
+    const code = (value as Error & { code?: unknown }).code;
+    const details = (value as Error & { details?: unknown }).details;
+    return `${String(code ?? '')} ${value.message} ${safeString(details)}`;
+  }
+  return safeString(value);
+}
+
+function safeString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value) ?? '';
+  } catch {
+    return String(value);
+  }
 }

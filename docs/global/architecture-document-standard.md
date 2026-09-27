@@ -1,8 +1,8 @@
 # 架构文档标准
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-04-20 | **Updated**: 2026-04-20
+> **Version**: v1.1
+> **Created**: 2026-04-20 | **Updated**: 2026-09-27
 > **Owner**: Architecture Team
 
 ---
@@ -12,15 +12,16 @@
 本文档定义：
 
 - 架构文档的固定文件集合与命名规则
-- 每个文件的职责边界与必选/可选规则
+- 每个文件的职责边界与按模块特征推导的必选规则
 - 元数据块格式
 - 目录架构（module layout）的表达规范
 - 设计决策的记录格式
 - 执行计划的关联方式
+- 架构模块正向能力声明与机器校验入口
 
 本文档不定义：
 
-- 具体架构设计的内容标准（由各模块自行负责）
+- 具体业务域的架构结论（由各模块自行负责）
 - 编码规范（见 `global/coding-guide/`）
 - 平台层落地规则（见 `client/` 和 `station/`）
 
@@ -31,7 +32,9 @@
 1. **固定文件集** — 每个架构模块是一个目录，内含固定命名的文档文件，不是一个大文件
 2. **职责单一** — 每个文件只回答一类问题，读者可以按需阅读
 3. **README 是入口** — `README.md` 提供导航，不堆内容
-4. **按需可选** — 必选文件保证最低完整度，可选文件按模块复杂度按需添加
+4. **按特征完备** — 协议、状态、存储、ownership 与跨运行时特征决定必需文件
+5. **当前态优先** — active 文档只描述当前允许关系，历史事实由 Git 或 `context/` 承载
+6. **正向声明** — 只登记当前能力、owner、consumer、契约根和允许依赖
 
 ---
 
@@ -44,9 +47,9 @@ architecture/<module>/
 ├── README.md                  # [必选] 入口：Scope + 背景 + 导航
 ├── design.md                  # [必选] 架构设计：原则、系统图、核心接口
 ├── decisions.md               # [必选] 设计决策（ADR-lite 格式）
-├── module-layout.md           # [可选] 模块目录结构与文件职责
-├── data-model.md              # [可选] 数据模型、协议结构、持久化 schema
-├── integration.md             # [可选] 与现有模块的映射、影响面、迁移策略
+├── module-layout.md           # [条件必选] 模块目录结构与文件职责
+├── data-model.md              # [条件必选] 数据模型、协议结构、持久化 schema
+├── integration.md             # [条件必选] 与现有模块的映射、影响面、切换策略
 ├── execution-plans/           # [可选] 分阶段实施计划
 │   ├── phase-1-xxx.md
 │   └── ...
@@ -61,9 +64,9 @@ architecture/<module>/
 | `README.md` | **是** | 这个模块是什么、解决什么问题、设计目标、文档导航 | 始终 |
 | `design.md` | **是** | 架构原则、系统架构图、核心接口/契约、组件关系 | 始终 |
 | `decisions.md` | **是** | 每个关键决策的 Decision / Rationale / Alternatives | 始终 |
-| `module-layout.md` | 可选 | 目录树 + 文件职责 + 依赖关系 | 模块 ≥10 个文件，或目录结构对理解架构至关重要 |
-| `data-model.md` | 可选 | 协议结构、状态机、持久化 schema、类型映射 | 协议密集型或存储密集型模块 |
-| `integration.md` | 可选 | 与现有模块的映射关系、影响面分析、迁移策略 | 涉及存量系统改造或跨模块协作 |
+| `module-layout.md` | 条件必选 | 目录树 + 文件职责 + 依赖关系 | 声明 ownership、目录布局或重复实现治理 |
+| `data-model.md` | 条件必选 | 协议结构、状态机、持久化 schema、类型映射 | 声明协议、状态机或持久化 |
+| `integration.md` | 条件必选 | 与现有模块的映射关系、影响面分析、切换策略 | 声明跨运行时或集成关系 |
 | `execution-plans/` | 可选 | 分阶段实施计划，每 Phase 一个文件 | 需要分阶段交付的模块 |
 | `prototype/` | 可选 | 用**落地目标对应的自有前端栈**做的**可运行原型**入口与跑法；UI/交互密集的模块用「能跑能点」替代纯文字/线框对齐。须登记进统一原型总账，过「原型确认门」后方可落地 | UI/交互形态需要确认、靠文字描述容易跑偏的模块；纯存储/协议/后端域不扩 |
 
@@ -73,6 +76,41 @@ architecture/<module>/
 - 正确：`architecture/agent/a2a/design.md`
 - 错误：`architecture/agent/a2a/a2a-design.md`
 - 子模块可嵌套目录：`architecture/agent/a2a/`、`architecture/agent/acp/`
+
+### 3.4 内容完整性 Profile
+
+每个进入机器治理的 active 模块在
+`architecture/architecture-module-governance/architecture-modules.json`
+声明以下布尔特征：
+
+```json
+{
+  "protocol": false,
+  "stateMachine": false,
+  "persistence": false,
+  "ownership": false,
+  "moduleLayout": false,
+  "crossRuntime": false,
+  "integration": false
+}
+```
+
+必需文档由特征机械推导：
+
+- 所有模块：`README.md`、`design.md`、`decisions.md`
+- `protocol || stateMachine || persistence`：增加 `data-model.md`
+- `ownership || moduleLayout`：增加 `module-layout.md`
+- `crossRuntime || integration`：增加 `integration.md`
+
+模块不得通过把特征设为 `false` 来隐藏文档已经声明的协议、状态、owner 或跨运行时
+关系。Review 必须把这种不一致视为架构缺口。
+
+### 3.5 当前态与历史边界
+
+- active 文档只定义当前接口、能力、owner、依赖和失败语义。
+- 已删除标识符不进入 active 文档、模块声明或永久扫描清单。
+- 历史原因通过 Git 历史或 `docs/context/` 查证。
+- 接口完整性通过当前能力全量 inventory 与 fail-closed discovery 证明。
 
 ---
 
@@ -97,6 +135,10 @@ architecture/<module>/
 | Created / Updated | **是** | 创建和最近更新日期 |
 | Owner | **是** | 负责维护此文档的人或团队 |
 | Module | 可选 | 对应的代码模块路径，README.md 中标注即可 |
+
+`accepted`、`completed` 和 `prepared` 不是架构文档状态。决策可在
+`decisions.md` 条目内使用 `accepted`；执行计划可使用 Plan Package 自身的
+lifecycle 状态。
 
 ---
 
@@ -446,9 +488,11 @@ pnpm dev          # Vite，浏览器打开 localhost
 
 1. 创建 `architecture/<module>/` 目录
 2. 至少创建必选三件套：`README.md`、`design.md`、`decisions.md`
-3. 每个文件顶部填写元数据块，Status 设为 `draft`
-4. 设计稳定后将 Status 改为 `active`
-5. 在 `docs/README.md` 的 §4.1 架构层真源中注册
+3. 根据内容特征补齐条件必选文件
+4. 每个文件顶部填写元数据块，Status 设为 `draft`
+5. 设计稳定后将 Status 改为 `active`
+6. 在 `docs/README.md` 的 §4.1 架构层真源中注册
+7. 在架构模块 registry 中登记 owner、governed paths、decisions 和当前 capabilities
 
 ### 7.2 维护规则
 
@@ -456,6 +500,8 @@ pnpm dev          # Vite，浏览器打开 localhost
 - `module-layout.md` 必须与代码目录保持同步
 - 决策变更时在 `decisions.md` 中新增条目或将旧条目标记为 `superseded`
 - 更新时同步刷新 `Updated` 日期和 `Version`
+- active 模块被修改时必须通过架构模块治理校验
+- 模块能力只维护正向 allowlist，未知接口必须 fail closed
 
 ### 7.3 存量文档迁移
 

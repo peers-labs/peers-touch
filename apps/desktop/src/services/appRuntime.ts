@@ -14,10 +14,13 @@ import { appletsRuntime } from '../runtimes/appletsRuntime';
 import { momentsRuntime } from '../runtimes/momentsRuntime';
 import { agentCapabilityRuntime } from '../runtimes/agentCapabilityRuntime';
 import { agentTopicRuntime } from '../runtimes/agentTopicRuntime';
+import { messagingRuntime } from '../runtimes/messagingRuntime';
 import { messagingRecoveryRuntime } from '../runtimes/messagingRecoveryRuntime';
 import { toolRuntime } from '../runtimes/toolRuntime';
 import { chatRuntime } from '../runtimes/chatRuntime';
 import { evaluationRuntime } from '../runtimes/evaluationRuntime';
+import { callRuntime } from '../runtimes/callRuntime';
+import { chatStorageRuntime } from '../runtimes/chatStorageRuntime';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -30,6 +33,9 @@ function registerKernelRuntimes(): void {
   if (runtimesRegistered) return;
   runtimesRegistered = true;
   registerRuntime(socialRuntime);
+  registerRuntime(messagingRuntime);
+  registerRuntime(chatStorageRuntime);
+  registerRuntime(callRuntime);
   registerRuntime(searchRuntime);
   registerRuntime(settingsRuntime);
   registerRuntime(federationRuntime);
@@ -60,6 +66,8 @@ const DEFERRED_APP_RUNTIME_IDS = [
 ];
 
 export const CRITICAL_SESSION_RUNTIME_IDS: ReadonlyArray<string> = [
+  messagingRuntime.id,
+  callRuntime.id,
   chatRuntime.id,
   homeRuntime.id,
 ];
@@ -121,14 +129,23 @@ export function installDeferredAppRuntimeProjections(actorPtid: string): Promise
 export async function installAuthenticatedCriticalRuntimes(
   actorId: string,
 ): Promise<void> {
+  // #region debug-point A:critical-bootstrap-entry
+  await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A', location: 'apps/desktop/src/services/appRuntime.ts:critical-entry', msg: '[DEBUG] Critical runtime install requested', data: { actorPresent: Boolean(actorId), reusedInFlight: criticalInstallInFlight?.actorId === actorId }, ts: Date.now() }) }).catch(() => {});
+  // #endregion
   if (criticalInstallInFlight?.actorId === actorId) {
     return criticalInstallInFlight.promise;
   }
   installAppRuntime();
   const promise = (async () => {
     for (const runtimeId of CRITICAL_SESSION_RUNTIME_IDS) {
+      // #region debug-point A-D:critical-runtime-step
+      await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/services/appRuntime.ts:runtime-start', msg: '[DEBUG] Critical runtime bootstrap started', data: { runtimeId }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
       installRuntime(runtimeId);
       await bootstrapRuntime(runtimeId, actorId);
+      // #region debug-point A-D:critical-runtime-step
+      await fetch('http://127.0.0.1:7781/event', { method: 'POST', body: JSON.stringify({ sessionId: 'messaging-scope-race', runId: 'post-fix', hypothesisId: 'A,D', location: 'apps/desktop/src/services/appRuntime.ts:runtime-end', msg: '[DEBUG] Critical runtime bootstrap completed', data: { runtimeId }, ts: Date.now() }) }).catch(() => {});
+      // #endregion
     }
   })();
   criticalInstallInFlight = { actorId, promise };
@@ -149,6 +166,9 @@ export function teardownAppRuntime(): void {
   criticalInstallInFlight = null;
 
   teardownRuntime(socialRuntime.id);
+  teardownRuntime(messagingRuntime.id);
+  teardownRuntime(chatStorageRuntime.id);
+  teardownRuntime(callRuntime.id);
   teardownRuntime(searchRuntime.id);
   teardownRuntime(settingsRuntime.id);
   teardownRuntime(federationRuntime.id);

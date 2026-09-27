@@ -12,8 +12,8 @@
  * - MomentCommentsSection: comment panel with reply support
  * - MomentsFeedStates: empty/loading/error/unavailable/policy states
  *
- * All interactions dispatch through InteractionAdmission (reactions,
- * comments) or the MomentsGateway (feed pagination, publish).
+ * Mutations remain online-only through MomentsGateway until their generated
+ * command/result contracts are eligible for W4 durable admission.
  *
  * W6B: Refactored from monolithic page to pure-renderer pattern
  * with runtime-owned projection, cursor pagination, draft recovery,
@@ -23,23 +23,31 @@
  * Header uses ImagePlus toggle; feed uses Card-based layout.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Button, Typography } from 'antd';
-import { ImagePlus } from 'lucide-react';
+import { ArrowLeft, ImagePlus, RefreshCw } from 'lucide-react';
 
 import { useMobileI18n } from '../app/mobileI18n';
+import { BoundedList } from '../components/BoundedList';
 import { MobileNotice } from '../components/MobileNotice';
 import { useAuthStore } from '../features/auth/authStore';
-import { useMomentsFeed } from '../features/social/useMomentsFeed';
-import { getInteractionAdmission } from '../runtimes/commandRuntime';
-import { createMomentsGateway, type MomentsGateway } from '../services/gateways/momentsGateway';
 import {
-  createMomentsProjection,
-  type MomentsProjectionController,
-} from '../runtimes/momentsProjectionDescriptor';
-import { createSocialEventIngress } from '../runtimes/socialEventIngress';
-import type { Post } from '../gen/proto/domain/social/post_pb';
-import type { MobileAuthSession } from '../features/auth/authSession';
+  useMomentsFeed,
+  useMomentsProjectionState,
+} from '../features/social/useMomentsFeed';
+import {
+  resolveMomentPolicyState,
+  type MomentsFeedStoreController,
+} from '../features/social/momentsFeedStore';
+import {
+  readActiveMomentsRuntime,
+  type ActiveMomentsRuntime,
+} from '../runtimes/socialProjectionRuntime';
+import {
+  TimelinePageOutcome,
+  type Post,
+} from '../gen/proto/domain/social/post_pb';
+import type { MomentsGateway } from '../services/gateways/momentsGateway';
 
 import { MomentComposer } from './moments/MomentComposer';
 import { MomentFeedItem } from './moments/MomentFeedItem';
@@ -48,68 +56,75 @@ import {
   MomentsFeedEmpty,
   MomentsFeedError,
   MomentsFeedLoading,
+  MomentsPolicyViolation,
   MomentsUnavailable,
 } from './moments/MomentsFeedStates';
 
 const { Text } = Typography;
+const MOMENTS_FEED_WINDOW_SIZE = 100;
 
-// ---------------------------------------------------------------------------
-// Lazy-initialized runtime singletons scoped to authenticated session
-// ---------------------------------------------------------------------------
-
-let cachedGateway: MomentsGateway | null = null;
-let cachedProjection: MomentsProjectionController | null = null;
-let cachedSessionToken = '';
-
-function getSessionGateway(session: MobileAuthSession): MomentsGateway {
-  if (cachedGateway && cachedSessionToken === session.accessToken) {
-    return cachedGateway;
-  }
-  cachedSessionToken = session.accessToken;
-  cachedGateway = createMomentsGateway(session);
-  return cachedGateway;
-}
-
-function getSessionProjection(): MomentsProjectionController {
-  if (cachedProjection) return cachedProjection;
-  const ingress = createSocialEventIngress({
-    onEvent: () => {
-      // Events routed through projection ingestEvent below
-    },
-  });
-  cachedProjection = createMomentsProjection(ingress);
-  return cachedProjection;
+function momentPostKey(post: Post): string {
+  return post.id;
 }
 
 // ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 
-export function MomentsPage() {
+interface MomentsPageProps {
+  readonly activePostId: string | null;
+  readonly onOpenMoment: (postId: string) => void;
+  readonly onBack: () => void;
+}
+
+export async function submitInlineCommentToGateway(
+  gateway: Pick<MomentsGateway, 'createComment'>,
+  postId: string,
+  content: string,
+  refreshAuthoritativePost: Pick<MomentsFeedStoreController, 'refreshPost'>,
+): Promise<boolean> {
+  const result = await gateway.createComment(postId, content);
+  if (!result.ok) return false;
+  return refreshAuthoritativePost.refreshPost(postId);
+}
+
+export async function retryMomentsRuntime(
+  runtime: Pick<ActiveMomentsRuntime, 'retry'>,
+): Promise<boolean> {
+  try {
+    return await runtime.retry();
+  } catch {
+    return false;
+  }
+}
+
+export function MomentsPage({
+  activePostId,
+  onOpenMoment,
+  onBack,
+}: MomentsPageProps) {
   const { t } = useMobileI18n();
   const authSession = useAuthStore((state) => state.session);
-
-  // Memoize gateway and projection based on session
-  const gateway = useMemo(
-    () => (authSession ? getSessionGateway(authSession) : null),
-    [authSession],
-  );
-  const projection = useMemo(() => getSessionProjection(), []);
+  const momentsRuntime = readActiveMomentsRuntime(authSession);
+  const gateway = momentsRuntime?.gateway ?? null;
+  const projection = momentsRuntime?.projection ?? null;
 
   // Feed state from the store
-  const feed = useMomentsFeed(gateway, projection);
+  const feed = useMomentsFeed(momentsRuntime?.feed ?? null);
+  const runtimeFeedState = momentsRuntime?.feed.state();
+  const isPolicyFilteredEmpty =
+    feed.pageOutcome === TimelinePageOutcome.FILTERED_EMPTY;
 
   // Local UI state
   const [noticeError, setNoticeError] = useState('');
-  const [activeCommentsPostId, setActiveCommentsPostId] = useState<string | null>(null);
   const [showNewPost, setShowNewPost] = useState(false);
 
   // -- Projection availability check --
-  const projectionState = projection.state();
-  const isUnavailable = !projectionState.availability.available;
-  const unavailableReason = !projectionState.availability.available
+  const projectionState = useMomentsProjectionState(projection);
+  const isUnavailable = !projectionState?.availability.available;
+  const unavailableReason = projectionState && !projectionState.availability.available
     ? projectionState.availability.reason
-    : '';
+    : t('mobile.moments.unavailable.description');
 
   // -- Handlers --
 
@@ -123,68 +138,94 @@ export function MomentsPage() {
 
   const handleReact = useCallback(
     async (postId: string, reactionKind: number) => {
-      if (!gateway) return;
+      if (!gateway || !momentsRuntime) return;
+      const transaction = momentsRuntime.feed.beginReaction(postId, reactionKind);
+      if (!transaction) return;
 
-      // Record in command ledger
-      try {
-        const admission = getInteractionAdmission();
-        await admission.admit({
-          commandType: 'reaction_toggle',
-          category: 'moments',
-          orderingKey: `post:${postId}`,
-          payloadJson: JSON.stringify({ postId, reactionKind }),
-        });
-      } catch {
-        // Ledger recording is best-effort
-      }
-
-      // Check current state to toggle
-      const post = feed.posts.find((p) => p.id === postId);
-      const currentReaction = post?.reactions.find((r) => r.kind === reactionKind);
-      const isCurrentlyReacted = currentReaction?.reactedByViewer ?? false;
-
-      const result = isCurrentlyReacted
+      const result = transaction.operation === 'unreact'
         ? await gateway.unreactToPost(postId, reactionKind)
         : await gateway.reactToPost(postId, reactionKind);
 
       if (result.ok) {
-        feed.updateReaction(postId, result.data.reactions);
+        momentsRuntime.feed.commitReaction(transaction, result.data.reactions);
       } else {
+        momentsRuntime.feed.rollbackReaction(transaction, result.error.message);
         setNoticeError(t('mobile.moments.reaction.error'));
       }
     },
-    [gateway, feed, t],
+    [gateway, momentsRuntime, t],
   );
 
   const handleOpenComments = useCallback((postId: string) => {
-    setActiveCommentsPostId(postId);
-  }, []);
-
-  const handleCloseComments = useCallback(() => {
-    setActiveCommentsPostId(null);
-  }, []);
+    onOpenMoment(postId);
+  }, [onOpenMoment]);
 
   const handleOpenDetail = useCallback((postId: string) => {
-    // For now, open comments as detail view
-    setActiveCommentsPostId(postId);
-  }, []);
+    onOpenMoment(postId);
+  }, [onOpenMoment]);
+
+  const handleSubmitInlineComment = useCallback(
+    async (postId: string, content: string): Promise<boolean> => {
+      if (!gateway || !momentsRuntime) return false;
+
+      if (await submitInlineCommentToGateway(
+        gateway,
+        postId,
+        content,
+        momentsRuntime.feed,
+      )) {
+        return true;
+      }
+
+      setNoticeError(t('mobile.moments.comment.sendError'));
+      return false;
+    },
+    [gateway, momentsRuntime, t],
+  );
 
   const handleRetry = useCallback(() => {
-    projection.markAvailable();
-    feed.loadFeed();
-  }, [projection, feed]);
+    if (!momentsRuntime) return;
+    void retryMomentsRuntime(momentsRuntime);
+  }, [momentsRuntime]);
 
   // -- Render --
 
   // If comments panel is open, show it full-screen
-  if (activeCommentsPostId && gateway) {
+  if (activePostId) {
+    const activePost = feed.posts.find((post) => post.id === activePostId);
     return (
-      <div className="page-container moments-page">
-        <MomentCommentsSection
-          postId={activeCommentsPostId}
-          gateway={gateway}
-          onClose={handleCloseComments}
-        />
+      <div className="page-container moments-page mobile-detail-page">
+        {gateway && !isUnavailable ? (
+          <MomentCommentsSection
+            postId={activePostId}
+            post={activePost}
+            gateway={gateway}
+            onReact={(postId, kind) => void handleReact(postId, kind)}
+            reactionMutation={runtimeFeedState?.reactionMutations.get(activePostId)}
+            policyState={resolveMomentPolicyState(
+              runtimeFeedState?.feedExplanations.get(activePostId),
+            )}
+            onClose={onBack}
+          />
+        ) : (
+          <>
+            <header className="page-header">
+              <button
+                type="button"
+                className="header-action"
+                aria-label={t('common.action.back')}
+                onClick={onBack}
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <h1 className="header-title compact">{t('mobile.moments.detail.title')}</h1>
+            </header>
+            <MomentsUnavailable
+              reason={t('mobile.social.notAuthenticated')}
+              onRetry={handleRetry}
+            />
+          </>
+        )}
       </div>
     );
   }
@@ -194,6 +235,16 @@ export function MomentsPage() {
       {/* Header: title + ImagePlus new-post toggle (prototype) */}
       <header className="page-header">
         <h1 className="header-title">{t('mobile.moments.title')}</h1>
+        <button
+          type="button"
+          className="header-action"
+          aria-label={t('mobile.moments.feed.refresh')}
+          aria-busy={feed.loadState === 'refreshing'}
+          disabled={isUnavailable || feed.loadState === 'refreshing'}
+          onClick={feed.refresh}
+        >
+          <RefreshCw size={20} />
+        </button>
         <button
           type="button"
           className="header-action"
@@ -228,46 +279,97 @@ export function MomentsPage() {
       )}
 
       {!isUnavailable && feed.loadState === 'error' && feed.posts.length === 0 && (
-        <MomentsFeedError message={feed.errorMessage} onRetry={feed.loadFeed} />
+        <MomentsFeedError message={feed.errorMessage} onRetry={feed.retryFailure} />
       )}
 
-      {!isUnavailable && feed.loadState === 'idle' && feed.posts.length === 0 && (
+      {!isUnavailable
+        && feed.loadState === 'idle'
+        && feed.posts.length === 0
+        && !isPolicyFilteredEmpty && (
         <MomentsFeedEmpty />
+      )}
+
+      {!isUnavailable
+        && feed.loadState === 'idle'
+        && feed.posts.length === 0
+        && isPolicyFilteredEmpty && (
+        <MomentsPolicyViolation />
+      )}
+
+      {!isUnavailable && feed.posts.length > 0 && feed.loadState === 'refreshing' && (
+        <div className="moments-feed-loading-more" role="status">
+          <Text type="secondary">{t('mobile.moments.feed.loading')}</Text>
+        </div>
+      )}
+
+      {!isUnavailable && feed.posts.length > 0 && feed.failure && (
+        <div
+          className="moments-state moments-state--error"
+          data-feed-failure={feed.failure.kind}
+          role="alert"
+        >
+          <Text type="secondary">{feed.failure.message}</Text>
+          <Button onClick={feed.retryFailure}>
+            {t('mobile.moments.feed.retry')}
+          </Button>
+        </div>
       )}
 
       {/* Feed list — prototype card layout */}
       {!isUnavailable && feed.posts.length > 0 && (
-        <div className="moments-feed" role="feed" aria-label={t('mobile.moments.title')}>
-          {feed.posts.map((post) => (
-            <MomentFeedItem
-              key={post.id}
-              post={post}
-              onReact={(postId, kind) => void handleReact(postId, kind)}
-              onOpenComments={handleOpenComments}
-              onOpenDetail={handleOpenDetail}
-            />
-          ))}
+        <div role="feed" aria-label={t('mobile.moments.title')}>
+          <BoundedList
+            surfaceKey="moments:feed"
+            items={feed.posts}
+            itemKey={momentPostKey}
+            size={MOMENTS_FEED_WINDOW_SIZE}
+          >
+            {(windowedPosts) => {
+              const windowTail = windowedPosts[windowedPosts.length - 1]?.id;
+              const retainedTail = feed.posts[feed.posts.length - 1]?.id;
+              const isRetainedTailWindow = windowTail === retainedTail;
 
-          {/* Load more trigger */}
-          {feed.hasMore && feed.loadState === 'idle' && (
-            <div className="moments-feed-load-more">
-              <Button type="text" onClick={feed.loadMore}>
-                {t('mobile.moments.feed.loadMore')}
-              </Button>
-            </div>
-          )}
+              return (
+                <div className="moments-feed">
+                  {windowedPosts.map((post) => (
+                    <div key={post.id} data-scroll-anchor-id={post.id}>
+                      <MomentFeedItem
+                        post={post}
+                        onReact={(postId, kind) => void handleReact(postId, kind)}
+                        onOpenComments={handleOpenComments}
+                        onOpenDetail={handleOpenDetail}
+                        onSubmitComment={handleSubmitInlineComment}
+                        reactionMutation={runtimeFeedState?.reactionMutations.get(post.id)}
+                        policyState={resolveMomentPolicyState(
+                          runtimeFeedState?.feedExplanations.get(post.id),
+                        )}
+                      />
+                    </div>
+                  ))}
 
-          {feed.loadState === 'loading-more' && (
-            <div className="moments-feed-loading-more">
-              <Text type="secondary">{t('mobile.moments.feed.loadingMore')}</Text>
-            </div>
-          )}
+                  {isRetainedTailWindow && feed.hasMore && feed.loadState === 'idle' && (
+                    <div className="moments-feed-load-more">
+                      <Button type="text" onClick={feed.loadMore}>
+                        {t('mobile.moments.feed.loadMore')}
+                      </Button>
+                    </div>
+                  )}
 
-          {!feed.hasMore && (
-            <div className="moments-feed-end">
-              <Text type="secondary">{t('mobile.moments.feed.noMore')}</Text>
-            </div>
-          )}
+                  {isRetainedTailWindow && feed.loadState === 'loading-more' && (
+                    <div className="moments-feed-loading-more">
+                      <Text type="secondary">{t('mobile.moments.feed.loadingMore')}</Text>
+                    </div>
+                  )}
+
+                  {isRetainedTailWindow && !feed.hasMore && (
+                    <div className="moments-feed-end">
+                      <Text type="secondary">{t('mobile.moments.feed.noMore')}</Text>
+                    </div>
+                  )}
+                </div>
+              );
+            }}
+          </BoundedList>
         </div>
       )}
     </div>

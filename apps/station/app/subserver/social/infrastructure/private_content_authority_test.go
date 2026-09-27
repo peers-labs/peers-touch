@@ -21,6 +21,7 @@ func TestPrivateAudienceAuthorityUsesAcceptedProjectionOnly(t *testing.T) {
 	if err := database.AutoMigrate(
 		&federatedRelationshipProjectionModel{},
 		&friendshipModel{},
+		&socialDirectionalRelationshipModel{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -48,13 +49,19 @@ func TestPrivateAudienceAuthorityUsesAcceptedProjectionOnly(t *testing.T) {
 	if err := database.Create([]friendshipModel{
 		{
 			ActorPTID: "ptid:alice",
-			PeerPTID:  "ptid:eve",
-			Status:    friendshipStatusBlocked,
-		},
-		{
-			ActorPTID: "ptid:alice",
 			PeerPTID:  "ptid:mallory",
 			Status:    friendRequestPolicyRelationshipAccepted,
+		},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Create([]socialDirectionalRelationshipModel{
+		{
+			ActorPTID:       "ptid:alice",
+			TargetActorPTID: "ptid:eve",
+			Blocked:         true,
+			Revision:        1,
+			UpdatedAt:       acceptedAt,
 		},
 	}).Error; err != nil {
 		t.Fatal(err)

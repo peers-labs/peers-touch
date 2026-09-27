@@ -115,6 +115,7 @@ class SourceSyncRequest:
         source_root: Path,
         environments_dir: Path,
         central_environment_path: Path,
+        environment_path: Path | None = None,
         branch: str = "",
         require_clean: bool = False,
         remote_platform: RemotePlatform = RemotePlatform.POSIX,
@@ -124,7 +125,18 @@ class SourceSyncRequest:
             raise ProvisioningError(
                 f"source-sync environment name is not canonical: {environment_name!r}"
             )
-        environment_path = environments_dir / f"{environment_name}.env"
+        if environment_path is None:
+            environment_path = environments_dir / f"{environment_name}.env"
+        else:
+            environment_path = environment_path.expanduser().resolve()
+            if environment_path.name not in {
+                f"{environment_name}.env",
+                f"{environment_name}.env.example",
+            }:
+                raise ProvisioningError(
+                    "source-sync environment file name does not match "
+                    f"{environment_name!r}: {environment_path}"
+                )
         values = load_env_file(environment_path)
         source_mode = values.get("PT_DEPLOY_SOURCE", "central").strip()
         if source_mode not in ("direct", "central", "github", "local"):

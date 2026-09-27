@@ -7,7 +7,7 @@
 //!
 //! Persistence contract:
 //! - Every encrypt/decrypt produces an updated `DrSessionState` that the caller
-//!   MUST persist (via SQLCipher `local_chat_store`) before the next operation.
+//!   MUST persist through the canonical SQLCipher Messaging store before the next operation.
 //! - Skipped message keys are stored separately per (session, peer_dh, counter)
 //!   so they survive restart.
 //!

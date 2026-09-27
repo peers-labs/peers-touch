@@ -45,6 +45,8 @@ const (
 	KeyExchangeMLSFetchRoute = "/federation/key-exchange/mls/key-package/fetch"
 	// KeyExchangeMLSClaimRoute irreversibly claims a prepared MLS KeyPackage.
 	KeyExchangeMLSClaimRoute = "/federation/key-exchange/mls-key-package/claim"
+	// RealtimeCallResolutionRoute reads call truth from the callee Home Station.
+	RealtimeCallResolutionRoute = "/federation/realtime/call-resolution"
 )
 
 // PeerRoute identifies one Federation-owned peer HTTP capability.
@@ -66,6 +68,7 @@ const (
 	PeerRouteKeyExchangeDirectFetch         PeerRoute = "key-exchange-direct-fetch"
 	PeerRouteKeyExchangeMLSFetch            PeerRoute = "key-exchange-mls-fetch"
 	PeerRouteKeyExchangeMLSClaim            PeerRoute = "key-exchange-mls-claim"
+	PeerRouteRealtimeCallResolution         PeerRoute = "realtime-call-resolution"
 )
 
 // PeerEndpointResolver resolves a resource-owner endpoint lazily at request
@@ -113,6 +116,7 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteKeyExchangeDirectFetch, "federation-key-exchange-direct-fetch", KeyExchangeDirectFetchRoute, server.POST, KeyExchangeDirectFetchScope},
 	{PeerRouteKeyExchangeMLSFetch, "federation-key-exchange-mls-fetch", KeyExchangeMLSFetchRoute, server.POST, KeyExchangeMLSFetchScope},
 	{PeerRouteKeyExchangeMLSClaim, "federation-key-exchange-mls-claim", KeyExchangeMLSClaimRoute, server.POST, KeyExchangeMLSClaimScope},
+	{PeerRouteRealtimeCallResolution, "federation-realtime-call-resolution", RealtimeCallResolutionRoute, server.POST, RealtimeCallResolutionScope},
 }
 
 // NewPeerRouteFactory validates and creates the Federation route owner.
@@ -273,6 +277,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteKeyExchangeMLSClaim),
 			f.wrappers[PeerRouteKeyExchangeMLSClaim],
+		),
+		server.NewSimpleHandler(
+			"federation-realtime-call-resolution",
+			RealtimeCallResolutionRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteRealtimeCallResolution),
+			f.wrappers[PeerRouteRealtimeCallResolution],
 		),
 	}
 }

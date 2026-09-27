@@ -4,7 +4,6 @@
 
 ```json
 {
-  "schemaVersion": 1,
   "kind": "peers-touch-task-slice",
   "planId": "modern-chat-agent-v2-alignment-20260917",
   "taskId": "MCA-J01",

@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -31,10 +31,11 @@
    existing approved environment, but may not create, copy, derive, or register
    a profile or deploy environment without explicit human developer approval
    for the exact name and target.
-10. **Profile-declared Agent control**: each reviewed profile declares whether
-    Agent operation is human-gated, managed, or fully disposable. The policy
-    removes repeated prompts but never replaces declarations, capabilities,
-    leases, exact reset scope, or source identity.
+10. **Profile-ID reset policy**: the canonical Profile ID is the only reset
+    policy source. A case-insensitive `stable` substring protects the Profile
+    from autonomous reset; every other reviewed Profile is Agent-resettable.
+    The policy never replaces declarations, capabilities, exact reset scope,
+    leases, topology validation, or source identity.
 11. **One read-only development view**: the Development Control Plane dashboard
     joins each worktree's requirements and Journeys with its topology, bindings,
     declared resources, leases and observations without becoming a mutation or
@@ -105,7 +106,7 @@ not remain as a symlink, fallback, or second read owner.
 | State | Owner | Canonical source |
 |-------|-------|------------------|
 | Deployable Station/Relay topology | Environment repository | `env/peers-touch/<profile>/` |
-| Profile Agent control policy | Environment repository | `PT_AGENT_CONTROL_MODE` in the reviewed profile |
+| Profile reset policy | Canonical profile identity | Case-insensitive `stable` substring in the verified directory/`PT_DEV_PROFILE` ID |
 | Machine-local environment creation approval | Human developer | `~/.peers-touch/dev/authorizations/environment-creation/` |
 | Worktree identity | Git + canonical filesystem path | `workspaceId = sha256(realpath(root))[0:16]` |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
@@ -138,17 +139,30 @@ Remote deployment resolves exactly one Git-tracked, clean deploy definition
 directly from this repository. A `.local/deploy/envs/` copy is never topology
 authority.
 
-Every profile declares exactly one Agent control mode:
+Reset policy is derived after the selected directory name and
+`PT_DEV_PROFILE` value are proven identical:
 
-| Mode | Agent authority |
-|---|---|
-| `human-gated` | Inspect/connect only; binding changes and Station mutation require explicit human approval |
-| `managed` | Register, bind, connect, deploy, restart and clean up under declaration/capability/lease guards; destructive reset is denied |
-| `disposable` | Same as `managed`, plus exact-scope reset when the declaration, binding capability and reset lease all match |
+| Derived policy | Canonical Profile ID | Agent reset authority |
+|---|---|---|
+| `stable-protected` | contains `stable`, case-insensitive | autonomous `station.reset` is denied |
+| `agent-resettable` | does not contain `stable` | Agent may choose exact-scope reset without human involvement |
 
-The mode is a maximum authority, not a lease. Workspace capabilities and the
-active Development declaration may narrow it. Profile creation and changing
-the mode remain human-reviewed environment-repository changes.
+No profile field stores or overrides this policy. Former control-mode metadata
+has no reader. Renaming a Profile across the `stable` boundary is therefore a
+reviewed topology change, not a runtime toggle.
+
+For a non-stable Profile, reset still requires `station.reset` in the workspace
+binding, one live Development declaration with the same Profile and exact
+exclusive reset scope, the same scope on the command boundary, remote
+tracked-clean topology, matching source identity, and the OS-held reset lease.
+These are intent, scope, topology, identity, and concurrency guards; none is a
+human-permission prompt. A stable Profile fails with
+`PROFILE_RESET_PROTECTED` before lease acquisition.
+
+Existing-profile deploy authorization remains resolved from exact user grants
+and the accepted Plan's `authorization.runtime.deployProfiles`. Mere Plan
+existence grants nothing, and Plan fields never authorize profile or
+deploy-environment creation.
 
 Human developers may create a short-lived, exact machine authorization for one
 `workspaceId + profile + mode + slot` tuple. `profile-init` consumes it once
@@ -357,6 +371,10 @@ Allowed:
 - Multiple worktrees share one remote Station with `station.connect`.
 - One worktree holds `station.deploy` while other clients remain connected,
   provided the deployment policy explicitly allows it.
+- An exact user grant or accepted Plan `deployProfiles` entry authorizes direct
+  deploy operation of the matching existing reviewed remote profile.
+- An Agent may add `station.reset` to the current binding and declare an exact
+  reset scope for any non-stable reviewed Profile without human confirmation.
 - Each worktree has its own profile and slot binding.
 - A human-authorized machine-local compose profile has one consumed,
   digest-bound authorization receipt for its exact workspace and slot.
@@ -374,9 +392,14 @@ Forbidden:
 - Runtime commands read untracked environment definitions as approved topology.
 - An AI agent creates or registers a profile or deploy environment without
   explicit human developer approval for the exact environment and target.
-- A missing `PT_AGENT_CONTROL_MODE` falls back to permissive Agent operation.
-- `managed` grants destructive reset, or `disposable` bypasses exact reset
-  declaration/capability/lease checks.
+- A stored field, alias, Station mode, worktree name, or legacy cache overrides
+  the canonical Profile ID reset policy.
+- An existing non-stable Profile reset is converted into a user authorization
+  request.
+- A non-stable Profile bypasses exact reset
+  declaration/capability/scope/lease checks.
+- A stable Profile is granted `station.reset` or reaches reset lease
+  acquisition.
 - The dashboard writes registry, work ledger, lease, profile, workflow, or
   runtime state.
 - Two Peers Dev processes listen concurrently, a worktree silently chooses
@@ -398,6 +421,9 @@ Forbidden:
 | Worktree not registered | `WORKSPACE_UNREGISTERED` |
 | Binding absent | `WORKSPACE_BINDING_MISSING` |
 | Profile missing or unreviewed | `PROFILE_UNAVAILABLE` |
+| Stable Profile requests `station.reset` | `PROFILE_RESET_PROTECTED` |
+| Workspace binding lacks a requested capability | `WORKSPACE_CAPABILITY_MISSING` |
+| Reset command scope differs from the requested resource | `RESET_SCOPE_MISMATCH` |
 | Environment creation lacks explicit human approval | `ENVIRONMENT_CREATION_UNAUTHORIZED` |
 | Authorization is expired, mismatched, reused, or digest-invalid | `ENVIRONMENT_CREATION_AUTHORIZATION_INVALID` |
 | Slot already live | `LOCAL_SLOT_CONFLICT` |
@@ -419,8 +445,10 @@ The target implementation must prove:
 - Stale PID and stale lock metadata do not establish ownership.
 - Dirty or untracked env definitions are visible and cannot authorize deploy.
 - `make env-status-all` reports declared binding and observed runtime separately.
-- Every reviewed profile declares a valid Agent control mode and the resolved
-  status projection exposes it.
+- Every reviewed profile derives exactly one reset policy from its canonical
+  ID and the resolved status projection exposes it.
+- Mixed-case `stable` IDs reject `station.reset`; IDs without `stable` admit it
+  only when binding capability, declaration, exact scope, and lease all match.
 - The dashboard joins every worktree's active requirements/Journeys and
   declared/held resources without exposing secret-bearing profile fields or
   providing mutation controls.
@@ -440,3 +468,6 @@ The target implementation must prove:
   field or migration branch.
 - No runtime command defaults to loopback, slot 0, or an arbitrary profile when
   a binding is missing.
+- Existing non-stable Profile reset never requests human authorization; missing
+  capability, declaration, scope, topology, identity, and lease failures remain
+  separately typed and fail closed.

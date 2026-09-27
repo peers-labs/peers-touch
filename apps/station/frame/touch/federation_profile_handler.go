@@ -25,6 +25,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	fedprofile "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"github.com/peers-labs/peers-touch/station/frame/touch/util"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -111,4 +112,19 @@ func FederationProfile(c context.Context, ctx *app.RequestContext) {
 	}
 
 	ctx.Data(http.StatusOK, "application/json", envJSON)
+}
+
+func writeFederationError(
+	c context.Context,
+	ctx *app.RequestContext,
+	httpStatus int,
+	code model.ErrorCode,
+	message string,
+	details map[string]string,
+) {
+	response := &model.ErrorResponse{Code: code, Message: message}
+	if len(details) > 0 {
+		response.Details = details
+	}
+	util.RspError(c, ctx, httpStatus, response)
 }

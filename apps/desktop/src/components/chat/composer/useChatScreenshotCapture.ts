@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { imServiceV1 } from '../../../services/im-service';
+import { messagingCommands } from '../../../messaging/runtime';
 import type { MessagingLocalAttachmentIntent } from '../../../services/im-service-contract';
 import { RustCommandException } from '../../../services/desktop_api';
 import { chatScreenshotShortcutMatches } from '../../../utils/chatScreenshotShortcut';
@@ -34,7 +34,7 @@ export function useChatScreenshotCapture({
     capturingRef.current = true;
     setCapturing(true);
     try {
-      onCaptured(await imServiceV1.messaging.captureAttachmentSource());
+      onCaptured(await messagingCommands.captureAttachmentSource());
     } catch (error) {
       const reason = error instanceof RustCommandException
         ? String(error.details?.reason ?? '')

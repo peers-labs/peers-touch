@@ -36,6 +36,8 @@ const (
 	gateIDInviteCode      = "invite.code"
 )
 
+const invalidAccessGateType pb.AccessGateType = -1
+
 // defaultGateOrder is the chain a Station evaluates when its policy does not pin
 // an explicit enabled_gates list. Capability runs first, then login establishes
 // actor identity, then the allowlist enforces administrator policy.
@@ -46,18 +48,23 @@ var defaultGateOrder = []pb.AccessGateType{
 }
 
 type Attempt struct {
-	ID               string
-	SessionID        string
-	StationPeerID    string
-	Actor            *actormodel.ActorRef
-	ActorUsername    string
-	ActorEmail       string
-	InvitePassed     bool
-	CurrentGateID    string
-	DecisionRevision uint64
-	Status           string
-	CreatedAt        time.Time
-	ExpiresAt        time.Time
+	ID                  string
+	SessionID           string
+	StationPeerID       string
+	Actor               *actormodel.ActorRef
+	ActorUsername       string
+	ActorEmail          string
+	AuthMethod          string
+	InvitePassed        bool
+	Platform            string
+	DeviceID            string
+	LifecycleGeneration uint64
+	CompletedActions    map[string]bool
+	CurrentGateID       string
+	DecisionRevision    uint64
+	Status              string
+	CreatedAt           time.Time
+	ExpiresAt           time.Time
 }
 
 type PolicyInput struct {
@@ -78,6 +85,19 @@ func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.A
 	if err := ValidateStationPeerID(stationPeerID); err != nil {
 		return nil, err
 	}
+	client := req.GetClient()
+	if client == nil {
+		return nil, fmt.Errorf("access attempt client is required")
+	}
+	if strings.TrimSpace(client.GetDeviceId()) == "" {
+		return nil, fmt.Errorf("access attempt device id is required")
+	}
+	if _, err := accessGateSessionDeviceType(client.GetPlatform()); err != nil {
+		return nil, err
+	}
+	if client.GetLifecycleGeneration() == 0 {
+		return nil, fmt.Errorf("access attempt lifecycle generation is required")
+	}
 
 	actorRef, username, email, err := actorRefFromSession(ctx, strings.TrimSpace(req.GetSessionId()))
 	if err != nil {
@@ -85,14 +105,22 @@ func StartAttempt(ctx context.Context, req *pb.StartAccessAttemptRequest) (*pb.A
 	}
 
 	attempt := &Attempt{
-		ID:            newAttemptID(),
-		SessionID:     strings.TrimSpace(req.GetSessionId()),
-		StationPeerID: stationPeerID,
-		Actor:         actorRef,
-		ActorUsername: username,
-		ActorEmail:    email,
-		CreatedAt:     time.Now(),
-		ExpiresAt:     time.Now().Add(15 * time.Minute),
+		ID:                  newAttemptID(),
+		SessionID:           strings.TrimSpace(req.GetSessionId()),
+		StationPeerID:       stationPeerID,
+		Actor:               actorRef,
+		ActorUsername:       username,
+		ActorEmail:          email,
+		AuthMethod:          "",
+		Platform:            strings.TrimSpace(client.GetPlatform()),
+		DeviceID:            strings.TrimSpace(client.GetDeviceId()),
+		LifecycleGeneration: client.GetLifecycleGeneration(),
+		CompletedActions:    make(map[string]bool),
+		CreatedAt:           time.Now(),
+		ExpiresAt:           time.Now().Add(15 * time.Minute),
+	}
+	if actorRef != nil {
+		attempt.AuthMethod = "session_restore"
 	}
 
 	decision := DecisionForAttempt(ctx, attempt)
@@ -190,6 +218,7 @@ func BindOAuthCandidate(
 	attempt.ActorUsername = username
 	attempt.ActorEmail = email
 	attempt.SessionID = ""
+	attempt.AuthMethod = "oauth"
 	return decisionAndPersist(ctx, attempt)
 }
 
@@ -222,7 +251,10 @@ func actorRefFromSession(ctx context.Context, sessionID string) (*actormodel.Act
 
 	session, err := auth.SessionManager().Validate(ctx, sessionID)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("access session invalid: %w", err)
+		return nil, "", "", actormodel.NewErrorResponse(
+			actormodel.ErrorCode_ERROR_CODE_UNAUTHORIZED,
+			"access session invalid",
+		)
 	}
 
 	rds, err := store.GetRDS(ctx)
@@ -244,11 +276,11 @@ func GetAttempt(ctx context.Context, id string) (*Attempt, bool) {
 	return findAttempt(ctx, id)
 }
 
-func CompleteLogin(
+func CompleteLoginCandidate(
 	ctx context.Context,
 	attemptID string,
 	actor *actormodel.ActorRef,
-	username, email, sessionID string,
+	username, email string,
 ) (*pb.AccessDecision, error) {
 	attempt, ok := findAttempt(ctx, attemptID)
 	if !ok {
@@ -258,7 +290,8 @@ func CompleteLogin(
 	attempt.Actor = actor
 	attempt.ActorUsername = username
 	attempt.ActorEmail = email
-	attempt.SessionID = sessionID
+	attempt.SessionID = ""
+	attempt.AuthMethod = "password"
 
 	return decisionAndPersist(ctx, attempt)
 }
@@ -278,19 +311,51 @@ func CompleteInviteCode(ctx context.Context, attemptID, code string) (*pb.Access
 	if !ok {
 		return nil, errAttemptNotFound
 	}
+	if attempt.InvitePassed {
+		return decisionAndPersist(ctx, attempt)
+	}
 
-	if err := redeemInviteCode(ctx, code); err != nil {
+	if err := redeemInviteCode(ctx, attempt.ID, code); err != nil {
 		if errors.Is(err, errInviteCodeInvalid) {
 			return nil, errInviteCodeInvalid
 		}
 		return nil, err
 	}
 
-	attempt.InvitePassed = true
-	if err := markAttemptInvitePassed(ctx, attempt.ID); err != nil {
-		return nil, err
+	attempt, ok = findAttempt(ctx, attempt.ID)
+	if !ok {
+		return nil, errAttemptNotFound
 	}
 
+	return decisionAndPersist(ctx, attempt)
+}
+
+// CompleteGenericAction applies the policy semantics for a schema-bound scalar
+// action. Only registered, Station-owned actions are accepted.
+func CompleteGenericAction(
+	ctx context.Context,
+	attemptID, actionID string,
+	input *pb.AccessGateGenericInput,
+) (*pb.AccessDecision, error) {
+	switch actionID {
+	case "terms.accept":
+		accepted := false
+		for _, field := range input.GetFields() {
+			if field.GetFieldName() == "accepted" {
+				accepted = field.GetBoolValue()
+			}
+		}
+		if !accepted {
+			return nil, errors.New("terms acceptance requires explicit consent")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported schema-bound access action: %s", actionID)
+	}
+
+	attempt, err := markAttemptActionCompleted(ctx, attemptID, actionID)
+	if err != nil {
+		return nil, err
+	}
 	return decisionAndPersist(ctx, attempt)
 }
 
@@ -299,13 +364,21 @@ func CompleteInviteCode(ctx context.Context, attemptID, code string) (*pb.Access
 // the decision the client receives.
 func DecisionForAttempt(ctx context.Context, attempt *Attempt) *pb.AccessDecision {
 	return registry().Decide(ctx, &gatekeeper.EvalContext{
-		AttemptID:     attempt.ID,
-		Actor:         attempt.Actor,
-		ActorUsername: attempt.ActorUsername,
-		ActorEmail:    attempt.ActorEmail,
-		ExpiresAt:     attempt.ExpiresAt,
-		InvitePassed:  attempt.InvitePassed,
+		AttemptID:        attempt.ID,
+		Actor:            attempt.Actor,
+		ActorUsername:    attempt.ActorUsername,
+		ActorEmail:       attempt.ActorEmail,
+		ExpiresAt:        attempt.ExpiresAt,
+		InvitePassed:     attempt.InvitePassed,
+		CompletedActions: attempt.CompletedActions,
 	}, gateOrder(ctx))
+}
+
+func RefreshDecision(ctx context.Context, attempt *Attempt) (*pb.AccessDecision, error) {
+	if attempt == nil {
+		return nil, errors.New("access attempt is required")
+	}
+	return decisionAndPersist(ctx, attempt)
 }
 
 // decisionAndPersist evaluates the gate chain and writes the resulting status
@@ -334,15 +407,17 @@ func registry() *gatekeeper.Registry {
 		r.Register(loginGatekeeper{})
 		r.Register(allowlistGatekeeper{allowed: CheckActorAllowed})
 		r.Register(inviteCodeGatekeeper{})
+		r.Register(termsAcceptanceGatekeeper{})
 		registryInst = r
 	})
 	return registryInst
 }
 
 // gateOrder resolves the evaluation order for the current Station policy. An
-// explicit enabled_gates list wins so the Dashboard can disable a gate flow
-// across every client; otherwise the built-in default chain applies. Gates that
-// have no registered gatekeeper are dropped by the orchestrator.
+// explicit enabled_gates list wins so the Dashboard can disable an optional
+// policy gate across every client; otherwise the built-in default chain
+// applies. Invalid persisted orders become an invalid sentinel that the
+// registry blocks rather than silently falling back or skipping a gate.
 func gateOrder(ctx context.Context) []pb.AccessGateType {
 	policy, err := GetPolicy(ctx)
 	if err != nil {
@@ -352,6 +427,9 @@ func gateOrder(ctx context.Context) []pb.AccessGateType {
 	enabled := decodeEnabledGates(policy.EnabledGates)
 	if len(enabled) == 0 {
 		return defaultGateOrder
+	}
+	if err := validateGateOrder(normalizeMode(policy.Mode), enabled); err != nil {
+		return []pb.AccessGateType{invalidAccessGateType}
 	}
 	return enabled
 }
@@ -409,6 +487,9 @@ func UpdatePolicy(ctx context.Context, input PolicyInput) (*dbmodel.AccessPolicy
 	if mode == "" {
 		return nil, fmt.Errorf("unsupported access policy mode: %s", input.Mode)
 	}
+	if err := validateGateOrder(mode, input.EnabledGates); err != nil {
+		return nil, err
+	}
 
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
@@ -434,34 +515,87 @@ func UpdatePolicy(ctx context.Context, input PolicyInput) (*dbmodel.AccessPolicy
 	return policy, nil
 }
 
+func validateGateOrder(mode string, gates []pb.AccessGateType) error {
+	switch mode {
+	case policyModeOpen, policyModeInviteOnly, policyModeFixedUsers, policyModeClosed:
+	default:
+		return fmt.Errorf("unsupported access policy mode: %s", mode)
+	}
+
+	if len(gates) == 0 {
+		return nil
+	}
+
+	seen := make(map[pb.AccessGateType]struct{}, len(gates))
+	for _, gateType := range gates {
+		if !isKnownGateType(gateType) || !registry().Has(gateType) {
+			return fmt.Errorf("unsupported access gate type in policy: %d", gateType)
+		}
+		if _, ok := seen[gateType]; ok {
+			return fmt.Errorf("duplicate access gate type in policy: %s", gateType.String())
+		}
+		seen[gateType] = struct{}{}
+	}
+
+	if len(gates) < 2 ||
+		gates[0] != pb.AccessGateType_ACCESS_GATE_TYPE_STATION_CAPABILITY ||
+		gates[1] != pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_LOGIN {
+		return fmt.Errorf("access gate order must start with STATION_CAPABILITY followed by AUTH_LOGIN")
+	}
+
+	_, hasAllowlist := seen[pb.AccessGateType_ACCESS_GATE_TYPE_INVITE_ALLOWLIST]
+	_, hasInviteCode := seen[pb.AccessGateType_ACCESS_GATE_TYPE_INVITE_CODE]
+	switch mode {
+	case policyModeInviteOnly:
+		if !hasAllowlist && !hasInviteCode {
+			return fmt.Errorf("invite-only policy requires INVITE_ALLOWLIST or INVITE_CODE")
+		}
+	case policyModeFixedUsers, policyModeClosed:
+		if !hasAllowlist {
+			return fmt.Errorf("%s policy requires INVITE_ALLOWLIST", mode)
+		}
+	}
+
+	return nil
+}
+
+func isKnownGateType(gateType pb.AccessGateType) bool {
+	if gateType == pb.AccessGateType_ACCESS_GATE_TYPE_UNSPECIFIED {
+		return false
+	}
+	_, ok := pb.AccessGateType_name[int32(gateType)]
+	return ok
+}
+
 // encodeEnabledGates serializes the enabled gate types as a comma-separated list
 // of their numeric enum values for storage.
 func encodeEnabledGates(gates []pb.AccessGateType) string {
 	parts := make([]string, 0, len(gates))
 	for _, gate := range gates {
-		if gate == pb.AccessGateType_ACCESS_GATE_TYPE_UNSPECIFIED {
-			continue
-		}
 		parts = append(parts, strconv.Itoa(int(gate)))
 	}
 	return strings.Join(parts, ",")
 }
 
-// decodeEnabledGates parses the stored enabled gate list back into enum values,
-// dropping any malformed or unspecified entries.
+// decodeEnabledGates parses the stored enabled gate list back into enum values.
+// Malformed entries are retained as an invalid sentinel so legacy or manually
+// corrupted policy rows fail closed during evaluation.
 func decodeEnabledGates(raw string) []pb.AccessGateType {
-	values := splitList(raw)
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	values := strings.Split(raw, ",")
 	gates := make([]pb.AccessGateType, 0, len(values))
 	for _, value := range values {
+		value = strings.TrimSpace(value)
 		num, err := strconv.Atoi(value)
 		if err != nil {
+			gates = append(gates, invalidAccessGateType)
 			continue
 		}
-		gate := pb.AccessGateType(num)
-		if gate == pb.AccessGateType_ACCESS_GATE_TYPE_UNSPECIFIED {
-			continue
-		}
-		gates = append(gates, gate)
+		gates = append(gates, pb.AccessGateType(num))
 	}
 	return gates
 }

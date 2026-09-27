@@ -1,8 +1,8 @@
 # Service API Capability Ownership — Decisions
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-06 | **Updated**: 2026-09-07
+> **Version**: v1.1
+> **Created**: 2026-09-06 | **Updated**: 2026-09-19
 > **Owner**: Architecture Team
 
 ---
@@ -18,6 +18,8 @@
 | AO-D05 | Social and Conversation reuse one domain-neutral Federation transport | accepted |
 | AO-D06 | Conversation is rebuilt as a Station DDD bounded context | accepted |
 | AO-D07 | Canonical creation, command, event, and destructive-read wire semantics | accepted |
+| AO-D10 | Target-member authority and ownership transfer are Conversation transactions | accepted |
+| AO-D10A | Federated member-authority commands reuse the signed Conversation proposal path | accepted |
 
 ---
 
@@ -333,3 +335,38 @@ The full contract and failure matrix are documented in
 - No Group Chat authority, compatibility route, dual write, or two-step owner
   transfer is introduced.
 - Mobile caller migration and old route deletion remain a later W5-OWNER cutover.
+
+---
+
+## AO-D10A: Federated Member-Authority Commands Reuse The Signed Conversation Proposal Path
+
+**Status**: accepted
+**Date**: 2026-09-19
+
+### Decision
+
+The existing actor-device-signed `ConversationCommandProposal` is generalized
+to carry either the canonical `ChatCommand` or the exact
+`ConversationMemberAuthorityCommand`. The canonical member-update and
+ownership-transfer routes accept a local raw command or a remote signed
+proposal.
+
+The authenticated Home Station verifies and durably forwards the exact proposal
+through the existing `AUTHORITY_COMMAND` Federation path. The authority maps the
+member-authority command into the existing Conversation aggregate and
+`SubmitForwarded` transaction. Ordered Device Inbox projection remains the only
+client completion truth.
+
+The complete trust boundary, stable failures, rejected alternatives, and source
+and runtime gates are documented in
+[`proposals/20260918-conversation-member-authority-remote-routing-amendment.md`](./proposals/20260918-conversation-member-authority-remote-routing-amendment.md).
+
+The Owner accepted AO-D10A.1 through AO-D10A.6 on 2026-09-19.
+
+### Consequences
+
+- No direct remote bearer, unsigned forwarding, Group alias, optimistic patch,
+  compatibility path, or second result store is permitted.
+- Model, Station, Mobile Rust, and generated bindings change atomically.
+- Source completion remains owned by Mobile `W5-OWNER`; two-Station runtime
+  convergence remains `UNPROVEN` until `W5-PROOF` and `W6A-PROOF`.

@@ -217,7 +217,7 @@ class WorktreeBindingContractTests(unittest.TestCase):
         paths = (
             "AGENTS.md",
             "tooling/skills/pt-dev-workflow/SKILL.md",
-            "tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md",
+            "tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",
         )
         required = (
             "verify-worktree-binding.py",
@@ -237,8 +237,8 @@ class WorktreeBindingContractTests(unittest.TestCase):
             "tooling/skills/pt-dev-workflow/SKILL.md",
             "tooling/skills/pt-execution-plan-guardian/SKILL.md",
             "tooling/skills/pt-plan-and-document/SKILL.md",
-            "tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md",
-            "tooling/skills/pt-trae-goal-orchestrator/REVIEW_RUBRIC.md",
+            "tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",
+            "tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md",
         )
         forbidden = (
             "worktree-set",
@@ -252,17 +252,21 @@ class WorktreeBindingContractTests(unittest.TestCase):
                     self.assertNotIn(marker, content)
 
     def test_active_work_contracts_persist_current_worktree_identity(self) -> None:
-        paths = (
-            "AGENTS.md",
-            "tooling/skills/pt-context-anchor/SKILL.md",
-            "tooling/skills/pt-plan-and-document/SKILL.md",
-        )
-        required = (
-            "workspace_id",
-            "initial_head",
-            "expected_head",
-        )
-        for relative in paths:
+        contracts = {
+            "AGENTS.md": ("workspaceId", "initial_head", "expected_head"),
+            "tooling/skills/pt-context-anchor/SKILL.md": (
+                "workspaceId",
+                "Initial HEAD",
+                "Expected HEAD",
+                "active-work.json",
+            ),
+            "tooling/skills/pt-plan-and-document/SKILL.md": (
+                "workspace",
+                "active-work",
+                "project_memory.md",
+            ),
+        }
+        for relative, required in contracts.items():
             with self.subTest(path=relative):
                 content = (REPO_ROOT / relative).read_text(encoding="utf-8")
                 for marker in required:
@@ -273,10 +277,10 @@ class WorktreeBindingContractTests(unittest.TestCase):
         paths = ("AGENTS.md",)
         required = (
             "legacy",
-            "exactly once",
-            "explicitly authorizes",
-            "active_work_binding_migrations",
-            "both HEAD",
+            "project_memory.md ## active_work",
+            "compatibility writer",
+            "make active-work-sync",
+            "another workspace's record",
             "resume",
             "WORKTREE_IDENTITY_UNAVAILABLE",
         )
@@ -299,7 +303,7 @@ class WorktreeBindingContractTests(unittest.TestCase):
         self.assertIn("bare `<repo-root>`", agents)
 
     def test_goal_commands_require_shell_safe_root_quoting(self) -> None:
-        command_paths = ("tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md",)
+        command_paths = ("tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",)
         for relative in command_paths:
             with self.subTest(path=relative):
                 content = (REPO_ROOT / relative).read_text(encoding="utf-8")
@@ -308,7 +312,7 @@ class WorktreeBindingContractTests(unittest.TestCase):
 
         rubric = (
             REPO_ROOT
-            / "tooling/skills/pt-trae-goal-orchestrator/REVIEW_RUBRIC.md"
+            / "tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md"
         ).read_text(encoding="utf-8")
         self.assertIn("shell-safe", rubric)
         self.assertIn("root containing whitespace", rubric)
@@ -316,7 +320,7 @@ class WorktreeBindingContractTests(unittest.TestCase):
     def test_execution_contracts_forbid_implicit_worktree_operations(self) -> None:
         paths = (
             "AGENTS.md",
-            "tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md",
+            "tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",
         )
         for relative in paths:
             with self.subTest(path=relative):
@@ -328,8 +332,8 @@ class WorktreeBindingContractTests(unittest.TestCase):
 
     def test_goal_orchestration_drains_ready_work_before_blocking(self) -> None:
         queue_contracts = (
-            "tooling/skills/pt-trae-goal-orchestrator/GOAL_TEMPLATE.md",
-            "tooling/skills/pt-trae-goal-orchestrator/REVIEW_RUBRIC.md",
+            "tooling/skills/pt-goal-orchestrator/GOAL_TEMPLATE.md",
+            "tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md",
         )
         for relative in queue_contracts:
             with self.subTest(path=relative):
@@ -339,7 +343,7 @@ class WorktreeBindingContractTests(unittest.TestCase):
                 self.assertIn("exhaustion proof", content)
 
         scheduler = (
-            REPO_ROOT / "tooling/skills/pt-trae-goal-orchestrator/SKILL.md"
+            REPO_ROOT / "tooling/skills/pt-goal-orchestrator/SKILL.md"
         ).read_text(encoding="utf-8")
         self.assertIn("Ready Queue", scheduler)
         self.assertIn("Park actions", scheduler)
@@ -349,15 +353,15 @@ class WorktreeBindingContractTests(unittest.TestCase):
             "AGENTS.md": (
                 "Action blocked",
                 "Goal blocked",
-                "repeated-blocker",
+                "fixed-point exhaustion",
             ),
             "tooling/skills/pt-execution-plan-guardian/SKILL.md": (
                 "One failed action does not prove the whole plan blocked",
             ),
             "tooling/skills/pt-context-anchor/SKILL.md": (
                 "non-blocked",
-                "`blocked=true`",
-                "source-backed exhaustion",
+                "hard boundary",
+                "source-backed",
             ),
         }
         for relative, required in execution_contracts.items():

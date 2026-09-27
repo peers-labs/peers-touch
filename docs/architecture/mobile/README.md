@@ -1,8 +1,8 @@
 # Mobile Shell Architecture
 
-> **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-09-02
+> **Status**: active; iOS simulator-canonical Acceptance amendment accepted
+> **Version**: v1.2
+> **Created**: 2026-08-27 | **Updated**: 2026-09-21
 > **Owner**: Mobile Architecture Team
 > **Module**: `apps/mobile/`
 
@@ -55,11 +55,11 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 | [data-model.md](./data-model.md) | State and Proto mapping |
 | [integration.md](./integration.md) | Initial implementation gap and target impact |
 | [module-layout.md](./module-layout.md) | Target module ownership |
-| [native-oauth-proof/README.md](./native-oauth-proof/README.md) | W2-E2 physical OAuth Fixture, Station proof, browser lease and build provenance amendment |
+| [native-oauth-proof/README.md](./native-oauth-proof/README.md) | Optional W2-E2 physical OAuth diagnostics: Fixture, Station proof, browser lease, and build provenance |
 | [mobile-acceptance-environment.md](./mobile-acceptance-environment.md) | Mobile acceptance environment contract: tiers, gate mapping, Station dependency, network model |
 | [prototype/README.md](./prototype/README.md) | Confirmed prototype reference |
-| [execution-plans/20260827-mobile-shell-implementation.md](./execution-plans/20260827-mobile-shell-implementation.md) | Dependency-ordered implementation and Acceptance plan |
-| [execution-plans/20260829-mobile-native-oauth-proof.md](./execution-plans/20260829-mobile-native-oauth-proof.md) | Focused W2-E2 implementation and physical-proof plan |
+| [execution-plans/20260827-mobile-shell-implementation/plan.md](./execution-plans/20260827-mobile-shell-implementation/plan.md) | Dependency-ordered implementation and Acceptance plan |
+| [execution-plans/20260829-mobile-native-oauth-proof.md](./execution-plans/20260829-mobile-native-oauth-proof.md) | Historical focused W2-E2 physical-diagnostics plan |
 
 ## 5. Upstream Sources
 
@@ -67,6 +67,13 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 - `docs/architecture/frontend-runtime/`: shared runtime, admission and evidence.
 - `docs/architecture/social-runtime/`: social supervisor and projection domains.
 - `docs/architecture/access-gates/`: Station-owned access chain.
+- `docs/architecture/api-ownership/proposals/20260918-conversation-member-authority.md`:
+  accepted Conversation member administration and atomic owner transfer.
+- `docs/architecture/chat-lifecycle/`: cross-client Chat product composition.
+- `docs/architecture/notification/notification-architecture.md`: notification
+  preferences, push-device registration, and APNs/FCM delivery ownership.
+- `docs/architecture/secure-content/`: private Social content and encrypted
+  media ownership.
 - `docs/architecture/identity/unified-actor-system.md`: PTID boundary.
 - `docs/architecture/service-coordination.md`: signed Station identity handshake.
 - `docs/client/mobile/`: lifecycle, native plugin and sync refinements.
@@ -76,9 +83,48 @@ runtime registry 仅是状态说明，Moments/Profile/Settings 与已确认原�
 
 The PRODUCT contract, recovery/accessibility amendment, Prototype, and base
 architecture were accepted by the Owner on 2026-08-27. The W2-E2 physical OAuth
-proof amendment, MOP-D01..MOP-D04 and focused execution plan were accepted on
+diagnostic design, MOP-D01..MOP-D04 and focused execution plan were accepted on
 2026-08-29. W2-E2-A through W2-E2-C and W2-E2-FREEZE are complete, covering
 E2-0 through E2-4. D-19 Infra landed (PR #105) and E2-5 source-side closure is
 complete (finalizer module, registry, baseline, capability YAML, gate catalog,
-11 adversarial tests). E2-6 physical proof remains `UNPROVEN` — requires
-physical iOS/Android devices and approved provider accounts.
+11 adversarial tests). MS-D26 now makes source-bound iOS Simulator evidence
+canonical, using two isolated iOS clients where the Journey requires independent
+sessions or actors. MS-D27 binds the current Mobile product proof to one
+source-attested Station and defers cross-Station/Relay proof until the
+Desktop/Mobile cross-Station plan. Android and E2-6 physical proof remain
+optional diagnostics.
+
+## 7. Accepted Owner-Contract Closure Amendment
+
+The 2026-09-18 amendment closes the architecture prerequisites for the remaining
+Mobile Shell work as one review unit. It covers:
+
+- schema-bound generic Access Gate submission and Station-only finalization;
+- canonical Conversation member administration and atomic ownership transfer;
+- Social-owned directional block, unblock, blocked-list, and relationship
+  projection semantics across Stations;
+- Conversation-owned forward, retract, actor-local hide, and moderation-redact
+  semantics with authoritative command readback;
+- Social/Secure-Content-owned Moments policy explanations and encrypted media
+  production;
+- explicit Actor Profile, Notification, Social blocked-user, and device-setting
+  ownership, with no additional account-preference owner in this release;
+- Rust-owned authenticated business transport and native push, scheduled
+  wakeup, and media-picker lifecycles;
+- atomic deletion of the six remaining Mobile legacy callers and a
+  repository-wide semantic reference audit.
+
+The amendment preserves the accepted product scope `MS-C01..MS-C10` plus
+degraded `MS-C14`. `MS-C11` WeChat OAuth, `MS-C12` voice/video calls, and
+`MS-C13` Chat Docs remain excluded. Cross-client Chat scope does not implicitly
+expand Mobile scope.
+
+The Owner accepted `MS-D16..MS-D24` on 2026-09-18 and accepted `MS-D22A` on
+2026-09-19. Those approvals authorize execution planning; they do not
+authorize implementation. The Owner subsequently accepted `MS-D25` on
+2026-09-19 to record the completed integration of typed Moments outcomes with
+the Rust-owned media staging lifecycle; that decision does not promote
+optional physical diagnostics. The
+recovered Plan Package, immutable workspace binding, active-work registration,
+and one Plan approval remain mandatory before a Development Session can select
+the first current Task.

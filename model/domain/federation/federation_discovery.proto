@@ -9,7 +9,7 @@ option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/fed
 //
 // All catalog/discovery queries MUST carry federation_id to scope results
 // to the correct federation's member stations and visibility policies.
-// Queries without federation_id are rejected or treated as legacy/advanced path.
+// Queries without federation_id are rejected.
 
 // FederationCatalogSearchRequest scopes an actor search to a specific federation.
 message FederationCatalogSearchRequest {

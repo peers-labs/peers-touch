@@ -68,6 +68,15 @@ def main() -> int:
     parser.add_argument("environment")
     parser.add_argument("--branch", default="")
     parser.add_argument("--source-root", type=Path, default=REPO_ROOT)
+    parser.add_argument(
+        "--environment-file",
+        type=Path,
+        default=(
+            Path(os.environ["PT_DEPLOY_ENV_FILE"])
+            if os.environ.get("PT_DEPLOY_ENV_FILE")
+            else None
+        ),
+    )
     parser.add_argument("--require-clean", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(arguments)
@@ -90,6 +99,7 @@ def main() -> int:
             source_root=args.source_root,
             environments_dir=environments_dir,
             central_environment_path=central_environment_path,
+            environment_path=args.environment_file,
             branch=args.branch,
             require_clean=args.require_clean,
         )

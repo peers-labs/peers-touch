@@ -42,9 +42,19 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	if err := repo.AutoMigrate(); err != nil {
 		return err
 	}
+	protector, err := infrastructure.NewPushCredentialProtector(coreauth.Get().Secret)
+	if err != nil {
+		return err
+	}
+	if err := repo.ActivatePushCredentialKey(
+		protector.KeyVersion(),
+		protector.KeyIdentity(),
+	); err != nil {
+		return err
+	}
 
 	s.repo = repo
-	s.service = application.NewService(repo)
+	s.service = application.NewService(repo, protector)
 
 	RegisterService(s.service)
 

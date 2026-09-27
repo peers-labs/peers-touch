@@ -1,8 +1,8 @@
 # Chat Encryption - Decisions
 
 > **Status**: active
-> **Version**: 1.0.0
-> **Created**: 2026-08-08 | **Updated**: 2026-08-08
+> **Version**: 1.1.0
+> **Created**: 2026-08-08 | **Updated**: 2026-09-26
 > **Owner**: Architecture Team
 
 ---
@@ -64,7 +64,13 @@ Actor-wide DKX was rejected because an SPK/OPK belongs to one device.
 **Status**: accepted
 
 Backup restores actor identity, encrypted history, attachment keys, and trust
-metadata. A restored or new device enrolls with fresh device keys and sessions.
+metadata. A new installation keeps the fresh device identity established for
+its authenticated session. An in-place restore preserves the currently
+authenticated device identity and transfers only that endpoint's enrollment,
+public-material private counterparts, queue cursor/dedup state, authority
+heads, and MLS bootstrap inventory directly between its local SQLCipher
+databases. This continuity state never enters the portable archive or crosses
+devices. Both paths establish fresh Direct and MLS conversation sessions.
 
 Transferring ratchet or MLS live state was rejected because it breaks
 device isolation and complicates compromise recovery.

@@ -29,10 +29,10 @@ func (r *blockGraphRepository) IsBlockedBetween(ctx context.Context, actorPTID, 
 	}
 	var found int
 	err := r.db.WithContext(ctx).
-		Table("friend_chat_friendships").
+		Table("social_directional_relationships").
 		Select("1").
-		Where("status = ? AND ((actor_ptid = ? AND peer_ptid = ?) OR (actor_ptid = ? AND peer_ptid = ?))",
-			friendshipStatusBlocked,
+		Where("blocked = ? AND ((actor_ptid = ? AND target_actor_ptid = ?) OR (actor_ptid = ? AND target_actor_ptid = ?))",
+			true,
 			actorPTID,
 			peerPTID,
 			peerPTID,
@@ -64,14 +64,14 @@ func (r *blockGraphRepository) BlockedActorPTIDs(ctx context.Context, actorPTID 
 		return out, nil
 	}
 	var rows []struct {
-		ActorPtid string `gorm:"column:actor_ptid"`
-		PeerPtid  string `gorm:"column:peer_ptid"`
+		ActorPTID       string `gorm:"column:actor_ptid"`
+		TargetActorPTID string `gorm:"column:target_actor_ptid"`
 	}
 	if err := r.db.WithContext(ctx).
-		Table("friend_chat_friendships").
-		Select("actor_ptid, peer_ptid").
-		Where("status = ? AND ((actor_ptid = ? AND peer_ptid IN ?) OR (peer_ptid = ? AND actor_ptid IN ?))",
-			friendshipStatusBlocked,
+		Table("social_directional_relationships").
+		Select("actor_ptid, target_actor_ptid").
+		Where("blocked = ? AND ((actor_ptid = ? AND target_actor_ptid IN ?) OR (target_actor_ptid = ? AND actor_ptid IN ?))",
+			true,
 			actorPTID,
 			peerValues,
 			actorPTID,
@@ -81,9 +81,9 @@ func (r *blockGraphRepository) BlockedActorPTIDs(ctx context.Context, actorPTID 
 		return nil, err
 	}
 	for _, row := range rows {
-		peer := row.PeerPtid
-		if row.PeerPtid == actorPTID {
-			peer = row.ActorPtid
+		peer := row.TargetActorPTID
+		if row.TargetActorPTID == actorPTID {
+			peer = row.ActorPTID
 		}
 		if _, ok := peerSet[peer]; !ok {
 			continue

@@ -14,6 +14,7 @@ import type {
   RuntimeEntry,
   RuntimeOperationResult,
   AggregateTeardownResult,
+  RuntimeReadiness,
 } from './types';
 
 // --- Actions ---
@@ -26,6 +27,7 @@ export type LifecycleAction =
   | { type: 'RUNTIME_BOOTSTRAPPING'; runtimeId: string }
   | { type: 'RUNTIME_READY'; runtimeId: string }
   | { type: 'RUNTIME_FAILED'; runtimeId: string; error: string }
+  | { type: 'RUNTIME_READINESS'; runtimeId: string; readiness: RuntimeReadiness }
   | { type: 'BOOTSTRAP_COMPLETE'; results: readonly RuntimeOperationResult[] }
   | { type: 'BEGIN_SUSPEND' }
   | { type: 'RUNTIME_SUSPENDED'; runtimeId: string }
@@ -39,6 +41,7 @@ export type LifecycleAction =
   | { type: 'BEGIN_TEARDOWN' }
   | { type: 'RUNTIME_TEARING_DOWN'; runtimeId: string }
   | { type: 'RUNTIME_TORN_DOWN'; runtimeId: string }
+  | { type: 'RUNTIME_TEARDOWN_FAILED'; runtimeId: string; error: string }
   | { type: 'TEARDOWN_COMPLETE'; result: AggregateTeardownResult }
   | { type: 'SET_ERROR'; error: string };
 
@@ -78,6 +81,7 @@ export function lifecycleReducer(
           descriptor,
           status: 'pending',
           lastError: null,
+          readiness: null,
         });
       }
       return {
@@ -101,6 +105,11 @@ export function lifecycleReducer(
       return updateRuntimeEntry(state, action.runtimeId, {
         status: 'failed',
         lastError: action.error,
+      });
+
+    case 'RUNTIME_READINESS':
+      return updateRuntimeEntry(state, action.runtimeId, {
+        readiness: action.readiness,
       });
 
     case 'BOOTSTRAP_COMPLETE':
@@ -128,7 +137,11 @@ export function lifecycleReducer(
       return { ...state, phase: 'RESUMING' };
 
     case 'RUNTIME_RESUMING':
-      return updateRuntimeStatus(state, action.runtimeId, 'resuming');
+      return updateRuntimeEntry(state, action.runtimeId, {
+        status: 'resuming',
+        lastError: null,
+        readiness: null,
+      });
 
     case 'RUNTIME_RESUMED':
       return updateRuntimeStatus(state, action.runtimeId, 'ready');
@@ -155,10 +168,16 @@ export function lifecycleReducer(
     case 'RUNTIME_TORN_DOWN':
       return updateRuntimeStatus(state, action.runtimeId, 'torn-down');
 
+    case 'RUNTIME_TEARDOWN_FAILED':
+      return updateRuntimeEntry(state, action.runtimeId, {
+        status: 'failed',
+        lastError: action.error,
+      });
+
     case 'TEARDOWN_COMPLETE':
       return {
         ...state,
-        phase: 'COLD',
+        phase: action.result.allSuccessful ? 'COLD' : 'TEARDOWN_FAILED',
         error: action.result.allSuccessful
           ? null
           : 'mobile.lifecycle.teardownIncomplete',
@@ -185,7 +204,7 @@ function updateRuntimeStatus(
 function updateRuntimeEntry(
   state: LifecycleKernelState,
   runtimeId: string,
-  patch: Partial<Pick<RuntimeEntry, 'status' | 'lastError'>>,
+  patch: Partial<Pick<RuntimeEntry, 'status' | 'lastError' | 'readiness'>>,
 ): LifecycleKernelState {
   const existing = state.runtimes.get(runtimeId);
   if (!existing) return state;
@@ -195,6 +214,7 @@ function updateRuntimeEntry(
     ...existing,
     status: patch.status ?? existing.status,
     lastError: patch.lastError !== undefined ? patch.lastError : existing.lastError,
+    readiness: patch.readiness !== undefined ? patch.readiness : existing.readiness,
   });
   return { ...state, runtimes };
 }
@@ -208,7 +228,8 @@ const VALID_TRANSITIONS: ReadonlyMap<LifecyclePhase, readonly LifecyclePhase[]> 
   ['SUSPENDING', ['SUSPENDED', 'TEARDOWN']],
   ['SUSPENDED', ['RESUMING', 'TEARDOWN']],
   ['RESUMING', ['ACTIVE', 'TEARDOWN']],
-  ['TEARDOWN', ['COLD']],
+  ['TEARDOWN', ['COLD', 'TEARDOWN_FAILED']],
+  ['TEARDOWN_FAILED', ['TEARDOWN']],
 ]);
 
 export function isValidPhaseTransition(from: LifecyclePhase, to: LifecyclePhase): boolean {

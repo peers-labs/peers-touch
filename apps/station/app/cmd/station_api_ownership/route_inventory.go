@@ -21,6 +21,7 @@ var handlerConstructors = map[string]struct{}{
 	"NewHertzHandler":             {},
 	"NewHTTPHandler":              {},
 	"NewSimpleHandler":            {},
+	"NewStrictTypedHandler":       {},
 	"NewTypedHandler":             {},
 	"NewCanonicalProtobufHandler": {},
 }
@@ -50,6 +51,12 @@ func discoverRoutes(
 	for _, file := range files {
 		resolver := resolvers[file.PackageKey]
 		ast.Inspect(file.AST, func(node ast.Node) bool {
+			if composite, ok := node.(*ast.CompositeLit); ok {
+				routes = append(
+					routes,
+					routesFromHandlerInfoComposite(composite, file, resolver)...,
+				)
+			}
 			call, ok := node.(*ast.CallExpr)
 			if !ok {
 				return true
@@ -86,6 +93,83 @@ func discoverRoutes(
 		return left.Name < right.Name
 	})
 	return routes, parseDiagnostics, parsedCount
+}
+
+func routesFromHandlerInfoComposite(
+	composite *ast.CompositeLit,
+	file parsedGoFile,
+	resolver *constantResolver,
+) []discoveredRoute {
+	switch typed := composite.Type.(type) {
+	case *ast.ArrayType:
+		elementType, ok := typed.Elt.(*ast.Ident)
+		if !ok || elementType.Name != "ActorHandlerInfo" {
+			return nil
+		}
+		routes := make([]discoveredRoute, 0, len(composite.Elts))
+		for _, element := range composite.Elts {
+			item, ok := element.(*ast.CompositeLit)
+			if !ok {
+				continue
+			}
+			if route, found := routeFromActorHandlerFields(item, file, resolver); found {
+				routes = append(routes, route)
+			}
+		}
+		return routes
+	case *ast.Ident:
+		if typed.Name != "ActorHandlerInfo" {
+			return nil
+		}
+		if route, found := routeFromActorHandlerFields(composite, file, resolver); found {
+			return []discoveredRoute{route}
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func routeFromActorHandlerFields(
+	composite *ast.CompositeLit,
+	file parsedGoFile,
+	resolver *constantResolver,
+) (discoveredRoute, bool) {
+	var pathExpression, methodExpression ast.Expr
+	for _, element := range composite.Elts {
+		pair, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := pair.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		switch key.Name {
+		case "RouterURL":
+			pathExpression = pair.Value
+		case "Method":
+			methodExpression = pair.Value
+		}
+	}
+
+	subPath, pathOK := resolver.evalString(pathExpression)
+	method, methodOK := evalMethod(methodExpression, file.Imports, resolver)
+	if !pathOK || !methodOK {
+		return discoveredRoute{}, false
+	}
+	routePath, err := normalizeRoutePath("/actor/" + strings.TrimPrefix(subPath, "/"))
+	if err != nil {
+		return discoveredRoute{}, false
+	}
+	position := file.FileSet.Position(composite.Pos())
+	return discoveredRoute{
+		Method:   method,
+		Path:     routePath,
+		Name:     "actor-handler-info",
+		Source:   sourceLocation{File: file.Path, Line: position.Line, Column: position.Column},
+		Function: "ActorHandlerInfo",
+	}, true
 }
 
 func parseGoFiles(
@@ -286,7 +370,7 @@ func routeFromCall(
 ) (discoveredRoute, bool) {
 	var nameExpression, pathExpression, methodExpression ast.Expr
 	switch constructor {
-	case "NewTypedHandler", "NewCanonicalProtobufHandler",
+	case "NewTypedHandler", "NewStrictTypedHandler", "NewCanonicalProtobufHandler",
 		"NewHTTPHandler", "NewSimpleHandler", "NewHertzHandler":
 		if len(call.Args) < 3 {
 			return discoveredRoute{}, false

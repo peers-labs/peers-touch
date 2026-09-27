@@ -191,7 +191,7 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 ) (conversationfederation.AuthorityCommandOutcome, error) {
 	if p == nil || p.composition == nil ||
 		transaction == nil || transaction.DB() == nil ||
-		verified.Proposal == nil || verified.Proposal.GetCommand() == nil {
+		verified.Proposal == nil {
 		return conversationfederation.AuthorityCommandOutcome{},
 			fmt.Errorf("apply Conversation authority command: dependencies are incomplete")
 	}
@@ -207,28 +207,32 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 		return conversationfederation.AuthorityCommandOutcome{}, err
 	}
 	proposal := verified.Proposal
-	wireCommand := proposal.GetCommand()
+	proposalCommand, err := conversationfederation.ParseProposalCommand(proposal)
+	if err != nil {
+		return conversationfederation.AuthorityCommandOutcome{},
+			fmt.Errorf("apply Conversation authority command: %w", err)
+	}
 	authenticated := conversationhttp.AuthenticatedActor{
 		PTID:     proposal.GetActorPtid(),
 		DeviceID: proposal.GetActorDeviceId(),
 	}
 	conversationID, err := valueobject.NewConversationID(
-		wireCommand.GetConversationId(),
+		proposalCommand.ConversationID,
 	)
 	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
 	}
 	sender, err := valueobject.NewEndpoint(
 		proposal.GetActorPtid(),
 		proposal.GetActorDeviceId(),
 	)
 	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
 	}
 	sourceHomeStation, err := valueobject.NewStationID(verified.SourceHomeStation)
 	if err != nil || string(sourceHomeStation) != proposal.GetHomeStationPeerId() {
 		return productionAuthorityRejection(
-			wireCommand,
+			proposalCommand.CommandID,
 			conversationdomain.NewError(
 				conversationdomain.ErrorCodeProposalBinding,
 				"production_federation.apply_authority_command",
@@ -244,55 +248,89 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 		sender.Actor,
 	)
 	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
+	}
+	prepareRequest, err := productionPrepareCommandRequest(
+		conversationID,
+		sender,
+		sourceHomeStation,
+		verifiedRoutes,
+		proposalCommand.Kind,
+	)
+	if err != nil {
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
 	}
 	preparation, err := boundService.PrepareCommand(
 		ctx,
-		command.PrepareCommandRequest{
-			ConversationID:    conversationID,
-			Sender:            sender,
-			SenderHomeStation: sourceHomeStation,
-			VerifiedRoutes:    verifiedRoutes,
-		},
+		prepareRequest,
 	)
 	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
 	}
-	plan, err := loadCommandAuthorityPlan(
-		ctx,
-		boundUnitOfWork,
-		wireCommand,
-	)
-	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
-	}
-	mapped, err := conversationhttp.MapSubmitCommand(
-		authenticated,
-		&chatmodel.SubmitConversationAuthorityCommandRequest{
-			Submission: &chatmodel.SubmitConversationAuthorityCommandRequest_Command{
-				Command: wireCommand,
-			},
-		},
-		preparation,
-		plan,
-		p.composition.clock.Now(),
-	)
-	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
-	}
-	mapped.VerifiedRoutes, mapped.ManifestStateHash, err =
-		p.composition.productionSubmitCommandRoutes(
+	var mapped command.SubmitRequest
+	switch {
+	case proposalCommand.Chat != nil:
+		plan, loadErr := loadCommandAuthorityPlan(
 			ctx,
-			plan,
-			mapped.Membership != nil,
-			verifiedRoutes,
+			boundUnitOfWork,
+			proposalCommand.Chat,
 		)
+		if loadErr != nil {
+			return productionAuthorityRejection(proposalCommand.CommandID, loadErr), nil
+		}
+		mapped, err = conversationhttp.MapSubmitCommand(
+			authenticated,
+			&chatmodel.SubmitConversationAuthorityCommandRequest{
+				Submission: &chatmodel.SubmitConversationAuthorityCommandRequest_Command{
+					Command: proposalCommand.Chat,
+				},
+			},
+			preparation,
+			plan,
+			p.composition.clock.Now(),
+		)
+		if err == nil {
+			mapped.VerifiedRoutes, mapped.ManifestStateHash, err =
+				p.composition.productionSubmitCommandRoutes(
+					ctx,
+					plan,
+					mapped.Membership != nil,
+					verifiedRoutes,
+				)
+		}
+	case proposalCommand.MemberAuthority != nil:
+		mapped, err = conversationhttp.MapMemberAuthorityCommand(
+			authenticated,
+			proposalCommand.MemberAuthority,
+			preparation,
+			p.composition.clock.Now(),
+		)
+		mapped.VerifiedRoutes = verifiedRoutes
+	default:
+		err = conversationdomain.NewError(
+			conversationdomain.ErrorCodeUnsupportedTransition,
+			"production_federation.apply_authority_command",
+			"command_kind",
+			"is not supported",
+		)
+	}
 	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
+	}
+	if !bytes.Equal(mapped.ExactCommandBytes, verified.CanonicalCommandBytes) {
+		return productionAuthorityRejection(
+			proposalCommand.CommandID,
+			conversationdomain.NewError(
+				conversationdomain.ErrorCodeProposalBinding,
+				"production_federation.apply_authority_command",
+				"command_bytes",
+				"do not match the verified Federation payload",
+			),
+		), nil
 	}
 	commandHash, err := valueobject.NewHash(proposal.GetCommandSha256())
 	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
 	}
 	result, err := boundService.SubmitForwarded(
 		ctx,
@@ -315,7 +353,7 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 				Subject:        valueobject.PTID(proposal.GetActorPtid()),
 				FederationID:   valueobject.FederationID(proposal.GetFederationId()),
 				ConversationID: conversationID,
-				CommandID:      valueobject.CommandID(wireCommand.GetCommandId()),
+				CommandID:      valueobject.CommandID(proposalCommand.CommandID),
 				CommandKind:    mapped.Command.Kind,
 				DeviceID:       valueobject.DeviceID(proposal.GetActorDeviceId()),
 				SigningKeyID:   proposal.GetActorSigningKeyId(),
@@ -327,7 +365,7 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 		},
 	)
 	if err != nil {
-		return productionAuthorityRejection(wireCommand, err), nil
+		return productionAuthorityRejection(proposalCommand.CommandID, err), nil
 	}
 	if result.PostCommitError != nil {
 		return conversationfederation.AuthorityCommandOutcome{},
@@ -344,7 +382,7 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 
 	return conversationfederation.AuthorityCommandOutcome{
 		Result: &chatmodel.ConversationCommandProposalResult{
-			CommandId:          wireCommand.GetCommandId(),
+			CommandId:          proposalCommand.CommandID,
 			Accepted:           true,
 			Event:              event,
 			AuthoritySequence:  event.GetSequence(),
@@ -355,14 +393,9 @@ func (p *productionAuthorityCommandPort) ApplyAuthorityCommand(
 }
 
 func productionAuthorityRejection(
-	command *chatmodel.ChatCommand,
+	commandID string,
 	err error,
 ) conversationfederation.AuthorityCommandOutcome {
-	commandID := ""
-	if command != nil {
-		commandID = command.GetCommandId()
-	}
-
 	return conversationfederation.AuthorityCommandOutcome{
 		Result: &chatmodel.ConversationCommandProposalResult{
 			CommandId:  commandID,
@@ -403,7 +436,11 @@ func (p *productionAuthorityResultPort) ApplyAuthorityResult(
 	if err != nil {
 		return false, err
 	}
-	if proposal.GetCommand().GetConversationId() != result.GetConversationId() ||
+	proposalCommand, err := conversationfederation.ParseProposalCommand(proposal)
+	if err != nil {
+		return false, err
+	}
+	if proposalCommand.ConversationID != result.GetConversationId() ||
 		!bytes.Equal(proposal.GetCommandSha256(), originatingCommandSHA256) {
 		return false, conversationfederation.ErrAuthorityResultCommandHashMismatch
 	}
@@ -1187,31 +1224,15 @@ func (p *productionDeliveryReceiptPort) ApplyDeliveryReceipt(
 	if err != nil {
 		return false, err
 	}
-	view, err := boundQuery.Get(
+	route, err := boundQuery.ResolveRoute(
 		ctx,
 		receipt.ConversationID,
-		receipt.Consumer.Actor,
 	)
 	if err != nil ||
-		view.Source != query.SourceAuthority ||
-		view.Conversation.AuthorityStation != p.composition.localStation {
+		route.Source != query.SourceAuthority ||
+		route.AuthorityStation != p.composition.localStation {
 		return false, fmt.Errorf(
 			"%w: receipt does not target the local Conversation authority",
-			conversationfederation.ErrDeliveryReceiptRejected,
-		)
-	}
-	active, err := (productionFederationMembershipProjection{}).IsActiveStation(
-		ctx,
-		transaction,
-		string(view.Conversation.FederationID),
-		sourceHomeStationPeerID,
-	)
-	if err != nil {
-		return false, err
-	}
-	if !active {
-		return false, fmt.Errorf(
-			"%w: receipt source Station is not active in the Conversation federation",
 			conversationfederation.ErrDeliveryReceiptRejected,
 		)
 	}
@@ -1522,7 +1543,8 @@ func (s *subServer) forwardConversationProposal(
 	authenticated conversationhttp.AuthenticatedActor,
 	proposal *chatmodel.ConversationCommandProposal,
 ) error {
-	if proposal == nil || proposal.GetCommand() == nil {
+	command, err := conversationfederation.ParseProposalCommand(proposal)
+	if err != nil {
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeProposalInvalid,
 			"production_federation.forward_proposal",
@@ -1534,9 +1556,9 @@ func (s *subServer) forwardConversationProposal(
 		proposal.GetAuthorityStationPeerId() == string(s.localStation) ||
 		proposal.GetActorPtid() != authenticated.PTID ||
 		proposal.GetActorDeviceId() != authenticated.DeviceID ||
-		proposal.GetCommand().GetSender() == nil ||
-		proposal.GetCommand().GetSender().GetPtid() != authenticated.PTID ||
-		proposal.GetCommand().GetSender().GetDeviceId() != authenticated.DeviceID {
+		command.Actor == nil ||
+		command.Actor.GetPtid() != authenticated.PTID ||
+		command.Actor.GetDeviceId() != authenticated.DeviceID {
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeProposalBinding,
 			"production_federation.forward_proposal",
@@ -1544,7 +1566,7 @@ func (s *subServer) forwardConversationProposal(
 			"does not match the authenticated Home Station endpoint",
 		)
 	}
-	commandBytes, err := deterministicProductionProto(proposal.GetCommand())
+	commandBytes, err := deterministicProductionProto(command.Message)
 	if err != nil {
 		return err
 	}
@@ -1565,9 +1587,9 @@ func (s *subServer) forwardConversationProposal(
 		AuthorityStationPeerId: proposal.GetAuthorityStationPeerId(),
 		AuthorityEpoch:         proposal.GetAuthorityEpoch(),
 		HomeStationPeerId:      proposal.GetHomeStationPeerId(),
-		ConversationId:         proposal.GetCommand().GetConversationId(),
-		CommandId:              proposal.GetCommand().GetCommandId(),
-		CommandKind:            productionWireCommandKind(proposal.GetCommand()),
+		ConversationId:         command.ConversationID,
+		CommandId:              command.CommandID,
+		CommandKind:            command.Kind,
 		ActorPtid:              proposal.GetActorPtid(),
 		ActorDeviceId:          proposal.GetActorDeviceId(),
 		ActorSigningKeyId:      proposal.GetActorSigningKeyId(),
@@ -1580,7 +1602,7 @@ func (s *subServer) forwardConversationProposal(
 		return err
 	}
 	conversationID, err := valueobject.NewConversationID(
-		proposal.GetCommand().GetConversationId(),
+		command.ConversationID,
 	)
 	if err != nil {
 		return err
@@ -1591,7 +1613,7 @@ func (s *subServer) forwardConversationProposal(
 	}
 
 	lockValue, _ := productionProposalLocks.LoadOrStore(
-		proposal.GetCommand().GetConversationId(),
+		command.ConversationID,
 		&sync.Mutex{},
 	)
 	lock := lockValue.(*sync.Mutex)
@@ -1602,7 +1624,7 @@ func (s *subServer) forwardConversationProposal(
 		if tx.Dialector.Name() == "postgres" {
 			lockID := productionAdvisoryLockID(
 				"conversation-proposal:" +
-					proposal.GetCommand().GetConversationId(),
+					command.ConversationID,
 			)
 			if err := tx.Exec(
 				"SELECT pg_advisory_xact_lock(?)",
@@ -1671,7 +1693,7 @@ func (s *subServer) forwardConversationProposal(
 			return err
 		}
 		orderingKey := "conversation-authority-command:" +
-			proposal.GetCommand().GetConversationId()
+			command.ConversationID
 		var current int64
 		if err := tx.Model(&federationdelivery.OutboxRecord{}).
 			Where(
@@ -1712,13 +1734,17 @@ func existingConversationProposalReplay(
 	proposal *chatmodel.ConversationCommandProposal,
 	now time.Time,
 ) (bool, error) {
+	command, err := conversationfederation.ParseProposalCommand(proposal)
+	if err != nil {
+		return false, err
+	}
 	var records []federationdelivery.OutboxRecord
 	if err := database.WithContext(ctx).
 		Where(
 			"source_station_peer_id = ? AND payload_kind = ? AND payload_id = ?",
 			localStationPeerID,
 			int32(federationdelivery.PayloadKindConversationAuthorityCommand),
-			proposal.GetCommand().GetCommandId(),
+			command.CommandID,
 		).
 		Limit(2).
 		Find(&records).Error; err != nil {
@@ -1746,7 +1772,7 @@ func existingConversationProposalReplay(
 	if frame.GetSourceStationPeerId() != localStationPeerID ||
 		frame.GetTargetStationPeerId() != proposal.GetAuthorityStationPeerId() ||
 		frame.GetPayloadKind() != federationdelivery.PayloadKindConversationAuthorityCommand ||
-		frame.GetPayloadId() != proposal.GetCommand().GetCommandId() ||
+		frame.GetPayloadId() != command.CommandID ||
 		!bytes.Equal(frame.GetOpaquePayload(), proposalBytes) {
 		return false, conversationdomain.NewError(
 			conversationdomain.ErrorCodeCommandConflict,
@@ -1792,23 +1818,22 @@ func validateNewConversationProposal(
 	proposal *chatmodel.ConversationCommandProposal,
 	now time.Time,
 ) error {
+	command, commandErr := conversationfederation.ParseProposalCommand(proposal)
 	if proposal == nil ||
+		commandErr != nil ||
 		proposal.GetVersion() != productionCommandProposalVersion ||
-		proposal.GetCommand() == nil ||
 		proposal.GetFederationId() == "" ||
 		proposal.GetAuthorityStationPeerId() == "" ||
 		proposal.GetHomeStationPeerId() == "" ||
 		proposal.GetActorPtid() == "" ||
 		proposal.GetActorDeviceId() == "" ||
 		proposal.GetActorSigningKeyId() == "" ||
-		proposal.GetCommand().GetCommandId() == "" ||
-		proposal.GetCommand().GetConversationId() == "" ||
-		proposal.GetCommand().GetAuthorityStationPeerId() !=
-			proposal.GetAuthorityStationPeerId() ||
+		command.CommandID == "" ||
+		command.ConversationID == "" ||
+		command.AuthorityStationPeerID != proposal.GetAuthorityStationPeerId() ||
 		len(proposal.GetCommandSha256()) != sha256.Size ||
 		len(proposal.GetActorSignature()) != ed25519.SignatureSize ||
-		productionWireCommandKind(proposal.GetCommand()) ==
-			chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED {
+		command.Kind == chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED {
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeProposalInvalid,
 			"production_federation.forward_proposal",
@@ -1837,6 +1862,23 @@ func validateNewConversationProposal(
 			"has expired",
 		)
 	}
+	if member := command.MemberAuthority; member != nil {
+		if member.GetFederationId() != proposal.GetFederationId() ||
+			member.GetAuthorityEpoch() != proposal.GetAuthorityEpoch() ||
+			member.GetClientTimestamp() == nil ||
+			member.GetDeadline() == nil ||
+			member.GetClientTimestamp().AsTime().UTC().UnixMilli() !=
+				proposal.GetCreatedAtUnixMs() ||
+			member.GetDeadline().AsTime().UTC().UnixMilli() !=
+				proposal.GetExpiresAtUnixMs() {
+			return conversationdomain.NewError(
+				conversationdomain.ErrorCodeProposalBinding,
+				"production_federation.forward_proposal",
+				"member_authority",
+				"does not match the signed proposal scope",
+			)
+		}
+	}
 
 	return nil
 }
@@ -1845,12 +1887,13 @@ func validateConversationProposalFollowerHead(
 	proposal *chatmodel.ConversationCommandProposal,
 	head query.PublicHead,
 ) error {
+	command, err := conversationfederation.ParseProposalCommand(proposal)
 	if proposal == nil ||
-		proposal.GetCommand() == nil ||
+		err != nil ||
 		head.Source != query.SourceFollower ||
 		head.FollowerStatus != repository.FollowerStatusActive ||
 		head.Status != valueobject.ConversationStatusActive ||
-		string(head.ConversationID) != proposal.GetCommand().GetConversationId() ||
+		string(head.ConversationID) != command.ConversationID ||
 		string(head.FederationID) != proposal.GetFederationId() ||
 		string(head.AuthorityStation) != proposal.GetAuthorityStationPeerId() ||
 		int64(head.AuthorityEpoch) != proposal.GetAuthorityEpoch() {
@@ -2065,6 +2108,39 @@ func productionFactFromWire(
 		}
 		fact.Kind = domainevent.KindMessageRetracted
 		fact.MessageID = valueobject.MessageID(message.GetMessageId())
+	case *chatmodel.ConversationEvent_MessageHiddenForActor:
+		message := payload.MessageHiddenForActor
+		command.Payload = &chatmodel.ChatCommand_HideMessageForActor{
+			HideMessageForActor: &chatmodel.HideMessageForActorIntent{
+				MessageId: message.GetMessageId(),
+			},
+		}
+		fact.Kind = domainevent.KindMessageHiddenForActor
+		fact.MessageID = valueobject.MessageID(message.GetMessageId())
+	case *chatmodel.ConversationEvent_MessageModerated:
+		message := payload.MessageModerated
+		command.Payload = &chatmodel.ChatCommand_ModerateMessage{
+			ModerateMessage: &chatmodel.ModerateMessageIntent{
+				MessageId:  message.GetMessageId(),
+				ReasonCode: message.GetReasonCode(),
+			},
+		}
+		fact.Kind = domainevent.KindMessageModerated
+		fact.MessageID = valueobject.MessageID(message.GetMessageId())
+	case *chatmodel.ConversationEvent_MessageForwarded:
+		message := payload.MessageForwarded
+		command.Payload = &chatmodel.ChatCommand_ForwardMessage{
+			ForwardMessage: &chatmodel.ForwardMessageIntent{
+				DestinationMessageId:   message.GetDestinationMessageId(),
+				ContentKind:            message.GetContentKind(),
+				DestinationAttachments: message.GetDestinationAttachments(),
+			},
+		}
+		command.ClientTimestamp = message.GetClientTimestamp()
+		fact.Kind = domainevent.KindMessageForwarded
+		fact.MessageID = valueobject.MessageID(
+			message.GetDestinationMessageId(),
+		)
 	case *chatmodel.ConversationEvent_ReactionCommitted:
 		reaction := payload.ReactionCommitted
 		command.Payload = &chatmodel.ChatCommand_Reaction{
@@ -2090,11 +2166,10 @@ func productionFactFromWire(
 		update := payload.ConversationUpdated
 		command.Payload = &chatmodel.ChatCommand_UpdateConversation{
 			UpdateConversation: &chatmodel.UpdateConversationIntent{
-				Name:                  update.Name,
-				Description:           update.Description,
-				AvatarObjectId:        update.AvatarObjectId,
-				DisappearTimerSeconds: update.DisappearTimerSeconds,
-				Visibility:            update.Visibility,
+				Name:           update.Name,
+				Description:    update.Description,
+				AvatarObjectId: update.AvatarObjectId,
+				Visibility:     update.Visibility,
 			},
 		}
 		fact.Kind = domainevent.KindConversationSettings
@@ -2322,10 +2397,9 @@ func productionSettingsPatchFromWire(
 	wire *chatmodel.ConversationUpdatedFact,
 ) valueobject.SettingsPatch {
 	patch := valueobject.SettingsPatch{
-		Name:                  wire.Name,
-		Description:           wire.Description,
-		AvatarObjectID:        wire.AvatarObjectId,
-		DisappearTimerSeconds: wire.DisappearTimerSeconds,
+		Name:           wire.Name,
+		Description:    wire.Description,
+		AvatarObjectID: wire.AvatarObjectId,
 	}
 	if wire.Visibility != nil {
 		visibility := productionConversationVisibilityFromProto(*wire.Visibility)
@@ -2339,11 +2413,10 @@ func productionConversationSettingsFromWire(
 	wire *chatmodel.ConversationAuthoritySnapshot,
 ) valueobject.ConversationSettings {
 	return valueobject.ConversationSettings{
-		Name:                  wire.GetName(),
-		Description:           wire.GetDescription(),
-		AvatarObjectID:        wire.GetAvatarObjectId(),
-		Visibility:            productionConversationVisibilityFromProto(wire.GetVisibility()),
-		DisappearTimerSeconds: wire.GetDisappearTimerSeconds(),
+		Name:           wire.GetName(),
+		Description:    wire.GetDescription(),
+		AvatarObjectID: wire.GetAvatarObjectId(),
+		Visibility:     productionConversationVisibilityFromProto(wire.GetVisibility()),
 	}
 }
 
@@ -2391,6 +2464,12 @@ func productionWireCommandKind(
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE
 	case *chatmodel.ChatCommand_RetractMessage:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE
+	case *chatmodel.ChatCommand_HideMessageForActor:
+		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR
+	case *chatmodel.ChatCommand_ModerateMessage:
+		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE
+	case *chatmodel.ChatCommand_ForwardMessage:
+		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE
 	case *chatmodel.ChatCommand_DissolveConversation:
 		return chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE
 	case *chatmodel.ChatCommand_UpdateConversation:

@@ -3,7 +3,8 @@ use crate::codec::private_content::encode_message_private_content;
 use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind, CryptoEndpoint,
-    EditMessageIntent, MessagingContentKind, PrepareConversationCommandResponse, SendMessageIntent,
+    EditMessageIntent, ForwardMessageIntent, MessagingContentKind,
+    PrepareConversationCommandResponse, SendMessageIntent,
 };
 use crate::store::{
     MlsOutboundEditCommit, MlsOutboundRepository, MlsOutboundSendCommit, PendingSenderProjection,
@@ -28,6 +29,15 @@ pub struct GroupEditTextIntent<'a> {
     pub message_id: &'a str,
     pub conversation_id: &'a str,
     pub plaintext: &'a str,
+    pub client_timestamp_unix_ms: i64,
+}
+
+pub struct GroupForwardIntent<'a> {
+    pub command_id: &'a str,
+    pub destination_message_id: &'a str,
+    pub conversation_id: &'a str,
+    pub plaintext: &'a str,
+    pub attachments: &'a [AttachmentPlaintextMetadata],
     pub client_timestamp_unix_ms: i64,
 }
 
@@ -150,6 +160,71 @@ impl<R: MlsOutboundRepository> MlsOutboundPreparer<R> {
             .install_prepared_outbound_application(intent.conversation_id, &prepared)?;
         Ok(command)
     }
+
+    pub fn prepare_forward(
+        &self,
+        plan: &PrepareConversationCommandResponse,
+        intent: &GroupForwardIntent<'_>,
+    ) -> Result<ChatCommand, String> {
+        let send = GroupSendTextIntent {
+            command_id: intent.command_id,
+            message_id: intent.destination_message_id,
+            conversation_id: intent.conversation_id,
+            plaintext: intent.plaintext,
+            reply_to_message_id: "",
+            thread_root_message_id: "",
+            attachments: intent.attachments,
+            client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
+        };
+        validate_send_context(plan, &send, &self.endpoint)?;
+        self.store.validate_sender_attachments_ready(
+            intent.conversation_id,
+            intent.destination_message_id,
+            intent.attachments,
+        )?;
+        validate_authority_head(self.store.as_ref(), plan)?;
+
+        let expected_mls_epoch = u64::try_from(plan.mls_epoch)
+            .map_err(|_| "messaging MLS epoch is invalid".to_string())?;
+        let private_content = encode_message_private_content(intent.plaintext, intent.attachments)?;
+        let prepared = self.manager.prepare_outbound_application(
+            intent.conversation_id,
+            expected_mls_epoch,
+            &private_content,
+        )?;
+        if prepared.mls_epoch != expected_mls_epoch {
+            return Err("messaging prepared MLS epoch mismatch".to_string());
+        }
+        let command = build_forward_command(plan, intent, &self.endpoint, &prepared.ciphertext)?;
+        let command_bytes = command.encode_to_vec();
+        self.store
+            .persist_mls_outbound_send(&MlsOutboundSendCommit {
+                command_bytes: &command_bytes,
+                expected_authority_sequence: plan.authority_sequence,
+                expected_authority_hash: &plan.authority_hash,
+                session_state: &prepared.session_state,
+                membership_epoch: plan.membership_epoch,
+                mls_epoch: plan.mls_epoch,
+                projection: PendingSenderProjection {
+                    command_id: intent.command_id,
+                    conversation_id: intent.conversation_id,
+                    conversation_kind: plan.conversation_kind,
+                    message_id: intent.destination_message_id,
+                    sender_ptid: &self.endpoint.ptid,
+                    sender_device_id: &self.endpoint.device_id,
+                    plaintext: intent.plaintext,
+                    reply_to_message_id: "",
+                    thread_root_message_id: "",
+                    attachments: intent.attachments,
+                    private_content: &private_content,
+                    delivery_plan_sha256: &plan.delivery_plan_sha256,
+                    created_at_unix_ms: intent.client_timestamp_unix_ms,
+                },
+            })?;
+        self.manager
+            .install_prepared_outbound_application(intent.conversation_id, &prepared)?;
+        Ok(command)
+    }
 }
 
 fn validate_send_context(
@@ -266,6 +341,44 @@ fn build_send_command(
             mls_application_payload: mls_payload.to_vec(),
             mls_application_payload_sha256: Sha256::digest(mls_payload).to_vec(),
         })),
+    })
+}
+
+fn build_forward_command(
+    plan: &PrepareConversationCommandResponse,
+    intent: &GroupForwardIntent<'_>,
+    endpoint: &CryptoEndpoint,
+    mls_payload: &[u8],
+) -> Result<ChatCommand, String> {
+    let attachments = intent
+        .attachments
+        .iter()
+        .map(|attachment| {
+            attachment
+                .object
+                .clone()
+                .ok_or_else(|| "messaging forward attachment descriptor is missing".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ChatCommand {
+        command_id: intent.command_id.to_string(),
+        conversation_id: intent.conversation_id.to_string(),
+        sender: Some(endpoint.clone()),
+        observed_membership_epoch: plan.membership_epoch,
+        observed_mls_epoch: plan.mls_epoch,
+        client_timestamp: Some(timestamp(intent.client_timestamp_unix_ms)),
+        delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
+        authority_station_peer_id: plan.authority_station_peer_id.clone(),
+        payload: Some(chat_command::Payload::ForwardMessage(
+            ForwardMessageIntent {
+                destination_message_id: intent.destination_message_id.to_string(),
+                content_kind: MessagingContentKind::Text as i32,
+                destination_attachments: attachments,
+                destination_payloads: Vec::new(),
+                mls_application_payload: mls_payload.to_vec(),
+                mls_application_payload_sha256: Sha256::digest(mls_payload).to_vec(),
+            },
+        )),
     })
 }
 
@@ -538,6 +651,50 @@ mod tests {
                 .unwrap()
                 .attachments,
             private_content.attachments
+        );
+    }
+
+    #[test]
+    fn group_forward_reencrypts_plaintext_and_attachment_for_destination() {
+        let store = Arc::new(TestOutboundRepository::new());
+        let (alice, bob) = group();
+        let attachment = test_attachment_metadata("forwarded-group-attachment");
+        let command = preparer(store.clone(), alice)
+            .prepare_forward(
+                &plan(),
+                &GroupForwardIntent {
+                    command_id: "forward-command-1",
+                    destination_message_id: "destination-message-1",
+                    conversation_id: "group-1",
+                    plaintext: "fresh destination plaintext",
+                    attachments: std::slice::from_ref(&attachment),
+                    client_timestamp_unix_ms: 100,
+                },
+            )
+            .unwrap();
+
+        let forward = match command.payload.as_ref().unwrap() {
+            chat_command::Payload::ForwardMessage(forward) => forward,
+            _ => panic!("unexpected command payload"),
+        };
+        assert_eq!(forward.destination_message_id, "destination-message-1");
+        assert_eq!(
+            forward.destination_attachments,
+            vec![attachment.object.clone().unwrap()]
+        );
+        assert_eq!(
+            Sha256::digest(&forward.mls_application_payload).as_slice(),
+            forward.mls_application_payload_sha256,
+        );
+        let decrypted = bob
+            .decrypt("group-1", &forward.mls_application_payload)
+            .unwrap();
+        let private_content = decode_message_private_content(&decrypted).unwrap();
+        assert_eq!(private_content.text, "fresh destination plaintext");
+        assert_eq!(private_content.attachments, vec![attachment]);
+        assert_eq!(
+            store.send.lock().unwrap().as_ref().unwrap().command_bytes,
+            command.encode_to_vec(),
         );
     }
 

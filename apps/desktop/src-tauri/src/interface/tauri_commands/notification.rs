@@ -1,9 +1,10 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::application::session_resolver;
 use crate::contracts::{
     NotificationDeleteInput, NotificationListInput, NotificationMarkAllReadInput,
-    NotificationMarkReadInput, NotificationPreferenceUpdateInput, StubPayload,
+    NotificationMarkReadInput, NotificationPreferencesUpdateInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
@@ -79,6 +80,96 @@ fn notification_preference_to_value(p: &model::notification::NotificationPrefere
     })
 }
 
+fn notification_preferences_snapshot_to_value(
+    snapshot: &model::notification::NotificationPreferencesSnapshot,
+) -> Value {
+    json!({
+        "preferences": snapshot
+            .preferences
+            .iter()
+            .map(notification_preference_to_value)
+            .collect::<Vec<_>>(),
+        "notificationPreferencesRevision": snapshot.notification_preferences_revision,
+    })
+}
+
+fn load_notification_preferences_snapshot(
+    token: &str,
+) -> Result<model::notification::NotificationPreferencesSnapshot, station_client::StationClientError>
+{
+    let response = station_client::request_proto::<
+        (),
+        model::notification::GetNotificationPreferencesResponse,
+    >(
+        Method::GET,
+        "/notification/preferences",
+        token,
+        None,
+        None::<&()>,
+    )?;
+    response.snapshot.ok_or_else(|| {
+        station_client::StationClientError::new(
+            station_client::StationClientErrorKind::InvalidResponse,
+            "Station response omitted notification preference snapshot",
+            None,
+        )
+    })
+}
+
+fn reconcile_notification_preferences_update(
+    token: &str,
+    request: &model::notification::UpdateNotificationPreferencesRequest,
+) -> Option<model::notification::UpdateNotificationPreferencesResponse> {
+    let snapshot = load_notification_preferences_snapshot(token).ok()?;
+    let matches = request.updates.iter().all(|update| {
+        snapshot.preferences.iter().any(|preference| {
+            preference.category == update.category
+                && preference.enabled == update.enabled
+                && preference.push_enabled == update.push_enabled
+                && preference.sound_enabled == update.sound_enabled
+        })
+    });
+    let outcome = if matches {
+        if snapshot.notification_preferences_revision == request.observed_revision {
+            model::notification::NotificationPreferencesUpdateOutcome::Unchanged
+        } else if snapshot.notification_preferences_revision > request.observed_revision {
+            model::notification::NotificationPreferencesUpdateOutcome::Applied
+        } else {
+            return None;
+        }
+    } else if snapshot.notification_preferences_revision > request.observed_revision {
+        model::notification::NotificationPreferencesUpdateOutcome::Conflict
+    } else {
+        return None;
+    };
+    Some(model::notification::UpdateNotificationPreferencesResponse {
+        outcome: outcome as i32,
+        snapshot: Some(snapshot),
+    })
+}
+
+fn ambiguous_notification_preferences_error(error: &station_client::StationClientError) -> bool {
+    matches!(
+        error.kind,
+        station_client::StationClientErrorKind::Network
+            | station_client::StationClientErrorKind::Decode
+            | station_client::StationClientErrorKind::InvalidResponse
+    )
+}
+
+fn valid_notification_preferences_update_response(
+    response: &model::notification::UpdateNotificationPreferencesResponse,
+) -> bool {
+    response
+        .snapshot
+        .as_ref()
+        .is_some_and(|snapshot| snapshot.notification_preferences_revision > 0)
+        && !matches!(
+            model::notification::NotificationPreferencesUpdateOutcome::try_from(response.outcome,),
+            Ok(model::notification::NotificationPreferencesUpdateOutcome::Unspecified) | Err(_)
+        )
+}
+
 #[tauri::command]
 pub fn notification_list(
     input: NotificationListInput,
@@ -148,7 +239,7 @@ pub fn notification_unread_counts(
         None,
         None::<&()>,
     ) {
-        Ok(r) => r,
+        Ok(response) => response,
         Err(e) => return e.into_app_result("Failed to get unread notification counts"),
     };
 
@@ -281,35 +372,28 @@ pub fn notification_preferences(
         Err(e) => return e,
     };
 
-    let resp = match station_client::request_proto::<
-        (),
-        model::notification::GetNotificationPreferencesResponse,
-    >(
-        Method::GET,
-        "/notification/preferences",
-        &token,
-        None,
-        None::<&()>,
-    ) {
-        Ok(r) => r,
+    let snapshot = match load_notification_preferences_snapshot(&token) {
+        Ok(snapshot) => snapshot,
         Err(e) => return e.into_app_result("Failed to load notification preferences"),
     };
 
-    let preferences: Vec<Value> = resp
-        .preferences
-        .iter()
-        .map(notification_preference_to_value)
-        .collect();
+    if snapshot.notification_preferences_revision == 0 {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "Station response returned an invalid notification preference revision",
+            None,
+        );
+    }
 
     to_stub(
         "notification_preferences",
-        json!({ "preferences": preferences }),
+        notification_preferences_snapshot_to_value(&snapshot),
     )
 }
 
 #[tauri::command]
 pub fn notification_preferences_update(
-    input: NotificationPreferenceUpdateInput,
+    input: NotificationPreferencesUpdateInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> AppResult<StubPayload> {
@@ -318,34 +402,92 @@ pub fn notification_preferences_update(
         Err(e) => return e,
     };
 
-    let body = model::notification::UpdateNotificationPreferenceRequest {
-        category: input.category,
-        enabled: input.enabled,
-        push_enabled: input.push_enabled,
-        sound_enabled: input.sound_enabled,
+    if input.observed_revision == 0 || input.updates.is_empty() {
+        return AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "Notification preference updates require a revision and at least one category",
+            None,
+        );
+    }
+    let mut categories = HashSet::with_capacity(input.updates.len());
+    let updates = input
+        .updates
+        .into_iter()
+        .map(|update| {
+            if update.category == 0 || !categories.insert(update.category) {
+                return Err(AppResult::fail(
+                    ErrorCode::InvalidArgument,
+                    "Notification preference categories must be specified and unique",
+                    None,
+                ));
+            }
+            Ok(model::notification::NotificationPreferencePatch {
+                category: update.category,
+                enabled: update.enabled,
+                push_enabled: update.push_enabled,
+                sound_enabled: update.sound_enabled,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>();
+    let updates = match updates {
+        Ok(updates) => updates,
+        Err(error) => return error,
+    };
+    let body = model::notification::UpdateNotificationPreferencesRequest {
+        updates,
+        observed_revision: input.observed_revision,
     };
 
     let resp = match station_client::request_proto::<
-        model::notification::UpdateNotificationPreferenceRequest,
-        model::notification::UpdateNotificationPreferenceResponse,
+        model::notification::UpdateNotificationPreferencesRequest,
+        model::notification::UpdateNotificationPreferencesResponse,
     >(
         Method::POST,
-        "/notification/preferences/update",
+        "/notification/preferences",
         &token,
         None,
         Some(&body),
     ) {
         Ok(r) => r,
+        Err(error) if ambiguous_notification_preferences_error(&error) => {
+            match reconcile_notification_preferences_update(&token, &body) {
+                Some(response) => response,
+                None => return error.into_app_result("Failed to update notification preferences"),
+            }
+        }
         Err(e) => return e.into_app_result("Failed to update notification preferences"),
     };
 
-    let preference = match &resp.preference {
-        Some(p) => notification_preference_to_value(p),
-        None => Value::Null,
+    let outcome = model::notification::NotificationPreferencesUpdateOutcome::try_from(resp.outcome)
+        .unwrap_or(model::notification::NotificationPreferencesUpdateOutcome::Unspecified);
+    let snapshot = match &resp.snapshot {
+        Some(snapshot) if snapshot.notification_preferences_revision > 0 => {
+            notification_preferences_snapshot_to_value(snapshot)
+        }
+        _ => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "Station returned an invalid notification preference outcome",
+                None,
+            )
+        }
     };
+    if matches!(
+        outcome,
+        model::notification::NotificationPreferencesUpdateOutcome::Unspecified
+    ) {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "Station returned an unspecified notification preference outcome",
+            None,
+        );
+    }
 
     to_stub(
         "notification_preferences_update",
-        json!({ "preference": preference }),
+        json!({
+            "outcome": outcome.as_str_name(),
+            "snapshot": snapshot,
+        }),
     )
 }

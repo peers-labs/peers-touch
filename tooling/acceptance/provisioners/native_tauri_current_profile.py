@@ -5,8 +5,6 @@ import json
 import os
 import shutil
 import subprocess
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -16,7 +14,10 @@ from tooling.acceptance.core.attestation import (
     source_proto_digest,
 )
 from tooling.acceptance.core.errors import BlockedError
-from tooling.acceptance.core.provisioner import EnvironmentProvisioner
+from tooling.acceptance.core.provisioner import (
+    EnvironmentProvisioner,
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.core.provisioning import (
     ActorIdentity,
     ActorManifest,
@@ -30,6 +31,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     ACTOR_ACCOUNTS,
     fixture_password,
     persist_actor_manifest,
+    resolve_actor_identity,
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
@@ -536,6 +538,46 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 resource="source-identity:worktree-tree",
             )
 
+    @staticmethod
+    def _worktree_runtime_ports(
+        worktree: ClientWorktreeIdentity,
+        profile_name: str,
+    ) -> dict[str, int]:
+        (
+            resolved_profile,
+            _,
+            resolved_slot,
+            environment,
+        ) = resolve_machine_profile_environment(
+            repo_root=worktree.root,
+        )
+        if resolved_profile != profile_name:
+            raise BlockedError(
+                reason=(
+                    "Current-profile worktree runtime profile does not match "
+                    f"{worktree.logical_name}: expected {profile_name!r}, "
+                    f"got {resolved_profile!r}"
+                ),
+                resource=f"client-worktree-runtime:{worktree.logical_name}",
+            )
+        values = {
+            "gateway": int(environment["PT_DESKTOP_APP_GATEWAY_PORT"]),
+            "renderer": int(environment["PT_DESKTOP_APP_WEB_PORT"]),
+            "webdriver": 4445 + resolved_slot * 10,
+        }
+        if any(
+            not isinstance(value, int) or value <= 0
+            for value in values.values()
+        ):
+            raise BlockedError(
+                reason=(
+                    "Current-profile worktree runtime ports are incomplete "
+                    f"for {worktree.logical_name}"
+                ),
+                resource=f"client-worktree-runtime:{worktree.logical_name}",
+            )
+        return values
+
     @classmethod
     def _client_worktrees(cls) -> dict[str, ClientWorktreeIdentity]:
         raw = os.environ.get(CLIENT_WORKTREES_ENV, "").strip()
@@ -623,8 +665,8 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
     @staticmethod
     def _resolve_existing_actor(
         station_url: str,
+        deployment_environment: str,
         role: str,
-        password: str,
     ) -> ActorIdentity:
         account = ACTOR_ACCOUNTS.get(role)
         if not account:
@@ -632,87 +674,23 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 reason=f"unsupported current-profile actor role: {role}",
                 resource=f"fixture-actor:{role}",
             )
-        request = urllib.request.Request(
-            f"{station_url.rstrip('/')}/actor/login",
-            data=json.dumps(
-                {
-                    "email": account,
-                    "password": password,
-                    "device_type": "desktop",
-                }
-            ).encode("utf-8"),
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        token = ""
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                envelope = json.loads(response.read().decode("utf-8"))
-            data = (
-                envelope.get("data")
-                if isinstance(envelope, dict)
-                and isinstance(envelope.get("data"), dict)
-                else {}
+            resolved = resolve_actor_identity(
+                station_url,
+                deployment_environment,
+                role,
             )
-            actor_ref = (
-                data.get("actor_ref")
-                if isinstance(data.get("actor_ref"), dict)
-                else {}
-            )
-            tokens = (
-                data.get("tokens")
-                if isinstance(data.get("tokens"), dict)
-                else {}
-            )
-            ptid = str(actor_ref.get("ptid") or "")
-            token = str(tokens.get("access_token") or "")
-            if not ptid.startswith("ptid:") or not token:
-                raise BlockedError(
-                    reason=(
-                        f"Station login did not resolve canonical actor {role}"
-                    ),
-                    resource=f"fixture-actor:{role}",
-                )
             return ActorIdentity(
-                role=role,
-                account_ref=f"station-account:{account}",
-                ptid=ptid,
+                role=resolved.role,
+                account_ref=resolved.account_ref,
+                ptid=resolved.ptid,
                 device_policy="persistent-acceptance",
             )
-        except (
-            urllib.error.URLError,
-            OSError,
-            TimeoutError,
-            json.JSONDecodeError,
-        ) as error:
+        except (OSError, RuntimeError) as error:
             raise BlockedError(
                 reason=f"Cannot resolve existing actor {role}: {error}",
                 resource=f"fixture-actor:{role}",
             ) from error
-        finally:
-            if token:
-                logout = urllib.request.Request(
-                    f"{station_url.rstrip('/')}/actor/logout",
-                    data=b"{}",
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                    },
-                    method="POST",
-                )
-                try:
-                    urllib.request.urlopen(logout, timeout=15).close()
-                except (urllib.error.URLError, OSError, TimeoutError) as error:
-                    raise BlockedError(
-                        reason=(
-                            f"Existing actor {role} discovery session could "
-                            f"not be released: {error}"
-                        ),
-                        resource=f"fixture-session:{role}",
-                    ) from error
 
     @staticmethod
     def _port_available(port: int) -> bool:
@@ -754,47 +732,39 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
             self._persistent_storage_reset_authorized(profile_name)
         )
         retained_engine_state_roles = self._retained_engine_state_roles()
+        runtime_ports = {
+            role: self._worktree_runtime_ports(worktree, profile_name)
+            for role, worktree in client_worktrees.items()
+        }
         actors_by_role = {actor.role: actor for actor in actors}
         if set(actors_by_role) != set(CLIENT_ROLES):
             raise BlockedError(
                 reason="Current-profile Native actors are incomplete",
                 resource=f"gate-environment:{GATE_ID}",
             )
-        configured_gateway = int(profile_env["PT_DESKTOP_APP_GATEWAY_PORT"])
-        configured_renderer = int(profile_env["PT_DESKTOP_APP_WEB_PORT"])
-        configured_webdriver = 4445 + slot * 10
-        allocation = next(
-            (
-                (
-                    configured_gateway + offset,
-                    configured_renderer + offset,
-                    configured_webdriver + offset,
-                )
-                for offset in range(0, 1_000, 10)
-                if all(
-                    self._port_available(port)
-                    for port in (
-                        configured_gateway + offset,
-                        configured_gateway + offset + 1,
-                        configured_renderer + offset,
-                        configured_renderer + offset + 1,
-                        configured_webdriver + offset,
-                        configured_webdriver + offset + 1,
-                    )
-                )
-            ),
-            None,
-        )
-        if allocation is None:
+        del profile_env, slot
+        allocated_ports = [
+            port
+            for ports in runtime_ports.values()
+            for port in ports.values()
+        ]
+        if (
+            len(set(allocated_ports)) != len(allocated_ports)
+            or not all(self._port_available(port) for port in allocated_ports)
+        ):
             raise BlockedError(
-                reason="No complete two-client Native port set is available",
+                reason=(
+                    "Current-profile Native worktree port allocation is not "
+                    "available"
+                ),
                 resource="client-isolation:ports",
             )
-        gateway_base, renderer_base, webdriver_base = allocation
         desktop_profile = f"{profile_name}-app"
         clients: list[ClientRuntime] = []
-        for index, (role, seed_root, persistent_root) in enumerate(
-            zip(CLIENT_ROLES, seed_roots, persistent_roots)
+        for role, seed_root, persistent_root in zip(
+            CLIENT_ROLES,
+            seed_roots,
+            persistent_roots,
         ):
             storage_root = self._persistent_storage(
                 role=role,
@@ -813,9 +783,9 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                 actor=declared[role].actor,
                 runtime="native-tauri",
                 worktree=str(client_worktrees[role].root),
-                gateway_port=gateway_base + index,
-                renderer_port=renderer_base + index,
-                webdriver_port=webdriver_base + index,
+                gateway_port=runtime_ports[role]["gateway"],
+                renderer_port=runtime_ports[role]["renderer"],
+                webdriver_port=runtime_ports[role]["webdriver"],
                 profile=desktop_profile,
                 storage_root=str(storage_root),
                 storage_lifecycle="persistent",
@@ -893,10 +863,13 @@ class NativeTauriCurrentProfileProvisioner(EnvironmentProvisioner):
                     resource="source-identity:proto",
                 )
 
-            credential_refs, credential_values = self.prepare_credentials()
-            password = credential_values.get("chat-password", "")
+            credential_refs, _ = self.prepare_credentials()
             actors = tuple(
-                self._resolve_existing_actor(station_url, role, password)
+                self._resolve_existing_actor(
+                    station_url,
+                    deployment_environment,
+                    role,
+                )
                 for role in CLIENT_ROLES
             )
             _, _, actor_ref = persist_actor_manifest(

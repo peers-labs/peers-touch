@@ -1,8 +1,8 @@
 # Acceptance Framework — 模块目录结构
 
 > **Status**: active
-> **Version**: v2.1
-> **Created**: 2026-08-15 | **Updated**: 2026-09-02
+> **Version**: v2.2
+> **Created**: 2026-08-15 | **Updated**: 2026-09-16
 
 
 > **Owner**: Architecture Team
@@ -161,7 +161,7 @@ tooling/acceptance/
 | `core/harness.py` | async_harness 通用 JS 桥接，支持命名空间调用 |
 | `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、typed service topology、client-to-service bindings、Runtime Resource Manifest、blocked artifact 和 cleanup result |
 | `core/provisioner.py` | 解析并验证worktree Profile、管理Provisioner状态和reverse-order cleanup；D-19后不持有或执行business finalizer |
-| `core/launch_context.py` | 定义不可持久化launch context、capability registry、anonymous channel backend、child binding、framing与cleanup |
+| `core/launch_context.py` | 定义不可持久化launch context、capability registry、anonymous channel backend、child binding、隔离Gate bootstrap、framing与cleanup；portable `python3`绑定当前runner exact executable，bootstrap仅直接追加显式venv内经containment校验的`site-packages`，不启用site hook |
 | `core/bounded_http.py` | 以mandatory byte limit和monotonic deadline读取urllib response；无法控制底层socket deadline时fail closed |
 | `core/result_contracts.py` | 定义无I/O、无Evidence Store依赖的`CanonicalResultTuple`、`PlatformCellResult`、`PlatformMatrixResult`及唯一fold；供Runtime Cell与D-19共同使用 |
 | `core/execution_plan.py` | 解析正式Execution Plan的worktree绑定、current closure与Acceptance Execution合同；不持久化第二套计划状态 |
@@ -203,7 +203,7 @@ tooling/acceptance/
 | `capabilities/mobile.yaml` | **D-19 proposed / Mobile business**：按Gate ID声明required finalizer |
 | `fixtures/chat_native_actors.py` | 发现/准备测试账号并产出 role、account reference、canonical PTID，不写入凭据值 |
 | `gates/<domain>/*.py` | 各域验收场景实现，继承 AcceptanceGate，只包含业务编排逻辑 |
-| `tooling/scripts/acceptance-run.py` | **D-19 accepted target**：调用时序owner；验证required declaration、seal artifact、bounded启动detached finalizer并把typed outcome提交给Evidence Store，不自行merge或publish |
+| `tooling/scripts/acceptance-run.py` | **D-19/D-21 owner**：调用时序owner；验证required declaration、seal artifact、bounded启动detached finalizer并把typed outcome提交给Evidence Store；以显式policy区分non-publishing Development与formal Acceptance，并支持single-Gate preallocated run ID |
 | `tooling/scripts/execution-plan.py` | 校验当前worktree唯一active plan及merge前closure完成状态 |
 
 ## 依赖关系

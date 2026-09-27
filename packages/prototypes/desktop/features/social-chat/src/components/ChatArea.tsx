@@ -3,7 +3,6 @@ import {
   AlertCircle,
   Check,
   CheckCheck,
-  Clock3,
   FileText,
   Image as ImageIcon,
   Lock,
@@ -14,7 +13,6 @@ import {
   Phone,
   PhoneIncoming,
   PhoneOff,
-  RotateCcw,
   Search,
   Send,
   ShieldCheck,
@@ -35,17 +33,36 @@ interface ChatAreaProps {
   messages: MockMessage[];
   onToggleDetail: () => void;
   onSendMessage: (conversationId: string, content: string) => void;
-  onRestoreHistory: (conversationId: string) => void;
   backgroundImageUrl?: string;
   compact?: boolean;
 }
 
-const HISTORY_RESTORE_WINDOW_MS = 24 * 60 * 60 * 1000;
-type CallState = 'idle' | 'outgoing' | 'incoming' | 'active' | 'reconnecting' | 'ended' | 'failed';
+type CallState =
+  | 'idle'
+  | 'outgoing'
+  | 'incoming'
+  | 'ringing_all_devices'
+  | 'active'
+  | 'active_here'
+  | 'reconnecting'
+  | 'ended'
+  | 'handled_elsewhere'
+  | 'failed';
 type MediaKind = 'audio' | 'video';
 type EndReason = 'hangup' | 'canceled' | 'rejected' | 'missed' | 'denied' | 'network';
 
-const CALL_STATES: CallState[] = ['idle', 'outgoing', 'incoming', 'active', 'reconnecting', 'ended', 'failed'];
+const CALL_STATES: CallState[] = [
+  'idle',
+  'outgoing',
+  'incoming',
+  'ringing_all_devices',
+  'active',
+  'active_here',
+  'reconnecting',
+  'ended',
+  'handled_elsewhere',
+  'failed',
+];
 const CALL_REASONS: EndReason[] = ['hangup', 'canceled', 'rejected', 'missed', 'denied', 'network'];
 const endReasonText: Record<EndReason, { title: string; tone: 'neutral' | 'bad' }> = {
   hangup: { title: 'Call ended', tone: 'neutral' },
@@ -210,14 +227,6 @@ function trustColor(tone: MockConversation['trustTone']) {
   if (tone === 'attention') return T.warning;
   if (tone === 'remote') return T.textTertiary;
   return T.primary;
-}
-
-function formatRemaining(ms: number) {
-  const totalMinutes = Math.max(1, Math.ceil(ms / 60_000));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
 }
 
 function fmtDuration(sec: number): string {
@@ -432,13 +441,17 @@ function ModalAction({
 function IncomingCallModal({
   conversation,
   media,
+  multiDevice = false,
   onAccept,
   onReject,
+  onHandledElsewhere,
 }: {
   conversation: MockConversation;
   media: MediaKind;
+  multiDevice?: boolean;
   onAccept: () => void;
   onReject: () => void;
+  onHandledElsewhere?: () => void;
 }) {
   return (
     <div
@@ -487,12 +500,19 @@ function IncomingCallModal({
         </div>
         <div style={{ marginTop: T.space4, fontSize: T.fontLg, fontWeight: 700, color: T.text }}>{conversation.name}</div>
         <div style={{ marginTop: 5, fontSize: T.fontSm, color: T.textTertiary }}>
-          Incoming {media === 'video' ? 'video' : 'voice'} call
+          {multiDevice
+            ? `Incoming ${media === 'video' ? 'video' : 'voice'} call on this Mac and your phone`
+            : `Incoming ${media === 'video' ? 'video' : 'voice'} call`}
         </div>
         <div style={{ marginTop: T.space6, display: 'flex', gap: 40 }}>
           <ModalAction icon={PhoneOff} label="Decline" tone="danger" onClick={onReject} />
           <ModalAction icon={media === 'video' ? Video : Phone} label="Accept" tone="accept" onClick={onAccept} />
         </div>
+        {multiDevice && onHandledElsewhere ? (
+          <button onClick={onHandledElsewhere} style={{ ...simButtonStyle, marginTop: T.space4 }}>
+            Simulate accepted on phone
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -505,25 +525,33 @@ function CallHud({
   duration,
   micOn,
   camOn,
+  audioDevice,
+  videoDevice,
   onToggleMic,
   onToggleCam,
+  onAudioDevice,
+  onVideoDevice,
   onHangup,
   onPeerAccept,
   onSimWeak,
 }: {
   conversation: MockConversation;
-  state: 'outgoing' | 'active' | 'reconnecting';
+  state: 'outgoing' | 'active' | 'active_here' | 'reconnecting';
   media: MediaKind;
   duration: number;
   micOn: boolean;
   camOn: boolean;
+  audioDevice: string;
+  videoDevice: string;
   onToggleMic: () => void;
   onToggleCam: () => void;
+  onAudioDevice: (device: string) => void;
+  onVideoDevice: (device: string) => void;
   onPeerAccept: () => void;
   onSimWeak: () => void;
 }) {
   const isVideo = media === 'video';
-  const isActive = state === 'active' || state === 'reconnecting';
+  const isActive = state === 'active' || state === 'active_here' || state === 'reconnecting';
   const reconnecting = state === 'reconnecting';
 
   return (
@@ -637,6 +665,36 @@ function CallHud({
           )}
           <CircleButton icon={PhoneOff} title={isActive ? 'End' : 'Cancel'} tone="danger" onClick={onHangup} />
         </div>
+        {isActive ? (
+          <div style={{ display: 'grid', gridTemplateColumns: isVideo ? '1fr 1fr' : '1fr', gap: T.space2 }}>
+            <label style={{ display: 'grid', gap: 3, fontSize: T.fontXs, color: T.textTertiary }}>
+              Microphone
+              <select
+                aria-label="Microphone device"
+                value={audioDevice}
+                onChange={(event) => onAudioDevice(event.target.value)}
+                style={deviceSelectStyle}
+              >
+                <option>MacBook Microphone</option>
+                <option>Studio Display Microphone</option>
+              </select>
+            </label>
+            {isVideo ? (
+              <label style={{ display: 'grid', gap: 3, fontSize: T.fontXs, color: T.textTertiary }}>
+                Camera
+                <select
+                  aria-label="Camera device"
+                  value={videoDevice}
+                  onChange={(event) => onVideoDevice(event.target.value)}
+                  style={deviceSelectStyle}
+                >
+                  <option>FaceTime HD Camera</option>
+                  <option>Continuity Camera</option>
+                </select>
+              </label>
+            ) : null}
+          </div>
+        ) : null}
         <div style={{ display: 'flex', gap: T.space2, justifyContent: 'center' }}>
           {state === 'outgoing' && <button onClick={onPeerAccept} style={simButtonStyle}>Simulate accept</button>}
           {isActive && <button onClick={onSimWeak} style={simButtonStyle}>{reconnecting ? 'Simulate recover' : 'Simulate weak network'}</button>}
@@ -654,6 +712,17 @@ const simButtonStyle: CSSProperties = {
   borderRadius: T.radiusFull,
   border: `1px dashed ${T.border}`,
   background: T.bg,
+};
+
+const deviceSelectStyle: CSSProperties = {
+  width: '100%',
+  height: 30,
+  borderRadius: T.radiusSm,
+  border: `1px solid ${T.border}`,
+  background: T.bg,
+  color: T.text,
+  fontSize: T.fontXs,
+  padding: `0 ${T.space2}px`,
 };
 
 function CallResultToast({
@@ -711,37 +780,63 @@ function CallResultToast({
   );
 }
 
+function HandledElsewhereToast({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 74,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 25,
+        display: 'flex',
+        alignItems: 'center',
+        gap: T.space3,
+        padding: `${T.space3}px ${T.space4}px`,
+        borderRadius: T.radiusLg,
+        background: T.bg,
+        border: `1px solid ${T.border}`,
+        boxShadow: '0 12px 36px rgba(15,23,42,0.16)',
+      }}
+    >
+      <CheckCheck size={18} color={T.success} />
+      <div>
+        <div style={{ fontSize: T.fontSm, fontWeight: 700, color: T.text }}>
+          Answered on another device
+        </div>
+        <div style={{ fontSize: T.fontXs, color: T.textTertiary }}>
+          This device stopped ringing and released temporary call resources.
+        </div>
+      </div>
+      <button onClick={onClose} style={{ ...simButtonStyle, marginLeft: T.space1 }}>
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 export function ChatArea({
   conversation,
   messages,
   onToggleDetail,
   onSendMessage,
-  onRestoreHistory,
   backgroundImageUrl,
   compact = false,
 }: ChatAreaProps) {
   const [inputValue, setInputValue] = useState('');
-  const [now, setNow] = useState(Date.now());
   const [callState, setCallState] = useState<CallState>('idle');
   const [callMedia, setCallMedia] = useState<MediaKind>('video');
   const [callReason, setCallReason] = useState<EndReason>('hangup');
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
+  const [audioDevice, setAudioDevice] = useState('MacBook Microphone');
+  const [videoDevice, setVideoDevice] = useState('FaceTime HD Camera');
   const [duration, setDuration] = useState(0);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const callTimer = useRef<number | null>(null);
-  const historyClearedAt = conversation?.historyClearedAt ?? 0;
-  const historyRestoreExpiresAt = historyClearedAt + HISTORY_RESTORE_WINDOW_MS;
-  const canRestoreHistory = historyClearedAt > 0 && now < historyRestoreExpiresAt;
-  const historyRestoreExpired = historyClearedAt > 0 && !canRestoreHistory;
-  const historyRestoreRemaining = canRestoreHistory
-    ? formatRemaining(historyRestoreExpiresAt - now)
-    : '';
-  const visibleMessages = historyClearedAt > 0
-    ? messages.filter((message) => message.timestamp > historyClearedAt)
-    : messages;
+  const visibleMessages = messages;
   const searchResults = searchQuery.trim()
     ? visibleMessages.filter((message) =>
         message.content.toLowerCase().includes(searchQuery.trim().toLowerCase()),
@@ -749,17 +844,10 @@ export function ChatArea({
     : [];
 
   useEffect(() => {
-    setNow(Date.now());
-  }, [conversation?.id, conversation?.historyClearedAt]);
-
-  useEffect(() => {
-    if (!canRestoreHistory) return undefined;
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(timer);
-  }, [canRestoreHistory, historyRestoreExpiresAt]);
-
-  useEffect(() => {
-    const counting = callState === 'active' || callState === 'reconnecting';
+    const counting =
+      callState === 'active'
+      || callState === 'active_here'
+      || callState === 'reconnecting';
     if (counting && callTimer.current === null) {
       callTimer.current = window.setInterval(() => setDuration((value) => value + 1), 1000);
     }
@@ -767,7 +855,15 @@ export function ChatArea({
       window.clearInterval(callTimer.current);
       callTimer.current = null;
     }
-    if (callState === 'idle' || callState === 'outgoing' || callState === 'incoming') setDuration(0);
+    if (
+      callState === 'idle'
+      || callState === 'outgoing'
+      || callState === 'incoming'
+      || callState === 'ringing_all_devices'
+      || callState === 'handled_elsewhere'
+    ) {
+      setDuration(0);
+    }
     return () => {
       if (callTimer.current !== null) {
         window.clearInterval(callTimer.current);
@@ -813,9 +909,9 @@ export function ChatArea({
   const callChip =
     callState === 'outgoing'
       ? 'Ringing'
-      : callState === 'incoming'
-        ? 'Incoming'
-        : callState === 'active' || callState === 'reconnecting'
+      : callState === 'incoming' || callState === 'ringing_all_devices'
+        ? callState === 'ringing_all_devices' ? 'Ringing on your devices' : 'Incoming'
+        : callState === 'active' || callState === 'active_here' || callState === 'reconnecting'
           ? `${callState === 'reconnecting' ? 'Reconnecting' : 'In call'} · ${fmtDuration(duration)}`
           : null;
 
@@ -891,7 +987,10 @@ export function ChatArea({
               state={callState}
               media={callMedia}
               reason={callReason}
-              onState={setCallState}
+              onState={(state) => {
+                setCallState(state);
+                setActionsOpen(false);
+              }}
               onMedia={setCallMedia}
               onReason={setCallReason}
               onOpenDetail={() => {
@@ -963,60 +1062,6 @@ export function ChatArea({
             Prototype path: list / conversation / details / action surface
           </span>
         </div>}
-        {historyClearedAt > 0 && (
-          <div
-            style={{
-              alignSelf: 'center',
-              maxWidth: 420,
-              border: `1px solid ${T.borderSubtle}`,
-              borderRadius: T.radiusLg,
-              background: T.bgSubtle,
-              padding: `${T.space3}px ${T.space4}px`,
-              display: 'flex',
-              gap: T.space3,
-              color: T.textSecondary,
-              fontSize: T.fontSm,
-              lineHeight: 1.5,
-            }}
-          >
-            <Clock3 size={18} style={{ flexShrink: 0, color: canRestoreHistory ? T.warning : T.textTertiary }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ color: T.text, fontWeight: 700, marginBottom: 2 }}>
-                History hidden on this device
-              </div>
-              <div>
-                {canRestoreHistory
-                  ? `Messages before this point are hidden. Restore is available for ${historyRestoreRemaining}.`
-                  : historyRestoreExpired
-                    ? 'The 24h restore window has ended. New messages will appear here.'
-                    : 'Messages before this point are hidden.'}
-              </div>
-              {canRestoreHistory && (
-                <button
-                  onClick={() => onRestoreHistory(conversation.id)}
-                  style={{
-                    marginTop: T.space2,
-                    height: 28,
-                    border: `1px solid ${T.border}`,
-                    borderRadius: T.radiusMd,
-                    background: T.bg,
-                    color: T.text,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: T.space1,
-                    padding: `0 ${T.space2}px`,
-                    cursor: 'pointer',
-                    fontSize: T.fontXs,
-                    fontWeight: 800,
-                  }}
-                >
-                  <RotateCcw size={13} />
-                  Restore history
-                </button>
-              )}
-            </div>
-          </div>
-        )}
         {visibleMessages.length === 0 && (
           <div
             style={{
@@ -1028,7 +1073,7 @@ export function ChatArea({
               fontSize: T.fontBase,
             }}
           >
-            {historyClearedAt > 0 ? 'No visible messages after clearing history.' : 'No messages yet.'}
+            No messages yet.
           </div>
         )}
         {visibleMessages.map((msg) => (
@@ -1115,18 +1160,20 @@ export function ChatArea({
           </button>
         </div>
       </div>
-      {callState === 'incoming' && (
+      {(callState === 'incoming' || callState === 'ringing_all_devices') && (
         <IncomingCallModal
           conversation={conversation}
           media={callMedia}
-          onAccept={() => setCallState('active')}
+          multiDevice={callState === 'ringing_all_devices'}
+          onAccept={() => setCallState(callState === 'ringing_all_devices' ? 'active_here' : 'active')}
           onReject={() => {
             setCallReason('rejected');
             setCallState('ended');
           }}
+          onHandledElsewhere={() => setCallState('handled_elsewhere')}
         />
       )}
-      {(callState === 'outgoing' || callState === 'active' || callState === 'reconnecting') && (
+      {(callState === 'outgoing' || callState === 'active' || callState === 'active_here' || callState === 'reconnecting') && (
         <CallHud
           conversation={conversation}
           state={callState}
@@ -1134,15 +1181,22 @@ export function ChatArea({
           duration={duration}
           micOn={micOn}
           camOn={camOn}
+          audioDevice={audioDevice}
+          videoDevice={videoDevice}
           onToggleMic={() => setMicOn((value) => !value)}
           onToggleCam={() => setCamOn((value) => !value)}
+          onAudioDevice={setAudioDevice}
+          onVideoDevice={setVideoDevice}
           onHangup={() => {
             setCallReason(callState === 'outgoing' ? 'canceled' : 'hangup');
             setCallState('ended');
           }}
           onPeerAccept={() => setCallState('active')}
-          onSimWeak={() => setCallState(callState === 'reconnecting' ? 'active' : 'reconnecting')}
+          onSimWeak={() => setCallState(callState === 'reconnecting' ? 'active_here' : 'reconnecting')}
         />
+      )}
+      {callState === 'handled_elsewhere' && (
+        <HandledElsewhereToast onClose={() => setCallState('idle')} />
       )}
       {callState === 'ended' && (
         <CallResultToast reason={callReason} duration={duration} onClose={() => setCallState('idle')} />

@@ -14,7 +14,6 @@ export interface ChatActionState {
   sticky: boolean;
   alertEnabled: boolean;
   background: ChatBackgroundId;
-  clearedAt: number;
 }
 
 const DEFAULT_CHAT_ACTION_STATE: ChatActionState = {
@@ -22,7 +21,6 @@ const DEFAULT_CHAT_ACTION_STATE: ChatActionState = {
   sticky: false,
   alertEnabled: true,
   background: 'default',
-  clearedAt: 0,
 };
 
 const STORAGE_PREFIX = 'mobile-chat-action-state';
@@ -61,7 +59,6 @@ export function normalizeChatActionState(value: Partial<ChatActionState> | undef
     sticky: Boolean(value?.sticky),
     alertEnabled: value?.alertEnabled !== false,
     background: normalizeChatBackgroundId(value?.background),
-    clearedAt: Number(value?.clearedAt ?? 0),
   };
 }
 

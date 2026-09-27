@@ -375,6 +375,151 @@ func TestMapSubmitCommandBindsAuthenticatedEndpointAndDeliverySet(t *testing.T) 
 	})
 }
 
+func TestMapSubmitCommandKeepsForwardHideAndModerationDistinct(t *testing.T) {
+	now := time.Date(2026, time.September, 19, 8, 0, 0, 0, time.UTC)
+	alice := valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"}
+	bob := valueobject.Endpoint{Actor: "ptid:bob", Device: "bob-1"}
+	auth := conversationhttp.AuthenticatedActor{
+		PTID:     string(alice.Actor),
+		DeviceID: string(alice.Device),
+	}
+
+	t.Run("forward maps fresh destination identity and ciphertext", func(t *testing.T) {
+		payload := []byte("fresh-destination-ciphertext")
+		planHash := valueobject.HashBytes([]byte("forward-plan"))
+		wire := &chat.ChatCommand{
+			CommandId:               "forward-command",
+			ConversationId:          "conversation-1",
+			Sender:                  endpointProto(alice),
+			ObservedMembershipEpoch: 2,
+			ObservedMlsEpoch:        0,
+			ClientTimestamp:         timestamppb.New(now),
+			DeliveryPlanSha256:      planHash.Bytes(),
+			AuthorityStationPeerId:  "station-a",
+			Payload: &chat.ChatCommand_ForwardMessage{
+				ForwardMessage: &chat.ForwardMessageIntent{
+					DestinationMessageId: "destination-message",
+					ContentKind:          chat.MessagingContentKind_MESSAGING_CONTENT_KIND_TEXT,
+					DestinationPayloads: []*chat.PreparedEndpointPayload{{
+						Recipient:     endpointProto(bob),
+						Kind:          chat.PreparedEndpointPayloadKind_PREPARED_ENDPOINT_PAYLOAD_KIND_DIRECT_CIPHERTEXT,
+						OpaquePayload: payload,
+						PayloadSha256: valueobject.HashBytes(payload).Bytes(),
+					}},
+				},
+			},
+		}
+		mapped, err := conversationhttp.MapSubmitCommand(
+			auth,
+			localCommandRequest(wire),
+			aggregate.CommandPreparation{
+				Kind:              valueobject.ConversationKindDirect,
+				AuthorityStation:  "station-a",
+				RequiredEndpoints: []valueobject.Endpoint{alice, bob},
+				DeliveryPlanHash:  planHash,
+			},
+			nil,
+			now,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mapped.Command.Kind != domainevent.KindMessageForwarded ||
+			mapped.Command.MessageID != "destination-message" ||
+			len(mapped.Command.Deliveries) != 2 ||
+			mapped.Command.Deliveries[1].Kind != valueobject.DeliveryKindDirectCiphertext {
+			t.Fatalf("mapped forward = %+v", mapped.Command)
+		}
+	})
+
+	t.Run("actor hide keeps actor-scoped public delivery", func(t *testing.T) {
+		planHash := valueobject.HashBytes([]byte("hide-plan"))
+		wire := &chat.ChatCommand{
+			CommandId:               "hide-command",
+			ConversationId:          "conversation-1",
+			Sender:                  endpointProto(alice),
+			ObservedMembershipEpoch: 2,
+			ObservedMlsEpoch:        1,
+			ClientTimestamp:         timestamppb.New(now),
+			DeliveryPlanSha256:      planHash.Bytes(),
+			AuthorityStationPeerId:  "station-a",
+			Payload: &chat.ChatCommand_HideMessageForActor{
+				HideMessageForActor: &chat.HideMessageForActorIntent{
+					MessageId: "message-1",
+				},
+			},
+		}
+		mapped, err := conversationhttp.MapSubmitCommand(
+			auth,
+			localCommandRequest(wire),
+			aggregate.CommandPreparation{
+				Kind:              valueobject.ConversationKindGroup,
+				AuthorityStation:  "station-a",
+				RequiredEndpoints: []valueobject.Endpoint{alice},
+				DeliveryPlanHash:  planHash,
+			},
+			nil,
+			now,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mapped.Command.Kind != domainevent.KindMessageHiddenForActor ||
+			mapped.Command.MessageID != "message-1" ||
+			len(mapped.Command.Deliveries) != 1 ||
+			mapped.Command.Deliveries[0].Recipient != alice ||
+			mapped.Command.Deliveries[0].Kind != valueobject.DeliveryKindPublicEvent {
+			t.Fatalf("mapped actor-hide = %+v", mapped.Command)
+		}
+	})
+
+	t.Run("moderation keeps reason and shared public delivery", func(t *testing.T) {
+		planHash := valueobject.HashBytes([]byte("moderation-plan"))
+		wire := &chat.ChatCommand{
+			CommandId:               "moderation-command",
+			ConversationId:          "conversation-1",
+			Sender:                  endpointProto(alice),
+			ObservedMembershipEpoch: 2,
+			ObservedMlsEpoch:        1,
+			ClientTimestamp:         timestamppb.New(now),
+			DeliveryPlanSha256:      planHash.Bytes(),
+			AuthorityStationPeerId:  "station-a",
+			Payload: &chat.ChatCommand_ModerateMessage{
+				ModerateMessage: &chat.ModerateMessageIntent{
+					MessageId:  "message-1",
+					ReasonCode: "group_policy_violation",
+				},
+			},
+		}
+		mapped, err := conversationhttp.MapSubmitCommand(
+			auth,
+			localCommandRequest(wire),
+			aggregate.CommandPreparation{
+				Kind:              valueobject.ConversationKindGroup,
+				AuthorityStation:  "station-a",
+				RequiredEndpoints: []valueobject.Endpoint{alice, bob},
+				DeliveryPlanHash:  planHash,
+			},
+			nil,
+			now,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mapped.Command.Kind != domainevent.KindMessageModerated ||
+			mapped.Command.MessageID != "message-1" ||
+			mapped.Command.ReasonCode != "group_policy_violation" ||
+			len(mapped.Command.Deliveries) != 2 {
+			t.Fatalf("mapped moderation = %+v", mapped.Command)
+		}
+		for _, delivery := range mapped.Command.Deliveries {
+			if delivery.Kind != valueobject.DeliveryKindPublicEvent {
+				t.Fatalf("moderation delivery = %+v", delivery)
+			}
+		}
+	})
+}
+
 func TestMapSubmitCommandRejectsProposalSubmission(t *testing.T) {
 	_, err := conversationhttp.MapSubmitCommand(
 		conversationhttp.AuthenticatedActor{
@@ -987,6 +1132,36 @@ func TestProtobufCommandProposalSigningEncoderBindsAcceptedD17Fields(t *testing.
 		signingInput.CreatedAtUnixMs != 1000 ||
 		signingInput.ExpiresAtUnixMs != 2000 {
 		t.Fatalf("signing input = %+v", &signingInput)
+	}
+}
+
+func TestProtobufCommandProposalSigningEncoderMapsMemberAuthority(t *testing.T) {
+	encoded, err := (conversationhttp.ProtobufCommandProposalSigningEncoder{}).
+		EncodeCommandProposalSigningInput(ports.CommandProposalSigningInput{
+			Version:             1,
+			FederationID:        "federation-1",
+			AuthorityStation:    "station-a",
+			AuthorityEpoch:      7,
+			HomeStation:         "station-b",
+			ConversationID:      "conversation-1",
+			CommandID:           "member-command-1",
+			CommandKind:         domainevent.KindMemberAuthority,
+			Actor:               valueobject.Endpoint{Actor: "ptid:alice", Device: "alice-1"},
+			SigningKeyID:        "alice-signing-key",
+			CommandHash:         valueobject.HashBytes([]byte("member-command")),
+			CreatedAtUnixMillis: 1000,
+			ExpiresAtUnixMillis: 2000,
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var signingInput chat.ConversationCommandProposalSigningInput
+	if err := proto.Unmarshal(encoded, &signingInput); err != nil {
+		t.Fatal(err)
+	}
+	if signingInput.CommandKind !=
+		chat.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY {
+		t.Fatalf("member-authority signing kind = %s", signingInput.CommandKind)
 	}
 }
 

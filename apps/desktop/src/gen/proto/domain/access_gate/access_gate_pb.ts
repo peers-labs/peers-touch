@@ -16,7 +16,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/access_gate/access_gate.proto.
  */
 export const file_domain_access_gate_access_gate: GenFile = /*@__PURE__*/
-  fileDesc("CiRkb21haW4vYWNjZXNzX2dhdGUvYWNjZXNzX2dhdGUucHJvdG8SIHBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxImAKFEFjY2Vzc0dhdGVDbGllbnRJbmZvEhAKCHBsYXRmb3JtGAEgASgJEhMKC2FwcF92ZXJzaW9uGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRIOCgZsb2NhbGUYBCABKAkifAoQQWNjZXNzR2F0ZUFjdGlvbhIRCglhY3Rpb25faWQYASABKAkSPgoEdHlwZRgCIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGVUeXBlEhUKDXN1Ym1pdF9hY3Rpb24YAyABKAki3wIKCkFjY2Vzc0dhdGUSDwoHZ2F0ZV9pZBgBIAEoCRI+CgR0eXBlGAIgASgOMjAucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzR2F0ZVR5cGUSQAoFc3RhdGUYAyABKA4yMS5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5BY2Nlc3NHYXRlU3RhdGUSDQoFdGl0bGUYBCABKAkSEwoLZGVzY3JpcHRpb24YBSABKAkSFwoPYmxvY2tpbmdfcmVhc29uGAYgASgJEhUKDXN1Ym1pdF9hY3Rpb24YByABKAkSGQoRaW5wdXRfc2NoZW1hX2pzb24YCCABKAkSTwoTYWx0ZXJuYXRpdmVfYWN0aW9ucxgJIAMoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGVBY3Rpb24izwIKDkFjY2Vzc0RlY2lzaW9uEkQKBXN0YXRlGAEgASgOMjUucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzRGVjaXNpb25TdGF0ZRISCgphdHRlbXB0X2lkGAIgASgJEhcKD2N1cnJlbnRfZ2F0ZV9pZBgDIAEoCRI7CgVnYXRlcxgEIAMoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGUSMwoFYWN0b3IYBSABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZhIXCg9hY2Nlc3NfZ3JhbnRfaWQYBiABKAkSLgoKZXhwaXJlc19hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHbWVzc2FnZRgIIAEoCSKlAQoZU3RhcnRBY2Nlc3NBdHRlbXB0UmVxdWVzdBITCgtzdGF0aW9uX3VybBgBIAEoCRJGCgZjbGllbnQYAiABKAsyNi5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5BY2Nlc3NHYXRlQ2xpZW50SW5mbxISCgpzZXNzaW9uX2lkGAMgASgJEhcKD3N0YXRpb25fcGVlcl9pZBgEIAEoCSJgChpTdGFydEFjY2Vzc0F0dGVtcHRSZXNwb25zZRJCCghkZWNpc2lvbhgBIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0RlY2lzaW9uIt8BChdTdWJtaXRBY2Nlc3NHYXRlUmVxdWVzdBISCgphdHRlbXB0X2lkGAEgASgJEg8KB2dhdGVfaWQYAiABKAkSPgoEdHlwZRgDIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGVUeXBlEjYKBWxvZ2luGAQgASgLMicucGVlcnNfdG91Y2gubW9kZWwuYXV0aC52MS5Mb2dpblJlcXVlc3QSEwoLaW52aXRlX2NvZGUYBSABKAkSEgoKc2Vzc2lvbl9pZBgGIAEoCSKgAQoYU3VibWl0QWNjZXNzR2F0ZVJlc3BvbnNlEkIKCGRlY2lzaW9uGAEgASgLMjAucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzRGVjaXNpb24SQAoObG9naW5fcmVzcG9uc2UYAiABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hdXRoLnYxLkxvZ2luUmVzcG9uc2UiLgoYR2V0QWNjZXNzRGVjaXNpb25SZXF1ZXN0EhIKCmF0dGVtcHRfaWQYASABKAkiXwoZR2V0QWNjZXNzRGVjaXNpb25SZXNwb25zZRJCCghkZWNpc2lvbhgBIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0RlY2lzaW9uIjAKGkNhbmNlbEFjY2Vzc0F0dGVtcHRSZXF1ZXN0EhIKCmF0dGVtcHRfaWQYASABKAkiMAobQ2FuY2VsQWNjZXNzQXR0ZW1wdFJlc3BvbnNlEhEKCWNhbmNlbGxlZBgBIAEoCCLKAgoMQWNjZXNzUG9saWN5EkAKBG1vZGUYASABKA4yMi5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5BY2Nlc3NQb2xpY3lNb2RlEhYKDmFsbG93ZWRfZW1haWxzGAIgAygJEhkKEWFsbG93ZWRfdXNlcm5hbWVzGAMgAygJEhsKE2FsbG93ZWRfYWN0b3JfcHRpZHMYBCADKAkSLgoKdXBkYXRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEgoKdXBkYXRlZF9ieRgGIAEoCRJHCg1lbmFibGVkX2dhdGVzGAcgAygOMjAucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzR2F0ZVR5cGUSGwoTc2VsZl9zZXJ2aWNlX2ludml0ZRgIIAEoCCJbChlVcGRhdGVBY2Nlc3NQb2xpY3lSZXF1ZXN0Ej4KBnBvbGljeRgBIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc1BvbGljeSJcChpVcGRhdGVBY2Nlc3NQb2xpY3lSZXNwb25zZRI+CgZwb2xpY3kYASABKAsyLi5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5BY2Nlc3NQb2xpY3kikQIKCkludml0ZUNvZGUSCgoCaWQYASABKAkSDAoEY29kZRgCIAEoCRIMCgRub3RlGAMgASgJEhAKCG1heF91c2VzGAQgASgFEhIKCnVzZWRfY291bnQYBSABKAUSDwoHcmV2b2tlZBgGIAEoCBISCgpjcmVhdGVkX2J5GAcgASgJEi4KCmNyZWF0ZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmV4cGlyZXNfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKDGxhc3RfdXNlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAidwoXQ3JlYXRlSW52aXRlQ29kZVJlcXVlc3QSDAoEY29kZRgBIAEoCRIMCgRub3RlGAIgASgJEhAKCG1heF91c2VzGAMgASgFEi4KCmV4cGlyZXNfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIl0KGENyZWF0ZUludml0ZUNvZGVSZXNwb25zZRJBCgtpbnZpdGVfY29kZRgBIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkludml0ZUNvZGUiMQoWTGlzdEludml0ZUNvZGVzUmVxdWVzdBIXCg9pbmNsdWRlX3Jldm9rZWQYASABKAgiXQoXTGlzdEludml0ZUNvZGVzUmVzcG9uc2USQgoMaW52aXRlX2NvZGVzGAEgAygLMiwucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuSW52aXRlQ29kZSIlChdSZXZva2VJbnZpdGVDb2RlUmVxdWVzdBIKCgJpZBgBIAEoCSJdChhSZXZva2VJbnZpdGVDb2RlUmVzcG9uc2USQQoLaW52aXRlX2NvZGUYASABKAsyLC5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5JbnZpdGVDb2RlKpoDCg5BY2Nlc3NHYXRlVHlwZRIgChxBQ0NFU1NfR0FURV9UWVBFX1VOU1BFQ0lGSUVEEAASJwojQUNDRVNTX0dBVEVfVFlQRV9TVEFUSU9OX0NBUEFCSUxJVFkQARIfChtBQ0NFU1NfR0FURV9UWVBFX0FVVEhfTE9HSU4QAhIpCiVBQ0NFU1NfR0FURV9UWVBFX0FVVEhfU0VTU0lPTl9SRVNUT1JFEAMSJQohQUNDRVNTX0dBVEVfVFlQRV9JTlZJVEVfQUxMT1dMSVNUEAQSIAocQUNDRVNTX0dBVEVfVFlQRV9JTlZJVEVfQ09ERRAFEiEKHUFDQ0VTU19HQVRFX1RZUEVfREVWSUNFX1RSVVNUEAYSIAocQUNDRVNTX0dBVEVfVFlQRV9NQUlOVEVOQU5DRRAHEiUKIUFDQ0VTU19HQVRFX1RZUEVfVEVSTVNfQUNDRVBUQU5DRRAIEh8KG0FDQ0VTU19HQVRFX1RZUEVfQVVUSF9PQVVUSBAJEhsKF0FDQ0VTU19HQVRFX1RZUEVfQ1VTVE9NEGQq9AEKD0FjY2Vzc0dhdGVTdGF0ZRIhCh1BQ0NFU1NfR0FURV9TVEFURV9VTlNQRUNJRklFRBAAEh0KGUFDQ0VTU19HQVRFX1NUQVRFX1BFTkRJTkcQARIlCiFBQ0NFU1NfR0FURV9TVEFURV9BQ1RJT05fUkVRVUlSRUQQAhIcChhBQ0NFU1NfR0FURV9TVEFURV9QQVNTRUQQAxIdChlBQ0NFU1NfR0FURV9TVEFURV9CTE9DS0VEEAQSHAoYQUNDRVNTX0dBVEVfU1RBVEVfRkFJTEVEEAUSHQoZQUNDRVNTX0dBVEVfU1RBVEVfU0tJUFBFRBAGKvIBChNBY2Nlc3NEZWNpc2lvblN0YXRlEiUKIUFDQ0VTU19ERUNJU0lPTl9TVEFURV9VTlNQRUNJRklFRBAAEiEKHUFDQ0VTU19ERUNJU0lPTl9TVEFURV9QRU5ESU5HEAESKQolQUNDRVNTX0RFQ0lTSU9OX1NUQVRFX0FDVElPTl9SRVFVSVJFRBACEiEKHUFDQ0VTU19ERUNJU0lPTl9TVEFURV9HUkFOVEVEEAMSIQodQUNDRVNTX0RFQ0lTSU9OX1NUQVRFX0JMT0NLRUQQBBIgChxBQ0NFU1NfREVDSVNJT05fU1RBVEVfRkFJTEVEEAUqugEKEEFjY2Vzc1BvbGljeU1vZGUSIgoeQUNDRVNTX1BPTElDWV9NT0RFX1VOU1BFQ0lGSUVEEAASGwoXQUNDRVNTX1BPTElDWV9NT0RFX09QRU4QARIiCh5BQ0NFU1NfUE9MSUNZX01PREVfSU5WSVRFX09OTFkQAhIiCh5BQ0NFU1NfUE9MSUNZX01PREVfRklYRURfVVNFUlMQAxIdChlBQ0NFU1NfUE9MSUNZX01PREVfQ0xPU0VEEARCU1pRZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvYWNjZXNzZ2F0ZTthY2Nlc3NnYXRlYgZwcm90bzM", [file_google_protobuf_timestamp, file_domain_actor_actor, file_domain_auth_auth]);
+  fileDesc("CiRkb21haW4vYWNjZXNzX2dhdGUvYWNjZXNzX2dhdGUucHJvdG8SIHBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxIn4KFEFjY2Vzc0dhdGVDbGllbnRJbmZvEhAKCHBsYXRmb3JtGAEgASgJEhMKC2FwcF92ZXJzaW9uGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRIOCgZsb2NhbGUYBCABKAkSHAoUbGlmZWN5Y2xlX2dlbmVyYXRpb24YBSABKAQirAEKEEFjY2Vzc0dhdGVBY3Rpb24SEQoJYWN0aW9uX2lkGAEgASgJEj4KBHR5cGUYAiABKA4yMC5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5BY2Nlc3NHYXRlVHlwZRIVCg1zdWJtaXRfYWN0aW9uGAMgASgJEhcKD3NjaGVtYV9yZXZpc2lvbhgEIAEoDRIVCg1zY2hlbWFfZGlnZXN0GAUgASgJIqIDCgpBY2Nlc3NHYXRlEg8KB2dhdGVfaWQYASABKAkSPgoEdHlwZRgCIAEoDjIwLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGVUeXBlEkAKBXN0YXRlGAMgASgOMjEucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzR2F0ZVN0YXRlEg0KBXRpdGxlGAQgASgJEhMKC2Rlc2NyaXB0aW9uGAUgASgJEhcKD2Jsb2NraW5nX3JlYXNvbhgGIAEoCRIVCg1zdWJtaXRfYWN0aW9uGAcgASgJEhkKEWlucHV0X3NjaGVtYV9qc29uGAggASgJEk8KE2FsdGVybmF0aXZlX2FjdGlvbnMYCSADKAsyMi5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5BY2Nlc3NHYXRlQWN0aW9uEhEKCWFjdGlvbl9pZBgKIAEoCRIXCg9zY2hlbWFfcmV2aXNpb24YCyABKA0SFQoNc2NoZW1hX2RpZ2VzdBgMIAEoCSLPAgoOQWNjZXNzRGVjaXNpb24SRAoFc3RhdGUYASABKA4yNS5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5BY2Nlc3NEZWNpc2lvblN0YXRlEhIKCmF0dGVtcHRfaWQYAiABKAkSFwoPY3VycmVudF9nYXRlX2lkGAMgASgJEjsKBWdhdGVzGAQgAygLMiwucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzR2F0ZRIzCgVhY3RvchgFIAEoCzIkLnBlZXJzX3RvdWNoLm1vZGVsLmFjdG9yLnYxLkFjdG9yUmVmEhcKD2FjY2Vzc19ncmFudF9pZBgGIAEoCRIuCgpleHBpcmVzX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIPCgdtZXNzYWdlGAggASgJIqUBChlTdGFydEFjY2Vzc0F0dGVtcHRSZXF1ZXN0EhMKC3N0YXRpb25fdXJsGAEgASgJEkYKBmNsaWVudBgCIAEoCzI2LnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGVDbGllbnRJbmZvEhIKCnNlc3Npb25faWQYAyABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGAQgASgJIncKGlN0YXJ0QWNjZXNzQXR0ZW1wdFJlc3BvbnNlEkIKCGRlY2lzaW9uGAEgASgLMjAucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzRGVjaXNpb24SFQoNc3RhdGlvbl9sYWJlbBgCIAEoCSKTAQoVQWNjZXNzR2F0ZVNjYWxhclZhbHVlEhIKCmZpZWxkX25hbWUYASABKAkSFgoMc3RyaW5nX3ZhbHVlGAIgASgJSAASFAoKYm9vbF92YWx1ZRgDIAEoCEgAEhcKDWludGVnZXJfdmFsdWUYBCABKBJIABIWCgxudW1iZXJfdmFsdWUYBSABKAFIAEIHCgV2YWx1ZSJhChZBY2Nlc3NHYXRlR2VuZXJpY0lucHV0EkcKBmZpZWxkcxgBIAMoCzI3LnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGVTY2FsYXJWYWx1ZSI4ChpBY2Nlc3NHYXRlRGV2aWNlVHJ1c3RJbnB1dBIaChJhdHRlc3RhdGlvbl9oYW5kbGUYASABKAkivAQKF1N1Ym1pdEFjY2Vzc0dhdGVSZXF1ZXN0EhIKCmF0dGVtcHRfaWQYASABKAkSDwoHZ2F0ZV9pZBgCIAEoCRI+CgR0eXBlGAMgASgOMjAucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzR2F0ZVR5cGUSOAoFbG9naW4YBCABKAsyJy5wZWVyc190b3VjaC5tb2RlbC5hdXRoLnYxLkxvZ2luUmVxdWVzdEgAEhUKC2ludml0ZV9jb2RlGAUgASgJSAASFAoKc2Vzc2lvbl9pZBgGIAEoCUgAElQKDGRldmljZV90cnVzdBgOIAEoCzI8LnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGVEZXZpY2VUcnVzdElucHV0SAASSwoHZ2VuZXJpYxgPIAEoCzI4LnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0dhdGVHZW5lcmljSW5wdXRIABIRCglhY3Rpb25faWQYByABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGAggASgJEhEKCWRldmljZV9pZBgJIAEoCRIcChRsaWZlY3ljbGVfZ2VuZXJhdGlvbhgKIAEoBBIXCg9zY2hlbWFfcmV2aXNpb24YCyABKA0SFQoNc2NoZW1hX2RpZ2VzdBgMIAEoCRIVCg1zdWJtaXNzaW9uX2lkGA0gASgJQg4KDGFjdGlvbl9pbnB1dCKgAQoYU3VibWl0QWNjZXNzR2F0ZVJlc3BvbnNlEkIKCGRlY2lzaW9uGAEgASgLMjAucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzRGVjaXNpb24SQAoObG9naW5fcmVzcG9uc2UYAiABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hdXRoLnYxLkxvZ2luUmVzcG9uc2UieAoYR2V0QWNjZXNzRGVjaXNpb25SZXF1ZXN0EhIKCmF0dGVtcHRfaWQYASABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRIcChRsaWZlY3ljbGVfZ2VuZXJhdGlvbhgEIAEoBCKhAQoZR2V0QWNjZXNzRGVjaXNpb25SZXNwb25zZRJCCghkZWNpc2lvbhgBIAEoCzIwLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc0RlY2lzaW9uEkAKDmxvZ2luX3Jlc3BvbnNlGAIgASgLMigucGVlcnNfdG91Y2gubW9kZWwuYXV0aC52MS5Mb2dpblJlc3BvbnNlInoKGkNhbmNlbEFjY2Vzc0F0dGVtcHRSZXF1ZXN0EhIKCmF0dGVtcHRfaWQYASABKAkSFwoPc3RhdGlvbl9wZWVyX2lkGAIgASgJEhEKCWRldmljZV9pZBgDIAEoCRIcChRsaWZlY3ljbGVfZ2VuZXJhdGlvbhgEIAEoBCIwChtDYW5jZWxBY2Nlc3NBdHRlbXB0UmVzcG9uc2USEQoJY2FuY2VsbGVkGAEgASgIIsoCCgxBY2Nlc3NQb2xpY3kSQAoEbW9kZRgBIAEoDjIyLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc1BvbGljeU1vZGUSFgoOYWxsb3dlZF9lbWFpbHMYAiADKAkSGQoRYWxsb3dlZF91c2VybmFtZXMYAyADKAkSGwoTYWxsb3dlZF9hY3Rvcl9wdGlkcxgEIAMoCRIuCgp1cGRhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgp1cGRhdGVkX2J5GAYgASgJEkcKDWVuYWJsZWRfZ2F0ZXMYByADKA4yMC5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5BY2Nlc3NHYXRlVHlwZRIbChNzZWxmX3NlcnZpY2VfaW52aXRlGAggASgIIlsKGVVwZGF0ZUFjY2Vzc1BvbGljeVJlcXVlc3QSPgoGcG9saWN5GAEgASgLMi4ucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuQWNjZXNzUG9saWN5IlwKGlVwZGF0ZUFjY2Vzc1BvbGljeVJlc3BvbnNlEj4KBnBvbGljeRgBIAEoCzIuLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkFjY2Vzc1BvbGljeSKRAgoKSW52aXRlQ29kZRIKCgJpZBgBIAEoCRIMCgRjb2RlGAIgASgJEgwKBG5vdGUYAyABKAkSEAoIbWF4X3VzZXMYBCABKAUSEgoKdXNlZF9jb3VudBgFIAEoBRIPCgdyZXZva2VkGAYgASgIEhIKCmNyZWF0ZWRfYnkYByABKAkSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF91c2VkX2F0GAogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJ3ChdDcmVhdGVJbnZpdGVDb2RlUmVxdWVzdBIMCgRjb2RlGAEgASgJEgwKBG5vdGUYAiABKAkSEAoIbWF4X3VzZXMYAyABKAUSLgoKZXhwaXJlc19hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiXQoYQ3JlYXRlSW52aXRlQ29kZVJlc3BvbnNlEkEKC2ludml0ZV9jb2RlGAEgASgLMiwucGVlcnNfdG91Y2gubW9kZWwuYWNjZXNzX2dhdGUudjEuSW52aXRlQ29kZSIxChZMaXN0SW52aXRlQ29kZXNSZXF1ZXN0EhcKD2luY2x1ZGVfcmV2b2tlZBgBIAEoCCJdChdMaXN0SW52aXRlQ29kZXNSZXNwb25zZRJCCgxpbnZpdGVfY29kZXMYASADKAsyLC5wZWVyc190b3VjaC5tb2RlbC5hY2Nlc3NfZ2F0ZS52MS5JbnZpdGVDb2RlIiUKF1Jldm9rZUludml0ZUNvZGVSZXF1ZXN0EgoKAmlkGAEgASgJIl0KGFJldm9rZUludml0ZUNvZGVSZXNwb25zZRJBCgtpbnZpdGVfY29kZRgBIAEoCzIsLnBlZXJzX3RvdWNoLm1vZGVsLmFjY2Vzc19nYXRlLnYxLkludml0ZUNvZGUqmgMKDkFjY2Vzc0dhdGVUeXBlEiAKHEFDQ0VTU19HQVRFX1RZUEVfVU5TUEVDSUZJRUQQABInCiNBQ0NFU1NfR0FURV9UWVBFX1NUQVRJT05fQ0FQQUJJTElUWRABEh8KG0FDQ0VTU19HQVRFX1RZUEVfQVVUSF9MT0dJThACEikKJUFDQ0VTU19HQVRFX1RZUEVfQVVUSF9TRVNTSU9OX1JFU1RPUkUQAxIlCiFBQ0NFU1NfR0FURV9UWVBFX0lOVklURV9BTExPV0xJU1QQBBIgChxBQ0NFU1NfR0FURV9UWVBFX0lOVklURV9DT0RFEAUSIQodQUNDRVNTX0dBVEVfVFlQRV9ERVZJQ0VfVFJVU1QQBhIgChxBQ0NFU1NfR0FURV9UWVBFX01BSU5URU5BTkNFEAcSJQohQUNDRVNTX0dBVEVfVFlQRV9URVJNU19BQ0NFUFRBTkNFEAgSHwobQUNDRVNTX0dBVEVfVFlQRV9BVVRIX09BVVRIEAkSGwoXQUNDRVNTX0dBVEVfVFlQRV9DVVNUT00QZCr0AQoPQWNjZXNzR2F0ZVN0YXRlEiEKHUFDQ0VTU19HQVRFX1NUQVRFX1VOU1BFQ0lGSUVEEAASHQoZQUNDRVNTX0dBVEVfU1RBVEVfUEVORElORxABEiUKIUFDQ0VTU19HQVRFX1NUQVRFX0FDVElPTl9SRVFVSVJFRBACEhwKGEFDQ0VTU19HQVRFX1NUQVRFX1BBU1NFRBADEh0KGUFDQ0VTU19HQVRFX1NUQVRFX0JMT0NLRUQQBBIcChhBQ0NFU1NfR0FURV9TVEFURV9GQUlMRUQQBRIdChlBQ0NFU1NfR0FURV9TVEFURV9TS0lQUEVEEAYq8gEKE0FjY2Vzc0RlY2lzaW9uU3RhdGUSJQohQUNDRVNTX0RFQ0lTSU9OX1NUQVRFX1VOU1BFQ0lGSUVEEAASIQodQUNDRVNTX0RFQ0lTSU9OX1NUQVRFX1BFTkRJTkcQARIpCiVBQ0NFU1NfREVDSVNJT05fU1RBVEVfQUNUSU9OX1JFUVVJUkVEEAISIQodQUNDRVNTX0RFQ0lTSU9OX1NUQVRFX0dSQU5URUQQAxIhCh1BQ0NFU1NfREVDSVNJT05fU1RBVEVfQkxPQ0tFRBAEEiAKHEFDQ0VTU19ERUNJU0lPTl9TVEFURV9GQUlMRUQQBSq6AQoQQWNjZXNzUG9saWN5TW9kZRIiCh5BQ0NFU1NfUE9MSUNZX01PREVfVU5TUEVDSUZJRUQQABIbChdBQ0NFU1NfUE9MSUNZX01PREVfT1BFThABEiIKHkFDQ0VTU19QT0xJQ1lfTU9ERV9JTlZJVEVfT05MWRACEiIKHkFDQ0VTU19QT0xJQ1lfTU9ERV9GSVhFRF9VU0VSUxADEh0KGUFDQ0VTU19QT0xJQ1lfTU9ERV9DTE9TRUQQBEJTWlFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbC9hY2Nlc3NnYXRlO2FjY2Vzc2dhdGViBnByb3RvMw", [file_google_protobuf_timestamp, file_domain_actor_actor, file_domain_auth_auth]);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.AccessGateClientInfo
@@ -41,6 +41,11 @@ export type AccessGateClientInfo = Message<"peers_touch.model.access_gate.v1.Acc
    * @generated from field: string locale = 4;
    */
   locale: string;
+
+  /**
+   * @generated from field: uint64 lifecycle_generation = 5;
+   */
+  lifecycleGeneration: bigint;
 };
 
 /**
@@ -51,9 +56,9 @@ export const AccessGateClientInfoSchema: GenMessage<AccessGateClientInfo> = /*@_
   messageDesc(file_domain_access_gate_access_gate, 0);
 
 /**
- * AccessGateAction is one credential action accepted by its parent gate.
- * AUTH_LOGIN remains the ordered credential-stage gate; OAuth is advertised as
- * an alternative action rather than inserted as another mandatory gate.
+ * AccessGateAction is one exact action accepted by its parent gate. The schema
+ * digest binds the rendered form to the submitted action without allowing the
+ * client to select an endpoint.
  *
  * @generated from message peers_touch.model.access_gate.v1.AccessGateAction
  */
@@ -72,6 +77,16 @@ export type AccessGateAction = Message<"peers_touch.model.access_gate.v1.AccessG
    * @generated from field: string submit_action = 3;
    */
   submitAction: string;
+
+  /**
+   * @generated from field: uint32 schema_revision = 4;
+   */
+  schemaRevision: number;
+
+  /**
+   * @generated from field: string schema_digest = 5;
+   */
+  schemaDigest: string;
 };
 
 /**
@@ -133,6 +148,21 @@ export type AccessGate = Message<"peers_touch.model.access_gate.v1.AccessGate"> 
    * @generated from field: repeated peers_touch.model.access_gate.v1.AccessGateAction alternative_actions = 9;
    */
   alternativeActions: AccessGateAction[];
+
+  /**
+   * @generated from field: string action_id = 10;
+   */
+  actionId: string;
+
+  /**
+   * @generated from field: uint32 schema_revision = 11;
+   */
+  schemaRevision: number;
+
+  /**
+   * @generated from field: string schema_digest = 12;
+   */
+  schemaDigest: string;
 };
 
 /**
@@ -234,6 +264,11 @@ export type StartAccessAttemptResponse = Message<"peers_touch.model.access_gate.
    * @generated from field: peers_touch.model.access_gate.v1.AccessDecision decision = 1;
    */
   decision?: AccessDecision | undefined;
+
+  /**
+   * @generated from field: string station_label = 2;
+   */
+  stationLabel: string;
 };
 
 /**
@@ -242,6 +277,89 @@ export type StartAccessAttemptResponse = Message<"peers_touch.model.access_gate.
  */
 export const StartAccessAttemptResponseSchema: GenMessage<StartAccessAttemptResponse> = /*@__PURE__*/
   messageDesc(file_domain_access_gate_access_gate, 5);
+
+/**
+ * @generated from message peers_touch.model.access_gate.v1.AccessGateScalarValue
+ */
+export type AccessGateScalarValue = Message<"peers_touch.model.access_gate.v1.AccessGateScalarValue"> & {
+  /**
+   * @generated from field: string field_name = 1;
+   */
+  fieldName: string;
+
+  /**
+   * @generated from oneof peers_touch.model.access_gate.v1.AccessGateScalarValue.value
+   */
+  value: {
+    /**
+     * @generated from field: string string_value = 2;
+     */
+    value: string;
+    case: "stringValue";
+  } | {
+    /**
+     * @generated from field: bool bool_value = 3;
+     */
+    value: boolean;
+    case: "boolValue";
+  } | {
+    /**
+     * @generated from field: sint64 integer_value = 4;
+     */
+    value: bigint;
+    case: "integerValue";
+  } | {
+    /**
+     * @generated from field: double number_value = 5;
+     */
+    value: number;
+    case: "numberValue";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message peers_touch.model.access_gate.v1.AccessGateScalarValue.
+ * Use `create(AccessGateScalarValueSchema)` to create a new message.
+ */
+export const AccessGateScalarValueSchema: GenMessage<AccessGateScalarValue> = /*@__PURE__*/
+  messageDesc(file_domain_access_gate_access_gate, 6);
+
+/**
+ * @generated from message peers_touch.model.access_gate.v1.AccessGateGenericInput
+ */
+export type AccessGateGenericInput = Message<"peers_touch.model.access_gate.v1.AccessGateGenericInput"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.access_gate.v1.AccessGateScalarValue fields = 1;
+   */
+  fields: AccessGateScalarValue[];
+};
+
+/**
+ * Describes the message peers_touch.model.access_gate.v1.AccessGateGenericInput.
+ * Use `create(AccessGateGenericInputSchema)` to create a new message.
+ */
+export const AccessGateGenericInputSchema: GenMessage<AccessGateGenericInput> = /*@__PURE__*/
+  messageDesc(file_domain_access_gate_access_gate, 7);
+
+/**
+ * @generated from message peers_touch.model.access_gate.v1.AccessGateDeviceTrustInput
+ */
+export type AccessGateDeviceTrustInput = Message<"peers_touch.model.access_gate.v1.AccessGateDeviceTrustInput"> & {
+  /**
+   * Opaque reference to native attestation material. Raw credentials, binary
+   * payloads, and executable data are never valid generic field values.
+   *
+   * @generated from field: string attestation_handle = 1;
+   */
+  attestationHandle: string;
+};
+
+/**
+ * Describes the message peers_touch.model.access_gate.v1.AccessGateDeviceTrustInput.
+ * Use `create(AccessGateDeviceTrustInputSchema)` to create a new message.
+ */
+export const AccessGateDeviceTrustInputSchema: GenMessage<AccessGateDeviceTrustInput> = /*@__PURE__*/
+  messageDesc(file_domain_access_gate_access_gate, 8);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.SubmitAccessGateRequest
@@ -263,19 +381,74 @@ export type SubmitAccessGateRequest = Message<"peers_touch.model.access_gate.v1.
   type: AccessGateType;
 
   /**
-   * @generated from field: peers_touch.model.auth.v1.LoginRequest login = 4;
+   * @generated from oneof peers_touch.model.access_gate.v1.SubmitAccessGateRequest.action_input
    */
-  login?: LoginRequest | undefined;
+  actionInput: {
+    /**
+     * @generated from field: peers_touch.model.auth.v1.LoginRequest login = 4;
+     */
+    value: LoginRequest;
+    case: "login";
+  } | {
+    /**
+     * @generated from field: string invite_code = 5;
+     */
+    value: string;
+    case: "inviteCode";
+  } | {
+    /**
+     * @generated from field: string session_id = 6;
+     */
+    value: string;
+    case: "sessionId";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.access_gate.v1.AccessGateDeviceTrustInput device_trust = 14;
+     */
+    value: AccessGateDeviceTrustInput;
+    case: "deviceTrust";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.access_gate.v1.AccessGateGenericInput generic = 15;
+     */
+    value: AccessGateGenericInput;
+    case: "generic";
+  } | { case: undefined; value?: undefined };
 
   /**
-   * @generated from field: string invite_code = 5;
+   * @generated from field: string action_id = 7;
    */
-  inviteCode: string;
+  actionId: string;
 
   /**
-   * @generated from field: string session_id = 6;
+   * @generated from field: string station_peer_id = 8;
    */
-  sessionId: string;
+  stationPeerId: string;
+
+  /**
+   * @generated from field: string device_id = 9;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: uint64 lifecycle_generation = 10;
+   */
+  lifecycleGeneration: bigint;
+
+  /**
+   * @generated from field: uint32 schema_revision = 11;
+   */
+  schemaRevision: number;
+
+  /**
+   * @generated from field: string schema_digest = 12;
+   */
+  schemaDigest: string;
+
+  /**
+   * @generated from field: string submission_id = 13;
+   */
+  submissionId: string;
 };
 
 /**
@@ -283,7 +456,7 @@ export type SubmitAccessGateRequest = Message<"peers_touch.model.access_gate.v1.
  * Use `create(SubmitAccessGateRequestSchema)` to create a new message.
  */
 export const SubmitAccessGateRequestSchema: GenMessage<SubmitAccessGateRequest> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 6);
+  messageDesc(file_domain_access_gate_access_gate, 9);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.SubmitAccessGateResponse
@@ -305,7 +478,7 @@ export type SubmitAccessGateResponse = Message<"peers_touch.model.access_gate.v1
  * Use `create(SubmitAccessGateResponseSchema)` to create a new message.
  */
 export const SubmitAccessGateResponseSchema: GenMessage<SubmitAccessGateResponse> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 7);
+  messageDesc(file_domain_access_gate_access_gate, 10);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.GetAccessDecisionRequest
@@ -315,6 +488,21 @@ export type GetAccessDecisionRequest = Message<"peers_touch.model.access_gate.v1
    * @generated from field: string attempt_id = 1;
    */
   attemptId: string;
+
+  /**
+   * @generated from field: string station_peer_id = 2;
+   */
+  stationPeerId: string;
+
+  /**
+   * @generated from field: string device_id = 3;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: uint64 lifecycle_generation = 4;
+   */
+  lifecycleGeneration: bigint;
 };
 
 /**
@@ -322,7 +510,7 @@ export type GetAccessDecisionRequest = Message<"peers_touch.model.access_gate.v1
  * Use `create(GetAccessDecisionRequestSchema)` to create a new message.
  */
 export const GetAccessDecisionRequestSchema: GenMessage<GetAccessDecisionRequest> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 8);
+  messageDesc(file_domain_access_gate_access_gate, 11);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.GetAccessDecisionResponse
@@ -332,6 +520,11 @@ export type GetAccessDecisionResponse = Message<"peers_touch.model.access_gate.v
    * @generated from field: peers_touch.model.access_gate.v1.AccessDecision decision = 1;
    */
   decision?: AccessDecision | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.auth.v1.LoginResponse login_response = 2;
+   */
+  loginResponse?: LoginResponse | undefined;
 };
 
 /**
@@ -339,7 +532,7 @@ export type GetAccessDecisionResponse = Message<"peers_touch.model.access_gate.v
  * Use `create(GetAccessDecisionResponseSchema)` to create a new message.
  */
 export const GetAccessDecisionResponseSchema: GenMessage<GetAccessDecisionResponse> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 9);
+  messageDesc(file_domain_access_gate_access_gate, 12);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.CancelAccessAttemptRequest
@@ -349,6 +542,21 @@ export type CancelAccessAttemptRequest = Message<"peers_touch.model.access_gate.
    * @generated from field: string attempt_id = 1;
    */
   attemptId: string;
+
+  /**
+   * @generated from field: string station_peer_id = 2;
+   */
+  stationPeerId: string;
+
+  /**
+   * @generated from field: string device_id = 3;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: uint64 lifecycle_generation = 4;
+   */
+  lifecycleGeneration: bigint;
 };
 
 /**
@@ -356,7 +564,7 @@ export type CancelAccessAttemptRequest = Message<"peers_touch.model.access_gate.
  * Use `create(CancelAccessAttemptRequestSchema)` to create a new message.
  */
 export const CancelAccessAttemptRequestSchema: GenMessage<CancelAccessAttemptRequest> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 10);
+  messageDesc(file_domain_access_gate_access_gate, 13);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.CancelAccessAttemptResponse
@@ -373,7 +581,7 @@ export type CancelAccessAttemptResponse = Message<"peers_touch.model.access_gate
  * Use `create(CancelAccessAttemptResponseSchema)` to create a new message.
  */
 export const CancelAccessAttemptResponseSchema: GenMessage<CancelAccessAttemptResponse> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 11);
+  messageDesc(file_domain_access_gate_access_gate, 14);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.AccessPolicy
@@ -432,7 +640,7 @@ export type AccessPolicy = Message<"peers_touch.model.access_gate.v1.AccessPolic
  * Use `create(AccessPolicySchema)` to create a new message.
  */
 export const AccessPolicySchema: GenMessage<AccessPolicy> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 12);
+  messageDesc(file_domain_access_gate_access_gate, 15);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.UpdateAccessPolicyRequest
@@ -449,7 +657,7 @@ export type UpdateAccessPolicyRequest = Message<"peers_touch.model.access_gate.v
  * Use `create(UpdateAccessPolicyRequestSchema)` to create a new message.
  */
 export const UpdateAccessPolicyRequestSchema: GenMessage<UpdateAccessPolicyRequest> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 13);
+  messageDesc(file_domain_access_gate_access_gate, 16);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.UpdateAccessPolicyResponse
@@ -466,7 +674,7 @@ export type UpdateAccessPolicyResponse = Message<"peers_touch.model.access_gate.
  * Use `create(UpdateAccessPolicyResponseSchema)` to create a new message.
  */
 export const UpdateAccessPolicyResponseSchema: GenMessage<UpdateAccessPolicyResponse> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 14);
+  messageDesc(file_domain_access_gate_access_gate, 17);
 
 /**
  * InviteCode is a Station-issued, administrator-managed credential that lets a
@@ -532,7 +740,7 @@ export type InviteCode = Message<"peers_touch.model.access_gate.v1.InviteCode"> 
  * Use `create(InviteCodeSchema)` to create a new message.
  */
 export const InviteCodeSchema: GenMessage<InviteCode> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 15);
+  messageDesc(file_domain_access_gate_access_gate, 18);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.CreateInviteCodeRequest
@@ -570,7 +778,7 @@ export type CreateInviteCodeRequest = Message<"peers_touch.model.access_gate.v1.
  * Use `create(CreateInviteCodeRequestSchema)` to create a new message.
  */
 export const CreateInviteCodeRequestSchema: GenMessage<CreateInviteCodeRequest> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 16);
+  messageDesc(file_domain_access_gate_access_gate, 19);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.CreateInviteCodeResponse
@@ -587,7 +795,7 @@ export type CreateInviteCodeResponse = Message<"peers_touch.model.access_gate.v1
  * Use `create(CreateInviteCodeResponseSchema)` to create a new message.
  */
 export const CreateInviteCodeResponseSchema: GenMessage<CreateInviteCodeResponse> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 17);
+  messageDesc(file_domain_access_gate_access_gate, 20);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.ListInviteCodesRequest
@@ -604,7 +812,7 @@ export type ListInviteCodesRequest = Message<"peers_touch.model.access_gate.v1.L
  * Use `create(ListInviteCodesRequestSchema)` to create a new message.
  */
 export const ListInviteCodesRequestSchema: GenMessage<ListInviteCodesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 18);
+  messageDesc(file_domain_access_gate_access_gate, 21);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.ListInviteCodesResponse
@@ -621,7 +829,7 @@ export type ListInviteCodesResponse = Message<"peers_touch.model.access_gate.v1.
  * Use `create(ListInviteCodesResponseSchema)` to create a new message.
  */
 export const ListInviteCodesResponseSchema: GenMessage<ListInviteCodesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 19);
+  messageDesc(file_domain_access_gate_access_gate, 22);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.RevokeInviteCodeRequest
@@ -638,7 +846,7 @@ export type RevokeInviteCodeRequest = Message<"peers_touch.model.access_gate.v1.
  * Use `create(RevokeInviteCodeRequestSchema)` to create a new message.
  */
 export const RevokeInviteCodeRequestSchema: GenMessage<RevokeInviteCodeRequest> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 20);
+  messageDesc(file_domain_access_gate_access_gate, 23);
 
 /**
  * @generated from message peers_touch.model.access_gate.v1.RevokeInviteCodeResponse
@@ -655,7 +863,7 @@ export type RevokeInviteCodeResponse = Message<"peers_touch.model.access_gate.v1
  * Use `create(RevokeInviteCodeResponseSchema)` to create a new message.
  */
 export const RevokeInviteCodeResponseSchema: GenMessage<RevokeInviteCodeResponse> = /*@__PURE__*/
-  messageDesc(file_domain_access_gate_access_gate, 21);
+  messageDesc(file_domain_access_gate_access_gate, 24);
 
 /**
  * @generated from enum peers_touch.model.access_gate.v1.AccessGateType

@@ -1,8 +1,20 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from .errors import GateError
+
+
+HARNESS_ERROR_DETAIL_FIELDS = (
+    "status",
+    "error_code",
+    "locale_key",
+    "retryable",
+    "terminal",
+    "required_gate",
+)
+HARNESS_ERROR_VALUE_LIMIT = 256
 
 
 ASYNC_HARNESS_SCRIPT = """
@@ -22,8 +34,56 @@ if (!harness || typeof harness[method] !== 'function') {
 }
 harness[method](payload)
   .then((value) => done({ value }))
-  .catch((error) => done({ error: String(error && error.message || error) }));
+  .catch((error) => {
+    const candidate = error && typeof error === 'object' ? error : {};
+    const sourceDetails = candidate.details && typeof candidate.details === 'object'
+      ? candidate.details
+      : {};
+    const errorDetails = {};
+    for (const field of [
+      'status',
+      'error_code',
+      'locale_key',
+      'retryable',
+      'terminal',
+      'required_gate',
+    ]) {
+      const value = sourceDetails[field];
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        errorDetails[field] = value;
+      } else if (typeof value === 'string') {
+        errorDetails[field] = value.slice(0, 256);
+      }
+    }
+    done({
+      error: String(error && error.message || error).slice(0, 512),
+      errorCode: typeof candidate.code === 'string'
+        ? candidate.code.slice(0, 128)
+        : null,
+      errorDetails,
+    });
+  });
 """
+
+
+def _harness_error_context(result: dict[str, Any]) -> str:
+    context: dict[str, Any] = {}
+    error_code = result.get("errorCode")
+    if isinstance(error_code, str) and error_code:
+        context["code"] = error_code[:HARNESS_ERROR_VALUE_LIMIT]
+    details = result.get("errorDetails")
+    if isinstance(details, dict):
+        for field in HARNESS_ERROR_DETAIL_FIELDS:
+            value = details.get(field)
+            if isinstance(value, bool):
+                context[field] = value
+            elif isinstance(value, (int, float)):
+                context[field] = value
+            elif isinstance(value, str) and value:
+                context[field] = value[:HARNESS_ERROR_VALUE_LIMIT]
+    if not context:
+        return ""
+    return f" [{json.dumps(context, sort_keys=True, separators=(',', ':'))}]"
 
 
 def _set_script_timeout(driver: Any, timeout: float) -> None:
@@ -61,7 +121,11 @@ def call_async_harness(
     if not isinstance(result, dict):
         raise GateError(f"harness {method} returned non-dict: {result!r}")
     if result.get("error"):
-        raise GateError(f"harness {namespace + '.' if namespace else ''}{method} failed: {result['error']}")
+        context = _harness_error_context(result)
+        raise GateError(
+            f"harness {namespace + '.' if namespace else ''}{method} "
+            f"failed: {result['error']}{context}"
+        )
     return result.get("value")
 
 

@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FederationCatalogEntry, MemberStationView } from '../services/desktop_api';
+import type { FederationCatalogEntry } from '../services/desktop_api';
 
 const mocks = vi.hoisted(() => ({
   federationCatalogSearch: vi.fn(),
+  federationListContexts: vi.fn(),
 }));
 
 vi.mock('../services/desktop_api', () => ({
   api: {
     federationCatalogSearch: mocks.federationCatalogSearch,
+    federationListContexts: mocks.federationListContexts,
   },
 }));
 
@@ -16,10 +18,29 @@ import { resolveFederationStationName, useFederationStore } from './federation';
 describe('federation actor Station directory', () => {
   beforeEach(() => {
     mocks.federationCatalogSearch.mockReset();
+    mocks.federationListContexts.mockReset();
     useFederationStore.setState({
+      federations: [],
       actorStationEntries: {},
-      memberStationsByFederation: {},
     });
+  });
+
+  it('loads only the context projection exposed to ordinary clients', async () => {
+    mocks.federationListContexts.mockResolvedValue({
+      contexts: [{
+        federationId: 'federation-1',
+        name: 'Development',
+        status: 'active',
+      }],
+    });
+
+    await useFederationStore.getState().refreshFederationContexts();
+
+    expect(useFederationStore.getState().federations).toEqual([{
+      federationId: 'federation-1',
+      name: 'Development',
+      status: 'active',
+    }]);
   });
 
   it('retains the authoritative Station name from the matching actor row', async () => {
@@ -72,31 +93,9 @@ describe('federation actor Station directory', () => {
     expect(mocks.federationCatalogSearch).not.toHaveBeenCalled();
   });
 
-  it('resolves a human-readable authority Station without falling back to its peer ID', () => {
+  it('resolves a human-readable authority Station only from the actor catalog row', () => {
     expect(resolveFederationStationName({
       actorPtid: 'ptid:bob',
-      federationId: 'federation-1',
-      stationPeerId: 'station-bob',
-      actorStationEntries: {},
-      memberStationsByFederation: {
-        'federation-1': [{
-          stationPeerId: 'station-bob',
-          stationName: 'Aspen Station',
-        } as MemberStationView],
-      },
-    })).toBe('Aspen Station');
-
-    expect(resolveFederationStationName({
-      stationPeerId: 'station-unknown',
-      actorStationEntries: {},
-      memberStationsByFederation: {},
-    })).toBe('');
-  });
-
-  it('prefers the actor-specific Station name over a generic member directory label', () => {
-    expect(resolveFederationStationName({
-      actorPtid: 'ptid:bob',
-      federationId: 'federation-1',
       stationPeerId: 'station-bob',
       actorStationEntries: {
         'ptid:bob': {
@@ -105,12 +104,11 @@ describe('federation actor Station directory', () => {
           homeStationName: 'Aspen Station',
         } as FederationCatalogEntry,
       },
-      memberStationsByFederation: {
-        'federation-1': [{
-          stationPeerId: 'station-bob',
-          stationName: 'local',
-        } as MemberStationView],
-      },
     })).toBe('Aspen Station');
+
+    expect(resolveFederationStationName({
+      stationPeerId: 'station-unknown',
+      actorStationEntries: {},
+    })).toBe('');
   });
 });

@@ -23,6 +23,7 @@ export interface Conversation {
   unread: number;
   online?: boolean;
   isGroup?: boolean;
+  canModerate?: boolean;
   pinned?: boolean;
   muted?: boolean;
   lastSender?: string;
@@ -51,9 +52,11 @@ export interface Message {
   reply?: MessageReply;
   image?: string;
   file?: { name: string; size: string };
+  voice?: { durationSeconds: number };
   dateLabel?: string;
   reactions?: MessageReaction[];
   recalled?: boolean;
+  moderated?: boolean;
   pinned?: boolean;
   threadReplies?: Message[];
   threadCount?: number;

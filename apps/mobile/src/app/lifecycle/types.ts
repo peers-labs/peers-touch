@@ -18,6 +18,7 @@
  * SUSPENDED     – All runtimes suspended; app is in background.
  * RESUMING      – App returning to foreground; runtimes resuming in bootstrap order.
  * TEARDOWN      – App is shutting down; runtimes tearing down in reverse order.
+ * TEARDOWN_FAILED – At least one runtime still requires cleanup before scope mutation.
  */
 export type LifecyclePhase =
   | 'COLD'
@@ -26,7 +27,8 @@ export type LifecyclePhase =
   | 'SUSPENDING'
   | 'SUSPENDED'
   | 'RESUMING'
-  | 'TEARDOWN';
+  | 'TEARDOWN'
+  | 'TEARDOWN_FAILED';
 
 export type MobileLaunchState =
   | 'app-boot'
@@ -43,8 +45,10 @@ export type MobileLaunchState =
 export type LifecycleTransitionReason =
   | 'app-start'
   | 'app-unmount'
+  | 'access-granted'
   | 'app-background'
   | 'app-resume'
+  | 'reliability-recovery'
   | 'native-resume'
   | 'visibility-change'
   | 'window-focus'
@@ -55,6 +59,13 @@ export type LifecycleTransitionReason =
   | 'acceptance-restart'
   | 'acceptance-suspend'
   | 'acceptance-resume';
+
+export type DraftDisposition = 'retain' | 'discard';
+
+export interface RuntimeTeardownContext {
+  readonly reason: LifecycleTransitionReason;
+  readonly draftDisposition?: DraftDisposition;
+}
 
 // --- Runtime Descriptor Status ---
 
@@ -83,6 +94,24 @@ export interface AggregateTeardownResult {
   readonly results: readonly RuntimeOperationResult[];
   readonly allSuccessful: boolean;
   readonly totalDurationMs: number;
+}
+
+export interface RuntimeReadiness {
+  readonly status: 'pending' | 'ready' | 'failed';
+  readonly errorKey: string | null;
+  readonly diagnosticError?: string | null;
+}
+
+export interface RuntimeReadinessUpdate {
+  isCurrent(): boolean;
+  waitForDependencies(): Promise<boolean>;
+  ready(): void;
+  fail(error: unknown): void;
+}
+
+export interface MobileRuntimeContext {
+  readonly generation: number;
+  beginReadinessUpdate(): RuntimeReadinessUpdate;
 }
 
 // --- MobileRuntimeDescriptor ---
@@ -115,7 +144,7 @@ export interface MobileRuntimeDescriptor {
    * Must resolve when the runtime is ready to serve requests.
    * Throwing aborts the bootstrap sequence for dependent runtimes.
    */
-  bootstrap(): Promise<void>;
+  bootstrap(context: MobileRuntimeContext): Promise<void>;
 
   /**
    * Pause runtime activity for background state.
@@ -129,14 +158,14 @@ export interface MobileRuntimeDescriptor {
    * Called during RESUMING phase in bootstrap dependency order.
    * Must reconcile any state that may have changed while suspended.
    */
-  resume(): Promise<void>;
+  resume(context: MobileRuntimeContext): Promise<void>;
 
   /**
    * Release all resources. Called during TEARDOWN phase in reverse dependency order.
    * Must be safe to call even if bootstrap() was never called or failed.
    * Returns an operation result for aggregate reporting.
    */
-  teardown(): Promise<RuntimeOperationResult>;
+  teardown(context: RuntimeTeardownContext): Promise<RuntimeOperationResult>;
 }
 
 // --- Lifecycle Kernel State ---
@@ -145,6 +174,7 @@ export interface RuntimeEntry {
   readonly descriptor: MobileRuntimeDescriptor;
   status: RuntimeBootstrapStatus;
   lastError: string | null;
+  readiness: RuntimeReadiness | null;
 }
 
 export interface LifecycleKernelState {

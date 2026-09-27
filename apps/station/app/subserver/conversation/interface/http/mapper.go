@@ -324,6 +324,42 @@ func MapSubmitCommand(
 		mapped.Kind = domainevent.KindMessageRetracted
 		mapped.MessageID = valueobject.MessageID(payload.RetractMessage.GetMessageId())
 		mapped.Deliveries, err = mapPublicDeliveries(wire, preparation.RequiredEndpoints)
+	case *chat.ChatCommand_HideMessageForActor:
+		mapped.Kind = domainevent.KindMessageHiddenForActor
+		mapped.MessageID = valueobject.MessageID(
+			payload.HideMessageForActor.GetMessageId(),
+		)
+		mapped.Deliveries, err = mapPublicDeliveries(
+			wire,
+			preparation.RequiredEndpoints,
+		)
+	case *chat.ChatCommand_ModerateMessage:
+		mapped.Kind = domainevent.KindMessageModerated
+		mapped.MessageID = valueobject.MessageID(
+			payload.ModerateMessage.GetMessageId(),
+		)
+		mapped.ReasonCode = payload.ModerateMessage.GetReasonCode()
+		mapped.Deliveries, err = mapPublicDeliveries(
+			wire,
+			preparation.RequiredEndpoints,
+		)
+	case *chat.ChatCommand_ForwardMessage:
+		mapped.Kind = domainevent.KindMessageForwarded
+		mapped.MessageID = valueobject.MessageID(
+			payload.ForwardMessage.GetDestinationMessageId(),
+		)
+		mapped.ObjectIDs = objectIDs(
+			payload.ForwardMessage.GetDestinationAttachments(),
+		)
+		mapped.Deliveries, err = mapContentDeliveries(
+			wire,
+			preparation.Kind,
+			preparation.RequiredEndpoints,
+			payload.ForwardMessage.GetDestinationPayloads(),
+			payload.ForwardMessage.GetMlsApplicationPayload(),
+			payload.ForwardMessage.GetMlsApplicationPayloadSha256(),
+			valueobject.DeliveryKindMLSApplication,
+		)
 	case *chat.ChatCommand_Reaction:
 		mapped.Kind = domainevent.KindReactionCommitted
 		mapped.MessageID = valueobject.MessageID(payload.Reaction.GetMessageId())
@@ -494,6 +530,57 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 				RetractedAt: timestamppb.New(record.CommittedAt),
 			},
 		}
+	case domainevent.KindMessageHiddenForActor:
+		intent := source.GetHideMessageForActor()
+		if intent == nil {
+			return nil, invalid(
+				"interface.map_event",
+				"fact",
+				"actor-hide command payload is missing",
+			)
+		}
+		wire.Payload = &chat.ConversationEvent_MessageHiddenForActor{
+			MessageHiddenForActor: &chat.MessageHiddenForActorFact{
+				MessageId: intent.GetMessageId(),
+				ActorPtid: string(record.Actor.Actor),
+				HiddenAt:  timestamppb.New(record.CommittedAt),
+			},
+		}
+	case domainevent.KindMessageModerated:
+		intent := source.GetModerateMessage()
+		if intent == nil {
+			return nil, invalid(
+				"interface.map_event",
+				"fact",
+				"moderation command payload is missing",
+			)
+		}
+		wire.Payload = &chat.ConversationEvent_MessageModerated{
+			MessageModerated: &chat.MessageModeratedFact{
+				MessageId:   intent.GetMessageId(),
+				Moderator:   endpointToProto(record.Actor),
+				ReasonCode:  intent.GetReasonCode(),
+				ModeratedAt: timestamppb.New(record.CommittedAt),
+			},
+		}
+	case domainevent.KindMessageForwarded:
+		intent := source.GetForwardMessage()
+		if intent == nil {
+			return nil, invalid(
+				"interface.map_event",
+				"fact",
+				"forward command payload is missing",
+			)
+		}
+		wire.Payload = &chat.ConversationEvent_MessageForwarded{
+			MessageForwarded: &chat.MessageForwardedFact{
+				DestinationMessageId:   intent.GetDestinationMessageId(),
+				Sender:                 endpointToProto(record.Actor),
+				ContentKind:            intent.GetContentKind(),
+				DestinationAttachments: intent.GetDestinationAttachments(),
+				ClientTimestamp:        source.ClientTimestamp,
+			},
+		}
 	case domainevent.KindReactionCommitted:
 		intent := source.GetReaction()
 		if intent == nil {
@@ -523,11 +610,10 @@ func MapEvent(record domainevent.Record) (*chat.ConversationEvent, error) {
 		patch := record.Fact.SettingsPatch
 		wire.Payload = &chat.ConversationEvent_ConversationUpdated{
 			ConversationUpdated: &chat.ConversationUpdatedFact{
-				Name:                  patch.Name,
-				Description:           patch.Description,
-				AvatarObjectId:        patch.AvatarObjectID,
-				DisappearTimerSeconds: patch.DisappearTimerSeconds,
-				Visibility:            optionalConversationVisibilityToProto(patch.Visibility),
+				Name:           patch.Name,
+				Description:    patch.Description,
+				AvatarObjectId: patch.AvatarObjectID,
+				Visibility:     optionalConversationVisibilityToProto(patch.Visibility),
 			},
 		}
 	case domainevent.KindMembershipCommitted:
@@ -1168,11 +1254,10 @@ func mapSettingsPatch(intent *chat.UpdateConversationIntent) *valueobject.Settin
 		return nil
 	}
 	return &valueobject.SettingsPatch{
-		Name:                  intent.Name,
-		Description:           intent.Description,
-		AvatarObjectID:        intent.AvatarObjectId,
-		Visibility:            conversationVisibilityFromProto(intent.Visibility),
-		DisappearTimerSeconds: intent.DisappearTimerSeconds,
+		Name:           intent.Name,
+		Description:    intent.Description,
+		AvatarObjectID: intent.AvatarObjectId,
+		Visibility:     conversationVisibilityFromProto(intent.Visibility),
 	}
 }
 
@@ -1261,20 +1346,19 @@ func mapConversationState(
 		})
 	}
 	return &chat.ConversationAuthoritySnapshot{
-		Kind:                  conversationKindToProto(state.Kind),
-		Name:                  state.Settings.Name,
-		OwnerPtid:             string(state.Owner),
-		ActiveMembers:         members,
-		ActiveEndpoints:       endpoints,
-		MembershipEpoch:       int64(state.MembershipEpoch),
-		MlsEpoch:              int64(state.MLSEpoch),
-		ActiveEndpointRoutes:  endpointRoutes,
-		FederationId:          string(state.FederationID),
-		AuthorityEpoch:        int64(state.AuthorityEpoch),
-		Description:           state.Settings.Description,
-		AvatarObjectId:        state.Settings.AvatarObjectID,
-		Visibility:            conversationVisibilityToProto(state.Settings.Visibility),
-		DisappearTimerSeconds: state.Settings.DisappearTimerSeconds,
+		Kind:                 conversationKindToProto(state.Kind),
+		Name:                 state.Settings.Name,
+		OwnerPtid:            string(state.Owner),
+		ActiveMembers:        members,
+		ActiveEndpoints:      endpoints,
+		MembershipEpoch:      int64(state.MembershipEpoch),
+		MlsEpoch:             int64(state.MLSEpoch),
+		ActiveEndpointRoutes: endpointRoutes,
+		FederationId:         string(state.FederationID),
+		AuthorityEpoch:       int64(state.AuthorityEpoch),
+		Description:          state.Settings.Description,
+		AvatarObjectId:       state.Settings.AvatarObjectID,
+		Visibility:           conversationVisibilityToProto(state.Settings.Visibility),
 	}
 }
 

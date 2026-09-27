@@ -19,7 +19,6 @@ pub mod evaluation;
 pub mod federation;
 pub mod frontend_log;
 pub mod frontend_telemetry;
-pub mod group_chat;
 pub mod home;
 pub mod host_events;
 pub mod i18n;

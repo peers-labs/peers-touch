@@ -76,6 +76,30 @@ func (r *publicPostRepo) GetByID(ctx context.Context, id uint64) (*domain.Post, 
 	return r.hydrateOne(ctx, &row)
 }
 
+func (r *publicPostRepo) ProbeRecordState(
+	ctx context.Context,
+	id uint64,
+) (domain.PostRecordState, error) {
+	var row struct {
+		DeletedAt *time.Time
+	}
+	err := r.db.WithContext(ctx).
+		Model(&db.SocialPublicPost{}).
+		Select("deleted_at").
+		Where("id = ?", id).
+		Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.PostRecordMissing, nil
+	}
+	if err != nil {
+		return domain.PostRecordMissing, err
+	}
+	if row.DeletedAt != nil {
+		return domain.PostRecordDeleted, nil
+	}
+	return domain.PostRecordLive, nil
+}
+
 // Delete soft-deletes by setting `deleted_at = NOW()`. Author check
 // is enforced server-side via `WHERE author_id = ?` — a delete from
 // the wrong author is a no-op (no error, zero rows affected). The

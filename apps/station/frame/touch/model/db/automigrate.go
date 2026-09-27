@@ -22,10 +22,6 @@ func init() {
 			panic(fmt.Errorf("migrate social identity columns: %w", err))
 		}
 
-		if err := MigrateAccessGateActorIdentity(rds); err != nil {
-			panic(fmt.Errorf("migrate Access Gate actor identities to PTIDs: %w", err))
-		}
-
 		err := rds.AutoMigrate(
 			// Actor models
 			&Actor{}, &ActorTouchMeta{}, &PeerAddress{}, &ActorStatus{},
@@ -53,7 +49,7 @@ func init() {
 			// Station access gate. Policy is the Dashboard-managed source of
 			// truth; attempts are the persisted lifecycle/state-machine record;
 			// invite codes are Station-issued credentials for the invite.code gate.
-			&AccessPolicy{}, &AccessAttempt{}, &AccessInviteCode{},
+			&AccessPolicy{}, &AccessAttempt{}, &AccessGateSubmission{}, &AccessInviteCode{},
 			&OAuthAttempt{}, &OAuthSessionCandidate{}, &OAuthCredentialEnvelope{},
 		)
 		if err != nil {

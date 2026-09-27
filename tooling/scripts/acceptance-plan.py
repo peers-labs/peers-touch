@@ -326,7 +326,9 @@ def main() -> int:
                 formal_plan_path = str(formal_plan.path)
             result["execution"] = {
                 "formalPlan": formal_plan_path,
+                "planId": formal_plan.plan_id,
                 "planFormat": formal_plan.plan_format,
+                "branch": formal_plan.branch,
                 "currentTaskId": formal_plan.current_task_id,
                 "currentTaskPath": formal_plan.current_task_path,
                 "closure": formal_plan.current_closure,

@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/notification/notification.proto.
  */
 export const file_domain_notification_notification: GenFile = /*@__PURE__*/
-  fileDesc("CiZkb21haW4vbm90aWZpY2F0aW9uL25vdGlmaWNhdGlvbi5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxIuAECgxOb3RpZmljYXRpb24SCgoCaWQYASABKAkSFgoOcmVjaXBpZW50X3B0aWQYAiABKAkSEgoKYWN0b3JfcHRpZBgDIAEoCRJBCgR0eXBlGAQgASgOMjMucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblR5cGUSSQoIY2F0ZWdvcnkYBSABKA4yNy5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uQ2F0ZWdvcnkSRQoGc3RhdHVzGAYgASgOMjUucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblN0YXR1cxITCgt0YXJnZXRfdHlwZRgHIAEoCRIRCgl0YXJnZXRfaWQYCCABKAkSDQoFdGl0bGUYCSABKAkSDAoEYm9keRgKIAEoCRJPCghtZXRhZGF0YRgLIAMoCzI9LnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb24uTWV0YWRhdGFFbnRyeRIRCglncm91cF9rZXkYDCABKAkSLgoKY3JlYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoHcmVhZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAaLwoNTWV0YWRhdGFFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBUgxyZWNpcGllbnRfaWQijgMKEU5vdGlmaWNhdGlvbkdyb3VwEhEKCWdyb3VwX2tleRgBIAEoCRJBCgR0eXBlGAIgASgOMjMucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblR5cGUSSQoIY2F0ZWdvcnkYAyABKA4yNy5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uQ2F0ZWdvcnkSEwoLdGFyZ2V0X3R5cGUYBCABKAkSEQoJdGFyZ2V0X2lkGAUgASgJEg0KBXRpdGxlGAYgASgJEgwKBGJvZHkYByABKAkSDQoFY291bnQYCCABKAUSEwoLYWN0b3JfcHRpZHMYCSADKAkSPwoGbGF0ZXN0GAogASgLMi8ucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvbhIuCgp1cGRhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKoAgoWTm90aWZpY2F0aW9uUHJlZmVyZW5jZRISCgphY3Rvcl9wdGlkGAEgASgJEkkKCGNhdGVnb3J5GAIgASgOMjcucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvbkNhdGVnb3J5Eg8KB2VuYWJsZWQYAyABKAgSFAoMcHVzaF9lbmFibGVkGAQgASgIEhUKDXNvdW5kX2VuYWJsZWQYBSABKAgSLgoKdXBkYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASQQoEdHlwZRgHIAEoDjIzLnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb25UeXBlIssBChhMaXN0Tm90aWZpY2F0aW9uc1JlcXVlc3QSSQoIY2F0ZWdvcnkYASABKA4yNy5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uQ2F0ZWdvcnkSRQoGc3RhdHVzGAIgASgOMjUucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblN0YXR1cxIOCgZjdXJzb3IYAyABKAkSDQoFbGltaXQYBCABKAUiowEKGUxpc3ROb3RpZmljYXRpb25zUmVzcG9uc2USRgoNbm90aWZpY2F0aW9ucxgBIAMoCzIvLnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb24SEwoLbmV4dF9jdXJzb3IYAiABKAkSEwoLdG90YWxfY291bnQYAyABKAUSFAoMdW5yZWFkX2NvdW50GAQgASgFIosBCh9MaXN0R3JvdXBlZE5vdGlmaWNhdGlvbnNSZXF1ZXN0EkkKCGNhdGVnb3J5GAEgASgOMjcucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvbkNhdGVnb3J5Eg4KBmN1cnNvchgCIAEoCRINCgVsaW1pdBgDIAEoBSJ9CiBMaXN0R3JvdXBlZE5vdGlmaWNhdGlvbnNSZXNwb25zZRJECgZncm91cHMYASADKAsyNC5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uR3JvdXASEwoLbmV4dF9jdXJzb3IYAiABKAkiOAocTWFya05vdGlmaWNhdGlvbnNSZWFkUmVxdWVzdBIYChBub3RpZmljYXRpb25faWRzGAEgAygJIjYKHU1hcmtOb3RpZmljYXRpb25zUmVhZFJlc3BvbnNlEhUKDXVwZGF0ZWRfY291bnQYASABKAUibAofTWFya0FsbE5vdGlmaWNhdGlvbnNSZWFkUmVxdWVzdBJJCghjYXRlZ29yeRgBIAEoDjI3LnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb25DYXRlZ29yeSI5CiBNYXJrQWxsTm90aWZpY2F0aW9uc1JlYWRSZXNwb25zZRIVCg11cGRhdGVkX2NvdW50GAEgASgFIjYKGkRlbGV0ZU5vdGlmaWNhdGlvbnNSZXF1ZXN0EhgKEG5vdGlmaWNhdGlvbl9pZHMYASADKAkiNAobRGVsZXRlTm90aWZpY2F0aW9uc1Jlc3BvbnNlEhUKDWRlbGV0ZWRfY291bnQYASABKAUiGAoWR2V0VW5yZWFkQ291bnRzUmVxdWVzdCK8AQoXR2V0VW5yZWFkQ291bnRzUmVzcG9uc2USDQoFdG90YWwYASABKAUSXwoLYnlfY2F0ZWdvcnkYAiADKAsySi5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuR2V0VW5yZWFkQ291bnRzUmVzcG9uc2UuQnlDYXRlZ29yeUVudHJ5GjEKD0J5Q2F0ZWdvcnlFbnRyeRILCgNrZXkYASABKAUSDQoFdmFsdWUYAiABKAU6AjgBIiMKIUdldE5vdGlmaWNhdGlvblByZWZlcmVuY2VzUmVxdWVzdCJ0CiJHZXROb3RpZmljYXRpb25QcmVmZXJlbmNlc1Jlc3BvbnNlEk4KC3ByZWZlcmVuY2VzGAEgAygLMjkucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblByZWZlcmVuY2UirgEKI1VwZGF0ZU5vdGlmaWNhdGlvblByZWZlcmVuY2VSZXF1ZXN0EkkKCGNhdGVnb3J5GAEgASgOMjcucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvbkNhdGVnb3J5Eg8KB2VuYWJsZWQYAiABKAgSFAoMcHVzaF9lbmFibGVkGAMgASgIEhUKDXNvdW5kX2VuYWJsZWQYBCABKAgidQokVXBkYXRlTm90aWZpY2F0aW9uUHJlZmVyZW5jZVJlc3BvbnNlEk0KCnByZWZlcmVuY2UYASABKAsyOS5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uUHJlZmVyZW5jZSrBAQoUTm90aWZpY2F0aW9uQ2F0ZWdvcnkSJQohTk9USUZJQ0FUSU9OX0NBVEVHT1JZX1VOU1BFQ0lGSUVEEAASIAocTk9USUZJQ0FUSU9OX0NBVEVHT1JZX1NPQ0lBTBABEh4KGk5PVElGSUNBVElPTl9DQVRFR09SWV9DSEFUEAISIAocTk9USUZJQ0FUSU9OX0NBVEVHT1JZX1NZU1RFTRADEh4KGk5PVElGSUNBVElPTl9DQVRFR09SWV9UQVNLEAQq2gUKEE5vdGlmaWNhdGlvblR5cGUSIQodTk9USUZJQ0FUSU9OX1RZUEVfVU5TUEVDSUZJRUQQABImCiJOT1RJRklDQVRJT05fVFlQRV9GT0xMT1dfUkVRVUVTVEVEEGQSJQohTk9USUZJQ0FUSU9OX1RZUEVfRk9MTE9XX0FDQ0VQVEVEEGUSIAocTk9USUZJQ0FUSU9OX1RZUEVfUE9TVF9MSUtFRBBmEiQKIE5PVElGSUNBVElPTl9UWVBFX1BPU1RfQ09NTUVOVEVEEGcSIwofTk9USUZJQ0FUSU9OX1RZUEVfUE9TVF9SRVBPU1RFRBBoEh8KG05PVElGSUNBVElPTl9UWVBFX01FTlRJT05FRBBpEiUKIE5PVElGSUNBVElPTl9UWVBFX0ZSSUVORF9SRVFVRVNUEMgBEiYKIU5PVElGSUNBVElPTl9UWVBFX0ZSSUVORF9BQ0NFUFRFRBDJARIlCiBOT1RJRklDQVRJT05fVFlQRV9GUklFTkRfTUVTU0FHRRDKARIkCh9OT1RJRklDQVRJT05fVFlQRV9HUk9VUF9JTlZJVEVEEMsBEiUKIE5PVElGSUNBVElPTl9UWVBFX0NIQVRfTUVOVElPTkVEEMwBEh4KGU5PVElGSUNBVElPTl9UWVBFX1dFTENPTUUQrAISJQogTk9USUZJQ0FUSU9OX1RZUEVfU0VDVVJJVFlfQUxFUlQQrQISJQogTk9USUZJQ0FUSU9OX1RZUEVfVkVSU0lPTl9VUERBVEUQrgISIgodTk9USUZJQ0FUSU9OX1RZUEVfTUFJTlRFTkFOQ0UQrwISJAofTk9USUZJQ0FUSU9OX1RZUEVfVEFTS19BU1NJR05FRBCQAxIlCiBOT1RJRklDQVRJT05fVFlQRV9UQVNLX0NPTVBMRVRFRBCRAxIkCh9OT1RJRklDQVRJT05fVFlQRV9UQVNLX1JFTUlOREVSEJIDKpkBChJOb3RpZmljYXRpb25TdGF0dXMSIwofTk9USUZJQ0FUSU9OX1NUQVRVU19VTlNQRUNJRklFRBAAEh4KGk5PVElGSUNBVElPTl9TVEFUVVNfVU5SRUFEEAESHAoYTk9USUZJQ0FUSU9OX1NUQVRVU19SRUFEEAISIAocTk9USUZJQ0FUSU9OX1NUQVRVU19BUkNISVZFRBADQldaVWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsL25vdGlmaWNhdGlvbjtub3RpZmljYXRpb25iBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("CiZkb21haW4vbm90aWZpY2F0aW9uL25vdGlmaWNhdGlvbi5wcm90bxIhcGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxIuAECgxOb3RpZmljYXRpb24SCgoCaWQYASABKAkSFgoOcmVjaXBpZW50X3B0aWQYAiABKAkSEgoKYWN0b3JfcHRpZBgDIAEoCRJBCgR0eXBlGAQgASgOMjMucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblR5cGUSSQoIY2F0ZWdvcnkYBSABKA4yNy5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uQ2F0ZWdvcnkSRQoGc3RhdHVzGAYgASgOMjUucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblN0YXR1cxITCgt0YXJnZXRfdHlwZRgHIAEoCRIRCgl0YXJnZXRfaWQYCCABKAkSDQoFdGl0bGUYCSABKAkSDAoEYm9keRgKIAEoCRJPCghtZXRhZGF0YRgLIAMoCzI9LnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb24uTWV0YWRhdGFFbnRyeRIRCglncm91cF9rZXkYDCABKAkSLgoKY3JlYXRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKwoHcmVhZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAaLwoNTWV0YWRhdGFFbnRyeRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAk6AjgBUgxyZWNpcGllbnRfaWQijgMKEU5vdGlmaWNhdGlvbkdyb3VwEhEKCWdyb3VwX2tleRgBIAEoCRJBCgR0eXBlGAIgASgOMjMucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblR5cGUSSQoIY2F0ZWdvcnkYAyABKA4yNy5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uQ2F0ZWdvcnkSEwoLdGFyZ2V0X3R5cGUYBCABKAkSEQoJdGFyZ2V0X2lkGAUgASgJEg0KBXRpdGxlGAYgASgJEgwKBGJvZHkYByABKAkSDQoFY291bnQYCCABKAUSEwoLYWN0b3JfcHRpZHMYCSADKAkSPwoGbGF0ZXN0GAogASgLMi8ucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvbhIuCgp1cGRhdGVkX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKoAgoWTm90aWZpY2F0aW9uUHJlZmVyZW5jZRISCgphY3Rvcl9wdGlkGAEgASgJEkkKCGNhdGVnb3J5GAIgASgOMjcucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvbkNhdGVnb3J5Eg8KB2VuYWJsZWQYAyABKAgSFAoMcHVzaF9lbmFibGVkGAQgASgIEhUKDXNvdW5kX2VuYWJsZWQYBSABKAgSLgoKdXBkYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASQQoEdHlwZRgHIAEoDjIzLnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb25UeXBlIpwBCh9Ob3RpZmljYXRpb25QcmVmZXJlbmNlc1NuYXBzaG90Ek4KC3ByZWZlcmVuY2VzGAEgAygLMjkucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblByZWZlcmVuY2USKQohbm90aWZpY2F0aW9uX3ByZWZlcmVuY2VzX3JldmlzaW9uGAIgASgEIssBChhMaXN0Tm90aWZpY2F0aW9uc1JlcXVlc3QSSQoIY2F0ZWdvcnkYASABKA4yNy5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uQ2F0ZWdvcnkSRQoGc3RhdHVzGAIgASgOMjUucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblN0YXR1cxIOCgZjdXJzb3IYAyABKAkSDQoFbGltaXQYBCABKAUiowEKGUxpc3ROb3RpZmljYXRpb25zUmVzcG9uc2USRgoNbm90aWZpY2F0aW9ucxgBIAMoCzIvLnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb24SEwoLbmV4dF9jdXJzb3IYAiABKAkSEwoLdG90YWxfY291bnQYAyABKAUSFAoMdW5yZWFkX2NvdW50GAQgASgFIosBCh9MaXN0R3JvdXBlZE5vdGlmaWNhdGlvbnNSZXF1ZXN0EkkKCGNhdGVnb3J5GAEgASgOMjcucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvbkNhdGVnb3J5Eg4KBmN1cnNvchgCIAEoCRINCgVsaW1pdBgDIAEoBSJ9CiBMaXN0R3JvdXBlZE5vdGlmaWNhdGlvbnNSZXNwb25zZRJECgZncm91cHMYASADKAsyNC5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuTm90aWZpY2F0aW9uR3JvdXASEwoLbmV4dF9jdXJzb3IYAiABKAkiOAocTWFya05vdGlmaWNhdGlvbnNSZWFkUmVxdWVzdBIYChBub3RpZmljYXRpb25faWRzGAEgAygJIjYKHU1hcmtOb3RpZmljYXRpb25zUmVhZFJlc3BvbnNlEhUKDXVwZGF0ZWRfY291bnQYASABKAUibAofTWFya0FsbE5vdGlmaWNhdGlvbnNSZWFkUmVxdWVzdBJJCghjYXRlZ29yeRgBIAEoDjI3LnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb25DYXRlZ29yeSI5CiBNYXJrQWxsTm90aWZpY2F0aW9uc1JlYWRSZXNwb25zZRIVCg11cGRhdGVkX2NvdW50GAEgASgFIjYKGkRlbGV0ZU5vdGlmaWNhdGlvbnNSZXF1ZXN0EhgKEG5vdGlmaWNhdGlvbl9pZHMYASADKAkiNAobRGVsZXRlTm90aWZpY2F0aW9uc1Jlc3BvbnNlEhUKDWRlbGV0ZWRfY291bnQYASABKAUiGAoWR2V0VW5yZWFkQ291bnRzUmVxdWVzdCK8AQoXR2V0VW5yZWFkQ291bnRzUmVzcG9uc2USDQoFdG90YWwYASABKAUSXwoLYnlfY2F0ZWdvcnkYAiADKAsySi5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuR2V0VW5yZWFkQ291bnRzUmVzcG9uc2UuQnlDYXRlZ29yeUVudHJ5GjEKD0J5Q2F0ZWdvcnlFbnRyeRILCgNrZXkYASABKAUSDQoFdmFsdWUYAiABKAU6AjgBIiMKIUdldE5vdGlmaWNhdGlvblByZWZlcmVuY2VzUmVxdWVzdCKNAQoiR2V0Tm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXNwb25zZRJUCghzbmFwc2hvdBgCIAEoCzJCLnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb25QcmVmZXJlbmNlc1NuYXBzaG90SgQIARACUgtwcmVmZXJlbmNlcyKmAQobTm90aWZpY2F0aW9uUHJlZmVyZW5jZVBhdGNoEkkKCGNhdGVnb3J5GAEgASgOMjcucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvbkNhdGVnb3J5Eg8KB2VuYWJsZWQYAiABKAgSFAoMcHVzaF9lbmFibGVkGAMgASgIEhUKDXNvdW5kX2VuYWJsZWQYBCABKAgikgEKJFVwZGF0ZU5vdGlmaWNhdGlvblByZWZlcmVuY2VzUmVxdWVzdBJPCgd1cGRhdGVzGAEgAygLMj4ucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblByZWZlcmVuY2VQYXRjaBIZChFvYnNlcnZlZF9yZXZpc2lvbhgCIAEoBCLXAQolVXBkYXRlTm90aWZpY2F0aW9uUHJlZmVyZW5jZXNSZXNwb25zZRJYCgdvdXRjb21lGAEgASgOMkcucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLk5vdGlmaWNhdGlvblByZWZlcmVuY2VzVXBkYXRlT3V0Y29tZRJUCghzbmFwc2hvdBgCIAEoCzJCLnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5Ob3RpZmljYXRpb25QcmVmZXJlbmNlc1NuYXBzaG90IjcKDkFjdG9yRGV2aWNlUmVmEhIKCmFjdG9yX3B0aWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJIi8KD0FwbnNQdXNoQmluZGluZxINCgV0b2tlbhgBIAEoDBINCgV0b3BpYxgCIAEoCSIfCg5GY21QdXNoQmluZGluZxINCgV0b2tlbhgBIAEoCSJPChJVbmlmaWVkUHVzaEJpbmRpbmcSEAoIZW5kcG9pbnQYASABKAkSEgoKcDI1NmRoX2tleRgCIAEoDBITCgthdXRoX3NlY3JldBgDIAEoDCLWAwoQUHVzaFJlZ2lzdHJhdGlvbhIXCg9yZWdpc3RyYXRpb25faWQYASABKAkSRwoMYWN0b3JfZGV2aWNlGAIgASgLMjEucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLkFjdG9yRGV2aWNlUmVmEj8KB2NoYW5uZWwYAyABKA4yLi5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuUHVzaENoYW5uZWwSRwoLZW52aXJvbm1lbnQYBCABKA4yMi5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuUHVzaEVudmlyb25tZW50EiAKGGFwcF9pbnN0YWxsX2Vwb2NoX3NoYTI1NhgFIAEoDBIfChdwcm92aWRlcl9iaW5kaW5nX3NoYTI1NhgGIAEoDBIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIzCg9sYXN0X3N1Y2Nlc3NfYXQYCSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIrQDChlSZWdpc3RlclB1c2hEZXZpY2VSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSEQoJZGV2aWNlX2lkGAIgASgJEhwKFGxpZmVjeWNsZV9nZW5lcmF0aW9uGAMgASgEEiAKGGFwcF9pbnN0YWxsX2Vwb2NoX3NoYTI1NhgEIAEoDBJHCgtlbnZpcm9ubWVudBgFIAEoDjIyLnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5QdXNoRW52aXJvbm1lbnQSQgoEYXBucxgGIAEoCzIyLnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5BcG5zUHVzaEJpbmRpbmdIABJACgNmY20YByABKAsyMS5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuRmNtUHVzaEJpbmRpbmdIABJNCgx1bmlmaWVkX3B1c2gYCCABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5ub3RpZmljYXRpb24udjEuVW5pZmllZFB1c2hCaW5kaW5nSABCEgoQcHJvdmlkZXJfYmluZGluZyLKAQoaUmVnaXN0ZXJQdXNoRGV2aWNlUmVzcG9uc2USEgoKcmVxdWVzdF9pZBgBIAEoCRJNCgdvdXRjb21lGAIgASgOMjwucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLlJlZ2lzdGVyUHVzaERldmljZU91dGNvbWUSSQoMcmVnaXN0cmF0aW9uGAMgASgLMjMucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLlB1c2hSZWdpc3RyYXRpb24inQEKG1VucmVnaXN0ZXJQdXNoRGV2aWNlUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEhEKCWRldmljZV9pZBgCIAEoCRIcChRsaWZlY3ljbGVfZ2VuZXJhdGlvbhgDIAEoBBIXCg9yZWdpc3RyYXRpb25faWQYBCABKAkSIAoYYXBwX2luc3RhbGxfZXBvY2hfc2hhMjU2GAUgASgMIoMBChxVbnJlZ2lzdGVyUHVzaERldmljZVJlc3BvbnNlEhIKCnJlcXVlc3RfaWQYASABKAkSTwoHb3V0Y29tZRgCIAEoDjI+LnBlZXJzX3RvdWNoLm1vZGVsLm5vdGlmaWNhdGlvbi52MS5VbnJlZ2lzdGVyUHVzaERldmljZU91dGNvbWUiGAoWTGlzdFB1c2hEZXZpY2VzUmVxdWVzdCJlChdMaXN0UHVzaERldmljZXNSZXNwb25zZRJKCg1yZWdpc3RyYXRpb25zGAEgAygLMjMucGVlcnNfdG91Y2gubW9kZWwubm90aWZpY2F0aW9uLnYxLlB1c2hSZWdpc3RyYXRpb24qwQEKFE5vdGlmaWNhdGlvbkNhdGVnb3J5EiUKIU5PVElGSUNBVElPTl9DQVRFR09SWV9VTlNQRUNJRklFRBAAEiAKHE5PVElGSUNBVElPTl9DQVRFR09SWV9TT0NJQUwQARIeChpOT1RJRklDQVRJT05fQ0FURUdPUllfQ0hBVBACEiAKHE5PVElGSUNBVElPTl9DQVRFR09SWV9TWVNURU0QAxIeChpOT1RJRklDQVRJT05fQ0FURUdPUllfVEFTSxAEKtoFChBOb3RpZmljYXRpb25UeXBlEiEKHU5PVElGSUNBVElPTl9UWVBFX1VOU1BFQ0lGSUVEEAASJgoiTk9USUZJQ0FUSU9OX1RZUEVfRk9MTE9XX1JFUVVFU1RFRBBkEiUKIU5PVElGSUNBVElPTl9UWVBFX0ZPTExPV19BQ0NFUFRFRBBlEiAKHE5PVElGSUNBVElPTl9UWVBFX1BPU1RfTElLRUQQZhIkCiBOT1RJRklDQVRJT05fVFlQRV9QT1NUX0NPTU1FTlRFRBBnEiMKH05PVElGSUNBVElPTl9UWVBFX1BPU1RfUkVQT1NURUQQaBIfChtOT1RJRklDQVRJT05fVFlQRV9NRU5USU9ORUQQaRIlCiBOT1RJRklDQVRJT05fVFlQRV9GUklFTkRfUkVRVUVTVBDIARImCiFOT1RJRklDQVRJT05fVFlQRV9GUklFTkRfQUNDRVBURUQQyQESJQogTk9USUZJQ0FUSU9OX1RZUEVfRlJJRU5EX01FU1NBR0UQygESJAofTk9USUZJQ0FUSU9OX1RZUEVfR1JPVVBfSU5WSVRFRBDLARIlCiBOT1RJRklDQVRJT05fVFlQRV9DSEFUX01FTlRJT05FRBDMARIeChlOT1RJRklDQVRJT05fVFlQRV9XRUxDT01FEKwCEiUKIE5PVElGSUNBVElPTl9UWVBFX1NFQ1VSSVRZX0FMRVJUEK0CEiUKIE5PVElGSUNBVElPTl9UWVBFX1ZFUlNJT05fVVBEQVRFEK4CEiIKHU5PVElGSUNBVElPTl9UWVBFX01BSU5URU5BTkNFEK8CEiQKH05PVElGSUNBVElPTl9UWVBFX1RBU0tfQVNTSUdORUQQkAMSJQogTk9USUZJQ0FUSU9OX1RZUEVfVEFTS19DT01QTEVURUQQkQMSJAofTk9USUZJQ0FUSU9OX1RZUEVfVEFTS19SRU1JTkRFUhCSAyqZAQoSTm90aWZpY2F0aW9uU3RhdHVzEiMKH05PVElGSUNBVElPTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIeChpOT1RJRklDQVRJT05fU1RBVFVTX1VOUkVBRBABEhwKGE5PVElGSUNBVElPTl9TVEFUVVNfUkVBRBACEiAKHE5PVElGSUNBVElPTl9TVEFUVVNfQVJDSElWRUQQAyqBAgokTm90aWZpY2F0aW9uUHJlZmVyZW5jZXNVcGRhdGVPdXRjb21lEjcKM05PVElGSUNBVElPTl9QUkVGRVJFTkNFU19VUERBVEVfT1VUQ09NRV9VTlNQRUNJRklFRBAAEjMKL05PVElGSUNBVElPTl9QUkVGRVJFTkNFU19VUERBVEVfT1VUQ09NRV9BUFBMSUVEEAESNQoxTk9USUZJQ0FUSU9OX1BSRUZFUkVOQ0VTX1VQREFURV9PVVRDT01FX1VOQ0hBTkdFRBACEjQKME5PVElGSUNBVElPTl9QUkVGRVJFTkNFU19VUERBVEVfT1VUQ09NRV9DT05GTElDVBADKncKC1B1c2hDaGFubmVsEhwKGFBVU0hfQ0hBTk5FTF9VTlNQRUNJRklFRBAAEhUKEVBVU0hfQ0hBTk5FTF9BUE5TEAESFAoQUFVTSF9DSEFOTkVMX0ZDTRACEh0KGVBVU0hfQ0hBTk5FTF9VTklGSUVEX1BVU0gQAyp2Cg9QdXNoRW52aXJvbm1lbnQSIAocUFVTSF9FTlZJUk9OTUVOVF9VTlNQRUNJRklFRBAAEiAKHFBVU0hfRU5WSVJPTk1FTlRfREVWRUxPUE1FTlQQARIfChtQVVNIX0VOVklST05NRU5UX1BST0RVQ1RJT04QAirJAQoZUmVnaXN0ZXJQdXNoRGV2aWNlT3V0Y29tZRIsCihSRUdJU1RFUl9QVVNIX0RFVklDRV9PVVRDT01FX1VOU1BFQ0lGSUVEEAASKAokUkVHSVNURVJfUFVTSF9ERVZJQ0VfT1VUQ09NRV9DUkVBVEVEEAESKAokUkVHSVNURVJfUFVTSF9ERVZJQ0VfT1VUQ09NRV9ST1RBVEVEEAISKgomUkVHSVNURVJfUFVTSF9ERVZJQ0VfT1VUQ09NRV9VTkNIQU5HRUQQAyqsAQobVW5yZWdpc3RlclB1c2hEZXZpY2VPdXRjb21lEi4KKlVOUkVHSVNURVJfUFVTSF9ERVZJQ0VfT1VUQ09NRV9VTlNQRUNJRklFRBAAEioKJlVOUkVHSVNURVJfUFVTSF9ERVZJQ0VfT1VUQ09NRV9SRU1PVkVEEAESMQotVU5SRUdJU1RFUl9QVVNIX0RFVklDRV9PVVRDT01FX0FMUkVBRFlfQUJTRU5UEAJCV1pVZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWwvbm90aWZpY2F0aW9uO25vdGlmaWNhdGlvbmIGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * Notification represents a single notification entity.
@@ -221,6 +221,28 @@ export const NotificationPreferenceSchema: GenMessage<NotificationPreference> = 
   messageDesc(file_domain_notification_notification, 2);
 
 /**
+ * @generated from message peers_touch.model.notification.v1.NotificationPreferencesSnapshot
+ */
+export type NotificationPreferencesSnapshot = Message<"peers_touch.model.notification.v1.NotificationPreferencesSnapshot"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.notification.v1.NotificationPreference preferences = 1;
+   */
+  preferences: NotificationPreference[];
+
+  /**
+   * @generated from field: uint64 notification_preferences_revision = 2;
+   */
+  notificationPreferencesRevision: bigint;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.NotificationPreferencesSnapshot.
+ * Use `create(NotificationPreferencesSnapshotSchema)` to create a new message.
+ */
+export const NotificationPreferencesSnapshotSchema: GenMessage<NotificationPreferencesSnapshot> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 3);
+
+/**
  * @generated from message peers_touch.model.notification.v1.ListNotificationsRequest
  */
 export type ListNotificationsRequest = Message<"peers_touch.model.notification.v1.ListNotificationsRequest"> & {
@@ -250,7 +272,7 @@ export type ListNotificationsRequest = Message<"peers_touch.model.notification.v
  * Use `create(ListNotificationsRequestSchema)` to create a new message.
  */
 export const ListNotificationsRequestSchema: GenMessage<ListNotificationsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 3);
+  messageDesc(file_domain_notification_notification, 4);
 
 /**
  * @generated from message peers_touch.model.notification.v1.ListNotificationsResponse
@@ -282,7 +304,7 @@ export type ListNotificationsResponse = Message<"peers_touch.model.notification.
  * Use `create(ListNotificationsResponseSchema)` to create a new message.
  */
 export const ListNotificationsResponseSchema: GenMessage<ListNotificationsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 4);
+  messageDesc(file_domain_notification_notification, 5);
 
 /**
  * @generated from message peers_touch.model.notification.v1.ListGroupedNotificationsRequest
@@ -309,7 +331,7 @@ export type ListGroupedNotificationsRequest = Message<"peers_touch.model.notific
  * Use `create(ListGroupedNotificationsRequestSchema)` to create a new message.
  */
 export const ListGroupedNotificationsRequestSchema: GenMessage<ListGroupedNotificationsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 5);
+  messageDesc(file_domain_notification_notification, 6);
 
 /**
  * @generated from message peers_touch.model.notification.v1.ListGroupedNotificationsResponse
@@ -331,7 +353,7 @@ export type ListGroupedNotificationsResponse = Message<"peers_touch.model.notifi
  * Use `create(ListGroupedNotificationsResponseSchema)` to create a new message.
  */
 export const ListGroupedNotificationsResponseSchema: GenMessage<ListGroupedNotificationsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 6);
+  messageDesc(file_domain_notification_notification, 7);
 
 /**
  * @generated from message peers_touch.model.notification.v1.MarkNotificationsReadRequest
@@ -348,7 +370,7 @@ export type MarkNotificationsReadRequest = Message<"peers_touch.model.notificati
  * Use `create(MarkNotificationsReadRequestSchema)` to create a new message.
  */
 export const MarkNotificationsReadRequestSchema: GenMessage<MarkNotificationsReadRequest> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 7);
+  messageDesc(file_domain_notification_notification, 8);
 
 /**
  * @generated from message peers_touch.model.notification.v1.MarkNotificationsReadResponse
@@ -365,7 +387,7 @@ export type MarkNotificationsReadResponse = Message<"peers_touch.model.notificat
  * Use `create(MarkNotificationsReadResponseSchema)` to create a new message.
  */
 export const MarkNotificationsReadResponseSchema: GenMessage<MarkNotificationsReadResponse> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 8);
+  messageDesc(file_domain_notification_notification, 9);
 
 /**
  * @generated from message peers_touch.model.notification.v1.MarkAllNotificationsReadRequest
@@ -382,7 +404,7 @@ export type MarkAllNotificationsReadRequest = Message<"peers_touch.model.notific
  * Use `create(MarkAllNotificationsReadRequestSchema)` to create a new message.
  */
 export const MarkAllNotificationsReadRequestSchema: GenMessage<MarkAllNotificationsReadRequest> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 9);
+  messageDesc(file_domain_notification_notification, 10);
 
 /**
  * @generated from message peers_touch.model.notification.v1.MarkAllNotificationsReadResponse
@@ -399,7 +421,7 @@ export type MarkAllNotificationsReadResponse = Message<"peers_touch.model.notifi
  * Use `create(MarkAllNotificationsReadResponseSchema)` to create a new message.
  */
 export const MarkAllNotificationsReadResponseSchema: GenMessage<MarkAllNotificationsReadResponse> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 10);
+  messageDesc(file_domain_notification_notification, 11);
 
 /**
  * @generated from message peers_touch.model.notification.v1.DeleteNotificationsRequest
@@ -416,7 +438,7 @@ export type DeleteNotificationsRequest = Message<"peers_touch.model.notification
  * Use `create(DeleteNotificationsRequestSchema)` to create a new message.
  */
 export const DeleteNotificationsRequestSchema: GenMessage<DeleteNotificationsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 11);
+  messageDesc(file_domain_notification_notification, 12);
 
 /**
  * @generated from message peers_touch.model.notification.v1.DeleteNotificationsResponse
@@ -433,7 +455,7 @@ export type DeleteNotificationsResponse = Message<"peers_touch.model.notificatio
  * Use `create(DeleteNotificationsResponseSchema)` to create a new message.
  */
 export const DeleteNotificationsResponseSchema: GenMessage<DeleteNotificationsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 12);
+  messageDesc(file_domain_notification_notification, 13);
 
 /**
  * @generated from message peers_touch.model.notification.v1.GetUnreadCountsRequest
@@ -446,7 +468,7 @@ export type GetUnreadCountsRequest = Message<"peers_touch.model.notification.v1.
  * Use `create(GetUnreadCountsRequestSchema)` to create a new message.
  */
 export const GetUnreadCountsRequestSchema: GenMessage<GetUnreadCountsRequest> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 13);
+  messageDesc(file_domain_notification_notification, 14);
 
 /**
  * @generated from message peers_touch.model.notification.v1.GetUnreadCountsResponse
@@ -468,7 +490,7 @@ export type GetUnreadCountsResponse = Message<"peers_touch.model.notification.v1
  * Use `create(GetUnreadCountsResponseSchema)` to create a new message.
  */
 export const GetUnreadCountsResponseSchema: GenMessage<GetUnreadCountsResponse> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 14);
+  messageDesc(file_domain_notification_notification, 15);
 
 /**
  * @generated from message peers_touch.model.notification.v1.GetNotificationPreferencesRequest
@@ -481,16 +503,16 @@ export type GetNotificationPreferencesRequest = Message<"peers_touch.model.notif
  * Use `create(GetNotificationPreferencesRequestSchema)` to create a new message.
  */
 export const GetNotificationPreferencesRequestSchema: GenMessage<GetNotificationPreferencesRequest> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 15);
+  messageDesc(file_domain_notification_notification, 16);
 
 /**
  * @generated from message peers_touch.model.notification.v1.GetNotificationPreferencesResponse
  */
 export type GetNotificationPreferencesResponse = Message<"peers_touch.model.notification.v1.GetNotificationPreferencesResponse"> & {
   /**
-   * @generated from field: repeated peers_touch.model.notification.v1.NotificationPreference preferences = 1;
+   * @generated from field: peers_touch.model.notification.v1.NotificationPreferencesSnapshot snapshot = 2;
    */
-  preferences: NotificationPreference[];
+  snapshot?: NotificationPreferencesSnapshot | undefined;
 };
 
 /**
@@ -498,12 +520,12 @@ export type GetNotificationPreferencesResponse = Message<"peers_touch.model.noti
  * Use `create(GetNotificationPreferencesResponseSchema)` to create a new message.
  */
 export const GetNotificationPreferencesResponseSchema: GenMessage<GetNotificationPreferencesResponse> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 16);
+  messageDesc(file_domain_notification_notification, 17);
 
 /**
- * @generated from message peers_touch.model.notification.v1.UpdateNotificationPreferenceRequest
+ * @generated from message peers_touch.model.notification.v1.NotificationPreferencePatch
  */
-export type UpdateNotificationPreferenceRequest = Message<"peers_touch.model.notification.v1.UpdateNotificationPreferenceRequest"> & {
+export type NotificationPreferencePatch = Message<"peers_touch.model.notification.v1.NotificationPreferencePatch"> & {
   /**
    * @generated from field: peers_touch.model.notification.v1.NotificationCategory category = 1;
    */
@@ -526,28 +548,379 @@ export type UpdateNotificationPreferenceRequest = Message<"peers_touch.model.not
 };
 
 /**
- * Describes the message peers_touch.model.notification.v1.UpdateNotificationPreferenceRequest.
- * Use `create(UpdateNotificationPreferenceRequestSchema)` to create a new message.
+ * Describes the message peers_touch.model.notification.v1.NotificationPreferencePatch.
+ * Use `create(NotificationPreferencePatchSchema)` to create a new message.
  */
-export const UpdateNotificationPreferenceRequestSchema: GenMessage<UpdateNotificationPreferenceRequest> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 17);
+export const NotificationPreferencePatchSchema: GenMessage<NotificationPreferencePatch> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 18);
 
 /**
- * @generated from message peers_touch.model.notification.v1.UpdateNotificationPreferenceResponse
+ * @generated from message peers_touch.model.notification.v1.UpdateNotificationPreferencesRequest
  */
-export type UpdateNotificationPreferenceResponse = Message<"peers_touch.model.notification.v1.UpdateNotificationPreferenceResponse"> & {
+export type UpdateNotificationPreferencesRequest = Message<"peers_touch.model.notification.v1.UpdateNotificationPreferencesRequest"> & {
   /**
-   * @generated from field: peers_touch.model.notification.v1.NotificationPreference preference = 1;
+   * @generated from field: repeated peers_touch.model.notification.v1.NotificationPreferencePatch updates = 1;
    */
-  preference?: NotificationPreference | undefined;
+  updates: NotificationPreferencePatch[];
+
+  /**
+   * @generated from field: uint64 observed_revision = 2;
+   */
+  observedRevision: bigint;
 };
 
 /**
- * Describes the message peers_touch.model.notification.v1.UpdateNotificationPreferenceResponse.
- * Use `create(UpdateNotificationPreferenceResponseSchema)` to create a new message.
+ * Describes the message peers_touch.model.notification.v1.UpdateNotificationPreferencesRequest.
+ * Use `create(UpdateNotificationPreferencesRequestSchema)` to create a new message.
  */
-export const UpdateNotificationPreferenceResponseSchema: GenMessage<UpdateNotificationPreferenceResponse> = /*@__PURE__*/
-  messageDesc(file_domain_notification_notification, 18);
+export const UpdateNotificationPreferencesRequestSchema: GenMessage<UpdateNotificationPreferencesRequest> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 19);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.UpdateNotificationPreferencesResponse
+ */
+export type UpdateNotificationPreferencesResponse = Message<"peers_touch.model.notification.v1.UpdateNotificationPreferencesResponse"> & {
+  /**
+   * @generated from field: peers_touch.model.notification.v1.NotificationPreferencesUpdateOutcome outcome = 1;
+   */
+  outcome: NotificationPreferencesUpdateOutcome;
+
+  /**
+   * @generated from field: peers_touch.model.notification.v1.NotificationPreferencesSnapshot snapshot = 2;
+   */
+  snapshot?: NotificationPreferencesSnapshot | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.UpdateNotificationPreferencesResponse.
+ * Use `create(UpdateNotificationPreferencesResponseSchema)` to create a new message.
+ */
+export const UpdateNotificationPreferencesResponseSchema: GenMessage<UpdateNotificationPreferencesResponse> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 20);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.ActorDeviceRef
+ */
+export type ActorDeviceRef = Message<"peers_touch.model.notification.v1.ActorDeviceRef"> & {
+  /**
+   * @generated from field: string actor_ptid = 1;
+   */
+  actorPtid: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.ActorDeviceRef.
+ * Use `create(ActorDeviceRefSchema)` to create a new message.
+ */
+export const ActorDeviceRefSchema: GenMessage<ActorDeviceRef> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 21);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.ApnsPushBinding
+ */
+export type ApnsPushBinding = Message<"peers_touch.model.notification.v1.ApnsPushBinding"> & {
+  /**
+   * @generated from field: bytes token = 1;
+   */
+  token: Uint8Array;
+
+  /**
+   * @generated from field: string topic = 2;
+   */
+  topic: string;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.ApnsPushBinding.
+ * Use `create(ApnsPushBindingSchema)` to create a new message.
+ */
+export const ApnsPushBindingSchema: GenMessage<ApnsPushBinding> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 22);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.FcmPushBinding
+ */
+export type FcmPushBinding = Message<"peers_touch.model.notification.v1.FcmPushBinding"> & {
+  /**
+   * @generated from field: string token = 1;
+   */
+  token: string;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.FcmPushBinding.
+ * Use `create(FcmPushBindingSchema)` to create a new message.
+ */
+export const FcmPushBindingSchema: GenMessage<FcmPushBinding> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 23);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.UnifiedPushBinding
+ */
+export type UnifiedPushBinding = Message<"peers_touch.model.notification.v1.UnifiedPushBinding"> & {
+  /**
+   * @generated from field: string endpoint = 1;
+   */
+  endpoint: string;
+
+  /**
+   * @generated from field: bytes p256dh_key = 2;
+   */
+  p256dhKey: Uint8Array;
+
+  /**
+   * @generated from field: bytes auth_secret = 3;
+   */
+  authSecret: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.UnifiedPushBinding.
+ * Use `create(UnifiedPushBindingSchema)` to create a new message.
+ */
+export const UnifiedPushBindingSchema: GenMessage<UnifiedPushBinding> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 24);
+
+/**
+ * PushRegistration intentionally excludes provider credentials. Native
+ * provider bindings are write-only and remain encrypted at rest in Station.
+ *
+ * @generated from message peers_touch.model.notification.v1.PushRegistration
+ */
+export type PushRegistration = Message<"peers_touch.model.notification.v1.PushRegistration"> & {
+  /**
+   * @generated from field: string registration_id = 1;
+   */
+  registrationId: string;
+
+  /**
+   * @generated from field: peers_touch.model.notification.v1.ActorDeviceRef actor_device = 2;
+   */
+  actorDevice?: ActorDeviceRef | undefined;
+
+  /**
+   * @generated from field: peers_touch.model.notification.v1.PushChannel channel = 3;
+   */
+  channel: PushChannel;
+
+  /**
+   * @generated from field: peers_touch.model.notification.v1.PushEnvironment environment = 4;
+   */
+  environment: PushEnvironment;
+
+  /**
+   * @generated from field: bytes app_install_epoch_sha256 = 5;
+   */
+  appInstallEpochSha256: Uint8Array;
+
+  /**
+   * @generated from field: bytes provider_binding_sha256 = 6;
+   */
+  providerBindingSha256: Uint8Array;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 7;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp updated_at = 8;
+   */
+  updatedAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp last_success_at = 9;
+   */
+  lastSuccessAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.PushRegistration.
+ * Use `create(PushRegistrationSchema)` to create a new message.
+ */
+export const PushRegistrationSchema: GenMessage<PushRegistration> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 25);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.RegisterPushDeviceRequest
+ */
+export type RegisterPushDeviceRequest = Message<"peers_touch.model.notification.v1.RegisterPushDeviceRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: uint64 lifecycle_generation = 3;
+   */
+  lifecycleGeneration: bigint;
+
+  /**
+   * @generated from field: bytes app_install_epoch_sha256 = 4;
+   */
+  appInstallEpochSha256: Uint8Array;
+
+  /**
+   * @generated from field: peers_touch.model.notification.v1.PushEnvironment environment = 5;
+   */
+  environment: PushEnvironment;
+
+  /**
+   * @generated from oneof peers_touch.model.notification.v1.RegisterPushDeviceRequest.provider_binding
+   */
+  providerBinding: {
+    /**
+     * @generated from field: peers_touch.model.notification.v1.ApnsPushBinding apns = 6;
+     */
+    value: ApnsPushBinding;
+    case: "apns";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.notification.v1.FcmPushBinding fcm = 7;
+     */
+    value: FcmPushBinding;
+    case: "fcm";
+  } | {
+    /**
+     * @generated from field: peers_touch.model.notification.v1.UnifiedPushBinding unified_push = 8;
+     */
+    value: UnifiedPushBinding;
+    case: "unifiedPush";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.RegisterPushDeviceRequest.
+ * Use `create(RegisterPushDeviceRequestSchema)` to create a new message.
+ */
+export const RegisterPushDeviceRequestSchema: GenMessage<RegisterPushDeviceRequest> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 26);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.RegisterPushDeviceResponse
+ */
+export type RegisterPushDeviceResponse = Message<"peers_touch.model.notification.v1.RegisterPushDeviceResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: peers_touch.model.notification.v1.RegisterPushDeviceOutcome outcome = 2;
+   */
+  outcome: RegisterPushDeviceOutcome;
+
+  /**
+   * @generated from field: peers_touch.model.notification.v1.PushRegistration registration = 3;
+   */
+  registration?: PushRegistration | undefined;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.RegisterPushDeviceResponse.
+ * Use `create(RegisterPushDeviceResponseSchema)` to create a new message.
+ */
+export const RegisterPushDeviceResponseSchema: GenMessage<RegisterPushDeviceResponse> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 27);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.UnregisterPushDeviceRequest
+ */
+export type UnregisterPushDeviceRequest = Message<"peers_touch.model.notification.v1.UnregisterPushDeviceRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string device_id = 2;
+   */
+  deviceId: string;
+
+  /**
+   * @generated from field: uint64 lifecycle_generation = 3;
+   */
+  lifecycleGeneration: bigint;
+
+  /**
+   * @generated from field: string registration_id = 4;
+   */
+  registrationId: string;
+
+  /**
+   * @generated from field: bytes app_install_epoch_sha256 = 5;
+   */
+  appInstallEpochSha256: Uint8Array;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.UnregisterPushDeviceRequest.
+ * Use `create(UnregisterPushDeviceRequestSchema)` to create a new message.
+ */
+export const UnregisterPushDeviceRequestSchema: GenMessage<UnregisterPushDeviceRequest> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 28);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.UnregisterPushDeviceResponse
+ */
+export type UnregisterPushDeviceResponse = Message<"peers_touch.model.notification.v1.UnregisterPushDeviceResponse"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: peers_touch.model.notification.v1.UnregisterPushDeviceOutcome outcome = 2;
+   */
+  outcome: UnregisterPushDeviceOutcome;
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.UnregisterPushDeviceResponse.
+ * Use `create(UnregisterPushDeviceResponseSchema)` to create a new message.
+ */
+export const UnregisterPushDeviceResponseSchema: GenMessage<UnregisterPushDeviceResponse> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 29);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.ListPushDevicesRequest
+ */
+export type ListPushDevicesRequest = Message<"peers_touch.model.notification.v1.ListPushDevicesRequest"> & {
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.ListPushDevicesRequest.
+ * Use `create(ListPushDevicesRequestSchema)` to create a new message.
+ */
+export const ListPushDevicesRequestSchema: GenMessage<ListPushDevicesRequest> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 30);
+
+/**
+ * @generated from message peers_touch.model.notification.v1.ListPushDevicesResponse
+ */
+export type ListPushDevicesResponse = Message<"peers_touch.model.notification.v1.ListPushDevicesResponse"> & {
+  /**
+   * @generated from field: repeated peers_touch.model.notification.v1.PushRegistration registrations = 1;
+   */
+  registrations: PushRegistration[];
+};
+
+/**
+ * Describes the message peers_touch.model.notification.v1.ListPushDevicesResponse.
+ * Use `create(ListPushDevicesResponseSchema)` to create a new message.
+ */
+export const ListPushDevicesResponseSchema: GenMessage<ListPushDevicesResponse> = /*@__PURE__*/
+  messageDesc(file_domain_notification_notification, 31);
 
 /**
  * @generated from enum peers_touch.model.notification.v1.NotificationCategory
@@ -729,3 +1102,148 @@ export enum NotificationStatus {
  */
 export const NotificationStatusSchema: GenEnum<NotificationStatus> = /*@__PURE__*/
   enumDesc(file_domain_notification_notification, 2);
+
+/**
+ * @generated from enum peers_touch.model.notification.v1.NotificationPreferencesUpdateOutcome
+ */
+export enum NotificationPreferencesUpdateOutcome {
+  /**
+   * @generated from enum value: NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED = 1;
+   */
+  APPLIED = 1,
+
+  /**
+   * @generated from enum value: NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED = 2;
+   */
+  UNCHANGED = 2,
+
+  /**
+   * @generated from enum value: NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT = 3;
+   */
+  CONFLICT = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.notification.v1.NotificationPreferencesUpdateOutcome.
+ */
+export const NotificationPreferencesUpdateOutcomeSchema: GenEnum<NotificationPreferencesUpdateOutcome> = /*@__PURE__*/
+  enumDesc(file_domain_notification_notification, 3);
+
+/**
+ * @generated from enum peers_touch.model.notification.v1.PushChannel
+ */
+export enum PushChannel {
+  /**
+   * @generated from enum value: PUSH_CHANNEL_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PUSH_CHANNEL_APNS = 1;
+   */
+  APNS = 1,
+
+  /**
+   * @generated from enum value: PUSH_CHANNEL_FCM = 2;
+   */
+  FCM = 2,
+
+  /**
+   * @generated from enum value: PUSH_CHANNEL_UNIFIED_PUSH = 3;
+   */
+  UNIFIED_PUSH = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.notification.v1.PushChannel.
+ */
+export const PushChannelSchema: GenEnum<PushChannel> = /*@__PURE__*/
+  enumDesc(file_domain_notification_notification, 4);
+
+/**
+ * @generated from enum peers_touch.model.notification.v1.PushEnvironment
+ */
+export enum PushEnvironment {
+  /**
+   * @generated from enum value: PUSH_ENVIRONMENT_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: PUSH_ENVIRONMENT_DEVELOPMENT = 1;
+   */
+  DEVELOPMENT = 1,
+
+  /**
+   * @generated from enum value: PUSH_ENVIRONMENT_PRODUCTION = 2;
+   */
+  PRODUCTION = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.notification.v1.PushEnvironment.
+ */
+export const PushEnvironmentSchema: GenEnum<PushEnvironment> = /*@__PURE__*/
+  enumDesc(file_domain_notification_notification, 5);
+
+/**
+ * @generated from enum peers_touch.model.notification.v1.RegisterPushDeviceOutcome
+ */
+export enum RegisterPushDeviceOutcome {
+  /**
+   * @generated from enum value: REGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: REGISTER_PUSH_DEVICE_OUTCOME_CREATED = 1;
+   */
+  CREATED = 1,
+
+  /**
+   * @generated from enum value: REGISTER_PUSH_DEVICE_OUTCOME_ROTATED = 2;
+   */
+  ROTATED = 2,
+
+  /**
+   * @generated from enum value: REGISTER_PUSH_DEVICE_OUTCOME_UNCHANGED = 3;
+   */
+  UNCHANGED = 3,
+}
+
+/**
+ * Describes the enum peers_touch.model.notification.v1.RegisterPushDeviceOutcome.
+ */
+export const RegisterPushDeviceOutcomeSchema: GenEnum<RegisterPushDeviceOutcome> = /*@__PURE__*/
+  enumDesc(file_domain_notification_notification, 6);
+
+/**
+ * @generated from enum peers_touch.model.notification.v1.UnregisterPushDeviceOutcome
+ */
+export enum UnregisterPushDeviceOutcome {
+  /**
+   * @generated from enum value: UNREGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: UNREGISTER_PUSH_DEVICE_OUTCOME_REMOVED = 1;
+   */
+  REMOVED = 1,
+
+  /**
+   * @generated from enum value: UNREGISTER_PUSH_DEVICE_OUTCOME_ALREADY_ABSENT = 2;
+   */
+  ALREADY_ABSENT = 2,
+}
+
+/**
+ * Describes the enum peers_touch.model.notification.v1.UnregisterPushDeviceOutcome.
+ */
+export const UnregisterPushDeviceOutcomeSchema: GenEnum<UnregisterPushDeviceOutcome> = /*@__PURE__*/
+  enumDesc(file_domain_notification_notification, 7);

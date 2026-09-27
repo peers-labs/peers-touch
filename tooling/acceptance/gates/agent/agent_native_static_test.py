@@ -1575,10 +1575,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
         auth_service = DESKTOP_AUTH_SERVICE.read_text(encoding="utf-8")
 
-        self.assertIn(
-            "bind_gateway_auth_result(state, app_auth::auth_login(input, state))",
-            gateway,
-        )
+        self.assertNotIn('"auth_' + 'login" =>', gateway)
         self.assertIn(
             "bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))",
             gateway,

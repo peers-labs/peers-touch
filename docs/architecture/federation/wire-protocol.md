@@ -542,7 +542,9 @@ message AcceptInviteResponse {
 
 ### 6.5 Projection RPCs (exposed by Home Station to its own Clients)
 
-These are consumed by Desktop Settings and Dashboard, authenticated via standard JWT (not federation JWT):
+These are authenticated via standard JWT (not federation JWT). Ordinary clients
+consume only context/list and scoped discovery operations; Dashboard/CLI own
+membership and governance operations:
 
 #### ListFederations
 
@@ -908,28 +910,13 @@ New Governance Layer (app/subserver/federation/):
 
 | Existing Component | Change Required | How |
 |---|---|---|
-| `FederationSelfView` (proto) | Add `repeated JoinedFederationRef joined_federations` | New proto field (proto3 additive, backward compatible) |
-| `/actor/federation/me` endpoint | Return expanded view including joined federations list | Handler queries new federation subserver for membership list |
 | Catalog search | Add `federation_id` to `CatalogSearchRequest` | New field in existing proto (additive) |
-| Resolver | No change for v1 | Resolver still resolves by handle; federation_id scoping is on Catalog, not Resolver |
+| Resolver | Require `federation_id` | Resolve remains handle-based inside the explicitly selected Federation context |
+| Actor Profile | Own federated identity and discoverability | `/actor/profile` is the only ordinary-client self/visibility surface |
 | Routing Health | Add `governance_sync_status` field | New field in `FederationHealthView` proto |
 | Invalidation | No change for v1 | Invalidation remains per-actor, not per-federation |
 
-### 9.3 FederationSelfView Extension
-
-```protobuf
-message JoinedFederationRef {
-  string federation_id = 1;
-  string federation_name = 2;
-  string my_role = 3;
-  string status = 4;
-}
-
-// Add to existing FederationSelfView:
-// repeated JoinedFederationRef joined_federations = 10;
-```
-
-### 9.4 Governance Subserver → Frame Interaction
+### 9.3 Governance Subserver → Frame Interaction
 
 The new `federation` subserver in app layer calls frame layer via Go interface injection:
 
@@ -1018,5 +1005,4 @@ This specification maps to the following proto files (to be created in `model/do
 
 Existing files to extend:
 - `realtime/event.proto`: Add `LedgerEventDelivered` arm to StreamEvent oneof (§7.2)
-- `federation_self.proto`: Add `JoinedFederationRef` and field to `FederationSelfView`
 - `federation_health.proto`: Add `governance_sync_status` field

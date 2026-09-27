@@ -25,6 +25,48 @@ def _context_descriptor() -> int:
     return descriptor
 
 
+def _add_invoked_venv_site_packages() -> None:
+    venv_root = Path(sys.executable).parent.parent
+    config = venv_root / "pyvenv.cfg"
+    if not config.exists():
+        return
+
+    try:
+        resolved_root = venv_root.resolve(strict=True)
+        resolved_config = config.resolve(strict=True)
+    except OSError as error:
+        raise RuntimeError("isolated Gate virtual environment is invalid") from error
+    if not resolved_config.is_file() or resolved_config.parent != resolved_root:
+        raise RuntimeError("isolated Gate virtual environment config is unsafe")
+
+    version_directory = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    resolved_paths: list[str] = []
+    for library_directory in ("lib", "lib64"):
+        candidate = venv_root / library_directory / version_directory / "site-packages"
+        if not candidate.exists():
+            continue
+        try:
+            resolved_candidate = candidate.resolve(strict=True)
+            resolved_candidate.relative_to(resolved_root)
+        except (OSError, ValueError) as error:
+            raise RuntimeError(
+                "isolated Gate virtual environment package path is unsafe"
+            ) from error
+        if not resolved_candidate.is_dir():
+            raise RuntimeError(
+                "isolated Gate virtual environment package path is invalid"
+            )
+        resolved_path = str(resolved_candidate)
+        if resolved_path not in resolved_paths:
+            resolved_paths.append(resolved_path)
+
+    if not resolved_paths:
+        raise RuntimeError(
+            "isolated Gate virtual environment package path is unavailable"
+        )
+    sys.path.extend(resolved_paths)
+
+
 def _run_target(argv: list[str]) -> None:
     if len(argv) < 2:
         raise RuntimeError("isolated Gate bootstrap target is missing")
@@ -58,6 +100,7 @@ def _run_target(argv: list[str]) -> None:
 
 def main() -> None:
     _context_descriptor()
+    _add_invoked_venv_site_packages()
     _run_target(sys.argv[1:])
 
 

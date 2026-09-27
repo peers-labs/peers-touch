@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "id": "chat-mixed-client-convergence",
+  "domain": "chat",
+  "status": "active",
+  "owners": ["acceptance-framework", "chat"],
+  "source_paths": [
+    "tooling/acceptance/environments/chat-mixed-native.yaml",
+    "tooling/acceptance/provisioners/mobile_simulator.py",
+    "tooling/acceptance/provisioners/__init__.py",
+    "tooling/acceptance/gates/mobile/simulator_runtime_binding.py",
+    "tooling/acceptance/gates/chat/mixed_native_runtime.py",
+    "tooling/acceptance/gates/chat/lifecycle_call_resolution.py",
+    "tooling/acceptance/gates/chat/lifecycle_mixed_client_*.py",
+    "tooling/acceptance/tests/test_mobile_simulator_provisioner.py"
+  ],
+  "required_gates": [
+    "chat-lifecycle-mixed-client-same-station-e2e",
+    "chat-lifecycle-mixed-client-cross-station-e2e",
+    "chat-lifecycle-mixed-client-multi-device-e2e",
+    "chat-lifecycle-call-resolution-e2e",
+    "chat-lifecycle-mixed-client-group-mls-e2e"
+  ],
+  "acceptance": {
+    "product_truths": [
+      "Desktop and Mobile exchange canonical Direct and Group messages on the same Station",
+      "Desktop and Mobile preserve message identity, receipts, interactions, attachments, offline delivery, and restart readback across Stations",
+      "one actor's Desktop and Mobile devices converge sender companion messages, read cursors, revocation, and call resolution",
+      "a mixed three-actor Group converges membership and MLS epochs across Desktop and Mobile"
+    ],
+    "surfaces": [
+      {
+        "type": "native-desktop",
+        "selector": "[data-chat-message-timeline]"
+      },
+      {
+        "type": "native-mobile",
+        "route": "chat"
+      }
+    ]
+  },
+  "constraints": [
+    "same-platform evidence cannot substitute for mixed Desktop-Mobile proof",
+    "same-Station evidence cannot substitute for cross-Station proof",
+    "Appium endpoints, device identifiers, and artifact paths remain parent-owned ephemeral capabilities",
+    "every claimed runtime cell must identify the exact source commit and service attestation",
+    "unavailable Linux, Windows, Android, or physical-device cells remain UNPROVEN"
+  ]
+}

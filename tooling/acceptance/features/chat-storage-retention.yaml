@@ -1,0 +1,56 @@
+{
+  "id": "chat-storage-retention",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "model/domain/chat/storage.proto",
+    "packages/messaging-core/src/storage_governance/retention.rs",
+    "packages/messaging-core/src/store/schema.rs",
+    "apps/desktop/src-tauri/src/messaging/**",
+    "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+    "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+    "apps/mobile/src-tauri/src/messaging/**",
+    "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+    "apps/mobile/src/pages/settings/SettingsSections.tsx",
+    "apps/mobile/src/acceptance/**",
+    "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+  ],
+  "truth_sources": [
+    "Device Messaging Engine retention policy",
+    "authority-sequence and event-hash retention floors",
+    "Device Messaging Engine SQLCipher projections and cleanup journal"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "native-desktop",
+      "route": "Settings > Data > Storage > Keep messages"
+    },
+    {
+      "type": "native-mobile",
+      "route": "Me > Chat Settings > Storage > Keep messages"
+    }
+  ],
+  "required_gates": [
+    "chat-storage-retention-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Forever, 365-day, 90-day, and 30-day presets use one canonical Proto enum",
+      "retention prunes only durable-consumed projections before a verified sequence/hash floor",
+      "reliability, crypto, drafts, active transfers, and zero-reference media rules are preserved",
+      "new Recovery archives carry retention floors and exclude pruned plaintext"
+    ],
+    "visible": [
+      "native Mobile exposes all four retention presets in the Chat Storage section",
+      "selecting 30 days reports a persisted device-local policy and actual released bytes",
+      "pruned plaintext remains absent after WebView restart while protected and recent messages remain"
+    ]
+  },
+  "negative": [
+    "retention must not mutate Station authority or another device",
+    "a stale scope result must not update the active Settings surface",
+    "retention must not advance a floor when a deletion transaction fails",
+    "ordinary history and Recovery must not restore plaintext at or below a committed floor",
+    "compaction_pending must not render as success"
+  ]
+}

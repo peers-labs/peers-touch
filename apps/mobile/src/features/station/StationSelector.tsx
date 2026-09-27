@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Button, Input, Tag, Typography } from 'antd';
+import { Button, Input, Modal, Tag, Typography } from 'antd';
 import { AlertTriangle, Check, Plus, Server, Trash2, X } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
@@ -35,6 +35,7 @@ export function StationSelector({
   const [protocol, setProtocol] = useState<StationProtocol>('https');
   const [address, setAddress] = useState('');
   const [addingStation, setAddingStation] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<MobileStationEntry | null>(null);
   const hasEntries = entries.length > 0;
   const showStationInput = !hasEntries || addingStation;
   const canAdd = useMemo(() => Boolean(buildStationUrl({ protocol, address })), [address, protocol]);
@@ -58,6 +59,12 @@ export function StationSelector({
     setAddress('');
     setProtocol('https');
     setAddingStation(false);
+  }
+
+  function confirmStationRemoval() {
+    if (!pendingRemoval) return;
+    onRemove(pendingRemoval.stationPeerId);
+    setPendingRemoval(null);
   }
 
   return (
@@ -147,13 +154,13 @@ export function StationSelector({
                   aria-label={t('common.action.delete')}
                   onClick={(event) => {
                     event.stopPropagation();
-                    onRemove(entry.stationPeerId);
+                    setPendingRemoval(entry);
                   }}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return;
                     event.preventDefault();
                     event.stopPropagation();
-                    onRemove(entry.stationPeerId);
+                    setPendingRemoval(entry);
                   }}
                 >
                   <Trash2 size={15} />
@@ -169,6 +176,19 @@ export function StationSelector({
           {t('mobile.launch.addStation')}
         </Button>
       ) : null}
+
+      <Modal
+        title={t('common.stationPicker.removeLabel', {
+          station: pendingRemoval?.label ?? '',
+        })}
+        open={pendingRemoval !== null}
+        okText={t('common.action.delete')}
+        okButtonProps={{ danger: true }}
+        cancelText={t('common.action.cancel')}
+        onOk={confirmStationRemoval}
+        onCancel={() => setPendingRemoval(null)}
+        destroyOnClose
+      />
     </section>
   );
 }
@@ -178,8 +198,12 @@ function getStationStatus(
   verifying: boolean,
   t: (key: string) => string,
 ): { className: string; label: string } {
-  if (verifying || entry.online === undefined) {
+  if (verifying) {
     return { className: 'validating', label: t('mobile.launch.validating') };
+  }
+
+  if (entry.online === undefined) {
+    return { className: 'unknown', label: t('mobile.launch.unknown') };
   }
 
   if (entry.online) {

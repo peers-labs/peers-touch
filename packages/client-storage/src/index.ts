@@ -4,6 +4,7 @@ export type ClientStorageDomainId =
   | 'asset.avatar'
   | 'chat.conversation-settings'
   | 'chat.message'
+  | 'chat.message-flag'
   | 'config.preference'
   | 'crypto.sender-key-ledger'
   | 'identity.trust'
@@ -33,6 +34,7 @@ export const CLIENT_STORAGE_DOMAINS: Record<ClientStorageDomainId, ClientStorage
     persistent: true,
   },
   'chat.message': { id: 'chat.message', scope: 'actor', ttlMs: null, persistent: true },
+  'chat.message-flag': { id: 'chat.message-flag', scope: 'actor', ttlMs: null, persistent: true },
   'config.preference': { id: 'config.preference', scope: 'actor', ttlMs: null, persistent: true },
   'crypto.sender-key-ledger': { id: 'crypto.sender-key-ledger', scope: 'actor', ttlMs: null, persistent: true },
   'identity.trust': { id: 'identity.trust', scope: 'actor', ttlMs: null, persistent: true },

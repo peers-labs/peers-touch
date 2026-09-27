@@ -27,6 +27,7 @@ from tooling.acceptance.core import (
     EvidenceStore,
     GateError,
     REPO_ROOT,
+    call_async_harness,
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.core.evidence_store import workspace_id
@@ -52,6 +53,9 @@ LIFECYCLE_DIRECT_GATE_ID = "chat-lifecycle-direct-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
+STORAGE_ACCOUNTING_GATE_ID = "chat-storage-accounting-e2e"
+STORAGE_BATCH_DESKTOP_GATE_ID = "chat-storage-desktop-batch-clear-e2e"
+STORAGE_REDACTION_RECOVERY_GATE_ID = "chat-storage-redaction-recovery-e2e"
 CURRENT_PROFILE_GATE_IDS = frozenset(
     {
         CURRENT_PROFILE_GATE_ID,
@@ -129,6 +133,12 @@ def is_current_profile_gate(gate_id: str) -> bool:
 
 
 def journey_for_gate(gate_id: str) -> str:
+    if gate_id == STORAGE_ACCOUNTING_GATE_ID:
+        return "storage-observability"
+    if gate_id == STORAGE_BATCH_DESKTOP_GATE_ID:
+        return "storage-batch-clear"
+    if gate_id == STORAGE_REDACTION_RECOVERY_GATE_ID:
+        return "storage-redaction-recovery"
     if gate_id == LIFECYCLE_ONBOARDING_GATE_ID:
         return "onboarding-first-message"
     if gate_id == LIFECYCLE_DIRECT_GATE_ID:
@@ -521,6 +531,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
+        self.station_access: dict[str, dict[str, Any]] = {}
         self._reconciliation_target: dict[str, str] | None = None
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
@@ -529,6 +540,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 "runtimeCell": self.runtime_binding.cell_id,
                 "journey": journey_for_gate(self.gate_id),
                 "steps": self.steps,
+                "stationAccess": self.station_access,
                 "cleanup": {},
             }
         )
@@ -665,6 +677,34 @@ class NativeTwoClientGate(AcceptanceGate):
         )
         return identity
 
+    def configure_station_access(
+        self,
+        client: TauriSession,
+        actor: str,
+    ) -> dict[str, Any]:
+        station = runtime_station_service(self.manifest, actor)
+        station_url = str(station.get("endpoint") or "").rstrip("/")
+        station_peer_id = str(station.get("runtimeIdentity") or "")
+        if not station_url or not station_peer_id:
+            raise GateError(f"{actor} Station binding identity is incomplete")
+        binding = call_async_harness(
+            client,
+            "configureStation",
+            {"stationUrl": station_url},
+            namespace="stationAccess",
+            script_timeout=30,
+        )
+        if (
+            not isinstance(binding, dict)
+            or binding.get("configured") is not True
+            or binding.get("activeUrl") != station_url
+            or binding.get("boundUrl") != station_url
+            or binding.get("bindingPhase") != "access_gate"
+            or binding.get("activeStationPeerId") != station_peer_id
+        ):
+            raise GateError(f"{actor} did not verify the configured Station")
+        return binding
+
     def start_client(self, actor: str) -> None:
         client = self.runtime_binding.create_bound_session(
             actor,
@@ -680,6 +720,9 @@ class NativeTwoClientGate(AcceptanceGate):
         self.client_lifecycles.register(client, expected_ptid)
         self.client_lifecycles.mark_live(client)
         self.register_driver(client)
+        self.station_access[actor] = {
+            "preAuthentication": self.configure_station_access(client, actor),
+        }
         account_ref = str(
             self.actor_specs[actor].get("accountRef") or ""
         )
@@ -695,6 +738,29 @@ class NativeTwoClientGate(AcceptanceGate):
         )
         if not (login or {}).get("authenticated"):
             raise GateError(f"{actor} login did not authenticate")
+        bound_station = call_async_harness(
+            client,
+            "bindingState",
+            {},
+            namespace="stationAccess",
+            script_timeout=10,
+        )
+        if (
+            not isinstance(bound_station, dict)
+            or bound_station.get("phase") != "bound"
+            or str(bound_station.get("bound_url") or "").rstrip("/")
+            != str(
+                runtime_station_service(
+                    self.manifest,
+                    actor,
+                ).get("endpoint")
+                or ""
+            ).rstrip("/")
+        ):
+            raise GateError(
+                f"{actor} Station binding did not complete after access grant"
+            )
+        self.station_access[actor]["postAuthentication"] = bound_station
         self.client_lifecycles.mark_authenticated(client)
         hydration = async_harness(
             client,
@@ -746,6 +812,77 @@ class NativeTwoClientGate(AcceptanceGate):
                 pid=client.process_id,
             )
         )
+
+    def restart_client(self, actor: str) -> TauriSession:
+        predecessor = self.clients[actor]
+        self.client_lifecycles.stop_preserving_session(predecessor)
+        client = self.runtime_binding.create_bound_session(
+            actor,
+            NativeLaunchOptions(
+                window_slot=("alice", "bob").index(actor),
+                window_count=2,
+            ),
+        )
+        self.runtime_instances.append(client)
+        expected_ptid = self.ptids[actor]
+        self.client_lifecycles.register(client, expected_ptid)
+        self.client_lifecycles.transfer_preserved_session(
+            predecessor,
+            client,
+        )
+        self.client_lifecycles.mark_live(client)
+        self.register_driver(client)
+        station_url = str(
+            runtime_station_service(
+                self.manifest,
+                actor,
+            ).get("endpoint")
+            or ""
+        ).rstrip("/")
+        bound_station = call_async_harness(
+            client,
+            "bindingState",
+            {},
+            namespace="stationAccess",
+            script_timeout=10,
+        )
+        if (
+            not isinstance(bound_station, dict)
+            or bound_station.get("phase") != "bound"
+            or str(bound_station.get("bound_url") or "").rstrip("/")
+            != station_url
+        ):
+            raise GateError(
+                f"{actor} Station binding did not survive native restart"
+            )
+        device = wait_until(
+            lambda: (
+                current
+                if (
+                    isinstance(
+                        current := async_harness(
+                            client,
+                            "getRealtimeDevice",
+                            {},
+                        ),
+                        dict,
+                    )
+                    and current.get("active") is True
+                    and current.get("actorPtid") == expected_ptid
+                    and current.get("deviceId") == self.device_ids[actor]
+                )
+                else None
+            ),
+            f"{actor} preserved native session",
+            timeout=60,
+        )
+        if not is_native_tauri_url(client.get_current_url()):
+            raise GateError(f"{actor} restart did not use native Tauri")
+        self.client_lifecycles.mark_authenticated(client)
+        self.clients[actor] = client
+        self.device_ids[actor] = str(device["deviceId"])
+        self.station_access[actor]["postRestart"] = bound_station
+        return client
 
     def prove_additional_journey_assertions(self) -> None:
         """Variant hook for assertions that must run before evidence cleanup."""

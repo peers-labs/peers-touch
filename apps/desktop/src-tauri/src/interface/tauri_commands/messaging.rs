@@ -3,9 +3,10 @@ use crate::messaging::CommandDispatchProgress;
 use crate::model::chat::{
     ConversationKind, GetMemberSettingsRequest, GetMemberSettingsResponse, MemberSettings,
     MemberStatus, MessagingMembershipAction, MlsLeaveIntent, UpdateMemberSettingsRequest,
-    UpdateMemberSettingsResponse,
+    UpdateMemberSettingsResponse, VoiceNoteMetadata,
 };
 use crate::state::AppState;
+use prost::Message;
 use reqwest::Method;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -18,6 +19,16 @@ pub struct MessagingLocalAttachmentInput {
     pub file_path: String,
     pub filename: String,
     pub mime_type: String,
+    #[serde(default)]
+    pub voice_note: Option<MessagingVoiceNoteInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingVoiceNoteInput {
+    pub duration_ms: u32,
+    pub codec: String,
+    #[serde(default)]
+    pub waveform: Vec<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +58,20 @@ pub struct MessagingSendMessageInput {
 #[derive(Debug, Deserialize)]
 pub struct MessagingListMessagesInput {
     pub conversation_id: String,
+    #[serde(default)]
+    pub before_sequence: Option<i64>,
+    #[serde(default = "default_message_page_limit")]
+    pub limit: usize,
+}
+
+fn default_message_page_limit() -> usize {
+    50
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessagingRetryMessageInput {
+    pub conversation_id: String,
+    pub message_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,7 +100,6 @@ pub struct MessagingUpdateMemberSettingsInput {
     pub pinned: Option<bool>,
     pub background: Option<String>,
     pub background_image: Option<String>,
-    pub cleared_at_unix_ms: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +147,12 @@ pub struct MessagingSearchMessagesInput {
     pub before_message_id: Option<String>,
     #[serde(default = "default_search_limit")]
     pub limit: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatStorageSnapshotInput {
+    pub request_bytes: Vec<u8>,
 }
 
 fn default_search_limit() -> usize {
@@ -237,6 +267,14 @@ pub struct MessagingAcceptanceActorInput {
 
 #[cfg(feature = "acceptance-webdriver")]
 #[derive(Debug, Deserialize)]
+pub struct ChatStorageAcceptanceSeedConversationClearInput {
+    pub expected_actor_ptid: String,
+    pub station_peer_id: String,
+    pub plaintext_bytes: usize,
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
 pub struct MessagingAcceptanceInteractionSnapshotInput {
     pub expected_actor_ptid: String,
     pub conversation_id: String,
@@ -292,6 +330,37 @@ fn conversation_member_json(
     })
 }
 
+fn message_projection_json(message: &crate::messaging::ConversationMessageProjection) -> Value {
+    json!({
+        "event_id": message.event_id,
+        "event_sequence": message.event_sequence,
+        "message_id": message.message_id,
+        "sender_ptid": message.sender_ptid,
+        "sender_device_id": message.sender_device_id,
+        "plaintext": message.plaintext,
+        "attachments": message.attachments.iter()
+            .map(attachment_projection_json)
+            .collect::<Vec<_>>(),
+        "state": message.state,
+        "timestamp_unix_ms": message.timestamp_unix_ms,
+        "reply_to_message_id": message.reply_to_message_id,
+        "thread_root_message_id": message.thread_root_message_id,
+        "edited_text": message.edited_text,
+        "edited_at_unix_ms": message.edited_at_unix_ms,
+        "retracted": message.retracted,
+        "reactions": message.reactions.iter().map(
+            |(actor_ptid, reaction, created_at_unix_ms)| json!({
+                "actor_ptid": actor_ptid,
+                "reaction": reaction,
+                "created_at_unix_ms": created_at_unix_ms,
+            })
+        ).collect::<Vec<_>>(),
+        "pinned_by_ptid": message.pinned_by_ptid,
+        "pinned_at_unix_ms": message.pinned_at_unix_ms,
+        "read_by_ptids": message.read_by_ptids,
+    })
+}
+
 pub(crate) fn conversation_projection_json(
     engine: &crate::messaging::MessagingEngine,
     conversation: &crate::messaging::ConversationProjection,
@@ -306,6 +375,7 @@ pub(crate) fn conversation_projection_json(
         .iter()
         .map(|member| conversation_member_json(&conversation.conversation_id, member))
         .collect::<Vec<_>>();
+    let summary = engine.conversation_summary(&conversation.conversation_id)?;
     Ok(json!({
         "conversation_id": conversation.conversation_id,
         "authority_station_id": conversation.authority_station_id,
@@ -319,6 +389,10 @@ pub(crate) fn conversation_projection_json(
         "mls_status": mls_status,
         "active": conversation.active,
         "updated_at_unix_ms": conversation.updated_at_unix_ms,
+        "summary": {
+            "unread_count": summary.unread_count,
+            "latest_message": summary.latest_message.as_ref().map(message_projection_json),
+        },
     }))
 }
 
@@ -357,7 +431,6 @@ fn member_settings_json(settings: &MemberSettings) -> Value {
         "pinned": settings.pinned,
         "background": settings.background,
         "backgroundImage": settings.background_image,
-        "clearedAtUnixMs": settings.cleared_at_ms,
     })
 }
 
@@ -465,7 +538,6 @@ pub(crate) fn messaging_update_member_settings_result(
         alert_enabled: input.alert_enabled.unwrap_or(current.alert_enabled),
         pinned: input.pinned.unwrap_or(current.pinned),
         background: input.background.unwrap_or(current.background),
-        cleared_at_ms: input.cleared_at_unix_ms.unwrap_or(current.cleared_at_ms),
         background_image: input.background_image.unwrap_or(current.background_image),
     };
     let response = match crate::infrastructure::station_client::request_proto_for_device::<
@@ -523,6 +595,271 @@ fn active_engine(
             )
         })?;
     Ok((session.account_id, session.jwt, engine))
+}
+
+#[tauri::command]
+pub async fn chat_storage_snapshot(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: ChatStorageSnapshotInput,
+) -> Result<AppResult<Vec<u8>>, String> {
+    let request = match messaging_core::proto::chat::ChatStorageSnapshotRequest::decode(
+        input.request_bytes.as_slice(),
+    ) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid chat storage snapshot request: {error}"),
+                None,
+            ))
+        }
+    };
+    let scope = match request.scope {
+        Some(scope) => scope,
+        None => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "chat storage scope is required",
+                None,
+            ))
+        }
+    };
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(AppResult {
+                ok: false,
+                data: None,
+                error: error.error,
+            })
+        }
+    };
+    if scope.actor_ptid != engine.endpoint().ptid || scope.device_id != engine.endpoint().device_id
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::Conflict,
+            "chat storage scope is stale",
+            Some(json!({ "code": "STORAGE_SCOPE_STALE" })),
+        ));
+    }
+    let station_peer_id = scope.station_peer_id;
+    let revision = request.scope_revision;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_snapshot(&station_peer_id, &revision)
+            .map(|snapshot| AppResult::success(snapshot.encode_to_vec()))
+            .unwrap_or_else(|error| {
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    Some(json!({ "code": "STORAGE_IO_FAILED" })),
+                )
+            })
+    })
+    .await
+    .map_err(|error| format!("chat storage measurement worker failed: {error}"))
+}
+
+#[tauri::command]
+pub async fn chat_storage_clear_cache(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: ChatStorageSnapshotInput,
+) -> Result<AppResult<Vec<u8>>, String> {
+    let request = match messaging_core::proto::chat::ChatStorageSnapshotRequest::decode(
+        input.request_bytes.as_slice(),
+    ) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid chat cache cleanup request: {error}"),
+                None,
+            ))
+        }
+    };
+    let scope = match request.scope {
+        Some(scope) => scope,
+        None => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "chat storage scope is required",
+                None,
+            ))
+        }
+    };
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(AppResult {
+                ok: false,
+                data: None,
+                error: error.error,
+            })
+        }
+    };
+    if scope.actor_ptid != engine.endpoint().ptid || scope.device_id != engine.endpoint().device_id
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::Conflict,
+            "chat storage scope is stale",
+            Some(json!({ "code": "STORAGE_SCOPE_STALE" })),
+        ));
+    }
+    let station_peer_id = scope.station_peer_id;
+    let revision = request.scope_revision;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_clear_cache(&station_peer_id, &revision)
+            .map(|result| AppResult::success(result.encode_to_vec()))
+            .unwrap_or_else(|error| {
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    Some(json!({ "code": "STORAGE_IO_FAILED" })),
+                )
+            })
+    })
+    .await
+    .map_err(|error| format!("chat cache cleanup worker failed: {error}"))
+}
+
+#[tauri::command]
+pub async fn chat_storage_clear_conversation(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: ChatStorageSnapshotInput,
+) -> Result<AppResult<Vec<u8>>, String> {
+    let request = match messaging_core::proto::chat::ChatStorageConversationRequest::decode(
+        input.request_bytes.as_slice(),
+    ) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid chat conversation cleanup request: {error}"),
+                None,
+            ))
+        }
+    };
+    let scope = match request.scope {
+        Some(scope) => scope,
+        None => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "chat storage scope is required",
+                None,
+            ))
+        }
+    };
+    if request.conversation_id.trim().is_empty() {
+        return Ok(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "chat conversation ID is required",
+            None,
+        ));
+    }
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(AppResult {
+                ok: false,
+                data: None,
+                error: error.error,
+            })
+        }
+    };
+    if scope.actor_ptid != engine.endpoint().ptid || scope.device_id != engine.endpoint().device_id
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::Conflict,
+            "chat storage scope is stale",
+            Some(json!({ "code": "STORAGE_SCOPE_STALE" })),
+        ));
+    }
+    let station_peer_id = scope.station_peer_id;
+    let revision = request.scope_revision;
+    let conversation_id = request.conversation_id;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_clear_conversation(&station_peer_id, &revision, &conversation_id)
+            .map(|result| AppResult::success(result.encode_to_vec()))
+            .unwrap_or_else(|error| {
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    Some(json!({ "code": "STORAGE_IO_FAILED" })),
+                )
+            })
+    })
+    .await
+    .map_err(|error| format!("chat conversation cleanup worker failed: {error}"))
+}
+
+#[tauri::command]
+pub async fn chat_storage_set_retention(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    input: ChatStorageSnapshotInput,
+) -> Result<AppResult<Vec<u8>>, String> {
+    let request = match messaging_core::proto::chat::ChatStorageRetentionRequest::decode(
+        input.request_bytes.as_slice(),
+    ) {
+        Ok(request) => request,
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                format!("invalid chat retention request: {error}"),
+                None,
+            ))
+        }
+    };
+    let scope = match request.scope {
+        Some(scope) => scope,
+        None => {
+            return Ok(AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "chat storage scope is required",
+                None,
+            ))
+        }
+    };
+    let (_, _, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(AppResult {
+                ok: false,
+                data: None,
+                error: error.error,
+            })
+        }
+    };
+    if scope.actor_ptid != engine.endpoint().ptid || scope.device_id != engine.endpoint().device_id
+    {
+        return Ok(AppResult::fail(
+            ErrorCode::Conflict,
+            "chat storage scope is stale",
+            Some(json!({ "code": "STORAGE_SCOPE_STALE" })),
+        ));
+    }
+    let station_peer_id = scope.station_peer_id;
+    let revision = request.scope_revision;
+    let retention_preset = request.retention_preset;
+    tauri::async_runtime::spawn_blocking(move || {
+        engine
+            .chat_storage_set_retention(&station_peer_id, &revision, retention_preset)
+            .map(|result| AppResult::success(result.encode_to_vec()))
+            .unwrap_or_else(|error| {
+                AppResult::fail(
+                    ErrorCode::InternalError,
+                    error,
+                    Some(json!({ "code": "STORAGE_IO_FAILED" })),
+                )
+            })
+    })
+    .await
+    .map_err(|error| format!("chat retention worker failed: {error}"))
 }
 
 fn leave_intent_json(intent: &MlsLeaveIntent) -> Value {
@@ -690,6 +1027,11 @@ fn attachment_projection_json(
         "storage_ref": object.map(|value| value.storage_ref.as_str()).unwrap_or_default(),
         "ciphertext_size": object.map(|value| value.ciphertext_size).unwrap_or_default(),
         "availability_state": if object.is_some() { "remote" } else { "uploading" },
+        "voice_note": attachment.voice_note.as_ref().map(|voice_note| json!({
+            "duration_ms": voice_note.duration_ms,
+            "codec": voice_note.codec,
+            "waveform": voice_note.waveform,
+        })),
     })
 }
 
@@ -918,16 +1260,85 @@ pub fn messaging_acceptance_current_endpoint(
 
 #[cfg(feature = "acceptance-webdriver")]
 #[tauri::command]
+pub fn chat_storage_acceptance_seed_conversation_clear(
+    input: ChatStorageAcceptanceSeedConversationClearInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    if std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref()
+        != Some("chat-storage-desktop-batch-clear-e2e")
+    {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.storageFixtureUnauthorized",
+            Some(json!({ "reason": "storage_fixture_unauthorized" })),
+        );
+    }
+    let session = match state.sessions.get(window.label()) {
+        Some(session) => session,
+        None => {
+            return AppResult::fail(
+                ErrorCode::Unauthorized,
+                "acceptance.chat.windowSessionMissing",
+                Some(json!({ "reason": "window_session_missing" })),
+            )
+        }
+    };
+    let actor_ptid = match require_acceptance_actor(&input.expected_actor_ptid, &session.actor.ptid)
+    {
+        Ok(actor_ptid) => actor_ptid,
+        Err(error) => return error,
+    };
+    let engine = match state.messaging_engines.get(&session.account_id) {
+        Ok(Some(engine)) => engine,
+        Ok(None) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "acceptance.chat.messagingEngineInactive",
+                Some(json!({ "reason": "messaging_engine_inactive" })),
+            )
+        }
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                format!("read active messaging engine for acceptance: {error}"),
+                Some(json!({ "reason": "messaging_engine_lookup_failed" })),
+            )
+        }
+    };
+    if engine.endpoint().ptid != actor_ptid {
+        return AppResult::fail(
+            ErrorCode::Forbidden,
+            "acceptance.chat.messagingEndpointActorMismatch",
+            Some(json!({ "reason": "messaging_endpoint_actor_mismatch" })),
+        );
+    }
+    match engine
+        .seed_acceptance_storage_conversation_clear(&input.station_peer_id, input.plaintext_bytes)
+    {
+        Ok((conversation_id, message_id)) => AppResult::success(json!({
+            "actorPtid": actor_ptid,
+            "conversationId": conversation_id,
+            "messageId": message_id,
+        })),
+        Err(error) => AppResult::fail(ErrorCode::InternalError, error, None),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
 pub async fn messaging_acceptance_create_restorable_command(
     input: MessagingAcceptanceRestorableCommandInput,
     state: State<'_, Arc<AppState>>,
     window: Window,
 ) -> Result<AppResult<Value>, String> {
-    if std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
+    let recovery_fixture = std::env::var("PT_CHAT_NATIVE_PREPARE_SUBMITTED_COMMAND")
         .ok()
         .as_deref()
-        != Some("1")
-    {
+        == Some("1");
+    let direct_retry_fixture =
+        std::env::var("PT_ACCEPTANCE_GATE_ID").ok().as_deref() == Some("chat-lifecycle-direct-e2e");
+    if !recovery_fixture && !direct_retry_fixture {
         return Ok(AppResult::fail(
             ErrorCode::Forbidden,
             "acceptance.chat.submittedCommandFixtureUnauthorized",
@@ -1468,6 +1879,11 @@ pub async fn messaging_send_message(
             source_local_ref: attachment.file_path,
             filename: attachment.filename,
             mime_type: attachment.mime_type,
+            voice_note: attachment.voice_note.map(|voice_note| VoiceNoteMetadata {
+                duration_ms: voice_note.duration_ms,
+                codec: voice_note.codec,
+                waveform: voice_note.waveform,
+            }),
         })
         .collect::<Vec<_>>();
     let outcome = match tauri::async_runtime::spawn_blocking(move || {
@@ -1500,6 +1916,50 @@ pub async fn messaging_send_message(
         "command_id": outcome.command_id.unwrap_or_default(),
         "message_id": outcome.message_id,
         "attachment_ids": outcome.attachment_ids,
+        "state": outcome.state,
+    })))
+}
+
+#[tauri::command]
+pub async fn messaging_retry_message(
+    input: MessagingRetryMessageInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> Result<AppResult<Value>, String> {
+    if input.conversation_id.trim().is_empty() || input.message_id.trim().is_empty() {
+        return Ok(AppResult::fail(
+            ErrorCode::InvalidArgument,
+            "conversation_id and message_id are required",
+            None,
+        ));
+    }
+    let (account_id, token, engine) = match active_engine(state.inner(), &window) {
+        Ok(value) => value,
+        Err(error) => return Ok(error),
+    };
+    let conversation_id = input.conversation_id;
+    let message_id = input.message_id;
+    let outcome = match tauri::async_runtime::spawn_blocking(move || {
+        engine.retry_message(&token, &conversation_id, &message_id)
+    })
+    .await
+    {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => return Ok(AppResult::fail(ErrorCode::InternalError, error, None)),
+        Err(error) => {
+            return Ok(AppResult::fail(
+                ErrorCode::InternalError,
+                format!("messaging retry worker failed: {error}"),
+                None,
+            ))
+        }
+    };
+    if let Err(error) = state.messaging_engines.wake_profile(&account_id) {
+        return Ok(AppResult::fail(ErrorCode::InternalError, error, None));
+    }
+    Ok(AppResult::success(json!({
+        "command_id": outcome.command_id.unwrap_or_default(),
+        "message_id": outcome.message_id,
         "state": outcome.state,
     })))
 }
@@ -1575,6 +2035,7 @@ pub fn messaging_submit_metadata_interaction(
         Err(error) => return error,
     };
     let interaction = match input.kind.as_str() {
+        "hideForActor" => crate::messaging::MetadataInteraction::HideForActor,
         "retract" => crate::messaging::MetadataInteraction::Retract,
         "reaction" => crate::messaging::MetadataInteraction::Reaction {
             reaction: &input.reaction,
@@ -1759,39 +2220,18 @@ pub(crate) fn messaging_list_messages_result(
             None,
         );
     }
-    let messages = match engine.conversation_messages(&input.conversation_id) {
-        Ok(messages) => messages,
+    let page = match engine.conversation_message_page(
+        &input.conversation_id,
+        input.before_sequence,
+        input.limit,
+    ) {
+        Ok(page) => page,
         Err(error) => return AppResult::fail(ErrorCode::InternalError, error, None),
     };
     AppResult::success(json!({
-        "messages": messages.into_iter().map(|message| json!({
-            "event_id": message.event_id,
-            "event_sequence": message.event_sequence,
-            "message_id": message.message_id,
-            "sender_ptid": message.sender_ptid,
-            "sender_device_id": message.sender_device_id,
-            "plaintext": message.plaintext,
-            "attachments": message.attachments.iter()
-                .map(attachment_projection_json)
-                .collect::<Vec<_>>(),
-            "state": message.state,
-            "timestamp_unix_ms": message.timestamp_unix_ms,
-            "reply_to_message_id": message.reply_to_message_id,
-            "thread_root_message_id": message.thread_root_message_id,
-            "edited_text": message.edited_text,
-            "edited_at_unix_ms": message.edited_at_unix_ms,
-            "retracted": message.retracted,
-            "reactions": message.reactions.into_iter().map(
-                |(actor_ptid, reaction, created_at_unix_ms)| json!({
-                    "actor_ptid": actor_ptid,
-                    "reaction": reaction,
-                    "created_at_unix_ms": created_at_unix_ms,
-                })
-            ).collect::<Vec<_>>(),
-            "pinned_by_ptid": message.pinned_by_ptid,
-            "pinned_at_unix_ms": message.pinned_at_unix_ms,
-            "read_by_ptids": message.read_by_ptids,
-        })).collect::<Vec<_>>()
+        "messages": page.messages.iter().map(message_projection_json).collect::<Vec<_>>(),
+        "has_more": page.has_more,
+        "next_before_sequence": page.next_before_sequence,
     }))
 }
 
@@ -2092,7 +2532,6 @@ mod tests {
             alert_enabled: false,
             pinned: true,
             background: "mint".to_string(),
-            cleared_at_ms: 42,
             background_image: "oss://station/background".to_string(),
         });
         assert_eq!(settings["nickname"], "Alias");
@@ -2100,7 +2539,6 @@ mod tests {
         assert_eq!(settings["alertEnabled"], false);
         assert_eq!(settings["pinned"], true);
         assert_eq!(settings["background"], "mint");
-        assert_eq!(settings["clearedAtUnixMs"], 42);
         assert_eq!(settings["backgroundImage"], "oss://station/background");
     }
 

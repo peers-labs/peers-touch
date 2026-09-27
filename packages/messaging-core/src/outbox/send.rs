@@ -7,9 +7,9 @@ use crate::proto::actor_device_ptid;
 use crate::proto::chat::{
     chat_command, AttachmentPlaintextMetadata, ChatCommand, ConversationKind,
     CryptoEndpoint as ProtoCryptoEndpoint, DirectCiphertextAad, DirectDeviceCiphertext,
-    DirectSessionInit, DoubleRatchetCiphertext, EditMessageIntent, MessagingContentKind,
-    PrepareConversationCommandResponse, PreparedEndpointPayload, PreparedEndpointPayloadKind,
-    SendMessageIntent,
+    DirectSessionInit, DoubleRatchetCiphertext, EditMessageIntent, ForwardMessageIntent,
+    MessagingContentKind, PrepareConversationCommandResponse, PreparedEndpointPayload,
+    PreparedEndpointPayloadKind, SendMessageIntent,
 };
 use crate::store::{
     DirectOutboundEditCommit, DirectOutboundRepository, DirectOutboundSendCommit,
@@ -36,6 +36,15 @@ pub struct DirectEditIntent<'a> {
     pub message_id: &'a str,
     pub conversation_id: &'a str,
     pub plaintext: &'a str,
+    pub client_timestamp_unix_ms: i64,
+}
+
+pub struct DirectForwardIntent<'a> {
+    pub command_id: &'a str,
+    pub destination_message_id: &'a str,
+    pub conversation_id: &'a str,
+    pub plaintext: &'a str,
+    pub attachments: &'a [AttachmentPlaintextMetadata],
     pub client_timestamp_unix_ms: i64,
 }
 
@@ -156,6 +165,62 @@ impl<R: DirectOutboundRepository> DirectOutboundPreparer<R> {
                 expected_authority_hash: &plan.authority_hash,
                 session_advances: &session_advances,
                 created_at_unix_ms: intent.client_timestamp_unix_ms,
+            })?;
+        Ok(command)
+    }
+
+    pub fn prepare_forward(
+        &self,
+        plan: &PrepareConversationCommandResponse,
+        intent: &DirectForwardIntent<'_>,
+        bootstraps: &[DirectSessionBootstrap],
+    ) -> Result<ChatCommand, String> {
+        let send = DirectSendIntent {
+            command_id: intent.command_id,
+            message_id: intent.destination_message_id,
+            conversation_id: intent.conversation_id,
+            plaintext: intent.plaintext,
+            reply_to_message_id: "",
+            thread_root_message_id: "",
+            attachments: intent.attachments,
+            client_timestamp_unix_ms: intent.client_timestamp_unix_ms,
+        };
+        validate_send_context(plan, &send, &self.endpoint)?;
+        self.store.validate_sender_attachments_ready(
+            intent.conversation_id,
+            intent.destination_message_id,
+            intent.attachments,
+        )?;
+        validate_authority_head(self.store.as_ref(), plan)?;
+
+        let (sessions, previous_sessions, session_inits) =
+            self.resolve_sessions(plan, intent.conversation_id, bootstraps)?;
+        let fan_out = encrypt_direct_fan_out(&send, &self.endpoint, sessions)?;
+        let command = build_forward_command(plan, intent, &self.endpoint, fan_out.payloads)?;
+        let command_bytes = command.encode_to_vec();
+        let session_advances =
+            build_session_advances(previous_sessions, fan_out.advanced_sessions, session_inits)?;
+        self.store
+            .persist_direct_outbound_send(&DirectOutboundSendCommit {
+                command_bytes: &command_bytes,
+                expected_authority_sequence: plan.authority_sequence,
+                expected_authority_hash: &plan.authority_hash,
+                session_advances: &session_advances,
+                projection: PendingSenderProjection {
+                    command_id: intent.command_id,
+                    conversation_id: intent.conversation_id,
+                    conversation_kind: plan.conversation_kind,
+                    message_id: intent.destination_message_id,
+                    sender_ptid: &self.endpoint.ptid,
+                    sender_device_id: &self.endpoint.device_id,
+                    plaintext: intent.plaintext,
+                    reply_to_message_id: "",
+                    thread_root_message_id: "",
+                    attachments: intent.attachments,
+                    private_content: &fan_out.private_content_bytes,
+                    delivery_plan_sha256: &plan.delivery_plan_sha256,
+                    created_at_unix_ms: intent.client_timestamp_unix_ms,
+                },
             })?;
         Ok(command)
     }
@@ -499,6 +564,44 @@ fn build_send_command(
     })
 }
 
+fn build_forward_command(
+    plan: &PrepareConversationCommandResponse,
+    intent: &DirectForwardIntent<'_>,
+    endpoint: &ProtoCryptoEndpoint,
+    destination_payloads: Vec<PreparedEndpointPayload>,
+) -> Result<ChatCommand, String> {
+    let attachments = intent
+        .attachments
+        .iter()
+        .map(|attachment| {
+            attachment
+                .object
+                .clone()
+                .ok_or_else(|| "messaging forward attachment descriptor is missing".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ChatCommand {
+        command_id: intent.command_id.to_string(),
+        conversation_id: intent.conversation_id.to_string(),
+        sender: Some(endpoint.clone()),
+        observed_membership_epoch: plan.membership_epoch,
+        observed_mls_epoch: plan.mls_epoch,
+        client_timestamp: Some(timestamp(intent.client_timestamp_unix_ms)),
+        delivery_plan_sha256: plan.delivery_plan_sha256.clone(),
+        authority_station_peer_id: plan.authority_station_peer_id.clone(),
+        payload: Some(chat_command::Payload::ForwardMessage(
+            ForwardMessageIntent {
+                destination_message_id: intent.destination_message_id.to_string(),
+                content_kind: MessagingContentKind::Text as i32,
+                destination_attachments: attachments,
+                destination_payloads,
+                mls_application_payload: Vec::new(),
+                mls_application_payload_sha256: Vec::new(),
+            },
+        )),
+    })
+}
+
 fn build_edit_command(
     plan: &PrepareConversationCommandResponse,
     intent: &DirectEditIntent<'_>,
@@ -709,5 +812,81 @@ mod tests {
         assert_eq!((persisted.1, persisted.2), (0, 1));
         assert_eq!(persisted.3, "message-parent");
         assert_eq!(persisted.4, "message-root");
+    }
+
+    #[test]
+    fn outbound_forward_creates_a_fresh_destination_message_and_ciphertext() {
+        let local = endpoint("ptid:alice", "alice-device");
+        let peer = endpoint("ptid:bob", "bob-device");
+        let peer_spk = X25519KeyPair::generate();
+        let session_id = "forward-session-1";
+        let session = DirectSession {
+            session_id: session_id.to_string(),
+            key: DirectSessionKey::new("conversation-1", local.clone(), peer.clone(), 1).unwrap(),
+            protocol_version: 1,
+            established: true,
+            peer_identity_key: [1; 32],
+            ratchet: init_initiator(session_id, &[2; 32], peer_spk.public_bytes()),
+            updated_at_unix_ms: 10,
+        };
+        let repository = Arc::new(TestRepository {
+            session: DirectOutboundSession {
+                session,
+                session_init: None,
+            },
+            persisted: Mutex::new(None),
+        });
+
+        let command = DirectOutboundPreparer::new(
+            repository.clone(),
+            ProtoCryptoEndpoint {
+                ptid: local.ptid,
+                device_id: local.device_id,
+            },
+        )
+        .unwrap()
+        .prepare_forward(
+            &PrepareConversationCommandResponse {
+                conversation_id: "conversation-1".to_string(),
+                conversation_kind: ConversationKind::Direct as i32,
+                membership_epoch: 1,
+                required_endpoints: vec![
+                    actor_device_ref("ptid:alice", "alice-device"),
+                    actor_device_ref("ptid:bob", "bob-device"),
+                ],
+                delivery_plan_sha256: vec![7; 32],
+                authority_station_peer_id: "station-1".to_string(),
+                ..Default::default()
+            },
+            &DirectForwardIntent {
+                command_id: "forward-command-1",
+                destination_message_id: "destination-message-1",
+                conversation_id: "conversation-1",
+                plaintext: "fresh destination plaintext",
+                attachments: &[],
+                client_timestamp_unix_ms: 20,
+            },
+            &[],
+        )
+        .unwrap();
+
+        let forward = match command.payload.as_ref().unwrap() {
+            chat_command::Payload::ForwardMessage(forward) => forward,
+            _ => panic!("unexpected command payload"),
+        };
+        assert_eq!(forward.destination_message_id, "destination-message-1");
+        assert_eq!(forward.destination_payloads.len(), 1);
+        let ciphertext = DirectDeviceCiphertext::decode(
+            forward.destination_payloads[0].opaque_payload.as_slice(),
+        )
+        .unwrap();
+        assert_eq!(ciphertext.command_id, "forward-command-1");
+        assert_eq!(ciphertext.message_id, "destination-message-1");
+        assert!(!ciphertext.ciphertext_sha256.is_empty());
+        let persisted = repository.persisted.lock().unwrap().clone().unwrap();
+        assert_eq!(persisted.0, command.encode_to_vec());
+        assert_eq!((persisted.1, persisted.2), (0, 1));
+        assert!(persisted.3.is_empty());
+        assert!(persisted.4.is_empty());
     }
 }

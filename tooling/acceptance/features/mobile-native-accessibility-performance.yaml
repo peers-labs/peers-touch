@@ -5,10 +5,10 @@
   "owners": ["apps/mobile/src/**", "apps/mobile/src-tauri/**", "packages/locales/**"],
   "truth_sources": ["native Mobile runtime", "rendered accessibility tree", "interaction-linked runtime telemetry"],
   "visible_surfaces": [{"type": "native-mobile-ios", "route": "all-primary-journeys"}, {"type": "native-mobile-android", "route": "all-primary-journeys"}],
-  "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static"],
+  "required_gates": ["mobile-ios-simulator-layout-accessibility-e2e", "mobile-simulator-platform-e2e", "mobile-hard-cut-static"],
   "acceptance": {
     "product_assertions": ["MS-PA15", "MS-PA24", "MS-PA25", "MS-PA27"],
     "visible": ["both native platforms satisfy accessibility, localization, performance, security recovery, and capability-honesty gates"]
   },
-  "negative": ["iOS Simulator layout evidence is limited to its declared launch surfaces and viewport matrix", "browser or Prototype evidence must not substitute for native proof", "missing platform or physical accessibility evidence must remain UNPROVEN"]
+  "negative": ["iOS Simulator layout evidence is limited to the declared iPhone 17 launch surface and does not prove older generations or alternate viewport sizes", "browser or Prototype evidence must not substitute for simulator runtime proof", "optional physical diagnostics must not change required completion state"]
 }

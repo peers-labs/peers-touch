@@ -12,6 +12,7 @@ import (
 	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
+	realtimemodel "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -45,6 +46,14 @@ type keyExchangePeerCapabilities interface {
 	) (*keyexchangemodel.ClaimMlsKeyPackageResponse, error)
 }
 
+type realtimePeerCapabilities interface {
+	ResolveFederatedCallResolution(
+		context.Context,
+		string,
+		*realtimemodel.GetFederatedCallResolutionRequest,
+	) (*realtimemodel.GetFederatedCallResolutionResponse, error)
+}
+
 func resolveFederationPeerEndpoint(
 	route federationruntime.PeerRoute,
 ) (server.EndpointHandler, error) {
@@ -57,6 +66,8 @@ func resolveFederationPeerEndpoint(
 		return handleKeyExchangeMLSFetch, nil
 	case federationruntime.PeerRouteKeyExchangeMLSClaim:
 		return handleKeyExchangeMLSClaim, nil
+	case federationruntime.PeerRouteRealtimeCallResolution:
+		return handleRealtimeCallResolution, nil
 	default:
 		instance := server.GetOptions().SubserverInstances["conversation"]
 		provider, ok := instance.(conversationPeerEndpointProvider)
@@ -68,6 +79,51 @@ func resolveFederationPeerEndpoint(
 
 		return provider.FederationPeerHandler(route)
 	}
+}
+
+func handleRealtimeCallResolution(
+	ctx context.Context,
+	request server.Request,
+	response server.Response,
+) error {
+	instance := server.GetOptions().SubserverInstances["events"]
+	provider, ok := instance.(realtimePeerCapabilities)
+	if !ok || provider == nil {
+		return server.NewHandlerError(
+			http.StatusServiceUnavailable,
+			"Realtime call-resolution capability is unavailable",
+		)
+	}
+	input := &realtimemodel.GetFederatedCallResolutionRequest{}
+	if err := decodeFederationPeerRequest(request, input); err != nil {
+		return err
+	}
+	claims := httpadapter.GetVerifiedClaims(ctx)
+	if claims == nil ||
+		strings.TrimSpace(input.GetRequestingActorPtid()) == "" ||
+		strings.TrimSpace(input.GetPeerActorPtid()) == "" ||
+		strings.TrimSpace(input.GetCallId()) == "" ||
+		claims.Subject != input.GetRequestingActorPtid() ||
+		claims.Custom[federationruntime.ClaimActorPTID] !=
+			input.GetRequestingActorPtid() ||
+		claims.Custom[federationruntime.ClaimCallID] != input.GetCallId() ||
+		claims.Custom[federationruntime.ClaimSourceStationPeerID] !=
+			claims.Issuer ||
+		claims.Custom[federationruntime.ClaimTargetStationPeerID] !=
+			claims.Audience {
+		return server.Forbidden(
+			"Federation claims do not match the Realtime call-resolution request",
+		)
+	}
+	result, err := provider.ResolveFederatedCallResolution(
+		ctx,
+		claims.Issuer,
+		input,
+	)
+	if err != nil {
+		return err
+	}
+	return writeFederationPeerResponse(response, result)
 }
 
 func handleActorEndpointManifest(

@@ -18,7 +18,6 @@ function fixtureProfile({
   return [
     `PT_DEV_PROFILE=${name}`,
     'PT_DEV_SLOT=0',
-    'PT_AGENT_CONTROL_MODE=managed',
     `PT_STATION_MODE=${mode}`,
     `PT_STATION_NAME=${name}`,
     `PT_STATION_URL=http://127.0.0.1:${port}`,

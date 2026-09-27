@@ -5,7 +5,7 @@ use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::blocking::RequestBuilder;
 use reqwest::header::HeaderMap;
-use reqwest::Method;
+use reqwest::{Method, StatusCode};
 use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
@@ -384,59 +384,6 @@ pub(crate) fn post_json_with_auth(
     })?;
 
     tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, auth)");
-    Ok(result)
-}
-
-// JSON POST without auth — used for login where no token exists yet.
-pub(crate) fn post_json_no_auth(path: &str, body: Value) -> Result<Value, StationClientError> {
-    let url = format!("{}{}", station_base_url(), path);
-    tracing::debug!(path = %path, "→ station (json, no-auth)");
-
-    let start = std::time::Instant::now();
-    let client = build_client()?;
-
-    let resp = client
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json")
-        .json(&body)
-        .send()
-        .map_err(|e| {
-            let elapsed = start.elapsed().as_millis();
-            tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
-            StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
-        })?;
-
-    let status = resp.status();
-    let elapsed = start.elapsed().as_millis();
-
-    let body_text = resp.text().unwrap_or_default();
-
-    if !status.is_success() {
-        tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, body = %body_text, "← station FAIL");
-        let parsed: Value = serde_json::from_str(&body_text).unwrap_or(Value::Null);
-        let msg = parsed
-            .get("message")
-            .or_else(|| parsed.get("msg"))
-            .and_then(|v| v.as_str())
-            .unwrap_or(&body_text);
-        return Err(StationClientError::new(
-            StationClientErrorKind::HttpStatus(status.as_u16()),
-            format!("station returned {}: {}", status.as_u16(), msg),
-            Some(serde_json::json!({ "status": status.as_u16(), "body": parsed })),
-        ));
-    }
-
-    let result: Value = serde_json::from_str(&body_text).map_err(|e| {
-        tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
-        StationClientError::new(
-            StationClientErrorKind::Decode,
-            format!("decode json response failed: {}", e),
-            None,
-        )
-    })?;
-
-    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no-auth)");
     Ok(result)
 }
 
@@ -1013,7 +960,7 @@ where
     decode_peers_envelope(bytes.as_ref())
 }
 
-// JSON-based request for chat APIs (group_chat, social, etc.).
+// JSON-based request for chat APIs (social, messaging, etc.).
 // Sends/receives JSON with Content-Type: application/json.
 pub(crate) fn request_json(
     method: Method,
@@ -1111,6 +1058,10 @@ fn request_json_with_policy_base_url(
             &text,
             Some(&headers),
         ));
+    }
+    if status == StatusCode::NO_CONTENT {
+        tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no content)");
+        return Ok(Value::Null);
     }
 
     let result: Value = resp.json().map_err(|e| {
@@ -1693,6 +1644,41 @@ mod tests {
             StationTransportPolicy::TurnExecution.label(),
             "turn_execution"
         );
+    }
+
+    #[test]
+    fn json_request_accepts_successful_no_content_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind no-content fixture");
+        let address = listener
+            .local_addr()
+            .expect("read no-content fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept no-content request");
+            let mut request = [0_u8; 4096];
+            stream.read(&mut request).expect("read no-content request");
+            stream
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\n\
+                      Content-Length: 0\r\n\
+                      Connection: close\r\n\
+                      \r\n",
+                )
+                .expect("write no-content response");
+        });
+
+        let response = request_json_with_policy_base_url(
+            &format!("http://{address}"),
+            Method::POST,
+            "/realtime/signal",
+            "fixture-token",
+            None,
+            Some(json!({"kind": "CALL_REQUEST"})),
+            StationTransportPolicy::Interactive,
+        )
+        .expect("204 response must succeed");
+        server.join().expect("join no-content fixture");
+
+        assert!(response.is_null());
     }
 
     #[test]

@@ -80,7 +80,7 @@ Every material statement must be classified:
 | `inference` | Reasonable conclusion from verified facts, with reasoning shown | Yes, but must retain uncertainty |
 | `hypothesis` | Plausible explanation not yet verified | No; requires an evidence gate |
 | `proposal` | New relationship, contract, invariant, or policy | Yes, as a proposed decision |
-| `accepted_decision` | Proposal explicitly approved by the owner/reviewer | Yes; downstream plans must conform |
+| `accepted_decision` | Proposal passed agent-led architecture review, or a human owner resolved an escalated semantic/authorization boundary | Yes; downstream plans must conform |
 
 For performance, reliability, concurrency, security, or data-loss architecture:
 
@@ -294,6 +294,21 @@ Mandatory, not optional, when triggered:
 
 `execution-plans/` is not authored by this skill.
 
+For every new active architecture module, and every existing active module
+whose architecture documents are changed, the accepted model also includes one
+positive registry projection in
+`docs/architecture/architecture-module-governance/architecture-modules.json`:
+
+- module ID, root, status, owner, and characteristics;
+- the exact document set derived from those characteristics;
+- accepted decision IDs and non-overlapping governed paths;
+- current capability owners, contract roots, consumers, allowed dependencies,
+  and evidence Gates;
+- stable capability IDs from any external registry it consumes.
+
+The projection describes only current allowed capabilities. Do not encode
+removed names, aliases, migration blacklists, or compatibility inventories.
+
 ### Step 11. Run The Design Acceptance Gate
 
 Return `DESIGN_READY_FOR_REVIEW` only when:
@@ -307,11 +322,22 @@ Return `DESIGN_READY_FOR_REVIEW` only when:
   lifecycle, security, and large payloads where relevant.
 - Quality outcomes have executable evidence requirements.
 - Required document set is complete and discoverable.
+- The positive module registry projection is complete and validates when the
+  module is persisted.
 - Decisions include negative consequences and alternatives.
 - No execution phases or implementation status are disguised as architecture.
 
-The owner/reviewer must explicitly accept the architecture. Until then, its
-status remains `draft` or `proposed`.
+The Development Run must execute an explicit architecture review pass before
+acceptance. By default an independent agent, or the current agent in a separate
+findings-first pass, reviews the evidence ledger, ownership, contracts,
+alternatives, failure semantics, and quality gates. Source-backed findings are
+fixed and re-reviewed inside the Run.
+
+Human owner input is required only when accepted sources cannot choose among
+multiple materially valid product/architecture/security/privacy/compatibility/
+rollout outcomes, or when a DWF-D20 destructive, irreversible, permission, or
+external-resource boundary applies. Until the review passes or that precise
+decision is resolved, status remains `draft` or `proposed`.
 
 ## Handoff To Execution Planning
 
@@ -340,3 +366,5 @@ Never:
 - Claim responsiveness without a packaged-runtime performance gate.
 - Mark protocol/integration documents optional when their trigger applies.
 - Turn a proposal into a repository rule without acceptance.
+- Delegate routine architecture review to the user when project Review Skills
+  can evaluate and remediate the proposal.

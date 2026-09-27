@@ -63,7 +63,7 @@ Product and Acceptance:
 - `docs/architecture/messaging-platform/product-state-model.md`
 - `docs/architecture/messaging-platform/acceptance-matrix.md`
 - `docs/architecture/mobile/acceptance-matrix.md`
-- `docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation.md`
+- `docs/architecture/mobile/execution-plans/20260827-mobile-shell-implementation/tasks/CA-HC-PROOF.md`
 
 ## 3. Scope And Non-Scope
 

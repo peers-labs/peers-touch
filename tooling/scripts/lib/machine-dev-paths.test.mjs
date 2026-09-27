@@ -12,8 +12,12 @@ import {
   machineDevRoot,
   machineRegistryLockPath,
   machineRegistryPath,
+  machineWorkspacesPath,
+  workspaceActiveWorkLockPath,
+  workspaceActiveWorkPath,
   workspaceIdForRoot,
   workspaceStatePath,
+  workspaceWorkflowRootPath,
   workspaceWorkflowPath,
   workspaceRuntimeRef,
   workspaceRuntimePath,
@@ -63,6 +67,41 @@ test('resolves the public work ledger and workspace workflow state', () => {
     '/home/tester/.peers-touch/dev/work.lock',
   );
   assert.equal(
+    workspaceWorkflowRootPath({
+      home: '/home/tester',
+      repoRoot: root,
+    }),
+    path.join(
+      '/home/tester/.peers-touch/dev/workspaces',
+      workspaceId,
+      'workflow',
+    ),
+  );
+  assert.equal(
+    workspaceActiveWorkPath({
+      home: '/home/tester',
+      repoRoot: root,
+    }),
+    path.join(
+      '/home/tester/.peers-touch/dev/workspaces',
+      workspaceId,
+      'workflow',
+      'active-work.json',
+    ),
+  );
+  assert.equal(
+    workspaceActiveWorkLockPath({
+      home: '/home/tester',
+      repoRoot: root,
+    }),
+    path.join(
+      '/home/tester/.peers-touch/dev/workspaces',
+      workspaceId,
+      'workflow',
+      'active-work.lock',
+    ),
+  );
+  assert.equal(
     workspaceWorkflowPath('chat-group', {
       home: '/home/tester',
       repoRoot: root,
@@ -84,6 +123,10 @@ test('resolves the canonical registry and OS lease paths', () => {
   assert.equal(
     machineRegistryLockPath('/home/tester'),
     '/home/tester/.peers-touch/dev/registry.lock',
+  );
+  assert.equal(
+    machineWorkspacesPath('/home/tester'),
+    '/home/tester/.peers-touch/dev/workspaces',
   );
   assert.equal(
     machineLeaseRoot('/home/tester'),

@@ -44,8 +44,14 @@ from tooling.acceptance.provisioners.mobile_native import (
     MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
     MAX_MOBILE_SCREENSHOT_RESPONSE_BYTES,
     MAX_MOBILE_SCREENSHOT_BYTES,
+    MOBILE_NATIVE_BLOCKED_SCENARIO_DEPENDENCIES,
     MOBILE_NATIVE_CAPABILITIES,
     MOBILE_OAUTH_PROOF_GATE_ID,
+    MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS,
+    MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
+    MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS,
+    MOBILE_NATIVE_PRODUCT_SCENARIOS,
+    MOBILE_NATIVE_SCENARIO_GATES,
     CommandResult,
     MobileNativeAppiumCapabilityHandler,
     MobileNativeProvisioner,
@@ -62,6 +68,9 @@ from tooling.acceptance.provisioners.mobile_native import (
     load_mobile_native_preflight_spec,
     preflight_mobile_native_inputs,
     require_mobile_native_credentials,
+)
+from tooling.acceptance.provisioners.mobile_service_bindings import (
+    resolve_mobile_service_bindings,
 )
 from tooling.acceptance.fixtures.mobile_resource_lease import (
     BaselineRestoreResult,
@@ -1725,9 +1734,7 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 patch.object(
                     self.provisioner,
                     "_prepare_actor_manifest",
-                    side_effect=lambda _environment: events.append(
-                        "actor.prepare"
-                    )
+                    side_effect=lambda: events.append("actor.prepare")
                     or parent_artifact_ref(
                         "runtime/mobile-actor-manifest.json"
                     ).to_dict(),
@@ -1751,7 +1758,6 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 gate_id=MOBILE_OAUTH_PROOF_GATE_ID,
                 runtime_root=Path("/tmp/mobile-native-parent-test"),
                 credential_values=credentials,
-                profile_environment={},
             )
         return fixture, broker, heartbeat
 
@@ -2436,6 +2442,9 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 "conversationId": "conversation-1",
                 "state": "projected",
             },
+            "social.contact.open": {
+                "conversationId": "contact-conversation-1",
+            },
             "messaging.createGroup": {
                 "conversationId": "group-1",
                 "commandId": "command-group-1",
@@ -2568,6 +2577,26 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
                 cancellation=threading.Event(),
             )
             self.assertEqual(result["value"], values[action])
+
+        for invalid in (
+            {},
+            {"conversationId": ""},
+            {"conversationId": "contact-conversation-1", "accessToken": "forbidden"},
+        ):
+            with self.subTest(contact_result=invalid):
+                values["social.contact.open"] = invalid
+                with self.assertRaises(BlockedError):
+                    handler.invoke(
+                        "harness_action",
+                        {
+                            "clientId": "alice-ios",
+                            "sessionRef": "opaque-session",
+                            "action": "social.contact.open",
+                            "actionPayload": {},
+                        },
+                        deadline_monotonic=float("inf"),
+                        cancellation=threading.Event(),
+                    )
 
         values["projection.read"]["oauth"]["unexpected"] = True
         with self.assertRaisesRegex(
@@ -3556,6 +3585,57 @@ class MobileNativeParentIntegrationTests(unittest.TestCase):
         actor.assert_not_called()
         oauth.assert_not_called()
 
+    def test_blocked_product_scenarios_stop_before_resource_preflight(
+        self,
+    ) -> None:
+        base_manifest = self.provisioner._manifest
+        assert base_manifest is not None
+
+        for scenario, dependency in (
+            MOBILE_NATIVE_BLOCKED_SCENARIO_DEPENDENCIES.items()
+        ):
+            with self.subTest(scenario=scenario):
+                gate_id = MOBILE_NATIVE_SCENARIO_GATES[scenario]
+                provisioner = MobileNativeProvisioner(
+                    EnvironmentContract.from_yaml(
+                        ENVIRONMENTS_DIR / "mobile-native.yaml"
+                    )
+                )
+                manifest = dataclasses.replace(
+                    base_manifest,
+                    gate_id=gate_id,
+                )
+                with (
+                    patch.object(
+                        provisioner,
+                        "_new_base_manifest",
+                        return_value=manifest,
+                    ),
+                    patch(
+                        "tooling.acceptance.provisioners.mobile_native."
+                        "preflight_mobile_native_inputs",
+                    ) as preflight,
+                    patch.object(
+                        provisioner,
+                        "prepare_credentials",
+                    ) as credentials,
+                    patch.object(
+                        provisioner,
+                        "_provision_device_scenario",
+                    ) as provision_scenario,
+                ):
+                    result = provisioner.provision(gate_id)
+
+                self.assertEqual(result.state, ProvisioningState.BLOCKED)
+                self.assertEqual(
+                    result.blocked_resource,
+                    f"mobile-product-dependency:{dependency.lower()}",
+                )
+                self.assertIn("BLOCKED/UNPROVEN", result.blocked_reason)
+                preflight.assert_not_called()
+                credentials.assert_not_called()
+                provision_scenario.assert_not_called()
+
     def test_non_access_parent_authority_keeps_fenced_device_broker(self) -> None:
         source = inspect.getsource(
             MobileNativeProvisioner._prepare_scenario_parent_authorities
@@ -3704,7 +3784,10 @@ class MobileNativeContractTests(unittest.TestCase):
 
     def test_checked_in_environment_loads_without_reconstruction(self) -> None:
         spec = load_mobile_native_preflight_spec()
+        contract = EnvironmentContract.from_yaml(self.contract_path)
         self.assertEqual(spec.scenario.id, "access")
+        self.assertFalse(contract.profile.required)
+        self.assertFalse(contract.profile.identity_match)
         self.assertEqual(
             {client.id for client in spec.clients},
             set(EXPECTED_CLIENTS),
@@ -3732,6 +3815,73 @@ class MobileNativeContractTests(unittest.TestCase):
                 "github-disposable-account",
                 "google-disposable-account",
             ),
+        )
+
+    def test_service_bindings_resolve_only_from_runtime_environment(
+        self,
+    ) -> None:
+        contract = EnvironmentContract.from_yaml(self.contract_path)
+        environment = {
+            "PT_MOBILE_STATION_PRIMARY_URL": (
+                "https://station-primary.example"
+            ),
+            "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "deploy-primary",
+            "PT_MOBILE_STATION_SECONDARY_URL": (
+                "https://station-secondary.example"
+            ),
+            "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
+            "PT_RELAY_URL": "https://relay.example",
+            "PT_RELAY_DEPLOY_ENV": "deploy-relay",
+            "PT_RELAY_HEALTH_URL": (
+                "https://relay.example/sub-oss/healthz"
+            ),
+        }
+
+        bindings = resolve_mobile_service_bindings(
+            contract,
+            self.contract_path,
+            environment=environment,
+        )
+
+        self.assertEqual(set(bindings), set(contract.services))
+        self.assertEqual(
+            bindings["station-primary"].deployment_environment,
+            "deploy-primary",
+        )
+        self.assertEqual(
+            bindings["relay"].health_endpoint,
+            "https://relay.example/sub-oss/healthz",
+        )
+
+    def test_service_binding_missing_injection_fails_closed(self) -> None:
+        contract = EnvironmentContract.from_yaml(self.contract_path)
+
+        with self.assertRaises(BlockedError) as raised:
+            resolve_mobile_service_bindings(
+                contract,
+                self.contract_path,
+                environment={},
+            )
+
+        self.assertEqual(
+            raised.exception.resource,
+            "service-binding:station-primary:endpoint:"
+            "PT_MOBILE_STATION_PRIMARY_URL",
+        )
+
+    def test_service_independent_scenario_requires_no_runtime_binding(
+        self,
+    ) -> None:
+        contract = EnvironmentContract.from_yaml(self.contract_path)
+        lifecycle_contract = dataclasses.replace(contract, services={})
+
+        self.assertEqual(
+            resolve_mobile_service_bindings(
+                lifecycle_contract,
+                self.contract_path,
+                environment={},
+            ),
+            {},
         )
 
     def test_lifecycle_and_platform_scenarios_exclude_oauth_resources(
@@ -3781,6 +3931,99 @@ class MobileNativeContractTests(unittest.TestCase):
                 self.assertFalse(
                     spec.scenario.require_exact_device_count
                 )
+
+    def test_product_scenario_preflight_mapping_is_shared_and_non_oauth(
+        self,
+    ) -> None:
+        contract = EnvironmentContract.from_yaml(self.contract_path)
+
+        for scenario in MOBILE_NATIVE_PRODUCT_SCENARIOS:
+            with self.subTest(scenario=scenario):
+                gate_id = MOBILE_NATIVE_SCENARIO_GATES[scenario]
+                spec = load_mobile_native_preflight_spec(
+                    self.contract_path,
+                    gate_id=gate_id,
+                )
+                provisioner = MobileNativeProvisioner(contract)
+                provisioner._evidence_run = SimpleNamespace(gate_id=gate_id)
+                credential_refs, credential_values = (
+                    provisioner.prepare_credentials()
+                )
+
+                self.assertEqual(spec.scenario.id, scenario)
+                self.assertEqual(spec.scenario.gate_id, gate_id)
+                self.assertEqual(
+                    spec.scenario.client_ids,
+                    tuple(EXPECTED_CLIENTS),
+                )
+                self.assertEqual(
+                    spec.scenario.service_ids,
+                    ("station-primary", "station-secondary", "relay"),
+                )
+                self.assertEqual(
+                    spec.scenario.fixture_ids,
+                    ("mobile-native-actors",),
+                )
+                self.assertEqual(spec.scenario.credential_ids, ())
+                self.assertEqual(spec.scenario.provider_accounts, ())
+                self.assertEqual(spec.scenario.browser_sessions, ())
+                self.assertEqual(
+                    spec.scenario.harness_actions,
+                    MOBILE_NATIVE_PRODUCT_HARNESS_ACTIONS.get(scenario, ()),
+                )
+                self.assertEqual(
+                    spec.scenario.parent_harness_actions,
+                    ("build.identity",),
+                )
+                self.assertEqual(
+                    spec.scenario.ephemeral_capabilities,
+                    ("mobile.native.appium-session",),
+                )
+                self.assertEqual(
+                    spec.scenario.appium_operations,
+                    MOBILE_NATIVE_PRODUCT_APPIUM_OPERATIONS,
+                )
+                self.assertEqual(
+                    spec.scenario.cleanup_resources,
+                    MOBILE_NATIVE_PRODUCT_CLEANUP_RESOURCES,
+                )
+                self.assertTrue(spec.scenario.require_exact_device_count)
+                self.assertEqual(credential_refs, ())
+                self.assertEqual(credential_values, {})
+                self.assertEqual(provisioner.contract.credentials, ())
+                self.assertEqual(
+                    set(provisioner.contract.services),
+                    {"station-primary", "station-secondary", "relay"},
+                )
+                self.assertEqual(
+                    tuple(
+                        fixture.id
+                        for fixture in provisioner.contract.fixtures
+                    ),
+                    ("mobile-native-actors",),
+                )
+
+    def test_scenario_matrix_rejects_missing_or_unknown_entries(self) -> None:
+        for mutation in ("missing", "unknown"):
+            with self.subTest(mutation=mutation):
+                payload = json.loads(json.dumps(self.payload))
+                if mutation == "missing":
+                    del payload["scenarios"]["settings"]
+                else:
+                    payload["scenarios"]["unexpected"] = json.loads(
+                        json.dumps(payload["scenarios"]["settings"])
+                    )
+                    payload["scenarios"]["unexpected"]["gate_id"] = (
+                        "mobile-native-unexpected-e2e"
+                    )
+                with tempfile.TemporaryDirectory() as tmp:
+                    path = Path(tmp) / "mobile-native.yaml"
+                    path.write_text(json.dumps(payload), encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        BlockedError,
+                        "scenario matrix",
+                    ):
+                        load_mobile_native_preflight_spec(path)
 
     def test_runner_order_filters_credentials_before_resolution(self) -> None:
         contract = EnvironmentContract.from_yaml(self.contract_path)

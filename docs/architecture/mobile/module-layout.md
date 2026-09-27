@@ -1,8 +1,8 @@
 # Mobile Shell — 目标模块布局
 
-> **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-27
+> **Status**: active; owner-contract closure amendment accepted
+> **Version**: v1.2
+> **Created**: 2026-08-27 | **Updated**: 2026-09-19
 > **Owner**: Mobile Architecture Team
 
 ---
@@ -30,15 +30,15 @@ apps/mobile/src/
 │   ├── sessionRuntime.ts
 │   ├── commandRuntime.ts
 │   ├── socialRuntime.ts
-│   ├── groupRuntime.ts
+│   ├── messagingRuntime.ts
 │   ├── momentsRuntime.ts
 │   ├── notificationRuntime.ts
 │   ├── profileRuntime.ts
-│   ├── settingsRuntime.ts
 │   └── deviceSettingsRuntime.ts
 ├── services/
-│   ├── api/              # generated-Proto gateways; temporary JSON ingress is quarantined here
-│   └── platform/         # typed Web-to-Rust capability ports
+│   ├── api/              # generated domain gateways; no credential ownership
+│   ├── transport/        # typed operation clients over the Rust Station transport
+│   └── platform/         # typed Web-to-Rust OS capability ports
 └── storage/
     └── projections/      # Station/PTID-scoped cache adapters
 
@@ -49,8 +49,19 @@ apps/mobile/src-tauri/src/
 └── runtime/
     ├── lifecycle/        # foreground/background and generation bridge
     ├── oauth/            # secure attempt material and callback validation
+    ├── station_transport/# credential-attaching generated operation transport
+    ├── push/             # native token binding and Notification registration
+    ├── scheduled_wakeup/ # WorkManager/BGTask wakeup and completion fencing
+    ├── media_staging/    # opaque picker handles and encrypted draft staging
     ├── command_ledger/   # encrypted transactional command source of truth
     └── draft_store/      # encrypted device-local Chat/Moments drafts
+
+apps/mobile/src-tauri/plugins/
+├── push/                 # APNs/FCM/UnifiedPush registration, receipt, tap
+├── background-wakeup/    # WorkManager/BGTaskScheduler callbacks only
+├── media-picker/         # PhotosUI/Photo Picker and camera selection
+├── platform-permissions/ # permission status/request
+└── secure-storage/       # Keychain/Keystore
 ```
 
 ## Responsibilities
@@ -63,23 +74,30 @@ apps/mobile/src-tauri/src/
 | `runtimes/registry.ts` | descriptor registration, dependency validation, readiness and teardown orchestration | domain commands or projection merge rules |
 | `runtimes/stationRuntime.ts` | Station registry and handshake projection | session credentials |
 | `runtimes/authRuntime.ts` | pre-session email/OAuth projection and typed user intents | OAuth secrets, provider callback exchange, active session lifecycle, or access policy |
-| `runtimes/accessRuntime.ts` | Station gate attempt and access decision projection | gate policy or order |
+| `runtimes/accessRuntime.ts` | Station gate descriptor, schema-bound user submission, and access decision projection | gate policy, action execution, or finalization |
 | `runtimes/sessionRuntime.ts` | active PTID session, refresh and revocation | credential collection or social projections |
 | `runtimes/commandRuntime.ts` | bounded admission, scheduling, and outcome convergence | domain mutation semantics or persistent storage implementation |
-| `runtimes/socialRuntime.ts` | friend conversations, contacts, realtime cursor | group E2EE or Moments |
-| `runtimes/groupRuntime.ts` | group projection, membership, E2EE readiness | friend/session truth |
-| `runtimes/momentsRuntime.ts` | feed, post, comment, reaction projection | profile/account preferences |
-| `runtimes/notificationRuntime.ts` | notifications and badge projection | OS push delivery |
-| `runtimes/profileRuntime.ts` | current and remote Actor profiles | settings or session |
-| `runtimes/settingsRuntime.ts` | Station account preference projection | device preferences or secure session token |
-| `runtimes/deviceSettingsRuntime.ts` | device preference projection | Station account preferences |
-| `services/api/` | generated-Proto transport and quarantined migration adapters | public manual domain DTOs |
-| `services/platform/` | typed native capability ports | Android/iOS SDK calls |
+| `runtimes/socialRuntime.ts` | relationship, outgoing block-list, contacts, and shared realtime cursor projection | Conversation membership, group E2EE, or Moments policy |
+| `runtimes/messagingRuntime.ts` | Conversation projection, member-authority intents, and E2EE readiness | Social relationship truth or page-owned freshness |
+| `runtimes/momentsRuntime.ts` | Social-owned feed/detail policy projection plus post/comment/reaction intents | privacy derivation, object encryption, or settings |
+| `runtimes/notificationRuntime.ts` | Notification entities, preferences, push-registration projection, and badge state | OS push token acquisition or domain business truth |
+| `runtimes/profileRuntime.ts` | current and remote Actor profiles plus current-actor Profile CAS | Notification, Social, device settings, or session |
+| `runtimes/deviceSettingsRuntime.ts` | device preference projection | Station-owned Profile, Notification, or Social state |
+| `services/api/` | generated request/response mapping and quarantined wire adapters | credentials, arbitrary URLs, or public manual domain DTOs |
+| `services/transport/` | generated operation IDs and typed calls into Rust Station transport | bearer tokens, redirects, or domain projection merge |
+| `services/platform/` | typed native capability intents and result projections | Android/iOS SDK calls or filesystem paths |
 | `storage/projections/` | Station/PTID-scoped cache and invalidation | business authority |
 | `src-tauri/platform/` | OS capabilities | shared business protocol |
 | `src-tauri/runtime/oauth/` | secure PKCE/nonce/attempt/delivery-key material, callback validation, Station OAuth transport, restart recovery, and credential acknowledgement | provider UI, Web-visible secrets, or Station policy |
+| `src-tauri/runtime/station_transport/` | verified-origin request execution, in-memory credential attachment, generated operation allowlist, timeout/cancel, typed public response | arbitrary HTTP proxying, domain policy, or Web-visible credentials |
+| `src-tauri/runtime/push/` | provider-token/device/actor/Station binding, Notification registration, rotation and unregister recovery | notification business truth or Web-visible provider token |
+| `src-tauri/runtime/scheduled_wakeup/` | versioned OS work registration, generation fence, bounded reconcile request, expiration and exactly-once completion | business command dispatch, cursor advancement, or freshness claims |
+| `src-tauri/runtime/media_staging/` | picker request state, app-owned staged bytes, opaque handles, digest, draft binding, and cleanup | Social policy, arbitrary caller paths, or plaintext upload |
 | `src-tauri/runtime/command_ledger/` | encrypted transactional command persistence | Station truth or domain readback rules |
 | `src-tauri/runtime/draft_store/` | Station/PTID-scoped draft persistence | command replay or shared business truth |
+| `plugins/push/` | APNs/FCM/UnifiedPush token and OS receipt/tap callbacks | Station transport or projection mutation |
+| `plugins/background-wakeup/` | WorkManager/BGTaskScheduler registration and OS completion callback | reconciliation or business retry |
+| `plugins/media-picker/` | PhotosUI/Photo Picker/camera UI and temporary grant callback | durable path ownership or upload |
 
 ## Runtime Graph
 
@@ -92,11 +110,15 @@ apps/mobile/src-tauri/src/
 | `sessionRuntime` | session / shell-blocking | `stationRuntime`, `authRuntime`, `accessRuntime` | none | network |
 | `commandRuntime` | session / degradable | `sessionRuntime` | none | local |
 | `socialRuntime` | session / degradable | `sessionRuntime` | `commandRuntime` | network |
-| `groupRuntime` | session / degradable | `sessionRuntime` | `socialRuntime`, `commandRuntime` | network |
+| `messagingRuntime` | session / degradable | `sessionRuntime`, `secure-storage`, `native-event-bridge` | `socialRuntime`, `commandRuntime` | network |
 | `momentsRuntime` | session / degradable | `sessionRuntime` | `socialRuntime`, `commandRuntime` | network |
 | `notificationRuntime` | session / degradable | `sessionRuntime` | `socialRuntime` | network |
 | `profileRuntime` | session / degradable | `sessionRuntime` | `socialRuntime`, `commandRuntime` | network |
-| `settingsRuntime` | session / degradable | `sessionRuntime` | `commandRuntime` | network |
+
+`native-event-bridge` remains app-installed and generation-fenced. Push,
+scheduled-work, deep-link, network, permission, and media-picker callbacks enter
+through this bridge, but their Rust owners retain token, handle, completion, and
+cleanup state. The bridge emits typed intents only.
 
 ## Runtime Component Contract
 
@@ -192,6 +214,34 @@ app/lifecycle ---->    |
   export manual domain models.
 - Native plugins emit typed capability events tagged with lifecycle generation;
   they never import or mutate business projections.
+- Authenticated API clients pass generated operation IDs and typed payloads to
+  Rust; they never read a bearer credential or construct an arbitrary URL.
+- Social block commands terminate in Social; Conversation member/message
+  commands terminate in Conversation through Device Messaging Engine.
+
+## Owner-Contract Ports
+
+| Port | Producer | Consumer | Completion truth |
+|---|---|---|---|
+| Access Gate action | Station gate descriptor | `accessRuntime` | next Station `AccessDecision`; session only after finalizer grant |
+| Member authority | Conversation AO-D10 | `messagingRuntime` | command result plus member/owner authority projection |
+| Relationship authority | Social | `socialRuntime` | command result plus relationship revision/event |
+| Chat message actions | Device Messaging Engine + Conversation | Chat runtime | matching command ID/hash and ordered event/readback |
+| Moments policy | Social + Secure Content | `momentsRuntime` | typed feed/detail outcome and committed object descriptor |
+| Account/profile settings | Actor Profile / Notification / Social | profile and notification runtimes plus Social runtime | selected-owner revision/readback |
+| Device settings | `deviceSettingsRuntime` | Shell/native adapters | committed local readback |
+| Native push token | push plugin | Rust push registrar | Notification device registration readback |
+| Scheduled wakeup | OS scheduler | Rust lifecycle bridge | exactly-once OS completion after bounded reconcile request |
+| Media selection | picker plugin | Rust media staging | one terminal picker result with opaque staged handle |
+
+## Legacy Boundary
+
+The target tree contains no production client for any route or alias listed in
+the CCU legacy inventory.
+
+Generated compatibility comments, tests, fixtures, and historical documents may
+retain those strings only with explicit classification. They are not imported,
+registered, or reachable from a production runtime.
 
 ## Native Acceptance Harness
 
@@ -214,6 +264,9 @@ Appium 2
 | Acceptance registry | Expose typed production intents and projection readback in acceptance builds only | Business truth or mock result injection |
 | Access scenario runner | Execute Station trust, gate, provider, cancellation, mismatch, replay, and cleanup journeys | Browser-only substitution |
 
-The registry is absent unless `VITE_ACCEPTANCE_HARNESS=1`. Physical iOS and
-Android cells are mandatory for real provider MS-AG03 evidence; simulator and
-emulator cells are preflight and deterministic failure evidence only.
+The registry is absent unless `VITE_ACCEPTANCE_HARNESS=1`. Under MS-D26,
+source-bound iOS Simulator cells are the required Mobile proof surface.
+Journeys that require independent sessions or actors use two isolated iOS
+Simulator clients. Android and physical-device cells remain optional
+diagnostics for live providers, secure hardware, assistive technology, OEM
+behavior, and pinned-hardware performance.

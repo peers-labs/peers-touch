@@ -26,8 +26,6 @@ from _acceptance_artifacts import (
 PRODUCER_GATE_ID = "desktop-telemetry-route-probe-gate"
 DEFAULT_OUTPUT = "reports/desktop-telemetry-route-probe.json"
 DEFAULT_STATION = "http://10.37.246.80:18080"
-DEFAULT_ACCOUNT = "b@p.t"
-DEFAULT_PASSWORD = "1"
 ARTIFACT_KIND = "desktop-telemetry-route-probe"
 RUNTIME_CLOSURE_ARTIFACT_KIND = "desktop-telemetry-runtime-closure-gate"
 PHASE = "P0a-4/P0a-5/P0a-6/P0c-5"
@@ -41,7 +39,6 @@ RUNTIME_CLOSURE_GATE = (
     "P0a Station runtime proof must use a managed Station+Postgres dependency closure before "
     "Gateway upload, route probe, query, rollup, mirror, or runtime sample emission can be trusted"
 )
-STATION_LOGIN_DEVICE_TYPE = "telemetry-probe"
 INGEST_PATH = "/telemetry/frontend/events/batch"
 QUERY_PATH = "/telemetry/frontend/events/query"
 ROLLUP_PATH = "/telemetry/frontend/rollups/query"
@@ -76,27 +73,6 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def station_post_no_auth(station: str, path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
-    url = station.rstrip("/") + path
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise GateError(f"Station {path} failed status={exc.code} body={body}") from exc
-    except urllib.error.URLError as exc:
-        raise GateError(f"Station {path} failed: {exc.reason}") from exc
-    except (TimeoutError, socket.timeout) as exc:
-        raise GateError(f"Station {path} timed out: {exc}") from exc
-
-
 def station_get_probe(station: str, path: str, timeout: float) -> dict[str, Any]:
     url = station.rstrip("/") + path
     req = urllib.request.Request(url, method="GET", headers={"Accept": "application/json"})
@@ -116,7 +92,7 @@ def station_get_probe(station: str, path: str, timeout: float) -> dict[str, Any]
         return {"path": path, "status": "timeout", "body": str(exc)}
 
 
-def station_post_probe(station: str, path: str, token: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+def station_post_probe(station: str, path: str, payload: dict[str, Any], timeout: float) -> dict[str, Any]:
     url = station.rstrip("/") + path
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
@@ -124,7 +100,6 @@ def station_post_probe(station: str, path: str, token: str, payload: dict[str, A
         data=data,
         method="POST",
         headers={
-            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         },
@@ -138,11 +113,6 @@ def station_post_probe(station: str, path: str, token: str, payload: dict[str, A
         raise GateError(f"Station {path} route probe failed: {exc.reason}") from exc
     except (TimeoutError, socket.timeout) as exc:
         raise GateError(f"Station {path} route probe timed out: {exc}") from exc
-
-
-def data_or_self(value: dict[str, Any]) -> dict[str, Any]:
-    data = value.get("data")
-    return data if isinstance(data, dict) else value
 
 
 def read_json_if_present(path: Path) -> tuple[dict[str, Any] | None, str | None]:
@@ -297,17 +267,6 @@ def route_trust_blocked_proofs(
             }
         )
     return blocked
-
-
-def actor_token_from_auth(data: dict[str, Any]) -> str:
-    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
-    token = tokens.get("access_token")
-    if token:
-        return str(token)
-    raw_token = data.get("token") or data.get("access_token")
-    if raw_token:
-        return str(raw_token)
-    raise GateError(f"auth response missing token fields={sorted(data.keys())}")
 
 
 def local_source_route_evidence(repo_root: Path) -> dict[str, Any]:
@@ -648,23 +607,11 @@ def target_station_runtime_evidence(station: str, timeout: float) -> dict[str, A
     }
 
 
-def station_login_token(station: str, account: str, password: str, timeout: float) -> str:
-    response = data_or_self(
-        station_post_no_auth(
-            station,
-            "/actor/login",
-            {"email": account, "password": password, "device_type": STATION_LOGIN_DEVICE_TYPE},
-            timeout,
-        )
-    )
-    return actor_token_from_auth(response)
-
-
-def probe_routes(station: str, token: str, timeout: float) -> list[dict[str, Any]]:
+def probe_routes(station: str, timeout: float) -> list[dict[str, Any]]:
     probes = [
-        station_post_probe(station, INGEST_PATH, token, {"events": []}, timeout),
-        station_post_probe(station, QUERY_PATH, token, {"limit": 1}, timeout),
-        station_post_probe(station, ROLLUP_PATH, token, {"limit": 1}, timeout),
+        station_post_probe(station, INGEST_PATH, {"events": []}, timeout),
+        station_post_probe(station, QUERY_PATH, {"limit": 1}, timeout),
+        station_post_probe(station, ROLLUP_PATH, {"limit": 1}, timeout),
     ]
     for probe in probes:
         path = str(probe.get("path") or "unknown")
@@ -672,9 +619,7 @@ def probe_routes(station: str, token: str, timeout: float) -> list[dict[str, Any
         body = str(probe.get("body") or "")
         if status == 404:
             raise GateError(f"Station telemetry route missing path={path} status=404 body={body}")
-        if path == INGEST_PATH and status in {200, 400}:
-            continue
-        if path != INGEST_PATH and status == 200:
+        if status in {200, 400, 401, 403}:
             continue
         raise GateError(f"Station telemetry route probe failed path={path} status={status} body={body}")
     return probes
@@ -719,8 +664,6 @@ def recommended_review_commands(station: str) -> list[dict[str, str]]:
 
 def classify_failure(failed_step: str, error: str) -> dict[str, Any]:
     category = "station-telemetry-route-missing" if "status=404" in error else "station-telemetry-route-probe"
-    if failed_step == "station.auth_login":
-        category = "station-auth"
     return {
         "category": category,
         "failedStep": failed_step,
@@ -797,7 +740,6 @@ def route_probe_summary(
     failed_step: str | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
-    auth_step = next((step for step in steps if step.get("name") == "station.auth_login"), None)
     routes_step = next((step for step in steps if step.get("name") == "station.telemetry_routes"), None)
     routes_detail = routes_step.get("detail") if isinstance(routes_step, dict) else None
     routes = routes_detail.get("routes") if isinstance(routes_detail, dict) else None
@@ -829,7 +771,7 @@ def route_probe_summary(
     return {
         "station": station,
         "status": status,
-        "authStatus": auth_step.get("status") if isinstance(auth_step, dict) else "not-run",
+        "anonymousProbeStatus": routes_step.get("status") if isinstance(routes_step, dict) else "not-run",
         "routeProbeStatus": routes_step.get("status") if isinstance(routes_step, dict) else "not-run",
         "requiredRouteCount": len(REQUIRED_LOCAL_ROUTE_TOKENS),
         "requiredRoutes": REQUIRED_LOCAL_ROUTE_TOKENS,
@@ -925,8 +867,6 @@ def route_contract_summary(
 
 def build_report(
     station: str,
-    account: str,
-    password: str,
     timeout: float,
     output: str = DEFAULT_OUTPUT,
     repo_root: Path | None = None,
@@ -962,9 +902,7 @@ def build_report(
     }
     review_commands = recommended_review_commands(station)
     try:
-        token = station_login_token(station, account, password, timeout)
-        report["steps"].append({"name": "station.auth_login", "status": "pass", "detail": {"tokenSource": "/actor/login"}})
-        probes = probe_routes(station, token, timeout)
+        probes = probe_routes(station, timeout)
         report["steps"].append({"name": "station.telemetry_routes", "status": "pass", "detail": {"routes": probes}})
         route_trust_proofs = route_trust_blocked_proofs(
             source_artifact=output,
@@ -1025,7 +963,7 @@ def build_report(
         )
         return report
     except GateError as exc:
-        failed_step = "station.telemetry_routes" if any(step.get("name") == "station.auth_login" for step in report["steps"]) else "station.auth_login"
+        failed_step = "station.telemetry_routes"
         error = str(exc)
         details = [{"step": failed_step, "status": "fail", "error": error}]
         report["status"] = "fail"
@@ -1254,8 +1192,6 @@ def render_markdown(report: dict[str, Any]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--station", default=os.environ.get("PT_STATION_URL", DEFAULT_STATION))
-    parser.add_argument("--account", default=os.environ.get("PT_TEST_ACCOUNT", DEFAULT_ACCOUNT))
-    parser.add_argument("--password", default=os.environ.get("PT_TEST_PASSWORD", DEFAULT_PASSWORD))
     parser.add_argument("--timeout", type=float, default=2.0)
     parser.add_argument("--output")
     parser.add_argument(
@@ -1276,8 +1212,6 @@ def main() -> int:
     logical_output = str(output_path) if output_path is not None else DEFAULT_OUTPUT
     report = build_report(
         args.station,
-        args.account,
-        args.password,
         args.timeout,
         logical_output,
         runtime_closure_report=Path(args.runtime_closure_report),

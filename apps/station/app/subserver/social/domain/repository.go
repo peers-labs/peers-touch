@@ -14,6 +14,7 @@ import (
 type PublicPostRepository interface {
 	Create(ctx context.Context, p *Post) error
 	GetByID(ctx context.Context, id uint64) (*Post, error)
+	ProbeRecordState(ctx context.Context, id uint64) (PostRecordState, error)
 	Delete(ctx context.Context, id uint64, authorPTID string) error
 
 	ListByAuthor(ctx context.Context, authorPTID string, c Cursor, limit int) ([]*Post, error)
@@ -59,6 +60,7 @@ type PublicPostRepository interface {
 type PrivatePostRepository interface {
 	Create(ctx context.Context, p *Post) error
 	GetByID(ctx context.Context, id uint64, viewerPTID string) (*Post, error)
+	ProbeRecordState(ctx context.Context, id uint64) (PostRecordState, error)
 	Delete(ctx context.Context, id uint64, authorPTID string) error
 
 	// ListByFollowingForViewer returns private posts authored by any of
@@ -100,6 +102,17 @@ type PrivatePostRepository interface {
 	UpdateCommentsCount(ctx context.Context, id uint64, delta int64) (int64, error)
 	UpdateReactionsCount(ctx context.Context, id uint64, snapshotJSON string) error
 }
+
+// PostRecordState is an owner-internal lifecycle projection. It intentionally
+// carries no author, audience, or content fields, so application policy can
+// classify a point read without exposing a hidden row.
+type PostRecordState uint8
+
+const (
+	PostRecordMissing PostRecordState = iota
+	PostRecordLive
+	PostRecordDeleted
+)
 
 // AudienceGrant is the domain-level twin of `db.SocialPrivateAudienceGrant`,
 // representing one entry on a CUSTOM_ALLOW or CUSTOM_DENY post's actor

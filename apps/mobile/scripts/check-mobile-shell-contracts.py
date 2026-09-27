@@ -58,6 +58,34 @@ FORBIDDEN_WEB_OAUTH_SECRET_FIELDS = (
     "accessToken",
     "refreshToken",
 )
+RETIRED_CHAT_ROUTE_PATTERN = re.compile(
+    r"""(?P<quote>["'])/(?:friend-chat|group-chat)(?:/[^"']*)?(?P=quote)"""
+)
+GENERIC_GROUP_LEDGER_PATTERN = re.compile(
+    r"""\bCMD_(?:GROUP_[A-Z_]+|CREATE_GROUP)\b|commandType:\s*["']group\.[^"']+"""
+)
+OPAQUE_GENERIC_LEDGER_PATTERN = re.compile(
+    r"""\b(?:getInteractionAdmission|InteractionAdmission|CommandEnvelope)\b"""
+)
+RETIRED_RELIABILITY_PATTERN = re.compile(
+    r"""\b(?:ledger_(?:initialize|admit|update_status|readback|readback_by_status|purge_committed|shutdown)|draft_store_(?:initialize|shutdown)|encryption_secret_b64|payloadJson|RustDraftProjection|RustCommandProjection)\b|recovery:draft-restore|\#\[path\s*=\s*"\.\./reliability/mod\.rs"\]"""
+)
+MOBILE_PRODUCTION_SOURCE_SUFFIXES = {".js", ".jsx", ".ts", ".tsx"}
+RELIABILITY_SOURCE_SUFFIXES = MOBILE_PRODUCTION_SOURCE_SUFFIXES | {".rs"}
+DEBUG_SOURCE_SUFFIXES = RELIABILITY_SOURCE_SUFFIXES
+WEB_CREDENTIAL_PATTERN = re.compile(
+    r"""\b(?:accessToken|refreshToken)\b|"""
+    r"""\bAuthorization\s*:|"""
+    r"""["'`]Bearer\s+|"""
+    r"""\bcredentials\s*:\s*["']include["']"""
+)
+
+
+def display_mobile_source_path(path: Path, mobile_root: Path) -> str:
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return path.relative_to(mobile_root).as_posix()
 
 
 def load_json(path: Path) -> dict:
@@ -380,7 +408,8 @@ def validate_web_oauth_hard_cut() -> None:
 
     required_projection_bridge = (
         "'mobile:oauth-projection'",
-        "applyAuthRuntimeProjection(event.payload)",
+        "handler(event.payload)",
+        "applyAuthRuntimeProjection(payload)",
     )
     missing_projection_bridge = [
         token for token in required_projection_bridge if token not in bridge_source
@@ -391,6 +420,327 @@ def validate_web_oauth_hard_cut() -> None:
         )
     if "dispatchAuthRuntimeDeepLink" in bridge_source:
         raise ValueError("Raw OAuth deep-link dispatch remains in Mobile Web")
+
+
+def css_rule_body(source: str, selector: str) -> str:
+    selector_offset = source.find(selector)
+    if selector_offset < 0:
+        raise ValueError(f"CSS selector is missing: {selector}")
+    opening_brace = source.find("{", selector_offset + len(selector))
+    if opening_brace < 0:
+        raise ValueError(f"CSS selector body is missing: {selector}")
+    body, _ = rust_block_body(source, opening_brace)
+    return body
+
+
+def validate_auth_logo_parity(repo_root: Path = REPO_ROOT) -> None:
+    paths = (
+        repo_root / "apps" / "desktop" / "src-tauri" / "icons" / "icon.png",
+        repo_root / "apps" / "mobile" / "src" / "assets" / "logo.png",
+        repo_root
+        / "packages"
+        / "prototypes"
+        / "mobile"
+        / "chat"
+        / "src"
+        / "assets"
+        / "logo.png",
+    )
+    logos = [path.read_bytes() for path in paths]
+    if len(set(logos)) != 1:
+        raise ValueError(
+            "Mobile and prototype Auth logos must equal the canonical Desktop icon"
+        )
+
+
+def validate_auth_ui_identity(repo_root: Path = REPO_ROOT) -> None:
+    validate_auth_logo_parity(repo_root)
+    mobile_root = repo_root / "apps" / "mobile"
+    prototype_root = (
+        repo_root / "packages" / "prototypes" / "mobile" / "chat"
+    )
+    access_source = (
+        mobile_root / "src" / "features" / "auth" / "AccessGateHost.tsx"
+    ).read_text(encoding="utf-8")
+    recovery_source = (
+        mobile_root
+        / "src"
+        / "components"
+        / "recovery"
+        / "RecoveryOverlayHost.tsx"
+    ).read_text(encoding="utf-8")
+    mobile_css = (mobile_root / "src" / "styles.css").read_text(encoding="utf-8")
+    prototype_source = (
+        prototype_root / "src" / "pages" / "AuthGateScreen.tsx"
+    ).read_text(encoding="utf-8")
+    prototype_shell = (
+        prototype_root / "src" / "MobilePrototype.tsx"
+    ).read_text(encoding="utf-8")
+    prototype_css = (
+        prototype_root / "src" / "mobilePrototype.css"
+    ).read_text(encoding="utf-8")
+
+    required_mobile_tokens = (
+        'className="auth-gate-logo"',
+        'data-session-expired={expiredSession ? \'true\' : \'false\'}',
+        'data-acceptance-id="auth-session-expired"',
+        "t('mobile.settings.connected')",
+        "authStationLabel(",
+    )
+    missing_mobile_tokens = [
+        token for token in required_mobile_tokens if token not in access_source
+    ]
+    if missing_mobile_tokens:
+        raise ValueError(
+            f"Mobile Auth identity contract is incomplete: {missing_mobile_tokens}"
+        )
+    if access_source.index('<Card className="auth-gate-card"') > access_source.index(
+        '<section className="auth-gate-brand">'
+    ):
+        raise ValueError("Mobile Auth brand must render inside the dominant card")
+    if (
+        "mobile.auth.brandKicker" in access_source
+        or re.search(
+            r"<Text\b[^>]*>\s*\{stationUrl\}\s*</Text>",
+            access_source,
+        )
+    ):
+        raise ValueError(
+            "Mobile Auth must not render a platform kicker or raw Station address"
+        )
+
+    required_recovery_tokens = (
+        "launchState !== 'access-gate-chain'",
+        "state.reason === 'session-expired'",
+    )
+    if any(token not in recovery_source for token in required_recovery_tokens):
+        raise ValueError(
+            "Access Gate must suppress only its duplicate session-expired recovery"
+        )
+
+    required_prototype_tokens = (
+        'className="mp-auth-logo"',
+        'data-session-expired={expiredSession ? \'true\' : \'false\'}',
+        "Session expired",
+    )
+    if any(token not in prototype_source for token in required_prototype_tokens):
+        raise ValueError("Mobile Auth prototype is missing the shared re-auth anatomy")
+    if (
+        "PEERS TOUCH MOBILE" in prototype_source
+        or "stationUrl" in prototype_source
+        or "session-revoked" not in prototype_shell
+    ):
+        raise ValueError(
+            "Mobile Auth prototype retains a platform wordmark, raw address, "
+            "or detached session-revoked flow"
+        )
+
+    for source, selector in (
+        (mobile_css, ".auth-gate-logo"),
+        (prototype_css, ".mp-auth-logo"),
+    ):
+        logo_rule = css_rule_body(source, selector)
+        for declaration in (
+            "width: 72px",
+            "height: 72px",
+            "border-radius: 18px",
+        ):
+            if declaration not in logo_rule:
+                raise ValueError(
+                    f"{selector} must preserve Desktop Auth {declaration}"
+                )
+
+    for source, selector in (
+        (mobile_css, ".auth-gate-card"),
+        (prototype_css, ".mp-auth-card"),
+    ):
+        card_rule = css_rule_body(source, selector)
+        if (
+            "width: min(100%, 400px)" not in card_rule
+            or "border-radius: 24px" not in card_rule
+            or "margin-top: auto" in card_rule
+        ):
+            raise ValueError(
+                f"{selector} must preserve the centered Desktop Auth card anatomy"
+            )
+
+
+def retired_mobile_chat_route_references(mobile_root: Path) -> list[str]:
+    source_root = mobile_root / "src"
+    references: list[str] = []
+    for path in sorted(source_root.rglob("*")):
+        if (
+            not path.is_file()
+            or path.suffix not in MOBILE_PRODUCTION_SOURCE_SUFFIXES
+            or "gen" in path.relative_to(source_root).parts
+            or path.name.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"))
+        ):
+            continue
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            if RETIRED_CHAT_ROUTE_PATTERN.search(line):
+                references.append(
+                    f"{display_mobile_source_path(path, mobile_root)}:{line_number}"
+                )
+    return references
+
+
+def generic_group_ledger_references(mobile_root: Path) -> list[str]:
+    features_root = mobile_root / "src" / "features"
+    if not features_root.is_dir():
+        return []
+    references: list[str] = []
+    for path in sorted(features_root.rglob("*")):
+        if (
+            not path.is_file()
+            or path.suffix not in MOBILE_PRODUCTION_SOURCE_SUFFIXES
+            or path.name.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx"))
+        ):
+            continue
+        source = path.read_text(encoding="utf-8")
+        if (
+            "getInteractionAdmission" not in source
+            and "InteractionAdmission" not in source
+        ):
+            continue
+        for line_number, line in enumerate(source.splitlines(), start=1):
+            if GENERIC_GROUP_LEDGER_PATTERN.search(line):
+                references.append(
+                    f"{display_mobile_source_path(path, mobile_root)}:{line_number}"
+                )
+    return references
+
+
+def opaque_generic_ledger_references(mobile_root: Path) -> list[str]:
+    references: list[str] = []
+    for relative_root in ("src/features", "src/pages"):
+        source_root = mobile_root / relative_root
+        if not source_root.is_dir():
+            continue
+        for path in sorted(source_root.rglob("*")):
+            if (
+                not path.is_file()
+                or path.suffix not in MOBILE_PRODUCTION_SOURCE_SUFFIXES
+                or path.name.endswith(
+                    (
+                        ".test.ts",
+                        ".test.tsx",
+                        ".spec.ts",
+                        ".spec.tsx",
+                    )
+                )
+            ):
+                continue
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(),
+                start=1,
+            ):
+                if OPAQUE_GENERIC_LEDGER_PATTERN.search(line):
+                    references.append(
+                        f"{display_mobile_source_path(path, mobile_root)}:"
+                        f"{line_number}"
+                    )
+    return references
+
+
+def retired_reliability_references(mobile_root: Path) -> list[str]:
+    references: list[str] = []
+    for relative_root in ("src", "src-tauri/src"):
+        source_root = mobile_root / relative_root
+        if not source_root.is_dir():
+            continue
+        for path in sorted(source_root.rglob("*")):
+            if (
+                not path.is_file()
+                or path.suffix not in RELIABILITY_SOURCE_SUFFIXES
+                or "gen" in path.relative_to(source_root).parts
+                or path.name.endswith(
+                    (
+                        ".test.ts",
+                        ".test.tsx",
+                        ".spec.ts",
+                        ".spec.tsx",
+                        "_test.rs",
+                    )
+                )
+            ):
+                continue
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(),
+                start=1,
+            ):
+                if RETIRED_RELIABILITY_PATTERN.search(line):
+                    references.append(
+                        f"{display_mobile_source_path(path, mobile_root)}:"
+                        f"{line_number}"
+                    )
+    return references
+
+
+def debug_region_references(mobile_root: Path) -> list[str]:
+    references: list[str] = []
+    for relative_root in ("src", "src-tauri/src"):
+        source_root = mobile_root / relative_root
+        if not source_root.is_dir():
+            continue
+        for path in sorted(source_root.rglob("*")):
+            if (
+                not path.is_file()
+                or path.suffix not in DEBUG_SOURCE_SUFFIXES
+                or "gen" in path.relative_to(source_root).parts
+                or path.name.endswith(
+                    (
+                        ".test.ts",
+                        ".test.tsx",
+                        ".spec.ts",
+                        ".spec.tsx",
+                        "_test.rs",
+                    )
+                )
+            ):
+                continue
+            for line_number, line in enumerate(
+                path.read_text(encoding="utf-8").splitlines(),
+                start=1,
+            ):
+                if "// #region debug-point" in line:
+                    references.append(
+                        f"{display_mobile_source_path(path, mobile_root)}:"
+                        f"{line_number}"
+                    )
+    return references
+
+
+def web_credential_references(mobile_root: Path) -> list[str]:
+    source_root = mobile_root / "src"
+    references: list[str] = []
+    for path in sorted(source_root.rglob("*")):
+        if (
+            not path.is_file()
+            or path.suffix not in MOBILE_PRODUCTION_SOURCE_SUFFIXES
+            or "gen" in path.relative_to(source_root).parts
+            or path.name.endswith(
+                (
+                    ".test.ts",
+                    ".test.tsx",
+                    ".spec.ts",
+                    ".spec.tsx",
+                )
+            )
+        ):
+            continue
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            if WEB_CREDENTIAL_PATTERN.search(line):
+                references.append(
+                    f"{display_mobile_source_path(path, mobile_root)}:"
+                    f"{line_number}"
+                )
+    return references
 
 
 def validate() -> None:
@@ -436,9 +786,25 @@ def validate() -> None:
         )
     validate_native_oauth_adapters()
     validate_web_oauth_hard_cut()
+    credential_references = web_credential_references(
+        REPO_ROOT / "apps" / "mobile"
+    )
+    if credential_references:
+        raise ValueError(
+            "Mobile Web authenticated credential access remains: "
+            + ", ".join(credential_references)
+        )
+    validate_auth_ui_identity()
+    debug_regions = debug_region_references(REPO_ROOT / "apps" / "mobile")
+    if debug_regions:
+        raise ValueError(
+            "Mobile production debug regions remain: "
+            + ", ".join(debug_regions)
+        )
 
 
 def validate_hard_cut() -> None:
+    mobile_root = REPO_ROOT / "apps" / "mobile"
     required_paths = (
         "src/app/lifecycle/MobileLifecycleKernel.ts",
         "src/runtimes/commandRuntime.ts",
@@ -463,6 +829,31 @@ def validate_hard_cut() -> None:
     present = [token for token in forbidden if token in provisioning_source]
     if present:
         raise ValueError(f"legacy RuntimeManifest paths remain: {present}")
+
+    retired_routes = retired_mobile_chat_route_references(mobile_root)
+    if retired_routes:
+        raise ValueError(
+            "retired Mobile Chat route callers remain: "
+            + ", ".join(retired_routes)
+        )
+    generic_group_commands = generic_group_ledger_references(mobile_root)
+    if generic_group_commands:
+        raise ValueError(
+            "group administration still uses the generic Mobile command ledger: "
+            + ", ".join(generic_group_commands)
+        )
+    opaque_generic_commands = opaque_generic_ledger_references(mobile_root)
+    if opaque_generic_commands:
+        raise ValueError(
+            "production Mobile surfaces still use the opaque generic command ledger: "
+            + ", ".join(opaque_generic_commands)
+        )
+    retired_reliability = retired_reliability_references(mobile_root)
+    if retired_reliability:
+        raise ValueError(
+            "retired Mobile reliability APIs or browser-only recovery paths remain: "
+            + ", ".join(retired_reliability)
+        )
 
 
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:

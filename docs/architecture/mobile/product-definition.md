@@ -1,8 +1,8 @@
 # Mobile Shell — 产品定义
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-08-27 | **Updated**: 2026-08-27
+> **Version**: v1.1
+> **Created**: 2026-08-27 | **Updated**: 2026-09-19
 > **Owner**: Mobile Product Team
 > **Module**: `apps/mobile/`
 
@@ -66,7 +66,7 @@ making the device a business authority.
 | MS-C06 | Advanced message collaboration | required | Reactions, pinning, forwarding, and thread replies use authoritative conversation contracts. |
 | MS-C07 | Contacts and groups | required | Search people, handle requests, inspect profiles, create groups, and enter conversations. |
 | MS-C08 | Moments | required | Read feed, publish text/images, react, comment, reply, paginate, and recover failed actions. |
-| MS-C09 | Profile and settings | required | Show and edit profile, account/device preferences, notification/privacy/storage settings, blocked users, language, Station switch, and logout. |
+| MS-C09 | Profile and settings | required | Show and edit Actor Profile and privacy, Notification preferences, Social blocked users, device-local appearance/language/storage settings, Station switch, and logout. No additional account-preference fields are claimed in this release. |
 | MS-C10 | Runtime freshness and recovery | required | Foreground events plus reconciliation, background wakeups, resume sync, stale indication, and session revocation recovery. |
 | MS-C11 | WeChat OAuth | deferred | Visible only as unavailable until provider and callback support are production-ready. |
 | MS-C12 | Voice/video call | deferred | No enabled call action until the Mobile call contract and runtime exist. |
@@ -97,6 +97,8 @@ making the device a business authority.
 - Model owns cross-client contracts.
 - Mobile owns navigation, device-local UI state, secure local credentials, runtime
   orchestration, and bounded caches.
+- A future cross-device preference requires a product amendment that names its
+  fields and behavior before a new Station owner or UI section may exist.
 - Prototype-only types and demo transitions are not product contracts.
 - A disabled future capability must explain unavailability or be absent.
 - Mobile does not expose a peer endpoint and does not join the Desktop P2P mesh.

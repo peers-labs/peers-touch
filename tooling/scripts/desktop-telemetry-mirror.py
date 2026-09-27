@@ -94,6 +94,21 @@ def build_report(station_url: str, filters: dict[str, Any], events: list[dict[st
     }
 
 
+def read_source_input(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    try:
+        source = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"telemetry mirror source input is invalid: {path}: {exc}") from exc
+    filters = source.get("filters")
+    events = source.get("events")
+    rollups = source.get("rollups")
+    if not isinstance(filters, dict) or not isinstance(events, list) or not isinstance(rollups, list):
+        raise RuntimeError("telemetry mirror source input must contain filters, events, and rollups")
+    if not all(isinstance(item, dict) for item in [*events, *rollups]):
+        raise RuntimeError("telemetry mirror source input contains non-object rows")
+    return filters, events, rollups
+
+
 def render_markdown(report: dict[str, Any]) -> str:
     summary = report["summary"]
     lines = [
@@ -179,6 +194,10 @@ def main() -> int:
     parser.add_argument("--station-url", default=os.environ.get("PT_STATION_URL", DEFAULT_STATION_URL))
     parser.add_argument("--token", default=os.environ.get("PT_STATION_ACCESS_TOKEN") or os.environ.get("PT_ACCESS_TOKEN"))
     parser.add_argument(
+        "--source-input",
+        help="JSON payload with filters/events/rollups already queried through the Desktop Gateway.",
+    )
+    parser.add_argument(
         "--output-prefix",
         required=True,
         help="Explicit output prefix supplied by desktop-telemetry-live-gate or a test.",
@@ -191,14 +210,16 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=100)
     args = parser.parse_args()
 
-    if not args.token:
-        raise SystemExit("missing token: set PT_STATION_ACCESS_TOKEN or pass --token")
-
-    filters = compact_filter(args)
-    events_response = post_json(args.station_url, args.token, "/telemetry/frontend/events/query", filters)
-    rollups_response = post_json(args.station_url, args.token, "/telemetry/frontend/rollups/query", filters)
-    events = events_response.get("events", [])
-    rollups = rollups_response.get("rollups", [])
+    if args.source_input:
+        filters, events, rollups = read_source_input(Path(args.source_input))
+    else:
+        if not args.token:
+            raise SystemExit("missing telemetry source: pass --source-input or provide a Station access token")
+        filters = compact_filter(args)
+        events_response = post_json(args.station_url, args.token, "/telemetry/frontend/events/query", filters)
+        rollups_response = post_json(args.station_url, args.token, "/telemetry/frontend/rollups/query", filters)
+        events = events_response.get("events", [])
+        rollups = rollups_response.get("rollups", [])
     report = build_report(args.station_url, filters, events, rollups)
 
     output_prefix = explicit_output_path(args.output_prefix)

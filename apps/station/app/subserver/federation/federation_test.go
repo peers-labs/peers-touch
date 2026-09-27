@@ -11,6 +11,9 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain/policy"
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/infrastructure"
 	federationpb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
+	locatorpb "github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator/pb"
+	profilepb "github.com/peers-labs/peers-touch/station/frame/touch/federation/profile/pb"
+	"github.com/peers-labs/peers-touch/station/frame/touch/federation/resolver"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -68,6 +71,65 @@ func setupTestServices(t *testing.T) (*application.FederationService, *applicati
 	)
 
 	return fedSvc, ledgerSvc, repos
+}
+
+func TestFederationContextsExposeOnlyClientScope(t *testing.T) {
+	contexts := federationContexts(&federationpb.ListFederationsResponse{
+		Federations: []*federationpb.FederationSummary{
+			nil,
+			{
+				FederationId:           "federation-1",
+				Name:                   "Development",
+				Status:                 "active",
+				PolicyType:             "single_admin",
+				HeadSeq:                42,
+				MemberStationCount:     3,
+				SequencerStationPeerId: "station-admin",
+				MyRole:                 "admin",
+				Capability: &federationpb.ActorCapability{
+					CanInvite: true,
+				},
+			},
+			{
+				FederationId: "federation-archived",
+				Name:         "Archived",
+				Status:       "archived",
+			},
+		},
+	})
+
+	if len(contexts.Contexts) != 1 {
+		t.Fatalf("contexts = %d, want 1", len(contexts.Contexts))
+	}
+	context := contexts.Contexts[0]
+	if context.FederationId != "federation-1" ||
+		context.Name != "Development" ||
+		context.Status != "active" {
+		t.Fatalf("context = %+v", context)
+	}
+}
+
+func TestFederationResolveViewUsesCanonicalHandleAndContext(t *testing.T) {
+	for _, handle := range []string{
+		"alice@station.example",
+		"@alice@station.example",
+	} {
+		view := federationResolveView(
+			"federation-1",
+			&resolver.Resolved{
+				Envelope: &profilepb.ActorProfileEnvelope{
+					FederatedHandle: handle,
+				},
+				Locator: &locatorpb.ActorLocatorRecord{Seq: 74},
+			},
+		)
+		if got, want := view.GetFederatedHandle(), "@alice@station.example"; got != want {
+			t.Fatalf("resolve handle = %q, want %q", got, want)
+		}
+		if got := view.GetFederationId(); got != "federation-1" {
+			t.Fatalf("resolve Federation context = %q", got)
+		}
+	}
 }
 
 func TestSeedTestnet_CreatesAndReplaysConsistently(t *testing.T) {

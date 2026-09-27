@@ -38,6 +38,9 @@ CREATE TABLE friend_chat_friendships (
 )`).Error; err != nil {
 		t.Fatalf("migrate friendships: %v", err)
 	}
+	if err := infrastructure.MigrateIdentitySchema(gdb); err != nil {
+		t.Fatalf("migrate Social relationship authority: %v", err)
+	}
 	if err := gdb.Exec(`
 CREATE TABLE social_relationship_projections (
 	owner_ptid text,
@@ -62,9 +65,14 @@ CREATE TABLE social_relationship_projections (
 func (f *relationshipFixture) seedBlock(t *testing.T, actorPTID, peerPTID string) {
 	t.Helper()
 	if err := f.gdb.Exec(
-		"INSERT INTO friend_chat_friendships (actor_ptid, peer_ptid, status) VALUES (?, ?, 3)",
+		"INSERT INTO social_directional_relationships "+
+			"(actor_ptid, target_actor_ptid, actor_home_station_peer_id, "+
+			"target_home_station_peer_id, blocked, revision, updated_at) "+
+			"VALUES (?, ?, '', '', ?, ?, CURRENT_TIMESTAMP)",
 		actorPTID,
 		peerPTID,
+		true,
+		1,
 	).Error; err != nil {
 		t.Fatalf("seed block %s->%s: %v", actorPTID, peerPTID, err)
 	}

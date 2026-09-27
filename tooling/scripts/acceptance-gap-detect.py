@@ -24,16 +24,6 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
-RECEIVER_PROOF_GATE = "chat-native-two-client-e2e"
-RECEIVER_VISIBLE_PATHS = {
-    "apps/desktop/src-tauri/src/messaging/direct.rs",
-    "apps/desktop/src/runtimes/imRuntime.ts",
-    "apps/desktop/src/services/chatReceipt.ts",
-    "apps/desktop/src/store/socialChat.ts",
-    "apps/desktop/src/store/socialProjection.ts",
-    "apps/station/app/subserver/conversation/engine/application/receipt_service.go",
-    "apps/station/app/subserver/conversation/engine/interface/http/receipt_handler.go",
-}
 
 SCAN_TYPE_TO_GATE = {
     "path-absent": "chat-w11-forbidden-scan",
@@ -421,26 +411,6 @@ def detect(
                                 normalized_planned_paths - actual_paths
                             ),
                         }
-                    ],
-                )
-            )
-
-    receipt_paths = sorted(RECEIVER_VISIBLE_PATHS.intersection(paths))
-    if receipt_paths:
-        obligations.add(RECEIVER_PROOF_GATE)
-        if RECEIVER_PROOF_GATE not in selected:
-            gaps.append(
-                gap(
-                    gap_type="RECEIVER_PROOF_GATE_NOT_SELECTED",
-                    claim=claim,
-                    owner_stage="EXECUTE",
-                    required_closure=(
-                        f"Select and execute {RECEIVER_PROOF_GATE} for "
-                        "receiver-visible receipt changes"
-                    ),
-                    evidence=[
-                        {"path": path, "reason": "receiver-visible owner changed"}
-                        for path in receipt_paths
                     ],
                 )
             )

@@ -200,6 +200,11 @@ export interface ChatAttachmentLike {
   readonly tag_size?: number | string | bigint;
   readonly nonceStrategy?: string;
   readonly nonce_strategy?: string;
+  readonly voiceNote?: {
+    readonly durationMs?: number;
+    readonly codec?: string;
+    readonly waveform?: readonly number[];
+  };
 }
 
 export interface ChatEncryptedMessagePayload<Attachment extends ChatAttachmentLike = ChatAttachmentLike> {
@@ -261,7 +266,6 @@ export interface ChatConversationPreferenceLike {
   readonly sticky?: boolean;
   readonly muted?: boolean;
   readonly alertEnabled?: boolean;
-  readonly clearedAt?: number;
 }
 
 export interface ChatConversationSurfaceOptions<T> {
@@ -491,6 +495,7 @@ export const CHAT_COMPOSER_CAPABILITIES_MOBILE_MAIN: ResolvedChatComposerCapabil
   ...EMPTY_COMPOSER_CAPABILITIES,
   emoji: true,
   file: true,
+  voice: true,
 };
 
 export const CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD: ResolvedChatComposerCapabilities = {
@@ -1045,15 +1050,6 @@ export function buildChatMessageSurfaceItems<T extends ChatMessageLike>({
   });
 }
 
-export function filterChatMessagesAfterClearedAt<T extends ChatMessageLike>(
-  messages: readonly T[],
-  clearedAt: number | null | undefined,
-  resolveTimestampMs: (message: T) => number,
-): T[] {
-  if (!clearedAt) return [...messages];
-  return messages.filter((message) => resolveTimestampMs(message) >= clearedAt);
-}
-
 export function countChatThreadReplies<T extends ChatMessageLike>(
   messages: readonly T[],
   rootUlid: string,
@@ -1606,3 +1602,4 @@ export function replyPreviewForChatMessage(
 }
 
 export * from './agentChatCache.js';
+export * from './storageBatch.js';

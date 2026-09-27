@@ -136,11 +136,6 @@ func requireCanonicalSchema(db *gorm.DB) error {
 			primaryColumns: []string{"plan_id"},
 		},
 		{
-			model:          &ConversationMemberSettingsModel{},
-			columns:        []string{"cleared_at_unix_ms"},
-			primaryColumns: []string{"conversation_id", "ptid"},
-		},
-		{
 			model:          &ConversationReadCursorModel{},
 			columns:        []string{"last_read_sequence"},
 			primaryColumns: []string{"conversation_id", "ptid"},

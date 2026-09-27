@@ -15,7 +15,8 @@
     "per-device Device Inbox"
   ],
   "visible_surfaces": [
-    {"type": "desktop-gateway", "command": "auth_login"},
+    {"type": "desktop-gateway", "command": "access_start"},
+    {"type": "desktop-gateway", "command": "access_submit_login"},
     {"type": "desktop-gateway", "command": "messaging_create_direct"},
     {"type": "desktop-gateway", "command": "messaging_send_message"},
     {"type": "desktop-gateway", "command": "messaging_hydrate"},

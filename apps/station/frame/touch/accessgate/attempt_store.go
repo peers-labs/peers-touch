@@ -3,6 +3,8 @@ package accessgate
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
@@ -10,6 +12,7 @@ import (
 	pb "github.com/peers-labs/peers-touch/station/frame/touch/model/accessgate"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Attempt status values. The lifecycle is pending -> action_required ->
@@ -29,6 +32,13 @@ const (
 // callers can map it to a single user-facing message.
 var errAttemptNotFound = errors.New("access attempt expired or not found")
 
+var cancellableAttemptStatuses = []string{
+	attemptStatusPending,
+	attemptStatusActionRequired,
+	attemptStatusBlocked,
+	attemptStatusFailed,
+}
+
 // createAttempt persists a fresh attempt row. The caller has already minted the
 // attempt ID and resolved any session-bound actor.
 func createAttempt(
@@ -43,14 +53,17 @@ func createAttempt(
 	}
 
 	row := &dbmodel.AccessAttempt{
-		ID:               attempt.ID,
-		Status:           attemptStatusForDecision(decision.GetState()),
-		SessionID:        attempt.SessionID,
-		StationPeerID:    attempt.StationPeerID,
-		StationURL:       req.GetStationUrl(),
-		CurrentGateID:    decision.GetCurrentGateId(),
-		DecisionRevision: 1,
-		ExpiresAt:        attempt.ExpiresAt,
+		ID:                  attempt.ID,
+		Status:              attemptStatusForDecision(decision.GetState()),
+		SessionID:           attempt.SessionID,
+		AuthMethod:          attempt.AuthMethod,
+		StationPeerID:       attempt.StationPeerID,
+		StationURL:          req.GetStationUrl(),
+		CurrentGateID:       decision.GetCurrentGateId(),
+		DecisionRevision:    1,
+		ExpiresAt:           attempt.ExpiresAt,
+		LifecycleGeneration: attempt.LifecycleGeneration,
+		CompletedActionIDs:  encodeCompletedActions(attempt.CompletedActions),
 	}
 	if attempt.Actor != nil {
 		row.ActorPTID = attempt.Actor.GetPtid()
@@ -106,10 +119,12 @@ func saveAttemptDecision(ctx context.Context, attempt *Attempt, decision *pb.Acc
 	}
 
 	updates := map[string]any{
-		"status":            attemptStatusForDecision(decision.GetState()),
-		"current_gate_id":   decision.GetCurrentGateId(),
-		"session_id":        attempt.SessionID,
-		"decision_revision": gorm.Expr("decision_revision + 1"),
+		"status":               attemptStatusForDecision(decision.GetState()),
+		"current_gate_id":      decision.GetCurrentGateId(),
+		"session_id":           attempt.SessionID,
+		"auth_method":          attempt.AuthMethod,
+		"completed_action_ids": encodeCompletedActions(attempt.CompletedActions),
+		"decision_revision":    gorm.Expr("decision_revision + 1"),
 	}
 	if attempt.Actor != nil {
 		updates["actor_ptid"] = attempt.Actor.GetPtid()
@@ -148,7 +163,7 @@ func cancelAttempt(ctx context.Context, id string) (bool, error) {
 	}
 
 	res := rds.WithContext(ctx).Model(&dbmodel.AccessAttempt{}).
-		Where("id = ? AND status IN ?", id, []string{attemptStatusPending, attemptStatusActionRequired}).
+		Where("id = ? AND status IN ?", id, cancellableAttemptStatuses).
 		Update("status", attemptStatusCancelled)
 	if res.Error != nil {
 		return false, res.Error
@@ -156,30 +171,53 @@ func cancelAttempt(ctx context.Context, id string) (bool, error) {
 	return res.RowsAffected > 0, nil
 }
 
-// markAttemptInvitePassed records that the attempt redeemed a valid invite code
-// so the invite.code gate stays satisfied on subsequent decision passes.
-func markAttemptInvitePassed(ctx context.Context, id string) error {
+func markAttemptActionCompleted(ctx context.Context, id, actionID string) (*Attempt, error) {
 	rds, err := store.GetRDS(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return rds.WithContext(ctx).Model(&dbmodel.AccessAttempt{}).
-		Where("id = ?", id).Update("invite_passed", true).Error
+	var result *Attempt
+	err = rds.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row dbmodel.AccessAttempt
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", id).First(&row).Error; err != nil {
+			return err
+		}
+		attempt := attemptFromRow(&row)
+		if attempt.CompletedActions == nil {
+			attempt.CompletedActions = make(map[string]bool)
+		}
+		attempt.CompletedActions[actionID] = true
+		if err := tx.Model(&row).Update(
+			"completed_action_ids",
+			encodeCompletedActions(attempt.CompletedActions),
+		).Error; err != nil {
+			return err
+		}
+		result = attempt
+		return nil
+	})
+	return result, err
 }
 
 func attemptFromRow(row *dbmodel.AccessAttempt) *Attempt {
 	attempt := &Attempt{
-		ID:               row.ID,
-		SessionID:        row.SessionID,
-		StationPeerID:    row.StationPeerID,
-		ActorUsername:    row.ActorUsername,
-		ActorEmail:       row.ActorEmail,
-		InvitePassed:     row.InvitePassed,
-		CurrentGateID:    row.CurrentGateID,
-		DecisionRevision: row.DecisionRevision,
-		Status:           row.Status,
-		CreatedAt:        row.CreatedAt,
-		ExpiresAt:        row.ExpiresAt,
+		ID:                  row.ID,
+		SessionID:           row.SessionID,
+		StationPeerID:       row.StationPeerID,
+		ActorUsername:       row.ActorUsername,
+		ActorEmail:          row.ActorEmail,
+		AuthMethod:          row.AuthMethod,
+		InvitePassed:        row.InvitePassed,
+		Platform:            row.Platform,
+		DeviceID:            row.DeviceID,
+		LifecycleGeneration: row.LifecycleGeneration,
+		CompletedActions:    decodeCompletedActions(row.CompletedActionIDs),
+		CurrentGateID:       row.CurrentGateID,
+		DecisionRevision:    row.DecisionRevision,
+		Status:              row.Status,
+		CreatedAt:           row.CreatedAt,
+		ExpiresAt:           row.ExpiresAt,
 	}
 	if row.ActorPTID != "" {
 		attempt.Actor = &actormodel.ActorRef{
@@ -188,6 +226,27 @@ func attemptFromRow(row *dbmodel.AccessAttempt) *Attempt {
 		}
 	}
 	return attempt
+}
+
+func encodeCompletedActions(actions map[string]bool) string {
+	values := make([]string, 0, len(actions))
+	for action, completed := range actions {
+		if completed && strings.TrimSpace(action) != "" {
+			values = append(values, strings.TrimSpace(action))
+		}
+	}
+	sort.Strings(values)
+	return strings.Join(values, ",")
+}
+
+func decodeCompletedActions(raw string) map[string]bool {
+	actions := make(map[string]bool)
+	for _, action := range strings.Split(raw, ",") {
+		if action = strings.TrimSpace(action); action != "" {
+			actions[action] = true
+		}
+	}
+	return actions
 }
 
 func isTerminalStatus(status string) bool {

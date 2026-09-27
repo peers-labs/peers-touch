@@ -1,10 +1,10 @@
 ---
 name: "pt-plan-and-document"
-description: "Persists an accepted product, architecture, or execution model into the correct Peers-Touch repository documents. For execution planning it renders and validates the Plan Package and registers the initial tracked-work locator."
+description: "Persists an accepted product, architecture, or execution model into the correct Peers-Touch repository documents. For execution planning it renders, validates and binds the Plan Package before Dev Workflow creates runtime state."
 stage: "PLAN"
 requires: ["accepted source model", "repository documentation rules"]
-produces: ["persisted documents", "validated prepared Plan Package", "initial active_work registration", "review prompt"]
-next: "plan review"
+produces: ["persisted documents", "validated prepared Plan Package", "generation-bound workspace Plan binding", "review prompt"]
+next: "pt-dev-workflow agent review loop"
 ---
 
 # Plan And Document
@@ -22,7 +22,7 @@ next: "plan review"
 - 创建 Plan Package / Task Slice 文件；
 - 运行结构校验；
 - 更新导航；
-- 首次登记 `active_work`；
+- 建立 workspace 的首个 Plan generation，或在上一代完成并释放后显式推进；
 - 生成 review prompt。
 
 本 Skill 不负责：
@@ -49,6 +49,7 @@ next: "plan review"
 
 - `docs/README.md`
 - `docs/global/architecture-document-standard.md`
+- `docs/architecture/architecture-module-governance/architecture-modules.json`
 - 最近的模块 `README.md`
 - 对应上游方法论 Skill
 - `docs/knowledge/playbooks/documenting-large-requirements.md`（大需求）
@@ -80,6 +81,11 @@ docs/architecture/<module>/
 ```
 
 每个正式文件保留 status/version/date/owner 元数据和最近 README 导航。
+
+新建 active 架构模块，或修改尚未登记的 active 模块时，必须在同一落盘变更
+中新增其正向 module registry projection。按模块特征推导
+`requiredDocuments`，登记非重叠 `governedPaths`、当前 capability allowlist
+和外部 capability ID 引用；不得登记已删除名称、历史别名或迁移黑名单。
 
 ## 3. 持久化 Plan Package
 
@@ -131,7 +137,8 @@ Task 文件不复制 lifecycle，Session 不进入 Git。
 
 Execution plans MUST NOT contain a `## Context Anchor` section.
 
-Context Anchor 只存在于聊天；`active_work` 只保存 locator/binding projection。
+Context Anchor 只存在于聊天；workspace active-work 只由 Dev Workflow 在
+消费 worktree 中从 owner state 派生。
 
 ## 5. 校验和登记
 
@@ -141,32 +148,28 @@ Context Anchor 只存在于聊天；`active_work` 只保存 locator/binding proj
 ```bash
 make plan-validate PLAN=<package-plan.md>
 make plan-current PLAN=<package-plan.md>
+node tooling/scripts/architecture/module-governance.mjs validate
 ```
 
 3. 验证明确选定的 worktree binding。
-4. 运行 `make plan-bind PLAN=<package-plan.md>` 建立该 workspace 唯一且不可
-   换绑的 `planId + planPath`。同值调用幂等；若 workspace 已绑定其他 Plan，
-   返回 `WORKSPACE_PLAN_REBIND_DENIED`，新 Plan 必须使用新 worktree。
-5. 仅在 package 校验和不可变绑定均通过后登记一条 `active_work`：
-
-```text
-plan
-stage=PLAN
-current_task_id=NONE
-current_task_path=NONE
-dev_state=NONE
-branch
-workspace_id
-initial_head
-expected_head
-blocked=false
-last_session
-```
-
-6. 同一 `workspace_id` 不得存在第二条 non-complete tracked row，且该行
-   `plan` 必须等于机器绑定。同步进入仓库的其他 Plan 不参与选择。
-7. 计划评审通过后，current Task 的选择由 Development Run 通过 owner
-   command 原子完成；本 Skill 不自行启动 EXECUTE。
+4. 首个 Plan 运行 `make plan-bind PLAN=<package-plan.md>` 创建 generation 1。
+   同值调用幂等；不同值返回 `WORKSPACE_PLAN_REBIND_DENIED`。若 workspace
+   已绑定一个 completed Plan，先证明 declaration、active-work 与 runtime
+   lease 均已释放，再运行
+   `make plan-binding-advance PLAN=<package-plan.md>
+   EXPECTED_GENERATION=<n>` 原子推进下一 generation。不得删除绑定文件，也
+   不得由 Agent 自建 worktree 绕过该检查。
+5. prepared package 没有 current Task，因此本 Skill 不创建 active-work
+   占位记录。计划评审通过后，Development Run 通过 owner command 选择
+   current Task、发布 tracked declaration，再运行
+   `make active-work-sync WORK_ITEM=<id>`。
+6. 同一 workspace 只有一个 machine-local active-work 文件；同步进入仓库
+   的其他 Plan 不参与选择。`peers-dev-workflow` 只发布实现，不持有消费
+   worktree 的 runtime record。
+7. 落盘后将 review prompt 返回 Development Run。Development Run 调用项目
+   Review Skills 完成评审、修复与重审；通过后，current Task 的选择由
+   Development Run 通过 owner command 原子完成。本 Skill 不自行启动
+   EXECUTE，也不写 project memory。
 
 ## 6. 修订
 
@@ -195,20 +198,26 @@ strength，返回 `PRODUCT_AMENDMENT_REQUIRED`、`DESIGN_AMENDMENT_REQUIRED` 或
 - `planctl validate` 结果。
 
 Reviewer 输出 `通过 / 有条件通过 / 需要修改` 和具体 source-backed
-findings。用户决定是否发起 review；本 Skill 不自审自批。
+findings。本 Skill 不自审自批，但 Development Run 必须自动将 prompt 交给
+独立 Agent 或独立的 findings-first review pass，并调用适用的
+`pt-quality-check`、`pt-completion-auditor`、`pt-github-review`。对 accepted
+sources 已能裁决的问题，Agent 自动修复并重审；仅当存在 DWF-D20 定义的
+破坏性、外部授权或无法由接受源裁决的语义选择时才升级给用户。
 
 ## 8. 完成检查
 
 - [ ] 输入模型已被 owning methodology 接受
 - [ ] 文件位置、命名、元数据、导航正确
 - [ ] Plan Package 和所有 Task Slice 通过 `planctl validate`
-- [ ] workspace 的不可变 Plan binding 已创建且与 package 匹配
+- [ ] 涉及的 active 架构模块已登记并通过共享 module governance validator
+- [ ] workspace 的当前 Plan generation 已创建且与 package 匹配
 - [ ] package 为 `prepared` 且无 current Task
 - [ ] `Acceptance Execution` 唯一且 closure 完整
 - [ ] scenario/Gate 映射来自 product state 或 concrete risk
-- [ ] `active_work` 只在校验后创建且 binding 完整
+- [ ] prepared package 未伪造 active-work 占位记录
 - [ ] 没有 `## Context Anchor`
 - [ ] review prompt 已生成
+- [ ] review prompt 已交回 Development Run，未把例行评审委托给用户
 
 ## 与其他 Skill 的关系
 
@@ -229,7 +238,9 @@ findings。用户决定是否发起 review；本 Skill 不自审自批。
 - 把通用 success/network/timeout/invalid/cancel 套餐写进每个 closure；
 - 创建 active 单文件计划或第二套状态表；
 - 把 Session 日志、raw output 或 Context Anchor 写进 package；
-- 在 `planctl validate` 前登记 `active_work`；
+- 在 current Task、declaration 和 Session owner 就绪前创建 active-work；
+- 写共享 `project_memory.md active_work` 表；
 - 从 branch、目录或 active Plan 数量推断 workspace Plan；
-- 换绑已有 workspace，或添加 unbind/rebind 兼容路径；
+- 覆盖或删除已有 binding，或把新建 worktree 当作 binding workaround；
+- 把 plan review prompt 当作用户交互停点；
 - 由本 Skill 选择 current Task、执行或宣称完成。

@@ -14,9 +14,9 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEV_SERVER_KIND,
-  DEV_SERVER_PROTOCOL_VERSION,
   PeersDevError,
   buildServerIdentity,
+  buildServerFreshness,
   createDevHttpServer,
   ensureDevServer,
   probeDevServer,
@@ -48,9 +48,7 @@ async function freePort() {
 
 function identity(port, workspaceId = '0123456789abcdef') {
   return {
-    schemaVersion: 1,
     kind: DEV_SERVER_KIND,
-    protocolVersion: DEV_SERVER_PROTOCOL_VERSION,
     endpoint: `http://127.0.0.1:${port}`,
     startedAt: '2026-09-17T00:00:00.000Z',
     source: {
@@ -58,6 +56,7 @@ function identity(port, workspaceId = '0123456789abcdef') {
       branch: 'feat/peers-dev',
       head: '1'.repeat(40),
       dirty: false,
+      workspaceDigest: 'clean',
     },
   };
 }
@@ -116,7 +115,7 @@ test('concurrent starts produce one server and one compatible reuse', async () =
     );
   } finally {
     if (started?.server) await close(started.server);
-    rmSync(envRepo, { recursive: true, force: true });
+    rmSync(envRepo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
 
@@ -139,7 +138,55 @@ test('server identity distinguishes clean and dirty source', () => {
     writeFileSync(path.join(sourceRoot, 'dirty.txt'), 'dirty\n');
     assert.equal(buildServerIdentity({ sourceRoot }).source.dirty, true);
   } finally {
-    rmSync(sourceRoot, { recursive: true, force: true });
+    rmSync(sourceRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
+test('server freshness requires restart after source identity changes', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'peers-dev-freshness-'));
+  try {
+    execFileSync('git', ['init', '-b', 'feature/dev-ui'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'Peers Dev Test'], { cwd: root });
+    execFileSync(
+      'git',
+      ['config', 'user.email', 'peers-dev@test.invalid'],
+      { cwd: root },
+    );
+    writeFileSync(path.join(root, 'README.md'), 'fresh\n');
+    execFileSync('git', ['add', 'README.md'], { cwd: root });
+    execFileSync('git', ['commit', '-m', 'test: initialize source'], {
+      cwd: root,
+    });
+    const server = buildServerIdentity({
+      sourceRoot: root,
+      port: 4177,
+      startedAt: new Date('2026-09-23T01:00:00.000Z'),
+    });
+    assert.equal(
+      buildServerFreshness(server, {
+        sourceRoot: root,
+        now: new Date('2026-09-23T01:00:01.000Z'),
+      }).state,
+      'current',
+    );
+    writeFileSync(path.join(root, 'README.md'), 'dirty\n');
+    const freshness = buildServerFreshness(server, {
+      sourceRoot: root,
+      now: new Date('2026-09-23T01:00:02.000Z'),
+    });
+    assert.equal(freshness.state, 'restart-required');
+    assert.equal(freshness.currentSource.dirty, true);
+    const dirtyServer = buildServerIdentity({ sourceRoot: root });
+    writeFileSync(path.join(root, 'README.md'), 'dirty again\n');
+    assert.equal(
+      buildServerFreshness(dirtyServer, {
+        sourceRoot: root,
+        now: new Date('2026-09-23T01:00:03.000Z'),
+      }).state,
+      'restart-required',
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
 
@@ -177,7 +224,7 @@ test('compatible launch is idempotent and HTTP surface is read-only', async () =
     assert.equal((await request(port, 'POST', '/api/status')).status, 405);
   } finally {
     if (started?.server) await close(started.server);
-    rmSync(envRepo, { recursive: true, force: true });
+    rmSync(envRepo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
 
@@ -209,13 +256,12 @@ test('identity probe stays responsive while a status snapshot is pending', async
     assert.equal(probe.state, 'compatible');
 
     releaseSnapshot({
-      schemaVersion: 1,
       kind: 'peers-touch-dev-snapshot',
     });
     assert.equal((await statusRequest).status, 200);
   } finally {
     await close(server);
-    rmSync(envRepo, { recursive: true, force: true });
+    rmSync(envRepo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
 
@@ -243,7 +289,7 @@ test('status failures do not expose internal paths', async () => {
     });
   } finally {
     await close(server);
-    rmSync(envRepo, { recursive: true, force: true });
+    rmSync(envRepo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
 
@@ -267,7 +313,7 @@ test('foreign listener fails closed without being replaced', async () => {
     assert.equal((await request(port, 'GET', '/')).status, 200);
   } finally {
     await close(foreign);
-    rmSync(envRepo, { recursive: true, force: true });
+    rmSync(envRepo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
 
@@ -277,9 +323,7 @@ test('incomplete Peers Dev identity is treated as a foreign listener', async () 
     response.writeHead(200, { 'Content-Type': 'application/json' });
     response.end(
       `${JSON.stringify({
-        schemaVersion: 1,
         kind: DEV_SERVER_KIND,
-        protocolVersion: DEV_SERVER_PROTOCOL_VERSION,
       })}\n`,
     );
   });
@@ -297,7 +341,28 @@ test('incomplete Peers Dev identity is treated as a foreign listener', async () 
     );
   } finally {
     await close(foreign);
-    rmSync(envRepo, { recursive: true, force: true });
+    rmSync(envRepo, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
+test('versioned Peers Dev identity is rejected as a foreign listener', async () => {
+  let port;
+  const foreign = createServer((_request, response) => {
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(
+      `${JSON.stringify({
+        ...identity(port),
+        schemaVersion: 1,
+        protocolVersion: 2,
+      })}\n`,
+    );
+  });
+  port = await listen(foreign);
+  try {
+    const probe = await probeDevServer({ port });
+    assert.equal(probe.state, 'foreign');
+  } finally {
+    await close(foreign);
   }
 });
 
@@ -319,5 +384,80 @@ test('browser renderer consumes split work and environment state', () => {
   );
   assert.match(app, /item\.workState/);
   assert.match(app, /item\.environmentHealth\.state/);
+  assert.match(app, /item\.freshness\.state/);
+  assert.match(app, /item\.workflow/);
+  assert.match(app, /item\.agentActivity/);
+  assert.match(app, /projected\.completedAfter/);
+  assert.match(app, /projected\.percentageAfter/);
+  assert.match(app, /new EventSource\('\/api\/events'\)/);
+  assert.match(app, /schedulePoll/);
   assert.doesNotMatch(app, /item\.issues/);
+});
+
+function readFirstSnapshotEvent(port) {
+  return new Promise((resolve, reject) => {
+    const call = httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        method: 'GET',
+        path: '/api/events',
+      },
+      (response) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+          body += chunk;
+          const match = body.match(/event: snapshot\ndata: ([^\n]+)\n\n/);
+          if (!match) return;
+          resolve({
+            status: response.statusCode,
+            contentType: response.headers['content-type'],
+            snapshot: JSON.parse(match[1]),
+          });
+          response.destroy();
+        });
+      },
+    );
+    call.once('error', reject);
+    call.end();
+  });
+}
+
+test('SSE endpoint streams the complete canonical snapshot contract', async () => {
+  const envRepo = mkdtempSync(path.join(tmpdir(), 'peers-dev-env-'));
+  const port = await freePort();
+  const expected = {
+    kind: 'peers-touch-dev-snapshot',
+    observedAt: '2026-09-26T00:00:00.000Z',
+    digest: 'a'.repeat(64),
+    serverFreshness: {
+      state: 'current',
+      checkedAt: '2026-09-26T00:00:00.000Z',
+    },
+    worktrees: [],
+  };
+  const server = createDevHttpServer({
+    envRepo,
+    identity: identity(port),
+    buildSnapshot: async () => expected,
+  });
+  try {
+    await listen(server, port);
+    const event = await readFirstSnapshotEvent(port);
+    assert.equal(event.status, 200);
+    assert.match(event.contentType, /^text\/event-stream/);
+    assert.equal(event.snapshot.kind, expected.kind);
+    assert.equal(event.snapshot.digest, expected.digest);
+    assert.equal(event.snapshot.serverFreshness.state, 'current');
+    assert.equal(event.snapshot.stream.state, 'live');
+  } finally {
+    await close(server);
+    rmSync(envRepo, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 50,
+    });
+  }
 });

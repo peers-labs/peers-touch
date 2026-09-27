@@ -26,6 +26,17 @@ type ConversationView struct {
 	FollowerStatus repository.FollowerStatus
 }
 
+// ConversationRoute identifies the canonical authority/follower route without
+// exposing member or device projections.
+type ConversationRoute struct {
+	ConversationID   valueobject.ConversationID
+	Source           Source
+	FederationID     valueobject.FederationID
+	AuthorityStation valueobject.StationID
+	AuthorityEpoch   valueobject.AuthorityEpoch
+	FollowerStatus   repository.FollowerStatus
+}
+
 type MessagePage struct {
 	Events  []domainevent.Record
 	HasMore bool
@@ -76,6 +87,31 @@ func (s *Service) Get(
 		return nil
 	})
 	return view, err
+}
+
+// ResolveRoute returns only the canonical authority/follower route. Callers
+// must authorize their operation against immutable operation-specific truth.
+func (s *Service) ResolveRoute(
+	ctx context.Context,
+	conversationID valueobject.ConversationID,
+) (ConversationRoute, error) {
+	var route ConversationRoute
+	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
+		view, err := loadConversationView(ctx, transaction.Repositories, conversationID)
+		if err != nil {
+			return err
+		}
+		route = ConversationRoute{
+			ConversationID:   view.Conversation.ID,
+			Source:           view.Source,
+			FederationID:     view.Conversation.FederationID,
+			AuthorityStation: view.Conversation.AuthorityStation,
+			AuthorityEpoch:   view.Conversation.AuthorityEpoch,
+			FollowerStatus:   view.FollowerStatus,
+		}
+		return nil
+	})
+	return route, err
 }
 
 func (s *Service) List(

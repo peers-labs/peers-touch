@@ -331,11 +331,13 @@ mod tests {
                 ptid: alice.ptid.clone(),
                 role: "member".to_string(),
                 home_station_peer_id: "station-local".to_string(),
+                ..Default::default()
             },
             ConversationAuthorityMember {
                 ptid: bob.ptid.clone(),
                 role: "member".to_string(),
                 home_station_peer_id: "station-local".to_string(),
+                ..Default::default()
             },
         ];
         let mut event = ConversationEvent {

@@ -230,6 +230,260 @@ func (NotificationStatus) EnumDescriptor() ([]byte, []int) {
 	return file_domain_notification_notification_proto_rawDescGZIP(), []int{2}
 }
 
+type NotificationPreferencesUpdateOutcome int32
+
+const (
+	NotificationPreferencesUpdateOutcome_NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNSPECIFIED NotificationPreferencesUpdateOutcome = 0
+	NotificationPreferencesUpdateOutcome_NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED     NotificationPreferencesUpdateOutcome = 1
+	NotificationPreferencesUpdateOutcome_NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED   NotificationPreferencesUpdateOutcome = 2
+	NotificationPreferencesUpdateOutcome_NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT    NotificationPreferencesUpdateOutcome = 3
+)
+
+// Enum value maps for NotificationPreferencesUpdateOutcome.
+var (
+	NotificationPreferencesUpdateOutcome_name = map[int32]string{
+		0: "NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNSPECIFIED",
+		1: "NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED",
+		2: "NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED",
+		3: "NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT",
+	}
+	NotificationPreferencesUpdateOutcome_value = map[string]int32{
+		"NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNSPECIFIED": 0,
+		"NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED":     1,
+		"NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED":   2,
+		"NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT":    3,
+	}
+)
+
+func (x NotificationPreferencesUpdateOutcome) Enum() *NotificationPreferencesUpdateOutcome {
+	p := new(NotificationPreferencesUpdateOutcome)
+	*p = x
+	return p
+}
+
+func (x NotificationPreferencesUpdateOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (NotificationPreferencesUpdateOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_notification_notification_proto_enumTypes[3].Descriptor()
+}
+
+func (NotificationPreferencesUpdateOutcome) Type() protoreflect.EnumType {
+	return &file_domain_notification_notification_proto_enumTypes[3]
+}
+
+func (x NotificationPreferencesUpdateOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use NotificationPreferencesUpdateOutcome.Descriptor instead.
+func (NotificationPreferencesUpdateOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{3}
+}
+
+type PushChannel int32
+
+const (
+	PushChannel_PUSH_CHANNEL_UNSPECIFIED  PushChannel = 0
+	PushChannel_PUSH_CHANNEL_APNS         PushChannel = 1
+	PushChannel_PUSH_CHANNEL_FCM          PushChannel = 2
+	PushChannel_PUSH_CHANNEL_UNIFIED_PUSH PushChannel = 3
+)
+
+// Enum value maps for PushChannel.
+var (
+	PushChannel_name = map[int32]string{
+		0: "PUSH_CHANNEL_UNSPECIFIED",
+		1: "PUSH_CHANNEL_APNS",
+		2: "PUSH_CHANNEL_FCM",
+		3: "PUSH_CHANNEL_UNIFIED_PUSH",
+	}
+	PushChannel_value = map[string]int32{
+		"PUSH_CHANNEL_UNSPECIFIED":  0,
+		"PUSH_CHANNEL_APNS":         1,
+		"PUSH_CHANNEL_FCM":          2,
+		"PUSH_CHANNEL_UNIFIED_PUSH": 3,
+	}
+)
+
+func (x PushChannel) Enum() *PushChannel {
+	p := new(PushChannel)
+	*p = x
+	return p
+}
+
+func (x PushChannel) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PushChannel) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_notification_notification_proto_enumTypes[4].Descriptor()
+}
+
+func (PushChannel) Type() protoreflect.EnumType {
+	return &file_domain_notification_notification_proto_enumTypes[4]
+}
+
+func (x PushChannel) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PushChannel.Descriptor instead.
+func (PushChannel) EnumDescriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{4}
+}
+
+type PushEnvironment int32
+
+const (
+	PushEnvironment_PUSH_ENVIRONMENT_UNSPECIFIED PushEnvironment = 0
+	PushEnvironment_PUSH_ENVIRONMENT_DEVELOPMENT PushEnvironment = 1
+	PushEnvironment_PUSH_ENVIRONMENT_PRODUCTION  PushEnvironment = 2
+)
+
+// Enum value maps for PushEnvironment.
+var (
+	PushEnvironment_name = map[int32]string{
+		0: "PUSH_ENVIRONMENT_UNSPECIFIED",
+		1: "PUSH_ENVIRONMENT_DEVELOPMENT",
+		2: "PUSH_ENVIRONMENT_PRODUCTION",
+	}
+	PushEnvironment_value = map[string]int32{
+		"PUSH_ENVIRONMENT_UNSPECIFIED": 0,
+		"PUSH_ENVIRONMENT_DEVELOPMENT": 1,
+		"PUSH_ENVIRONMENT_PRODUCTION":  2,
+	}
+)
+
+func (x PushEnvironment) Enum() *PushEnvironment {
+	p := new(PushEnvironment)
+	*p = x
+	return p
+}
+
+func (x PushEnvironment) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PushEnvironment) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_notification_notification_proto_enumTypes[5].Descriptor()
+}
+
+func (PushEnvironment) Type() protoreflect.EnumType {
+	return &file_domain_notification_notification_proto_enumTypes[5]
+}
+
+func (x PushEnvironment) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PushEnvironment.Descriptor instead.
+func (PushEnvironment) EnumDescriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{5}
+}
+
+type RegisterPushDeviceOutcome int32
+
+const (
+	RegisterPushDeviceOutcome_REGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED RegisterPushDeviceOutcome = 0
+	RegisterPushDeviceOutcome_REGISTER_PUSH_DEVICE_OUTCOME_CREATED     RegisterPushDeviceOutcome = 1
+	RegisterPushDeviceOutcome_REGISTER_PUSH_DEVICE_OUTCOME_ROTATED     RegisterPushDeviceOutcome = 2
+	RegisterPushDeviceOutcome_REGISTER_PUSH_DEVICE_OUTCOME_UNCHANGED   RegisterPushDeviceOutcome = 3
+)
+
+// Enum value maps for RegisterPushDeviceOutcome.
+var (
+	RegisterPushDeviceOutcome_name = map[int32]string{
+		0: "REGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED",
+		1: "REGISTER_PUSH_DEVICE_OUTCOME_CREATED",
+		2: "REGISTER_PUSH_DEVICE_OUTCOME_ROTATED",
+		3: "REGISTER_PUSH_DEVICE_OUTCOME_UNCHANGED",
+	}
+	RegisterPushDeviceOutcome_value = map[string]int32{
+		"REGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED": 0,
+		"REGISTER_PUSH_DEVICE_OUTCOME_CREATED":     1,
+		"REGISTER_PUSH_DEVICE_OUTCOME_ROTATED":     2,
+		"REGISTER_PUSH_DEVICE_OUTCOME_UNCHANGED":   3,
+	}
+)
+
+func (x RegisterPushDeviceOutcome) Enum() *RegisterPushDeviceOutcome {
+	p := new(RegisterPushDeviceOutcome)
+	*p = x
+	return p
+}
+
+func (x RegisterPushDeviceOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RegisterPushDeviceOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_notification_notification_proto_enumTypes[6].Descriptor()
+}
+
+func (RegisterPushDeviceOutcome) Type() protoreflect.EnumType {
+	return &file_domain_notification_notification_proto_enumTypes[6]
+}
+
+func (x RegisterPushDeviceOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RegisterPushDeviceOutcome.Descriptor instead.
+func (RegisterPushDeviceOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{6}
+}
+
+type UnregisterPushDeviceOutcome int32
+
+const (
+	UnregisterPushDeviceOutcome_UNREGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED    UnregisterPushDeviceOutcome = 0
+	UnregisterPushDeviceOutcome_UNREGISTER_PUSH_DEVICE_OUTCOME_REMOVED        UnregisterPushDeviceOutcome = 1
+	UnregisterPushDeviceOutcome_UNREGISTER_PUSH_DEVICE_OUTCOME_ALREADY_ABSENT UnregisterPushDeviceOutcome = 2
+)
+
+// Enum value maps for UnregisterPushDeviceOutcome.
+var (
+	UnregisterPushDeviceOutcome_name = map[int32]string{
+		0: "UNREGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED",
+		1: "UNREGISTER_PUSH_DEVICE_OUTCOME_REMOVED",
+		2: "UNREGISTER_PUSH_DEVICE_OUTCOME_ALREADY_ABSENT",
+	}
+	UnregisterPushDeviceOutcome_value = map[string]int32{
+		"UNREGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED":    0,
+		"UNREGISTER_PUSH_DEVICE_OUTCOME_REMOVED":        1,
+		"UNREGISTER_PUSH_DEVICE_OUTCOME_ALREADY_ABSENT": 2,
+	}
+)
+
+func (x UnregisterPushDeviceOutcome) Enum() *UnregisterPushDeviceOutcome {
+	p := new(UnregisterPushDeviceOutcome)
+	*p = x
+	return p
+}
+
+func (x UnregisterPushDeviceOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (UnregisterPushDeviceOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_notification_notification_proto_enumTypes[7].Descriptor()
+}
+
+func (UnregisterPushDeviceOutcome) Type() protoreflect.EnumType {
+	return &file_domain_notification_notification_proto_enumTypes[7]
+}
+
+func (x UnregisterPushDeviceOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use UnregisterPushDeviceOutcome.Descriptor instead.
+func (UnregisterPushDeviceOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{7}
+}
+
 // Notification represents a single notification entity.
 // title and body carry server-generated fallback text for push previews.
 // Rich clients render locale-aware display text from the structured
@@ -601,6 +855,58 @@ func (x *NotificationPreference) GetType() NotificationType {
 	return NotificationType_NOTIFICATION_TYPE_UNSPECIFIED
 }
 
+type NotificationPreferencesSnapshot struct {
+	state                           protoimpl.MessageState    `protogen:"open.v1"`
+	Preferences                     []*NotificationPreference `protobuf:"bytes,1,rep,name=preferences,proto3" json:"preferences,omitempty"`
+	NotificationPreferencesRevision uint64                    `protobuf:"varint,2,opt,name=notification_preferences_revision,json=notificationPreferencesRevision,proto3" json:"notification_preferences_revision,omitempty"`
+	unknownFields                   protoimpl.UnknownFields
+	sizeCache                       protoimpl.SizeCache
+}
+
+func (x *NotificationPreferencesSnapshot) Reset() {
+	*x = NotificationPreferencesSnapshot{}
+	mi := &file_domain_notification_notification_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NotificationPreferencesSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NotificationPreferencesSnapshot) ProtoMessage() {}
+
+func (x *NotificationPreferencesSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NotificationPreferencesSnapshot.ProtoReflect.Descriptor instead.
+func (*NotificationPreferencesSnapshot) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *NotificationPreferencesSnapshot) GetPreferences() []*NotificationPreference {
+	if x != nil {
+		return x.Preferences
+	}
+	return nil
+}
+
+func (x *NotificationPreferencesSnapshot) GetNotificationPreferencesRevision() uint64 {
+	if x != nil {
+		return x.NotificationPreferencesRevision
+	}
+	return 0
+}
+
 type ListNotificationsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Category      NotificationCategory   `protobuf:"varint,1,opt,name=category,proto3,enum=peers_touch.model.notification.v1.NotificationCategory" json:"category,omitempty"`
@@ -613,7 +919,7 @@ type ListNotificationsRequest struct {
 
 func (x *ListNotificationsRequest) Reset() {
 	*x = ListNotificationsRequest{}
-	mi := &file_domain_notification_notification_proto_msgTypes[3]
+	mi := &file_domain_notification_notification_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -625,7 +931,7 @@ func (x *ListNotificationsRequest) String() string {
 func (*ListNotificationsRequest) ProtoMessage() {}
 
 func (x *ListNotificationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[3]
+	mi := &file_domain_notification_notification_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -638,7 +944,7 @@ func (x *ListNotificationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNotificationsRequest.ProtoReflect.Descriptor instead.
 func (*ListNotificationsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{3}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListNotificationsRequest) GetCategory() NotificationCategory {
@@ -681,7 +987,7 @@ type ListNotificationsResponse struct {
 
 func (x *ListNotificationsResponse) Reset() {
 	*x = ListNotificationsResponse{}
-	mi := &file_domain_notification_notification_proto_msgTypes[4]
+	mi := &file_domain_notification_notification_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -693,7 +999,7 @@ func (x *ListNotificationsResponse) String() string {
 func (*ListNotificationsResponse) ProtoMessage() {}
 
 func (x *ListNotificationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[4]
+	mi := &file_domain_notification_notification_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -706,7 +1012,7 @@ func (x *ListNotificationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNotificationsResponse.ProtoReflect.Descriptor instead.
 func (*ListNotificationsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{4}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListNotificationsResponse) GetNotifications() []*Notification {
@@ -748,7 +1054,7 @@ type ListGroupedNotificationsRequest struct {
 
 func (x *ListGroupedNotificationsRequest) Reset() {
 	*x = ListGroupedNotificationsRequest{}
-	mi := &file_domain_notification_notification_proto_msgTypes[5]
+	mi := &file_domain_notification_notification_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -760,7 +1066,7 @@ func (x *ListGroupedNotificationsRequest) String() string {
 func (*ListGroupedNotificationsRequest) ProtoMessage() {}
 
 func (x *ListGroupedNotificationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[5]
+	mi := &file_domain_notification_notification_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -773,7 +1079,7 @@ func (x *ListGroupedNotificationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupedNotificationsRequest.ProtoReflect.Descriptor instead.
 func (*ListGroupedNotificationsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{5}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ListGroupedNotificationsRequest) GetCategory() NotificationCategory {
@@ -807,7 +1113,7 @@ type ListGroupedNotificationsResponse struct {
 
 func (x *ListGroupedNotificationsResponse) Reset() {
 	*x = ListGroupedNotificationsResponse{}
-	mi := &file_domain_notification_notification_proto_msgTypes[6]
+	mi := &file_domain_notification_notification_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +1125,7 @@ func (x *ListGroupedNotificationsResponse) String() string {
 func (*ListGroupedNotificationsResponse) ProtoMessage() {}
 
 func (x *ListGroupedNotificationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[6]
+	mi := &file_domain_notification_notification_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +1138,7 @@ func (x *ListGroupedNotificationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListGroupedNotificationsResponse.ProtoReflect.Descriptor instead.
 func (*ListGroupedNotificationsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{6}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ListGroupedNotificationsResponse) GetGroups() []*NotificationGroup {
@@ -858,7 +1164,7 @@ type MarkNotificationsReadRequest struct {
 
 func (x *MarkNotificationsReadRequest) Reset() {
 	*x = MarkNotificationsReadRequest{}
-	mi := &file_domain_notification_notification_proto_msgTypes[7]
+	mi := &file_domain_notification_notification_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1176,7 @@ func (x *MarkNotificationsReadRequest) String() string {
 func (*MarkNotificationsReadRequest) ProtoMessage() {}
 
 func (x *MarkNotificationsReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[7]
+	mi := &file_domain_notification_notification_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +1189,7 @@ func (x *MarkNotificationsReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkNotificationsReadRequest.ProtoReflect.Descriptor instead.
 func (*MarkNotificationsReadRequest) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{7}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MarkNotificationsReadRequest) GetNotificationIds() []string {
@@ -902,7 +1208,7 @@ type MarkNotificationsReadResponse struct {
 
 func (x *MarkNotificationsReadResponse) Reset() {
 	*x = MarkNotificationsReadResponse{}
-	mi := &file_domain_notification_notification_proto_msgTypes[8]
+	mi := &file_domain_notification_notification_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -914,7 +1220,7 @@ func (x *MarkNotificationsReadResponse) String() string {
 func (*MarkNotificationsReadResponse) ProtoMessage() {}
 
 func (x *MarkNotificationsReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[8]
+	mi := &file_domain_notification_notification_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -927,7 +1233,7 @@ func (x *MarkNotificationsReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkNotificationsReadResponse.ProtoReflect.Descriptor instead.
 func (*MarkNotificationsReadResponse) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{8}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *MarkNotificationsReadResponse) GetUpdatedCount() int32 {
@@ -946,7 +1252,7 @@ type MarkAllNotificationsReadRequest struct {
 
 func (x *MarkAllNotificationsReadRequest) Reset() {
 	*x = MarkAllNotificationsReadRequest{}
-	mi := &file_domain_notification_notification_proto_msgTypes[9]
+	mi := &file_domain_notification_notification_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -958,7 +1264,7 @@ func (x *MarkAllNotificationsReadRequest) String() string {
 func (*MarkAllNotificationsReadRequest) ProtoMessage() {}
 
 func (x *MarkAllNotificationsReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[9]
+	mi := &file_domain_notification_notification_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -971,7 +1277,7 @@ func (x *MarkAllNotificationsReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkAllNotificationsReadRequest.ProtoReflect.Descriptor instead.
 func (*MarkAllNotificationsReadRequest) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{9}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *MarkAllNotificationsReadRequest) GetCategory() NotificationCategory {
@@ -990,7 +1296,7 @@ type MarkAllNotificationsReadResponse struct {
 
 func (x *MarkAllNotificationsReadResponse) Reset() {
 	*x = MarkAllNotificationsReadResponse{}
-	mi := &file_domain_notification_notification_proto_msgTypes[10]
+	mi := &file_domain_notification_notification_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1002,7 +1308,7 @@ func (x *MarkAllNotificationsReadResponse) String() string {
 func (*MarkAllNotificationsReadResponse) ProtoMessage() {}
 
 func (x *MarkAllNotificationsReadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[10]
+	mi := &file_domain_notification_notification_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1015,7 +1321,7 @@ func (x *MarkAllNotificationsReadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MarkAllNotificationsReadResponse.ProtoReflect.Descriptor instead.
 func (*MarkAllNotificationsReadResponse) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{10}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MarkAllNotificationsReadResponse) GetUpdatedCount() int32 {
@@ -1034,7 +1340,7 @@ type DeleteNotificationsRequest struct {
 
 func (x *DeleteNotificationsRequest) Reset() {
 	*x = DeleteNotificationsRequest{}
-	mi := &file_domain_notification_notification_proto_msgTypes[11]
+	mi := &file_domain_notification_notification_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1046,7 +1352,7 @@ func (x *DeleteNotificationsRequest) String() string {
 func (*DeleteNotificationsRequest) ProtoMessage() {}
 
 func (x *DeleteNotificationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[11]
+	mi := &file_domain_notification_notification_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1059,7 +1365,7 @@ func (x *DeleteNotificationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteNotificationsRequest.ProtoReflect.Descriptor instead.
 func (*DeleteNotificationsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{11}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DeleteNotificationsRequest) GetNotificationIds() []string {
@@ -1078,7 +1384,7 @@ type DeleteNotificationsResponse struct {
 
 func (x *DeleteNotificationsResponse) Reset() {
 	*x = DeleteNotificationsResponse{}
-	mi := &file_domain_notification_notification_proto_msgTypes[12]
+	mi := &file_domain_notification_notification_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1090,7 +1396,7 @@ func (x *DeleteNotificationsResponse) String() string {
 func (*DeleteNotificationsResponse) ProtoMessage() {}
 
 func (x *DeleteNotificationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[12]
+	mi := &file_domain_notification_notification_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1103,7 +1409,7 @@ func (x *DeleteNotificationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteNotificationsResponse.ProtoReflect.Descriptor instead.
 func (*DeleteNotificationsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{12}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DeleteNotificationsResponse) GetDeletedCount() int32 {
@@ -1121,7 +1427,7 @@ type GetUnreadCountsRequest struct {
 
 func (x *GetUnreadCountsRequest) Reset() {
 	*x = GetUnreadCountsRequest{}
-	mi := &file_domain_notification_notification_proto_msgTypes[13]
+	mi := &file_domain_notification_notification_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1133,7 +1439,7 @@ func (x *GetUnreadCountsRequest) String() string {
 func (*GetUnreadCountsRequest) ProtoMessage() {}
 
 func (x *GetUnreadCountsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[13]
+	mi := &file_domain_notification_notification_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1146,7 +1452,7 @@ func (x *GetUnreadCountsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUnreadCountsRequest.ProtoReflect.Descriptor instead.
 func (*GetUnreadCountsRequest) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{13}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{14}
 }
 
 type GetUnreadCountsResponse struct {
@@ -1159,7 +1465,7 @@ type GetUnreadCountsResponse struct {
 
 func (x *GetUnreadCountsResponse) Reset() {
 	*x = GetUnreadCountsResponse{}
-	mi := &file_domain_notification_notification_proto_msgTypes[14]
+	mi := &file_domain_notification_notification_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1171,7 +1477,7 @@ func (x *GetUnreadCountsResponse) String() string {
 func (*GetUnreadCountsResponse) ProtoMessage() {}
 
 func (x *GetUnreadCountsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[14]
+	mi := &file_domain_notification_notification_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1184,7 +1490,7 @@ func (x *GetUnreadCountsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUnreadCountsResponse.ProtoReflect.Descriptor instead.
 func (*GetUnreadCountsResponse) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{14}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetUnreadCountsResponse) GetTotal() int32 {
@@ -1209,7 +1515,7 @@ type GetNotificationPreferencesRequest struct {
 
 func (x *GetNotificationPreferencesRequest) Reset() {
 	*x = GetNotificationPreferencesRequest{}
-	mi := &file_domain_notification_notification_proto_msgTypes[15]
+	mi := &file_domain_notification_notification_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1221,7 +1527,7 @@ func (x *GetNotificationPreferencesRequest) String() string {
 func (*GetNotificationPreferencesRequest) ProtoMessage() {}
 
 func (x *GetNotificationPreferencesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[15]
+	mi := &file_domain_notification_notification_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1234,19 +1540,19 @@ func (x *GetNotificationPreferencesRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use GetNotificationPreferencesRequest.ProtoReflect.Descriptor instead.
 func (*GetNotificationPreferencesRequest) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{15}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{16}
 }
 
 type GetNotificationPreferencesResponse struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Preferences   []*NotificationPreference `protobuf:"bytes,1,rep,name=preferences,proto3" json:"preferences,omitempty"`
+	state         protoimpl.MessageState           `protogen:"open.v1"`
+	Snapshot      *NotificationPreferencesSnapshot `protobuf:"bytes,2,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetNotificationPreferencesResponse) Reset() {
 	*x = GetNotificationPreferencesResponse{}
-	mi := &file_domain_notification_notification_proto_msgTypes[16]
+	mi := &file_domain_notification_notification_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1258,7 +1564,7 @@ func (x *GetNotificationPreferencesResponse) String() string {
 func (*GetNotificationPreferencesResponse) ProtoMessage() {}
 
 func (x *GetNotificationPreferencesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[16]
+	mi := &file_domain_notification_notification_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1271,17 +1577,17 @@ func (x *GetNotificationPreferencesResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use GetNotificationPreferencesResponse.ProtoReflect.Descriptor instead.
 func (*GetNotificationPreferencesResponse) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{16}
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *GetNotificationPreferencesResponse) GetPreferences() []*NotificationPreference {
+func (x *GetNotificationPreferencesResponse) GetSnapshot() *NotificationPreferencesSnapshot {
 	if x != nil {
-		return x.Preferences
+		return x.Snapshot
 	}
 	return nil
 }
 
-type UpdateNotificationPreferenceRequest struct {
+type NotificationPreferencePatch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Category      NotificationCategory   `protobuf:"varint,1,opt,name=category,proto3,enum=peers_touch.model.notification.v1.NotificationCategory" json:"category,omitempty"`
 	Enabled       bool                   `protobuf:"varint,2,opt,name=enabled,proto3" json:"enabled,omitempty"`
@@ -1291,21 +1597,21 @@ type UpdateNotificationPreferenceRequest struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *UpdateNotificationPreferenceRequest) Reset() {
-	*x = UpdateNotificationPreferenceRequest{}
-	mi := &file_domain_notification_notification_proto_msgTypes[17]
+func (x *NotificationPreferencePatch) Reset() {
+	*x = NotificationPreferencePatch{}
+	mi := &file_domain_notification_notification_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateNotificationPreferenceRequest) String() string {
+func (x *NotificationPreferencePatch) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateNotificationPreferenceRequest) ProtoMessage() {}
+func (*NotificationPreferencePatch) ProtoMessage() {}
 
-func (x *UpdateNotificationPreferenceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[17]
+func (x *NotificationPreferencePatch) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1316,61 +1622,62 @@ func (x *UpdateNotificationPreferenceRequest) ProtoReflect() protoreflect.Messag
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateNotificationPreferenceRequest.ProtoReflect.Descriptor instead.
-func (*UpdateNotificationPreferenceRequest) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{17}
+// Deprecated: Use NotificationPreferencePatch.ProtoReflect.Descriptor instead.
+func (*NotificationPreferencePatch) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{18}
 }
 
-func (x *UpdateNotificationPreferenceRequest) GetCategory() NotificationCategory {
+func (x *NotificationPreferencePatch) GetCategory() NotificationCategory {
 	if x != nil {
 		return x.Category
 	}
 	return NotificationCategory_NOTIFICATION_CATEGORY_UNSPECIFIED
 }
 
-func (x *UpdateNotificationPreferenceRequest) GetEnabled() bool {
+func (x *NotificationPreferencePatch) GetEnabled() bool {
 	if x != nil {
 		return x.Enabled
 	}
 	return false
 }
 
-func (x *UpdateNotificationPreferenceRequest) GetPushEnabled() bool {
+func (x *NotificationPreferencePatch) GetPushEnabled() bool {
 	if x != nil {
 		return x.PushEnabled
 	}
 	return false
 }
 
-func (x *UpdateNotificationPreferenceRequest) GetSoundEnabled() bool {
+func (x *NotificationPreferencePatch) GetSoundEnabled() bool {
 	if x != nil {
 		return x.SoundEnabled
 	}
 	return false
 }
 
-type UpdateNotificationPreferenceResponse struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Preference    *NotificationPreference `protobuf:"bytes,1,opt,name=preference,proto3" json:"preference,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+type UpdateNotificationPreferencesRequest struct {
+	state            protoimpl.MessageState         `protogen:"open.v1"`
+	Updates          []*NotificationPreferencePatch `protobuf:"bytes,1,rep,name=updates,proto3" json:"updates,omitempty"`
+	ObservedRevision uint64                         `protobuf:"varint,2,opt,name=observed_revision,json=observedRevision,proto3" json:"observed_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
-func (x *UpdateNotificationPreferenceResponse) Reset() {
-	*x = UpdateNotificationPreferenceResponse{}
-	mi := &file_domain_notification_notification_proto_msgTypes[18]
+func (x *UpdateNotificationPreferencesRequest) Reset() {
+	*x = UpdateNotificationPreferencesRequest{}
+	mi := &file_domain_notification_notification_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *UpdateNotificationPreferenceResponse) String() string {
+func (x *UpdateNotificationPreferencesRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*UpdateNotificationPreferenceResponse) ProtoMessage() {}
+func (*UpdateNotificationPreferencesRequest) ProtoMessage() {}
 
-func (x *UpdateNotificationPreferenceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_domain_notification_notification_proto_msgTypes[18]
+func (x *UpdateNotificationPreferencesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1381,14 +1688,797 @@ func (x *UpdateNotificationPreferenceResponse) ProtoReflect() protoreflect.Messa
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use UpdateNotificationPreferenceResponse.ProtoReflect.Descriptor instead.
-func (*UpdateNotificationPreferenceResponse) Descriptor() ([]byte, []int) {
-	return file_domain_notification_notification_proto_rawDescGZIP(), []int{18}
+// Deprecated: Use UpdateNotificationPreferencesRequest.ProtoReflect.Descriptor instead.
+func (*UpdateNotificationPreferencesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{19}
 }
 
-func (x *UpdateNotificationPreferenceResponse) GetPreference() *NotificationPreference {
+func (x *UpdateNotificationPreferencesRequest) GetUpdates() []*NotificationPreferencePatch {
 	if x != nil {
-		return x.Preference
+		return x.Updates
+	}
+	return nil
+}
+
+func (x *UpdateNotificationPreferencesRequest) GetObservedRevision() uint64 {
+	if x != nil {
+		return x.ObservedRevision
+	}
+	return 0
+}
+
+type UpdateNotificationPreferencesResponse struct {
+	state         protoimpl.MessageState               `protogen:"open.v1"`
+	Outcome       NotificationPreferencesUpdateOutcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=peers_touch.model.notification.v1.NotificationPreferencesUpdateOutcome" json:"outcome,omitempty"`
+	Snapshot      *NotificationPreferencesSnapshot     `protobuf:"bytes,2,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateNotificationPreferencesResponse) Reset() {
+	*x = UpdateNotificationPreferencesResponse{}
+	mi := &file_domain_notification_notification_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateNotificationPreferencesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateNotificationPreferencesResponse) ProtoMessage() {}
+
+func (x *UpdateNotificationPreferencesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateNotificationPreferencesResponse.ProtoReflect.Descriptor instead.
+func (*UpdateNotificationPreferencesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *UpdateNotificationPreferencesResponse) GetOutcome() NotificationPreferencesUpdateOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return NotificationPreferencesUpdateOutcome_NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNSPECIFIED
+}
+
+func (x *UpdateNotificationPreferencesResponse) GetSnapshot() *NotificationPreferencesSnapshot {
+	if x != nil {
+		return x.Snapshot
+	}
+	return nil
+}
+
+type ActorDeviceRef struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ActorPtid     string                 `protobuf:"bytes,1,opt,name=actor_ptid,json=actorPtid,proto3" json:"actor_ptid,omitempty"`
+	DeviceId      string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ActorDeviceRef) Reset() {
+	*x = ActorDeviceRef{}
+	mi := &file_domain_notification_notification_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActorDeviceRef) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActorDeviceRef) ProtoMessage() {}
+
+func (x *ActorDeviceRef) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActorDeviceRef.ProtoReflect.Descriptor instead.
+func (*ActorDeviceRef) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ActorDeviceRef) GetActorPtid() string {
+	if x != nil {
+		return x.ActorPtid
+	}
+	return ""
+}
+
+func (x *ActorDeviceRef) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+type ApnsPushBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         []byte                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	Topic         string                 `protobuf:"bytes,2,opt,name=topic,proto3" json:"topic,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApnsPushBinding) Reset() {
+	*x = ApnsPushBinding{}
+	mi := &file_domain_notification_notification_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApnsPushBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApnsPushBinding) ProtoMessage() {}
+
+func (x *ApnsPushBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApnsPushBinding.ProtoReflect.Descriptor instead.
+func (*ApnsPushBinding) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ApnsPushBinding) GetToken() []byte {
+	if x != nil {
+		return x.Token
+	}
+	return nil
+}
+
+func (x *ApnsPushBinding) GetTopic() string {
+	if x != nil {
+		return x.Topic
+	}
+	return ""
+}
+
+type FcmPushBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FcmPushBinding) Reset() {
+	*x = FcmPushBinding{}
+	mi := &file_domain_notification_notification_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FcmPushBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FcmPushBinding) ProtoMessage() {}
+
+func (x *FcmPushBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FcmPushBinding.ProtoReflect.Descriptor instead.
+func (*FcmPushBinding) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *FcmPushBinding) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type UnifiedPushBinding struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Endpoint      string                 `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	P256DhKey     []byte                 `protobuf:"bytes,2,opt,name=p256dh_key,json=p256dhKey,proto3" json:"p256dh_key,omitempty"`
+	AuthSecret    []byte                 `protobuf:"bytes,3,opt,name=auth_secret,json=authSecret,proto3" json:"auth_secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnifiedPushBinding) Reset() {
+	*x = UnifiedPushBinding{}
+	mi := &file_domain_notification_notification_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnifiedPushBinding) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnifiedPushBinding) ProtoMessage() {}
+
+func (x *UnifiedPushBinding) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnifiedPushBinding.ProtoReflect.Descriptor instead.
+func (*UnifiedPushBinding) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *UnifiedPushBinding) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *UnifiedPushBinding) GetP256DhKey() []byte {
+	if x != nil {
+		return x.P256DhKey
+	}
+	return nil
+}
+
+func (x *UnifiedPushBinding) GetAuthSecret() []byte {
+	if x != nil {
+		return x.AuthSecret
+	}
+	return nil
+}
+
+// PushRegistration intentionally excludes provider credentials. Native
+// provider bindings are write-only and remain encrypted at rest in Station.
+type PushRegistration struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	RegistrationId        string                 `protobuf:"bytes,1,opt,name=registration_id,json=registrationId,proto3" json:"registration_id,omitempty"`
+	ActorDevice           *ActorDeviceRef        `protobuf:"bytes,2,opt,name=actor_device,json=actorDevice,proto3" json:"actor_device,omitempty"`
+	Channel               PushChannel            `protobuf:"varint,3,opt,name=channel,proto3,enum=peers_touch.model.notification.v1.PushChannel" json:"channel,omitempty"`
+	Environment           PushEnvironment        `protobuf:"varint,4,opt,name=environment,proto3,enum=peers_touch.model.notification.v1.PushEnvironment" json:"environment,omitempty"`
+	AppInstallEpochSha256 []byte                 `protobuf:"bytes,5,opt,name=app_install_epoch_sha256,json=appInstallEpochSha256,proto3" json:"app_install_epoch_sha256,omitempty"`
+	ProviderBindingSha256 []byte                 `protobuf:"bytes,6,opt,name=provider_binding_sha256,json=providerBindingSha256,proto3" json:"provider_binding_sha256,omitempty"`
+	CreatedAt             *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt             *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	LastSuccessAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_success_at,json=lastSuccessAt,proto3" json:"last_success_at,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *PushRegistration) Reset() {
+	*x = PushRegistration{}
+	mi := &file_domain_notification_notification_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PushRegistration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PushRegistration) ProtoMessage() {}
+
+func (x *PushRegistration) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PushRegistration.ProtoReflect.Descriptor instead.
+func (*PushRegistration) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *PushRegistration) GetRegistrationId() string {
+	if x != nil {
+		return x.RegistrationId
+	}
+	return ""
+}
+
+func (x *PushRegistration) GetActorDevice() *ActorDeviceRef {
+	if x != nil {
+		return x.ActorDevice
+	}
+	return nil
+}
+
+func (x *PushRegistration) GetChannel() PushChannel {
+	if x != nil {
+		return x.Channel
+	}
+	return PushChannel_PUSH_CHANNEL_UNSPECIFIED
+}
+
+func (x *PushRegistration) GetEnvironment() PushEnvironment {
+	if x != nil {
+		return x.Environment
+	}
+	return PushEnvironment_PUSH_ENVIRONMENT_UNSPECIFIED
+}
+
+func (x *PushRegistration) GetAppInstallEpochSha256() []byte {
+	if x != nil {
+		return x.AppInstallEpochSha256
+	}
+	return nil
+}
+
+func (x *PushRegistration) GetProviderBindingSha256() []byte {
+	if x != nil {
+		return x.ProviderBindingSha256
+	}
+	return nil
+}
+
+func (x *PushRegistration) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *PushRegistration) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *PushRegistration) GetLastSuccessAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSuccessAt
+	}
+	return nil
+}
+
+type RegisterPushDeviceRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	RequestId             string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	DeviceId              string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	LifecycleGeneration   uint64                 `protobuf:"varint,3,opt,name=lifecycle_generation,json=lifecycleGeneration,proto3" json:"lifecycle_generation,omitempty"`
+	AppInstallEpochSha256 []byte                 `protobuf:"bytes,4,opt,name=app_install_epoch_sha256,json=appInstallEpochSha256,proto3" json:"app_install_epoch_sha256,omitempty"`
+	Environment           PushEnvironment        `protobuf:"varint,5,opt,name=environment,proto3,enum=peers_touch.model.notification.v1.PushEnvironment" json:"environment,omitempty"`
+	// Types that are valid to be assigned to ProviderBinding:
+	//
+	//	*RegisterPushDeviceRequest_Apns
+	//	*RegisterPushDeviceRequest_Fcm
+	//	*RegisterPushDeviceRequest_UnifiedPush
+	ProviderBinding isRegisterPushDeviceRequest_ProviderBinding `protobuf_oneof:"provider_binding"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RegisterPushDeviceRequest) Reset() {
+	*x = RegisterPushDeviceRequest{}
+	mi := &file_domain_notification_notification_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterPushDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterPushDeviceRequest) ProtoMessage() {}
+
+func (x *RegisterPushDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterPushDeviceRequest.ProtoReflect.Descriptor instead.
+func (*RegisterPushDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *RegisterPushDeviceRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RegisterPushDeviceRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *RegisterPushDeviceRequest) GetLifecycleGeneration() uint64 {
+	if x != nil {
+		return x.LifecycleGeneration
+	}
+	return 0
+}
+
+func (x *RegisterPushDeviceRequest) GetAppInstallEpochSha256() []byte {
+	if x != nil {
+		return x.AppInstallEpochSha256
+	}
+	return nil
+}
+
+func (x *RegisterPushDeviceRequest) GetEnvironment() PushEnvironment {
+	if x != nil {
+		return x.Environment
+	}
+	return PushEnvironment_PUSH_ENVIRONMENT_UNSPECIFIED
+}
+
+func (x *RegisterPushDeviceRequest) GetProviderBinding() isRegisterPushDeviceRequest_ProviderBinding {
+	if x != nil {
+		return x.ProviderBinding
+	}
+	return nil
+}
+
+func (x *RegisterPushDeviceRequest) GetApns() *ApnsPushBinding {
+	if x != nil {
+		if x, ok := x.ProviderBinding.(*RegisterPushDeviceRequest_Apns); ok {
+			return x.Apns
+		}
+	}
+	return nil
+}
+
+func (x *RegisterPushDeviceRequest) GetFcm() *FcmPushBinding {
+	if x != nil {
+		if x, ok := x.ProviderBinding.(*RegisterPushDeviceRequest_Fcm); ok {
+			return x.Fcm
+		}
+	}
+	return nil
+}
+
+func (x *RegisterPushDeviceRequest) GetUnifiedPush() *UnifiedPushBinding {
+	if x != nil {
+		if x, ok := x.ProviderBinding.(*RegisterPushDeviceRequest_UnifiedPush); ok {
+			return x.UnifiedPush
+		}
+	}
+	return nil
+}
+
+type isRegisterPushDeviceRequest_ProviderBinding interface {
+	isRegisterPushDeviceRequest_ProviderBinding()
+}
+
+type RegisterPushDeviceRequest_Apns struct {
+	Apns *ApnsPushBinding `protobuf:"bytes,6,opt,name=apns,proto3,oneof"`
+}
+
+type RegisterPushDeviceRequest_Fcm struct {
+	Fcm *FcmPushBinding `protobuf:"bytes,7,opt,name=fcm,proto3,oneof"`
+}
+
+type RegisterPushDeviceRequest_UnifiedPush struct {
+	UnifiedPush *UnifiedPushBinding `protobuf:"bytes,8,opt,name=unified_push,json=unifiedPush,proto3,oneof"`
+}
+
+func (*RegisterPushDeviceRequest_Apns) isRegisterPushDeviceRequest_ProviderBinding() {}
+
+func (*RegisterPushDeviceRequest_Fcm) isRegisterPushDeviceRequest_ProviderBinding() {}
+
+func (*RegisterPushDeviceRequest_UnifiedPush) isRegisterPushDeviceRequest_ProviderBinding() {}
+
+type RegisterPushDeviceResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	RequestId     string                    `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Outcome       RegisterPushDeviceOutcome `protobuf:"varint,2,opt,name=outcome,proto3,enum=peers_touch.model.notification.v1.RegisterPushDeviceOutcome" json:"outcome,omitempty"`
+	Registration  *PushRegistration         `protobuf:"bytes,3,opt,name=registration,proto3" json:"registration,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterPushDeviceResponse) Reset() {
+	*x = RegisterPushDeviceResponse{}
+	mi := &file_domain_notification_notification_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterPushDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterPushDeviceResponse) ProtoMessage() {}
+
+func (x *RegisterPushDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterPushDeviceResponse.ProtoReflect.Descriptor instead.
+func (*RegisterPushDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *RegisterPushDeviceResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RegisterPushDeviceResponse) GetOutcome() RegisterPushDeviceOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return RegisterPushDeviceOutcome_REGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED
+}
+
+func (x *RegisterPushDeviceResponse) GetRegistration() *PushRegistration {
+	if x != nil {
+		return x.Registration
+	}
+	return nil
+}
+
+type UnregisterPushDeviceRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	RequestId             string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	DeviceId              string                 `protobuf:"bytes,2,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	LifecycleGeneration   uint64                 `protobuf:"varint,3,opt,name=lifecycle_generation,json=lifecycleGeneration,proto3" json:"lifecycle_generation,omitempty"`
+	RegistrationId        string                 `protobuf:"bytes,4,opt,name=registration_id,json=registrationId,proto3" json:"registration_id,omitempty"`
+	AppInstallEpochSha256 []byte                 `protobuf:"bytes,5,opt,name=app_install_epoch_sha256,json=appInstallEpochSha256,proto3" json:"app_install_epoch_sha256,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *UnregisterPushDeviceRequest) Reset() {
+	*x = UnregisterPushDeviceRequest{}
+	mi := &file_domain_notification_notification_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnregisterPushDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnregisterPushDeviceRequest) ProtoMessage() {}
+
+func (x *UnregisterPushDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnregisterPushDeviceRequest.ProtoReflect.Descriptor instead.
+func (*UnregisterPushDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *UnregisterPushDeviceRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *UnregisterPushDeviceRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *UnregisterPushDeviceRequest) GetLifecycleGeneration() uint64 {
+	if x != nil {
+		return x.LifecycleGeneration
+	}
+	return 0
+}
+
+func (x *UnregisterPushDeviceRequest) GetRegistrationId() string {
+	if x != nil {
+		return x.RegistrationId
+	}
+	return ""
+}
+
+func (x *UnregisterPushDeviceRequest) GetAppInstallEpochSha256() []byte {
+	if x != nil {
+		return x.AppInstallEpochSha256
+	}
+	return nil
+}
+
+type UnregisterPushDeviceResponse struct {
+	state         protoimpl.MessageState      `protogen:"open.v1"`
+	RequestId     string                      `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Outcome       UnregisterPushDeviceOutcome `protobuf:"varint,2,opt,name=outcome,proto3,enum=peers_touch.model.notification.v1.UnregisterPushDeviceOutcome" json:"outcome,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnregisterPushDeviceResponse) Reset() {
+	*x = UnregisterPushDeviceResponse{}
+	mi := &file_domain_notification_notification_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnregisterPushDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnregisterPushDeviceResponse) ProtoMessage() {}
+
+func (x *UnregisterPushDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnregisterPushDeviceResponse.ProtoReflect.Descriptor instead.
+func (*UnregisterPushDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *UnregisterPushDeviceResponse) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *UnregisterPushDeviceResponse) GetOutcome() UnregisterPushDeviceOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return UnregisterPushDeviceOutcome_UNREGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED
+}
+
+type ListPushDevicesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPushDevicesRequest) Reset() {
+	*x = ListPushDevicesRequest{}
+	mi := &file_domain_notification_notification_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPushDevicesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPushDevicesRequest) ProtoMessage() {}
+
+func (x *ListPushDevicesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPushDevicesRequest.ProtoReflect.Descriptor instead.
+func (*ListPushDevicesRequest) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{30}
+}
+
+type ListPushDevicesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Registrations []*PushRegistration    `protobuf:"bytes,1,rep,name=registrations,proto3" json:"registrations,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPushDevicesResponse) Reset() {
+	*x = ListPushDevicesResponse{}
+	mi := &file_domain_notification_notification_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPushDevicesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPushDevicesResponse) ProtoMessage() {}
+
+func (x *ListPushDevicesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_notification_notification_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPushDevicesResponse.ProtoReflect.Descriptor instead.
+func (*ListPushDevicesResponse) Descriptor() ([]byte, []int) {
+	return file_domain_notification_notification_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *ListPushDevicesResponse) GetRegistrations() []*PushRegistration {
+	if x != nil {
+		return x.Registrations
 	}
 	return nil
 }
@@ -1445,7 +2535,10 @@ const file_domain_notification_notification_proto_rawDesc = "" +
 	"\rsound_enabled\x18\x05 \x01(\bR\fsoundEnabled\x129\n" +
 	"\n" +
 	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12G\n" +
-	"\x04type\x18\a \x01(\x0e23.peers_touch.model.notification.v1.NotificationTypeR\x04type\"\xec\x01\n" +
+	"\x04type\x18\a \x01(\x0e23.peers_touch.model.notification.v1.NotificationTypeR\x04type\"\xca\x01\n" +
+	"\x1fNotificationPreferencesSnapshot\x12[\n" +
+	"\vpreferences\x18\x01 \x03(\v29.peers_touch.model.notification.v1.NotificationPreferenceR\vpreferences\x12J\n" +
+	"!notification_preferences_revision\x18\x02 \x01(\x04R\x1fnotificationPreferencesRevision\"\xec\x01\n" +
 	"\x18ListNotificationsRequest\x12S\n" +
 	"\bcategory\x18\x01 \x01(\x0e27.peers_touch.model.notification.v1.NotificationCategoryR\bcategory\x12M\n" +
 	"\x06status\x18\x02 \x01(\x0e25.peers_touch.model.notification.v1.NotificationStatusR\x06status\x12\x16\n" +
@@ -1486,18 +2579,77 @@ const file_domain_notification_notification_proto_rawDesc = "" +
 	"\x0fByCategoryEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\x05R\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\x05R\x05value:\x028\x01\"#\n" +
-	"!GetNotificationPreferencesRequest\"\x81\x01\n" +
-	"\"GetNotificationPreferencesResponse\x12[\n" +
-	"\vpreferences\x18\x01 \x03(\v29.peers_touch.model.notification.v1.NotificationPreferenceR\vpreferences\"\xdc\x01\n" +
-	"#UpdateNotificationPreferenceRequest\x12S\n" +
+	"!GetNotificationPreferencesRequest\"\x97\x01\n" +
+	"\"GetNotificationPreferencesResponse\x12^\n" +
+	"\bsnapshot\x18\x02 \x01(\v2B.peers_touch.model.notification.v1.NotificationPreferencesSnapshotR\bsnapshotJ\x04\b\x01\x10\x02R\vpreferences\"\xd4\x01\n" +
+	"\x1bNotificationPreferencePatch\x12S\n" +
 	"\bcategory\x18\x01 \x01(\x0e27.peers_touch.model.notification.v1.NotificationCategoryR\bcategory\x12\x18\n" +
 	"\aenabled\x18\x02 \x01(\bR\aenabled\x12!\n" +
 	"\fpush_enabled\x18\x03 \x01(\bR\vpushEnabled\x12#\n" +
-	"\rsound_enabled\x18\x04 \x01(\bR\fsoundEnabled\"\x81\x01\n" +
-	"$UpdateNotificationPreferenceResponse\x12Y\n" +
+	"\rsound_enabled\x18\x04 \x01(\bR\fsoundEnabled\"\xad\x01\n" +
+	"$UpdateNotificationPreferencesRequest\x12X\n" +
+	"\aupdates\x18\x01 \x03(\v2>.peers_touch.model.notification.v1.NotificationPreferencePatchR\aupdates\x12+\n" +
+	"\x11observed_revision\x18\x02 \x01(\x04R\x10observedRevision\"\xea\x01\n" +
+	"%UpdateNotificationPreferencesResponse\x12a\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2G.peers_touch.model.notification.v1.NotificationPreferencesUpdateOutcomeR\aoutcome\x12^\n" +
+	"\bsnapshot\x18\x02 \x01(\v2B.peers_touch.model.notification.v1.NotificationPreferencesSnapshotR\bsnapshot\"L\n" +
+	"\x0eActorDeviceRef\x12\x1d\n" +
 	"\n" +
-	"preference\x18\x01 \x01(\v29.peers_touch.model.notification.v1.NotificationPreferenceR\n" +
-	"preference*\xc1\x01\n" +
+	"actor_ptid\x18\x01 \x01(\tR\tactorPtid\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\"=\n" +
+	"\x0fApnsPushBinding\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\fR\x05token\x12\x14\n" +
+	"\x05topic\x18\x02 \x01(\tR\x05topic\"&\n" +
+	"\x0eFcmPushBinding\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"p\n" +
+	"\x12UnifiedPushBinding\x12\x1a\n" +
+	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x1d\n" +
+	"\n" +
+	"p256dh_key\x18\x02 \x01(\fR\tp256dhKey\x12\x1f\n" +
+	"\vauth_secret\x18\x03 \x01(\fR\n" +
+	"authSecret\"\xdc\x04\n" +
+	"\x10PushRegistration\x12'\n" +
+	"\x0fregistration_id\x18\x01 \x01(\tR\x0eregistrationId\x12T\n" +
+	"\factor_device\x18\x02 \x01(\v21.peers_touch.model.notification.v1.ActorDeviceRefR\vactorDevice\x12H\n" +
+	"\achannel\x18\x03 \x01(\x0e2..peers_touch.model.notification.v1.PushChannelR\achannel\x12T\n" +
+	"\venvironment\x18\x04 \x01(\x0e22.peers_touch.model.notification.v1.PushEnvironmentR\venvironment\x127\n" +
+	"\x18app_install_epoch_sha256\x18\x05 \x01(\fR\x15appInstallEpochSha256\x126\n" +
+	"\x17provider_binding_sha256\x18\x06 \x01(\fR\x15providerBindingSha256\x129\n" +
+	"\n" +
+	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12B\n" +
+	"\x0flast_success_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\rlastSuccessAt\"\x9a\x04\n" +
+	"\x19RegisterPushDeviceRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x121\n" +
+	"\x14lifecycle_generation\x18\x03 \x01(\x04R\x13lifecycleGeneration\x127\n" +
+	"\x18app_install_epoch_sha256\x18\x04 \x01(\fR\x15appInstallEpochSha256\x12T\n" +
+	"\venvironment\x18\x05 \x01(\x0e22.peers_touch.model.notification.v1.PushEnvironmentR\venvironment\x12H\n" +
+	"\x04apns\x18\x06 \x01(\v22.peers_touch.model.notification.v1.ApnsPushBindingH\x00R\x04apns\x12E\n" +
+	"\x03fcm\x18\a \x01(\v21.peers_touch.model.notification.v1.FcmPushBindingH\x00R\x03fcm\x12Z\n" +
+	"\funified_push\x18\b \x01(\v25.peers_touch.model.notification.v1.UnifiedPushBindingH\x00R\vunifiedPushB\x12\n" +
+	"\x10provider_binding\"\xec\x01\n" +
+	"\x1aRegisterPushDeviceResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12V\n" +
+	"\aoutcome\x18\x02 \x01(\x0e2<.peers_touch.model.notification.v1.RegisterPushDeviceOutcomeR\aoutcome\x12W\n" +
+	"\fregistration\x18\x03 \x01(\v23.peers_touch.model.notification.v1.PushRegistrationR\fregistration\"\xee\x01\n" +
+	"\x1bUnregisterPushDeviceRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12\x1b\n" +
+	"\tdevice_id\x18\x02 \x01(\tR\bdeviceId\x121\n" +
+	"\x14lifecycle_generation\x18\x03 \x01(\x04R\x13lifecycleGeneration\x12'\n" +
+	"\x0fregistration_id\x18\x04 \x01(\tR\x0eregistrationId\x127\n" +
+	"\x18app_install_epoch_sha256\x18\x05 \x01(\fR\x15appInstallEpochSha256\"\x97\x01\n" +
+	"\x1cUnregisterPushDeviceResponse\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12X\n" +
+	"\aoutcome\x18\x02 \x01(\x0e2>.peers_touch.model.notification.v1.UnregisterPushDeviceOutcomeR\aoutcome\"\x18\n" +
+	"\x16ListPushDevicesRequest\"t\n" +
+	"\x17ListPushDevicesResponse\x12Y\n" +
+	"\rregistrations\x18\x01 \x03(\v23.peers_touch.model.notification.v1.PushRegistrationR\rregistrations*\xc1\x01\n" +
 	"\x14NotificationCategory\x12%\n" +
 	"!NOTIFICATION_CATEGORY_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cNOTIFICATION_CATEGORY_SOCIAL\x10\x01\x12\x1e\n" +
@@ -1528,7 +2680,30 @@ const file_domain_notification_notification_proto_rawDesc = "" +
 	"\x1fNOTIFICATION_STATUS_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aNOTIFICATION_STATUS_UNREAD\x10\x01\x12\x1c\n" +
 	"\x18NOTIFICATION_STATUS_READ\x10\x02\x12 \n" +
-	"\x1cNOTIFICATION_STATUS_ARCHIVED\x10\x03BWZUgithub.com/peers-labs/peers-touch/station/frame/touch/model/notification;notificationb\x06proto3"
+	"\x1cNOTIFICATION_STATUS_ARCHIVED\x10\x03*\x81\x02\n" +
+	"$NotificationPreferencesUpdateOutcome\x127\n" +
+	"3NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNSPECIFIED\x10\x00\x123\n" +
+	"/NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED\x10\x01\x125\n" +
+	"1NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED\x10\x02\x124\n" +
+	"0NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT\x10\x03*w\n" +
+	"\vPushChannel\x12\x1c\n" +
+	"\x18PUSH_CHANNEL_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11PUSH_CHANNEL_APNS\x10\x01\x12\x14\n" +
+	"\x10PUSH_CHANNEL_FCM\x10\x02\x12\x1d\n" +
+	"\x19PUSH_CHANNEL_UNIFIED_PUSH\x10\x03*v\n" +
+	"\x0fPushEnvironment\x12 \n" +
+	"\x1cPUSH_ENVIRONMENT_UNSPECIFIED\x10\x00\x12 \n" +
+	"\x1cPUSH_ENVIRONMENT_DEVELOPMENT\x10\x01\x12\x1f\n" +
+	"\x1bPUSH_ENVIRONMENT_PRODUCTION\x10\x02*\xc9\x01\n" +
+	"\x19RegisterPushDeviceOutcome\x12,\n" +
+	"(REGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED\x10\x00\x12(\n" +
+	"$REGISTER_PUSH_DEVICE_OUTCOME_CREATED\x10\x01\x12(\n" +
+	"$REGISTER_PUSH_DEVICE_OUTCOME_ROTATED\x10\x02\x12*\n" +
+	"&REGISTER_PUSH_DEVICE_OUTCOME_UNCHANGED\x10\x03*\xac\x01\n" +
+	"\x1bUnregisterPushDeviceOutcome\x12.\n" +
+	"*UNREGISTER_PUSH_DEVICE_OUTCOME_UNSPECIFIED\x10\x00\x12*\n" +
+	"&UNREGISTER_PUSH_DEVICE_OUTCOME_REMOVED\x10\x01\x121\n" +
+	"-UNREGISTER_PUSH_DEVICE_OUTCOME_ALREADY_ABSENT\x10\x02BWZUgithub.com/peers-labs/peers-touch/station/frame/touch/model/notification;notificationb\x06proto3"
 
 var (
 	file_domain_notification_notification_proto_rawDescOnce sync.Once
@@ -1542,64 +2717,99 @@ func file_domain_notification_notification_proto_rawDescGZIP() []byte {
 	return file_domain_notification_notification_proto_rawDescData
 }
 
-var file_domain_notification_notification_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_domain_notification_notification_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_domain_notification_notification_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
+var file_domain_notification_notification_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_domain_notification_notification_proto_goTypes = []any{
-	(NotificationCategory)(0),                    // 0: peers_touch.model.notification.v1.NotificationCategory
-	(NotificationType)(0),                        // 1: peers_touch.model.notification.v1.NotificationType
-	(NotificationStatus)(0),                      // 2: peers_touch.model.notification.v1.NotificationStatus
-	(*Notification)(nil),                         // 3: peers_touch.model.notification.v1.Notification
-	(*NotificationGroup)(nil),                    // 4: peers_touch.model.notification.v1.NotificationGroup
-	(*NotificationPreference)(nil),               // 5: peers_touch.model.notification.v1.NotificationPreference
-	(*ListNotificationsRequest)(nil),             // 6: peers_touch.model.notification.v1.ListNotificationsRequest
-	(*ListNotificationsResponse)(nil),            // 7: peers_touch.model.notification.v1.ListNotificationsResponse
-	(*ListGroupedNotificationsRequest)(nil),      // 8: peers_touch.model.notification.v1.ListGroupedNotificationsRequest
-	(*ListGroupedNotificationsResponse)(nil),     // 9: peers_touch.model.notification.v1.ListGroupedNotificationsResponse
-	(*MarkNotificationsReadRequest)(nil),         // 10: peers_touch.model.notification.v1.MarkNotificationsReadRequest
-	(*MarkNotificationsReadResponse)(nil),        // 11: peers_touch.model.notification.v1.MarkNotificationsReadResponse
-	(*MarkAllNotificationsReadRequest)(nil),      // 12: peers_touch.model.notification.v1.MarkAllNotificationsReadRequest
-	(*MarkAllNotificationsReadResponse)(nil),     // 13: peers_touch.model.notification.v1.MarkAllNotificationsReadResponse
-	(*DeleteNotificationsRequest)(nil),           // 14: peers_touch.model.notification.v1.DeleteNotificationsRequest
-	(*DeleteNotificationsResponse)(nil),          // 15: peers_touch.model.notification.v1.DeleteNotificationsResponse
-	(*GetUnreadCountsRequest)(nil),               // 16: peers_touch.model.notification.v1.GetUnreadCountsRequest
-	(*GetUnreadCountsResponse)(nil),              // 17: peers_touch.model.notification.v1.GetUnreadCountsResponse
-	(*GetNotificationPreferencesRequest)(nil),    // 18: peers_touch.model.notification.v1.GetNotificationPreferencesRequest
-	(*GetNotificationPreferencesResponse)(nil),   // 19: peers_touch.model.notification.v1.GetNotificationPreferencesResponse
-	(*UpdateNotificationPreferenceRequest)(nil),  // 20: peers_touch.model.notification.v1.UpdateNotificationPreferenceRequest
-	(*UpdateNotificationPreferenceResponse)(nil), // 21: peers_touch.model.notification.v1.UpdateNotificationPreferenceResponse
-	nil,                           // 22: peers_touch.model.notification.v1.Notification.MetadataEntry
-	nil,                           // 23: peers_touch.model.notification.v1.GetUnreadCountsResponse.ByCategoryEntry
-	(*timestamppb.Timestamp)(nil), // 24: google.protobuf.Timestamp
+	(NotificationCategory)(0),                     // 0: peers_touch.model.notification.v1.NotificationCategory
+	(NotificationType)(0),                         // 1: peers_touch.model.notification.v1.NotificationType
+	(NotificationStatus)(0),                       // 2: peers_touch.model.notification.v1.NotificationStatus
+	(NotificationPreferencesUpdateOutcome)(0),     // 3: peers_touch.model.notification.v1.NotificationPreferencesUpdateOutcome
+	(PushChannel)(0),                              // 4: peers_touch.model.notification.v1.PushChannel
+	(PushEnvironment)(0),                          // 5: peers_touch.model.notification.v1.PushEnvironment
+	(RegisterPushDeviceOutcome)(0),                // 6: peers_touch.model.notification.v1.RegisterPushDeviceOutcome
+	(UnregisterPushDeviceOutcome)(0),              // 7: peers_touch.model.notification.v1.UnregisterPushDeviceOutcome
+	(*Notification)(nil),                          // 8: peers_touch.model.notification.v1.Notification
+	(*NotificationGroup)(nil),                     // 9: peers_touch.model.notification.v1.NotificationGroup
+	(*NotificationPreference)(nil),                // 10: peers_touch.model.notification.v1.NotificationPreference
+	(*NotificationPreferencesSnapshot)(nil),       // 11: peers_touch.model.notification.v1.NotificationPreferencesSnapshot
+	(*ListNotificationsRequest)(nil),              // 12: peers_touch.model.notification.v1.ListNotificationsRequest
+	(*ListNotificationsResponse)(nil),             // 13: peers_touch.model.notification.v1.ListNotificationsResponse
+	(*ListGroupedNotificationsRequest)(nil),       // 14: peers_touch.model.notification.v1.ListGroupedNotificationsRequest
+	(*ListGroupedNotificationsResponse)(nil),      // 15: peers_touch.model.notification.v1.ListGroupedNotificationsResponse
+	(*MarkNotificationsReadRequest)(nil),          // 16: peers_touch.model.notification.v1.MarkNotificationsReadRequest
+	(*MarkNotificationsReadResponse)(nil),         // 17: peers_touch.model.notification.v1.MarkNotificationsReadResponse
+	(*MarkAllNotificationsReadRequest)(nil),       // 18: peers_touch.model.notification.v1.MarkAllNotificationsReadRequest
+	(*MarkAllNotificationsReadResponse)(nil),      // 19: peers_touch.model.notification.v1.MarkAllNotificationsReadResponse
+	(*DeleteNotificationsRequest)(nil),            // 20: peers_touch.model.notification.v1.DeleteNotificationsRequest
+	(*DeleteNotificationsResponse)(nil),           // 21: peers_touch.model.notification.v1.DeleteNotificationsResponse
+	(*GetUnreadCountsRequest)(nil),                // 22: peers_touch.model.notification.v1.GetUnreadCountsRequest
+	(*GetUnreadCountsResponse)(nil),               // 23: peers_touch.model.notification.v1.GetUnreadCountsResponse
+	(*GetNotificationPreferencesRequest)(nil),     // 24: peers_touch.model.notification.v1.GetNotificationPreferencesRequest
+	(*GetNotificationPreferencesResponse)(nil),    // 25: peers_touch.model.notification.v1.GetNotificationPreferencesResponse
+	(*NotificationPreferencePatch)(nil),           // 26: peers_touch.model.notification.v1.NotificationPreferencePatch
+	(*UpdateNotificationPreferencesRequest)(nil),  // 27: peers_touch.model.notification.v1.UpdateNotificationPreferencesRequest
+	(*UpdateNotificationPreferencesResponse)(nil), // 28: peers_touch.model.notification.v1.UpdateNotificationPreferencesResponse
+	(*ActorDeviceRef)(nil),                        // 29: peers_touch.model.notification.v1.ActorDeviceRef
+	(*ApnsPushBinding)(nil),                       // 30: peers_touch.model.notification.v1.ApnsPushBinding
+	(*FcmPushBinding)(nil),                        // 31: peers_touch.model.notification.v1.FcmPushBinding
+	(*UnifiedPushBinding)(nil),                    // 32: peers_touch.model.notification.v1.UnifiedPushBinding
+	(*PushRegistration)(nil),                      // 33: peers_touch.model.notification.v1.PushRegistration
+	(*RegisterPushDeviceRequest)(nil),             // 34: peers_touch.model.notification.v1.RegisterPushDeviceRequest
+	(*RegisterPushDeviceResponse)(nil),            // 35: peers_touch.model.notification.v1.RegisterPushDeviceResponse
+	(*UnregisterPushDeviceRequest)(nil),           // 36: peers_touch.model.notification.v1.UnregisterPushDeviceRequest
+	(*UnregisterPushDeviceResponse)(nil),          // 37: peers_touch.model.notification.v1.UnregisterPushDeviceResponse
+	(*ListPushDevicesRequest)(nil),                // 38: peers_touch.model.notification.v1.ListPushDevicesRequest
+	(*ListPushDevicesResponse)(nil),               // 39: peers_touch.model.notification.v1.ListPushDevicesResponse
+	nil,                                           // 40: peers_touch.model.notification.v1.Notification.MetadataEntry
+	nil,                                           // 41: peers_touch.model.notification.v1.GetUnreadCountsResponse.ByCategoryEntry
+	(*timestamppb.Timestamp)(nil),                 // 42: google.protobuf.Timestamp
 }
 var file_domain_notification_notification_proto_depIdxs = []int32{
 	1,  // 0: peers_touch.model.notification.v1.Notification.type:type_name -> peers_touch.model.notification.v1.NotificationType
 	0,  // 1: peers_touch.model.notification.v1.Notification.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
 	2,  // 2: peers_touch.model.notification.v1.Notification.status:type_name -> peers_touch.model.notification.v1.NotificationStatus
-	22, // 3: peers_touch.model.notification.v1.Notification.metadata:type_name -> peers_touch.model.notification.v1.Notification.MetadataEntry
-	24, // 4: peers_touch.model.notification.v1.Notification.created_at:type_name -> google.protobuf.Timestamp
-	24, // 5: peers_touch.model.notification.v1.Notification.read_at:type_name -> google.protobuf.Timestamp
+	40, // 3: peers_touch.model.notification.v1.Notification.metadata:type_name -> peers_touch.model.notification.v1.Notification.MetadataEntry
+	42, // 4: peers_touch.model.notification.v1.Notification.created_at:type_name -> google.protobuf.Timestamp
+	42, // 5: peers_touch.model.notification.v1.Notification.read_at:type_name -> google.protobuf.Timestamp
 	1,  // 6: peers_touch.model.notification.v1.NotificationGroup.type:type_name -> peers_touch.model.notification.v1.NotificationType
 	0,  // 7: peers_touch.model.notification.v1.NotificationGroup.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
-	3,  // 8: peers_touch.model.notification.v1.NotificationGroup.latest:type_name -> peers_touch.model.notification.v1.Notification
-	24, // 9: peers_touch.model.notification.v1.NotificationGroup.updated_at:type_name -> google.protobuf.Timestamp
+	8,  // 8: peers_touch.model.notification.v1.NotificationGroup.latest:type_name -> peers_touch.model.notification.v1.Notification
+	42, // 9: peers_touch.model.notification.v1.NotificationGroup.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 10: peers_touch.model.notification.v1.NotificationPreference.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
-	24, // 11: peers_touch.model.notification.v1.NotificationPreference.updated_at:type_name -> google.protobuf.Timestamp
+	42, // 11: peers_touch.model.notification.v1.NotificationPreference.updated_at:type_name -> google.protobuf.Timestamp
 	1,  // 12: peers_touch.model.notification.v1.NotificationPreference.type:type_name -> peers_touch.model.notification.v1.NotificationType
-	0,  // 13: peers_touch.model.notification.v1.ListNotificationsRequest.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
-	2,  // 14: peers_touch.model.notification.v1.ListNotificationsRequest.status:type_name -> peers_touch.model.notification.v1.NotificationStatus
-	3,  // 15: peers_touch.model.notification.v1.ListNotificationsResponse.notifications:type_name -> peers_touch.model.notification.v1.Notification
-	0,  // 16: peers_touch.model.notification.v1.ListGroupedNotificationsRequest.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
-	4,  // 17: peers_touch.model.notification.v1.ListGroupedNotificationsResponse.groups:type_name -> peers_touch.model.notification.v1.NotificationGroup
-	0,  // 18: peers_touch.model.notification.v1.MarkAllNotificationsReadRequest.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
-	23, // 19: peers_touch.model.notification.v1.GetUnreadCountsResponse.by_category:type_name -> peers_touch.model.notification.v1.GetUnreadCountsResponse.ByCategoryEntry
-	5,  // 20: peers_touch.model.notification.v1.GetNotificationPreferencesResponse.preferences:type_name -> peers_touch.model.notification.v1.NotificationPreference
-	0,  // 21: peers_touch.model.notification.v1.UpdateNotificationPreferenceRequest.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
-	5,  // 22: peers_touch.model.notification.v1.UpdateNotificationPreferenceResponse.preference:type_name -> peers_touch.model.notification.v1.NotificationPreference
-	23, // [23:23] is the sub-list for method output_type
-	23, // [23:23] is the sub-list for method input_type
-	23, // [23:23] is the sub-list for extension type_name
-	23, // [23:23] is the sub-list for extension extendee
-	0,  // [0:23] is the sub-list for field type_name
+	10, // 13: peers_touch.model.notification.v1.NotificationPreferencesSnapshot.preferences:type_name -> peers_touch.model.notification.v1.NotificationPreference
+	0,  // 14: peers_touch.model.notification.v1.ListNotificationsRequest.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
+	2,  // 15: peers_touch.model.notification.v1.ListNotificationsRequest.status:type_name -> peers_touch.model.notification.v1.NotificationStatus
+	8,  // 16: peers_touch.model.notification.v1.ListNotificationsResponse.notifications:type_name -> peers_touch.model.notification.v1.Notification
+	0,  // 17: peers_touch.model.notification.v1.ListGroupedNotificationsRequest.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
+	9,  // 18: peers_touch.model.notification.v1.ListGroupedNotificationsResponse.groups:type_name -> peers_touch.model.notification.v1.NotificationGroup
+	0,  // 19: peers_touch.model.notification.v1.MarkAllNotificationsReadRequest.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
+	41, // 20: peers_touch.model.notification.v1.GetUnreadCountsResponse.by_category:type_name -> peers_touch.model.notification.v1.GetUnreadCountsResponse.ByCategoryEntry
+	11, // 21: peers_touch.model.notification.v1.GetNotificationPreferencesResponse.snapshot:type_name -> peers_touch.model.notification.v1.NotificationPreferencesSnapshot
+	0,  // 22: peers_touch.model.notification.v1.NotificationPreferencePatch.category:type_name -> peers_touch.model.notification.v1.NotificationCategory
+	26, // 23: peers_touch.model.notification.v1.UpdateNotificationPreferencesRequest.updates:type_name -> peers_touch.model.notification.v1.NotificationPreferencePatch
+	3,  // 24: peers_touch.model.notification.v1.UpdateNotificationPreferencesResponse.outcome:type_name -> peers_touch.model.notification.v1.NotificationPreferencesUpdateOutcome
+	11, // 25: peers_touch.model.notification.v1.UpdateNotificationPreferencesResponse.snapshot:type_name -> peers_touch.model.notification.v1.NotificationPreferencesSnapshot
+	29, // 26: peers_touch.model.notification.v1.PushRegistration.actor_device:type_name -> peers_touch.model.notification.v1.ActorDeviceRef
+	4,  // 27: peers_touch.model.notification.v1.PushRegistration.channel:type_name -> peers_touch.model.notification.v1.PushChannel
+	5,  // 28: peers_touch.model.notification.v1.PushRegistration.environment:type_name -> peers_touch.model.notification.v1.PushEnvironment
+	42, // 29: peers_touch.model.notification.v1.PushRegistration.created_at:type_name -> google.protobuf.Timestamp
+	42, // 30: peers_touch.model.notification.v1.PushRegistration.updated_at:type_name -> google.protobuf.Timestamp
+	42, // 31: peers_touch.model.notification.v1.PushRegistration.last_success_at:type_name -> google.protobuf.Timestamp
+	5,  // 32: peers_touch.model.notification.v1.RegisterPushDeviceRequest.environment:type_name -> peers_touch.model.notification.v1.PushEnvironment
+	30, // 33: peers_touch.model.notification.v1.RegisterPushDeviceRequest.apns:type_name -> peers_touch.model.notification.v1.ApnsPushBinding
+	31, // 34: peers_touch.model.notification.v1.RegisterPushDeviceRequest.fcm:type_name -> peers_touch.model.notification.v1.FcmPushBinding
+	32, // 35: peers_touch.model.notification.v1.RegisterPushDeviceRequest.unified_push:type_name -> peers_touch.model.notification.v1.UnifiedPushBinding
+	6,  // 36: peers_touch.model.notification.v1.RegisterPushDeviceResponse.outcome:type_name -> peers_touch.model.notification.v1.RegisterPushDeviceOutcome
+	33, // 37: peers_touch.model.notification.v1.RegisterPushDeviceResponse.registration:type_name -> peers_touch.model.notification.v1.PushRegistration
+	7,  // 38: peers_touch.model.notification.v1.UnregisterPushDeviceResponse.outcome:type_name -> peers_touch.model.notification.v1.UnregisterPushDeviceOutcome
+	33, // 39: peers_touch.model.notification.v1.ListPushDevicesResponse.registrations:type_name -> peers_touch.model.notification.v1.PushRegistration
+	40, // [40:40] is the sub-list for method output_type
+	40, // [40:40] is the sub-list for method input_type
+	40, // [40:40] is the sub-list for extension type_name
+	40, // [40:40] is the sub-list for extension extendee
+	0,  // [0:40] is the sub-list for field type_name
 }
 
 func init() { file_domain_notification_notification_proto_init() }
@@ -1607,13 +2817,18 @@ func file_domain_notification_notification_proto_init() {
 	if File_domain_notification_notification_proto != nil {
 		return
 	}
+	file_domain_notification_notification_proto_msgTypes[26].OneofWrappers = []any{
+		(*RegisterPushDeviceRequest_Apns)(nil),
+		(*RegisterPushDeviceRequest_Fcm)(nil),
+		(*RegisterPushDeviceRequest_UnifiedPush)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_notification_notification_proto_rawDesc), len(file_domain_notification_notification_proto_rawDesc)),
-			NumEnums:      3,
-			NumMessages:   21,
+			NumEnums:      8,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

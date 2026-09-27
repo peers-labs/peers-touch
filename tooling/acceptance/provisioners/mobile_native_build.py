@@ -14,7 +14,7 @@ import tempfile
 import time
 import uuid
 import zipfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
@@ -32,6 +32,7 @@ from tooling.acceptance.gates.mobile.proof_contracts import validate_contract_pa
 
 GATE_ID = "mobile-native-access-e2e"
 APPLICATION_ID = "com.peers.touch.mobile"
+IOS_CALLBACK_SCHEMES = frozenset({"peers-touch"})
 BUILD_IDENTITY_SCHEMA = "peers-mobile-build-identity"
 BUILD_CONFIGURATION = "acceptance-debug"
 RELEASE_CONFIGURATION = "release"
@@ -203,6 +204,7 @@ COMMON_TOOLCHAIN_PROBES = (
 ANDROIDX_GRADLE_PROPERTY = "android.useAndroidX=true"
 FORBIDDEN_RELEASE_ADAPTER_SYMBOLS = (
     b"oauth_acceptance_callback_replay_handle",
+    b"oauth_acceptance_configure_secure_storage_fault",
     b"oauth_acceptance_negative_callback",
 )
 NATIVE_ACCEPTANCE_HARNESS_MARKER = b"PEERS_TOUCH_MOBILE_ACCEPTANCE_HARNESS_ENABLED"
@@ -216,6 +218,7 @@ WEB_ACCEPTANCE_HARNESS_MARKERS = (
     b"oauth.status",
     b"oauth.cancel",
     b"lifecycle.restart",
+    b"lifecycle.secureStorageDeleteFailure",
     b"native.deliverDeepLink",
     b"projection.read",
     b"cleanup",
@@ -970,12 +973,21 @@ def _source_local_package_closure(root: Path) -> set[Path]:
     for relative in _collect_input_tree(root, "apps/mobile/src"):
         if Path(relative).suffix not in {".ts", ".tsx", ".js", ".jsx"}:
             continue
-        source = _relative_file(root, relative).read_text(encoding="utf-8")
-        for package in re.findall(r"(?:\.\./)+packages/([^/'\"]+)", source):
-            package_root = (root / "packages" / package).resolve(strict=True)
-            if not (package_root / "package.json").is_file():
+        source_path = _relative_file(root, relative)
+        source = source_path.read_text(encoding="utf-8")
+        for reference in re.findall(r"(?:\.\./)+packages/[^'\"\s)]+", source):
+            target = (source_path.parent / reference).resolve(strict=True)
+            package_root = target if target.is_dir() else target.parent
+            packages_root = (root / "packages").resolve(strict=True)
+            while package_root != packages_root and not (
+                package_root / "package.json"
+            ).is_file():
+                package_root = package_root.parent
+            if package_root == packages_root or not (
+                package_root / "package.json"
+            ).is_file():
                 raise MobileNativeBuildError(
-                    f"relative local package import is unresolved: packages/{package}"
+                    f"relative local package import is unresolved: {reference}"
                 )
             package_roots.add(package_root)
     return package_roots
@@ -2235,11 +2247,65 @@ def _plist_from_command(result: CommandResult) -> dict[str, Any]:
     return value
 
 
+def _require_ios_callback_schemes(
+    info: Mapping[str, Any],
+    expected_callback_schemes: Collection[str],
+) -> None:
+    if isinstance(expected_callback_schemes, (str, bytes)) or not isinstance(
+        expected_callback_schemes, Collection
+    ):
+        raise MobileNativeBuildError(
+            "expected iOS callback schemes must be a collection"
+        )
+    expected = list(expected_callback_schemes)
+    if (
+        not expected
+        or any(
+            not isinstance(scheme, str)
+            or re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*", scheme) is None
+            for scheme in expected
+        )
+        or len({scheme.casefold() for scheme in expected}) != len(expected)
+    ):
+        raise MobileNativeBuildError("expected iOS callback schemes are invalid")
+
+    url_types = info.get("CFBundleURLTypes")
+    if not isinstance(url_types, list) or not url_types:
+        raise MobileNativeBuildError("IPA callback schemes are missing")
+
+    actual: list[str] = []
+    seen: set[str] = set()
+    for url_type in url_types:
+        if not isinstance(url_type, dict):
+            raise MobileNativeBuildError("IPA CFBundleURLTypes is malformed")
+        schemes = url_type.get("CFBundleURLSchemes")
+        if not isinstance(schemes, list) or not schemes:
+            raise MobileNativeBuildError("IPA CFBundleURLSchemes is malformed")
+        for scheme in schemes:
+            if (
+                not isinstance(scheme, str)
+                or re.fullmatch(r"[A-Za-z][A-Za-z0-9+.-]*", scheme) is None
+            ):
+                raise MobileNativeBuildError("IPA callback scheme is malformed")
+            canonical_scheme = scheme.casefold()
+            if canonical_scheme in seen:
+                raise MobileNativeBuildError("IPA callback scheme is duplicated")
+            seen.add(canonical_scheme)
+            actual.append(scheme)
+
+    if set(actual) != set(expected):
+        raise MobileNativeBuildError(
+            "IPA callback schemes do not match build identity: "
+            f"expected {sorted(expected)}, found {sorted(actual)}"
+        )
+
+
 def inspect_ios_ipa(
     artifact: Path,
     runner: CommandRunner,
     *,
     expected_application_id: str = APPLICATION_ID,
+    expected_callback_schemes: Collection[str] = IOS_CALLBACK_SCHEMES,
     environment: Mapping[str, str] | None = None,
     executables: Mapping[str, str] | None = None,
 ) -> ArtifactInspection:
@@ -2256,9 +2322,12 @@ def inspect_ios_ipa(
             info = plistlib.loads((application / "Info.plist").read_bytes())
         except (OSError, plistlib.InvalidFileException) as error:
             raise MobileNativeBuildError("IPA Info.plist is unavailable") from error
+        if not isinstance(info, dict):
+            raise MobileNativeBuildError("IPA Info.plist is not an object")
         application_id = str(info.get("CFBundleIdentifier", ""))
         if application_id != expected_application_id:
             raise MobileNativeBuildError("IPA application ID does not match build identity")
+        _require_ios_callback_schemes(info, expected_callback_schemes)
 
         _run_required(
             runner,

@@ -5,7 +5,8 @@ usage() {
   cat <<'USAGE'
 Usage: knowledge-match.sh [--range <git-range>] [--changed-file <path> ...] [--strict]
 
-Lists docs/knowledge entries whose frontmatter owns changed paths.
+Lists docs/knowledge entries whose frontmatter owns changed paths, then
+validates the same changed paths against architecture module governance.
 With --strict, also validates knowledge frontmatter and active owns paths.
 USAGE
 }
@@ -175,5 +176,17 @@ if [[ "$failures" -gt 0 ]]; then
   echo "knowledge-match: $failures freshness issue(s)" >&2
   exit 1
 fi
+
+architecture_args=(
+  tooling/scripts/architecture/module-governance.mjs
+  changed-paths
+  --repo-root
+  "$repo_root"
+)
+while IFS= read -r changed; do
+  [[ -z "$changed" ]] && continue
+  architecture_args+=(--changed-file "$changed")
+done < "$tmp_changed"
+node "${architecture_args[@]}"
 
 echo "knowledge-match: pass"

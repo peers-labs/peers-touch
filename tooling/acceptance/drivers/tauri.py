@@ -28,6 +28,7 @@ from tooling.acceptance.core import (
     DomDriver,
     REPO_ROOT,
 )
+from tooling.acceptance.core.evidence_store import workspace_id
 from tooling.acceptance.core.errors import DriverError
 
 
@@ -610,11 +611,15 @@ class MakeDesktopLauncher(AppLauncher):
         return owned[0]
 
     def _managed_process_pid(self) -> int:
+        environment = self._launch_environment or self.environment
+        home = Path(environment.get("HOME") or Path.home()).expanduser()
         state_path = (
-            self.worktree
-            / ".local"
+            home
+            / ".peers-touch"
             / "dev"
-            / "state"
+            / "workspaces"
+            / workspace_id(self.worktree)
+            / "runtime"
             / self.profile
             / "desktop-app-tauri.json"
         )

@@ -13,8 +13,9 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { timestampMillis } from './socialNormalizers';
+import { FriendRequestState } from '../../gen/proto/domain/social/relationship_pb';
 import type {
-  FriendChatMessage,
+  SocialMessage,
   FriendChatSession,
   FriendRequest,
   SocialConversation,
@@ -27,18 +28,51 @@ const NOTIFICATION_STATUS_UNREAD = 1;
 
 export type MessageMutationKind = ChatMessageMutationKind;
 
+export interface SocialContact {
+  readonly peerPtid: string;
+  readonly peerName: string;
+  readonly peerAvatar: string;
+  readonly peerOnline: boolean;
+  readonly federationIds: readonly string[];
+}
+
+export function projectAcceptedContacts(
+  requests: readonly FriendRequest[],
+  currentUserPtid: string | null,
+  peerOnline: Readonly<Record<string, boolean>>,
+): SocialContact[] {
+  if (!currentUserPtid) return [];
+  const contacts = new Map<string, SocialContact>();
+  for (const request of requests) {
+    if (request.status !== FriendRequestState.ACCEPTED) continue;
+    const outgoing: boolean = request.senderPtid === currentUserPtid;
+    if (!outgoing && request.receiverPtid !== currentUserPtid) continue;
+    const peerPtid: string = outgoing ? request.receiverPtid : request.senderPtid;
+    if (!peerPtid || peerPtid === currentUserPtid) continue;
+    const existing = contacts.get(peerPtid);
+    const federationIds = new Set(existing?.federationIds);
+    if (request.federationId.trim()) federationIds.add(request.federationId);
+    contacts.set(peerPtid, {
+      peerPtid,
+      peerName: (outgoing ? request.receiverDisplayName : request.senderDisplayName)
+        || existing?.peerName || peerPtid,
+      peerAvatar: (outgoing ? request.receiverAvatar : request.senderAvatar)
+        || existing?.peerAvatar || '',
+      peerOnline: peerOnline[peerPtid] ?? false,
+      federationIds: [...federationIds],
+    });
+  }
+  return [...contacts.values()].sort((a, b) => a.peerName.localeCompare(b.peerName));
+}
+
 export function projectConversations(input: {
   sessions: FriendChatSession[];
-  messages: Record<string, FriendChatMessage[]>;
   currentUserPtid: string | null;
   peerOnline: Record<string, boolean>;
 }): SocialConversation[] {
   return input.sessions
     .map((session) => {
       const peerPtid = peerPtidFromSession(session, input.currentUserPtid);
-      const loadedLastMessage = input.messages[session.ulid]?.at(-1);
-      const sessionLastMessage = session.lastMessage;
-      const lastMessage = loadedLastMessage ?? sessionLastMessage;
       return {
         session,
         peerPtid,
@@ -46,7 +80,7 @@ export function projectConversations(input: {
         peerAvatar: peerAvatarFromSession(session, input.currentUserPtid),
         peerOnline: input.peerOnline[peerPtid] ?? false,
         unread: unreadFromSession(session, input.currentUserPtid),
-        lastMessage,
+        lastMessage: session.lastMessage,
       };
     })
     .sort((a, b) => timestampMillis(b.session.lastMessageAt) - timestampMillis(a.session.lastMessageAt));
@@ -105,7 +139,7 @@ export function projectMobileSocialIMConversation(conversation: SocialConversati
 
 export function projectMobileSocialIMMessage(
   conversationId: string,
-  message: FriendChatMessage,
+  message: SocialMessage,
 ): IMMessageProjection {
   return projectIMMessage({
     id: message.ulid ?? '',

@@ -9,17 +9,9 @@ DEV_URL="http://$MOBILE_DEV_HOST:$MOBILE_WEB_PORT"
 VITE_LOG="$APP_DIR/src-tauri/target/mobile-vite-dev.log"
 VITE_PID=""
 
-booted_iphone_name() {
-  xcrun simctl list devices booted \
-    | sed -nE 's/^[[:space:]]+([^()]+)[[:space:]]+\([^)]+\)[[:space:]]+\(Booted\)$/\1/p' \
-    | sed 's/[[:space:]]*$//' \
-    | grep -E '^iPhone ' \
-    | head -n 1
-}
-
 REQUESTED_DEVICE_NAME="${1:-${MOBILE_IOS_DEVICE:-${PT_MOBILE_IOS_DEVICE:-}}}"
-DEVICE_NAME="${REQUESTED_DEVICE_NAME:-$(booted_iphone_name)}"
-DEVICE_NAME="${DEVICE_NAME:-iPhone 17}"
+DEVICE_NAME="${REQUESTED_DEVICE_NAME:-iPhone 17}"
+SIMCTL_DEVICE_NAME="${DEVICE_NAME% Simulator}"
 
 is_dev_url_ready() {
   curl --silent --fail --max-time 1 "$DEV_URL" >/dev/null 2>&1
@@ -48,11 +40,11 @@ fi
 
 # Tauri installs to the named simulator. Keep that target booted so a shutdown
 # default device cannot tear down the dev server after a successful build.
-xcrun simctl boot "$DEVICE_NAME" >/dev/null 2>&1 || true
-xcrun simctl bootstatus "$DEVICE_NAME" -b >/dev/null
+xcrun simctl boot "$SIMCTL_DEVICE_NAME" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$SIMCTL_DEVICE_NAME" -b >/dev/null
 
 if ! is_dev_url_ready; then
-  pnpm dev -- --host "$MOBILE_DEV_HOST" --port "$MOBILE_WEB_PORT" --strictPort >"$VITE_LOG" 2>&1 &
+  pnpm dev --host "$MOBILE_DEV_HOST" --port "$MOBILE_WEB_PORT" --strictPort >"$VITE_LOG" 2>&1 &
   VITE_PID="$!"
   trap cleanup_vite EXIT INT TERM
 
@@ -88,7 +80,11 @@ export TAURI_CONFIG="$(cat "$DEV_CONFIG")"
 # Tauri embeds devUrl into the native context during the Rust build. Force the
 # build script to rerun so dev sessions cannot reuse a stale libapp.a.
 touch "$APP_DIR/src-tauri/build.rs"
-xattr -dr com.apple.provenance "$APP_DIR/src-tauri/target" 2>/dev/null || true
+PROVENANCE_MARKER="$APP_DIR/src-tauri/target/.mobile-provenance-cleared"
+if [ ! -f "$PROVENANCE_MARKER" ]; then
+  xattr -dr com.apple.provenance "$APP_DIR/src-tauri/target" 2>/dev/null || true
+  touch "$PROVENANCE_MARKER"
+fi
 find "$APP_DIR/src-tauri/target" "$APP_DIR/src-tauri/gen/apple/Externals" \
   \( -name libpeers_touch_mobile_lib.a -o -name libapp.a \) \
   -delete 2>/dev/null || true
@@ -98,5 +94,5 @@ if [ -f "$HOME/.cargo/env" ]; then
   source "$HOME/.cargo/env"
 fi
 
-echo "Launching Peers on iOS simulator: $DEVICE_NAME"
-npx tauri ios dev --config "$DEV_CONFIG" "$DEVICE_NAME"
+echo "Launching Peers on iOS simulator: $SIMCTL_DEVICE_NAME"
+npx tauri ios dev --config "$DEV_CONFIG" "$SIMCTL_DEVICE_NAME"

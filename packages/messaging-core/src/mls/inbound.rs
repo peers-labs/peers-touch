@@ -2,18 +2,19 @@ use super::group::{MlsGroupManager, MlsPreparedReceive};
 use crate::codec::private_content::decode_message_private_content;
 use crate::codec::verification::verify_device_event_delivery;
 use crate::contracts::{
-    CryptoEndpoint, InteractionMutation, InteractionReceiveCommit, MlsApplicationReceiveCommit,
-    MlsConversationMemberProjection, MlsConversationProjection, MlsMessageProjection,
-    MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit, MlsTransitionReceiveCommit,
-    ReceiveCommitResult,
+    ConversationAuthorityMemberProjection, CryptoEndpoint, InteractionMutation,
+    InteractionReceiveCommit, MlsApplicationReceiveCommit, MlsConversationProjection,
+    MlsMessageProjection, MlsRetirementReceiveCommit, MlsSenderTransitionReceiveCommit,
+    MlsTransitionReceiveCommit, ReceiveCommitResult,
 };
 use crate::inbox::ClaimedItemConsumer;
 use crate::proto::chat::{
     conversation_event, ConversationAuthoritySnapshot, ConversationCreatedFact, ConversationEvent,
     CryptoEndpoint as ProtoCryptoEndpoint, DeviceConsumptionReceipt, DurableDeviceInboxItem,
     MemberRole, MembershipTransitionAction, MembershipTransitionChange,
-    MembershipTransitionCommittedFact, MessagingMembershipAction, MlsQueuePayload,
-    MlsQueuePayloadKind, MlsRetirementMarker, PreparedEndpointPayloadKind, PublicEventMarker,
+    MembershipTransitionCommittedFact, MessagingContentKind, MessagingMembershipAction,
+    MlsQueuePayload, MlsQueuePayloadKind, MlsRetirementMarker, PreparedEndpointPayloadKind,
+    PublicEventMarker,
 };
 use crate::store::MlsInboundRepository;
 use prost::Message;
@@ -69,18 +70,63 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
             .event
             .as_ref()
             .ok_or_else(|| "messaging MLS delivery has no event".to_string())?;
-        let (message_id, is_edit, committed_fact) = match event.payload.as_ref() {
-            Some(conversation_event::Payload::MessageCommitted(message)) => {
-                (message.message_id.as_str(), false, Some(message))
-            }
-            Some(conversation_event::Payload::MessageEdited(fact)) => {
-                if fact.message_id.trim().is_empty() {
-                    return Err("messaging MLS edit has no message ID".to_string());
+        let (message_id, is_edit, message_sender, reply_to_message_id, thread_root_message_id) =
+            match event.payload.as_ref() {
+                Some(conversation_event::Payload::MessageCommitted(message)) => {
+                    if MessagingContentKind::try_from(message.content_kind)
+                        .map_err(|_| "messaging MLS content kind is invalid".to_string())?
+                        != MessagingContentKind::Text
+                    {
+                        return Err(
+                            "messaging MLS processor only accepts text projections".to_string()
+                        );
+                    }
+                    (
+                        message.message_id.as_str(),
+                        false,
+                        message.sender.as_ref(),
+                        (!message.reply_to_message_id.is_empty())
+                            .then_some(message.reply_to_message_id.as_str()),
+                        (!message.thread_root_message_id.is_empty())
+                            .then_some(message.thread_root_message_id.as_str()),
+                    )
                 }
-                (fact.message_id.as_str(), true, None)
+                Some(conversation_event::Payload::MessageForwarded(message)) => {
+                    if MessagingContentKind::try_from(message.content_kind)
+                        .map_err(|_| "messaging MLS forward content kind is invalid".to_string())?
+                        != MessagingContentKind::Text
+                    {
+                        return Err(
+                            "messaging MLS processor only accepts text projections".to_string()
+                        );
+                    }
+                    (
+                        message.destination_message_id.as_str(),
+                        false,
+                        message.sender.as_ref(),
+                        None,
+                        None,
+                    )
+                }
+                Some(conversation_event::Payload::MessageEdited(fact)) => {
+                    if fact.message_id.trim().is_empty() {
+                        return Err("messaging MLS edit has no message ID".to_string());
+                    }
+                    (fact.message_id.as_str(), true, None, None, None)
+                }
+                _ => return Err("messaging MLS application has unsupported event type".to_string()),
+            };
+        if !is_edit {
+            let sender = message_sender
+                .ok_or_else(|| "messaging MLS event has no message sender".to_string())?;
+            if message_id.trim().is_empty()
+                || sender.ptid.trim().is_empty()
+                || sender.device_id.trim().is_empty()
+                || event.actor.as_ref() != Some(sender)
+            {
+                return Err("messaging MLS event/message binding mismatch".to_string());
             }
-            _ => return Err("messaging MLS application has unsupported event type".to_string()),
-        };
+        }
         if !self.manager.has_session(&event.conversation_id) {
             let state = self
                 .store
@@ -130,28 +176,20 @@ impl<R: MlsInboundRepository> MlsApplicationProcessor<R> {
             return Ok(());
         }
 
-        let message = committed_fact
-            .ok_or_else(|| "messaging MLS application has no message fact".to_string())?;
+        let message_sender = message_sender
+            .ok_or_else(|| "messaging MLS application has no message sender".to_string())?;
         let projection = MlsMessageProjection {
             conversation_id: event.conversation_id.clone(),
             event_id: event.event_id.clone(),
             event_sequence: event.sequence,
-            message_id: message.message_id.clone(),
-            sender_ptid: message
-                .sender
-                .as_ref()
-                .map(|endpoint| endpoint.ptid.clone())
-                .unwrap_or_default(),
-            sender_device_id: message
-                .sender
-                .as_ref()
-                .map(|endpoint| endpoint.device_id.clone())
-                .unwrap_or_default(),
+            message_id: message_id.to_string(),
+            sender_ptid: message_sender.ptid.clone(),
+            sender_device_id: message_sender.device_id.clone(),
             plaintext: private_content.text,
             attachments: private_content.attachments,
             committed_at_unix_ms,
-            reply_to_message_id: non_empty(&message.reply_to_message_id),
-            thread_root_message_id: non_empty(&message.thread_root_message_id),
+            reply_to_message_id: reply_to_message_id.map(str::to_string),
+            thread_root_message_id: thread_root_message_id.map(str::to_string),
         };
         let result = self
             .store
@@ -768,9 +806,12 @@ pub fn authority_snapshot_projection(
             .active_members
             .iter()
             .map(|member| {
-                Ok(MlsConversationMemberProjection {
+                Ok(ConversationAuthorityMemberProjection {
                     ptid: member.ptid.clone(),
                     role: authority_member_role(&member.role)? as i32,
+                    home_station_peer_id: member.home_station_peer_id.clone(),
+                    muted: member.muted,
+                    muted_until_unix_ms: member.muted_until.as_ref().map(timestamp_value_millis),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?,
@@ -1002,12 +1043,11 @@ fn timestamp_millis(event: &ConversationEvent, fallback: i64) -> i64 {
         .unwrap_or(fallback)
 }
 
-fn non_empty(value: &str) -> Option<String> {
-    if value.is_empty() {
-        None
-    } else {
-        Some(value.to_string())
-    }
+fn timestamp_value_millis(timestamp: &prost_types::Timestamp) -> i64 {
+    timestamp
+        .seconds
+        .saturating_mul(1_000)
+        .saturating_add(i64::from(timestamp.nanos) / 1_000_000)
 }
 
 #[cfg(test)]
@@ -1022,8 +1062,8 @@ mod tests {
     use crate::proto::chat::{
         ConversationAuthorityMember, ConversationCreatedFact, ConversationKind,
         DeviceEventDelivery, DeviceInboxPayloadType, MembershipTransitionCommittedFact,
-        MessageCommittedFact, MessagingContentKind, MessagingMembershipChangeCommitted,
-        PrepareConversationGroupResponse,
+        MessageCommittedFact, MessageForwardedFact, MessagingContentKind,
+        MessagingMembershipChangeCommitted, PrepareConversationGroupResponse,
     };
     use crate::proto::key_exchange::MlsKeyPackageReservation;
     use crate::proto::{actor_device_from_chat_endpoint, actor_device_ref};
@@ -1067,6 +1107,7 @@ mod tests {
                     ptid: (*ptid).to_string(),
                     role: (*role).to_string(),
                     home_station_peer_id: (*station).to_string(),
+                    ..Default::default()
                 })
                 .collect(),
             active_endpoints: endpoints
@@ -1080,7 +1121,7 @@ mod tests {
         }
     }
 
-    fn queue_item(ciphertext: Vec<u8>) -> DurableDeviceInboxItem {
+    fn queue_item(ciphertext: Vec<u8>, forwarded: bool) -> DurableDeviceInboxItem {
         let recipient = proto_endpoint(&endpoint("ptid:bob", "bob-device"));
         let payload_hash = Sha256::digest(&ciphertext).to_vec();
         let mut event = ConversationEvent {
@@ -1099,14 +1140,21 @@ mod tests {
             membership_epoch: 1,
             mls_epoch: 1,
             authority_station_peer_id: "station-local".to_string(),
-            payload: Some(conversation_event::Payload::MessageCommitted(
-                MessageCommittedFact {
+            payload: Some(if forwarded {
+                conversation_event::Payload::MessageForwarded(MessageForwardedFact {
+                    destination_message_id: "message-1".to_string(),
+                    sender: Some(proto_endpoint(&endpoint("ptid:alice", "alice-device"))),
+                    content_kind: MessagingContentKind::Text as i32,
+                    ..Default::default()
+                })
+            } else {
+                conversation_event::Payload::MessageCommitted(MessageCommittedFact {
                     message_id: "message-1".to_string(),
                     sender: Some(proto_endpoint(&endpoint("ptid:alice", "alice-device"))),
                     content_kind: MessagingContentKind::Text as i32,
                     ..Default::default()
-                },
-            )),
+                })
+            }),
         };
         let commitment = delivery_commitment(
             &event.conversation_id,
@@ -1363,11 +1411,13 @@ mod tests {
                                 ptid: "ptid:alice".to_string(),
                                 role: "owner".to_string(),
                                 home_station_peer_id: "station-local".to_string(),
+                                ..Default::default()
                             },
                             ConversationAuthorityMember {
                                 ptid: "ptid:carol".to_string(),
                                 role: "member".to_string(),
                                 home_station_peer_id: "station-c".to_string(),
+                                ..Default::default()
                             },
                         ],
                         active_endpoints: vec![
@@ -1448,8 +1498,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn openmls_queue_consume_is_atomic_and_replay_skips_decrypt() {
+    fn assert_openmls_queue_consume_is_atomic_and_replay_safe(forwarded: bool) {
         let alice = Arc::new(MlsGroupManager::new());
         let bob = Arc::new(MlsGroupManager::new());
         alice
@@ -1487,14 +1536,25 @@ mod tests {
             now,
         )
         .unwrap();
-        let item = queue_item(ciphertext);
+        let item = queue_item(ciphertext, forwarded);
 
         processor.consume(&item, 1).unwrap();
         processor.consume(&item, 2).unwrap();
 
         let messages = store.messages();
         assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].message_id, "message-1");
         assert_eq!(messages[0].plaintext, "exact group plaintext");
+    }
+
+    #[test]
+    fn openmls_queue_consume_is_atomic_and_replay_skips_decrypt() {
+        assert_openmls_queue_consume_is_atomic_and_replay_safe(false);
+    }
+
+    #[test]
+    fn openmls_queue_consume_projects_forwarded_destination_message() {
+        assert_openmls_queue_consume_is_atomic_and_replay_safe(true);
     }
 
     #[test]

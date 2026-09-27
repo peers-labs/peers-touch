@@ -1,6 +1,6 @@
-import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
-import type { GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
+import type { FriendChatSession, GroupMember } from './socialProjection';
 import type { FederationResolveView } from '../gen/proto/domain/federation/federation_resolve_pb';
+import { ActorVisibility } from '../gen/proto/domain/actor/actor_pb';
 import type { AccountProfile } from '../services/desktop_api';
 
 export interface CurrentActorProfileProjection {
@@ -60,6 +60,7 @@ export function accountProfileFromFederationResolve(
   }
   return {
     id: profile.id,
+    profile_revision: Number(profile.profileRevision),
     username: profile.username,
     acct: profile.acct,
     display_name: profile.displayName,
@@ -83,10 +84,28 @@ export function accountProfileFromFederationResolve(
     manually_approves_followers: profile.manuallyApprovesFollowers,
     message_permission: profile.messagePermission,
     auto_expire_days: Number(profile.autoExpireDays),
+    federated_handle: view.federatedHandle,
+    home_station_peer_id: view.homeStationPeerId,
+    home_station_domain: view.homeStationDomain,
+    discoverability: actorVisibilityLabel(profile.discoverability),
     peers_touch: {
       network_id: actorPtid,
     },
   };
+}
+
+function actorVisibilityLabel(
+  visibility: ActorVisibility,
+): AccountProfile['discoverability'] {
+  switch (visibility) {
+    case ActorVisibility.INDEXED:
+      return 'indexed';
+    case ActorVisibility.BY_HANDLE:
+      return 'by_handle';
+    case ActorVisibility.HIDDEN:
+    case ActorVisibility.UNSPECIFIED:
+      return 'hidden';
+  }
 }
 
 function exactSessionProfile(

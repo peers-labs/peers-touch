@@ -1,21 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Badge } from 'antd';
 import { Image, MessageCircle, User, Users } from 'lucide-react';
 
-import { useLifecyclePhase } from '../app/lifecycle';
 import { useMobileI18n } from '../app/mobileI18n';
 import {
   activeMobileDetailRoute,
   navigationLocationKey,
   primaryTabDescriptors,
+  requestSettingsExit,
   restoreFocusTarget,
   saveScrollPosition,
   saveFocusTarget,
   restoreScrollPosition,
-  clearAllScrollPositions,
   useMobileNavigationStore,
-  type MobileChatDetailRoute,
   type MobileDetailRoute,
+  type MobileOverlayRoute,
   type MobilePrimaryRouteId,
 } from '../app/navigation';
 import { ChatPage } from '../pages/ChatPage';
@@ -30,8 +29,8 @@ import type { StoredStationRegistry } from '../features/station/stationRegistry'
 import {
   visibleChatUnread,
 } from '../features/chat/chatActionState';
-import { projectGroupConversations } from '../features/group/groupProjection';
-import { useGroupStore } from '../features/group/groupStore';
+import { MobileRouteBoundary } from './MobileRouteBoundary';
+import { MobileCallSurface } from './call/MobileCallSurface';
 
 type TabId = 'chat' | 'moments' | 'contacts' | 'settings';
 
@@ -51,32 +50,92 @@ function routeIdToTabId(routeId: string): TabId | null {
   return null;
 }
 
+function detailRouteToTabId(route: MobileDetailRoute | null): TabId | null {
+  switch (route?.routeId) {
+    case 'detail:chat-conversation':
+    case 'detail:group-conversation':
+      return 'chat';
+    case 'detail:contact-profile':
+      return 'contacts';
+    case 'detail:moment':
+      return 'moments';
+    case 'detail:setting':
+      return 'settings';
+    default:
+      return null;
+  }
+}
+
 function renderPage(
   tabId: TabId,
   props: MobileShellProps,
   authSession: MobileAuthSession | null,
-  activeChatDetail: MobileChatDetailRoute | null,
-  onOpenChat: (route: MobileChatDetailRoute) => void,
+  activeDetail: MobileDetailRoute | null,
+  activeOverlay: MobileOverlayRoute | null,
+  onOpenDetail: (route: MobileDetailRoute) => void,
+  onOpenOverlay: (route: MobileOverlayRoute) => void,
+  onCloseOverlay: () => void,
   onBack: () => void,
 ) {
   switch (tabId) {
     case 'chat':
       return (
         <ChatPage
-          activeDetail={activeChatDetail}
+          activeDetail={
+            activeDetail?.routeId === 'detail:chat-conversation'
+            || activeDetail?.routeId === 'detail:group-conversation'
+              ? activeDetail
+              : null
+          }
           onBack={onBack}
-          onOpenConversation={onOpenChat}
+          onOpenConversation={onOpenDetail}
         />
       );
     case 'moments':
-      return <MomentsPage />;
+      return (
+        <MomentsPage
+          activePostId={activeDetail?.routeId === 'detail:moment' ? activeDetail.postId : null}
+          onOpenMoment={(postId) => onOpenDetail({
+            routeId: 'detail:moment',
+            postId,
+          })}
+          onBack={onBack}
+        />
+      );
     case 'contacts':
-      return <ContactsPage onOpenChat={onOpenChat} />;
+      return (
+        <ContactsPage
+          activeContactPtid={
+            activeDetail?.routeId === 'detail:contact-profile'
+              ? activeDetail.actorPtid
+              : null
+          }
+          activeOverlay={activeOverlay}
+          onOpenChat={onOpenDetail}
+          onOpenContact={(actorPtid) => onOpenDetail({
+            routeId: 'detail:contact-profile',
+            actorPtid,
+          })}
+          onOpenOverlay={onOpenOverlay}
+          onCloseOverlay={onCloseOverlay}
+          onBack={onBack}
+        />
+      );
     case 'settings':
       return (
         <SettingsPage
           authSession={authSession}
           stationRegistry={props.stationRegistry}
+          activeSettingId={
+            activeDetail?.routeId === 'detail:setting'
+              ? activeDetail.settingId
+              : null
+          }
+          onOpenSetting={(settingId) => onOpenDetail({
+            routeId: 'detail:setting',
+            settingId,
+          })}
+          onBack={onBack}
           onChangeStation={props.onChangeStation}
           onLogout={props.onLogout}
         />
@@ -86,7 +145,7 @@ function renderPage(
 
 export interface MobileShellProps {
   stationRegistry: StoredStationRegistry;
-  onChangeStation: () => void;
+  readonly onChangeStation: () => Promise<void>;
   onLogout: () => Promise<void>;
 }
 
@@ -99,36 +158,31 @@ export interface MobileShellProps {
  */
 export function MobileShell(props: MobileShellProps) {
   const { t } = useMobileI18n();
-  const lifecyclePhase = useLifecyclePhase();
   const authSession = useAuthStore((state) => state.session);
   const primaryRouteId = useMobileNavigationStore(
     (state) => state.primaryRouteId,
   );
   const detailStack = useMobileNavigationStore((state) => state.detailStack);
+  const activeOverlay = useMobileNavigationStore((state) => state.overlayRoute);
   const navigatePrimary = useMobileNavigationStore(
     (state) => state.navigatePrimary,
   );
   const pushDetail = useMobileNavigationStore((state) => state.pushDetail);
   const popDetail = useMobileNavigationStore((state) => state.popDetail);
+  const openOverlay = useMobileNavigationStore((state) => state.openOverlay);
+  const closeOverlay = useMobileNavigationStore((state) => state.closeOverlay);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const sessions = useSocialStore((state) => state.sessions);
-  const messages = useSocialStore((state) => state.messages);
   const currentUserPtid = useSocialStore((state) => state.currentUserPtid);
   const peerOnline = useSocialStore((state) => state.peerOnline);
   const friendRequests = useSocialStore((state) => state.friendRequests);
   const friendConversationSettings = useSocialStore((state) => state.conversationSettings);
-  const groups = useGroupStore((state) => state.groups);
-  const groupMessages = useGroupStore((state) => state.messages);
-  const groupUnreadCounts = useGroupStore((state) => state.unreadCounts);
-  const groupSettings = useGroupStore((state) => state.settings);
+  const messagingConversations = useSocialStore((state) => state.messagingConversations);
+  const conversationSummaries = useSocialStore((state) => state.conversationSummaries);
   const conversations = useMemo(
-    () => projectConversations({ sessions, messages, currentUserPtid, peerOnline }),
-    [currentUserPtid, messages, peerOnline, sessions],
-  );
-  const groupConversations = useMemo(
-    () => projectGroupConversations({ groups, messages: groupMessages, unreadCounts: groupUnreadCounts }),
-    [groupMessages, groupUnreadCounts, groups],
+    () => projectConversations({ sessions, currentUserPtid, peerOnline }),
+    [currentUserPtid, peerOnline, sessions],
   );
   const inboundRequests = useMemo(
     () => projectPendingInboundRequests(friendRequests, currentUserPtid),
@@ -141,23 +195,23 @@ export function MobileShell(props: MobileShellProps) {
         alertEnabled: friendConversationSettings[conversation.session.ulid]?.alertEnabled !== false,
       }),
     0,
-  ) + groupConversations.reduce(
-    (total, conversation) =>
-      total + visibleChatUnread(conversation.unread, {
-        muted: Boolean(groupSettings[conversation.group.ulid]?.isMuted),
-        alertEnabled: groupSettings[conversation.group.ulid]?.alertEnabled !== false,
-      }),
+  ) + messagingConversations.reduce(
+    (total, conversation) => conversation.kind === 2 && conversation.active
+      ? total + visibleChatUnread(
+          conversationSummaries[conversation.conversationId]?.unreadCount ?? 0,
+          {
+            muted: Boolean(friendConversationSettings[conversation.conversationId]?.isMuted),
+            alertEnabled: friendConversationSettings[conversation.conversationId]?.alertEnabled !== false,
+          },
+        )
+      : total,
     0,
   );
   const contactBadge = inboundRequests.length;
 
   const activeDetail = activeMobileDetailRoute({ detailStack });
-  const activeChatDetail = activeDetail?.routeId === 'detail:chat-conversation'
-    || activeDetail?.routeId === 'detail:group-conversation'
-    ? activeDetail
-    : null;
   const activeTab = routeIdToTabId(primaryRouteId) ?? 'chat';
-  const renderedTab = activeChatDetail ? 'chat' : activeTab;
+  const renderedTab = detailRouteToTabId(activeDetail) ?? activeTab;
 
   const saveCurrentLocation = useCallback(() => {
     const state = useMobileNavigationStore.getState();
@@ -181,12 +235,14 @@ export function MobileShell(props: MobileShellProps) {
 
   const switchTab = useCallback((tabId: TabId) => {
     const routeId = `tab:${tabId}` as MobilePrimaryRouteId;
-    saveCurrentLocation();
-    navigatePrimary(routeId);
-    restoreLocation(routeId);
+    requestSettingsExit(() => {
+      saveCurrentLocation();
+      navigatePrimary(routeId);
+      restoreLocation(routeId);
+    });
   }, [navigatePrimary, restoreLocation, saveCurrentLocation]);
 
-  const openChatDetail = useCallback((route: MobileChatDetailRoute) => {
+  const openDetail = useCallback((route: MobileDetailRoute) => {
     saveCurrentLocation();
     pushDetail(route);
     restoreLocation(route);
@@ -200,25 +256,27 @@ export function MobileShell(props: MobileShellProps) {
     restoreLocation(nextRoute);
   }, [popDetail, restoreLocation, saveCurrentLocation]);
 
-  useEffect(() => {
-    if (lifecyclePhase !== 'ACTIVE' && lifecyclePhase !== 'RESUMING') {
-      clearAllScrollPositions();
-    }
-  }, [lifecyclePhase]);
-
   const hideTabbar = activeDetail !== null;
 
   return (
     <div className={`mobile-shell ${hideTabbar ? 'tabbar-hidden' : ''}`}>
       <div className="mobile-content" ref={contentRef}>
-        {renderPage(
-          renderedTab,
-          props,
-          authSession,
-          activeChatDetail,
-          openChatDetail,
-          closeDetail,
-        )}
+        <MobileRouteBoundary
+          routeId={activeDetail?.routeId ?? primaryRouteId}
+          onBack={closeDetail}
+        >
+          {renderPage(
+            renderedTab,
+            props,
+            authSession,
+            activeDetail,
+            activeOverlay,
+            openDetail,
+            openOverlay,
+            closeOverlay,
+            closeDetail,
+          )}
+        </MobileRouteBoundary>
       </div>
 
       {!hideTabbar ? <nav className="mobile-tabbar">
@@ -243,6 +301,7 @@ export function MobileShell(props: MobileShellProps) {
           );
         })}
       </nav> : null}
+      <MobileCallSurface />
     </div>
   );
 }

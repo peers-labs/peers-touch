@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -89,7 +89,7 @@ Target command behavior:
 | `make mobile` | Acquire current workspace `local.slot` lease |
 | `make station-check` | Require `station.connect` |
 | `make station` / restart | Require exclusive `station.deploy` |
-| destructive Acceptance reset | Require exclusive `station.reset` plus explicit run authorization |
+| destructive Acceptance reset | Require an Agent-resettable Profile, exclusive `station.reset`, and an exact run scope |
 
 The generic reset lease API for the later destructive wrapper is:
 
@@ -97,14 +97,15 @@ The generic reset lease API for the later destructive wrapper is:
 node tooling/scripts/local-dev/machine-dev.mjs lease \
   --resource-kind station.reset \
   --resource-id <station-fixture-scope> \
-  --reset-authorized-scope <station-fixture-scope> \
+  --reset-scope <station-fixture-scope> \
   --budget-seconds <seconds> \
   -- <reset-command>
 ```
 
-It validates the authoritative binding, `allowedCapabilities`, exact active
-Development intent, remote tracked-clean topology, and exact reset scope before
-acquiring the OS lock. It does not itself authorize or implement deletion.
+It validates the canonical Profile-ID reset policy, authoritative binding,
+`allowedCapabilities`, exact active Development intent, remote tracked-clean
+topology, and exact reset scope before acquiring the OS lock. It does not
+implement deletion or consult a second human-authorization channel.
 
 `make station` uses the same API with `station.deploy` and holds the lease
 across source synchronization, build, restart, deploy health readback, and the
@@ -132,8 +133,9 @@ promotes it. This permits visibility without silently changing active runtimes.
 ## 5. Migration Constraints
 
 - Preserve each worktree's independent profile choice.
-- Require `PT_AGENT_CONTROL_MODE` on every reviewed profile; do not infer it
-  from the profile name or Station mode.
+- Derive reset policy only from the verified canonical Profile ID. A
+  case-insensitive `stable` substring is protected; all other reviewed Profile
+  IDs are Agent-resettable. Do not read a control-mode field or legacy cache.
 - Do not select a default profile for unbound worktrees.
 - Do not assign slot 0 as a fallback.
 - Do not create, copy, derive, or register an environment-repository profile,
@@ -192,6 +194,9 @@ Required negative fixtures:
 - Missing registry, malformed registry, and unsupported schema.
 - Dirty/untracked environment repository definition.
 - Missing profile with no explicit human authorization to create it.
+- Mixed-case `stable` Profile requesting `station.reset`.
+- Non-stable reset with missing binding capability, declaration, exact scope,
+  or OS lease.
 - Expired, mismatched, reused, or digest-invalid environment authorization.
 
 Focused implementation verification:

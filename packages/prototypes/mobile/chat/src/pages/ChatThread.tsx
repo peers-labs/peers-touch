@@ -1,26 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Avatar, Input, Typography } from 'antd';
 import {
   ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
-  Copy, CornerUpLeft, File, Flag as FlagIcon, Forward,
+  Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
   Image as ImageIcon, Laugh, ListChecks, LockKeyhole,
-  MessageSquare, MoreVertical, Pencil, Phone, Pin, Plus,
-  RotateCcw, Send, Trash2, X,
+  MessageSquare, Mic, MoreVertical, Pencil, Phone, PhoneOff, Pin, Play, Plus,
+  RotateCcw, Send, ShieldX, Square, Video, X,
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, ReactionKind } from '../types';
 import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
 import { demoMessages } from '../data';
 import { ThreadView } from '../components/ThreadView';
 import { ForwardPicker } from '../components/ForwardPicker';
+import { ChatHistorySearch } from '../components/ChatHistorySearch';
+import { PrototypeListWindow, type PrototypeListHandle } from '../components/PrototypeListWindow';
+import type { PrototypeListMemory } from '../listPresentation';
+import type { SearchDemoControl } from '../searchDemo';
+import copy from '../../../../../locales/en/common.json';
 
 const { Text } = Typography;
+const messageKey = (message: Message) => message.id;
 
-export function ChatThread({ conversation, onBack }: { conversation: Conversation; onBack: () => void }) {
-  const [messages, setMessages] = useState<Message[]>(demoMessages);
+export function ChatThread({ conversation, onBack, initialMessages = demoMessages, listMemory, searchDemo }: {
+  conversation: Conversation;
+  onBack: () => void;
+  initialMessages?: Message[];
+  listMemory: PrototypeListMemory;
+  searchDemo?: SearchDemoControl;
+}) {
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [inputValue, setInputValue] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [actionSheetMessage, setActionSheetMessage] = useState<Message | null>(null);
-  const [isTyping] = useState(true);
+  const [isTyping] = useState(initialMessages.length > 0);
   const [threadMessage, setThreadMessage] = useState<Message | null>(null);
   const [chatTab, setChatTab] = useState<'chat' | 'pinned'>('chat');
   const [showEmojiGrid, setShowEmojiGrid] = useState(false);
@@ -28,17 +40,42 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
   const [toastKey, setToastKey] = useState(0);
   const [showChatDetails, setShowChatDetails] = useState(false);
   const [detailsView, setDetailsView] = useState<'main' | 'search' | 'media'>('main');
-  const [detailsSearchQuery, setDetailsSearchQuery] = useState('');
+  const [targetMessageId, setTargetMessageId] = useState<string | null>(null);
+  const [targetUnavailable, setTargetUnavailable] = useState(false);
+  const messageWindow = useRef<PrototypeListHandle>(null);
   const [isMuted, setIsMuted] = useState(conversation.muted ?? false);
   const [isStickyTop, setIsStickyTop] = useState(conversation.pinned ?? false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [confirmAction, setConfirmAction] = useState<'clear' | 'block' | 'report' | null>(null);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [voiceRecording, setVoiceRecording] = useState(false);
+  const [voiceSeconds, setVoiceSeconds] = useState(0);
+  const [voiceDraft, setVoiceDraft] = useState<{ durationSeconds: number } | null>(null);
+  const [callState, setCallState] = useState<'idle' | 'outgoing' | 'active'>('idle');
+  const [callKind, setCallKind] = useState<'audio' | 'video'>('audio');
+
+  useEffect(() => {
+    if (!voiceRecording) return undefined;
+    const timer = window.setInterval(() => setVoiceSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [voiceRecording]);
+
+  useEffect(() => {
+    if (callState !== 'outgoing') return undefined;
+    const timer = window.setTimeout(() => setCallState('active'), 700);
+    return () => window.clearTimeout(timer);
+  }, [callState]);
+
+  useLayoutEffect(() => {
+    if (!targetMessageId || showChatDetails || threadMessage || chatTab !== 'chat') return;
+    setTargetUnavailable(!messageWindow.current?.reveal(targetMessageId));
+    setTargetMessageId(null);
+  }, [targetMessageId, showChatDetails, threadMessage, chatTab]);
 
   function handleSend() {
     const text = inputValue.trim();
-    if (!text) return;
+    if (!text && !voiceDraft) return;
 
     if (editingMessage) {
       setMessages((prev) => prev.map((m) =>
@@ -55,11 +92,34 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
       text,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'sent',
+      voice: voiceDraft ?? undefined,
       reply: replyTo ? { name: replyTo.mine ? 'You' : conversation.name, text: replyTo.text || (replyTo.image ? '[Photo]' : '[File]') } : undefined,
     };
     setMessages((prev) => [...prev, newMsg]);
     setInputValue('');
+    setVoiceDraft(null);
     setReplyTo(null);
+  }
+
+  function startVoiceRecording() {
+    setVoiceDraft(null);
+    setVoiceSeconds(0);
+    setVoiceRecording(true);
+  }
+
+  function finishVoiceRecording() {
+    setVoiceRecording(false);
+    setVoiceDraft({ durationSeconds: Math.max(1, voiceSeconds) });
+  }
+
+  function cancelVoiceRecording() {
+    setVoiceRecording(false);
+    setVoiceSeconds(0);
+  }
+
+  function startCall(kind: 'audio' | 'video') {
+    setCallKind(kind);
+    setCallState('outgoing');
   }
 
   function handleAction(action: string) {
@@ -78,9 +138,16 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
     } else if (action === 'edit') {
       setEditingMessage(actionSheetMessage);
       setInputValue(actionSheetMessage.text ?? '');
-    } else if (action === 'delete') {
+    } else if (action === 'hide-for-me') {
       setMessages((prev) => prev.filter((m) => m.id !== actionSheetMessage.id));
-      showToast('Message deleted');
+      showToast(copy['mobile.chat.deleteForMe']);
+    } else if (action === 'moderate') {
+      setMessages((prev) => prev.map((m) =>
+        m.id === actionSheetMessage.id
+          ? { ...m, moderated: true, text: undefined, image: undefined, file: undefined }
+          : m,
+      ));
+      showToast(copy['mobile.chat.moderatedMessage']);
     } else if (action === 'recall') {
       setMessages((prev) => prev.map((m) =>
         m.id === actionSheetMessage.id ? { ...m, recalled: true, text: undefined, image: undefined, file: undefined } : m,
@@ -146,11 +213,13 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
     return <Clock size={13} className="mp-receipt mp-receipt--pending" />;
   }
 
-  const pinnedMessage = messages.find((m) => m.pinned && !m.dateLabel && !m.recalled);
-  const pinnedMessages = messages.filter((m) => m.pinned && !m.dateLabel && !m.recalled);
+  const pinnedMessage = messages.find((m) => m.pinned && !m.dateLabel && !m.recalled && !m.moderated);
+  const pinnedMessages = messages.filter((m) => m.pinned && !m.dateLabel && !m.recalled && !m.moderated);
 
   return (
     <div className="mp-thread">
+      {!showChatDetails && !threadMessage && (
+        <>
       <header className="mp-thread-header">
         <button type="button" className="mp-thread-back" onClick={onBack} aria-label="Back">
           <ArrowLeft size={22} />
@@ -167,8 +236,11 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
             </span>
           </div>
         </div>
-        <button type="button" className="mp-thread-action mp-thread-action--muted" aria-label="Call unavailable" disabled>
+        <button type="button" className="mp-thread-action" aria-label="Audio call" onClick={() => startCall('audio')}>
           <Phone size={19} />
+        </button>
+        <button type="button" className="mp-thread-action" aria-label="Video call" onClick={() => startCall('video')}>
+          <Video size={19} />
         </button>
         <button type="button" className="mp-thread-action" aria-label="More" onClick={() => setShowChatDetails(true)}>
           <MoreVertical size={19} />
@@ -208,27 +280,44 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
             </div>
           )}
 
-          <div className="mp-thread-messages">
-            {messages.map((msg) => {
+          <div className="mp-thread-messages" data-prototype-page="messages">
+            {targetUnavailable && (
+              <Text type="secondary" role="status">{copy['mobile.chat.messageUnavailable']}</Text>
+            )}
+            {messages.length === 0 && (
+              <Text type="secondary" role="status">{copy['mobile.chat.emptyThread']}</Text>
+            )}
+            <PrototypeListWindow items={messages} itemKey={messageKey}
+              surfaceKey={`messages:${conversation.key}`} memory={listMemory} size={200} initial="end"
+              controllerRef={messageWindow}>
+            {(window) => window.map((msg) => {
               if (msg.dateLabel) {
                 return (
-                  <div key={msg.id} className="mp-date-separator">
+                  <div key={msg.id} className="mp-date-separator" data-scroll-anchor-id={msg.id}>
                     <span className="mp-date-pill">{msg.dateLabel}</span>
                   </div>
                 );
               }
-              if (msg.recalled) {
+              if (msg.recalled || msg.moderated) {
                 return (
-                  <div key={msg.id} className={`mp-message-row ${msg.mine ? 'mine' : 'peer'}`}>
+                  <div key={msg.id} className={`mp-message-row ${msg.mine ? 'mine' : 'peer'}`}
+                    data-scroll-anchor-id={msg.id}>
                     <div className="mp-recalled-notice">
-                      <RotateCcw size={12} />
-                      <span>{msg.mine ? 'You recalled a message' : `${conversation.name} recalled a message`}</span>
+                      {msg.moderated ? <ShieldX size={12} /> : <RotateCcw size={12} />}
+                      <span>
+                        {msg.moderated
+                          ? copy['mobile.chat.moderatedMessage']
+                          : msg.mine
+                            ? 'You recalled a message'
+                            : `${conversation.name} recalled a message`}
+                      </span>
                     </div>
                   </div>
                 );
               }
               return (
-                <div key={msg.id} className={`mp-message-row ${msg.mine ? 'mine' : 'peer'}`}>
+                <div key={msg.id} className={`mp-message-row ${msg.mine ? 'mine' : 'peer'}`}
+                  data-scroll-anchor-id={msg.id}>
                   {!msg.mine && (
                     <Avatar size={36} className="mp-message-avatar" style={{ background: conversation.avatarGradient, borderRadius: 10 }}>
                       {conversation.avatar}
@@ -260,6 +349,13 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
                         </div>
                       </div>
                     )}
+                    {msg.voice && (
+                      <div className="mp-message-voice">
+                        <button type="button" aria-label="Play voice message"><Play size={16} /></button>
+                        <span>{formatVoiceDuration(msg.voice.durationSeconds)}</span>
+                        <div className="mp-voice-progress"><span /></div>
+                      </div>
+                    )}
                     {msg.text && (
                       <div className="mp-bubble" onContextMenu={(e) => { e.preventDefault(); setActionSheetMessage(msg); }}>
                         {msg.pinned && <Pin size={11} className="mp-bubble-pin" />}
@@ -269,7 +365,7 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
                     {msg.threadCount && msg.threadCount > 0 && (
                       <button type="button" className="mp-thread-badge" onClick={() => setThreadMessage(msg)}>
                         <MessageSquare size={12} />
-                        <span>{msg.threadCount} replies</span>
+                        <span>{copy['mobile.chat.threadReplyCount'].replace('{{count}}', String(msg.threadCount))}</span>
                       </button>
                     )}
                     {msg.reactions && msg.reactions.length > 0 && (
@@ -303,8 +399,9 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
                 </div>
               );
             })}
+            </PrototypeListWindow>
 
-            {isTyping && (
+            {isTyping && messages.length <= 200 && (
               <div className="mp-message-row peer">
                 <Avatar size={36} className="mp-message-avatar" style={{ background: conversation.avatarGradient, borderRadius: 10 }}>
                   {conversation.avatar}
@@ -342,21 +439,58 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
             </div>
           )}
 
+          {(voiceRecording || voiceDraft) && (
+            <div className="mp-voice-composer">
+              <div className="mp-voice-composer-status">
+                <span className={`mp-voice-status-dot ${voiceRecording ? 'recording' : ''}`} />
+                <Text strong>
+                  {voiceRecording
+                    ? `Recording ${voiceSeconds}s`
+                    : `Voice preview ${formatVoiceDuration(voiceDraft?.durationSeconds ?? 0)}`}
+                </Text>
+              </div>
+              <div className="mp-voice-composer-actions">
+                {voiceDraft && <button type="button" aria-label="Preview voice message"><Play size={16} /></button>}
+                <button type="button" aria-label="Cancel voice message" onClick={() => { cancelVoiceRecording(); setVoiceDraft(null); }}><X size={16} /></button>
+                {voiceRecording && <button type="button" aria-label="Use recording" onClick={finishVoiceRecording}><Square size={15} /></button>}
+              </div>
+            </div>
+          )}
+
           <div className="mp-composer">
             <button type="button" className="mp-composer-attach" aria-label="Attach"><Plus size={22} /></button>
+            <button type="button" className={`mp-composer-voice ${voiceRecording ? 'active' : ''}`} aria-label={voiceRecording ? 'Stop recording' : 'Record voice message'} onClick={voiceRecording ? finishVoiceRecording : startVoiceRecording}><Mic size={19} /></button>
             <Input.TextArea
               className="mp-composer-input"
               value={inputValue}
               placeholder="Message"
               autoSize={{ minRows: 1, maxRows: 4 }}
+              disabled={voiceRecording}
               onChange={(e) => setInputValue(e.target.value)}
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
             />
-            <button type="button" className={`mp-composer-send ${inputValue.trim() ? 'active' : ''}`} onClick={handleSend} aria-label="Send">
+            <button type="button" className={`mp-composer-send ${inputValue.trim() || voiceDraft ? 'active' : ''}`} onClick={handleSend} aria-label="Send">
               <Send size={18} />
             </button>
           </div>
         </>
+      )}
+        </>
+      )}
+
+      {callState !== 'idle' && (
+        <div className="mp-call-surface" role="dialog" aria-modal="true" aria-label="Call">
+          <div className="mp-call-avatar">
+            {callKind === 'video' ? <Video size={30} /> : <Phone size={30} />}
+          </div>
+          <div className="mp-call-copy">
+            <strong>{conversation.name}</strong>
+            <span>{callState === 'outgoing' ? 'Calling...' : 'Connected'}</span>
+          </div>
+          <button type="button" className="mp-call-end" aria-label="End call" onClick={() => setCallState('idle')}>
+            <PhoneOff size={22} />
+          </button>
+        </div>
       )}
 
       {/* Toast notification */}
@@ -369,7 +503,7 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
             <div className="mp-action-sheet-handle" />
 
             {/* Reaction row */}
-            {!actionSheetMessage.recalled && (
+            {!actionSheetMessage.recalled && !actionSheetMessage.moderated && (
               <div className="mp-reaction-bar-wrapper">
                 <div className="mp-reaction-bar">
                   {REACTION_EMOJI_EXTENDED.map((emoji, idx) => {
@@ -431,7 +565,7 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
             </div>
 
             {/* List action groups */}
-            {actionSheetMessage.mine && (
+            {actionSheetMessage.mine && !actionSheetMessage.moderated && (
               <div className="mp-action-group">
                 <button type="button" className="mp-action-item" onClick={() => handleAction('recall')}>
                   <RotateCcw size={19} /><span>Recall</span>
@@ -459,11 +593,14 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
             </div>
 
             <div className="mp-action-group">
-              {actionSheetMessage.mine && (
-                <button type="button" className="mp-action-item danger" onClick={() => handleAction('delete')}>
-                  <Trash2 size={19} /><span>Delete</span>
+              {conversation.canModerate && !actionSheetMessage.moderated && (
+                <button type="button" className="mp-action-item danger" onClick={() => handleAction('moderate')}>
+                  <ShieldX size={19} /><span>{copy['mobile.chat.moderate']}</span>
                 </button>
               )}
+              <button type="button" className="mp-action-item danger" onClick={() => handleAction('hide-for-me')}>
+                <EyeOff size={19} /><span>{copy['mobile.chat.deleteForMe']}</span>
+              </button>
             </div>
           </div>
         </div>
@@ -538,8 +675,8 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
             </div>
 
               <div className="mp-chat-details-section">
-                <button type="button" className="mp-chat-details-item" onClick={() => setConfirmAction('clear')}>
-                  <span>Clear Chat History</span>
+                <button type="button" className="mp-chat-details-item danger" onClick={() => setConfirmAction('clear')}>
+                  <span>Clear Local Chat Data</span>
                 </button>
               </div>
 
@@ -556,44 +693,21 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
 
           {/* Search Chat History Sub-view */}
           {detailsView === 'search' && (
-            <div className="mp-chat-details-body">
-              <div className="mp-details-search-box">
-                <input
-                  type="text"
-                  className="mp-details-search-input"
-                  placeholder="Search messages..."
-                  value={detailsSearchQuery}
-                  onChange={(e) => setDetailsSearchQuery(e.target.value)}
-                  autoFocus
-                />
-              </div>
-              <div className="mp-details-search-results">
-                {detailsSearchQuery.trim() ? (
-                  messages
-                    .filter((m) => m.text && m.text.toLowerCase().includes(detailsSearchQuery.toLowerCase()) && !m.recalled && !m.dateLabel)
-                    .map((m) => (
-                      <div key={m.id} className="mp-details-search-result-item">
-                        <div className="mp-details-search-result-sender">{m.mine ? 'You' : conversation.name}</div>
-                        <div className="mp-details-search-result-text">{m.text}</div>
-                        <div className="mp-details-search-result-time">{m.time}</div>
-                      </div>
-                    ))
-                ) : (
-                  <div className="mp-details-empty">Type to search messages</div>
-                )}
-                {detailsSearchQuery.trim() && messages.filter((m) => m.text && m.text.toLowerCase().includes(detailsSearchQuery.toLowerCase()) && !m.recalled && !m.dateLabel).length === 0 && (
-                  <div className="mp-details-empty">No results found</div>
-                )}
-              </div>
-            </div>
+            <ChatHistorySearch messages={messages} conversationKey={conversation.key}
+              peerName={conversation.name} memory={listMemory} searchDemo={searchDemo} onSelect={(id) => {
+                setTargetMessageId(id);
+                setChatTab('chat');
+                setDetailsView('main');
+                setShowChatDetails(false);
+              }} />
           )}
 
           {/* Shared Media Sub-view */}
           {detailsView === 'media' && (
             <div className="mp-chat-details-body">
               <div className="mp-details-media-grid">
-                {messages.filter((m) => m.image && !m.recalled).length > 0 ? (
-                  messages.filter((m) => m.image && !m.recalled).map((m) => (
+                {messages.filter((m) => m.image && !m.recalled && !m.moderated).length > 0 ? (
+                  messages.filter((m) => m.image && !m.recalled && !m.moderated).map((m) => (
                     <div key={m.id} className="mp-details-media-thumb">
                       <img src={m.image} alt="" />
                     </div>
@@ -610,12 +724,12 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
             <div className="mp-confirm-backdrop" onClick={() => setConfirmAction(null)}>
               <div className="mp-confirm-dialog" onClick={(e) => e.stopPropagation()}>
                 <div className="mp-confirm-title">
-                  {confirmAction === 'clear' && 'Clear Chat History?'}
+                  {confirmAction === 'clear' && 'Clear Local Chat Data?'}
                   {confirmAction === 'block' && (isBlocked ? 'Unblock Contact?' : 'Block Contact?')}
                   {confirmAction === 'report' && 'Report this contact?'}
                 </div>
                 <div className="mp-confirm-desc">
-                  {confirmAction === 'clear' && 'All messages will be permanently deleted. This cannot be undone.'}
+                  {confirmAction === 'clear' && 'Permanently removes messages, search entries, and unreferenced media from this device. Other devices and participants are not affected.'}
                   {confirmAction === 'block' && (isBlocked ? `${conversation.name} will be able to message you again.` : `${conversation.name} will no longer be able to send you messages.`)}
                   {confirmAction === 'report' && 'This will be reported to our safety team for review.'}
                 </div>
@@ -624,7 +738,7 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
                   <button type="button" className="mp-confirm-btn mp-confirm-btn--danger" onClick={() => {
                     if (confirmAction === 'clear') {
                       setMessages([]);
-                      showToast('Chat history cleared');
+                      showToast('Local chat data cleared');
                     } else if (confirmAction === 'block') {
                       setIsBlocked(!isBlocked);
                       showToast(isBlocked ? 'Contact unblocked' : 'Contact blocked');
@@ -633,7 +747,7 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
                     }
                     setConfirmAction(null);
                   }}>
-                    {confirmAction === 'clear' && 'Clear'}
+                    {confirmAction === 'clear' && 'Clear Local Data'}
                     {confirmAction === 'block' && (isBlocked ? 'Unblock' : 'Block')}
                     {confirmAction === 'report' && 'Report'}
                   </button>
@@ -650,4 +764,9 @@ export function ChatThread({ conversation, onBack }: { conversation: Conversatio
       )}
     </div>
   );
+}
+
+function formatVoiceDuration(durationSeconds: number): string {
+  const rounded = Math.max(0, Math.round(durationSeconds));
+  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')}`;
 }
