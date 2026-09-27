@@ -25,9 +25,14 @@
     "tooling/acceptance"
   ],
   "readSet": [
+    "apps/mobile/package.json",
+    "apps/mobile/scripts",
     "apps/mobile/src/pages/ChatPage.tsx",
     "apps/mobile/src-tauri/src/messaging",
-    "packages/messaging-core/src/storage_governance"
+    "docs/architecture/mobile",
+    "docs/client/mobile",
+    "packages/messaging-core/src/storage_governance",
+    "pnpm-lock.yaml"
   ],
   "budgets": {
     "focusedCheckSeconds": 1200,
@@ -64,7 +69,7 @@
     "Do not clear filtered-out or unselected conversations",
     "Do not carry selection or result across a scope change"
   ],
-  "updatedAt": "2026-09-27T13:16:00.000Z",
+  "updatedAt": "2026-09-27T13:42:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "FUNCTIONAL_CHECK",
