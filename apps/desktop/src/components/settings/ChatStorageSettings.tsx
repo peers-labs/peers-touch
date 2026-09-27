@@ -518,6 +518,8 @@ export function ChatStorageSettings() {
                 gap={10}
                 data-chat-storage-batch-confirm
                 data-chat-storage-batch-estimated-bytes={String(selectedReclaimableBytes)}
+                data-chat-storage-batch-selected-count={String(selectedConversations.length)}
+                data-chat-storage-batch-scope="current-device"
                 style={{
                   padding: 12,
                   borderRadius: 8,
@@ -563,7 +565,13 @@ export function ChatStorageSettings() {
           </Flexbox>
         ) : null}
         {batchRunning ? (
-          <Text type="secondary" role="status" data-chat-storage-batch-progress>
+          <Text
+            type="secondary"
+            role="status"
+            data-chat-storage-batch-progress
+            data-chat-storage-batch-completed={String(batchProgress.completedCount)}
+            data-chat-storage-batch-total={String(batchProgress.totalCount)}
+          >
             {t('settings.storage.batchProgress', batchProgress)}
           </Text>
         ) : null}

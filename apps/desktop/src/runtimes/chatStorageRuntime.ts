@@ -59,6 +59,12 @@ export interface ChatStorageProjection {
   readonly retention: ChatStorageRetentionProjection;
 }
 
+export interface ChatStorageBatchAcceptanceScenario {
+  readonly delayMs?: number;
+  readonly failureConversationId?: string;
+  readonly scopeChangeConversationId?: string;
+}
+
 const idleCleanup: ChatStorageCleanupProjection = Object.freeze({
   status: 'idle',
   result: null,
@@ -98,6 +104,7 @@ class DesktopChatStorageRuntime {
     conversationId: string;
     promise: Promise<ChatStorageResult | null>;
   } | null = null;
+  private batchAcceptanceScenario: ChatStorageBatchAcceptanceScenario | null = null;
   private unsubscribeScope: (() => void) | null = null;
   private lastRetentionSweepAtUnixMs = 0;
 
@@ -124,6 +131,7 @@ class DesktopChatStorageRuntime {
     this.cleanupInFlight = null;
     this.retentionInFlight = null;
     this.conversationClearInFlight = null;
+    this.batchAcceptanceScenario = null;
     this.lastRetentionSweepAtUnixMs = 0;
     this.publish(idleProjection);
   }
@@ -405,6 +413,19 @@ class DesktopChatStorageRuntime {
         if (!scope || !messagingDomainRuntime.isCurrent(scope)) {
           return { state: 'scope_changed' };
         }
+        const scenario = this.batchAcceptanceScenario;
+        if (scenario?.delayMs) {
+          await new Promise((resolve) => globalThis.setTimeout(resolve, scenario.delayMs));
+        }
+        if (scenario?.failureConversationId === conversationId) {
+          this.batchAcceptanceScenario = null;
+          return { state: 'failed' };
+        }
+        if (scenario?.scopeChangeConversationId === conversationId) {
+          this.batchAcceptanceScenario = null;
+          await messagingDomainRuntime.bootstrap(null);
+          return { state: 'scope_changed' };
+        }
         const result = await this.clearConversation(conversationId);
         if (!messagingDomainRuntime.isCurrent(scope)) {
           return { state: 'scope_changed' };
@@ -422,6 +443,29 @@ class DesktopChatStorageRuntime {
         };
       },
     });
+  }
+
+  configureAcceptanceBatchScenario(
+    scenario: ChatStorageBatchAcceptanceScenario | null,
+  ): void {
+    if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') {
+      throw new Error('chat_storage_acceptance_scenario_unavailable');
+    }
+    if (scenario === null) {
+      this.batchAcceptanceScenario = null;
+      return;
+    }
+    const delayMs = Math.max(0, Math.min(2_000, scenario.delayMs ?? 0));
+    const failureConversationId = scenario.failureConversationId?.trim() || undefined;
+    const scopeChangeConversationId = scenario.scopeChangeConversationId?.trim() || undefined;
+    if (failureConversationId && scopeChangeConversationId) {
+      throw new Error('chat_storage_acceptance_scenario_ambiguous');
+    }
+    this.batchAcceptanceScenario = {
+      delayMs,
+      failureConversationId,
+      scopeChangeConversationId,
+    };
   }
 
   getSnapshot = (): ChatStorageProjection => this.projection;
