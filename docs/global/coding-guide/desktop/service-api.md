@@ -105,7 +105,8 @@ interface AuthCommandException extends Error {
 }
 ```
 
-用于：`auth_login`、`auth_logout`、`auth_restore_session`、`auth_validate_token`
+用于：`access_submit_login`、`auth_logout`、`auth_restore_session`、
+`auth_validate_token`
 
 
 ### 第三层：invokeRustDataFromStatus

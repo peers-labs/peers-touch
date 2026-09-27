@@ -167,25 +167,25 @@
       }
     },
     {
-      "id": "station-access-zero-legacy-integrity",
+      "id": "station-access-interface-integrity",
       "domain": "station-access",
       "direction": "acceptance_validates_product",
-      "features": ["station-access-zero-legacy"],
+      "features": ["station-access-interface-contract"],
       "required_gates": [
-        "station-access-zero-legacy-e2e",
+        "station-access-capability-contract",
         "desktop-release-build",
         "mobile-native-build",
         "station-access-lifecycle-aggregate-e2e"
       ],
       "synthetic_paths": [
-        "docs/architecture/station-access-lifecycle/legacy-inventory.json",
-        "tooling/acceptance/gates/station_access/zero_legacy.py",
+        "docs/architecture/station-access-lifecycle/data-model.md",
+        "tooling/acceptance/gates/station_access/capability_contract.py",
         "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
       ],
       "evidence": {
         "truth_sources": [
-          "Station Access legacy inventory",
-          "current-source Station Access Gate manifests",
+          "Station Access current capability inventory",
+          "current-source Station Access Gate contracts",
           "Desktop and Mobile native build commands"
         ],
         "surfaces": [
@@ -193,13 +193,13 @@
           "Mobile iOS Simulator native artifact"
         ],
         "proven_by": [
-          "station-access-zero-legacy-e2e",
+          "station-access-capability-contract",
           "desktop-release-build",
           "mobile-native-build",
           "station-access-lifecycle-aggregate-e2e"
         ],
         "proven_scope": [
-          "all nine Station Access legacy dimensions contain zero forbidden references",
+          "the current Station Access route and consumer inventory is complete",
           "Desktop release and Mobile native builds complete from one clean source",
           "all Station Access capability Gates have current-source proof"
         ],

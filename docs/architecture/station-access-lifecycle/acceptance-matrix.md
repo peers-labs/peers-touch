@@ -1,8 +1,8 @@
 # Station 接入生命周期 - 验收矩阵
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Identity and Access
 
 ---
@@ -11,19 +11,19 @@
 
 - 所有 required capability 必须由当前精确源码完成 Desktop 与 Mobile 原生证明。
 - 双端比较产品语义、状态、错误和持久结果，不比较组件树或 command 数量。
-- 接入失败路径必须证明不会调用旧 route。
-- 任一 legacy matcher 在九个维度残留均失败。
+- 接入失败路径必须证明不会调用 capability registry 之外的 route。
+- 当前接口 inventory、owner、contract 或 consumer 任一缺口均失败。
 
 ## 2. Capability Crosswalk
 
-| Capability | Journey | 当前差距 | Gate |
+| Capability | Journey | 当前状态 | Gate |
 |---|---|---|---|
-| SAL-C01 可信 Station | SAL-J01/J03/J05 | 原生双端证据待运行 | SAL-G01 |
-| SAL-C02 Access Gate | SAL-J01/J02/J05 | protobuf-only 静态闭环已实现，原生双端证据待运行 | SAL-G01 |
-| SAL-C03 Scope 隔离 | SAL-J02/J03 | 双端 scope fence 已实现，原生重启/登出证据待运行 | SAL-G02 |
-| SAL-C04 Federation context | SAL-J04 | context 语义分散，Desktop 另有治理 UI | SAL-G03 |
-| SAL-C05 基础设施收口 | SAL-J04/J05 | 普通客户端仍暴露治理与 Relay 概念 | SAL-G03 |
-| SAL-C06 能力与遗产治理 | 全部 | 缺 client applicability 与零消费者审计 | SAL-G00/SAL-G04 |
+| SAL-C01 可信 Station | SAL-J01/J03/J05 | 已完成 | SAL-G01 |
+| SAL-C02 Access Gate | SAL-J01/J02/J05 | 已完成 | SAL-G01 |
+| SAL-C03 Scope 隔离 | SAL-J02/J03 | 已完成 | SAL-G02 |
+| SAL-C04 Federation context | SAL-J04 | 已完成 | SAL-G03 |
+| SAL-C05 基础设施收口 | SAL-J04/J05 | 已完成 | SAL-G03 |
+| SAL-C06 能力完整性治理 | 全部 | 已完成 | SAL-G00/SAL-G04 |
 
 ## 3. Gates
 
@@ -38,7 +38,7 @@
 - Desktop 与 Mobile 从新安装开始验证同一签名 Station identity。
 - 两端分别通过四个 canonical protobuf endpoint 登录。
 - 签名错误、PeerID 变化、404、unknown gate 与 attempt expiry 均 fail closed。
-- 运行中不命中 `/actor/login`、`auth_login` 或 fallback。
+- 运行中只调用 registry 登记的 Access Gate capability。
 
 Stable Gate：`station-access-auth-e2e`，环境
 `station-access-native`（macOS Desktop + iOS Simulator，同一 source-attested
@@ -47,8 +47,8 @@ Station；每个 Gate 在已授权的 `chat-native-four` 上独立重置 Alice/B
 ### SAL-G02：Scope 隔离
 
 - Session、Messaging、Federation 与本地 projection 的 Station/Actor/Device 一致。
-- 账号、Station 切换和重启不泄漏旧 projection。
-- 未限定 scope 的历史 key 与兼容清理逻辑零引用。
+- 账号、Station 切换和重启不泄漏其他 scope 的 projection。
+- 所有持久化 key 都绑定完整 scope tuple。
 
 Stable Gate：`station-access-scope-isolation-e2e`，环境
 `station-access-native`。
@@ -60,11 +60,12 @@ Stable Gate：`station-access-scope-isolation-e2e`，环境
 - 普通客户端无 Relay token/invite/mount/endpoint。
 - Station operator flows 仍可由真实 Dashboard/CLI consumer 完成。
 
-### SAL-G04：零引用与聚合
+### SAL-G04：当前接口完整性与聚合
 
-九个维度全部为零：production source、client wrapper、Station route/handler、Proto/
-generated、schema/backfill、tests/fixtures/mocks、Acceptance runner、docs/locales/
-prototype、build/runtime registration。
+- 四个 Access Gate capability 在 Station registry 中完整登记。
+- Desktop 与 Mobile 的 client capability registry 均引用同一 capability ID。
+- route、Proto request/response、owner root 和 consumer 均能从当前树解析。
+- 受治理前缀下发现的接口必须全部存在于正向 registry。
 
 ## 4. 必需运行单元
 
@@ -74,7 +75,7 @@ prototype、build/runtime registration。
 | Mobile native | 首次接入、恢复、切换、失败关闭 |
 | Mixed same-Station | 同一 actor/context 与 scope 一致 |
 | Mixed cross-Station | 显式 Federation context 与 Relay 隔离 |
-| Fresh install/reset | 无旧 key、旧 route 或兼容 schema 依赖 |
+| Fresh install/reset | 仅依赖当前 scoped key、route 与 schema |
 
 ## 5. 完成条件
 

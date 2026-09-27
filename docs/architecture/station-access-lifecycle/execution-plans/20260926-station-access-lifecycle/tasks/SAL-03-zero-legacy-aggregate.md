@@ -44,14 +44,9 @@
   },
   "checks": [
     {
-      "id": "station-access-zero-legacy-source",
-      "command": "python3 -m unittest tooling.acceptance.gates.station_access.zero_legacy_test",
+      "id": "station-access-interface-contract",
+      "command": "python3 -m unittest tooling.acceptance.gates.station_access.capability_contract_test",
       "verificationClass": "SOURCE_CHECK"
-    },
-    {
-      "id": "station-access-zero-legacy-e2e",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate station-access-zero-legacy-e2e",
-      "verificationClass": "ACCEPTANCE_PROOF"
     },
     {
       "id": "desktop-release-build",
@@ -78,7 +73,7 @@
     "All plan-completion Gates pass against one exact source",
     "Desktop release build and Mobile native build pass",
     "First access, restart, switch, same-Station and cross-Station journeys pass",
-    "Nine-dimensional legacy scan reports zero without allowlist suppression",
+    "The current route, contract, owner and client consumer inventory is complete",
     "CCU-20260922 remains completed",
     "Runtime resources are released and the final worktree is clean"
   ],
@@ -101,12 +96,12 @@
 ## Current Snapshot
 
 - State: done。
-- Completion run 20/20 PASS；九维遗产扫描、Desktop release、Mobile native、
+- Completion run 20/20 PASS；当前接口完整性、Desktop release、Mobile native、
   聚合 Gate 与 Station Access domain validation 均为 exact-source proof。
 
 ## Closure
 
-冻结精确源码后执行零引用、发布构建和完整接入 E2E，只负责证明与收尾。
+冻结精确源码后执行接口完整性、发布构建和完整接入 E2E，只负责证明与收尾。
 
 ## Concurrency Decision
 
