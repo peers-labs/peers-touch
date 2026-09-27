@@ -2892,6 +2892,7 @@ async function startFoundationToolTurn(input: {
     idempotencyKey: crypto.randomUUID(),
     provider: input.agent.provider || undefined,
     model: input.agent.model || undefined,
+    thinkingMode: 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     requestedBudget: input.requestedBudget,
     streamId: input.streamId,
