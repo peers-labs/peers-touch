@@ -418,28 +418,44 @@ export async function acknowledgeReliabilityProjection(
   });
 }
 
+const projectionCheckpointApplications = new Map<string, Promise<number>>();
+
 export async function applyReliabilityProjectionCheckpoints(
   stationPeerId: string,
   actorPtid: string,
   runtimeGeneration: number,
   applyProjection: () => Promise<void>,
 ): Promise<number> {
-  const checkpoints = await listReliabilityProjectionCheckpoints(
-    stationPeerId,
-    actorPtid,
-    runtimeGeneration,
-  );
-  if (checkpoints.length === 0) return 0;
-  await applyProjection();
-  for (const checkpoint of checkpoints) {
-    await acknowledgeReliabilityProjection(
+  const scopeKey = `${stationPeerId}\u001f${actorPtid}\u001f${runtimeGeneration}`;
+  const active = projectionCheckpointApplications.get(scopeKey);
+  if (active) return active;
+
+  const operation = (async () => {
+    const checkpoints = await listReliabilityProjectionCheckpoints(
       stationPeerId,
       actorPtid,
-      checkpoint.commandId,
-      checkpoint.payloadSha256,
+      runtimeGeneration,
     );
+    if (checkpoints.length === 0) return 0;
+    await applyProjection();
+    for (const checkpoint of checkpoints) {
+      await acknowledgeReliabilityProjection(
+        stationPeerId,
+        actorPtid,
+        checkpoint.commandId,
+        checkpoint.payloadSha256,
+      );
+    }
+    return checkpoints.length;
+  })();
+  projectionCheckpointApplications.set(scopeKey, operation);
+  try {
+    return await operation;
+  } finally {
+    if (projectionCheckpointApplications.get(scopeKey) === operation) {
+      projectionCheckpointApplications.delete(scopeKey);
+    }
   }
-  return checkpoints.length;
 }
 
 export async function acknowledgeTerminalReliabilityFailure(
