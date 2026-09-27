@@ -8,6 +8,7 @@ import {
 } from '../../gen/proto/domain/mobile/reliability_pb';
 import { FriendRequestState } from '../../gen/proto/domain/social/relationship_pb';
 import {
+  applyReliabilityProjectionCheckpoints,
   listReliabilityCommands,
   readReliabilityRuntimeStatus,
   type CommandProjection,
@@ -28,6 +29,7 @@ vi.mock('../../services/mobileCommands', async (importOriginal) => ({
 }));
 vi.mock('../../runtimes/commandRuntime', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../runtimes/commandRuntime')>(),
+  applyReliabilityProjectionCheckpoints: vi.fn(),
   readReliabilityRuntimeStatus: vi.fn(),
   listReliabilityCommands: vi.fn(),
 }));
@@ -69,6 +71,7 @@ describe('Contacts relationship and Direct journey', () => {
       commandId: 'command-direct',
       state: 'projected',
     });
+    vi.mocked(applyReliabilityProjectionCheckpoints).mockResolvedValue(1);
   });
 
   it('projects accepted friends even when no conversation exists', () => {
@@ -192,6 +195,71 @@ describe('Contacts relationship and Direct journey', () => {
       await expect(useSocialStore.getState()[action](request.requestId))
         .rejects.toThrow('mobile.contacts.requestUnconfirmed');
       expect(useSocialStore.getState().friendRequests).toEqual([request]);
+    },
+  );
+
+  it.each([
+    ['acceptFriendRequest', FriendRequestState.ACCEPTED],
+    ['rejectFriendRequest', FriendRequestState.REJECTED],
+  ] as const)(
+    '%s delegates checkpoint consumption to the runtime owner',
+    async (action, status) => {
+      const request = { ...accepted, status: FriendRequestState.PENDING };
+      const resolved = { ...request, status };
+      const gateway = createSocialGateway(session);
+      vi.spyOn(gateway, action).mockResolvedValue({
+        ok: true,
+        data: {
+          request: resolved,
+          command: {
+            commandId: 'command',
+            requestId: request.requestId,
+            payloadSha256: [1, 2, 3],
+            state: 'committed',
+            checkpointReady: true,
+          },
+        },
+      });
+      vi.mocked(readReliabilityRuntimeStatus).mockResolvedValue({
+        active: true,
+        stationPeerId: 'station-a',
+        actorPtid: 'ptid:bob',
+        runtimeGeneration: 7,
+        admissionOpen: true,
+        pendingCommands: 0,
+        unknownCommands: 0,
+        draftCount: 0,
+        archivedLegacyFiles: 0,
+        commandCapacity: {
+          recordCount: 0,
+          recordLimit: 512,
+          byteUsage: 0,
+          byteLimit: 16_777_216,
+          exhaustionCauses: [],
+        },
+      });
+      const reconcile = vi.fn().mockResolvedValue(undefined);
+      useSocialStore.setState({
+        authSession: { ...session, actorRef: { ptid: 'ptid:bob' } },
+        currentUserPtid: 'ptid:bob',
+        socialGateway: gateway,
+        friendRequests: [request],
+        refreshFriendRequests: vi.fn().mockResolvedValue(undefined),
+        reconcile,
+      });
+
+      await expect(
+        useSocialStore.getState()[action](request.requestId),
+      ).resolves.toBeUndefined();
+
+      expect(applyReliabilityProjectionCheckpoints).toHaveBeenCalledWith(
+        'station-a',
+        'ptid:bob',
+        7,
+        expect.any(Function),
+      );
+      expect(reconcile).toHaveBeenCalledOnce();
+      expect(useSocialStore.getState().friendRequests).toEqual([resolved]);
     },
   );
 

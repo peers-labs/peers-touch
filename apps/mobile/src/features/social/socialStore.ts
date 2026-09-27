@@ -38,7 +38,7 @@ import {
   type MessagingSubmitCommandResult,
 } from '../../services/mobileCommands';
 import {
-  acknowledgeReliabilityProjection,
+  applyReliabilityProjectionCheckpoints,
   listReliabilityCommands,
   readReliabilityRuntimeStatus,
 } from '../../runtimes/commandRuntime';
@@ -847,15 +847,23 @@ export const useSocialStore = create<SocialState>((set, get) => ({
             : request,
         ),
       }));
-      await get().reconcile();
-      if (payload.command.checkpointReady) {
-        await acknowledgeReliabilityProjection(
-          state.authSession!.stationPeerId,
-          state.currentUserPtid!,
-          payload.command.commandId,
-          payload.command.payloadSha256,
-        );
+      const reliability = await readReliabilityRuntimeStatus();
+      if (
+        !reliability.active
+        || !reliability.stationPeerId
+        || !reliability.actorPtid
+        || reliability.stationPeerId !== state.authSession?.stationPeerId
+        || reliability.actorPtid !== state.currentUserPtid
+      ) {
+        throw new Error('mobile.social.notAuthenticated');
       }
+      await applyReliabilityProjectionCheckpoints(
+        reliability.stationPeerId,
+        reliability.actorPtid,
+        reliability.runtimeGeneration,
+        () => get().refreshFriendRequests(),
+      );
+      await get().reconcile();
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -894,15 +902,23 @@ export const useSocialStore = create<SocialState>((set, get) => ({
             : request,
         ),
       }));
-      await get().reconcile();
-      if (payload.command.checkpointReady) {
-        await acknowledgeReliabilityProjection(
-          state.authSession!.stationPeerId,
-          state.currentUserPtid!,
-          payload.command.commandId,
-          payload.command.payloadSha256,
-        );
+      const reliability = await readReliabilityRuntimeStatus();
+      if (
+        !reliability.active
+        || !reliability.stationPeerId
+        || !reliability.actorPtid
+        || reliability.stationPeerId !== state.authSession?.stationPeerId
+        || reliability.actorPtid !== state.currentUserPtid
+      ) {
+        throw new Error('mobile.social.notAuthenticated');
       }
+      await applyReliabilityProjectionCheckpoints(
+        reliability.stationPeerId,
+        reliability.actorPtid,
+        reliability.runtimeGeneration,
+        () => get().refreshFriendRequests(),
+      );
+      await get().reconcile();
     } catch (error) {
       set({ error: normalizeError(error) });
       throw error;
@@ -967,14 +983,15 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       if (get().authSession !== state.authSession) {
         throw new Error('mobile.social.notAuthenticated');
       }
-      await get().refreshFriendRequests();
       if (payload.command.checkpointReady) {
-        await acknowledgeReliabilityProjection(
-          state.authSession!.stationPeerId,
-          state.currentUserPtid!,
-          payload.command.commandId,
-          payload.command.payloadSha256,
+        await applyReliabilityProjectionCheckpoints(
+          reliability.stationPeerId,
+          reliability.actorPtid,
+          reliability.runtimeGeneration,
+          () => get().refreshFriendRequests(),
         );
+      } else {
+        await get().refreshFriendRequests();
       }
       return payload.command;
     } catch (error) {
