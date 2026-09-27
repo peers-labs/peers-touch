@@ -170,12 +170,8 @@
       "dependsOn": [
         "CSG-BATCH-01-desktop"
       ],
-      "status": "blocked",
-      "blocker": {
-        "code": "PROFILE_UNAVAILABLE",
-        "owner": "local-dev-control-plane",
-        "evidenceRef": "make env-register PROFILE=chat-native-five SLOT=4 CAPABILITIES=station.connect,station.deploy,station.reset"
-      }
+      "status": "pending",
+      "blocker": null
     },
     {
       "id": "CSG-BATCH-03-aggregate",
