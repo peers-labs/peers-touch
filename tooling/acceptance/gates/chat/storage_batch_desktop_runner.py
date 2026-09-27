@@ -75,12 +75,33 @@ class ChatStorageDesktopBatchGate(ChatStorageAccountingGate):
                   candidate.getAttribute('data-chat-storage-conversation')
                     === arguments[0]
                 ));
-                const checkbox = row?.querySelector(
-                  '[data-chat-storage-conversation-select] input'
+                const control = row?.querySelector(
+                  '[data-chat-storage-conversation-select]'
                 );
+                const checkbox = control?.matches('input')
+                  ? control
+                  : control?.querySelector('input');
                 if (!checkbox) return false;
                 checkbox.click();
                 return true;
+                """,
+                conversation_id,
+            )
+        )
+
+    @staticmethod
+    def _conversation_selected(client: Any, conversation_id: str) -> bool:
+        return bool(
+            client.execute_script(
+                """
+                const row = Array.from(document.querySelectorAll(
+                  '[data-chat-storage-conversation]'
+                )).find((candidate) => (
+                  candidate.getAttribute('data-chat-storage-conversation')
+                    === arguments[0]
+                ));
+                return row?.getAttribute('data-chat-storage-selected')
+                  === 'true';
                 """,
                 conversation_id,
             )
@@ -124,12 +145,35 @@ class ChatStorageDesktopBatchGate(ChatStorageAccountingGate):
             timeout=60,
         )
 
-        def select_rows() -> dict[str, Any] | None:
+        def select_rows() -> dict[str, Any]:
             client.find_element("[data-chat-storage-batch-manage]", 10).click()
-            if not self._select_conversation(client, first_id):
-                return None
-            if not self._select_conversation(client, second_id):
-                return None
+            wait_until(
+                lambda: client.execute_script(
+                    """
+                    return Boolean(document.querySelector(
+                      '[data-chat-storage-batch-actions]'
+                    ));
+                    """
+                ),
+                "Desktop batch selection controls",
+                timeout=20,
+            )
+            for conversation_id in (first_id, second_id):
+                if not self._select_conversation(client, conversation_id):
+                    raise GateError(
+                        "Desktop batch selection control is missing for "
+                        f"{conversation_id}"
+                    )
+                wait_until(
+                    lambda conversation_id=conversation_id: (
+                        self._conversation_selected(
+                            client,
+                            conversation_id,
+                        )
+                    ),
+                    f"selected Desktop storage row {conversation_id}",
+                    timeout=20,
+                )
             return wait_until(
                 lambda: (
                     value
