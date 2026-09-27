@@ -2288,6 +2288,147 @@ def valid_approval_expired_capture() -> dict[str, object]:
     }
 
 
+def valid_loop_budget_exhausted_capture() -> dict[str, object]:
+    typed_error = {
+        "error": "agent.errors.toolLoopBudgetExhausted",
+        "error_type": "TOOL_LOOP_BUDGET_EXHAUSTED",
+        "locale_key": "agent.errors.toolLoopBudgetExhausted",
+        "retryable": False,
+        "terminal": True,
+        "details": {
+            "turn_id": "turn-loop-budget",
+            "budget_kind": "tool_calls",
+            "limit": "2",
+        },
+    }
+    return {
+        "conversationId": "conversation-loop-budget",
+        "turnId": "turn-loop-budget",
+        "stationError": copy.deepcopy(typed_error),
+        "typedError": typed_error,
+        "resolution": {
+            "type": "inspectBudget",
+            "turnId": "turn-loop-budget",
+            "budgetKind": "tool_calls",
+            "limit": "2",
+        },
+        "recoveryLabel": "Inspect budget",
+        "recoveryVisible": True,
+        "projectedTurnId": "turn-loop-budget",
+        "projectedBudgetKind": "tool_calls",
+        "projectedLimit": "2",
+        "loopBudget": {
+            "stopped": True,
+            "terminalReason": "max_tool_calls_exhausted",
+            "requestedLimit": 2,
+            "effectiveLimit": 2,
+            "observedIterations": 2,
+            "maximumIterations": 2,
+            "executionAfterLimit": 0,
+        },
+        "providerCallsBeforeAction": 3,
+        "providerCallsAfterAction": 3,
+        "toolCallsBeforeAction": 2,
+        "toolCallsAfterAction": 2,
+        "terminalEventCount": 1,
+        "terminalEventType": "error",
+        "turnDetailsOpened": True,
+        "runtimeEvent": {
+            "eventId": "a" * 64,
+            "eventType": "error",
+            "sequence": 3,
+            "observedAt": "2026-09-25T00:00:00Z",
+        },
+        "replay": {
+            "sourceHash": "b" * 64,
+            "replayHash": "b" * 64,
+            "equal": True,
+        },
+    }
+
+
+def valid_model_unavailable_capture() -> dict[str, object]:
+    conversation_id = "conversation-model-unavailable"
+    turn_id = "turn-model-unavailable"
+    typed_error = {
+        "error": "agent.errors.providerModelUnavailable",
+        "error_type": "PROVIDER_MODEL_UNAVAILABLE",
+        "locale_key": "agent.errors.providerModelUnavailable",
+        "retryable": True,
+        "terminal": True,
+        "details": {
+            "provider_id": "provider-1",
+            "model_id": "missing-model",
+        },
+    }
+    state_hash = "f" * 64
+    return {
+        "outcome": copy.deepcopy(typed_error),
+        "typedError": typed_error,
+        "resolution": {
+            "type": "chooseCompatibleModel",
+            "providerId": "provider-1",
+            "modelId": "missing-model",
+        },
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "The selected provider model is unavailable.",
+            "expectedErrorText": (
+                "The selected provider model is unavailable."
+            ),
+            "recoveryVisible": True,
+            "recoveryText": "Choose compatible model",
+            "expectedRecoveryText": "Choose compatible model",
+            "chooseModelExecuted": True,
+        },
+        "station": {
+            "conversationId": conversation_id,
+            "turnId": turn_id,
+            "providerId": "provider-1",
+            "modelId": "missing-model",
+            "conversationVersion": 3,
+            "stateHash": state_hash,
+            "messageDelta": 2,
+            "traceDelta": 1,
+            "queueDelta": 0,
+            "providerCallCount": 1,
+            "completedAssistantCount": 0,
+        },
+        "replay": {
+            "sourceHash": state_hash,
+            "replayHash": state_hash,
+            "equal": True,
+        },
+        "runtimeEvent": {
+            "eventId": "a" * 64,
+            "eventType": "error",
+            "sequence": 3,
+            "observedAt": "2026-09-25T00:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "b" * 64,
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": "c" * 64,
+            "errorType": "PROVIDER_MODEL_UNAVAILABLE",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "d" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": turn_id,
+            "sourceSequence": 3,
+            "sourceEventType": "error",
+        },
+        "cleanup": {
+            "modelAdded": True,
+            "modelRemoved": True,
+            "agentRestored": True,
+            "disposableAgentDeleted": True,
+            "conversationDeleted": True,
+            "localProjectionCleared": True,
+        },
+    }
+
+
 class FoundationGroupOneScenariosTest(unittest.TestCase):
     def test_as_f06_accepts_source_bound_recovery_facts(self) -> None:
         assertions = evaluate_as_f06(
