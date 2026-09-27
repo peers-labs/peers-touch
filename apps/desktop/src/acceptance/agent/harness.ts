@@ -27039,9 +27039,188 @@ export function installAcceptanceHarness(): void {
           api.listAgentTurnQueue(conversationId),
         ]);
 
+        let observationSequence = 0;
+        const errorEventRef: {
+          current: FoundationPreAdmissionErrorEvent | null;
+        } = { current: null };
+        const unsubscribe = eventBus.subscribe(
+          EVENT.AGENT_TURN_STREAM_EVENT,
+          (payload) => {
+            const sourceDelivery = (
+              payload as typeof payload & {
+                sourceDelivery?: AgentTurnSourceDelivery;
+              }
+            ).sourceDelivery;
+            // #region debug-point E-H:foundation-model-recovery
+            if (payload.event === 'error') {
+              const projectedError =
+                projectAgentTurnOutcomeErrorPayload(payload.data)
+                ?? projectAgentTypedErrorPayload(payload.data);
+              const eventChatState = useChatStore.getState();
+              const operation =
+                eventChatState.operations[conversationId];
+              void reportFoundationModelRecoveryDebug(
+                'E-H',
+                'error-event-observed',
+                {
+                  conversationMatches:
+                    payload.conversationId === conversationId,
+                  directErrorType:
+                    typeof payload.data.error_type === 'string'
+                      ? payload.data.error_type
+                      : null,
+                  projectedErrorType:
+                    projectedError?.error_type ?? null,
+                  dataKeys: Object.keys(payload.data).sort(),
+                  sourceConversationMatches:
+                    sourceDelivery?.conversationId === conversationId,
+                  sourceTurnPresent:
+                    Boolean(sourceDelivery?.turnId),
+                  sourceSequence:
+                    sourceDelivery?.sequence ?? 0,
+                  operationPresent: operation !== undefined,
+                  operationStatus: operation?.status ?? null,
+                  operationRunState: operation?.runState ?? null,
+                  messageProjection: eventChatState.messages.map(
+                    (message) => ({
+                      role: message.role,
+                      loading: message.loading === true,
+                      terminalStatus: message.terminalStatus ?? null,
+                      error: message.error ?? null,
+                      errorType: message.typedError?.error_type ?? null,
+                      resolution: message.resolution?.type ?? null,
+                      turnPresent: Boolean(message.turnId),
+                    }),
+                  ),
+                },
+              );
+            }
+            // #endregion
+            if (payload.conversationId !== conversationId) return;
+            observationSequence += 1;
+            if (
+              payload.event !== 'error'
+              || payload.data.error_type !== 'PROVIDER_MODEL_UNAVAILABLE'
+            ) return;
+            errorEventRef.current = {
+              data: evidenceValue(payload.data) as Record<string, unknown>,
+              eventType: payload.event,
+              observedAt: new Date(payload.timestampMs).toISOString(),
+              streamId: payload.streamId,
+              streamGeneration: payload.streamGeneration,
+              conversationId: payload.conversationId,
+              observationSequence,
+              timestampMs: payload.timestampMs,
+              sourceDelivery,
+            };
+            // #region debug-point A-D:foundation-model-recovery
+            const eventChatState = useChatStore.getState();
+            void reportFoundationModelRecoveryDebug(
+              'A-D',
+              'typed-error-event-observed',
+              {
+                agentSurface:
+                  useAgentStore.getState().getAgentSurface(agent.name),
+                currentSessionMatches:
+                  eventChatState.currentSessionKey === conversationId,
+                messageCount: eventChatState.messages.length,
+                matchingErrorCount: eventChatState.messages.filter(
+                  (message) => (
+                    message.role === 'assistant'
+                    && message.typedError?.error_type
+                      === 'PROVIDER_MODEL_UNAVAILABLE'
+                  ),
+                ).length,
+                recoveryCount: document.querySelectorAll(
+                  '[data-pt-agent-message-error-recovery='
+                  + '"choose-compatible-model"]',
+                ).length,
+              },
+            );
+            // #endregion
+          },
+        );
         const messageCountBefore = useChatStore.getState().messages.length;
-        useChatStore.getState().sendMessage(
-          `Model unavailable ${sampleId}`,
+        // #region debug-point A-D:foundation-model-recovery
+        const modelUnavailableSurfaceSnapshot = () => {
+          const chatState = useChatStore.getState();
+          const currentAgent = selectedAgent();
+          const recoveryElements = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '[data-pt-agent-message-error-recovery='
+              + '"choose-compatible-model"]',
+            ),
+          );
+          const errorSurfaces = Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '[data-pt-agent-error-type="PROVIDER_MODEL_UNAVAILABLE"]',
+            ),
+          );
+          const matchingErrors = chatState.messages.filter(
+            (message) => (
+              message.role === 'assistant'
+              && message.typedError?.error_type
+                === 'PROVIDER_MODEL_UNAVAILABLE'
+            ),
+          );
+          return {
+            agentSurface:
+              useAgentStore.getState().getAgentSurface(agent.name),
+            currentSessionMatches:
+              chatState.currentSessionKey === conversationId,
+            selectedModelIsMissing: currentAgent?.model === missingModel,
+            modelAdded,
+            modelRemoved,
+            agentRestored,
+            messageCountBefore,
+            messageCount: chatState.messages.length,
+            matchingErrorCount: matchingErrors.length,
+            matchingErrorAfterBaselineCount:
+              chatState.messages.slice(messageCountBefore).filter(
+                (message) => (
+                  message.role === 'assistant'
+                  && message.typedError?.error_type
+                    === 'PROVIDER_MODEL_UNAVAILABLE'
+                ),
+              ).length,
+            loadingAssistantCount: chatState.messages.filter(
+              (message) => (
+                message.role === 'assistant'
+                && message.loading === true
+              ),
+            ).length,
+            errorEventSeen: errorEventRef.current !== null,
+            recoveryCount: recoveryElements.length,
+            visibleRecoveryCount: recoveryElements.filter(
+              (element) => element.getClientRects().length > 0,
+            ).length,
+            errorSurfaceCount: errorSurfaces.length,
+            visibleErrorSurfaceCount: errorSurfaces.filter(
+              (element) => element.getClientRects().length > 0,
+            ).length,
+            messageProjection: chatState.messages.map((message) => ({
+              role: message.role,
+              loading: message.loading === true,
+              terminalStatus: message.terminalStatus ?? null,
+              error: message.error ?? null,
+              errorType: message.typedError?.error_type ?? null,
+              resolution: message.resolution?.type ?? null,
+              turnPresent: Boolean(message.turnId),
+            })),
+            operation: chatState.operations[conversationId]
+              ? {
+                  status: chatState.operations[conversationId].status,
+                  runState: chatState.operations[conversationId].runState,
+                  turnPresent:
+                    Boolean(chatState.operations[conversationId].turnId),
+                }
+              : null,
+          };
+        };
+        void reportFoundationModelRecoveryDebug(
+          'A-D',
+          'before-send',
+          modelUnavailableSurfaceSnapshot(),
         );
         let errorMessage = useChatStore.getState().messages
           .slice(messageCountBefore)
