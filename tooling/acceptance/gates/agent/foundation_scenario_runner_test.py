@@ -1353,6 +1353,42 @@ class FoundationScenarioRunnerDryRunTest(unittest.TestCase):
     ) -> None:
         self.assertIsNone(foundation_scenario_runner.run_scenario(dry_run=True))
 
+    def test_external_model_configuration_is_forwarded_to_the_harness(self) -> None:
+        self.profile.update(
+            {
+                "PT_AGENT_DEFAULT_MODEL_NAME": "Qwen3 14B",
+                "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW": "40960",
+                "PT_AGENT_DEFAULT_MODEL_CAPABILITIES": (
+                    "streaming,native-tools,reasoning"
+                ),
+            }
+        )
+
+        config = foundation_scenario_runner._agent_provider_config(self.profile)
+
+        self.assertEqual(
+            config["modelConfig"],
+            {
+                "displayName": "Qwen3 14B",
+                "contextWindow": 40960,
+                "streaming": True,
+                "functionCall": True,
+                "vision": False,
+                "reasoning": True,
+                "imageOutput": False,
+            },
+        )
+
+    def test_external_model_configuration_requires_complete_capabilities(self) -> None:
+        self.profile["PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW"] = "40960"
+        self.profile["PT_AGENT_DEFAULT_MODEL_CAPABILITIES"] = "streaming"
+
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "missing=\\['native-tools'\\]",
+        ):
+            foundation_scenario_runner._agent_provider_config(self.profile)
+
     def test_missing_provider_configuration_fails_before_resource_acquisition(
         self,
     ) -> None:
@@ -1411,22 +1447,44 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             self.repo_root / ".local" / "dev" / "active" / "two.env"
         )
         self.active_profile.parent.mkdir(parents=True)
+        self.machine_values = {
+            "PT_DEV_PROFILE": "two",
+            "PT_AGENT_DEFAULT_MODEL_ID": "model",
+        }
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
-    def load_profile(self, resolved_name: str) -> dict[str, str]:
+    def load_profile(
+        self,
+        resolved_name: str,
+        *,
+        machine_profile: str = "two",
+        machine_values: dict[str, str] | None = None,
+    ) -> dict[str, str]:
         manifest = {"profile": {"resolvedName": resolved_name}}
-        with patch.object(
-            foundation_scenario_runner,
-            "REPO_ROOT",
-            self.repo_root,
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "REPO_ROOT",
+                self.repo_root,
+            ),
+            patch.object(
+                foundation_scenario_runner,
+                "resolve_machine_profile_environment",
+                return_value=(
+                    machine_profile,
+                    self.repo_root / "profiles" / f"{machine_profile}.env",
+                    1,
+                    dict(machine_values or self.machine_values),
+                ),
+            ),
         ):
             return foundation_scenario_runner._load_profile_env(manifest)
 
-    def test_loads_the_provisioned_active_profile(self) -> None:
+    def test_loads_the_provisioned_machine_profile(self) -> None:
         self.active_profile.write_text(
-            "PT_DEV_PROFILE=two\nPT_AGENT_DEFAULT_MODEL_ID=model\n",
+            "PT_DEV_PROFILE=chat-native-disposable\n",
             encoding="utf-8",
         )
 
@@ -1435,24 +1493,85 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(profile["PT_DEV_PROFILE"], "two")
         self.assertEqual(profile["PT_AGENT_DEFAULT_MODEL_ID"], "model")
 
-    def test_rejects_a_missing_active_profile(self) -> None:
-        with self.assertRaisesRegex(
-            foundation_scenario_runner.ScenarioRunnerError,
-            "active profile cannot be resolved",
-        ):
-            self.load_profile("two")
-
-    def test_rejects_a_different_active_profile_identity(self) -> None:
+    def test_ignores_a_stale_legacy_active_profile(self) -> None:
         self.active_profile.write_text(
-            "PT_DEV_PROFILE=one\n",
+            "PT_DEV_PROFILE=chat-native-disposable\n",
             encoding="utf-8",
         )
 
+        profile = self.load_profile("two")
+
+        self.assertEqual(profile["PT_DEV_PROFILE"], "two")
+
+    def test_overlays_approved_process_environment_provider_fields(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "PT_AGENT_PROVIDER_ID": "injected-provider",
+                "PT_AGENT_PROVIDER_API_KEY": "injected-provider-secret",
+                "PT_AGENT_DEFAULT_MODEL_ID": "injected-model",
+                "PT_AGENT_DEFAULT_MODEL_NAME": "Injected Model",
+                "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW": "32768",
+                "PT_AGENT_DEFAULT_MODEL_CAPABILITIES": (
+                    "streaming,native-tools"
+                ),
+                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+            },
+            clear=False,
+        ):
+            profile = self.load_profile("two")
+
+        self.assertEqual(
+            {
+                field: profile[field]
+                for field in (
+                    "PT_AGENT_PROVIDER_ID",
+                    "PT_AGENT_PROVIDER_API_KEY",
+                    "PT_AGENT_DEFAULT_MODEL_ID",
+                    "PT_AGENT_DEFAULT_MODEL_NAME",
+                    "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW",
+                    "PT_AGENT_DEFAULT_MODEL_CAPABILITIES",
+                    "PT_AGENT_PROVIDER_BASE_URL",
+                )
+            },
+            {
+                "PT_AGENT_PROVIDER_ID": "injected-provider",
+                "PT_AGENT_PROVIDER_API_KEY": "injected-provider-secret",
+                "PT_AGENT_DEFAULT_MODEL_ID": "injected-model",
+                "PT_AGENT_DEFAULT_MODEL_NAME": "Injected Model",
+                "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW": "32768",
+                "PT_AGENT_DEFAULT_MODEL_CAPABILITIES": (
+                    "streaming,native-tools"
+                ),
+                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+            },
+        )
+
+    def test_rejects_an_unavailable_machine_profile(self) -> None:
+        manifest = {"profile": {"resolvedName": "two"}}
+        error = foundation_scenario_runner.BlockedError(
+            reason="machine profile unavailable",
+            resource="profile:machine-control-plane",
+        )
+        with (
+            patch.object(
+                foundation_scenario_runner,
+                "resolve_machine_profile_environment",
+                side_effect=error,
+            ),
+            self.assertRaisesRegex(
+                foundation_scenario_runner.ScenarioRunnerError,
+                "machine control plane profile is unavailable",
+            ),
+        ):
+            foundation_scenario_runner._load_profile_env(manifest)
+
+    def test_rejects_a_different_machine_profile_identity(self) -> None:
         with self.assertRaisesRegex(
             foundation_scenario_runner.ScenarioRunnerError,
-            "active profile identity does not match",
+            "machine profile identity does not match",
         ):
-            self.load_profile("two")
+            self.load_profile("two", machine_profile="one")
 
     def test_builds_client_manifest_from_typed_station_service(self) -> None:
         clients = [{"runtime": "native-tauri"}, {"runtime": "browser"}]
