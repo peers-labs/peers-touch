@@ -98,14 +98,8 @@
         "pathPrefix": "apps/desktop/src/services/desktop_api.ts",
         "mode": "exclusive-write"
       },
-      {
-        "pathPrefix": "apps/mobile/src/pages/settings",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "apps/mobile/src/acceptance",
-        "mode": "exclusive-write"
-      },
+      {"pathPrefix": "apps/mobile/src/pages/settings", "mode": "exclusive-write"},
+      {"pathPrefix": "apps/mobile/src/acceptance", "mode": "exclusive-write"},
       {
         "pathPrefix": "apps/mobile/src/runtimes",
         "mode": "exclusive-write"
@@ -118,6 +112,11 @@
         "pathPrefix": "apps/mobile/src-tauri/src/messaging",
         "mode": "exclusive-write"
       },
+      {"pathPrefix": "apps/mobile/package.json", "mode": "shared-read"},
+      {"pathPrefix": "apps/mobile/scripts", "mode": "shared-read"},
+      {"pathPrefix": "docs/architecture/mobile", "mode": "shared-read"},
+      {"pathPrefix": "docs/client/mobile", "mode": "shared-read"},
+      {"pathPrefix": "pnpm-lock.yaml", "mode": "shared-read"},
       {
         "pathPrefix": "packages/messaging-core",
         "mode": "shared-read"
