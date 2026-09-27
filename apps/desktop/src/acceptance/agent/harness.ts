@@ -26997,6 +26997,17 @@ export function installAcceptanceHarness(): void {
       }
       const agentId = agent.id || agent.name;
       const originalModel = agent.model;
+      const originalModelConfig = useAgentStore.getState().availableModels.find(
+        (model) => (
+          model.provider_id === agent.provider
+          && model.id === originalModel
+        ),
+      );
+      if (!originalModelConfig) {
+        throw new Error(
+          'agent.acceptance.providerModelUnavailableSourceModelMissing',
+        );
+      }
       const missingModel = `pt-missing-model-${sampleId}`;
       let modelAdded = false;
       let modelRemoved = false;
@@ -27011,7 +27022,13 @@ export function installAcceptanceHarness(): void {
           display_name: missingModel,
           type: 'chat',
           context_window: 128_000,
-          streaming: true,
+          streaming: originalModelConfig.streaming,
+          function_call: originalModelConfig.function_call,
+          vision: originalModelConfig.vision,
+          reasoning: originalModelConfig.reasoning,
+          search: originalModelConfig.search,
+          image_output: originalModelConfig.image_output,
+          video: originalModelConfig.video,
           enabled: true,
         });
         modelAdded = true;
@@ -27071,6 +27088,8 @@ export function installAcceptanceHarness(): void {
                       : null,
                   projectedErrorType:
                     projectedError?.error_type ?? null,
+                  projectedErrorDetails:
+                    projectedError?.details ?? null,
                   dataKeys: Object.keys(payload.data).sort(),
                   sourceConversationMatches:
                     sourceDelivery?.conversationId === conversationId,
