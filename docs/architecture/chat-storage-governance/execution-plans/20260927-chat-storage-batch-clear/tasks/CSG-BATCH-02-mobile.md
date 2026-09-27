@@ -30,7 +30,8 @@
     "docs/architecture/mobile/mobile-acceptance-environment.md",
     "docs/client/mobile/acceptance-setup.md",
     "pnpm-lock.yaml",
-    "tooling/acceptance"
+    "tooling/acceptance",
+    "tooling/scripts/architecture/module-governance.test.mjs"
   ],
   "readSet": [
     "apps/mobile/src/pages/ChatPage.tsx",
