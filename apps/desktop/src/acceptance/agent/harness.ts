@@ -32116,20 +32116,45 @@ export function installAcceptanceHarness(): void {
         ));
         const residualTurnStatuses: string[] = [];
         for (const residualTurnId of residualTurnIds) {
-          const residualCancellation = await api.cancelAgentTurn(
+          let residualCancellationStatus = '';
+          try {
+            const residualCancellation = await api.cancelAgentTurn(
+              residualTurnId,
+            );
+            residualCancellationStatus = foundationTurnStatusName(
+              residualCancellation?.status,
+            );
+          } catch (error) {
+            const details = evidenceRecord(
+              (error as { details?: unknown }).details ?? {},
+              'AS-F02 residual cancellation error',
+            );
+            const typedError = projectAgentTypedErrorPayload(details);
+            if (
+              !isAgentLifecycleTerminalMutationError(typedError)
+              || typedError.details.resource_id !== residualTurnId
+            ) {
+              throw error;
+            }
+            residualCancellationStatus = typedError.details.terminal_status;
+          }
+          const residualReplay = await waitForFoundationDiagnosticReplay(
             residualTurnId,
+            diagnosticReplayTerminal,
+            'Foundation residual Turn settlement',
+            30_000,
           );
-          const residualStatus = String(
-            residualCancellation?.status ?? '',
-          ).toLowerCase();
+          const residualStatus = foundationTurnStatusName(
+            residualReplay.status,
+          );
           await reportFoundationQueueCapacityDebug(
             'G,H',
             'residual-turn-cancellation-observed',
             {
               elapsedSinceActiveMs: performance.now() - activeStartedAt,
               turnIdHash: await sha256Hex(residualTurnId),
+              commandStatus: residualCancellationStatus,
               status: residualStatus,
-              responseKeys: Object.keys(residualCancellation ?? {}).sort(),
             },
           );
           if (
