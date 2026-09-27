@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "id": "station-access-interface-contract",
+  "domain": "station-access",
+  "status": "active",
+  "owners": [
+    "docs/architecture/station-access-lifecycle/data-model.md",
+    "docs/architecture/api-ownership/station-api-capabilities.yaml",
+    "apps/desktop/src/services/desktop_api.ts",
+    "apps/mobile/src/services/mobileCommands.ts",
+    "tooling/acceptance/gates/station_access/capability_contract.py",
+    "tooling/acceptance/gates/station_access/lifecycle_aggregate.py"
+  ],
+  "truth_sources": [
+    "Station API capability registry",
+    "signed Station identity and Access Gate protobuf contracts",
+    "current Desktop and Mobile capability consumers"
+  ],
+  "visible_surfaces": [
+    {"type": "native-desktop", "route": "access-gate"},
+    {"type": "native-mobile", "route": "access-gate"}
+  ],
+  "required_gates": [
+    "station-access-capability-contract",
+    "desktop-release-build",
+    "mobile-native-build",
+    "station-access-lifecycle-aggregate-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "the current Station Access route inventory exactly matches its declared capabilities",
+      "Desktop and Mobile bind the same identity, Access Gate, scope, and typed outcomes"
+    ],
+    "surface": [
+      "Desktop release and Mobile native builds complete from the same clean source"
+    ]
+  },
+  "negative": [
+    "an undeclared Access route cannot pass capability validation",
+    "a missing Desktop or Mobile capability consumer cannot pass",
+    "stale or dirty-source Gate evidence cannot satisfy the aggregate"
+  ]
+}

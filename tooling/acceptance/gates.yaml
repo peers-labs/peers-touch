@@ -1,6 +1,13 @@
 {
   "version": 1,
   "gates": {
+    "architecture-module-governance": {
+      "command": "node tooling/scripts/architecture/module-governance.mjs validate",
+      "timeout_seconds": 30,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate registered architecture modules, derived documents, decisions, governed paths, and positive capability references."
+    },
     "acceptance-plan-self": {
       "command": "python3 tooling/scripts/acceptance-plan.py --root tooling/acceptance --self-check",
       "timeout_seconds": 30,
@@ -246,7 +253,7 @@
       "timeout_seconds": 180,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate signed Station identity ownership, the four generated-protobuf Access endpoints, shared Desktop/Mobile typed outcomes, scope fields, and retired direct-login absence."
+      "description": "Validate signed Station identity ownership, the complete generated-protobuf Access route inventory, shared Desktop/Mobile consumers, typed outcomes, and scope fields."
     },
     "station-access-auth-e2e": {
       "argv": [
@@ -299,13 +306,6 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Validate the Station Access managed domain against ownership, native authentication, scope isolation, and explicit unproven-scope contracts."
-    },
-    "station-access-zero-legacy-e2e": {
-      "command": "python3 -m tooling.acceptance.gates.station_access.zero_legacy",
-      "timeout_seconds": 180,
-      "environment": "local",
-      "tier": "ci-cheap",
-      "description": "Scan every Station Access legacy matcher across all nine declared dimensions and fail on any current tracked or untracked reference."
     },
     "desktop-release-build": {
       "command": "pnpm --dir apps/desktop exec tauri build --ci --no-bundle",

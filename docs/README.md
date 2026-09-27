@@ -205,6 +205,9 @@
 - 开发工作流控制面：`architecture/development-workflow/README.md`
   （active；定义从首次写入前资源声明到 `EXECUTE` 内以 Journey 为单位的产品优先开发循环、checkpoint
   授权、exact-source 功能验证与 Acceptance 晋级边界）
+- 架构模块治理：`architecture/architecture-module-governance/README.md`
+  （active；定义架构模块内容完整性、正向能力登记、编辑前上下文回执，以及
+  Plan、Review、CI 共享的 fail-closed 校验）
 - 联邦 IM 历史架构：`architecture/federated-im/README.md`（superseded；保留
   consolidation 前的决策与实现证据，当前 Chat 架构以 Messaging Platform 和
   API Ownership 为准）
@@ -212,8 +215,8 @@
   好友建立、会话进入、文本与富媒体、语音消息、实时一对一语音/视频、群聊到跨设备/跨 Station
   恢复的唯一产品完成口径与当前执行计划）
 - Station 接入生命周期：`architecture/station-access-lifecycle/README.md`
-  （draft；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
-  Federation context 与 Relay 客户端边界，独立 prepared Plan 待 Owner 审核）
+  （active；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
+  Federation context 与 Relay 客户端边界，实施 Plan 已完成）
 - Chat 本机存储治理：`architecture/chat-storage-governance/README.md`
   （active；定义当前设备 Chat 空间统计、缓存、保留周期、消息 redaction、单会话及
   显式批量清理与物理回收）

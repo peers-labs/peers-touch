@@ -68,11 +68,11 @@
     "Both clients use application/protobuf on the four canonical Access endpoints",
     "Session, Messaging and local projections share Station, Actor and Device scope",
     "Switch and restart expose no stale scope projection",
-    "Direct login, auth_login, legacy submission, JSON dual parsing and unscoped keys are deleted",
+    "Only registry-declared Access routes, protobuf decoding and scoped keys remain",
     "Unknown gate, identity mismatch and expiry produce matching typed outcomes"
   ],
   "failureBehavior": [
-    "Never fall back to /actor/login",
+    "Never call an interface outside the current capability registry",
     "Never accept reachability metadata as Station identity",
     "Never retain compatibility parsing or migration reads"
   ],

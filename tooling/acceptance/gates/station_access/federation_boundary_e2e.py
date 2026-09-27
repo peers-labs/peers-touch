@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -36,39 +37,114 @@ REQUIRED_ASSERTIONS = frozenset(
     }
 )
 
+CLIENT_BOUNDARY_CONTRACTS = {
+    "apps/desktop/src/services/desktop_api.ts": {
+        "pattern": r"^\s{2}(federation[A-Z][A-Za-z0-9]*):\s*\(",
+        "allowed": {
+            "federationResolve",
+            "federationCatalogSearch",
+            "federationListContexts",
+        },
+    },
+    "apps/mobile/src/services/gateways/profileGateway.ts": {
+        "pattern": (
+            r"^\s{2}(listFederationContexts|"
+            r"searchFederationActors|resolveFederationHandle):\s*\("
+        ),
+        "allowed": {
+            "listFederationContexts",
+            "searchFederationActors",
+            "resolveFederationHandle",
+        },
+    },
+    "apps/desktop/src-tauri/src/application/federation/mod.rs": {
+        "pattern": r'^const (ROUTE_[A-Z_]+): &str = "',
+        "allowed": {
+            "ROUTE_RESOLVE",
+            "ROUTE_CATALOG_SEARCH",
+            "ROUTE_LIST_CONTEXTS",
+        },
+    },
+    "apps/desktop/src-tauri/src/interface/tauri_commands/federation.rs": {
+        "pattern": r"^\s*pub fn (federation_[a-z0-9_]+)\s*\(",
+        "allowed": {
+            "federation_resolve",
+            "federation_catalog_search",
+            "federation_list_contexts",
+        },
+    },
+    "apps/desktop/src-tauri/src/main.rs": {
+        "pattern": r"\bfederation::(federation_[a-z0-9_]+)\b",
+        "allowed": {
+            "federation_resolve",
+            "federation_catalog_search",
+            "federation_list_contexts",
+        },
+    },
+    "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs": {
+        "pattern": r'^\s*"(federation_[a-z0-9_]+)"\s*=>',
+        "allowed": {
+            "federation_resolve",
+            "federation_catalog_search",
+            "federation_list_contexts",
+        },
+    },
+    "apps/mobile/src/services/gateways/gatewayTypes.ts": {
+        "pattern": r"operationId:\s*'(federation_[a-z0-9_]+)'",
+        "allowed": {
+            "federation_contexts_list",
+            "federation_resolve",
+            "federation_catalog_search",
+        },
+    },
+    "apps/mobile/src/services/stationTransport.ts": {
+        "pattern": r"(?:operationId:\s*|case\s+)'(federation_[a-z0-9_]+)'",
+        "allowed": {
+            "federation_contexts_list",
+            "federation_resolve",
+            "federation_catalog_search",
+        },
+    },
+}
+
 CLIENT_BOUNDARY_ROOTS = (
     "apps/desktop/src",
     "apps/desktop/src-tauri/src",
     "apps/mobile/src",
     "apps/mobile/src-tauri/src",
 )
-LEGACY_INVENTORY_PATH = (
-    REPO_ROOT
-    / "docs"
-    / "architecture"
-    / "station-access-lifecycle"
-    / "legacy-inventory.json"
+CLIENT_BOUNDARY_SUFFIXES = frozenset({".rs", ".ts", ".tsx"})
+CLIENT_BOUNDARY_SKIP_PARTS = frozenset(
+    {"acceptance", "gen", "node_modules", "target"}
 )
-
-
-def _legacy_values_by_entry() -> dict[str, tuple[str, ...]]:
-    inventory = json.loads(LEGACY_INVENTORY_PATH.read_text(encoding="utf-8"))
-    return {
-        str(entry["id"]): tuple(
-            value
-            for key in ("symbols", "routes")
-            for value in entry.get(key, [])
-        )
-        for entry in inventory["entries"]
+CLIENT_FEDERATION_COMMANDS = frozenset(
+    {
+        "federation_catalog_search",
+        "federation_contexts_list",
+        "federation_list_contexts",
+        "federation_resolve",
     }
-
-
-_LEGACY_VALUES = _legacy_values_by_entry()
-GOVERNANCE_TOKENS = (
-    *_LEGACY_VALUES["SAL-L03"],
-    *_LEGACY_VALUES["SAL-L04"],
 )
-RELAY_ADMIN_TOKENS = _LEGACY_VALUES["SAL-L05"]
+CLIENT_FEDERATION_ROUTES = frozenset(
+    {
+        "/actor/federation/profile",
+        "/actor/federation/resolve",
+        "/sub-federation/catalog/search",
+        "/sub-federation/contexts",
+    }
+)
+COMMAND_LITERAL_PATTERN = re.compile(
+    r"""(?:\b(?:invoke[A-Za-z0-9_]*)"""
+    r"""(?:<[^>]+>)?\(\s*|operationId:\s*|case\s+)"""
+    r"""['"`]((?:federation|relay)_[a-z0-9_]+)['"`]"""
+)
+COMMAND_ASSIGNMENT_PATTERN = re.compile(
+    r"""\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*"""
+    r"""\s*=\s*['"`]((?:federation|relay)_[a-z0-9_]+)['"`]"""
+)
+ROUTE_LITERAL_PATTERN = re.compile(
+    r"""['"`](/(?:(?:actor/)?federation|sub-federation|relay)/[^'"`\s]*)['"`]"""
+)
 
 
 def validate_ordinary_client_boundary(
@@ -79,22 +155,81 @@ def validate_ordinary_client_boundary(
         if sources is not None
         else _client_boundary_sources()
     )
-    governance_hits = _token_hits(inspected, GOVERNANCE_TOKENS)
-    relay_hits = _token_hits(inspected, RELAY_ADMIN_TOKENS)
-    if governance_hits:
+    mismatches: dict[str, dict[str, list[str]]] = {}
+    current_surfaces: dict[str, list[str]] = {}
+    for path, contract in CLIENT_BOUNDARY_CONTRACTS.items():
+        source = inspected.get(path)
+        if source is None:
+            mismatches[path] = {
+                "expected": sorted(contract["allowed"]),
+                "actual": [],
+            }
+            continue
+        actual = set(re.findall(str(contract["pattern"]), source, re.MULTILINE))
+        expected = set(contract["allowed"])
+        current_surfaces[path] = sorted(actual)
+        if actual != expected:
+            mismatches[path] = {
+                "expected": sorted(expected),
+                "actual": sorted(actual),
+            }
+    if mismatches:
         raise GateError(
-            "ordinary client Federation governance remains: "
-            + json.dumps(governance_hits, sort_keys=True)
+            "ordinary client Federation boundary must exactly match the "
+            "current context surface: "
+            + json.dumps(mismatches, sort_keys=True)
         )
-    if relay_hits:
+    commands = {
+        match
+        for source in inspected.values()
+        for pattern in (
+            COMMAND_LITERAL_PATTERN,
+            COMMAND_ASSIGNMENT_PATTERN,
+        )
+        for match in pattern.findall(source)
+    }
+    routes = {
+        match
+        for source in inspected.values()
+        for match in ROUTE_LITERAL_PATTERN.findall(source)
+    }
+    if commands != CLIENT_FEDERATION_COMMANDS:
         raise GateError(
-            "ordinary client Relay administration remains: "
-            + json.dumps(relay_hits, sort_keys=True)
+            "ordinary client Federation command inventory must exactly match "
+            "the current context surface: "
+            + json.dumps(
+                {
+                    "expected": sorted(CLIENT_FEDERATION_COMMANDS),
+                    "actual": sorted(commands),
+                },
+                sort_keys=True,
+            )
+        )
+    if routes != CLIENT_FEDERATION_ROUTES:
+        raise GateError(
+            "ordinary client Federation route inventory must exactly match "
+            "the current context surface: "
+            + json.dumps(
+                {
+                    "expected": sorted(CLIENT_FEDERATION_ROUTES),
+                    "actual": sorted(routes),
+                },
+                sort_keys=True,
+            )
         )
     return {
-        "scannedFiles": sorted(inspected),
-        "governanceTokensAbsent": True,
-        "relayAdminTokensAbsent": True,
+        "contractFiles": sorted(inspected),
+        "currentSurfaces": current_surfaces,
+        "contextCapabilitiesComplete": True,
+        "operatorBoundary": "station-only",
+        "relayBoundary": (
+            "diagnostic-only"
+            if not any(
+                value.startswith("relay_") for value in commands
+            )
+            and not any(route.startswith("/relay/") for route in routes)
+            else "client-surface-present"
+        ),
     }
 
 
@@ -296,11 +431,14 @@ class StationAccessFederationBoundaryGate(AcceptanceGate):
             boundary = validate_ordinary_client_boundary()
             self.assert_condition(
                 "ordinary_client_governance_absent",
-                boundary["governanceTokensAbsent"] is True,
+                (
+                    boundary["contextCapabilitiesComplete"] is True
+                    and boundary["operatorBoundary"] == "station-only"
+                ),
             )
             self.assert_condition(
                 "ordinary_client_relay_admin_absent",
-                boundary["relayAdminTokensAbsent"] is True,
+                boundary["relayBoundary"] == "diagnostic-only",
             )
 
             source_identity = self.runtime.source_identity()
@@ -456,31 +594,20 @@ class StationAccessFederationBoundaryGate(AcceptanceGate):
         return value.strip()
 
 
-def _token_hits(
-    sources: Mapping[str, str],
-    tokens: tuple[str, ...],
-) -> dict[str, list[str]]:
-    return {
-        path: [token for token in tokens if token in source]
-        for path, source in sources.items()
-        if any(token in source for token in tokens)
-    }
-
-
 def _client_boundary_sources() -> dict[str, str]:
     sources: dict[str, str] = {}
-    for root in CLIENT_BOUNDARY_ROOTS:
-        for path in (REPO_ROOT / root).rglob("*"):
+    for relative_root in CLIENT_BOUNDARY_ROOTS:
+        root = REPO_ROOT / relative_root
+        for path in root.rglob("*"):
+            relative = path.relative_to(REPO_ROOT)
             if (
-                not path.is_file()
-                or path.suffix not in {".rs", ".ts", ".tsx"}
-                or "gen" in path.parts
-                or "target" in path.parts
+                path.is_file()
+                and path.suffix in CLIENT_BOUNDARY_SUFFIXES
+                and not (set(relative.parts) & CLIENT_BOUNDARY_SKIP_PARTS)
+                and ".test." not in path.name
+                and ".spec." not in path.name
             ):
-                continue
-            sources[str(path.relative_to(REPO_ROOT))] = path.read_text(
-                encoding="utf-8"
-            )
+                sources[relative.as_posix()] = path.read_text(encoding="utf-8")
     return sources
 
 

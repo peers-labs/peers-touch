@@ -242,31 +242,116 @@ class StationAccessFederationBoundaryGateTest(unittest.TestCase):
         ):
             gate.run()
 
-    def test_rejects_ordinary_client_governance_tokens(self) -> None:
-        with self.assertRaisesRegex(
-            GateError,
-            "ordinary client Federation governance remains",
-        ):
-            validate_ordinary_client_boundary(
-                {
-                    "apps/desktop/src/client.ts": (
-                        "federation" + "Create()"
-                    )
-                }
-            )
+    def test_accepts_complete_current_client_boundary(self) -> None:
+        result = validate_ordinary_client_boundary(
+            self._valid_boundary_sources()
+        )
 
-    def test_rejects_ordinary_client_relay_admin_tokens(self) -> None:
+        self.assertTrue(result["contextCapabilitiesComplete"])
+        self.assertEqual(result["operatorBoundary"], "station-only")
+        self.assertEqual(result["relayBoundary"], "diagnostic-only")
+
+    def test_rejects_missing_desktop_context_capability(self) -> None:
+        sources = self._valid_boundary_sources()
+        path = "apps/desktop/src/services/desktop_api.ts"
+        sources[path] = sources[path].replace(
+            "  federationCatalogSearch: (\n",
+            "",
+        )
         with self.assertRaisesRegex(
             GateError,
-            "ordinary client Relay administration remains",
+            "must exactly match",
         ):
-            validate_ordinary_client_boundary(
-                {
-                    "apps/mobile/src/client.ts": (
-                        "const relay" + "Token = token"
-                    )
-                }
-            )
+            validate_ordinary_client_boundary(sources)
+
+    def test_rejects_missing_mobile_context_contract(self) -> None:
+        sources = self._valid_boundary_sources()
+        path = "apps/mobile/src/services/gateways/profileGateway.ts"
+        sources[path] = sources[path].replace(
+            "  searchFederationActors: (\n",
+            "",
+        )
+        with self.assertRaisesRegex(
+            GateError,
+            "must exactly match",
+        ):
+            validate_ordinary_client_boundary(sources)
+
+    def test_rejects_unknown_command_in_another_client_file(self) -> None:
+        sources = self._valid_boundary_sources()
+        sources["apps/mobile/src/services/rogueGateway.ts"] = (
+            "const command = `federation_topology_mutate`;\n"
+            "invoke(command)"
+        )
+
+        with self.assertRaisesRegex(GateError, "command inventory"):
+            validate_ordinary_client_boundary(sources)
+
+    def test_rejects_relay_route_in_another_client_file(self) -> None:
+        sources = self._valid_boundary_sources()
+        sources["apps/desktop/src/services/rogueGateway.ts"] = (
+            "const path = `/relay/admin`;\n"
+            "fetch(path)"
+        )
+
+        with self.assertRaisesRegex(GateError, "route inventory"):
+            validate_ordinary_client_boundary(sources)
+
+    @staticmethod
+    def _valid_boundary_sources() -> dict[str, str]:
+        return {
+            "apps/desktop/src/services/desktop_api.ts": (
+                "  federationResolve: (\n"
+                "  federationCatalogSearch: (\n"
+                "  federationListContexts: (\n"
+                "invokeRustProto('federation_resolve')\n"
+                "invokeRustProto('federation_catalog_search')\n"
+                "invokeRustProto('federation_list_contexts')\n"
+            ),
+            "apps/mobile/src/services/gateways/profileGateway.ts": (
+                "  listFederationContexts: (\n"
+                "  searchFederationActors: (\n"
+                "  resolveFederationHandle: (\n"
+            ),
+            "apps/desktop/src-tauri/src/application/federation/mod.rs": (
+                'const ROUTE_RESOLVE: &str = "/actor/federation/resolve";\n'
+                'const ROUTE_CATALOG_SEARCH: &str = '
+                '"/sub-federation/catalog/search";\n'
+                'const ROUTE_LIST_CONTEXTS: &str = '
+                '"/sub-federation/contexts";\n'
+            ),
+            "apps/desktop/src-tauri/src/interface/tauri_commands/federation.rs": (
+                "pub fn federation_resolve() {}\n"
+                "pub fn federation_catalog_search() {}\n"
+                "pub fn federation_list_contexts() {}\n"
+            ),
+            "apps/desktop/src-tauri/src/main.rs": (
+                "federation::federation_resolve,\n"
+                "federation::federation_catalog_search,\n"
+                "federation::federation_list_contexts,\n"
+            ),
+            "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs": (
+                '  "federation_resolve" => value,\n'
+                '  "federation_catalog_search" => value,\n'
+                '  "federation_list_contexts" => value,\n'
+            ),
+            "apps/mobile/src/services/gateways/gatewayTypes.ts": (
+                "operationId: 'federation_contexts_list'\n"
+                "operationId: 'federation_resolve'\n"
+                "operationId: 'federation_catalog_search'\n"
+                "'/actor/federation/resolve'\n"
+                "'/sub-federation/catalog/search'\n"
+                "'/sub-federation/contexts'\n"
+            ),
+            "apps/mobile/src/services/stationTransport.ts": (
+                "case 'federation_contexts_list':\n"
+                "case 'federation_resolve':\n"
+                "case 'federation_catalog_search':\n"
+            ),
+            "apps/desktop/src-tauri/src/secure_content/adapter.rs": (
+                '"/actor/federation/profile"\n'
+            ),
+        }
 
 
 if __name__ == "__main__":

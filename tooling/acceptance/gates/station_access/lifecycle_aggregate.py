@@ -36,7 +36,6 @@ PRECEDING_GATES: tuple[GateSpec, ...] = (
     GateSpec("SAL-G03", "station-access-federation-boundary-e2e"),
     GateSpec("SAL-G04", "mobile-hard-cut-static"),
     GateSpec("SAL-G04", "mobile-simulator-platform-e2e"),
-    GateSpec("SAL-G04", "station-access-zero-legacy-e2e"),
     GateSpec("SAL-G04", "desktop-release-build"),
     GateSpec("SAL-G04", "mobile-native-build"),
 )

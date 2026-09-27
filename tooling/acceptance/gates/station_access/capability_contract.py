@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import json
+import re
+import subprocess
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -58,22 +61,124 @@ CANONICAL_CAPABILITIES = {
     ),
 }
 
+CANONICAL_ACCESS_ROUTES = {
+    ("POST", "/actor/access/start"),
+    ("OPTIONS", "/actor/access/start"),
+    ("POST", "/actor/access/submit"),
+    ("OPTIONS", "/actor/access/submit"),
+    ("POST", "/actor/access/decision"),
+    ("OPTIONS", "/actor/access/decision"),
+    ("POST", "/actor/access/cancel"),
+    ("OPTIONS", "/actor/access/cancel"),
+}
+
 CLIENT_OUTCOMES = (
     "STATION_ACCESS_UNKNOWN_GATE",
     "STATION_ACCESS_IDENTITY_MISMATCH",
     "STATION_ACCESS_ATTEMPT_EXPIRED",
 )
 
-PRODUCTION_SCAN_ROOTS = (
-    Path("apps/station/frame/touch"),
-    Path("apps/desktop/src"),
-    Path("apps/desktop/src-tauri/src"),
-    Path("apps/mobile/src"),
-    Path("apps/mobile/src-tauri/src"),
-)
+CLIENT_ACCESS_COMMANDS = {
+    "Desktop": {
+        "access_start",
+        "access_submit_invite_code",
+        "access_submit_login",
+        "access_decision",
+        "access_cancel",
+    },
+    "Mobile": {
+        "access_start",
+        "access_submit",
+        "access_decision",
+        "access_cancel",
+    },
+}
 
-TEXT_SUFFIXES = frozenset({".go", ".rs", ".ts", ".tsx"})
-SKIP_PARTS = frozenset({"node_modules", "target", "dist", "__pycache__"})
+CLIENT_ACCESS_COMMAND_CONTRACTS = {
+    "Desktop frontend": {
+        "path": "apps/desktop/src/services/desktop_api.ts",
+        "pattern": re.compile(
+            r"\b(?:invoke|invokeAccessCommand|invokeAuthCommand)"
+            r"(?:<[^>]+>)?\(\s*['\"](access_[a-z0-9_]+)['\"]"
+        ),
+        "allowed": CLIENT_ACCESS_COMMANDS["Desktop"],
+    },
+    "Desktop native commands": {
+        "path": "apps/desktop/src-tauri/src/interface/tauri_commands/auth.rs",
+        "pattern": re.compile(
+            r"^\s*pub\s+fn\s+(access_[a-z0-9_]+)\s*\(",
+            re.MULTILINE,
+        ),
+        "allowed": CLIENT_ACCESS_COMMANDS["Desktop"],
+    },
+    "Desktop Tauri handlers": {
+        "path": "apps/desktop/src-tauri/src/main.rs",
+        "pattern": re.compile(r"\bauth::(access_[a-z0-9_]+)\b"),
+        "allowed": CLIENT_ACCESS_COMMANDS["Desktop"],
+    },
+    "Desktop HTTP gateway": {
+        "path": "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+        "pattern": re.compile(
+            r"^\s*['\"](access_[a-z0-9_]+)['\"]\s*=>",
+            re.MULTILINE,
+        ),
+        "allowed": CLIENT_ACCESS_COMMANDS["Desktop"],
+    },
+    "Mobile frontend": {
+        "path": "apps/mobile/src/services/mobileCommands.ts",
+        "pattern": re.compile(
+            r"\binvoke(?:<[^>]+>)?\(\s*['\"](access_[a-z0-9_]+)['\"]"
+        ),
+        "allowed": CLIENT_ACCESS_COMMANDS["Mobile"],
+    },
+    "Mobile native commands": {
+        "path": "apps/mobile/src-tauri/src/commands/oauth.rs",
+        "pattern": re.compile(
+            r"^\s*pub\s+async\s+fn\s+(access_[a-z0-9_]+)\s*\(",
+            re.MULTILINE,
+        ),
+        "allowed": CLIENT_ACCESS_COMMANDS["Mobile"],
+    },
+    "Mobile Tauri handlers": {
+        "path": "apps/mobile/src-tauri/src/commands/mod.rs",
+        "pattern": re.compile(r"\boauth::(access_[a-z0-9_]+)\b"),
+        "allowed": CLIENT_ACCESS_COMMANDS["Mobile"],
+    },
+}
+
+CLIENT_ACCESS_ROOTS = {
+    "Desktop": (
+        Path("apps/desktop/src"),
+        Path("apps/desktop/src-tauri/src"),
+    ),
+    "Mobile": (
+        Path("apps/mobile/src"),
+        Path("apps/mobile/src-tauri/src"),
+    ),
+}
+CLIENT_ACCESS_SUFFIXES = frozenset({".rs", ".ts", ".tsx"})
+CLIENT_ACCESS_SKIP_PARTS = frozenset(
+    {"acceptance", "gen", "node_modules", "target"}
+)
+CLIENT_ACCESS_DISCOVERY_PATTERNS = (
+    re.compile(
+        r"\b(?:invoke[A-Za-z0-9_]*)"
+        r"(?:<[^>]+>)?\(\s*['\"`](access_[a-z0-9_]+)['\"`]"
+    ),
+    re.compile(
+        r"\b(?:operationId:\s*|case\s+)['\"`](access_[a-z0-9_]+)['\"`]"
+    ),
+    re.compile(r"^\s*['\"`](access_[a-z0-9_]+)['\"`]\s*=>", re.MULTILINE),
+    re.compile(
+        r"^\s*pub(?:\s+async)?\s+fn\s+(access_[a-z0-9_]+)\s*\(",
+        re.MULTILINE,
+    ),
+    re.compile(r"\b(?:auth|oauth)::(access_[a-z0-9_]+)\b"),
+    re.compile(
+        r"\b(?:const|let|var)\s+[A-Za-z_$][A-Za-z0-9_$]*"
+        r"\s*=\s*['\"`](access_[a-z0-9_]+)['\"`]"
+    ),
+)
 
 
 def _read(relative_path: str) -> str:
@@ -123,6 +228,133 @@ def _validate_api_ownership(registry: Mapping[str, Any]) -> None:
             raise GateError(
                 f"Station API capability {capability_id!r} drifted: {actual!r}"
             )
+    access_routes = {
+        (
+            str(route.get("method") or ""),
+            str(route.get("path") or ""),
+        )
+        for item in raw_capabilities
+        if isinstance(item, Mapping)
+        for route in [item.get("canonical_route")]
+        if isinstance(route, Mapping)
+        and str(route.get("path") or "").startswith("/actor/access/")
+    }
+    if access_routes != CANONICAL_ACCESS_ROUTES:
+        raise GateError(
+            "Station Access route inventory must exactly match the current "
+            f"capability registry: {sorted(access_routes)!r}"
+        )
+
+
+def _load_route_report() -> dict[str, Any]:
+    completed = subprocess.run(
+        [
+            "go",
+            "run",
+            "./apps/station/app/cmd/station_api_ownership",
+            "--root",
+            ".",
+            "--registry",
+            str(OWNERSHIP_REGISTRY.relative_to(REPO_ROOT)),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        report = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise GateError(
+            "Station API ownership report is not valid JSON"
+        ) from error
+    if completed.returncode != 0 or report.get("status") != "PASS":
+        raise GateError(
+            "Station API ownership source analysis failed: "
+            + json.dumps(report.get("diagnostics", []), sort_keys=True)
+        )
+    return report
+
+
+def _validate_source_route_inventory(report: Mapping[str, Any]) -> None:
+    routes = report.get("routes")
+    if not isinstance(routes, list):
+        raise GateError("Station API ownership report routes are missing")
+    access_routes = {
+        (str(item.get("method") or ""), str(item.get("path") or ""))
+        for item in routes
+        if isinstance(item, Mapping)
+        and str(item.get("path") or "").startswith("/actor/access/")
+    }
+    if access_routes != CANONICAL_ACCESS_ROUTES:
+        raise GateError(
+            "Station Access implementation routes must exactly match the "
+            f"current capability registry: {sorted(access_routes)!r}"
+        )
+
+
+def _validate_client_command_inventory(
+    sources: Mapping[str, str] | None = None,
+) -> dict[str, list[str]]:
+    inspected = (
+        dict(sources)
+        if sources is not None
+        else _client_access_command_sources()
+    )
+    inventories: dict[str, list[str]] = {}
+    for surface, contract in CLIENT_ACCESS_COMMAND_CONTRACTS.items():
+        path = str(contract["path"])
+        source = inspected.get(path)
+        if source is None:
+            raise GateError(f"{surface} Access command source is missing: {path}")
+        commands = set(contract["pattern"].findall(source))
+        allowed = set(contract["allowed"])
+        inventories[surface] = sorted(commands)
+        if commands != allowed:
+            raise GateError(
+                f"{surface} Access command inventory drifted: "
+                f"expected={sorted(allowed)!r}, actual={sorted(commands)!r}"
+            )
+    for platform, roots in CLIENT_ACCESS_ROOTS.items():
+        commands = {
+            command
+            for path, source in inspected.items()
+            if any(
+                path == root.as_posix()
+                or path.startswith(f"{root.as_posix()}/")
+                for root in roots
+            )
+            for pattern in CLIENT_ACCESS_DISCOVERY_PATTERNS
+            for command in pattern.findall(source)
+        }
+        allowed = CLIENT_ACCESS_COMMANDS[platform]
+        inventories[f"{platform} production discovery"] = sorted(commands)
+        if commands != allowed:
+            raise GateError(
+                f"{platform} production Access command inventory drifted: "
+                f"expected={sorted(allowed)!r}, actual={sorted(commands)!r}"
+            )
+    return inventories
+
+
+def _client_access_command_sources() -> dict[str, str]:
+    sources: dict[str, str] = {}
+    for roots in CLIENT_ACCESS_ROOTS.values():
+        for relative_root in roots:
+            for path in (REPO_ROOT / relative_root).rglob("*"):
+                relative = path.relative_to(REPO_ROOT)
+                if (
+                    path.is_file()
+                    and path.suffix in CLIENT_ACCESS_SUFFIXES
+                    and not (set(relative.parts) & CLIENT_ACCESS_SKIP_PARTS)
+                    and ".test." not in path.name
+                    and ".spec." not in path.name
+                ):
+                    sources[relative.as_posix()] = path.read_text(
+                        encoding="utf-8"
+                    )
+    return sources
+
 
 def _validate_proto_contracts() -> None:
     identity_proto = STATION_IDENTITY_PROTO.read_text(encoding="utf-8")
@@ -251,47 +483,13 @@ def _validate_client_outcome_parity() -> None:
             )
 
 
-def _source_files() -> Iterable[Path]:
-    for relative_root in PRODUCTION_SCAN_ROOTS:
-        root = REPO_ROOT / relative_root
-        for path in root.rglob("*"):
-            if (
-                path.is_file()
-                and path.suffix in TEXT_SUFFIXES
-                and not (set(path.relative_to(REPO_ROOT).parts) & SKIP_PARTS)
-                and not path.name.endswith(".pb.go")
-                and not path.name.endswith("_pb.ts")
-            ):
-                yield path
-
-
-def _validate_retired_access_surface_absent() -> None:
-    forbidden = (
-        "/actor/" + "login",
-        "auth_" + "login",
-        "direct_" + "login_fallback",
-        "Validate" + "LegacySubmission",
-    )
-    violations: list[str] = []
-    for path in _source_files():
-        text = path.read_text(encoding="utf-8")
-        for token in forbidden:
-            if token in text:
-                relative = path.relative_to(REPO_ROOT).as_posix()
-                violations.append(f"{relative}: {token}")
-    if violations:
-        raise GateError(
-            "retired Station Access surface remains: "
-            + ", ".join(violations[:20])
-        )
-
-
 def validate_station_access_capability_contract() -> None:
     _validate_api_ownership(_load_ownership_registry())
+    _validate_source_route_inventory(_load_route_report())
     _validate_proto_contracts()
     _validate_transport_owners()
+    _validate_client_command_inventory()
     _validate_client_outcome_parity()
-    _validate_retired_access_surface_absent()
 
 
 class StationAccessCapabilityContractGate(AcceptanceGate):
@@ -306,13 +504,13 @@ class StationAccessCapabilityContractGate(AcceptanceGate):
             "station_access_capability_contract",
             True,
             "Station identity, protobuf Access Gate, scope fields, typed "
-            "outcomes, and retired-path absence are valid",
+            "outcomes, and current interface inventory are valid",
         )
         return {
             "proven_scope": [
                 "Station Access API ownership and generated protobuf wire",
                 "Desktop and Mobile typed failure parity",
-                "retired direct-login production surface absence",
+                "complete current Access route and consumer inventory",
             ],
             "unproven_scope": [
                 "native Desktop and Mobile receiver behavior",

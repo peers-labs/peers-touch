@@ -1,8 +1,8 @@
 # Station 接入生命周期
 
-> **Status**: completed
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -18,7 +18,7 @@
 - Station、Actor、Device scope 隔离；
 - Federation context 的消费与选择；
 - Relay 对普通客户端不可见；
-- 无历史用户前提下的旧登录、重复接口和客户端治理入口硬切。
+- 接入能力、owner 和双端 consumer 的正向完整性。
 
 本文档集不定义：
 
@@ -29,12 +29,12 @@
 
 ## 2. 背景
 
-已完成的 `CCU-20260922` 解决 Chat 双端主生命周期统一，不覆盖接入层。当前 Desktop
-仍有 `/actor/login` 回退和普通用户 Federation 管理入口，Mobile 则使用签名
-Station identity 与 Access Gate，形成第二套语义和多余实体。
+Desktop 与 Mobile 当前共享签名 Station identity、protobuf Access Gate 和
+Station/Actor/Device scope。该模块把这条接入链及其 Federation context
+消费边界定义为单一当前真源。
 
-本模块只治理“客户端如何可信进入一个 Station 并取得明确 Federation context”。
-它不会继续扩张为通用客户端平台项目。
+本模块只治理“客户端如何可信进入一个 Station 并取得明确 Federation context”，
+不扩张为通用客户端平台项目。
 
 ## 3. 设计目标
 
@@ -42,7 +42,7 @@ Station identity 与 Access Gate，形成第二套语义和多余实体。
 2. Session、Messaging 与本地投影共享同一 Station/Actor/Device scope。
 3. 普通客户端只消费 Federation context，不治理 Federation topology。
 4. Relay 只属于 Station/运维基础设施。
-5. 所有旧路径、别名、兼容解析、无消费者 wrapper 和旧测试归零。
+5. 所有接入接口均由当前 capability registry 声明且拥有真实 consumer。
 6. Desktop 与 Mobile 以相同结果、错误和状态验收。
 
 ## 4. 文档导航
@@ -55,8 +55,9 @@ Station identity 与 Access Gate，形成第二套语义和多余实体。
 | [acceptance-matrix.md](./acceptance-matrix.md) | 能力与 Gate 映射 |
 | [design.md](./design.md) | Ownership、拓扑、协议与失败语义 |
 | [decisions.md](./decisions.md) | 关键设计决策 |
-| [integration.md](./integration.md) | 当前实现映射与硬切范围 |
-| [legacy-inventory.json](./legacy-inventory.json) | 接入遗产 matcher 与 owner |
+| [data-model.md](./data-model.md) | 接入协议、状态与 scope 数据模型 |
+| [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
+| [integration.md](./integration.md) | 当前实现映射与跨运行时集成 |
 | [execution-plans/20260926-station-access-lifecycle/plan.md](./execution-plans/20260926-station-access-lifecycle/plan.md) | 已完成的绑定 Plan |
 | [reviews/review-01-product-architecture.md](./reviews/review-01-product-architecture.md) | 第一轮产品与架构审查 |
 | [reviews/review-02-plan-readiness.md](./reviews/review-02-plan-readiness.md) | 第二轮计划与验收审查 |
