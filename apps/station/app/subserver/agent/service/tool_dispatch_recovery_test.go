@@ -366,8 +366,8 @@ func TestToolDispatchServiceLateAppliedAfterCancellationPersistsWithoutContinuat
 	if err := fixture.db.First(&call, "tool_call_id = ?", envelope.GetToolCallId()).Error; err != nil {
 		t.Fatalf("reload cancelled tool call: %v", err)
 	}
-	if call.Status != persistence.ToolCallStatusUnknownSideEffect || !call.ResultPersisted {
-		t.Fatalf("late result changed cancelled call authority: %+v", call)
+	if call.Status != persistence.ToolCallStatusCancelled || !call.ResultPersisted {
+		t.Fatalf("late applied result did not preserve cancelled call authority: %+v", call)
 	}
 	var batch persistence.ToolBatch
 	if err := fixture.db.First(&batch, "id = ?", envelope.GetToolBatchId()).Error; err != nil {

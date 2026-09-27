@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -31,10 +32,11 @@ from tooling.acceptance.core.evidence_store import (
 )
 from tooling.acceptance.core.provisioner import load_env_file
 from tooling.acceptance.gates.agent.capability_binding_development import (
-    J02_ACTOR_ACCOUNT,
-    J02_IDENTITY_FIXTURE,
+    OPERATION_SCENARIO_ACTOR_ACCOUNT,
+    OPERATION_SCENARIO_IDENTITY_FIXTURE,
     authenticate_native_client,
     cleanup_clients,
+    confirm_native_actor_identity_enrollment,
     copy_native_runtime_logs,
     identity_fixture_evidence,
     persist_native_actor_identity,
@@ -59,10 +61,10 @@ WORKSPACE_ID = workspace_id(ROOT)
 WORK_ITEM_ID = "MCA-V2-ALIGNMENT-J03"
 JOURNEY_ID = "V2-J03"
 PROFILE = "two"
-FIXTURE_API_KEY = "mca-j03-fixture-key"
 FIXTURE_TOOL_NAME = "local_clipboard_read"
 FIXTURE_CLIPBOARD_TEXT = "mca-j03-clipboard-fixture"
 FIXTURE_CLIPBOARD_BYTES = FIXTURE_CLIPBOARD_TEXT.encode("utf-8")
+FIXTURE_LOOP_MARKER = "PT_ACCEPTANCE_REPEAT_TOOL_UNTIL_BUDGET"
 MAX_REQUEST_BYTES = 1_048_576
 
 REMOTE_TCP_BRIDGE = r"""
@@ -155,14 +157,27 @@ class _ProviderFixtureServer(ThreadingHTTPServer):
         with self.request_lock:
             return [dict(request) for request in self.requests]
 
-    def resolve_tool_name(self, tool_names: list[str]) -> str:
+    def resolve_tool_name(
+        self,
+        tool_names: list[str],
+        user_prompt: str = "",
+    ) -> str:
         with self.request_lock:
             if self.selected_tool_name:
                 return self.selected_tool_name
             if self.tool_name:
                 self.selected_tool_name = self.tool_name
             else:
-                matches = sorted(
+                requested = [
+                    name
+                    for name in tool_names
+                    if (
+                        not self.tool_name_prefix
+                        or name.startswith(self.tool_name_prefix)
+                    )
+                    if f"Call {name} " in user_prompt
+                ]
+                matches = requested or sorted(
                     name
                     for name in tool_names
                     if name.startswith(self.tool_name_prefix)
@@ -217,6 +232,12 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
             and isinstance(message, Mapping)
             and message.get("role") == "tool"
         ] if isinstance(messages, list) else []
+        repeat_until_stopped = any(
+            isinstance(message, Mapping)
+            and message.get("role") == "user"
+            and FIXTURE_LOOP_MARKER in str(message.get("content") or "")
+            for message in messages
+        ) if isinstance(messages, list) else False
         tool_names = []
         if isinstance(tools, list):
             for tool in tools:
@@ -227,7 +248,19 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                     name = str(function.get("name") or "")
                     if name:
                         tool_names.append(name)
-        selected_tool_name = self.fixture.resolve_tool_name(tool_names)
+        user_prompt = next(
+            (
+                str(message.get("content") or "")
+                for message in reversed(messages)
+                if isinstance(message, Mapping)
+                and message.get("role") == "user"
+            ),
+            "",
+        ) if isinstance(messages, list) else ""
+        selected_tool_name = self.fixture.resolve_tool_name(
+            tool_names,
+            user_prompt,
+        )
         request_number = self.fixture.record_request(
             {
                 "path": self.path,
@@ -242,6 +275,7 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
                     in str(message.get("content") or "")
                     for message in tool_result_messages
                 ),
+                "repeatUntilStopped": repeat_until_stopped,
                 "authorizationPresent": (
                     self.headers.get("Authorization")
                     == f"Bearer {self.fixture.api_key}"
@@ -260,7 +294,7 @@ class _ProviderFixtureHandler(BaseHTTPRequestHandler):
 
         model = str(payload.get("model") or "mca-j03-model")
         has_tool_result = "tool" in message_roles
-        if has_tool_result:
+        if has_tool_result and not repeat_until_stopped:
             chunks = [
                 {
                     "model": model,
@@ -327,16 +361,17 @@ class OpenAIProviderFixture:
         tool_name: str = FIXTURE_TOOL_NAME,
         tool_arguments: Mapping[str, Any] | None = None,
         expected_tool_result: str = FIXTURE_CLIPBOARD_TEXT,
-        api_key: str = FIXTURE_API_KEY,
+        api_key: str | None = None,
         terminal_content: str = "Governed tool execution completed.",
         thread_name: str = "mca-j03-provider-fixture",
         tool_name_prefix: str = "",
     ) -> None:
+        self.api_key = api_key or secrets.token_urlsafe(32)
         self.server = _ProviderFixtureServer(
             tool_name=tool_name,
             tool_arguments=tool_arguments or {},
             expected_tool_result=expected_tool_result,
-            api_key=api_key,
+            api_key=self.api_key,
             terminal_content=terminal_content,
             tool_name_prefix=tool_name_prefix,
         )
@@ -369,6 +404,10 @@ class OpenAIProviderFixture:
 
     def snapshot(self) -> list[dict[str, Any]]:
         return self.server.snapshot()
+
+    def reset_tool_selection(self) -> None:
+        with self.server.request_lock:
+            self.server.selected_tool_name = ""
 
 
 class RemoteProviderBridge:
@@ -683,12 +722,32 @@ def main() -> int:
         )
         client = runtime_pair.native
         seeded_identity = seed_native_actor_identity(
-            fixture_root=J02_IDENTITY_FIXTURE,
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
             target_root=client.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
         )
         client.start()
-        login = authenticate_native_client(client, profile_env)
+        login = authenticate_native_client(
+            client,
+            profile_env,
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
+        identity_enrollment = confirm_native_actor_identity_enrollment(
+            client,
+            actor_id=str(login["actorId"]),
+        )
+        identity_metadata = persist_native_actor_identity(
+            source_root=client.actor_identity_root,
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=str(login["actorId"]),
+            station_accepted=identity_enrollment["accepted"] is True,
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
         native_adapter.write_clipboard(FIXTURE_CLIPBOARD_BYTES)
         fixture_round_trip = (
             native_adapter.read_clipboard() == FIXTURE_CLIPBOARD_BYTES
@@ -702,6 +761,7 @@ def main() -> int:
             {
                 "sampleId": sample_id,
                 "providerBaseUrl": provider_base_url,
+                "providerApiKey": provider_fixture.api_key,
             },
             timeout=900,
         )
@@ -711,18 +771,12 @@ def main() -> int:
         )
         provider_requests = provider_fixture.snapshot()
         assertions = evaluate_governed_tool(journey, provider_requests)
-        identity_metadata = persist_native_actor_identity(
-            source_root=client.actor_identity_root,
-            fixture_root=J02_IDENTITY_FIXTURE,
-            station_url=profile_env["PT_STATION_URL"],
-            actor_id=str(login["actorId"]),
-            station_accepted=True,
-        )
         capture = {
             "identityFixture": identity_fixture_evidence(
                 identity_metadata,
                 reused=seeded_identity is not None,
             ),
+            "identityEnrollment": identity_enrollment,
             "providerFixture": {
                 "requestCount": len(provider_requests),
                 "requests": provider_requests,
@@ -826,7 +880,7 @@ def main() -> int:
             "stationDeploymentEnvironment": deployment_environment,
             "stationBuildCommit": station.live_commit if station else "",
             "clientRuntime": "native-tauri",
-            "actorAccount": J02_ACTOR_ACCOUNT,
+            "actorAccount": OPERATION_SCENARIO_ACTOR_ACCOUNT,
         },
         "assertions": assertions,
         "capture": capture,
@@ -859,4 +913,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--formal-candidate"]:
+        from tooling.acceptance.gates.agent.governed_tool_candidate import (
+            main as candidate_main,
+        )
+
+        raise SystemExit(candidate_main())
+    if sys.argv[1:]:
+        raise SystemExit("usage: governed_tool_development.py [--formal-candidate]")
     raise SystemExit(main())

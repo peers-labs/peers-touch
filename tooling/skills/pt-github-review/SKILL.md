@@ -136,6 +136,10 @@ verify:
 - Anchor and dashboard consumers copy post-Next progress from
   `planctl status.progress.nextProgressBoundary`; reject local rounded
   percentage addition or counting newly unlocked Tasks as complete;
+- Context Anchor timing is derived transiently from the bounded current
+  Session journal or the current `planctl advance` result; reject a new metrics
+  store, active-work expansion, historical Session scans, or estimated token
+  usage;
 - resume-time Anchor synchronization does not pause already-authorized
   execution.
 - Goal Slice completion returns a legal successor frontier to Dev Workflow

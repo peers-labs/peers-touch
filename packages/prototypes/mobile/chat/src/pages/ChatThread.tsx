@@ -4,8 +4,8 @@ import {
   ArrowLeft, Check, CheckCheck, ChevronRight, Clock,
   Copy, CornerUpLeft, EyeOff, File, Flag as FlagIcon, Forward,
   Image as ImageIcon, Laugh, ListChecks, LockKeyhole,
-  MessageSquare, Mic, MoreVertical, Pencil, Phone, PhoneOff, Pin, Play, Plus,
-  RotateCcw, Send, ShieldX, Square, Video, X,
+  MessageSquare, MoreVertical, Pencil, Phone, Pin, Plus,
+  RotateCcw, Send, ShieldX, X,
 } from 'lucide-react';
 import type { Conversation, Message, MessageStatus, ReactionKind } from '../types';
 import { REACTION_EMOJI, REACTION_EMOJI_EXTENDED, FULL_EMOJI_GRID } from '../types';
@@ -49,23 +49,6 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
   const [confirmAction, setConfirmAction] = useState<'clear' | 'block' | 'report' | null>(null);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-  const [voiceRecording, setVoiceRecording] = useState(false);
-  const [voiceSeconds, setVoiceSeconds] = useState(0);
-  const [voiceDraft, setVoiceDraft] = useState<{ durationSeconds: number } | null>(null);
-  const [callState, setCallState] = useState<'idle' | 'outgoing' | 'active'>('idle');
-  const [callKind, setCallKind] = useState<'audio' | 'video'>('audio');
-
-  useEffect(() => {
-    if (!voiceRecording) return undefined;
-    const timer = window.setInterval(() => setVoiceSeconds((seconds) => seconds + 1), 1000);
-    return () => window.clearInterval(timer);
-  }, [voiceRecording]);
-
-  useEffect(() => {
-    if (callState !== 'outgoing') return undefined;
-    const timer = window.setTimeout(() => setCallState('active'), 700);
-    return () => window.clearTimeout(timer);
-  }, [callState]);
 
   useLayoutEffect(() => {
     if (!targetMessageId || showChatDetails || threadMessage || chatTab !== 'chat') return;
@@ -75,7 +58,7 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
 
   function handleSend() {
     const text = inputValue.trim();
-    if (!text && !voiceDraft) return;
+    if (!text) return;
 
     if (editingMessage) {
       setMessages((prev) => prev.map((m) =>
@@ -92,34 +75,11 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
       text,
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: 'sent',
-      voice: voiceDraft ?? undefined,
       reply: replyTo ? { name: replyTo.mine ? 'You' : conversation.name, text: replyTo.text || (replyTo.image ? '[Photo]' : '[File]') } : undefined,
     };
     setMessages((prev) => [...prev, newMsg]);
     setInputValue('');
-    setVoiceDraft(null);
     setReplyTo(null);
-  }
-
-  function startVoiceRecording() {
-    setVoiceDraft(null);
-    setVoiceSeconds(0);
-    setVoiceRecording(true);
-  }
-
-  function finishVoiceRecording() {
-    setVoiceRecording(false);
-    setVoiceDraft({ durationSeconds: Math.max(1, voiceSeconds) });
-  }
-
-  function cancelVoiceRecording() {
-    setVoiceRecording(false);
-    setVoiceSeconds(0);
-  }
-
-  function startCall(kind: 'audio' | 'video') {
-    setCallKind(kind);
-    setCallState('outgoing');
   }
 
   function handleAction(action: string) {
@@ -236,11 +196,8 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
             </span>
           </div>
         </div>
-        <button type="button" className="mp-thread-action" aria-label="Audio call" onClick={() => startCall('audio')}>
+        <button type="button" className="mp-thread-action mp-thread-action--muted" aria-label="Call unavailable" disabled>
           <Phone size={19} />
-        </button>
-        <button type="button" className="mp-thread-action" aria-label="Video call" onClick={() => startCall('video')}>
-          <Video size={19} />
         </button>
         <button type="button" className="mp-thread-action" aria-label="More" onClick={() => setShowChatDetails(true)}>
           <MoreVertical size={19} />
@@ -349,13 +306,6 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
                         </div>
                       </div>
                     )}
-                    {msg.voice && (
-                      <div className="mp-message-voice">
-                        <button type="button" aria-label="Play voice message"><Play size={16} /></button>
-                        <span>{formatVoiceDuration(msg.voice.durationSeconds)}</span>
-                        <div className="mp-voice-progress"><span /></div>
-                      </div>
-                    )}
                     {msg.text && (
                       <div className="mp-bubble" onContextMenu={(e) => { e.preventDefault(); setActionSheetMessage(msg); }}>
                         {msg.pinned && <Pin size={11} className="mp-bubble-pin" />}
@@ -439,58 +389,23 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
             </div>
           )}
 
-          {(voiceRecording || voiceDraft) && (
-            <div className="mp-voice-composer">
-              <div className="mp-voice-composer-status">
-                <span className={`mp-voice-status-dot ${voiceRecording ? 'recording' : ''}`} />
-                <Text strong>
-                  {voiceRecording
-                    ? `Recording ${voiceSeconds}s`
-                    : `Voice preview ${formatVoiceDuration(voiceDraft?.durationSeconds ?? 0)}`}
-                </Text>
-              </div>
-              <div className="mp-voice-composer-actions">
-                {voiceDraft && <button type="button" aria-label="Preview voice message"><Play size={16} /></button>}
-                <button type="button" aria-label="Cancel voice message" onClick={() => { cancelVoiceRecording(); setVoiceDraft(null); }}><X size={16} /></button>
-                {voiceRecording && <button type="button" aria-label="Use recording" onClick={finishVoiceRecording}><Square size={15} /></button>}
-              </div>
-            </div>
-          )}
-
           <div className="mp-composer">
             <button type="button" className="mp-composer-attach" aria-label="Attach"><Plus size={22} /></button>
-            <button type="button" className={`mp-composer-voice ${voiceRecording ? 'active' : ''}`} aria-label={voiceRecording ? 'Stop recording' : 'Record voice message'} onClick={voiceRecording ? finishVoiceRecording : startVoiceRecording}><Mic size={19} /></button>
             <Input.TextArea
               className="mp-composer-input"
               value={inputValue}
               placeholder="Message"
               autoSize={{ minRows: 1, maxRows: 4 }}
-              disabled={voiceRecording}
               onChange={(e) => setInputValue(e.target.value)}
               onPressEnter={(e) => { if (!e.shiftKey) { e.preventDefault(); handleSend(); } }}
             />
-            <button type="button" className={`mp-composer-send ${inputValue.trim() || voiceDraft ? 'active' : ''}`} onClick={handleSend} aria-label="Send">
+            <button type="button" className={`mp-composer-send ${inputValue.trim() ? 'active' : ''}`} onClick={handleSend} aria-label="Send">
               <Send size={18} />
             </button>
           </div>
         </>
       )}
         </>
-      )}
-
-      {callState !== 'idle' && (
-        <div className="mp-call-surface" role="dialog" aria-modal="true" aria-label="Call">
-          <div className="mp-call-avatar">
-            {callKind === 'video' ? <Video size={30} /> : <Phone size={30} />}
-          </div>
-          <div className="mp-call-copy">
-            <strong>{conversation.name}</strong>
-            <span>{callState === 'outgoing' ? 'Calling...' : 'Connected'}</span>
-          </div>
-          <button type="button" className="mp-call-end" aria-label="End call" onClick={() => setCallState('idle')}>
-            <PhoneOff size={22} />
-          </button>
-        </div>
       )}
 
       {/* Toast notification */}
@@ -764,9 +679,4 @@ export function ChatThread({ conversation, onBack, initialMessages = demoMessage
       )}
     </div>
   );
-}
-
-function formatVoiceDuration(durationSeconds: number): string {
-  const rounded = Math.max(0, Math.round(durationSeconds));
-  return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')}`;
 }

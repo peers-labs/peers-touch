@@ -236,6 +236,232 @@ func TestRecoverRunningChatTasksSettlesDirectTurnAndSnapshot(t *testing.T) {
 	}
 }
 
+func TestRecoverRunningChatTasksCreatesInterruptedAssistantBeforeFirstText(t *testing.T) {
+	db := openConversationAuthorityDB(t, "chat_task_restart_before_first_text")
+	if err := db.AutoMigrate(persistence.AllModels()...); err != nil {
+		t.Fatalf("migrate Agent models: %v", err)
+	}
+
+	now := time.Now().UTC()
+	turnID := "turn-restart-before-text"
+	userMessageID := "user-restart-before-text"
+	userContent := "start a long response"
+	records := []interface{}{
+		&persistence.Conversation{
+			ID:                    "conversation-restart-before-text",
+			AgentID:               "agent-1",
+			ActorPTID:             "ptid:person:owner",
+			Title:                 "Restart before text",
+			Status:                "active",
+			ActiveBranchMessageID: userMessageID,
+			CreatedAt:             now,
+			UpdatedAt:             now,
+		},
+		&persistence.AgentTurn{
+			ID:             turnID,
+			ConversationID: "conversation-restart-before-text",
+			AgentID:        "agent-1",
+			Status:         string(domain.TurnStatusRunning),
+			StartedAt:      now,
+		},
+		&persistence.TurnAttempt{
+			ID:           "attempt-restart-before-text",
+			TurnID:       turnID,
+			AttemptIndex: 1,
+			Status:       string(domain.TurnStatusRunning),
+			StartedAt:    now,
+		},
+		&persistence.AgentMessage{
+			ID:             userMessageID,
+			ConversationID: "conversation-restart-before-text",
+			TurnID:         &turnID,
+			Role:           string(domain.MessageRoleUser),
+			Status:         "completed",
+			Content:        &userContent,
+			Seq:            1,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		},
+		&persistence.TaskRun{
+			TaskID:         "task-restart-before-text",
+			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+			OwnerActorPTID: "ptid:person:owner",
+			ConversationID: "conversation-restart-before-text",
+			CreatedAt:      now,
+			StartedAt:      now,
+			UpdatedAt:      now,
+		},
+		&persistence.ExecutionStep{
+			StepID:    "step-restart-before-text",
+			TaskID:    "task-restart-before-text",
+			AgentID:   "agent-1",
+			TurnID:    turnID,
+			Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+			StartedAt: now,
+		},
+		&persistence.ExecutorLease{
+			LeaseID:      "lease-restart-before-text",
+			TaskID:       "task-restart-before-text",
+			StepID:       "step-restart-before-text",
+			ExecutorID:   "station-old",
+			ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+			Status:       chatLeaseStatusActive,
+			AcquiredAt:   now,
+			HeartbeatAt:  now,
+			ExpiresAt:    now.Add(time.Minute),
+		},
+	}
+	for _, record := range records {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed restart state: %v", err)
+		}
+	}
+
+	service := NewChatTaskService(nil)
+	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatalf("recover running chat tasks: %v", err)
+	}
+
+	var messages []persistence.AgentMessage
+	if err := db.Where(
+		"turn_id = ? AND role = ?",
+		turnID,
+		string(domain.MessageRoleAssistant),
+	).Find(&messages).Error; err != nil {
+		t.Fatalf("load interrupted assistant message: %v", err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("assistant message count = %d, want 1", len(messages))
+	}
+	message := messages[0]
+	if message.Status != string(domain.TurnStatusInterrupted) ||
+		message.Content == nil ||
+		*message.Content != "" ||
+		message.Seq != 2 ||
+		message.ParentMessageID == nil ||
+		*message.ParentMessageID != userMessageID {
+		t.Fatalf("interrupted assistant projection is invalid: %+v", message)
+	}
+	assertLifecycleInterruptedJSON(t, message.ErrorJSON)
+
+	var conversation persistence.Conversation
+	if err := db.First(
+		&conversation,
+		"id = ?",
+		"conversation-restart-before-text",
+	).Error; err != nil {
+		t.Fatalf("reload conversation: %v", err)
+	}
+	if conversation.ActiveBranchMessageID != message.ID {
+		t.Fatalf(
+			"active branch message = %q, want %q",
+			conversation.ActiveBranchMessageID,
+			message.ID,
+		)
+	}
+
+	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatalf("repeat recovery: %v", err)
+	}
+	var messageCount int64
+	if err := db.Model(&persistence.AgentMessage{}).
+		Where(
+			"turn_id = ? AND role = ?",
+			turnID,
+			string(domain.MessageRoleAssistant),
+		).
+		Count(&messageCount).Error; err != nil {
+		t.Fatalf("count interrupted assistant messages: %v", err)
+	}
+	if messageCount != 1 {
+		t.Fatalf("idempotent recovery created %d assistant messages", messageCount)
+	}
+}
+
+func TestRecoverRunningChatTasksDoesNotCreateAssistantBeforeAdmission(t *testing.T) {
+	db := openConversationAuthorityDB(t, "chat_task_restart_before_admission")
+	if err := db.AutoMigrate(persistence.AllModels()...); err != nil {
+		t.Fatalf("migrate Agent models: %v", err)
+	}
+
+	now := time.Now().UTC()
+	turnID := "turn-restart-before-admission"
+	records := []interface{}{
+		&persistence.Conversation{
+			ID:        "conversation-restart-before-admission",
+			AgentID:   "agent-1",
+			ActorPTID: "ptid:person:owner",
+			Title:     "Restart before admission",
+			Status:    "active",
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		&persistence.AgentTurn{
+			ID:             turnID,
+			ConversationID: "conversation-restart-before-admission",
+			AgentID:        "agent-1",
+			Status:         string(domain.TurnStatusRunning),
+			StartedAt:      now,
+		},
+		&persistence.TurnAttempt{
+			ID:           "attempt-restart-before-admission",
+			TurnID:       turnID,
+			AttemptIndex: 1,
+			Status:       string(domain.TurnStatusRunning),
+			StartedAt:    now,
+		},
+		&persistence.TaskRun{
+			TaskID:         "task-restart-before-admission",
+			Surface:        int32(model.TaskSurface_TASK_SURFACE_CHAT),
+			Status:         int32(model.CollaborationTaskStatus_COLLABORATION_TASK_STATUS_RUNNING),
+			OwnerActorPTID: "ptid:person:owner",
+			ConversationID: "conversation-restart-before-admission",
+			CreatedAt:      now,
+			StartedAt:      now,
+			UpdatedAt:      now,
+		},
+		&persistence.ExecutionStep{
+			StepID:    "step-restart-before-admission",
+			TaskID:    "task-restart-before-admission",
+			AgentID:   "agent-1",
+			TurnID:    turnID,
+			Status:    int32(model.TaskNodeStatus_TASK_NODE_STATUS_RUNNING),
+			StartedAt: now,
+		},
+		&persistence.ExecutorLease{
+			LeaseID:      "lease-restart-before-admission",
+			TaskID:       "task-restart-before-admission",
+			StepID:       "step-restart-before-admission",
+			ExecutorID:   "station-old",
+			ExecutorKind: int32(model.ExecutorKind_EXECUTOR_KIND_STATION_HOSTED),
+			Status:       chatLeaseStatusActive,
+			AcquiredAt:   now,
+			HeartbeatAt:  now,
+			ExpiresAt:    now.Add(time.Minute),
+		},
+	}
+	for _, record := range records {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed restart state: %v", err)
+		}
+	}
+
+	service := NewChatTaskService(nil)
+	if err := service.RecoverRunningChatTasks(context.Background()); err != nil {
+		t.Fatalf("recover running chat tasks: %v", err)
+	}
+	var messageCount int64
+	if err := db.Model(&persistence.AgentMessage{}).
+		Where("turn_id = ?", turnID).
+		Count(&messageCount).Error; err != nil {
+		t.Fatalf("count pre-admission messages: %v", err)
+	}
+	if messageCount != 0 {
+		t.Fatalf("pre-admission recovery created %d messages", messageCount)
+	}
+}
+
 func TestRecoverRunningChatTasksConvergesAlreadyTerminalTurn(t *testing.T) {
 	db := openConversationAuthorityDB(t, "chat_task_terminal_turn_window")
 	if err := db.AutoMigrate(persistence.AllModels()...); err != nil {

@@ -3,7 +3,7 @@
  *
  * W6A contract: this page renders narrow selectors and dispatches typed
  * commands only.  It handles duplicate / no-result / unavailable /
- * role-denied states.  All visible text uses i18n.  Contact
+ * role-denied states.  All visible text uses i18n.  Contact and group
  * lists are bounded.
  */
 
@@ -20,6 +20,8 @@ import { MobileAvatar } from '../components/MobileAvatar';
 import { MobileNotice } from '../components/MobileNotice';
 import { BoundedList } from '../components/BoundedList';
 import { readRouteQuery, saveRouteQuery } from '../app/navigation/scrollRestoration';
+import { useGroupStore } from '../features/group/groupStore';
+import { projectGroupConversations, type GroupConversation } from '../features/group/groupProjection';
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
 import { projectAcceptedContacts, projectOutgoingRequests, projectPendingInboundRequests, type SocialContact } from '../features/social/socialProjection';
 import {
@@ -35,8 +37,8 @@ import type { ActorSearchResult } from '../features/social/socialTypes';
 import {
   dispatchSendFriendRequest,
   dispatchAcceptFriendRequest,
-  dispatchCreateGroup,
   dispatchRejectFriendRequest,
+  dispatchCreateGroup,
   dispatchOpenContactChat,
 } from '../features/social/contactCommands';
 import { dispatchBlockUser, dispatchUnblockUser } from '../features/chat/chatCommands';
@@ -74,8 +76,6 @@ export function ContactsPage({
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
   const [selectedGroupMemberPtids, setSelectedGroupMemberPtids] = useState<string[]>([]);
-  const [creatingGroup, setCreatingGroup] = useState(false);
-  const [pendingGroupConversationId, setPendingGroupConversationId] = useState('');
   const [localActionError, setLocalActionError] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
@@ -93,7 +93,6 @@ export function ContactsPage({
   const authSession = useSocialStore((s) => s.authSession);
   const currentUserPtid = useSocialStore((s) => s.currentUserPtid);
   const friendRequests = useSocialStore((s) => s.friendRequests);
-  const messagingConversations = useSocialStore((s) => s.messagingConversations);
   const loading = useSocialStore((s) => s.loading);
   const error = useSocialStore((s) => s.error);
   const clearSocialError = useSocialStore((s) => s.clearError);
@@ -109,13 +108,25 @@ export function ContactsPage({
   const peopleError = useSocialStore((s) => s.peopleSearchError);
   const searchPeople = useSocialStore((s) => s.searchPeople);
   const clearPeopleSearch = useSocialStore((s) => s.clearPeopleSearch);
+  const selectGroup = useGroupStore((s) => s.selectGroup);
+  const groupLoading = useGroupStore((s) => s.loading);
+  const groupError = useGroupStore((s) => s.error);
+  const clearGroupError = useGroupStore((s) => s.clearError);
+  const groupCreateOperation = useGroupStore((s) => s.groupCreateOperation);
+  const clearGroupCreateOperation = useGroupStore((s) => s.clearGroupCreateOperation);
 
   // --- Projection data ---
   const peerOnline = useSocialStore((s) => s.peerOnline);
+  const groupItems = useGroupStore((s) => s.groups);
+  const groupUnreadCounts = useGroupStore((s) => s.unreadCounts);
 
   const contacts = useMemo(
     () => projectAcceptedContacts(friendRequests, currentUserPtid, peerOnline),
     [currentUserPtid, friendRequests, peerOnline],
+  );
+  const groups = useMemo(
+    () => projectGroupConversations({ groups: groupItems, unreadCounts: groupUnreadCounts }),
+    [groupItems, groupUnreadCounts],
   );
   const inboundRequests = useMemo(
     () => projectPendingInboundRequests(friendRequests, currentUserPtid),
@@ -130,6 +141,11 @@ export function ContactsPage({
     if (!query) return contacts;
     return contacts.filter((c) => `${c.peerName} ${c.peerPtid}`.toLowerCase().includes(query));
   }, [contactQuery, contacts]);
+  const filteredGroups = useMemo(() => {
+    const query = contactQuery.trim().toLowerCase();
+    if (!query) return groups;
+    return groups.filter((g) => `${g.group.name} ${g.group.ulid} ${g.lastMessage?.content ?? ''}`.toLowerCase().includes(query));
+  }, [contactQuery, groups]);
   const pendingTargetPtids = useMemo(
     () => new Set(sentRequests.map((request) => request.receiverPtid)),
     [sentRequests],
@@ -152,6 +168,7 @@ export function ContactsPage({
     () => [...filteredContacts].sort((a, b) => a.peerName.localeCompare(b.peerName)),
     [filteredContacts],
   );
+  const windowedGroups = filteredGroups;
 
   // --- Selected contact profile ---
   const selectedProfile = selectedContact ? peerProfiles[selectedContact.peerPtid] : null;
@@ -197,28 +214,28 @@ export function ContactsPage({
   }, [inboundRequests, requestDecisionScope]);
 
   useEffect(() => {
+    const operation = groupCreateOperation;
     if (
-      !pendingGroupConversationId
-      || !messagingConversations.some(
-        (conversation) => conversation.conversationId === pendingGroupConversationId,
-      )
+      operation?.phase !== 'pending'
+      || !groupItems.some((group) => group.ulid === operation.conversationId)
     ) {
       return;
     }
-    const groupUlid = pendingGroupConversationId;
-    setPendingGroupConversationId('');
-    setCreatingGroup(false);
-    setGroupName('');
-    setGroupDescription('');
-    setSelectedGroupMemberPtids([]);
+    clearGroupCreateOperation(operation.conversationId);
     onCloseOverlay();
-    onOpenChat({ routeId: 'detail:group-conversation', groupUlid });
-    void selectSession(groupUlid);
+    onOpenChat({
+      routeId: 'detail:group-conversation',
+      groupUlid: operation.conversationId,
+    });
+    void selectSession(null);
+    void selectGroup(operation.conversationId);
   }, [
-    messagingConversations,
+    clearGroupCreateOperation,
+    groupCreateOperation,
+    groupItems,
     onCloseOverlay,
     onOpenChat,
-    pendingGroupConversationId,
+    selectGroup,
     selectSession,
   ]);
 
@@ -231,53 +248,10 @@ export function ContactsPage({
     clearPeopleSearch();
   };
 
-  const closeCreateGroup = () => {
-    onCloseOverlay();
-    setGroupName('');
-    setGroupDescription('');
-    setSelectedGroupMemberPtids([]);
-    setPendingGroupConversationId('');
-    setCreatingGroup(false);
-  };
-
-  const toggleInitialGroupMember = (ptid: string, checked: boolean) => {
-    setSelectedGroupMemberPtids((current) => checked
-      ? [...new Set([...current, ptid])]
-      : current.filter((candidate) => candidate !== ptid));
-  };
-
-  const submitCreateGroup = async () => {
-    const name = groupName.trim();
-    if (!name || selectedGroupMemberPtids.length === 0 || creatingGroup) return;
-    setLocalActionError('');
-    setCreatingGroup(true);
-    try {
-      const result = await dispatchCreateGroup({
-        name,
-        description: groupDescription.trim(),
-        initialMemberPtids: selectedGroupMemberPtids,
-      });
-      setPendingGroupConversationId(result.conversationId);
-      if (result.state === 'projected') {
-        const groupUlid = result.conversationId;
-        closeCreateGroup();
-        onOpenChat({ routeId: 'detail:group-conversation', groupUlid });
-        void selectSession(groupUlid);
-      }
-    } catch (error) {
-      setCreatingGroup(false);
-      setLocalActionError(t(
-        error instanceof Error && error.message === 'mobile.group.federationScopeRequired'
-          ? error.message
-          : 'mobile.group.operationCreateFailed',
-      ));
-    }
-  };
-
   const runPeopleSearch = async (value: string) => {
     const query = value.trim();
     setSubmittedPeopleQuery(query);
-    await searchPeople(query, requestFederationId);
+    await searchPeople(query);
   };
 
   const sendRequestToResult = async (result: ActorSearchResult) => {
@@ -296,7 +270,7 @@ export function ContactsPage({
         setLocalActionError(t('mobile.contacts.requestUnconfirmed'));
         return;
       }
-      await searchPeople(peopleQuery, requestFederationId);
+      await searchPeople(peopleQuery);
     } catch (err) {
       setLocalActionError(t(err instanceof Error && err.message === 'mobile.contacts.requestUnconfirmed'
         ? err.message : 'mobile.contacts.requestFailed'));
@@ -344,6 +318,7 @@ export function ContactsPage({
       const sessionUlid = await dispatchOpenContactChat(contact.peerPtid, directFederationId);
       if (activeContactRef.current !== contact.peerPtid) return;
       onOpenChat({ routeId: 'detail:chat-conversation', sessionUlid });
+      void selectGroup(null);
       void selectSession(sessionUlid);
     } catch (error) {
       setLocalActionError(t(error instanceof Error && error.message === 'mobile.contacts.conversationPreparing'
@@ -351,6 +326,15 @@ export function ContactsPage({
     } finally {
       setOpeningChat(false);
     }
+  };
+
+  const openGroupChat = (group: GroupConversation) => {
+    onOpenChat({
+      routeId: 'detail:group-conversation',
+      groupUlid: group.group.ulid,
+    });
+    void selectSession(null);
+    void selectGroup(group.group.ulid);
   };
 
   const confirmBlockSelectedContact = () => {
@@ -372,6 +356,49 @@ export function ContactsPage({
       okText: t('mobile.contacts.unblock'), cancelText: t('common.action.cancel'),
       onOk: async () => { await dispatchUnblockUser(selectedContact.peerPtid); },
     });
+  };
+
+  const closeCreateGroup = () => {
+    onCloseOverlay();
+    setGroupName('');
+    setGroupDescription('');
+    setSelectedGroupMemberPtids([]);
+  };
+
+  const toggleInitialGroupMember = (ptid: string, checked: boolean) => {
+    setSelectedGroupMemberPtids((current) => checked ? [...new Set([...current, ptid])] : current.filter((i) => i !== ptid));
+  };
+
+  const submitCreateGroup = async () => {
+    const name = groupName.trim();
+    if (!name || groupCreateOperation?.phase === 'pending') return;
+    setLocalActionError('');
+    try {
+      const groupUlid = await dispatchCreateGroup({
+        name, description: groupDescription.trim(), initialMemberPtids: selectedGroupMemberPtids,
+      });
+      closeCreateGroup();
+      if (groupUlid) {
+        clearGroupCreateOperation(groupUlid);
+        onOpenChat({
+          routeId: 'detail:group-conversation',
+          groupUlid,
+        });
+        void selectSession(null);
+        void selectGroup(groupUlid);
+      }
+    } catch {
+      setLocalActionError(t('mobile.group.operationCreateFailed'));
+    }
+  };
+
+  const retryGroupCreate = () => {
+    if (!groupCreateOperation || groupCreateOperation.phase !== 'failed') return;
+    setGroupName(groupCreateOperation.name);
+    setGroupDescription(groupCreateOperation.description);
+    setSelectedGroupMemberPtids([...groupCreateOperation.initialMemberPtids]);
+    clearGroupCreateOperation(groupCreateOperation.conversationId);
+    onOpenOverlay({ routeId: 'overlay:create-group' });
   };
 
   if (activeContactPtid) {
@@ -485,9 +512,28 @@ export function ContactsPage({
 
       {localActionError ? <MobileNotice onClose={() => setLocalActionError('')}>{localActionError}</MobileNotice> : null}
       {error ? <MobileNotice onClose={clearSocialError}>{formatSocialError(error)}</MobileNotice> : null}
+      {groupError ? <MobileNotice onClose={clearGroupError}>{formatSocialError(groupError)}</MobileNotice> : null}
+      {groupCreateOperation ? (
+        <div data-group-create-state={groupCreateOperation.phase}>
+          <MobileNotice tone={groupCreateOperation.phase === 'failed' ? 'error' : 'info'}>
+            <Text strong>{groupCreateOperation.name}</Text>
+            {' '}
+            <Tag color={groupCreateOperation.phase === 'failed' ? 'error' : 'processing'}>
+              {t(groupCreateOperation.phase === 'failed'
+                ? 'mobile.group.operationCreateFailed'
+                : 'mobile.recovery.command.state.pending')}
+            </Tag>
+            {groupCreateOperation.phase === 'failed' ? (
+              <Button size="small" onClick={retryGroupCreate}>
+                {t('common.action.retry')}
+              </Button>
+            ) : null}
+          </MobileNotice>
+        </div>
+      ) : null}
 
       <section className="contacts-body">
-        <Spin spinning={loading && windowedContacts.length === 0 && inboundRequests.length === 0 && sentRequests.length === 0}>
+        <Spin spinning={(loading || groupLoading) && windowedContacts.length === 0 && windowedGroups.length === 0 && inboundRequests.length === 0 && sentRequests.length === 0}>
           {/* --- Friend requests --- */}
           {inboundRequests.length > 0 ? (
             <div className="contact-section">
@@ -536,6 +582,26 @@ export function ContactsPage({
                   </List.Item>
                 );
               }} />}</BoundedList>
+            </div>
+          ) : null}
+
+          {/* --- Groups section (prototype order: groups before contacts) --- */}
+          {windowedGroups.length > 0 ? (
+            <div className="contact-section">
+              <div className="section-header"><span>{t('mobile.group.title')}</span></div>
+              <div className="group-list">
+                <BoundedList surfaceKey={`contacts:groups:${contactQuery}`} items={windowedGroups} itemKey={(group) => group.group.ulid}>
+                {(rows) => rows.map((group) => (
+                  <div key={group.group.ulid} data-scroll-anchor-id={group.group.ulid} data-focus-id={group.group.ulid} tabIndex={0} role="button" className="group-item" onClick={() => openGroupChat(group)} onKeyDown={(event) => { if (event.key === 'Enter') openGroupChat(group); }}>
+                    <MobileAvatar src={group.group.avatarCid} size={44} icon={<Users size={16} />}>{group.group.name.slice(0, 1)}</MobileAvatar>
+                    <div className="group-info">
+                      <Text strong>{group.group.name}</Text>
+                      <Text type="secondary">{t('mobile.group.memberCount', { count: group.group.memberCount })}</Text>
+                    </div>
+                    <ChevronRight size={18} color="#9ca0ab" />
+                  </div>
+                ))}</BoundedList>
+              </div>
             </div>
           ) : null}
 
@@ -598,7 +664,7 @@ export function ContactsPage({
         open={activeOverlay?.routeId === 'overlay:add-friend'}
         footer={null}
         onCancel={closeFindPeople}
-        destroyOnHidden
+        destroyOnClose
       >
         <div className="find-people-modal">
           <Input.Search
@@ -613,9 +679,9 @@ export function ContactsPage({
             enterButton={t('mobile.contacts.search')}
             loading={peopleSearching}
             allowClear
-            disabled={!requestFederationId}
           />
-          {peopleFederationsError ? (
+          {peopleResults.length > 0 && !peopleSearching ? (
+            peopleFederationsError ? (
               <MobileNotice tone="error">{t('mobile.contacts.federationsFailed')}</MobileNotice>
             ) : peopleFederations.length === 0 ? (
               <MobileNotice>{t('mobile.contacts.noFederation')}</MobileNotice>
@@ -624,10 +690,7 @@ export function ContactsPage({
                 <legend>{t('mobile.contacts.federation')}</legend>
                 <Radio.Group
                   value={requestFederationId}
-                  onChange={(event) => {
-                    setSelectedFederationId(String(event.target.value));
-                    clearPeopleSearch();
-                  }}
+                  onChange={(event) => setSelectedFederationId(String(event.target.value))}
                 >
                   {peopleFederations.map((federation) => (
                     <Radio key={federation.federationId} value={federation.federationId}>
@@ -636,7 +699,8 @@ export function ContactsPage({
                   ))}
                 </Radio.Group>
               </fieldset>
-            )}
+            )
+          ) : null}
           {localActionError ? <MobileNotice tone="error">{localActionError}</MobileNotice> : null}
           <Spin spinning={peopleSearching && peopleResults.length === 0}>
             <div className="people-result-list">
@@ -711,93 +775,33 @@ export function ContactsPage({
         </div>
       </Modal>
 
-      <Modal
-        title={t('mobile.group.create')}
-        open={activeOverlay?.routeId === 'overlay:create-group'}
-        onCancel={closeCreateGroup}
-        onOk={() => void submitCreateGroup()}
-        okText={t('mobile.group.create')}
-        cancelText={t('common.action.cancel')}
-        confirmLoading={creatingGroup}
-        okButtonProps={{
-          disabled: !groupName.trim()
-            || selectedGroupMemberPtids.length === 0
-            || creatingGroup,
-        }}
-        destroyOnHidden
-      >
-        <div className="group-create-form" data-acceptance-id="create-group">
-          {pendingGroupConversationId ? (
-            <MobileNotice>
-              {t('mobile.recovery.command.state.pending')}
+      {/* --- Create Group modal --- */}
+      <Modal title={t('mobile.group.create')} open={activeOverlay?.routeId === 'overlay:create-group'} onCancel={closeCreateGroup}
+        onOk={submitCreateGroup} okText={t('mobile.group.create')} cancelText={t('common.action.cancel')}
+        confirmLoading={groupCreateOperation?.phase === 'pending'}
+        okButtonProps={{ disabled: !groupName.trim() || groupCreateOperation?.phase === 'pending' }} destroyOnClose>
+        <div className="group-create-form">
+          {groupCreateOperation?.phase === 'failed' ? (
+            <MobileNotice tone="error">
+              {t('mobile.group.operationCreateFailed')}
             </MobileNotice>
           ) : null}
-          {localActionError ? (
-            <MobileNotice tone="error" onClose={() => setLocalActionError('')}>
-              {localActionError}
-            </MobileNotice>
-          ) : null}
-          <Input
-            value={groupName}
-            onChange={(event) => setGroupName(event.target.value)}
-            placeholder={t('mobile.group.namePlaceholder')}
-            disabled={creatingGroup}
-          />
-          <Input.TextArea
-            value={groupDescription}
-            onChange={(event) => setGroupDescription(event.target.value)}
-            placeholder={t('mobile.group.descriptionPlaceholder')}
-            autoSize={{ minRows: 2, maxRows: 4 }}
-            disabled={creatingGroup}
-          />
-          <SectionTitle
-            title={t('mobile.group.initialMembers')}
-            count={selectedGroupMemberPtids.length}
-          />
-          {contacts.length > 0 && selectedGroupMemberPtids.length === 0 ? (
-            <Text type="secondary">{t('mobile.group.initialMembersRequired')}</Text>
-          ) : null}
+          <Input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder={t('mobile.group.namePlaceholder')} />
+          <Input.TextArea value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)} placeholder={t('mobile.group.descriptionPlaceholder')} autoSize={{ minRows: 2, maxRows: 4 }} />
+          <SectionTitle title={t('mobile.group.initialMembers')} count={selectedGroupMemberPtids.length} />
           {contacts.length > 0 ? (
-            <BoundedList
-              surfaceKey="contacts:create-group"
-              items={contacts}
-              itemKey={(contact) => contact.peerPtid}
-            >
-              {(rows) => (
-                <List
-                  dataSource={rows}
-                  rowKey="peerPtid"
-                  renderItem={(contact) => (
-                    <List.Item data-scroll-anchor-id={contact.peerPtid}>
-                      <List.Item.Meta
-                        avatar={(
-                          <MobileAvatar src={contact.peerAvatar}>
-                            {contact.peerName.slice(0, 1)}
-                          </MobileAvatar>
-                        )}
-                        title={<Text strong>{contact.peerName}</Text>}
-                        description={<Text type="secondary" copyable>{contact.peerPtid}</Text>}
-                      />
-                      <Checkbox
-                        aria-label={contact.peerName}
-                        checked={selectedGroupMemberPtids.includes(contact.peerPtid)}
-                        disabled={creatingGroup}
-                        onChange={(event) => toggleInitialGroupMember(
-                          contact.peerPtid,
-                          event.target.checked,
-                        )}
-                      />
-                    </List.Item>
-                  )}
+            <BoundedList surfaceKey="contacts:create-group" items={contacts} itemKey={(contact) => contact.peerPtid}>
+            {(rows) => <List dataSource={rows} rowKey="peerPtid" renderItem={(contact) => (
+              <List.Item data-scroll-anchor-id={contact.peerPtid}>
+                <List.Item.Meta
+                  avatar={<MobileAvatar src={contact.peerAvatar}>{contact.peerName.slice(0, 1)}</MobileAvatar>}
+                  title={<Text strong>{contact.peerName}</Text>}
+                  description={<Text type="secondary" copyable>{contact.peerPtid}</Text>}
                 />
-              )}
-            </BoundedList>
-          ) : (
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={t('mobile.group.noInitialMembers')}
-            />
-          )}
+                <Checkbox aria-label={contact.peerName} checked={selectedGroupMemberPtids.includes(contact.peerPtid)} onChange={(e) => toggleInitialGroupMember(contact.peerPtid, e.target.checked)} />
+              </List.Item>
+            )} />}</BoundedList>
+          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('mobile.group.noInitialMembers')} />}
         </div>
       </Modal>
     </div>
@@ -817,10 +821,5 @@ function displayPeerName(name: string | undefined, t: (key: string) => string): 
 }
 
 function SectionTitle({ title, count }: { title: string; count: number }) {
-  return (
-    <div className="social-section-title">
-      <Text strong>{title}</Text>
-      <Text type="secondary">{count}</Text>
-    </div>
-  );
+  return <div className="social-section-title"><Text strong>{title}</Text><Text type="secondary">{count}</Text></div>;
 }

@@ -24,6 +24,7 @@ type subServer struct {
 	jwtWrapper server.Wrapper
 	repo       *infrastructure.GormRepo
 	service    *application.Service
+	query      *presenceQueryCoordinator
 	cancel     context.CancelFunc
 }
 
@@ -52,6 +53,10 @@ func (s *subServer) Init(ctx context.Context, opts ...option.Option) error {
 	}
 	s.repo = repo
 	s.service = application.NewService(repo, eventBusPublisher{})
+	s.query = newPresenceQueryCoordinator(
+		s.service,
+		resolvePresenceQueryDependencies,
+	)
 	setGlobalService(s.service)
 	return nil
 }

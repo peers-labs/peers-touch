@@ -10,7 +10,6 @@ import type { JsonValue, Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import { resolvePresenceOnline } from './chatPresence';
-import type { AccessDecision } from './accessGate';
 import { throttleInvoke } from '../kernel/invokeThrottler';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
@@ -51,13 +50,24 @@ export type {
   Actor,
 } from '../gen/proto/domain/actor/actor_pb';
 import {
+  FederationSelfViewSchema,
+} from '../gen/proto/domain/federation/federation_self_pb';
+import {
   FederationResolveViewSchema,
 } from '../gen/proto/domain/federation/federation_resolve_pb';
+import {
+  FederationHealthViewSchema,
+} from '../gen/proto/domain/federation/federation_health_pb';
 import {
   FederationCatalogSearchResponseSchema,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 import {
-  ListFederationContextsResponseSchema,
+  CreateFederationResponseSchema,
+  DeleteFederationResponseSchema,
+  JoinFederationResponseSchema,
+  LeaveFederationResponseSchema,
+  ListFederationsResponseSchema,
+  ListMemberStationsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
   ExportTurnDiagnosticsResponse,
@@ -72,26 +82,41 @@ import {
   RecordFeedbackResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
+  AdvanceCapabilityAcceptanceScenarioClockRequest,
   AgentPackageUnresolvedDependency,
+  ArmCapabilityAcceptanceExecutorHookRequest,
+  CapabilityCatalogIssue,
   CapabilityApprovalPolicy,
+  CapabilityManifest,
   CapabilityReadiness as ProtoCapabilityReadiness,
   CapabilityReadinessSnapshot as ProtoCapabilityReadinessSnapshot,
   CapabilitySourceKind,
+  CleanupCapabilityAcceptanceScenarioRequest,
   CreateKnowledgeResourceDescriptorRequest,
   ConnectorResourceManifest,
+  InterruptCapabilityAcceptanceWorkerRequest,
   ListConnectorResourceManifestsRequest,
   ListKnowledgeResourceDescriptorsRequest,
+  PrepareCapabilityAcceptanceScenarioRequest,
+  ReleaseCapabilityAcceptanceBarrierRequest,
   StartCapabilityOperationResponse,
   TakeOverCapabilityCleanupRequest,
   TakeOverCapabilityOperationRequest,
   TombstoneKnowledgeResourceDescriptorRequest,
   UpdateKnowledgeResourceDescriptorRequest,
+  WaitCapabilityAcceptanceBarrierRequest,
 } from '../gen/proto/domain/agent/capability_pb';
 import {
   AgentCapabilityBindingSchema,
   AgentPackageDocumentSchema,
+  ArmCapabilityAcceptanceExecutorHookRequestSchema,
+  ArmCapabilityAcceptanceExecutorHookResponseSchema,
   CancelCapabilityOperationRequestSchema,
   CancelCapabilityOperationResponseSchema,
+  AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+  AdvanceCapabilityAcceptanceScenarioClockResponseSchema,
+  CleanupCapabilityAcceptanceScenarioRequestSchema,
+  CleanupCapabilityAcceptanceScenarioResponseSchema,
   CreateKnowledgeResourceDescriptorRequestSchema,
   CreateKnowledgeResourceDescriptorResponseSchema,
   DeleteAgentCapabilityBindingResponseSchema,
@@ -102,14 +127,20 @@ import {
   GetCapabilityReadinessResponseSchema,
   ImportAgentPackageRequestSchema,
   ImportAgentPackageResponseSchema,
+  InterruptCapabilityAcceptanceWorkerRequestSchema,
+  InterruptCapabilityAcceptanceWorkerResponseSchema,
   ListAgentCapabilityBindingsResponseSchema,
   ListCapabilityManifestsResponseSchema,
   ListConnectorResourceManifestsRequestSchema,
   ListConnectorResourceManifestsResponseSchema,
   ListKnowledgeResourceDescriptorsRequestSchema,
   ListKnowledgeResourceDescriptorsResponseSchema,
+  PrepareCapabilityAcceptanceScenarioRequestSchema,
+  PrepareCapabilityAcceptanceScenarioResponseSchema,
   ReconcileCapabilityOperationRequestSchema,
   ReconcileCapabilityOperationResponseSchema,
+  ReleaseCapabilityAcceptanceBarrierRequestSchema,
+  ReleaseCapabilityAcceptanceBarrierResponseSchema,
   StartCapabilityOperationResponseSchema,
   SyncConnectorResourceManifestsResponseSchema,
   TakeOverCapabilityCleanupRequestSchema,
@@ -121,6 +152,8 @@ import {
   UpdateKnowledgeResourceDescriptorRequestSchema,
   UpdateKnowledgeResourceDescriptorResponseSchema,
   UpsertAgentCapabilityBindingResponseSchema,
+  WaitCapabilityAcceptanceBarrierRequestSchema,
+  WaitCapabilityAcceptanceBarrierResponseSchema,
 } from '../gen/proto/domain/agent/capability_pb';
 import type {
   HomeWorkProjection,
@@ -144,20 +177,73 @@ import type {
   ListCollaborationTasksResponse,
   ListTaskEventsResponse,
 } from '../gen/proto/domain/agent/orchestration_pb';
+export {
+  FederationVisibility,
+  FederationVisibilityRequestSchema,
+} from '../gen/proto/domain/federation/federation_self_pb';
+export type {
+  FederationSelfView,
+  FederationVisibilityRequest,
+} from '../gen/proto/domain/federation/federation_self_pb';
 export type {
   FederationResolveView,
 } from '../gen/proto/domain/federation/federation_resolve_pb';
+export type {
+  FederationHealthView,
+} from '../gen/proto/domain/federation/federation_health_pb';
 export type {
   FederationCatalogSearchResponse,
   FederationCatalogEntry,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 export type {
-  ListFederationContextsResponse,
-  FederationContext,
+  ListFederationsResponse,
+  FederationSummary,
+  ActorCapability,
+  CreateFederationResponse,
+  DeleteFederationResponse,
+  JoinFederationResponse,
+  LeaveFederationResponse,
+  ListMemberStationsResponse,
+  MemberStationView,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 export type {
   Friend,
 } from '../gen/proto/domain/chat/chat_pb';
+export type {
+  FriendChatSession,
+  FriendChatMessage,
+} from '../gen/proto/domain/chat/friend_chat_pb';
+export type {
+  Group,
+  GroupMessage,
+  ListGroupsResponse,
+  GetGroupMessagesResponse,
+  GetUnreadCountResponse,
+  MarkGroupReadResponse,
+  GroupMember,
+  GroupInvitation,
+  CreateGroupResponse,
+  GetGroupResponse,
+  UpdateGroupResponse,
+  InviteToGroupResponse,
+  JoinGroupResponse,
+  LeaveGroupResponse,
+  TransferGroupOwnershipResponse,
+  DissolveGroupResponse,
+  GetGroupMembersResponse,
+  RemoveMemberResponse,
+  UpdateMemberResponse,
+  RecallGroupMessageResponse,
+  DeleteGroupMessageResponse,
+  SearchGroupMessagesResponse,
+  UpdateMyNicknameResponse,
+  GetGroupSettingsResponse,
+  UpdateGroupSettingsResponse,
+  GetOfflineMessagesResponse,
+  AckOfflineMessagesResponse,
+  GetGroupStatsResponse,
+} from '../gen/proto/domain/chat/group_chat_pb';
+
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export type RustErrorCode =
@@ -199,16 +285,6 @@ export interface ChatThreadCount {
   latestReplyUlid: string;
   latestReplyAt: number;
   unreadCount: number;
-}
-
-export interface GroupChatFederatedActorInput {
-  ptid: string;
-  homeStationPeerId: string;
-  homeStationDomain?: string;
-  federatedHandle?: string;
-  actorIdentityPublicKey?: Uint8Array | number[];
-  profileVersion?: number | bigint;
-  federationId?: string;
 }
 
 export interface DesktopNativeHostEventInput {
@@ -574,7 +650,6 @@ function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
 export type PresenceTrigger =
   | 'app_launch'
   | 'app_foreground'
-  | 'app_background'
   | 'app_shutdown'
   | 'identity_restored'
   | 'identity_switched'
@@ -2222,33 +2297,25 @@ export interface ChatStorageAcceptanceConversationClearFixture {
 
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
-export interface AccessDecisionResponse extends TauriStubPayload {
-  decision: AccessDecision;
+export interface AuthLoginInput {
+  account: string;
+  password: string;
+  base_url?: string;
 }
 
-export interface AccessDecisionInput {
-  attempt_id: string;
+/// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
+/// The frontend normalizes the wire shape (snake_case keys, string enums).
+export interface AccessDecisionResponse extends TauriStubPayload {
+  decision: unknown;
 }
 
 export interface AccessSubmitInviteInput {
   attempt_id: string;
-  gate_id: string;
-  gate_type: number;
-  action_id: string;
-  schema_revision: number;
-  schema_digest: string;
-  submission_id: string;
   invite_code: string;
 }
 
 export interface AccessSubmitLoginInput {
   attempt_id: string;
-  gate_id: string;
-  gate_type: number;
-  action_id: string;
-  schema_revision: number;
-  schema_digest: string;
-  submission_id: string;
   account: string;
   password: string;
 }
@@ -2329,7 +2396,6 @@ export interface ProfileUpdateInput {
   timezone?: string;
   tags?: string[];
   links?: AccountProfileLink[];
-  discoverability?: 'hidden' | 'by_handle' | 'indexed';
   observed_revision: number;
 }
 
@@ -2361,10 +2427,6 @@ export interface AccountProfile {
   manually_approves_followers: boolean;
   message_permission: string;
   auto_expire_days: number;
-  federated_handle: string;
-  home_station_peer_id: string;
-  home_station_domain: string;
-  discoverability: 'hidden' | 'by_handle' | 'indexed';
   peers_touch: {
     network_id: string;
   };
@@ -2573,6 +2635,7 @@ export interface AgentErrorResolutionAction {
     | 'chooseResourceAgain'
     | 'removeReference'
     | 'reconcile'
+    | 'openPermissionSettings'
     | 'recover'
     | 'reloadLatest'
     | 'openResult';
@@ -2591,6 +2654,7 @@ export interface AgentErrorResolutionAction {
   referenceKind?: string;
   referenceHash?: string;
   capabilityId?: string;
+  permissionKind?: AgentCapabilityPermissionKind;
   toolId?: string;
   toolVersion?: string;
   budgetKind?: AgentRuntimeBudgetKind;
@@ -2641,6 +2705,10 @@ export const AGENT_CLIENT_LEASE_EXPIRED_ERROR_TYPE =
   'CLIENT_LEASE_EXPIRED';
 export const AGENT_CLIENT_LEASE_EXPIRED_LOCALE_KEY =
   'agent.errors.clientLeaseExpired';
+export const AGENT_CLIENT_PERMISSION_DENIED_ERROR_TYPE =
+  'CLIENT_PERMISSION_DENIED';
+export const AGENT_CLIENT_PERMISSION_DENIED_LOCALE_KEY =
+  'agent.errors.clientPermissionDenied';
 export const AGENT_FORBIDDEN_ACTOR_ERROR_TYPE = 'OWNERSHIP_FORBIDDEN_ACTOR';
 export const AGENT_FORBIDDEN_ACTOR_LOCALE_KEY = 'agent.errors.forbiddenActor';
 export const AGENT_INCOMPATIBLE_CAPABILITY_ERROR_TYPE =
@@ -2736,6 +2804,21 @@ export type AgentIncompatibleCapabilityError = AgentTypedErrorPayload & {
   };
 };
 
+export type AgentCapabilityPermissionKind =
+  | 'clipboard'
+  | 'filesystem'
+  | 'camera'
+  | 'microphone'
+  | 'notifications'
+  | 'screen_capture';
+
+export type AgentClientPermissionDeniedError = AgentTypedErrorPayload & {
+  details: {
+    capability_id: string;
+    permission_kind: AgentCapabilityPermissionKind;
+  };
+};
+
 export type AgentLifecycleInterruptedError = AgentTypedErrorPayload & {
   details: {
     turn_id: string;
@@ -2797,6 +2880,14 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'actual_revision',
   'terminal_status',
   'capability_id',
+  'capability_version',
+  'expected_version',
+  'actual_version',
+  'schema_field',
+  'binding_id',
+  'target_device_id',
+  'permission_kind',
+  'policy_kind',
   'turn_id',
   'budget_kind',
   'limit',
@@ -3144,6 +3235,38 @@ export function isAgentIncompatibleCapabilityError(
   );
 }
 
+const AGENT_CAPABILITY_PERMISSION_KINDS = new Set<AgentCapabilityPermissionKind>([
+  'clipboard',
+  'filesystem',
+  'camera',
+  'microphone',
+  'notifications',
+  'screen_capture',
+]);
+
+export function isAgentClientPermissionDeniedError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentClientPermissionDeniedError {
+  if (
+    error?.error_type !== AGENT_CLIENT_PERMISSION_DENIED_ERROR_TYPE
+    || error.locale_key !== AGENT_CLIENT_PERMISSION_DENIED_LOCALE_KEY
+    || error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'capability_id'
+    && detailKeys[1] === 'permission_kind'
+    && error.details.capability_id.trim().length > 0
+    && AGENT_CAPABILITY_PERMISSION_KINDS.has(
+      error.details.permission_kind as AgentCapabilityPermissionKind,
+    )
+  );
+}
+
 export function isAgentLifecycleInterruptedError(
   error: AgentTypedErrorPayload | null | undefined,
 ): error is AgentLifecycleInterruptedError {
@@ -3356,6 +3479,14 @@ export function resolveAgentTypedErrorAction(
       capabilityId: error.details.capability_id,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.chooseCompatibleModel',
+    };
+  }
+  if (isAgentClientPermissionDeniedError(error)) {
+    return {
+      type: 'openPermissionSettings',
+      capabilityId: error.details.capability_id,
+      permissionKind: error.details.permission_kind,
+      label: 'agent.recovery.openPermissionSettings',
     };
   }
   if (isAgentLifecycleInterruptedError(error)) {
@@ -3735,7 +3866,9 @@ export type AgentCapabilityNegativeControl =
   | 'schemaMismatch'
   | 'crossDevice'
   | 'leasePause'
-  | 'leaseExpired';
+  | 'leaseExpired'
+  | 'permissionDenied'
+  | 'permissionGranted';
 
 export interface AgentCapabilityNegativeControlFact {
   control: AgentCapabilityNegativeControl;
@@ -3786,6 +3919,7 @@ export interface AgentCapabilitySessionList {
       capability_id: string;
       schema_version: string;
       permission: string;
+      permission_kind: string;
       constraints: {
         max_request_bytes: number;
         max_result_bytes: number;
@@ -4512,11 +4646,6 @@ export interface ContextActionDispatchInput {
   payload?: Record<string, unknown>;
 }
 
-export interface ChatLocalSearchInput {
-  query: string;
-  limit?: number;
-}
-
 export interface ChatScopeCursorSetInput {
   scope: string;
   cursor: string;
@@ -4602,6 +4731,9 @@ function requireEvaluationValue<T>(
 }
 
 export const api = {
+  authLogin: (input: AuthLoginInput) =>
+    invokeAuthCommand<AuthLoginInput>('auth_login', input),
+
   accessStart: () =>
     invokeAccessCommand<void>('access_start'),
 
@@ -4610,12 +4742,6 @@ export const api = {
 
   accessSubmitLogin: (input: AccessSubmitLoginInput) =>
     invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
-
-  accessDecision: (attemptId: string) =>
-    invokeAccessCommand<AccessDecisionInput>('access_decision', { attempt_id: attemptId }),
-
-  accessCancel: (attemptId: string) =>
-    invokeAccessCommand<AccessDecisionInput>('access_cancel', { attempt_id: attemptId }),
 
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
@@ -6298,6 +6424,81 @@ export const api = {
       { sourceKinds: [...sourceKinds] },
     ).then((response) => response.manifests),
 
+  listCapabilityManifestInventory: (
+    sourceKinds: readonly CapabilitySourceKind[] = [],
+  ): Promise<{
+    manifests: CapabilityManifest[];
+    issues: CapabilityCatalogIssue[];
+  }> =>
+    invokeRustProto(
+      'agent_capability_manifest_list',
+      ListCapabilityManifestsResponseSchema,
+      { sourceKinds: [...sourceKinds] },
+    ),
+
+  prepareCapabilityAcceptanceScenario: (
+    request: PrepareCapabilityAcceptanceScenarioRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_prepare',
+    PrepareCapabilityAcceptanceScenarioRequestSchema,
+    PrepareCapabilityAcceptanceScenarioResponseSchema,
+    request,
+  ),
+
+  armCapabilityAcceptanceExecutorHook: (
+    request: ArmCapabilityAcceptanceExecutorHookRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_arm',
+    ArmCapabilityAcceptanceExecutorHookRequestSchema,
+    ArmCapabilityAcceptanceExecutorHookResponseSchema,
+    request,
+  ),
+
+  waitCapabilityAcceptanceBarrier: (
+    request: WaitCapabilityAcceptanceBarrierRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_wait',
+    WaitCapabilityAcceptanceBarrierRequestSchema,
+    WaitCapabilityAcceptanceBarrierResponseSchema,
+    request,
+  ),
+
+  releaseCapabilityAcceptanceBarrier: (
+    request: ReleaseCapabilityAcceptanceBarrierRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_release',
+    ReleaseCapabilityAcceptanceBarrierRequestSchema,
+    ReleaseCapabilityAcceptanceBarrierResponseSchema,
+    request,
+  ),
+
+  advanceCapabilityAcceptanceScenarioClock: (
+    request: AdvanceCapabilityAcceptanceScenarioClockRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_clock_advance',
+    AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+    AdvanceCapabilityAcceptanceScenarioClockResponseSchema,
+    request,
+  ),
+
+  interruptCapabilityAcceptanceWorker: (
+    request: InterruptCapabilityAcceptanceWorkerRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_interrupt',
+    InterruptCapabilityAcceptanceWorkerRequestSchema,
+    InterruptCapabilityAcceptanceWorkerResponseSchema,
+    request,
+  ),
+
+  cleanupCapabilityAcceptanceScenario: (
+    request: CleanupCapabilityAcceptanceScenarioRequest,
+  ) => invokeRustProtoRequest(
+    'agent_capability_acceptance_scenario_cleanup',
+    CleanupCapabilityAcceptanceScenarioRequestSchema,
+    CleanupCapabilityAcceptanceScenarioResponseSchema,
+    request,
+  ),
+
   syncOAuthConnectorManifests: () =>
     invokeRustProto(
       'oauth2_sync_connector_manifests',
@@ -6482,6 +6683,8 @@ export const api = {
     control: AgentCapabilityNegativeControl,
     capabilitySessionIdHash: string,
     crossDeviceSessionId?: string,
+    capabilityId?: string,
+    permissionKind?: AgentCapabilityPermissionKind,
   ) =>
     invokeRustDataFromStatus<
       {
@@ -6489,6 +6692,8 @@ export const api = {
           control: AgentCapabilityNegativeControl;
           capabilitySessionIdHash: string;
           crossDeviceSessionId?: string;
+          capabilityId?: string;
+          permissionKind?: AgentCapabilityPermissionKind;
         };
       },
       AgentCapabilityNegativeControlFact
@@ -6497,6 +6702,8 @@ export const api = {
         control,
         capabilitySessionIdHash,
         crossDeviceSessionId,
+        capabilityId,
+        permissionKind,
       },
     }),
 
@@ -7052,14 +7259,29 @@ export const api = {
     return data;
   },
 
-  // Read-only Federation context and discovery. Actor identity and
-  // discoverability are owned by the canonical profile commands.
-  federationResolve: (federationId: string, handle: string) =>
+  // Federation API (Tier A1) — proto-first end-to-end. The Rust shim
+  // already encodes a typed FederationSelfView / FederationResolveView /
+  // FederationHealthView; `invokeRustProto` decodes the byte stream back
+  // into a typed proto-es message so callers never touch JSON.
+  federationGetSelf: () =>
+    invokeRustProto('federation_get_self', FederationSelfViewSchema),
+
+  federationUpdateVisibility: (visibility: string) =>
+    invokeRustProto(
+      'federation_update_visibility',
+      FederationSelfViewSchema,
+      { visibility },
+    ),
+
+  federationResolve: (handle: string) =>
     invokeRustProto(
       'federation_resolve',
       FederationResolveViewSchema,
-      { federation_id: federationId, handle },
+      { handle },
     ),
+
+  federationHealth: () =>
+    invokeRustProto('federation_health', FederationHealthViewSchema),
 
   federationCatalogSearch: (params: {
     federation_id: string;
@@ -7069,9 +7291,30 @@ export const api = {
   }) =>
     invokeRustProto('federation_catalog_search', FederationCatalogSearchResponseSchema, params),
 
-  federationListContexts: () =>
-    invokeRustProto('federation_list_contexts', ListFederationContextsResponseSchema),
+  // Federation Lifecycle (Governance Subserver)
+  federationListFederations: () =>
+    invokeRustProto('federation_list_federations', ListFederationsResponseSchema),
 
+  federationCreate: (params: { name: string; description?: string; policy_type?: string }) =>
+    invokeRustProto('federation_create', CreateFederationResponseSchema, params),
+
+  federationJoin: (params: {
+    federation_endpoint?: string;
+    federation_id?: string;
+    message?: string;
+  }) =>
+    invokeRustProto('federation_join', JoinFederationResponseSchema, params),
+
+  federationLeave: (params: { federation_id: string; reason?: string }) =>
+    invokeRustProto('federation_leave', LeaveFederationResponseSchema, params),
+
+  federationDelete: (params: { federation_id: string }) =>
+    invokeRustProto('federation_delete', DeleteFederationResponseSchema, params),
+
+  federationListMemberStations: (federationId: string) =>
+    invokeRustProto('federation_list_member_stations', ListMemberStationsResponseSchema, {
+      federation_id: federationId,
+    }),
 
   /**
    * Fire a presence trigger to the Rust supervisor. Always resolves; the
@@ -7687,6 +7930,12 @@ export const api = {
       { agent_id: string; prompt: string },
       { ok: boolean; content: string }
     >('agent_quick_completion', { agent_id: agentId, prompt }).then((r) => r.content ?? ''),
+
+  groupCallJoin: (input: { group_ulid: string }) =>
+    invokeRustDataFromStatus<
+      { group_ulid: string },
+      { url: string; token: string; room_name: string }
+    >('group_call_join', input),
 };
 
 export interface ConfigFieldMeta {

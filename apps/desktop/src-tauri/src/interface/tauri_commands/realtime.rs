@@ -86,6 +86,37 @@ pub fn realtime_stream_stop(
     to_stub("realtime_stream_stop", json!({ "actor_ptid": null }))
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupCallJoinInput {
+    pub group_ulid: String,
+}
+
+#[tauri::command]
+pub fn group_call_join(
+    input: GroupCallJoinInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<StubPayload> {
+    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    if token.trim().is_empty() {
+        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+    }
+    if input.group_ulid.trim().is_empty() {
+        return AppResult::fail(ErrorCode::InvalidArgument, "group_ulid is required", None);
+    }
+    let response = match station_client::request_json_auth(
+        Method::POST,
+        "/group-call/join",
+        &token,
+        None,
+        Some(&json!({ "group_ulid": input.group_ulid })),
+    ) {
+        Ok(response) => response,
+        Err(error) => return error.into_app_result("Failed to join group call"),
+    };
+    to_stub("group_call_join", response)
+}
+
 /// Input for `realtime_signal_send`. The frontend has already
 /// produced `payload_b64` by ratchet-encrypting the canonical
 /// signaling JSON (see contract §2.7.2) using the chat session's

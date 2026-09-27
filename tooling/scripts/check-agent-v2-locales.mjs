@@ -26,6 +26,7 @@ export const ERROR_LOCALE_KEYS = Object.freeze([
   'agent.errors.contextInvalidReference',
   'agent.errors.attachmentRejected',
   'agent.errors.toolUnknown',
+  'agent.errors.toolUnknownSideEffect',
   'agent.errors.toolApprovalDenied',
   'agent.errors.toolApprovalExpired',
   'agent.errors.toolLoopBudgetExhausted',
@@ -37,6 +38,7 @@ export const ERROR_LOCALE_KEYS = Object.freeze([
   'agent.errors.homeSliceUnavailable',
   'agent.errors.homeReadinessUnresolved',
   'agent.errors.capabilityManifestMissing',
+  'agent.errors.capabilityManifestNotFound',
   'agent.errors.capabilityManifestVersionStale',
   'agent.errors.capabilityManifestSchemaInvalid',
   'agent.errors.capabilityBindingVersionConflict',
@@ -54,11 +56,20 @@ export const ERROR_LOCALE_KEYS = Object.freeze([
   'agent.errors.connectorScopeDenied',
   'agent.errors.connectorResourceRemoved',
   'agent.errors.connectorManifestStale',
+  'agent.errors.connectorDisconnected',
+  'agent.errors.connectorProviderRevoked',
+  'agent.errors.connectorRevocationUnconfirmed',
   'agent.errors.evaluationDatasetRevisionConflict',
   'agent.errors.evaluationTargetSnapshotInvalid',
   'agent.errors.evaluationRunNotCancellable',
   'agent.errors.evaluationCaseRetryConflict',
   'agent.errors.evaluationEvaluatorUnavailable',
+  'agent.errors.evaluationIdempotencyConflict',
+  'agent.errors.evaluationCancelAckTimeout',
+  'agent.errors.evaluationBenchmarkRevisionConflict',
+  'agent.errors.evaluationTestCaseRevisionConflict',
+  'agent.errors.evaluationRetentionConflict',
+  'agent.errors.evaluationFailed',
   'agent.errors.canvasSingleAgentNotReady',
 ]);
 
@@ -133,6 +144,7 @@ export const STABLE_ERROR_CODES = Object.freeze([
   'CONTEXT_INVALID_REFERENCE',
   'CONTEXT_ATTACHMENT_REJECTED',
   'TOOL_UNKNOWN',
+  'TOOL_UNKNOWN_SIDE_EFFECT',
   'TOOL_APPROVAL_DENIED',
   'TOOL_APPROVAL_EXPIRED',
   'TOOL_LOOP_BUDGET_EXHAUSTED',
@@ -161,11 +173,20 @@ export const STABLE_ERROR_CODES = Object.freeze([
   'CONNECTOR_SCOPE_DENIED',
   'CONNECTOR_RESOURCE_REMOVED',
   'CONNECTOR_MANIFEST_STALE',
+  'CONNECTOR_DISCONNECTED',
+  'CONNECTOR_PROVIDER_REVOKED',
+  'CONNECTOR_REVOCATION_UNCONFIRMED',
   'EVALUATION_DATASET_REVISION_CONFLICT',
   'EVALUATION_TARGET_SNAPSHOT_INVALID',
   'EVALUATION_RUN_NOT_CANCELLABLE',
   'EVALUATION_CASE_RETRY_CONFLICT',
   'EVALUATION_EVALUATOR_UNAVAILABLE',
+  'EVALUATION_IDEMPOTENCY_CONFLICT',
+  'EVALUATION_CANCEL_ACK_TIMEOUT',
+  'EVALUATION_BENCHMARK_REVISION_CONFLICT',
+  'EVALUATION_TEST_CASE_REVISION_CONFLICT',
+  'EVALUATION_RETENTION_CONFLICT',
+  'EVALUATION_FAILED',
   'AGENT_CANVAS_SINGLE_AGENT_NOT_READY',
 ]);
 
@@ -189,6 +210,13 @@ function sorted(values) {
 function difference(left, right) {
   const rightSet = new Set(right);
   return sorted(left.filter((value) => !rightSet.has(value)));
+}
+
+function withoutDebugPointRegions(content) {
+  return content.replace(
+    /^\s*\/\/ #region debug-point\b[\s\S]*?^\s*\/\/ #endregion[^\n]*$/gm,
+    '',
+  );
 }
 
 export function parseLocale(text, label) {
@@ -253,7 +281,10 @@ export function validateLocaleTexts({ enText, zhText, sourceFiles = [] }) {
   }
 
   for (const { file, content } of sourceFiles) {
-    const leakedCode = STABLE_ERROR_CODES.find((code) => content.includes(code));
+    const receiverCopySource = withoutDebugPointRegions(content);
+    const leakedCode = STABLE_ERROR_CODES.find(
+      (code) => receiverCopySource.includes(code),
+    );
     if (leakedCode) {
       throw new Error(`${file}: receiver source hardcodes stable code ${leakedCode} as user copy`);
     }

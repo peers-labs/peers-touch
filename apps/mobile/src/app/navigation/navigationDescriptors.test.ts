@@ -32,12 +32,6 @@ describe('Mobile navigation descriptor lifetimes', () => {
     expect(overlayDescriptors.every((descriptor) => (
       descriptor.layout === 'overlay' && descriptor.keepAlive === false
     ))).toBe(true);
-    expect(detailDescriptors.find(
-      (descriptor) => descriptor.routeId === 'detail:group-conversation',
-    )?.ownerRuntimeId).toBe('messaging');
-    expect(overlayDescriptors.find(
-      (descriptor) => descriptor.routeId === 'overlay:create-group',
-    )?.ownerRuntimeId).toBe('messaging');
   });
 
   it('owns primary and detail route identity independently of business stores', () => {

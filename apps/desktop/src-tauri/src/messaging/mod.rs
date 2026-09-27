@@ -126,16 +126,17 @@ pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextInt
 pub use store::{
     ActorReadReceiveCommit, AttachmentDownloadProjection, CommandOutboxEntry,
     CommandReconciliation, CommandReconciliationDisposition, CommandResultDisposition,
-    CommandResultReceiveCommit, CommandStatusProjection, ConversationMemberProjection,
-    ConversationMessagePage, ConversationMessageProjection, ConversationProjection,
+    CommandResultReceiveCommit, CommandStatusProjection, ConversationCommandCommit,
+    ConversationMemberProjection, ConversationMessagePage, ConversationMessageProjection,
+    ConversationMutation, ConversationMutationReceiveCommit, ConversationProjection,
     ConversationStateReceiveCommit, ConversationSummaryProjection, DeliveryReceiptReceiveCommit,
     DirectEditCommit, DirectReceiveCommit, DirectSendCommit, InteractionCommandCommit,
-    MessageProjection, MessageRetryDisposition, MessagingStore, MlsReceiveCommit,
-    MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
+    MemberAuthorityReceiveCommit, MessageProjection, MessageRetryDisposition, MessagingStore,
+    MlsReceiveCommit, MlsRetirementReceiveCommit, MlsSendCommit, MlsSenderTransitionReceiveCommit,
     MlsTransitionReceiveCommit, PendingAttachmentUpload, PendingMembershipIntent,
     PendingMessageDraft, PendingMlsTransitionState, PendingSenderProjection,
-    PublicEventReceiveCommit, ReceiveCommitResult, SubmittedCommand, ThreadCountProjection,
-    COMMAND_RECONCILIATION_BATCH_LIMIT,
+    PublicEventReceiveCommit, ReceiveCommitResult, SubmittedCommand, SupersededInteractionIntent,
+    ThreadCountProjection, COMMAND_RECONCILIATION_BATCH_LIMIT,
 };
 pub use transport::{
     StationCommandTransport, StationDeliveryReceiptTransport, StationDeviceTransport,

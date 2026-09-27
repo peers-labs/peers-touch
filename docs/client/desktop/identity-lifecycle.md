@@ -27,7 +27,7 @@ The regression guard is [`docs/knowledge/invariants/desktop-identity-lifecycle-c
 
 | Concern | Owner | Rule |
 | --- | --- | --- |
-| Session validity | `desktop-rust` auth service + `session` store | A session is valid only after `auth_restore_session`, `access_submit_login`, `account_unlock`, or `account_switch` returns an actor. |
+| Session validity | `desktop-rust` auth service + `session` store | A session is valid only after `auth_restore_session`, `auth_login`, `account_unlock`, or `account_switch` returns an actor. |
 | Boot restore policy | `IdentityBootResolution` in `apps/desktop/src/kernel/identityLifecycle.ts` | Boot must decide `resolveSession` vs `authGate` as an explicit policy object, not an inline boolean. |
 | Authenticated edges | `IdentityAuthenticatedEdge` in `apps/desktop/src/kernel/identityLifecycle.ts` | Password/OAuth login, restore, PIN unlock, account switch, and applet launch must be represented as named edges with completion semantics. |
 | Identity phase | `apps/desktop/src/kernel/identityLifecycle.ts` | The reducer is the single phase model for boot, gates, restore, authenticated, pending completion, and revoked states. |

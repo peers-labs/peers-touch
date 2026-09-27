@@ -215,9 +215,6 @@ func (s *MomentService) validateAttachmentCIDs(ctx context.Context, req *model.C
 		} else if n > maxImagesPerPost {
 			return fmt.Errorf("IMAGE post supports at most %d images, got %d", maxImagesPerPost, n)
 		}
-		if err := validatePrivateImageMediaEncryption(req.Audience, img); err != nil {
-			return err
-		}
 		return s.media.ValidateCIDs(ctx, imageIDs)
 
 	case model.PostType_VIDEO:
@@ -267,32 +264,6 @@ func imageIDsFromCreateRequest(img *model.CreateImagePostRequest) ([]string, err
 	return ids, nil
 }
 
-func validatePrivateImageMediaEncryption(audience *model.Audience, img *model.CreateImagePostRequest) error {
-	if audience == nil || audience.Kind == model.Audience_PUBLIC {
-		return nil
-	}
-	if len(audience.GetKeyEnvelopes()) == 0 {
-		return fmt.Errorf("non-public IMAGE post requires audience key envelopes")
-	}
-	if img == nil || len(img.Images) == 0 {
-		return fmt.Errorf("non-public IMAGE post requires encrypted image attachments")
-	}
-	for _, image := range img.Images {
-		if image == nil || image.MediaEncryption == nil || !image.MediaEncryption.Encrypted {
-			return fmt.Errorf("non-public IMAGE post requires encrypted image attachments")
-		}
-		if image.MediaEncryption.GetKeyB64() != "" {
-			return fmt.Errorf("non-public IMAGE post rejects inline media key material")
-		}
-	}
-	for _, envelope := range audience.GetKeyEnvelopes() {
-		if envelope == nil || envelope.GetRecipientPtid() == "" || envelope.GetDeviceId() == "" || envelope.GetKeyId() == "" || len(envelope.GetEncryptedKey()) == 0 || envelope.GetSuite() == "" {
-			return fmt.Errorf("non-public IMAGE post has incomplete audience key envelope")
-		}
-	}
-	return nil
-}
-
 // assertAudienceTargetReachable enforces the cross-subserver pre-flight
 // checks that ValidateForAuthor intentionally skips:
 //
@@ -323,9 +294,7 @@ func (s *MomentService) assertAudienceTargetReachable(ctx context.Context, autho
 	return nil
 }
 
-// persistInTx writes the post (and any CUSTOM_* grants) inside a
-// single transaction. The grants insert needs the post's id, which is
-// known after the post insert returns (BeforeCreate sets it).
+// persistInTx writes the post inside a single transaction.
 func (s *MomentService) persistInTx(ctx context.Context, p *domain.Post) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Construct a per-transaction Repos snapshot so the inner
@@ -338,32 +307,12 @@ func (s *MomentService) persistInTx(ctx context.Context, p *domain.Post) error {
 				return fmt.Errorf("public post create: %w", err)
 			}
 		} else {
-			if err := txRepos.PrivatePosts.Create(ctx, p); err != nil {
-				return fmt.Errorf("private post create: %w", err)
-			}
+			// W11 hard-cut: legacy private posts are no longer created
+			// through this path. New private content uses the Secure
+			// Content prepare/submit pipeline.
+			return fmt.Errorf("legacy private post creation removed; use prepare-private/submit-private routes")
 		}
 
-		// CUSTOM_* grants: insert in the same TX so the post row +
-		// the grant rows are atomically visible to readers.
-		if a := p.Audience; a.Kind == model.Audience_CUSTOM_ALLOW || a.Kind == model.Audience_CUSTOM_DENY {
-			role := domain.GrantRoleAllow
-			if a.Kind == model.Audience_CUSTOM_DENY {
-				role = domain.GrantRoleDeny
-			}
-			grants := make([]domain.AudienceGrant, 0, len(a.ActorPtids))
-			for _, ptid := range a.ActorPtids {
-				if ptid == "" {
-					continue
-				}
-				grants = append(grants, domain.AudienceGrant{
-					ActorPTID: ptid,
-					Role:      role,
-				})
-			}
-			if err := txRepos.AudienceGrant.AddGrants(ctx, p.ID, grants); err != nil {
-				return fmt.Errorf("audience grants: %w", err)
-			}
-		}
 		deliveries, err := s.buildMomentDeliveries(ctx, txRepos, p)
 		if err != nil {
 			return fmt.Errorf("build moment deliveries: %w", err)
@@ -443,11 +392,10 @@ func (s *MomentService) buildMomentDeliveries(ctx context.Context, repos *infras
 	return deliveries, nil
 }
 
-// GetMoment returns a single moment with the viewer-bound visibility
-// applied. The lookup tries the public repo first (cheap point lookup)
-// and falls through to the private repo (which applies the per-viewer
-// filter at the SQL layer + does the third-line CanRead re-check
-// downstream).
+// GetMoment returns a single public moment with viewer-bound visibility
+// applied. Legacy private posts are no longer reachable after the W11
+// hard-cut; new private content is served through the Secure Content
+// pipeline (GetPrivateMoment / GetMomentResource).
 func (s *MomentService) GetMoment(ctx context.Context, postIDStr, viewerPTID string) (*model.Post, error) {
 	post, _, err := s.GetMomentDetail(ctx, postIDStr, viewerPTID)
 	return post, err
@@ -492,37 +440,8 @@ func (s *MomentService) GetMomentDetail(
 		return post, model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE, nil
 	}
 
-	priv, err := s.repos.PrivatePosts.GetByID(ctx, postID, viewerPTID)
-	if err != nil {
-		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
-	}
-	if priv == nil {
-		outcome, err := s.classifyUnreadableMoment(ctx, postID)
-		return nil, outcome, err
-	}
-
-	// Third defense line: re-evaluate CanRead in pure form.
-	viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, []string{priv.AuthorPTID})
-	if err != nil {
-		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
-			fmt.Errorf("build viewer: %w", err)
-	}
-	if ok, _ := domain.CanRead(viewer, priv.AuthorPTID, priv.Audience, priv.IsDeleted()); !ok {
-		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
-	}
-	if blocked, err := actorStationModerated(ctx, s.repos.Moderation, priv.AuthorPTID); err != nil {
-		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
-	} else if blocked {
-		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
-	}
-	post, err := s.hydratePost(ctx, priv, viewerPTID)
-	if err != nil {
-		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
-	}
-	if post == nil {
-		return nil, model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, nil
-	}
-	return post, model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE, nil
+	outcome, err := s.classifyUnreadableMoment(ctx, postID)
+	return nil, outcome, err
 }
 
 func (s *MomentService) classifyUnreadableMoment(
@@ -533,23 +452,19 @@ func (s *MomentService) classifyUnreadableMoment(
 	if err != nil {
 		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
 	}
-	privateState, err := s.repos.PrivatePosts.ProbeRecordState(ctx, postID)
-	if err != nil {
-		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, err
-	}
-	if publicState == domain.PostRecordDeleted || privateState == domain.PostRecordDeleted {
+	if publicState == domain.PostRecordDeleted {
 		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_DELETED, nil
 	}
-	if publicState == domain.PostRecordLive || privateState == domain.PostRecordLive {
+	if publicState == domain.PostRecordLive {
 		return model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN, nil
 	}
 	return model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE, nil
 }
 
-// DeleteMoment soft-deletes a post. Tries public repo first then
-// private — a delete from the wrong author is a no-op (zero rows
-// affected). Returns "no rows affected" as a 404-ish nil so the
-// handler doesn't leak existence to non-authors.
+// DeleteMoment soft-deletes a public post. Legacy private posts are
+// unreachable after W11; new private content deletion goes through the
+// Secure Content pipeline. Returns nil when the post doesn't exist or
+// the caller is not the author, so the handler doesn't leak existence.
 func (s *MomentService) DeleteMoment(ctx context.Context, postIDStr, authorPTID string) error {
 	postID := domain.ParseID(postIDStr)
 	if postID == 0 {
@@ -559,21 +474,10 @@ func (s *MomentService) DeleteMoment(ctx context.Context, postIDStr, authorPTID 
 	if err != nil {
 		return err
 	}
-	if owned == nil {
-		owned, err = s.repos.PrivatePosts.GetByID(ctx, postID, authorPTID)
-		if err != nil {
-			return err
-		}
-	}
 	if owned == nil || owned.AuthorPTID != authorPTID {
 		return nil
 	}
 	if err := s.repos.PublicPosts.Delete(ctx, postID, authorPTID); err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-	}
-	if err := s.repos.PrivatePosts.Delete(ctx, postID, authorPTID); err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
@@ -590,8 +494,9 @@ func (s *MomentService) DeleteMoment(ctx context.Context, postIDStr, authorPTID 
 	return nil
 }
 
-// ListByAuthor serves a profile page. Public posts are always shown;
-// private posts are filtered per `viewerID`.
+// ListByAuthor serves a profile page. Only public posts are returned
+// after the W11 hard-cut; legacy private posts are unreachable, and
+// new private content is accessed through the Secure Content pipeline.
 func (s *MomentService) ListByAuthor(ctx context.Context, authorPTID, viewerPTID, cursor string, limit int) ([]*model.Post, string, bool, error) {
 	posts, nextCursor, hasMore, _, err := s.ListByAuthorPage(
 		ctx,
@@ -628,22 +533,19 @@ func (s *MomentService) ListByAuthorPage(
 	if err != nil {
 		return nil, "", false, 0, err
 	}
-
-	privPosts, err := s.repos.PrivatePosts.ListByAuthorVisibleTo(ctx, authorPTID, viewerPTID, c, limit+1)
-	if err != nil {
-		return nil, "", false, 0, err
+	hasMore := len(pubPosts) > limit
+	if hasMore {
+		pubPosts = pubPosts[:limit]
 	}
+	scannedCount := len(pubPosts)
 
-	merged, hasMore := mergePostsByCreatedAtDesc(pubPosts, privPosts, limit)
-	scannedCount := len(merged)
-
-	viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, postAuthorPTIDs(merged))
+	viewer, err := buildViewerForAuthors(ctx, viewerPTID, s.repos, s.groups, postAuthorPTIDs(pubPosts))
 	if err != nil {
 		return nil, "", false, scannedCount, fmt.Errorf("build viewer: %w", err)
 	}
-	readable := make([]*domain.Post, 0, len(merged))
+	readable := make([]*domain.Post, 0, len(pubPosts))
 	if !moderated {
-		for _, p := range merged {
+		for _, p := range pubPosts {
 			if ok, _ := domain.CanRead(viewer, p.AuthorPTID, p.Audience, p.IsDeleted()); !ok {
 				continue
 			}
@@ -653,8 +555,8 @@ func (s *MomentService) ListByAuthorPage(
 	out := s.hydratePosts(ctx, readable, viewerPTID)
 
 	var nextCursor string
-	if hasMore && len(merged) > 0 {
-		last := merged[len(merged)-1]
+	if hasMore && len(pubPosts) > 0 {
+		last := pubPosts[len(pubPosts)-1]
 		nextCursor = domain.Cursor{LastID: last.ID, CreatedAt: last.CreatedAt}.Encode()
 	}
 	return out, nextCursor, hasMore, scannedCount, nil
@@ -788,34 +690,6 @@ func (s *MomentService) hydratePostWith(ctx context.Context, p *domain.Post, vie
 // List paths MUST use `hydratePosts` to avoid N+1 author lookups.
 func (s *MomentService) hydratePost(ctx context.Context, p *domain.Post, viewerPTID string) (*model.Post, error) {
 	return s.hydratePostWith(ctx, p, viewerPTID, nil)
-}
-
-// mergePostsByCreatedAtDesc merges two pre-sorted (DESC by created_at +
-// id) slices into a single DESC slice, respecting the limit. Returns
-// the merged slice and a `hasMore` bool.
-func mergePostsByCreatedAtDesc(a, b []*domain.Post, limit int) ([]*domain.Post, bool) {
-	out := make([]*domain.Post, 0, len(a)+len(b))
-	i, j := 0, 0
-	for i < len(a) && j < len(b) && len(out) < limit+1 {
-		if postNewer(a[i], b[j]) {
-			out = append(out, a[i])
-			i++
-		} else {
-			out = append(out, b[j])
-			j++
-		}
-	}
-	for ; i < len(a) && len(out) < limit+1; i++ {
-		out = append(out, a[i])
-	}
-	for ; j < len(b) && len(out) < limit+1; j++ {
-		out = append(out, b[j])
-	}
-	hasMore := len(out) > limit
-	if hasMore {
-		out = out[:limit]
-	}
-	return out, hasMore
 }
 
 func postNewer(a, b *domain.Post) bool {

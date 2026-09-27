@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { FriendChatSession, GroupMember } from './socialProjection';
+import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
+import type { GroupMember } from '../gen/proto/domain/chat/group_chat_pb';
 import type { AccountProfile } from '../services/desktop_api';
 import {
   accountProfileFromFederationResolve,

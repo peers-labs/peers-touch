@@ -68,7 +68,7 @@ Station 与 Federation 是多对多关系。一个 Station 可以加入多个 Fe
 
 ### Rationale
 
-这允许 Station 在不同 Federation 中暴露不同策略、成员关系和治理状态。普通客户端按 Federation context 展示可发现用户，Dashboard/CLI 展示并治理成员 Station。
+这允许 Station 在不同 Federation 中暴露不同策略、成员关系和治理状态。Desktop Settings 和 Dashboard 也可以按 Federation 分组展示 Station 和用户。
 
 ### Alternatives Considered
 
@@ -105,7 +105,7 @@ Station/Federation governance 由 `station_owner`、`federation_admin`、`federa
 
 ### Consequences
 
-需要 Station 级 role assignment 和 Federation 级 actor role。治理能力只暴露给 Dashboard/CLI operator surface，普通客户端不得持有管理操作。
+需要 Station 级 role assignment 和 Federation 级 actor role。Desktop UI 必须根据权限展示或隐藏管理操作。
 
 ---
 
@@ -152,7 +152,7 @@ Federation Ledger 保留区块链式的可审计和防篡改特性，但复杂�
 废弃"联邦广场"作为 Desktop 一级入口。联邦存在感通过以下方式渗透：
 
 1. **搜索/联系人/聊天**（日常入口）— 用户通过正常社交路径发现联邦内的人，联邦作为底层 scope 自然生效。
-2. **Settings → Federation**（低频状态）— 查看身份、调整 Actor 可见性、查看可用 context 与连接状态。
+2. **Settings → Federation**（低频配置）— 查看身份、调整 Actor 可见性、路由健康、加入/离开联邦。
 3. **Dashboard → Federation**（治理入口）— Station 管理员创建联邦、审批加入、管理 Ledger 和策略。
 
 ### Rationale
@@ -167,7 +167,7 @@ Federation Ledger 保留区块链式的可审计和防篡改特性，但复杂�
 
 ### Consequences
 
-Desktop 无需新增一级导航入口。普通客户端只消费 Federation context、scoped Catalog/Resolver 与连接状态；成员 Station、创建、加入、离开、删除和权限治理只由 Dashboard/CLI operator surface 消费。
+Desktop 无需新增一级导航入口。Station API 仍需提供 Federation 列表、成员 Station 列表、公开用户列表和权限信息——但消费方从"联邦广场页面"变为"Settings 配置面板 + Dashboard 治理控制台 + 搜索/联系人的底层 scope"。
 
 ---
 

@@ -32,7 +32,6 @@ const PAGE_ICONS: Record<string, string> = {
   'agent-orchestration': 'Network',
   'agent-groups': 'Users',
   marketplace: 'Store',
-  'custom-plugins': 'Puzzle',
 };
 
 export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
@@ -56,7 +55,6 @@ export function useCommandMenuItems(deps: CommandMenuDeps): GroupedCommands {
       { id: 'page:marketplace', page: 'marketplace', titleKey: 'agent.commandMenu.page.marketplace' },
       { id: 'page:agent-groups', page: 'agent-groups', titleKey: 'agent.commandMenu.page.agentGroups' },
       { id: 'page:settings', page: 'settings', titleKey: 'agent.commandMenu.page.settings' },
-      { id: 'page:custom-plugins', page: 'custom-plugins', titleKey: 'agent.commandMenu.page.customPlugins' },
     ];
 
     for (const entry of pageEntries) {

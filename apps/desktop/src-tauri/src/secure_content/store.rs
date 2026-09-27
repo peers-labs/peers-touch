@@ -22,6 +22,7 @@ pub enum PublicationState {
     UnknownCommit = 3,
     Published = 4,
     Terminal = 5,
+    CommittedPendingReadback = 6,
 }
 
 impl TryFrom<i64> for PublicationState {
@@ -34,7 +35,51 @@ impl TryFrom<i64> for PublicationState {
             3 => Ok(Self::UnknownCommit),
             4 => Ok(Self::Published),
             5 => Ok(Self::Terminal),
+            6 => Ok(Self::CommittedPendingReadback),
             _ => Err("secure content publication state is invalid".to_string()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(i64)]
+pub enum CommentState {
+    Editing = 1,
+    Encrypting = 2,
+    Submitting = 3,
+    Posted = 4,
+    Failed = 5,
+    RateLimited = 6,
+    ParentUnavailable = 7,
+}
+
+impl CommentState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Editing => "COMMENT_EDITING",
+            Self::Encrypting => "COMMENT_ENCRYPTING",
+            Self::Submitting => "COMMENT_SUBMITTING",
+            Self::Posted => "COMMENT_POSTED",
+            Self::Failed => "COMMENT_FAILED",
+            Self::RateLimited => "COMMENT_RATE_LIMITED",
+            Self::ParentUnavailable => "COMMENT_PARENT_UNAVAILABLE",
+        }
+    }
+}
+
+impl TryFrom<i64> for CommentState {
+    type Error = String;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Editing),
+            2 => Ok(Self::Encrypting),
+            3 => Ok(Self::Submitting),
+            4 => Ok(Self::Posted),
+            5 => Ok(Self::Failed),
+            6 => Ok(Self::RateLimited),
+            7 => Ok(Self::ParentUnavailable),
+            _ => Err("secure content Comment state is invalid".to_string()),
         }
     }
 }
@@ -99,6 +144,31 @@ pub struct StoredMomentDraft {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredCommentDraft {
+    pub draft_id: String,
+    pub draft_revision: u64,
+    pub post_id: String,
+    pub content_id: String,
+    pub generation: u64,
+    pub reply_to_comment_id: String,
+    pub text: String,
+    pub intent_sha256: [u8; 32],
+    pub prepare_command_id: String,
+    pub submit_command_id: Option<String>,
+    pub plan_bytes: Option<Vec<u8>>,
+    pub request_bytes: Option<Vec<u8>>,
+    pub request_sha256: Option<[u8; 32]>,
+    pub root_key: Option<[u8; 32]>,
+    pub publication_state: Option<PublicationState>,
+    pub session_generation: u64,
+    pub comment_id: Option<String>,
+    pub state: CommentState,
+    pub error_code: Option<String>,
+    pub retry_after_seconds: Option<u64>,
+    pub retry_not_before_unix_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StoredObjectTransfer {
     pub record: ObjectTransferRecord,
     pub media_type: String,
@@ -144,18 +214,70 @@ impl SecureContentStore {
             .map_err(|_| "secure content store lock poisoned".to_string())
     }
 
+    pub fn claim_session_generation(&self) -> Result<u64, String> {
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let current = transaction
+            .query_row(
+                "SELECT session_generation
+                 FROM secure_content_runtime_state
+                 WHERE singleton = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let generation = from_i64(current, "session generation")
+            .map_err(|error| error.to_string())?
+            .checked_add(1)
+            .ok_or_else(|| "secure content session generation overflowed".to_string())?;
+        let stored_generation = to_i64(generation, "session generation")?;
+        transaction
+            .execute(
+                "UPDATE secure_content_runtime_state
+                 SET session_generation = ?1
+                 WHERE singleton = 1",
+                params![stored_generation],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE secure_content_object_transfers
+                 SET session_generation = ?1",
+                params![stored_generation],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        self.session_generation.store(generation, Ordering::Release);
+        Ok(generation)
+    }
+
+    #[cfg(test)]
     pub fn bind_session_generation(&self, session_generation: u64) -> Result<(), String> {
         if session_generation == 0 {
             return Err("secure content session generation is required".to_string());
         }
-        let connection = self.connection()?;
-        connection
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE secure_content_runtime_state
+                 SET session_generation = ?1
+                 WHERE singleton = 1",
+                params![to_i64(session_generation, "session generation")?],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
             .execute(
                 "UPDATE secure_content_object_transfers
                  SET session_generation = ?1",
                 params![to_i64(session_generation, "session generation")?],
             )
             .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
         self.session_generation
             .store(session_generation, Ordering::Release);
         Ok(())
@@ -198,6 +320,20 @@ impl SecureContentStore {
                 ],
             )
             .map_err(|error| error.to_string())?;
+        let comments = transaction
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, state = ?2,
+                     error_code = 'COMMENT_SUBMIT_RESULT_UNKNOWN',
+                     updated_at_unix_ms = unixepoch('subsec') * 1000
+                 WHERE publication_state = ?3",
+                params![
+                    PublicationState::UnknownCommit as i64,
+                    CommentState::Failed as i64,
+                    PublicationState::InFlight as i64,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         transaction
             .execute(
                 "DELETE FROM secure_content_moment_drafts
@@ -208,7 +344,7 @@ impl SecureContentStore {
             )
             .map_err(|error| error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(publications + moments)
+        Ok(publications + moments + comments)
     }
 
     pub fn checkpoint_session_generation(&self, session_generation: u64) -> Result<usize, String> {
@@ -241,8 +377,23 @@ impl SecureContentStore {
                 ],
             )
             .map_err(|error| error.to_string())?;
+        let comments = transaction
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, state = ?2,
+                     error_code = 'COMMENT_SUBMIT_RESULT_UNKNOWN',
+                     updated_at_unix_ms = unixepoch('subsec') * 1000
+                 WHERE publication_state = ?3 AND session_generation = ?4",
+                params![
+                    PublicationState::UnknownCommit as i64,
+                    CommentState::Failed as i64,
+                    PublicationState::InFlight as i64,
+                    session_generation,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
         transaction.commit().map_err(|error| error.to_string())?;
-        Ok(publications + moments)
+        Ok(publications + moments + comments)
     }
 
     pub fn persist_prekey_publication(
@@ -954,6 +1105,608 @@ impl SecureContentStore {
             .map_err(|error| error.to_string())
     }
 
+    pub fn reserve_comment_draft(
+        &self,
+        candidate: &StoredCommentDraft,
+    ) -> Result<StoredCommentDraft, String> {
+        if candidate.draft_id.trim().is_empty()
+            || candidate.draft_revision == 0
+            || candidate.post_id.trim().is_empty()
+            || candidate.content_id.trim().is_empty()
+            || candidate.text.trim().is_empty()
+            || candidate.prepare_command_id.trim().is_empty()
+        {
+            return Err("secure content Comment draft is invalid".to_string());
+        }
+        {
+            let connection = self.connection()?;
+            connection
+                .execute(
+                    "INSERT INTO secure_content_comment_drafts(
+                    draft_id, draft_revision, post_id, content_id,
+                    reply_to_comment_id, plaintext_text, intent_sha256,
+                    prepare_command_id, state, session_generation,
+                    updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(draft_id, draft_revision) DO NOTHING",
+                    params![
+                        candidate.draft_id,
+                        to_i64(candidate.draft_revision, "Comment draft revision")?,
+                        candidate.post_id,
+                        candidate.content_id,
+                        candidate.reply_to_comment_id,
+                        candidate.text,
+                        candidate.intent_sha256.as_slice(),
+                        candidate.prepare_command_id,
+                        candidate.state as i64,
+                        to_i64(candidate.session_generation, "session generation")?,
+                        now_unix_ms(),
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        let stored = self
+            .comment_draft(&candidate.draft_id, candidate.draft_revision)?
+            .ok_or_else(|| "secure content Comment draft was not persisted".to_string())?;
+        if stored.post_id != candidate.post_id
+            || stored.reply_to_comment_id != candidate.reply_to_comment_id
+            || stored.text != candidate.text
+            || stored.intent_sha256 != candidate.intent_sha256
+        {
+            return Err("secure content Comment draft replay conflict".to_string());
+        }
+        Ok(stored)
+    }
+
+    pub fn comment_draft(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+    ) -> Result<Option<StoredCommentDraft>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT draft_id, draft_revision, post_id, content_id, generation,
+                        reply_to_comment_id, plaintext_text, intent_sha256,
+                        prepare_command_id, submit_command_id, plan_bytes,
+                        request_bytes, request_sha256, root_key,
+                        publication_state, session_generation, comment_id,
+                        state, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM secure_content_comment_drafts
+                 WHERE draft_id = ?1 AND draft_revision = ?2",
+                params![draft_id, to_i64(draft_revision, "Comment draft revision")?],
+                comment_draft_from_row,
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn comment_drafts(&self) -> Result<Vec<StoredCommentDraft>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT draft_id, draft_revision, post_id, content_id, generation,
+                        reply_to_comment_id, plaintext_text, intent_sha256,
+                        prepare_command_id, submit_command_id, plan_bytes,
+                        request_bytes, request_sha256, root_key,
+                        publication_state, session_generation, comment_id,
+                        state, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM secure_content_comment_drafts
+                 ORDER BY updated_at_unix_ms DESC, draft_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let drafts = statement
+            .query_map([], comment_draft_from_row)
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(drafts)
+    }
+
+    pub fn set_comment_draft_state(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        state: CommentState,
+        error_code: Option<&str>,
+        retry_after_seconds: Option<u64>,
+    ) -> Result<bool, String> {
+        let updated_at_unix_ms = now_unix_ms();
+        let retry_not_before_unix_ms = retry_deadline(updated_at_unix_ms, retry_after_seconds)?;
+        self.connection()?
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET state = ?1, error_code = ?2, retry_after_seconds = ?3,
+                     retry_not_before_unix_ms = ?4, updated_at_unix_ms = ?5
+                 WHERE draft_id = ?6 AND draft_revision = ?7",
+                params![
+                    state as i64,
+                    error_code,
+                    retry_after_seconds
+                        .map(|value| to_i64(value, "Comment retry after"))
+                        .transpose()?,
+                    retry_not_before_unix_ms,
+                    updated_at_unix_ms,
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn reset_comment_submission_for_reprepare(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        session_generation: u64,
+        content_id: &str,
+        prepare_command_id: &str,
+    ) -> Result<bool, String> {
+        if content_id.trim().is_empty() || prepare_command_id.trim().is_empty() {
+            return Err("secure content Comment reprepare identity is invalid".to_string());
+        }
+        let now = now_unix_ms();
+        self.connection()?
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET content_id = ?1, generation = 0, prepare_command_id = ?2,
+                     submit_command_id = NULL, plan_bytes = NULL,
+                     request_bytes = NULL, request_sha256 = NULL, root_key = NULL,
+                     publication_state = NULL, session_generation = ?3,
+                     comment_id = NULL, state = ?4, error_code = NULL,
+                     retry_after_seconds = NULL, retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?5
+                 WHERE draft_id = ?6 AND draft_revision = ?7
+                   AND publication_state = ?8
+                   AND state IN (?9, ?10, ?11)
+                   AND plaintext_text != ''
+                   AND (
+                     retry_not_before_unix_ms IS NULL
+                     OR retry_not_before_unix_ms <= ?5
+                   )",
+                params![
+                    content_id,
+                    prepare_command_id,
+                    to_i64(session_generation, "session generation")?,
+                    CommentState::Editing as i64,
+                    now,
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                    PublicationState::PendingPublication as i64,
+                    CommentState::Failed as i64,
+                    CommentState::RateLimited as i64,
+                    CommentState::Submitting as i64,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn persist_comment_submission(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        generation: u64,
+        submit_command_id: &str,
+        plan_bytes: &[u8],
+        request_bytes: &[u8],
+        request_sha256: &[u8; 32],
+        root_key: &[u8; 32],
+        session_generation: u64,
+    ) -> Result<(), String> {
+        if submit_command_id.trim().is_empty()
+            || plan_bytes.is_empty()
+            || request_bytes.is_empty()
+            || Sha256::digest(request_bytes).as_slice() != request_sha256
+        {
+            return Err("secure content Comment submission is invalid".to_string());
+        }
+        let changed = {
+            let connection = self.connection()?;
+            connection
+                .execute(
+                    "UPDATE secure_content_comment_drafts
+                 SET generation = ?1, submit_command_id = ?2, plan_bytes = ?3,
+                     request_bytes = ?4, request_sha256 = ?5, root_key = ?6,
+                     publication_state = ?7, session_generation = ?8,
+                     state = ?9, error_code = NULL, retry_after_seconds = NULL,
+                     retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?10
+                 WHERE draft_id = ?11 AND draft_revision = ?12
+                   AND request_bytes IS NULL",
+                    params![
+                        to_i64(generation, "content generation")?,
+                        submit_command_id,
+                        plan_bytes,
+                        request_bytes,
+                        request_sha256.as_slice(),
+                        root_key.as_slice(),
+                        PublicationState::PendingPublication as i64,
+                        to_i64(session_generation, "session generation")?,
+                        CommentState::Submitting as i64,
+                        now_unix_ms(),
+                        draft_id,
+                        to_i64(draft_revision, "Comment draft revision")?,
+                    ],
+                )
+                .map_err(|error| error.to_string())?
+        };
+        if changed == 0 {
+            let stored = self
+                .comment_draft(draft_id, draft_revision)?
+                .ok_or_else(|| "secure content Comment draft is unavailable".to_string())?;
+            if stored.request_sha256 != Some(*request_sha256) {
+                return Err("secure content Comment submission replay conflict".to_string());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn acquire_comment_submission(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        session_generation: u64,
+    ) -> Result<StoredCommentDraft, String> {
+        let acquired_at_unix_ms = now_unix_ms();
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        let changed = transaction
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, session_generation = ?2,
+                     state = ?3, error_code = NULL, retry_after_seconds = NULL,
+                     retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?4
+                 WHERE draft_id = ?5 AND draft_revision = ?6
+                   AND publication_state IN (?7, ?8)
+                   AND (
+                     retry_not_before_unix_ms IS NULL
+                     OR retry_not_before_unix_ms <= ?9
+                   )",
+                params![
+                    PublicationState::InFlight as i64,
+                    to_i64(session_generation, "session generation")?,
+                    CommentState::Submitting as i64,
+                    acquired_at_unix_ms,
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                    PublicationState::PendingPublication as i64,
+                    PublicationState::UnknownCommit as i64,
+                    acquired_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("secure content Comment submission is not retryable".to_string());
+        }
+        let draft = transaction
+            .query_row(
+                "SELECT draft_id, draft_revision, post_id, content_id, generation,
+                        reply_to_comment_id, plaintext_text, intent_sha256,
+                        prepare_command_id, submit_command_id, plan_bytes,
+                        request_bytes, request_sha256, root_key,
+                        publication_state, session_generation, comment_id,
+                        state, error_code, retry_after_seconds,
+                        retry_not_before_unix_ms
+                 FROM secure_content_comment_drafts
+                 WHERE draft_id = ?1 AND draft_revision = ?2",
+                params![draft_id, to_i64(draft_revision, "Comment draft revision")?],
+                comment_draft_from_row,
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(draft)
+    }
+
+    pub fn mark_comment_retryable(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        session_generation: u64,
+        publication_state: PublicationState,
+        state: CommentState,
+        error_code: &str,
+        retry_after_seconds: Option<u64>,
+    ) -> Result<bool, String> {
+        if !matches!(
+            publication_state,
+            PublicationState::PendingPublication | PublicationState::UnknownCommit
+        ) || !matches!(state, CommentState::Failed | CommentState::RateLimited)
+        {
+            return Err("secure content Comment retry state is invalid".to_string());
+        }
+        let updated_at_unix_ms = now_unix_ms();
+        let retry_not_before_unix_ms = retry_deadline(updated_at_unix_ms, retry_after_seconds)?;
+        self.connection()?
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, state = ?2, error_code = ?3,
+                     retry_after_seconds = ?4, retry_not_before_unix_ms = ?5,
+                     updated_at_unix_ms = ?6
+                 WHERE draft_id = ?7 AND draft_revision = ?8
+                   AND publication_state = ?9 AND session_generation = ?10",
+                params![
+                    publication_state as i64,
+                    state as i64,
+                    error_code,
+                    retry_after_seconds
+                        .map(|value| to_i64(value, "Comment retry after"))
+                        .transpose()?,
+                    retry_not_before_unix_ms,
+                    updated_at_unix_ms,
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                    PublicationState::InFlight as i64,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn mark_comment_terminal(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        session_generation: u64,
+        state: CommentState,
+        error_code: &str,
+    ) -> Result<bool, String> {
+        self.connection()?
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, state = ?2, error_code = ?3,
+                     retry_after_seconds = NULL,
+                     retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?4
+                 WHERE draft_id = ?5 AND draft_revision = ?6
+                   AND publication_state IN (?7, ?8)
+                   AND session_generation = ?9",
+                params![
+                    PublicationState::Terminal as i64,
+                    state as i64,
+                    error_code,
+                    now_unix_ms(),
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                    PublicationState::InFlight as i64,
+                    PublicationState::CommittedPendingReadback as i64,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn mark_comment_committed_pending_readback(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        session_generation: u64,
+        comment_id: &str,
+    ) -> Result<bool, String> {
+        if comment_id.trim().is_empty() {
+            return Err("secure content committed Comment ID is invalid".to_string());
+        }
+        self.connection()?
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, comment_id = ?2, plaintext_text = '',
+                     state = ?3, error_code = 'COMMENT_READBACK_PENDING',
+                     retry_after_seconds = NULL,
+                     retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?4
+                 WHERE draft_id = ?5 AND draft_revision = ?6
+                   AND publication_state = ?7 AND session_generation = ?8",
+                params![
+                    PublicationState::CommittedPendingReadback as i64,
+                    comment_id,
+                    CommentState::Failed as i64,
+                    now_unix_ms(),
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                    PublicationState::InFlight as i64,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn mark_comment_readback_failed(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        session_generation: u64,
+        error_code: &str,
+        retry_after_seconds: Option<u64>,
+    ) -> Result<bool, String> {
+        let updated_at_unix_ms = now_unix_ms();
+        let retry_not_before_unix_ms = retry_deadline(updated_at_unix_ms, retry_after_seconds)?;
+        self.connection()?
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET state = ?1, error_code = ?2, retry_after_seconds = ?3,
+                     retry_not_before_unix_ms = ?4, updated_at_unix_ms = ?5
+                 WHERE draft_id = ?6 AND draft_revision = ?7
+                   AND publication_state = ?8 AND session_generation = ?9",
+                params![
+                    CommentState::Failed as i64,
+                    error_code,
+                    retry_after_seconds
+                        .map(|value| to_i64(value, "Comment retry after"))
+                        .transpose()?,
+                    retry_not_before_unix_ms,
+                    updated_at_unix_ms,
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                    PublicationState::CommittedPendingReadback as i64,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn mark_comment_posted(
+        &self,
+        draft_id: &str,
+        draft_revision: u64,
+        session_generation: u64,
+        comment_id: &str,
+    ) -> Result<bool, String> {
+        let connection = self.connection()?;
+        connection
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET publication_state = ?1, comment_id = ?2, plaintext_text = '',
+                     state = ?3, error_code = NULL, retry_after_seconds = NULL,
+                     retry_not_before_unix_ms = NULL,
+                     updated_at_unix_ms = ?4
+                 WHERE draft_id = ?5 AND draft_revision = ?6
+                   AND publication_state = ?7 AND session_generation = ?8",
+                params![
+                    PublicationState::Published as i64,
+                    comment_id,
+                    CommentState::Posted as i64,
+                    now_unix_ms(),
+                    draft_id,
+                    to_i64(draft_revision, "Comment draft revision")?,
+                    PublicationState::CommittedPendingReadback as i64,
+                    to_i64(session_generation, "session generation")?,
+                ],
+            )
+            .map(|changed| changed == 1)
+            .map_err(|error| error.to_string())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_comment_root(
+        &self,
+        content_id: &str,
+        generation: u64,
+        post_id: &str,
+        comment_id: &str,
+        root_key: &[u8; 32],
+        endpoint_prekey_id: Option<&str>,
+        projection_bytes: &[u8],
+    ) -> Result<(), String> {
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO secure_content_roots(
+                    content_id, generation, post_id, root_key, committed_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(content_id, generation) DO UPDATE SET
+                    post_id = excluded.post_id,
+                    root_key = excluded.root_key",
+                params![
+                    content_id,
+                    to_i64(generation, "content generation")?,
+                    post_id,
+                    root_key.as_slice(),
+                    now_unix_ms(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO secure_content_comment_projections(
+                    post_id, comment_id, content_id, generation,
+                    projection_bytes, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(post_id, comment_id) DO UPDATE SET
+                    content_id = excluded.content_id,
+                    generation = excluded.generation,
+                    projection_bytes = excluded.projection_bytes,
+                    updated_at_unix_ms = excluded.updated_at_unix_ms",
+                params![
+                    post_id,
+                    comment_id,
+                    content_id,
+                    to_i64(generation, "content generation")?,
+                    projection_bytes,
+                    now_unix_ms(),
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if let Some(key_id) = endpoint_prekey_id {
+            let changed = transaction
+                .execute(
+                    "UPDATE secure_content_prekeys
+                     SET state = ?1, private_key = NULL, root_content_id = ?2,
+                         root_generation = ?3
+                     WHERE key_id = ?4 AND key_kind = 1 AND private_key IS NOT NULL
+                       AND state = ?5",
+                    params![
+                        LocalPreKeyState::RootCommitted as i64,
+                        content_id,
+                        to_i64(generation, "content generation")?,
+                        key_id,
+                        LocalPreKeyState::Published as i64,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            if changed != 1 {
+                return Err(
+                    "secure content Comment root did not consume the exact endpoint PreKey"
+                        .to_string(),
+                );
+            }
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn comment_projection(
+        &self,
+        post_id: &str,
+        comment_id: &str,
+    ) -> Result<Option<Vec<u8>>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT projection_bytes FROM secure_content_comment_projections
+                 WHERE post_id = ?1 AND comment_id = ?2",
+                params![post_id, comment_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn comment_projections(&self) -> Result<Vec<Vec<u8>>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT projection_bytes FROM secure_content_comment_projections
+                 ORDER BY updated_at_unix_ms, post_id, comment_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let projections = statement
+            .query_map([], |row| row.get(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(projections)
+    }
+
+    pub fn clear_comment_projections(&self, post_id: &str) -> Result<(), String> {
+        self.connection()?
+            .execute(
+                "DELETE FROM secure_content_comment_projections WHERE post_id = ?1",
+                params![post_id],
+            )
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
     pub fn commit_content_root(
         &self,
         content_id: &str,
@@ -1520,13 +2273,12 @@ impl SecureContentStore {
                     "UPDATE secure_content_object_transfers
                      SET source_local_ref = ?1, updated_at_unix_ms = ?2
                      WHERE transfer_id = ?3 AND session_generation = ?4
-                       AND state NOT IN (?5, ?6, ?7)",
+                       AND state NOT IN (?5, ?6)",
                     params![
                         record.source_local_ref,
                         now_unix_ms(),
                         record.transfer_id,
                         bound_session_generation,
-                        ObjectTransferState::Complete as i32,
                         ObjectTransferState::Cancelled as i32,
                         ObjectTransferState::Terminal as i32,
                     ],
@@ -1694,6 +2446,11 @@ impl ObjectTransferRepository for SecureContentStore {
         last_error: Option<ObjectTransferErrorCode>,
         updated_at_unix_ms: i64,
     ) -> Result<(), ObjectTransferFailure> {
+        let restarts_completed_download = state == ObjectTransferState::Queued
+            && completed_chunk_bitmap.iter().all(|byte| *byte == 0)
+            && attempt_count == 0
+            && next_attempt_at_unix_ms == updated_at_unix_ms
+            && last_error.is_none();
         let changed = self
             .connection()
             .map_err(transfer_error)?
@@ -1710,6 +2467,11 @@ impl ObjectTransferRepository for SecureContentStore {
                        ?1 != ?11
                        AND state NOT IN (?11, ?12, ?13)
                      )
+                     OR (
+                       ?14 = 1
+                       AND direction = ?15
+                       AND state = ?13
+                     )
                    )",
                 params![
                     state as i32,
@@ -1725,6 +2487,8 @@ impl ObjectTransferRepository for SecureContentStore {
                     ObjectTransferState::Cancelled as i32,
                     ObjectTransferState::Terminal as i32,
                     ObjectTransferState::Complete as i32,
+                    i32::from(restarts_completed_download),
+                    ObjectTransferDirection::Download as i32,
                 ],
             )
             .map_err(|error| transfer_error(error.to_string()))?;
@@ -1798,6 +2562,50 @@ fn moment_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredMomentComm
     })
 }
 
+fn comment_draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCommentDraft> {
+    let request_sha256 = row
+        .get::<_, Option<Vec<u8>>>(12)?
+        .map(|value| fixed_32(value, "Comment request hash"))
+        .transpose()?;
+    let root_key = row
+        .get::<_, Option<Vec<u8>>>(13)?
+        .map(|value| fixed_32(value, "Comment root key"))
+        .transpose()?;
+    let publication_state = row
+        .get::<_, Option<i64>>(14)?
+        .map(PublicationState::try_from)
+        .transpose()
+        .map_err(conversion_error)?;
+    let retry_after_seconds = row
+        .get::<_, Option<i64>>(19)?
+        .map(|value| from_i64(value, "Comment retry after"))
+        .transpose()?;
+    let retry_not_before_unix_ms = row.get::<_, Option<i64>>(20)?;
+    Ok(StoredCommentDraft {
+        draft_id: row.get(0)?,
+        draft_revision: from_i64(row.get(1)?, "Comment draft revision")?,
+        post_id: row.get(2)?,
+        content_id: row.get(3)?,
+        generation: from_i64(row.get(4)?, "content generation")?,
+        reply_to_comment_id: row.get(5)?,
+        text: row.get(6)?,
+        intent_sha256: fixed_32(row.get(7)?, "Comment intent hash")?,
+        prepare_command_id: row.get(8)?,
+        submit_command_id: row.get(9)?,
+        plan_bytes: row.get(10)?,
+        request_bytes: row.get(11)?,
+        request_sha256,
+        root_key,
+        publication_state,
+        session_generation: from_i64(row.get(15)?, "session generation")?,
+        comment_id: row.get(16)?,
+        state: CommentState::try_from(row.get::<_, i64>(17)?).map_err(conversion_error)?,
+        error_code: row.get(18)?,
+        retry_after_seconds,
+        retry_not_before_unix_ms,
+    })
+}
+
 fn object_transfer_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObjectTransferRecord> {
     let direction = row.get::<_, i32>(4)?.try_into().map_err(conversion_error)?;
     let state = row.get::<_, i32>(5)?.try_into().map_err(conversion_error)?;
@@ -1833,6 +2641,13 @@ fn migrate(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(
             "PRAGMA foreign_keys = ON;
+             CREATE TABLE IF NOT EXISTS secure_content_runtime_state (
+                singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                session_generation INTEGER NOT NULL CHECK(session_generation >= 0)
+             );
+             INSERT OR IGNORE INTO secure_content_runtime_state (
+                singleton, session_generation
+             ) VALUES (1, 0);
              CREATE TABLE IF NOT EXISTS secure_content_prekey_commands (
                 command_id TEXT PRIMARY KEY,
                 key_kind INTEGER NOT NULL,
@@ -1905,6 +2720,42 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 projection_bytes BLOB NOT NULL,
                 updated_at_unix_ms INTEGER NOT NULL
              );
+             CREATE TABLE IF NOT EXISTS secure_content_comment_drafts (
+                draft_id TEXT NOT NULL,
+                draft_revision INTEGER NOT NULL,
+                post_id TEXT NOT NULL,
+                content_id TEXT NOT NULL,
+                reply_to_comment_id TEXT NOT NULL,
+                plaintext_text TEXT NOT NULL,
+                intent_sha256 BLOB NOT NULL CHECK(length(intent_sha256) = 32),
+                prepare_command_id TEXT NOT NULL,
+                submit_command_id TEXT UNIQUE,
+                plan_bytes BLOB,
+                request_bytes BLOB,
+                request_sha256 BLOB CHECK(request_sha256 IS NULL OR length(request_sha256) = 32),
+                root_key BLOB CHECK(root_key IS NULL OR length(root_key) = 32),
+                publication_state INTEGER,
+                generation INTEGER NOT NULL DEFAULT 0,
+                session_generation INTEGER NOT NULL,
+                comment_id TEXT,
+                state INTEGER NOT NULL,
+                error_code TEXT,
+                retry_after_seconds INTEGER,
+                retry_not_before_unix_ms INTEGER,
+                updated_at_unix_ms INTEGER NOT NULL,
+                PRIMARY KEY(draft_id, draft_revision)
+             );
+             CREATE INDEX IF NOT EXISTS idx_secure_content_comment_drafts_post
+               ON secure_content_comment_drafts(post_id, updated_at_unix_ms DESC);
+             CREATE TABLE IF NOT EXISTS secure_content_comment_projections (
+                post_id TEXT NOT NULL,
+                comment_id TEXT NOT NULL,
+                content_id TEXT NOT NULL,
+                generation INTEGER NOT NULL CHECK(generation > 0),
+                projection_bytes BLOB NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL,
+                PRIMARY KEY(post_id, comment_id)
+             );
              CREATE TABLE IF NOT EXISTS secure_content_pending_purges (
                 post_id TEXT PRIMARY KEY,
                 updated_at_unix_ms INTEGER NOT NULL
@@ -1956,6 +2807,28 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|error| error.to_string())?;
     }
+    let has_comment_retry_deadline = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(secure_content_comment_drafts)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns
+            .iter()
+            .any(|column| column == "retry_not_before_unix_ms")
+    };
+    if !has_comment_retry_deadline {
+        connection
+            .execute(
+                "ALTER TABLE secure_content_comment_drafts
+                 ADD COLUMN retry_not_before_unix_ms INTEGER",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -1964,6 +2837,22 @@ fn now_unix_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
         .unwrap_or_default()
+}
+
+fn retry_deadline(
+    now_unix_ms: i64,
+    retry_after_seconds: Option<u64>,
+) -> Result<Option<i64>, String> {
+    retry_after_seconds
+        .map(|seconds| {
+            let millis = seconds
+                .checked_mul(1_000)
+                .ok_or_else(|| "secure content Comment retry deadline overflowed".to_string())?;
+            now_unix_ms
+                .checked_add(to_i64(millis, "Comment retry delay")?)
+                .ok_or_else(|| "secure content Comment retry deadline overflowed".to_string())
+        })
+        .transpose()
 }
 
 fn to_i64(value: u64, field: &str) -> Result<i64, String> {
@@ -1998,6 +2887,25 @@ fn transfer_error(error: impl Into<String>) -> ObjectTransferFailure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_generation_remains_monotonic_after_store_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "secure-content-session-generation-{}-{}.sqlite",
+            std::process::id(),
+            now_unix_ms()
+        ));
+        let first = SecureContentStore::from_connection(Connection::open(&path).unwrap()).unwrap();
+        assert_eq!(first.claim_session_generation().unwrap(), 1);
+        assert_eq!(first.claim_session_generation().unwrap(), 2);
+        drop(first);
+
+        let reopened =
+            SecureContentStore::from_connection(Connection::open(&path).unwrap()).unwrap();
+        assert_eq!(reopened.claim_session_generation().unwrap(), 3);
+        drop(reopened);
+        let _ = std::fs::remove_file(path);
+    }
 
     fn publication() -> StoredPublication {
         let request_bytes = b"canonical-publication".to_vec();
@@ -2071,6 +2979,32 @@ mod tests {
             state,
             session_generation: 1,
             post_id: None,
+        }
+    }
+
+    fn comment_draft() -> StoredCommentDraft {
+        StoredCommentDraft {
+            draft_id: "comment-draft-1".to_string(),
+            draft_revision: 1,
+            post_id: "post-1".to_string(),
+            content_id: "comment-content-1".to_string(),
+            generation: 0,
+            reply_to_comment_id: String::new(),
+            text: "retained private Comment".to_string(),
+            intent_sha256: [3; 32],
+            prepare_command_id: "comment-prepare-1".to_string(),
+            submit_command_id: None,
+            plan_bytes: None,
+            request_bytes: None,
+            request_sha256: None,
+            root_key: None,
+            publication_state: None,
+            session_generation: 7,
+            comment_id: None,
+            state: CommentState::Editing,
+            error_code: None,
+            retry_after_seconds: None,
+            retry_not_before_unix_ms: None,
         }
     }
 
@@ -2386,6 +3320,159 @@ mod tests {
     }
 
     #[test]
+    fn completed_download_can_restart_after_plaintext_cache_eviction() {
+        let store = SecureContentStore::in_memory().unwrap();
+        let record = download_transfer();
+        let cache = Path::new(&record.source_local_ref);
+        store
+            .ensure_object_download_transfer(&record, "image/jpeg", cache)
+            .unwrap();
+        store
+            .update_transfer_progress(
+                &record.transfer_id,
+                ObjectTransferState::Complete,
+                &record.upload_id,
+                record.generation,
+                &[1],
+                0,
+                0,
+                None,
+                2,
+            )
+            .unwrap();
+
+        store
+            .update_transfer_progress(
+                &record.transfer_id,
+                ObjectTransferState::Queued,
+                &record.upload_id,
+                record.generation,
+                &[0],
+                0,
+                3,
+                None,
+                3,
+            )
+            .unwrap();
+
+        let restarted = store.object_transfer(&record.transfer_id).unwrap().unwrap();
+        assert_eq!(restarted.state, ObjectTransferState::Queued);
+        assert_eq!(restarted.completed_chunk_bitmap, vec![0]);
+        assert_eq!(restarted.next_attempt_at_unix_ms, 3);
+    }
+
+    #[test]
+    fn completed_download_rebinds_cache_path_after_session_restart() {
+        let path = std::env::temp_dir().join(format!(
+            "secure-content-download-cache-rebind-{}.sqlite",
+            ulid::Ulid::new()
+        ));
+        let store = SecureContentStore::from_connection(Connection::open(&path).unwrap()).unwrap();
+        assert_eq!(store.claim_session_generation().unwrap(), 1);
+
+        let mut record = download_transfer();
+        let old_cache = std::env::temp_dir().join(format!(
+            "secure-content-download-cache-old-{}.jpg",
+            ulid::Ulid::new()
+        ));
+        record.source_local_ref = old_cache.display().to_string();
+        store
+            .ensure_object_download_transfer(&record, "image/jpeg", &old_cache)
+            .unwrap();
+        store
+            .update_transfer_progress(
+                &record.transfer_id,
+                ObjectTransferState::Complete,
+                &record.upload_id,
+                record.generation,
+                &[1],
+                0,
+                0,
+                None,
+                2,
+            )
+            .unwrap();
+
+        assert_eq!(store.claim_session_generation().unwrap(), 2);
+        let new_cache = std::env::temp_dir().join(format!(
+            "secure-content-download-cache-new-{}.jpg",
+            ulid::Ulid::new()
+        ));
+        let mut rebound = record.clone();
+        rebound.source_local_ref = new_cache.display().to_string();
+        store
+            .ensure_object_download_transfer(&rebound, "image/jpeg", &new_cache)
+            .unwrap();
+
+        let persisted = store.object_transfer(&record.transfer_id).unwrap().unwrap();
+        assert_eq!(persisted.state, ObjectTransferState::Complete);
+        assert_eq!(persisted.source_local_ref, rebound.source_local_ref);
+        assert_eq!(persisted.descriptor_sha256, record.descriptor_sha256);
+        assert_eq!(persisted.object_key, record.object_key);
+        assert_eq!(persisted.base_nonce, record.base_nonce);
+
+        drop(store);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn terminal_downloads_reject_cache_path_rebinding_after_session_restart() {
+        let store = SecureContentStore::in_memory().unwrap();
+        let mut records = Vec::new();
+        for (suffix, state) in [
+            ("cancelled", ObjectTransferState::Cancelled),
+            ("terminal", ObjectTransferState::Terminal),
+        ] {
+            let mut record = download_transfer();
+            record.transfer_id = format!("social-download-{suffix}");
+            record.source_local_ref = format!("/tmp/secure-content-{suffix}-old.jpg");
+            store
+                .ensure_object_download_transfer(
+                    &record,
+                    "image/jpeg",
+                    Path::new(&record.source_local_ref),
+                )
+                .unwrap();
+            store
+                .update_transfer_progress(
+                    &record.transfer_id,
+                    state,
+                    &record.upload_id,
+                    record.generation,
+                    &[0],
+                    0,
+                    0,
+                    None,
+                    2,
+                )
+                .unwrap();
+            records.push(record);
+        }
+
+        store.claim_session_generation().unwrap();
+        for record in records {
+            let original_cache = record.source_local_ref.clone();
+            let mut rebound = record.clone();
+            rebound.source_local_ref = format!("{original_cache}.new");
+            assert!(store
+                .ensure_object_download_transfer(
+                    &rebound,
+                    "image/jpeg",
+                    Path::new(&rebound.source_local_ref),
+                )
+                .is_err());
+            assert_eq!(
+                store
+                    .object_transfer(&record.transfer_id)
+                    .unwrap()
+                    .unwrap()
+                    .source_local_ref,
+                original_cache
+            );
+        }
+    }
+
+    #[test]
     fn secure_content_download_completion_cas_rejects_stale_session_generation() {
         let path = std::env::temp_dir().join(format!(
             "secure-content-download-completion-fence-{}.sqlite",
@@ -2564,5 +3651,265 @@ mod tests {
         assert!(store
             .reserve_moment_draft(&moment_draft("content-other", 4))
             .is_err());
+    }
+
+    #[test]
+    fn secure_content_comment_retry_preserves_plaintext_and_submission_identity() {
+        let store = SecureContentStore::in_memory().unwrap();
+        let candidate = comment_draft();
+        let draft = store.reserve_comment_draft(&candidate).unwrap();
+        let mut replay_candidate = candidate.clone();
+        replay_candidate.content_id = "ignored-new-content-id".to_string();
+        assert_eq!(
+            store.reserve_comment_draft(&replay_candidate).unwrap(),
+            draft,
+        );
+        assert_eq!(draft.state, CommentState::Editing);
+        assert!(store
+            .set_comment_draft_state(
+                &draft.draft_id,
+                draft.draft_revision,
+                CommentState::Encrypting,
+                None,
+                None,
+            )
+            .unwrap());
+
+        let request = b"encrypted-comment-request";
+        let request_sha256: [u8; 32] = Sha256::digest(request).into();
+        store
+            .persist_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                4,
+                "comment-submit-1",
+                b"comment-plan",
+                request,
+                &request_sha256,
+                &[9; 32],
+                7,
+            )
+            .unwrap();
+        let acquired = store
+            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, 7)
+            .unwrap();
+        assert_eq!(acquired.state, CommentState::Submitting);
+        assert_eq!(
+            acquired.submit_command_id.as_deref(),
+            Some("comment-submit-1")
+        );
+
+        assert!(store
+            .mark_comment_retryable(
+                &draft.draft_id,
+                draft.draft_revision,
+                7,
+                PublicationState::PendingPublication,
+                CommentState::RateLimited,
+                "COMMENT_RATE_LIMITED",
+                Some(17),
+            )
+            .unwrap());
+        let retained = store
+            .comment_draft(&draft.draft_id, draft.draft_revision)
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.text, "retained private Comment");
+        assert_eq!(retained.state, CommentState::RateLimited);
+        assert_eq!(retained.retry_after_seconds, Some(17));
+        assert!(retained
+            .retry_not_before_unix_ms
+            .is_some_and(|deadline| deadline > now_unix_ms()));
+        assert_eq!(retained.request_sha256, Some(request_sha256));
+
+        assert!(store
+            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, 7)
+            .is_err());
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE secure_content_comment_drafts
+                 SET retry_not_before_unix_ms = ?1
+                 WHERE draft_id = ?2 AND draft_revision = ?3",
+                params![
+                    now_unix_ms() - 1,
+                    draft.draft_id,
+                    to_i64(draft.draft_revision, "Comment draft revision").unwrap(),
+                ],
+            )
+            .unwrap();
+        assert!(store
+            .reset_comment_submission_for_reprepare(
+                &draft.draft_id,
+                draft.draft_revision,
+                7,
+                "comment-content-retry",
+                "comment-prepare-retry",
+            )
+            .unwrap());
+        let reset = store
+            .comment_draft(&draft.draft_id, draft.draft_revision)
+            .unwrap()
+            .unwrap();
+        assert_eq!(reset.text, "retained private Comment");
+        assert_eq!(reset.content_id, "comment-content-retry");
+        assert_eq!(reset.prepare_command_id, "comment-prepare-retry");
+        assert_eq!(reset.state, CommentState::Editing);
+        assert!(reset.plan_bytes.is_none());
+        assert!(reset.request_bytes.is_none());
+        assert!(reset.root_key.is_none());
+        let replacement = b"replacement-encrypted-comment-request";
+        let replacement_sha256: [u8; 32] = Sha256::digest(replacement).into();
+        store
+            .persist_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                5,
+                "comment-submit-2",
+                b"replacement-comment-plan",
+                replacement,
+                &replacement_sha256,
+                &[8; 32],
+                7,
+            )
+            .unwrap();
+        let retried = store
+            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, 7)
+            .unwrap();
+        assert_eq!(
+            retried.submit_command_id.as_deref(),
+            Some("comment-submit-2")
+        );
+        assert!(!store
+            .mark_comment_committed_pending_readback(
+                &draft.draft_id,
+                draft.draft_revision,
+                8,
+                "comment-1",
+            )
+            .unwrap());
+        assert!(store
+            .mark_comment_committed_pending_readback(
+                &draft.draft_id,
+                draft.draft_revision,
+                7,
+                "comment-1",
+            )
+            .unwrap());
+        let committed = store
+            .comment_draft(&draft.draft_id, draft.draft_revision)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            committed.publication_state,
+            Some(PublicationState::CommittedPendingReadback)
+        );
+        assert!(committed.text.is_empty());
+        assert!(store
+            .acquire_comment_submission(&draft.draft_id, draft.draft_revision, 7)
+            .is_err());
+        assert!(store
+            .mark_comment_readback_failed(
+                &draft.draft_id,
+                draft.draft_revision,
+                7,
+                "COMMENT_READBACK_FAILED",
+                Some(2),
+            )
+            .unwrap());
+        let pending_readback = store
+            .comment_draft(&draft.draft_id, draft.draft_revision)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            pending_readback.publication_state,
+            Some(PublicationState::CommittedPendingReadback)
+        );
+        assert_eq!(
+            pending_readback.error_code.as_deref(),
+            Some("COMMENT_READBACK_FAILED")
+        );
+        assert!(store
+            .mark_comment_posted(&draft.draft_id, draft.draft_revision, 7, "comment-1",)
+            .unwrap());
+        let posted = store
+            .comment_draft(&draft.draft_id, draft.draft_revision)
+            .unwrap()
+            .unwrap();
+        assert_eq!(posted.state, CommentState::Posted);
+        assert!(posted.text.is_empty());
+        assert_eq!(posted.comment_id.as_deref(), Some("comment-1"));
+    }
+
+    #[test]
+    fn secure_content_comment_reprepare_accepts_unsent_submitting_draft() {
+        let store = SecureContentStore::in_memory().unwrap();
+        let draft = comment_draft();
+        store.reserve_comment_draft(&draft).unwrap();
+        let request = b"encrypted-comment-request";
+        let request_sha256: [u8; 32] = Sha256::digest(request).into();
+        store
+            .persist_comment_submission(
+                &draft.draft_id,
+                draft.draft_revision,
+                4,
+                "comment-submit-1",
+                b"expired-comment-plan",
+                request,
+                &request_sha256,
+                &[9; 32],
+                draft.session_generation,
+            )
+            .unwrap();
+
+        assert!(store
+            .reset_comment_submission_for_reprepare(
+                &draft.draft_id,
+                draft.draft_revision,
+                draft.session_generation,
+                "comment-content-retry",
+                "comment-prepare-retry",
+            )
+            .unwrap());
+        let reset = store
+            .comment_draft(&draft.draft_id, draft.draft_revision)
+            .unwrap()
+            .unwrap();
+        assert_eq!(reset.state, CommentState::Editing);
+        assert_eq!(reset.text, draft.text);
+        assert_eq!(reset.content_id, "comment-content-retry");
+        assert!(reset.request_bytes.is_none());
+        assert!(reset.root_key.is_none());
+    }
+
+    #[test]
+    fn secure_content_comment_root_and_projection_commit_atomically() {
+        let store = SecureContentStore::in_memory().unwrap();
+        store
+            .commit_comment_root(
+                "comment-content-1",
+                3,
+                "post-1",
+                "comment-1",
+                &[7; 32],
+                None,
+                b"{\"verified\":true}",
+            )
+            .unwrap();
+
+        assert_eq!(
+            store.content_root("comment-content-1", 3).unwrap(),
+            Some([7; 32]),
+        );
+        assert_eq!(
+            store.comment_projection("post-1", "comment-1").unwrap(),
+            Some(b"{\"verified\":true}".to_vec()),
+        );
+        store.clear_comment_projections("post-1").unwrap();
+        assert_eq!(
+            store.comment_projection("post-1", "comment-1").unwrap(),
+            None,
+        );
     }
 }

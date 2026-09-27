@@ -17,6 +17,7 @@ import {
   buildChatThreadSurface,
   buildSocialHostEvent,
   canSubmitChatComposerDraft,
+  chatAttachmentDurationMs,
   chatUnreadForParticipant,
   chatE2eeProjectionCanSend,
   chatE2eeProjectionError,
@@ -40,6 +41,7 @@ import {
   failChatOutboxItem,
   filterUnreadChatNotifications,
   formatChatAttachmentSize,
+  isChatVoiceNoteAttachment,
   completeChatOutboxItem,
   markChatOutboxSending,
   mergeChatMessages,
@@ -94,6 +96,8 @@ describe('chat composer media type mapping', () => {
 describe('chat media contract helpers', () => {
   it('classifies attachments by mime type or filename fallback', () => {
     expect(chatMediaKindFromMimeFilename('image/png', 'photo.bin')).toBe('image');
+    expect(chatMediaKindFromMimeFilename('audio/mp4; codecs=mp4a.40.2', 'voice.webm')).toBe('audio');
+    expect(chatMediaKindFromMimeFilename('video/webm', 'voice.m4a')).toBe('video');
     expect(chatMediaKindFromMimeFilename('', 'clip.mp4')).toBe('video');
     expect(chatMediaKindFromMimeFilename('', 'voice.wav')).toBe('audio');
     expect(chatMediaKindFromMimeFilename('application/pdf', 'paper.pdf')).toBe('file');
@@ -108,6 +112,19 @@ describe('chat media contract helpers', () => {
     expect(formatChatAttachmentSize(0)).toBe('');
     expect(normalizeChatAttachmentVisibility('chat')).toBe('chat');
     expect(normalizeChatAttachmentVisibility('invalid')).toBeUndefined();
+  });
+
+  it('recognizes only typed audio attachments with durable duration as voice notes', () => {
+    const voice = {
+      mimeType: 'audio/webm',
+      contentKind: 'voice_note' as const,
+      durationMs: 1_250,
+    };
+    expect(isChatVoiceNoteAttachment(voice)).toBe(true);
+    expect(chatAttachmentDurationMs(voice)).toBe(1_250);
+    expect(isChatVoiceNoteAttachment({ ...voice, durationMs: 0 })).toBe(false);
+    expect(isChatVoiceNoteAttachment({ ...voice, mimeType: 'application/octet-stream' })).toBe(false);
+    expect(isChatVoiceNoteAttachment({ ...voice, contentKind: 'file' })).toBe(false);
   });
 });
 
@@ -141,7 +158,7 @@ describe('chat composer capability profiles', () => {
       emoji: true,
       file: true,
       screenshot: false,
-      voice: true,
+      voice: false,
     });
     expect(canSubmitChatComposerDraft({
       text: '',

@@ -575,10 +575,69 @@ func (s *ChatTaskService) settleInterruptedChatStep(
 		if len(outcomeErrorJSON) > 0 {
 			messageUpdates["error_json"] = outcomeErrorJSON
 		}
-		if err := tx.Model(&persistence.AgentMessage{}).
+		messageResult := tx.Model(&persistence.AgentMessage{}).
 			Where("turn_id = ? AND role = ? AND status = ?", turn.ID, string(domain.MessageRoleAssistant), "pending").
-			Updates(messageUpdates).Error; err != nil {
-			return err
+			Updates(messageUpdates)
+		if messageResult.Error != nil {
+			return messageResult.Error
+		}
+		if messageResult.RowsAffected == 0 &&
+			terminalStatus == domain.TurnStatusInterrupted {
+			var assistantMessageCount int64
+			if err := tx.Model(&persistence.AgentMessage{}).
+				Where(
+					"turn_id = ? AND role = ?",
+					turn.ID,
+					string(domain.MessageRoleAssistant),
+				).
+				Count(&assistantMessageCount).Error; err != nil {
+				return err
+			}
+			var admittedUserMessageCount int64
+			if assistantMessageCount == 0 {
+				if err := tx.Model(&persistence.AgentMessage{}).
+					Where(
+						"turn_id = ? AND role = ?",
+						turn.ID,
+						string(domain.MessageRoleUser),
+					).
+					Count(&admittedUserMessageCount).Error; err != nil {
+					return err
+				}
+			}
+			if assistantMessageCount == 0 && admittedUserMessageCount > 0 {
+				var maxSeq struct{ MaxSeq int64 }
+				if err := tx.Model(&persistence.AgentMessage{}).
+					Where("conversation_id = ?", turn.ConversationID).
+					Select("COALESCE(MAX(seq), 0) AS max_seq").
+					Scan(&maxSeq).Error; err != nil {
+					return err
+				}
+				content := ""
+				messageID := generateID("msg")
+				if err := tx.Create(&persistence.AgentMessage{
+					ID:              messageID,
+					ConversationID:  turn.ConversationID,
+					TurnID:          &turn.ID,
+					Role:            string(domain.MessageRoleAssistant),
+					Status:          string(domain.TurnStatusInterrupted),
+					Content:         &content,
+					ErrorJSON:       outcomeErrorJSON,
+					Seq:             maxSeq.MaxSeq + 1,
+					ParentMessageID: optionalString(conversation.ActiveBranchMessageID),
+					CreatedAt:       now,
+					UpdatedAt:       now,
+				}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&conversation).Updates(map[string]interface{}{
+					"active_branch_message_id": messageID,
+					"updated_at":               now,
+					"version":                  gorm.Expr("version + 1"),
+				}).Error; err != nil {
+					return err
+				}
+			}
 		}
 		if err := tx.Model(&persistence.ExecutionStep{}).
 			Where(

@@ -15,9 +15,9 @@ export interface MobileChatAttachmentDraft {
   readonly filename: string;
   readonly mimeType: string;
   readonly previewUrl: string;
-  readonly voiceNote?: MessagingVoiceNoteMetadata;
   readonly attempt: number;
   readonly status: ChatAttachmentDraftStatus;
+  readonly voiceNote?: MessagingVoiceNoteMetadata;
   readonly attachment?: MessagingAttachmentStageProjection;
 }
 

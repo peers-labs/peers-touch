@@ -1,4 +1,4 @@
-import type { FriendChatSession } from './socialProjection';
+import type { FriendChatSession } from '../gen/proto/domain/chat/friend_chat_pb';
 import type { Conversation, ConversationMember } from '../gen/proto/domain/chat/conversation_pb';
 import { ConversationKind, ConversationStatus, MemberRole, MemberStatus } from '../gen/proto/domain/chat/conversation_pb';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
@@ -192,8 +192,10 @@ export function normalizeConversation(raw: unknown): Conversation {
     createdAt: normalizeTimestamp(r.createdAt ?? r.created_at),
     updatedAt: normalizeTimestamp(r.updatedAt ?? r.updated_at),
     name: stringValue(r.name),
+    description: stringValue(r.description),
     maxMembers: numberValue(r.maxMembers ?? r.max_members),
     avatarCid: stringValue(r.avatarCid, r.avatar_cid),
+    ownerPtid: stringValue(r.ownerPtid, r.owner_ptid),
   } as Conversation;
 }
 

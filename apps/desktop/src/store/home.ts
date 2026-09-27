@@ -113,7 +113,15 @@ export const useHomeStore = createDesktopStore<HomeState>('home', (set) => ({
       && state.projection.ptid === projection.ptid
       && projection.revision < state.projection.revision
     ) {
-      return { loading: false };
+      return {
+        projection: {
+          ...state.projection,
+          freshness: HomeProjectionFreshness.STALE,
+          sliceErrors: projection.sliceErrors,
+        },
+        loading: false,
+        error: null,
+      };
     }
     return {
       projection: normalizeHomeProjection(projection),

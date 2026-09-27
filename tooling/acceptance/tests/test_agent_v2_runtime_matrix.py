@@ -84,6 +84,28 @@ class AgentV2RuntimeMatrixTest(unittest.TestCase):
             "orchestration_guard",
         )
 
+    def test_every_row_declares_profile_and_complete_role_policy(self) -> None:
+        gates = {
+            row["gate"]
+            for row in self.reviewed["rows"]
+        }
+        for gate_id in gates:
+            policies = self.module.role_policy_by_row(
+                self.reviewed,
+                gate_id,
+            )
+            profiles = self.module.runtime_attestation_profile_by_row(
+                self.reviewed,
+                gate_id,
+            )
+            rows = {
+                row["id"]
+                for row in self.reviewed["rows"]
+                if row["gate"] == gate_id
+            }
+            self.assertEqual(set(policies), rows)
+            self.assertEqual(set(profiles), rows)
+
     def test_rejects_overlapping_role_policy(self) -> None:
         matrix = copy.deepcopy(self.reviewed)
         matrix["rows"][0]["role_policy"]["not_applicable"].append(
@@ -98,6 +120,15 @@ class AgentV2RuntimeMatrixTest(unittest.TestCase):
         with self.assertRaisesRegex(
             self.module.MatrixError,
             "must include",
+        ):
+            self.module.expand_matrix(matrix)
+
+    def test_rejects_missing_role_policy(self) -> None:
+        matrix = copy.deepcopy(self.reviewed)
+        matrix["rows"][0].pop("role_policy")
+        with self.assertRaisesRegex(
+            self.module.MatrixError,
+            "requires role_policy",
         ):
             self.module.expand_matrix(matrix)
 

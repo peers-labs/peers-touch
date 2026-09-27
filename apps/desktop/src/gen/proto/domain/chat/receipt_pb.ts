@@ -276,4 +276,3 @@ export type SubmitConversationDeliveryReceiptResponse = Message<"peers_touch.mod
  */
 export const SubmitConversationDeliveryReceiptResponseSchema: GenMessage<SubmitConversationDeliveryReceiptResponse> = /*@__PURE__*/
   messageDesc(file_domain_chat_receipt, 7);
-

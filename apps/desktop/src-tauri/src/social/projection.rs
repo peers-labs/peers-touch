@@ -60,6 +60,10 @@ pub struct PrivateMomentMediaProjection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub plaintext_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plaintext_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mime_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
@@ -318,7 +322,7 @@ pub fn decrypt_projection_from_response(
             .as_ref()
             .map(|actor| actor.ptid.clone())
             .unwrap_or_default(),
-        audience_kind: "FRIENDS".to_string(),
+        audience_kind: private_audience_kind(metadata.audience_kind)?.to_string(),
         state: PrivateReadState::ContentReady,
         content: Some(content),
         error_code: None,
@@ -355,7 +359,7 @@ pub(super) fn verify_recovery_envelope_for_response(
         expected_post_id,
         response,
         Some(sender_signing_key),
-        None,
+        Some(recovery_epoch),
     )?;
     let parts = private_response_parts(response)?;
     let sender = validate_resource_identity(expected_post_id, &parts)?;
@@ -470,7 +474,7 @@ fn validate_resource_identity(
         || parts.resource.content_id != expected_post_id
         || parts.resource.generation == 0
         || parts.metadata.is_deleted
-        || parts.metadata.audience_kind != social::audience::Kind::Friends as i32
+        || !is_valid_private_audience_kind(parts.metadata.audience_kind)
         || metadata_author != proof_actor
         || envelope_binding
             .and_then(|binding| binding.sender.as_ref())
@@ -531,6 +535,8 @@ fn project_plaintext(
                         state: PrivateMediaState::MediaPlaceholder,
                         render_url: None,
                         local_path: None,
+                        plaintext_sha256: None,
+                        plaintext_size: None,
                         mime_type: Some(metadata.mime_type.clone()),
                         width: (metadata.width > 0).then_some(metadata.width),
                         height: (metadata.height > 0).then_some(metadata.height),
@@ -660,7 +666,7 @@ fn verify_response_integrity_at(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn verify_viewer_envelope(
+pub(super) fn verify_viewer_envelope(
     session: &SecureContentSession,
     envelope: &wire::ViewerContentKeyEnvelope,
     payload: &wire::EncryptedPayload,
@@ -718,8 +724,27 @@ fn verify_viewer_envelope(
                 && actor.ptid == session.key.actor_ptid
                 && expected_recovery_epoch
                     .map(|epoch| epoch == envelope.principal_epoch)
-                    .unwrap_or(true) => {}
-        _ => return Err("private Moment envelope recipient kind or epoch is invalid".to_string()),
+                    .unwrap_or(false) => {}
+        _ => {
+            // #region debug-point C:recovery-recipient-identity
+            let (recovery_actor, actor_matches) = match envelope.recipient.as_ref() {
+                Some(wire::viewer_content_key_envelope::Recipient::RecoveryActor(actor)) => {
+                    (true, actor.ptid == session.key.actor_ptid)
+                }
+                _ => (false, false),
+            };
+            let key_kind_matches = binding.recipient_key_kind
+                == wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32;
+            let epoch_matches = expected_recovery_epoch
+                .map(|epoch| epoch == envelope.principal_epoch)
+                .unwrap_or(false);
+            return Err(format!(
+                "private Moment envelope recipient kind or epoch is invalid \
+                 [debug: recovery_actor={recovery_actor}, key_kind={key_kind_matches}, \
+                 actor={actor_matches}, epoch={epoch_matches}]"
+            ));
+            // #endregion
+        }
     }
     let signature = Signature::from_slice(&envelope.sender_signature)
         .map_err(|_| "private Moment sender signature is invalid".to_string())?;
@@ -728,7 +753,7 @@ fn verify_viewer_envelope(
         .map_err(|_| "private Moment sender signature is invalid".to_string())
 }
 
-fn validated_object_descriptor_set_hash(
+pub(super) fn validated_object_descriptor_set_hash(
     private: &social::PrivateContentAccess,
     resource: &wire::SecureResourceRef,
 ) -> Result<[u8; 32], String> {
@@ -770,7 +795,7 @@ pub(super) fn object_descriptor_set_hash(
     Ok(Sha256::digest(encoder.finish()).into())
 }
 
-fn verify_station_attestation(
+pub(super) fn verify_station_attestation(
     session: &SecureContentSession,
     attestation: &wire::StationContentSigningKeyAttestation,
     now: i64,
@@ -818,7 +843,7 @@ fn verify_station_attestation(
     .map_err(|_| "private Moment proof key is invalid".to_string())
 }
 
-fn current_unix_seconds() -> i64 {
+pub(super) fn current_unix_seconds() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs().min(i64::MAX as u64) as i64)
@@ -829,18 +854,49 @@ fn private_moment_kind(post_type: i32) -> Result<social::PrivateMomentKind, Stri
     match social::PostType::try_from(post_type).ok() {
         Some(social::PostType::Text) => Ok(social::PrivateMomentKind::Text),
         Some(social::PostType::Image) => Ok(social::PrivateMomentKind::Image),
-        _ => Err("private Moment subtype is unsupported by the W7 pilot".to_string()),
+        Some(social::PostType::Video) => Ok(social::PrivateMomentKind::Video),
+        Some(social::PostType::Link) => Ok(social::PrivateMomentKind::Link),
+        Some(social::PostType::Poll) => Ok(social::PrivateMomentKind::Poll),
+        Some(social::PostType::Repost) => Ok(social::PrivateMomentKind::Repost),
+        Some(social::PostType::Location) => Ok(social::PrivateMomentKind::Location),
+        _ => Err("private Moment subtype is unsupported".to_string()),
     }
 }
 
-fn canonical_identifier(value: &str) -> bool {
+pub(super) fn canonical_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.trim() == value
         && value.len() <= MAX_IDENTIFIER_BYTES
         && !value.as_bytes().contains(&0)
 }
 
-fn checked_timestamp_millis(
+fn is_valid_private_audience_kind(kind: i32) -> bool {
+    matches!(
+        social::audience::Kind::try_from(kind),
+        Ok(social::audience::Kind::Friends
+            | social::audience::Kind::Followers
+            | social::audience::Kind::Circle
+            | social::audience::Kind::Group
+            | social::audience::Kind::Self_
+            | social::audience::Kind::CustomAllow
+            | social::audience::Kind::CustomDeny)
+    )
+}
+
+fn private_audience_kind(kind: i32) -> Result<&'static str, String> {
+    match social::audience::Kind::try_from(kind) {
+        Ok(social::audience::Kind::Friends) => Ok("FRIENDS"),
+        Ok(social::audience::Kind::Followers) => Ok("FOLLOWERS"),
+        Ok(social::audience::Kind::Circle) => Ok("CIRCLE"),
+        Ok(social::audience::Kind::Group) => Ok("GROUP"),
+        Ok(social::audience::Kind::Self_) => Ok("SELF"),
+        Ok(social::audience::Kind::CustomAllow) => Ok("CUSTOM_ALLOW"),
+        Ok(social::audience::Kind::CustomDeny) => Ok("CUSTOM_DENY"),
+        _ => Err("private Moment audience kind is unsupported".to_string()),
+    }
+}
+
+pub(super) fn checked_timestamp_millis(
     value: Option<&prost_types::Timestamp>,
     field: &str,
 ) -> Result<i64, String> {
@@ -1180,6 +1236,38 @@ mod tests {
             None,
             None,
             now,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn secure_content_recovery_verifies_the_attached_historical_epoch() {
+        let now = current_unix_seconds();
+        let station_key = SigningKey::from_bytes(&[7; 32]);
+        let proof_key = SigningKey::from_bytes(&[8; 32]);
+        let sender_key = SigningKey::from_bytes(&[6; 32]);
+        let session = session(&station_key);
+        let mut response = signed_response(&station_key, &proof_key, &sender_key, now);
+        let envelope = envelope_mut(&mut response);
+        envelope.binding.as_mut().unwrap().recipient_key_kind =
+            wire::ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32;
+        envelope.recipient = Some(wire::viewer_content_key_envelope::Recipient::RecoveryActor(
+            actor::ActorRef {
+                ptid: session.key.actor_ptid.clone(),
+                kind: actor::ActorKind::Person as i32,
+                ..Default::default()
+            },
+        ));
+        resign_envelope(envelope, &sender_key);
+        let recovery_envelope = envelope.clone();
+
+        verify_recovery_envelope_for_response(
+            &session,
+            "post-1",
+            &response,
+            &recovery_envelope,
+            recovery_envelope.principal_epoch,
+            &sender_key.verifying_key(),
         )
         .unwrap();
     }

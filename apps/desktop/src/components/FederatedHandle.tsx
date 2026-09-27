@@ -9,7 +9,8 @@
 //
 // Wire shape:
 //   • `localPart` is the bare username ("alice"), without "@".
-//   • `home`     is host[:port] from ActorProfile or FederationResolveView. Empty / undefined → render
+//   • `home`     is host[:port] — the FederationSelfView /
+//     FederationResolveView field. Empty / undefined → render
 //     "@<localPart>" only.
 //
 // Style is intentionally minimal: a small secondary-colored span the

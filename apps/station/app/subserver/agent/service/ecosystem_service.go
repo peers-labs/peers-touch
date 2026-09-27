@@ -1,6 +1,6 @@
 // Changelog:
 // 2026-08-14 — M11 localStorage→Station migration: EcosystemService with CRUD for
-//   AgentGroups, TopicComments, CustomPlugins.
+//   Agent Groups and Topic Comments.
 
 package service
 
@@ -100,54 +100,4 @@ func (s *EcosystemService) ListTopicComments(ctx context.Context, topicKey strin
 		return nil, err
 	}
 	return comments, nil
-}
-
-// --- Custom Plugins ---
-
-func (s *EcosystemService) CreateCustomPlugin(ctx context.Context, plugin *persistence.EcosystemCustomPlugin) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-	if plugin.ID == "" {
-		plugin.ID = uuid.New().String()
-	}
-	return db.WithContext(ctx).Create(plugin).Error
-}
-
-func (s *EcosystemService) UpdateCustomPlugin(ctx context.Context, plugin *persistence.EcosystemCustomPlugin) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-	return db.WithContext(ctx).Model(plugin).Updates(map[string]interface{}{
-		"name":          plugin.Name,
-		"description":   plugin.Description,
-		"endpoint":      plugin.Endpoint,
-		"method":        plugin.Method,
-		"auth_type":     plugin.AuthType,
-		"input_schema":  plugin.InputSchema,
-		"output_schema": plugin.OutputSchema,
-		"enabled":       plugin.Enabled,
-	}).Error
-}
-
-func (s *EcosystemService) DeleteCustomPlugin(ctx context.Context, id string) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-	return db.WithContext(ctx).Delete(&persistence.EcosystemCustomPlugin{}, "id = ?", id).Error
-}
-
-func (s *EcosystemService) ListCustomPlugins(ctx context.Context, ownerActorPTID string) ([]persistence.EcosystemCustomPlugin, error) {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var plugins []persistence.EcosystemCustomPlugin
-	if err := db.WithContext(ctx).Where("owner_actor_ptid = ?", ownerActorPTID).Order("created_at DESC").Find(&plugins).Error; err != nil {
-		return nil, err
-	}
-	return plugins, nil
 }

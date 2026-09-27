@@ -35,7 +35,7 @@
       "DWF-D21",
       "DWF-D22",
       "DWF-D23",
-      "DWF-D25"
+      "DWF-D27"
     ]
   },
   "scope": {

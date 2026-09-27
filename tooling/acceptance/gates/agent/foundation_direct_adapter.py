@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import json
+import os
+import time
+import urllib.request
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -396,6 +400,49 @@ class DirectRuntimeEvidenceError(RuntimeError):
     """The production capture cannot prove a direct-runtime tuple."""
 
 
+# region debug-point A-D:foundation-permission-denied
+def _report_unsupported_cell(runtime_tuple: FoundationTuple) -> None:
+    if os.environ.get("DEBUG_SESSION_ID") != "foundation-permission-denied":
+        return
+    payload = json.dumps(
+        {
+            "sessionId": "foundation-permission-denied",
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": "A-D",
+            "location": "foundation_direct_adapter.py:_observe",
+            "msg": "[DEBUG] direct-runtime-cell-unimplemented",
+            "data": {
+                "cell": runtime_tuple.cell,
+                "row": runtime_tuple.row,
+                "platform": runtime_tuple.platform,
+                "locale": runtime_tuple.locale,
+                "requiredAssertionRegistered": (
+                    runtime_tuple.cell in REQUIRED_ASSERTIONS
+                ),
+            },
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(
+                os.environ.get(
+                    "DEBUG_SERVER_URL",
+                    "http://127.0.0.1:7779/event",
+                ),
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            ),
+            timeout=1,
+        ).read()
+    except Exception:
+        pass
+
+
+# endregion
+
+
 @dataclass(frozen=True)
 class DirectRuntimeProbeInput:
     platform: str
@@ -439,6 +486,7 @@ class DirectRuntimeFoundationAdapter:
             )
         required_assertions = REQUIRED_ASSERTIONS.get(runtime_tuple.cell)
         if required_assertions is None:
+            _report_unsupported_cell(runtime_tuple)
             raise DirectRuntimeEvidenceError(
                 f"{runtime_tuple.cell}: direct-runtime group is not implemented"
             )
@@ -484,6 +532,7 @@ class DirectRuntimeFoundationAdapter:
             raise DirectRuntimeEvidenceError(
                 f"{runtime_tuple.cell}: receiver DOM is not visible"
             )
+        roles["receiver-dom"]["expectedVisible"] = True
         if roles["side-effect-count"].get("count", 0) > roles[
             "side-effect-count"
         ].get("maximum", -1):

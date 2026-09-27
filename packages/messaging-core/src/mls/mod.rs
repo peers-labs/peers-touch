@@ -83,6 +83,8 @@ mod test_support {
                     federation_id: "federation-1".to_string(),
                     kind: crate::proto::chat::ConversationKind::Group as i32,
                     name: String::new(),
+                    description: String::new(),
+                    avatar_object_id: String::new(),
                     owner_ptid: "ptid:alice".to_string(),
                     members: Vec::new(),
                     membership_epoch,

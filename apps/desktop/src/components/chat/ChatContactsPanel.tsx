@@ -78,8 +78,13 @@ export function ChatContactsPanel({
     acceptFriendRequest: s.acceptFriendRequest,
     rejectFriendRequest: s.rejectFriendRequest,
   }));
-  const { federations, actorStationEntries } = useActiveChatFederationSlice((s) => ({
+  const {
+    federations,
+    memberStationsByFederation,
+    actorStationEntries,
+  } = useActiveChatFederationSlice((s) => ({
     federations: s.federations,
+    memberStationsByFederation: s.memberStationsByFederation,
     actorStationEntries: s.actorStationEntries,
   }));
 
@@ -118,6 +123,14 @@ export function ChatContactsPanel({
   );
   const stationNamesByPeerId = useMemo(() => {
     const candidates = new Map<string, Set<string>>();
+    Object.values(memberStationsByFederation).flat().forEach((station) => {
+      const peerId = station.stationPeerId.trim();
+      const name = station.stationName.trim();
+      if (!peerId || !name) return;
+      const names = candidates.get(peerId) ?? new Set<string>();
+      names.add(name);
+      candidates.set(peerId, names);
+    });
     Object.values(actorStationEntries).forEach((entry) => {
       const peerId = entry.homeStationPeerId.trim();
       const name = entry.homeStationName.trim();
@@ -131,7 +144,7 @@ export function ChatContactsPanel({
         .filter(([, names]) => names.size === 1)
         .map(([peerId, names]) => [peerId, [...names][0] ?? '']),
     );
-  }, [actorStationEntries]);
+  }, [actorStationEntries, memberStationsByFederation]);
   const stationNamesByActorPtid = useMemo(
     () => Object.fromEntries(
       Object.entries(actorStationEntries)

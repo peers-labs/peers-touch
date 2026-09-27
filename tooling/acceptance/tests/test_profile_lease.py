@@ -137,6 +137,35 @@ class ProfileLeaseTests(unittest.TestCase):
         self.assertIn("tooling.acceptance.core.lease", source)
         self.assertIn('--resource "$env_name"', source)
 
+    def test_deploy_script_forwards_only_valid_capability_scenario_environment(
+        self,
+    ) -> None:
+        deploy_source = (
+            REPO_ROOT / "tooling" / "scripts" / "deploy" / "deploy.sh"
+        ).read_text(encoding="utf-8")
+        compose_source = (
+            REPO_ROOT / "tooling" / "docker" / "compose.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("acceptance_runtime_env_prefix()", deploy_source)
+        self.assertIn('[[ "$PT_DEPLOY_ROLE" != "station" ]]', deploy_source)
+        self.assertIn('[[ "$environment" != "home-station" ]]', deploy_source)
+        self.assertIn('[[ "$scenario_control" != "1" ]]', deploy_source)
+        self.assertIn(
+            '[[ ! "$run_id" =~ ^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{32}$ ]]',
+            deploy_source,
+        )
+        self.assertIn(
+            "${ACCEPTANCE_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}",
+            deploy_source,
+        )
+        for variable in (
+            "PT_ACCEPTANCE_ENVIRONMENT",
+            "PT_AGENT_CAPABILITY_SCENARIO_CONTROL",
+            "PT_ACCEPTANCE_RUN_ID",
+        ):
+            self.assertIn(f"{variable}: ${{{variable}:-}}", compose_source)
+
 
 class RemoteGitSourceLeaseTests(unittest.TestCase):
     def test_deployment_environment_resolver_uses_reviewed_authority(self) -> None:

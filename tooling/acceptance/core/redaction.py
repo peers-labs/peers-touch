@@ -18,6 +18,7 @@ _SAFE_REFERENCE_SUFFIXES = (
 _SAFE_EXACT_KEYS = frozenset(
     {
         "cache_tokens",
+        "cleanup_fencing_token",
         "context_tokens",
         "error_key",
         "fence_token",

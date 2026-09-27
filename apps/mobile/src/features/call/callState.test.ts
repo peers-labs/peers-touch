@@ -29,6 +29,8 @@ const session = {
   stationPeerId: 'station-primary',
   stationUrl: 'https://station.example',
   sessionId: 'session-1',
+  deviceId: 'device-1',
+  lifecycleGeneration: 1,
   actorRef: { ptid: 'ptid:bob' },
   authenticatedAt: 1,
 };

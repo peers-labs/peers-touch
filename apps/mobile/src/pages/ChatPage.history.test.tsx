@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizeMessage, normalizeSession } from '../features/social/socialNormalizers';
 import { useSocialStore } from '../features/social/socialStore';
+import { useGroupStore } from '../features/group/groupStore';
 import { ChatPage } from './ChatPage';
 
 vi.mock('../app/mobileI18n', () => ({
@@ -19,10 +20,22 @@ vi.mock('../features/social/socialStore', async (original) => {
     ),
   };
 });
+vi.mock('../features/group/groupStore', async (original) => {
+  const module = await original<typeof import('../features/group/groupStore')>();
+  return {
+    ...module,
+    useGroupStore: Object.assign(
+      (select: (state: ReturnType<typeof module.useGroupStore.getState>) => unknown) =>
+        select(module.useGroupStore.getState()),
+      module.useGroupStore,
+    ),
+  };
+});
 
 describe('Chat logical history and rendering', () => {
   beforeEach(() => {
     useSocialStore.setState(useSocialStore.getInitialState(), true);
+    useGroupStore.setState(useGroupStore.getInitialState(), true);
     useSocialStore.setState({
       currentUserPtid: 'ptid:alice',
       sessions: [normalizeSession({

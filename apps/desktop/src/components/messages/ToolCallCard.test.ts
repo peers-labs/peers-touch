@@ -74,6 +74,26 @@ describe('ToolCallsBlock approval visibility', () => {
     expect(decisionSubmission).toBe(-1);
   });
 
+  it('keeps a denied approval error visible after the ToolCall remounts', () => {
+    const source = readFileSync(
+      new URL('./ToolCallCard.tsx', import.meta.url),
+      'utf8',
+    );
+
+    expect(source).toContain(
+      "tool.status === 'denied'",
+    );
+    expect(source).toContain(
+      "tool.error === 'agent.errors.toolApprovalDenied'",
+    );
+    expect(source).toContain(
+      'expanded\n    || approvalRequired\n    || approvalDenied',
+    );
+    expect(source).toContain(
+      "status === 'denied'\n      && error === 'agent.errors.toolApprovalDenied'",
+    );
+  });
+
   it('renders executor-unavailable recovery without claiming or executing the ToolCall', () => {
     const source = readFileSync(
       new URL('./ToolCallCard.tsx', import.meta.url),
@@ -146,7 +166,11 @@ describe('ToolCallsBlock approval visibility', () => {
       "const unknownSideEffect = tool.status === 'unknown_side_effect'",
     );
     expect(source).toContain(
-      'expanded || approvalRequired || approvalExpired || unknownSideEffect',
+      'expanded\n'
+      + '    || approvalRequired\n'
+      + '    || approvalDenied\n'
+      + '    || approvalExpired\n'
+      + '    || unknownSideEffect',
     );
     expect(source).toContain(
       "status === 'unknown_side_effect'",

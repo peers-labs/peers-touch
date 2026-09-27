@@ -16,7 +16,7 @@ Review proposed `SC-D20` in:
 - `docs/architecture/secure-content/security.md`
 - `docs/architecture/api-ownership/design.md`
 - `docs/architecture/api-ownership/station-api-capabilities.yaml`
-- `docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut.md`
+- `docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/plan.md`
 
 ## Verified Gap
 

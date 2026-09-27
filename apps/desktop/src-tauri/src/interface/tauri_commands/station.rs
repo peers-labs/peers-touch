@@ -60,12 +60,10 @@ pub(crate) fn station_set_active_with_state(
         }
     };
     let registry = station_client::station_registry();
-    let previous = station_binding::service().state();
+    let binding_service = station_binding::service();
     let requested_url = input.url.trim().trim_end_matches('/');
-    let already_bound = previous.phase
-        == crate::application::station_binding::StationBindingPhase::Bound
-        && previous.bound_url.as_deref() == Some(requested_url);
-    if !already_bound {
+    let selection_changes = binding_service.selection_changes(registry, requested_url);
+    if selection_changes {
         if let Err(error) = state.secure_content.shutdown() {
             return AppResult::fail(
                 ErrorCode::InternalError,
@@ -77,11 +75,11 @@ pub(crate) fn station_set_active_with_state(
             );
         }
     }
-    let binding = match station_binding::service().switch(registry, &input.url) {
+    let binding = match binding_service.switch(registry, &input.url) {
         Ok(binding) => binding,
         Err(error) => return binding_error(error),
     };
-    if !already_bound {
+    if selection_changes {
         if let Err(error) = auth_service::detach_for_station_switch(state) {
             return AppResult::fail(
                 ErrorCode::InternalError,
@@ -125,6 +123,11 @@ pub(crate) fn station_binding_complete_authenticated(
             Some(serde_json::json!({ "code": "station_authentication_required" })),
         );
     }
+    if let Err(error) =
+        station_binding::service().resume_persisted(station_client::station_registry())
+    {
+        return binding_error(error);
+    }
     let binding = match station_binding::service().mark_bound() {
         Ok(binding) => binding,
         Err(error) => return binding_error(error),
@@ -140,18 +143,14 @@ pub fn station_add(input: StationUrlInput) -> AppResult<StubPayload> {
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let verified = match station_binding::verify_station_identity(&input.url) {
-        Ok(verified) => verified,
-        Err(error) => return binding_error(error),
-    };
-    let (online, label, _, peers_count) = station_client::probe_station(&input.url);
+    let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
     let now = time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_else(|_| "unknown".to_string());
     let entry = StationEntry {
         url: input.url.trim_end_matches('/').to_string(),
         label,
-        peer_id: verified.peer_id,
+        peer_id,
         peers_count,
         last_probe: Some(now),
         online,
@@ -242,13 +241,8 @@ pub fn station_probe(input: StationUrlInput) -> AppResult<StubPayload> {
     if input.url.is_empty() {
         return AppResult::fail(ErrorCode::InvalidArgument, "url is required", None);
     }
-    let (online, label, _, peers_count) = station_client::probe_station(&input.url);
+    let (online, label, peer_id, peers_count) = station_client::probe_station(&input.url);
     let reg = station_client::station_registry();
-    let peer_id = reg
-        .list()
-        .into_iter()
-        .find(|entry| entry.url.trim_end_matches('/') == input.url.trim_end_matches('/'))
-        .and_then(|entry| entry.peer_id);
     if let Err(error) = reg.update_probe(
         &input.url,
         label.clone(),
@@ -275,7 +269,6 @@ fn registry_error(command: &str, error: std::io::Error) -> AppResult<StubPayload
     let code = match error.kind() {
         std::io::ErrorKind::InvalidInput => ErrorCode::InvalidArgument,
         std::io::ErrorKind::NotFound => ErrorCode::NotFound,
-        std::io::ErrorKind::PermissionDenied => ErrorCode::Forbidden,
         _ => ErrorCode::InternalError,
     };
     AppResult::fail(
@@ -293,8 +286,6 @@ fn binding_error(error: StationBindingError) -> AppResult<StubPayload> {
         "station_unselected" => ErrorCode::InvalidArgument,
         "station_not_registered" => ErrorCode::NotFound,
         "station_switch_in_progress" => ErrorCode::Conflict,
-        "station_identity_invalid" | "station_identity_mismatch" => ErrorCode::Forbidden,
-        "station_identity_unavailable" | "station_unreachable" => ErrorCode::NotFound,
         _ => ErrorCode::InternalError,
     };
     AppResult::fail(

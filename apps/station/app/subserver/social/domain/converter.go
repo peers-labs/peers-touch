@@ -10,8 +10,8 @@ import (
 )
 
 // PostConverter translates between the proto Post / Audience surface and
-// both the domain `Post` aggregate and the two physical DB tables
-// (`SocialPublicPost` / `SocialPrivatePost`).
+// the domain `Post` aggregate and public Post persistence. Private content
+// uses the Secure Content pipeline.
 //
 // All translation routes through this struct so the body-shape mapping
 // (text / image / video / link / poll / repost / location oneof variants)
@@ -225,57 +225,6 @@ func (c *PostConverter) DomainToPublicDB(p *Post) (*db.SocialPublicPost, error) 
 	}, nil
 }
 
-// DomainToPrivateDB serializes a Post into the private-table row form
-// plus the audience grants for CUSTOM_ALLOW / CUSTOM_DENY. The grants
-// list is empty for FOLLOWERS / SELF / CIRCLE / GROUP audiences.
-func (c *PostConverter) DomainToPrivateDB(p *Post) (*db.SocialPrivatePost, []db.SocialPrivateAudienceGrant, error) {
-	if p == nil {
-		return nil, nil, fmt.Errorf("post is nil")
-	}
-	if p.IsPublic() {
-		return nil, nil, fmt.Errorf("DomainToPrivateDB: audience kind is PUBLIC")
-	}
-	a := p.Audience
-	row := &db.SocialPrivatePost{
-		ID:                       p.ID,
-		Type:                     p.Type.String(),
-		AudienceKind:             a.Kind.String(),
-		AudienceTargetID:         a.TargetId,
-		AudienceKeyEnvelopesJSON: encodeAudienceKeyEnvelopes(a.KeyEnvelopes),
-		TextBody:                 p.TextBody,
-		AttachmentsJSON:          p.AttachmentsJSON,
-		MentionsJSON:             p.MentionsJSON,
-		LinkPreviewJSON:          p.LinkPreviewJSON,
-		ReactionsCountJSON:       p.ReactionsCountJSON,
-		RepostOfRef:              p.RepostOfRef,
-		CommentsCount:            p.CommentsCount,
-		ViewsCount:               p.ViewsCount,
-		EditedAt:                 p.EditedAt,
-	}
-	if a.Kind == model.Audience_CUSTOM_ALLOW || a.Kind == model.Audience_CUSTOM_DENY {
-		row.AudienceBaseKind = a.BaseKind.String()
-	}
-
-	var grants []db.SocialPrivateAudienceGrant
-	if a.Kind == model.Audience_CUSTOM_ALLOW || a.Kind == model.Audience_CUSTOM_DENY {
-		role := db.AudienceGrantRoleAllow
-		if a.Kind == model.Audience_CUSTOM_DENY {
-			role = db.AudienceGrantRoleDeny
-		}
-		// PostID is filled in by the repo after BeforeCreate sets it on
-		// the parent row (the application layer wraps the two writes in
-		// a single transaction so PostID is known before grants insert).
-		grants = make([]db.SocialPrivateAudienceGrant, 0, len(a.ActorPtids))
-		for _, did := range a.ActorPtids {
-			grants = append(grants, db.SocialPrivateAudienceGrant{
-				ActorPtid: did,
-				Role:      role,
-			})
-		}
-	}
-	return row, grants, nil
-}
-
 // PublicDBToDomain hydrates a Post from a `social_public_posts` row.
 // Audience is reconstructed as Kind=PUBLIC since that is the only kind
 // physically possible in this table.
@@ -300,68 +249,6 @@ func (c *PostConverter) PublicDBToDomain(row *db.SocialPublicPost) *Post {
 		UpdatedAt:          row.UpdatedAt,
 		DeletedAt:          row.DeletedAt,
 	}
-}
-
-// PrivateDBToDomain hydrates a Post from a `social_private_posts` row.
-// `grants` may be nil — it is populated only for CUSTOM_ALLOW/DENY rows
-// by `AudienceGrantRepository.ListGrants`. The repo lazily resolves
-// grants only when the row's audience_kind requires them, avoiding a
-// per-row join.
-func (c *PostConverter) PrivateDBToDomain(row *db.SocialPrivatePost, grants []db.SocialPrivateAudienceGrant) *Post {
-	if row == nil {
-		return nil
-	}
-	a := &model.Audience{
-		Kind:     parseAudienceKind(row.AudienceKind),
-		TargetId: row.AudienceTargetID,
-		BaseKind: parseAudienceKind(row.AudienceBaseKind),
-	}
-	a.KeyEnvelopes = decodeAudienceKeyEnvelopes(row.AudienceKeyEnvelopesJSON)
-	if len(grants) > 0 {
-		a.ActorPtids = make([]string, 0, len(grants))
-		for _, g := range grants {
-			a.ActorPtids = append(a.ActorPtids, g.ActorPtid)
-		}
-	}
-	return &Post{
-		ID:                 row.ID,
-		Type:               parsePostType(row.Type),
-		Audience:           a,
-		TextBody:           row.TextBody,
-		AttachmentsJSON:    row.AttachmentsJSON,
-		MentionsJSON:       row.MentionsJSON,
-		LinkPreviewJSON:    row.LinkPreviewJSON,
-		ReactionsCountJSON: row.ReactionsCountJSON,
-		RepostOfRef:        row.RepostOfRef,
-		CommentsCount:      row.CommentsCount,
-		ViewsCount:         row.ViewsCount,
-		EditedAt:           row.EditedAt,
-		CreatedAt:          row.CreatedAt,
-		UpdatedAt:          row.UpdatedAt,
-		DeletedAt:          row.DeletedAt,
-	}
-}
-
-func encodeAudienceKeyEnvelopes(envelopes []*model.AudienceKeyEnvelope) string {
-	if len(envelopes) == 0 {
-		return ""
-	}
-	b, err := json.Marshal(envelopes)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-func decodeAudienceKeyEnvelopes(raw string) []*model.AudienceKeyEnvelope {
-	if raw == "" {
-		return nil
-	}
-	var envelopes []*model.AudienceKeyEnvelope
-	if err := json.Unmarshal([]byte(raw), &envelopes); err != nil {
-		return nil
-	}
-	return envelopes
 }
 
 // ---------------------------------------------------------------------------

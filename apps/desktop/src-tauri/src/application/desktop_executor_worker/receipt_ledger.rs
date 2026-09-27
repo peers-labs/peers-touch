@@ -28,6 +28,7 @@ pub struct ReceiptRecord {
     pub station_url: String,
     pub envelope: ClientCapabilityRequest,
     pub receipt: ClientCapabilityReceipt,
+    pub side_effect_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,7 +83,7 @@ impl ReceiptLedger {
         let connection = self.connection()?;
         connection
             .query_row(
-                "SELECT station_url, envelope, receipt
+                "SELECT station_url, envelope, receipt, side_effect_count
                  FROM client_capability_receipts
                  WHERE tool_call_id = ?1 AND fencing_token = ?2",
                 params![tool_call_id, to_sql_u64("fencing_token", fencing_token)?],
@@ -90,12 +91,15 @@ impl ReceiptLedger {
                     let station_url: String = row.get(0)?;
                     let envelope: Vec<u8> = row.get(1)?;
                     let receipt: Vec<u8> = row.get(2)?;
-                    Ok((station_url, envelope, receipt))
+                    let side_effect_count: i64 = row.get(3)?;
+                    Ok((station_url, envelope, receipt, side_effect_count))
                 },
             )
             .optional()
             .map_err(|error| format!("load client capability receipt: {error}"))?
-            .map(|(station_url, envelope, receipt)| decode_record(station_url, &envelope, &receipt))
+            .map(|(station_url, envelope, receipt, side_effect_count)| {
+                decode_record(station_url, &envelope, &receipt, side_effect_count)
+            })
             .transpose()
     }
 
@@ -103,7 +107,7 @@ impl ReceiptLedger {
         let connection = self.connection()?;
         let mut statement = connection
             .prepare(
-                "SELECT station_url, envelope, receipt
+                "SELECT station_url, envelope, receipt, side_effect_count
                  FROM client_capability_receipts
                  ORDER BY updated_at_ms ASC",
             )
@@ -114,13 +118,14 @@ impl ReceiptLedger {
                     row.get::<_, String>(0)?,
                     row.get::<_, Vec<u8>>(1)?,
                     row.get::<_, Vec<u8>>(2)?,
+                    row.get::<_, i64>(3)?,
                 ))
             })
             .map_err(|error| format!("scan client capability receipts: {error}"))?;
         rows.map(|row| {
-            let (station_url, envelope, receipt) =
+            let (station_url, envelope, receipt, side_effect_count) =
                 row.map_err(|error| format!("read client capability receipt row: {error}"))?;
-            decode_record(station_url, &envelope, &receipt)
+            decode_record(station_url, &envelope, &receipt, side_effect_count)
         })
         .collect()
     }
@@ -141,6 +146,23 @@ impl ReceiptLedger {
         }
         if existing.receipt.status != ClientCapabilityReceiptStatus::Prepared as i32 {
             return Err("CLIENT_CAPABILITY_SIDE_EFFECT_AFTER_TERMINAL".to_string());
+        }
+        if !envelope.external_idempotency_key.is_empty() {
+            let prior_effect_count: i64 = transaction
+                .query_row(
+                    "SELECT COALESCE(SUM(side_effect_count), 0)
+                     FROM client_capability_receipts
+                     WHERE tool_call_id = ?1",
+                    params![envelope.tool_call_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| format!("read ToolCall idempotent side-effect count: {error}"))?;
+            if prior_effect_count > 0 {
+                transaction
+                    .commit()
+                    .map_err(|error| format!("commit idempotent side-effect replay: {error}"))?;
+                return Ok(());
+            }
         }
         let updated = transaction
             .execute(
@@ -248,6 +270,7 @@ impl ReceiptLedger {
             station_url: station_url.trim_end_matches('/').to_string(),
             envelope: envelope.clone(),
             receipt: receipt.clone(),
+            side_effect_count: 0,
         })
     }
 
@@ -299,6 +322,7 @@ impl ReceiptLedger {
             station_url: existing.station_url,
             envelope: envelope.clone(),
             receipt: receipt.clone(),
+            side_effect_count: existing.side_effect_count,
         })
     }
 
@@ -409,7 +433,7 @@ fn load_tx(
 ) -> Result<Option<ReceiptRecord>, String> {
     transaction
         .query_row(
-            "SELECT station_url, envelope, receipt
+            "SELECT station_url, envelope, receipt, side_effect_count
              FROM client_capability_receipts
              WHERE tool_call_id = ?1 AND fencing_token = ?2",
             params![tool_call_id, to_sql_u64("fencing_token", fencing_token)?],
@@ -417,12 +441,15 @@ fn load_tx(
                 let station_url: String = row.get(0)?;
                 let envelope: Vec<u8> = row.get(1)?;
                 let receipt: Vec<u8> = row.get(2)?;
-                Ok((station_url, envelope, receipt))
+                let side_effect_count: i64 = row.get(3)?;
+                Ok((station_url, envelope, receipt, side_effect_count))
             },
         )
         .optional()
         .map_err(|error| format!("load receipt transaction row: {error}"))?
-        .map(|(station_url, envelope, receipt)| decode_record(station_url, &envelope, &receipt))
+        .map(|(station_url, envelope, receipt, side_effect_count)| {
+            decode_record(station_url, &envelope, &receipt, side_effect_count)
+        })
         .transpose()
 }
 
@@ -430,6 +457,7 @@ fn decode_record(
     station_url: String,
     envelope: &[u8],
     receipt: &[u8],
+    side_effect_count: i64,
 ) -> Result<ReceiptRecord, String> {
     Ok(ReceiptRecord {
         station_url,
@@ -437,6 +465,8 @@ fn decode_record(
             .map_err(|error| format!("decode persisted capability envelope: {error}"))?,
         receipt: ClientCapabilityReceipt::decode(receipt)
             .map_err(|error| format!("decode persisted capability receipt: {error}"))?,
+        side_effect_count: u64::try_from(side_effect_count)
+            .map_err(|_| "negative ToolCall side-effect count".to_string())?,
     })
 }
 

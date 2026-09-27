@@ -207,7 +207,7 @@ type LeaveIntentRepository interface {
 	ListPending(
 		ctx context.Context,
 		conversationID valueobject.ConversationID,
-		actor valueobject.PTID,
+		excludedActor valueobject.PTID,
 		limit int,
 	) ([]LeaveIntent, error)
 }
@@ -216,24 +216,15 @@ type FollowerStatus string
 
 const (
 	FollowerStatusActive         FollowerStatus = "active"
-	FollowerStatusRetired        FollowerStatus = "retired"
 	FollowerStatusResyncRequired FollowerStatus = "resync_required"
 	FollowerStatusDegraded       FollowerStatus = "degraded"
 	FollowerStatusReadOnly       FollowerStatus = "read_only"
-)
-
-type FollowerCheckpoint string
-
-const (
-	FollowerCheckpointNone   FollowerCheckpoint = ""
-	FollowerCheckpointRejoin FollowerCheckpoint = "rejoin"
 )
 
 type FollowerProjection struct {
 	Conversation aggregate.Snapshot
 	Head         valueobject.AuthorityHead
 	Status       FollowerStatus
-	Checkpoint   FollowerCheckpoint
 	UpdatedAt    time.Time
 }
 

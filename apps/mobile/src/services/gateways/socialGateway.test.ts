@@ -28,6 +28,8 @@ const session = {
   stationPeerId: 'station-peer',
   stationUrl: 'https://station.example',
   sessionId: 'session',
+  deviceId: 'device-1',
+  lifecycleGeneration: 1,
   actorRef: { ptid: 'alice' },
   authenticatedAt: 1,
 } satisfies MobileAuthSession;
@@ -69,6 +71,8 @@ describe('createSocialGateway Friend Request routes', () => {
     expect(friendRequestSendMock).toHaveBeenCalledWith({
       stationPeerId: 'station-peer',
       actorPtid: 'alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
       receiverPtid: 'ptid:bob',
       receiverHomeStationPeerId: 'station-b',
       federationId: 'federation-1',
@@ -77,11 +81,15 @@ describe('createSocialGateway Friend Request routes', () => {
     expect(friendRequestAcceptMock).toHaveBeenCalledWith({
       stationPeerId: 'station-peer',
       actorPtid: 'alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
       ...request,
     });
     expect(friendRequestRejectMock).toHaveBeenCalledWith({
       stationPeerId: 'station-peer',
       actorPtid: 'alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
       ...request,
     });
   });
@@ -250,6 +258,8 @@ describe('createSocialGateway Friend Request routes', () => {
     expect(relationshipBlockMock).toHaveBeenCalledWith({
       stationPeerId: 'station-peer',
       actorPtid: 'alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
       targetPtid: 'ptid:bob',
       targetHomeStationPeerId: 'station-b',
       observedRevision: 1,
@@ -257,6 +267,8 @@ describe('createSocialGateway Friend Request routes', () => {
     expect(relationshipUnblockMock).toHaveBeenCalledWith({
       stationPeerId: 'station-peer',
       actorPtid: 'alice',
+      deviceId: 'device-1',
+      lifecycleGeneration: 1,
       targetPtid: 'ptid:bob',
       targetHomeStationPeerId: 'station-b',
       observedRevision: 2,

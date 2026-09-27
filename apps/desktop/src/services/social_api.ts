@@ -44,6 +44,7 @@ import {
   Audience_Kind,
   Audience,
   Mention,
+  PostAuthorSchema,
   StationModerationPolicy_Kind,
   type CreatePostRequest,
   type CreatePostResponse,
@@ -62,14 +63,19 @@ import {
   type ListStationModerationPoliciesResponse,
 } from '../gen/proto/domain/social/post_pb';
 import {
+  CommentSchema,
   CreateCommentResponseSchema,
   DeleteCommentResponseSchema,
-  GetCommentsResponseSchema,
   type Comment,
   type CreateCommentResponse,
   type DeleteCommentResponse,
-  type GetCommentsResponse,
 } from '../gen/proto/domain/social/comment_pb';
+import {
+  ListMomentCommentsResponseSchema,
+  type CommentResource,
+  type ListMomentCommentsRequest,
+  type ListMomentCommentsResponse,
+} from '../gen/proto/domain/social/private_content_pb';
 import {
   CreateCircleResponseSchema,
   RenameCircleResponseSchema,
@@ -365,14 +371,50 @@ export async function socialGetComments(
   postId: string,
   cursor?: string,
   limit?: number,
-): Promise<GetCommentsResponse> {
+): Promise<ListMomentCommentsResponse> {
+  const boundedLimit = Number.isInteger(limit) && Number(limit) > 0
+    ? Math.min(Number(limit), 100)
+    : 20;
   return invokeRustProto<
-    { post_id: string; cursor?: string; limit?: number },
-    GetCommentsResponse
-  >('social_get_comments', GetCommentsResponseSchema, {
+    {
+      post_id: ListMomentCommentsRequest['postId'];
+      cursor?: ListMomentCommentsRequest['cursor'];
+      limit: ListMomentCommentsRequest['limit'];
+    },
+    ListMomentCommentsResponse
+  >('social_get_comments', ListMomentCommentsResponseSchema, {
     post_id: postId,
     cursor,
-    limit,
+    limit: boundedLimit,
+  });
+}
+
+export function publicCommentFromResource(resource: CommentResource): Comment {
+  const metadata = resource.metadata;
+  if (!metadata || resource.body.case !== 'publicContent') {
+    throw new Error('PUBLIC_COMMENT_RESOURCE_INVALID');
+  }
+  const author = metadata.author;
+  if (!metadata.commentId || !metadata.postId || !author?.ptid) {
+    throw new Error('PUBLIC_COMMENT_RESOURCE_INVALID');
+  }
+
+  return create(CommentSchema, {
+    id: metadata.commentId,
+    postId: metadata.postId,
+    authorPtid: author.ptid,
+    content: resource.body.value.text,
+    createdAt: metadata.createdAt,
+    updatedAt: metadata.updatedAt,
+    isDeleted: metadata.isDeleted,
+    author: create(PostAuthorSchema, {
+      id: author.ptid,
+      username: author.acct,
+      displayName: author.acct,
+    }),
+    likesCount: metadata.reactionsCount,
+    replyToCommentId: metadata.replyToCommentId,
+    repliesCount: metadata.repliesCount,
   });
 }
 

@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use ed25519_dalek::VerifyingKey;
 use prost::Message;
 use secure_content_core::codec::CanonicalMessageEncoder;
-use secure_content_core::envelope::{seal_content_key, ContentKey, SealedContentKey};
+use secure_content_core::envelope::ContentKey;
 use secure_content_core::object::{
     ObjectCryptoMaterial, ObjectTransferDirection, ObjectTransferErrorCode, ObjectTransferFailure,
     ObjectTransferProgress,
@@ -12,13 +12,12 @@ use secure_content_core::payload::{
     derive_payload_key, encrypt_payload, PayloadKeyContext, PAYLOAD_FORMAT_VERSION,
 };
 use secure_content_core::ports::{ObjectBlob, ObjectTransferRepository};
-use secure_content_core::prekey::ContentPreKeyPublic;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use crate::model::{secure_content as wire, social};
 use crate::secure_content::adapter::{NativeErrorDisposition, SecureContentTransport};
-use crate::secure_content::recovery::recovery_prekey;
+use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::station_trust::{
     current_session_sender_signing_key, verify_profile_actor_device_signing_key,
 };
@@ -32,16 +31,15 @@ use crate::secure_content::worker::{
 };
 use crate::secure_content::{SecureContentLease, SecureContentSupervisor};
 
+use super::crypto::{
+    bounded_command_id, now_unix_ms, seal_content_envelopes, validate_content_plan,
+};
 use super::projection::{
     decrypt_projection_from_response, object_descriptor_set_hash, sender_key_requirement,
     verify_recovery_envelope_for_response, DecryptedPrivateMoment, PrivateMediaState,
     PrivateMomentContentProjection, PrivateMomentProjection, PrivateMomentPublishResult,
     PrivateMomentsSnapshot, PrivateProjectionFailureKind,
 };
-
-const PRIVATE_PLAN_LIFETIME_MS: i64 = 5 * 60 * 1_000;
-const PRIVATE_PLAN_CLOCK_SKEW_MS: i64 = 30_000;
-const SENDER_KEY_CONTRACT_GAP: &str = "DESIGN_AMENDMENT_REQUIRED: Desktop needs a client-readable Actor Identity capability that resolves a retained actor-device signing key by actor_ptid, device_id, and signing_key_id with Home Station authentication and valid-from/revoked-at history";
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct PrivateMomentFileIntent {
@@ -56,6 +54,14 @@ pub struct PrivateMomentPublishIntent {
     pub draft_id: String,
     pub draft_revision: u64,
     pub audience_kind: String,
+    #[serde(default)]
+    pub audience_target_id: Option<String>,
+    #[serde(default)]
+    pub audience_base_kind: Option<String>,
+    #[serde(default)]
+    pub audience_actor_ptids: Vec<String>,
+    #[serde(default)]
+    pub moment_kind: String,
     pub text: String,
     #[serde(default)]
     pub files: Vec<PrivateMomentFileIntent>,
@@ -249,17 +255,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .map_err(PrivatePublishFailure::preserve)?;
         let content_id = reservation.content_id;
         *cleanup_content_id = Some(content_id.clone());
-        let kind = if intent.files.is_empty() {
-            social::PrivateMomentKind::Text
-        } else {
-            social::PrivateMomentKind::Image
-        };
+        let kind =
+            resolve_moment_kind(&intent.moment_kind).map_err(PrivatePublishFailure::cleanup)?;
+        let audience = private_audience(intent).map_err(PrivatePublishFailure::cleanup)?;
         let prepare = social::PreparePrivateMomentRequest {
             content_id: content_id.clone(),
-            audience: Some(social::Audience {
-                kind: social::audience::Kind::Friends as i32,
-                ..Default::default()
-            }),
+            audience: Some(audience),
             object_count: intent.files.len() as u32,
             command_id: prepare_command_id,
             kind: kind as i32,
@@ -425,9 +426,15 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         };
         let object_set_hash =
             object_descriptor_set_hash(&descriptors).map_err(PrivatePublishFailure::cleanup)?;
-        let envelopes = self
-            .seal_envelopes(&plan, &payload, object_set_hash, &root)
-            .map_err(PrivatePublishFailure::cleanup)?;
+        let envelopes = seal_content_envelopes(
+            self.lease.session.as_ref(),
+            &plan,
+            &payload,
+            object_set_hash,
+            &root,
+            "private Moment",
+        )
+        .map_err(PrivatePublishFailure::cleanup)?;
         let submit_command_id =
             bounded_command_id("moment-submit", &intent.draft_id, intent.draft_revision);
         let request = social::SubmitPrivateMomentRequest {
@@ -613,10 +620,6 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     .recovery_envelope
                     .as_ref()
                     .ok_or_else(|| "private Moment recovery envelope is unavailable".to_string())?;
-                let binding = envelope
-                    .binding
-                    .as_ref()
-                    .ok_or_else(|| "private Moment recovery binding is unavailable".to_string())?;
                 let mut point = self
                     .transport
                     .get_private_moment(post_id)
@@ -636,38 +639,12 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     envelope.principal_epoch,
                     &sender_signing_key,
                 )?;
-                let master = self
-                    .lease
-                    .store
-                    .recovery_master(&self.lease.session.key.actor_ptid, envelope.principal_epoch)?
-                    .ok_or_else(|| {
-                        PrivateRecoveryAttemptError::KeyUnavailable(
-                            "private Moment recovery key is unavailable".to_string(),
-                        )
-                    })?;
-                let claimed_public = secure_content_core::recovery::derive_recovery_prekey(
-                    &secure_content_core::recovery::RecoveryMaster::from_bytes(master),
-                    &self.lease.session.key.actor_ptid,
-                    envelope.principal_epoch,
-                    &binding.recipient_key_id,
-                )?
-                .public();
-                let pair = recovery_prekey(
+                let root = open_recovery_content_key(
                     self.lease.store.as_ref(),
                     &self.lease.session.key.actor_ptid,
-                    envelope.principal_epoch,
-                    &binding.recipient_key_id,
-                    claimed_public,
-                )?;
-                let binding_bytes = binding.encode_to_vec();
-                let root = secure_content_core::envelope::open_content_key(
-                    pair.private(),
-                    &binding_bytes,
-                    &SealedContentKey {
-                        encapsulated_key: envelope.hpke_encapsulated_key.clone(),
-                        ciphertext: envelope.hpke_ciphertext.clone(),
-                    },
-                )?;
+                    envelope,
+                )
+                .map_err(|error| PrivateRecoveryAttemptError::KeyUnavailable(error))?;
                 let decrypted = decrypt_projection_from_response(
                     self.lease.session.as_ref(),
                     self.lease.store.as_ref(),
@@ -829,16 +806,20 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                 if !cache_path.is_file() {
                     return Err("private Moment media cache is unavailable".to_string());
                 }
-                item.state = PrivateMediaState::MediaReady;
-                item.local_path = Some(cache_path.display().to_string());
-                item.render_url = None;
-                item.error_code = None;
+                apply_ready_media(
+                    item,
+                    &cache_path,
+                    &expected_plaintext_sha256,
+                    attachment.plaintext_size,
+                );
             }
             Ok(ObjectTransferProgress::Deferred { .. })
             | Ok(ObjectTransferProgress::RetryScheduled { .. }) => {
                 item.state = PrivateMediaState::MediaOfflineRetryable;
                 item.local_path = None;
                 item.render_url = None;
+                item.plaintext_sha256 = None;
+                item.plaintext_size = None;
                 item.error_code = Some("MEDIA_OFFLINE_RETRYABLE".to_string());
             }
             Ok(ObjectTransferProgress::Terminal { code }) => {
@@ -1083,53 +1064,6 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         }
     }
 
-    fn seal_envelopes(
-        &self,
-        plan: &wire::ContentEncryptionPlan,
-        payload: &wire::EncryptedPayload,
-        object_set_hash: [u8; 32],
-        root: &ContentKey,
-    ) -> Result<Vec<wire::PreparedContentKeyEnvelope>, String> {
-        let mut envelopes = Vec::with_capacity(plan.required_slots.len());
-        for slot in &plan.required_slots {
-            let public: [u8; 32] = slot
-                .one_time_public_key
-                .as_slice()
-                .try_into()
-                .map_err(|_| "private Moment recipient PreKey is invalid".to_string())?;
-            let binding = wire::ContentKeyEnvelopeBinding {
-                format_version: 1,
-                plan_id: plan.plan_id.clone(),
-                canonical_plan_sha256: plan.canonical_plan_sha256.clone(),
-                resource: plan.resource.clone(),
-                recipient_slot_id: slot.recipient_slot_id.clone(),
-                recipient_key_kind: slot.key_kind,
-                recipient_key_id: slot.one_time_key_id.clone(),
-                principal_binding_sha256: slot.principal_binding_sha256.clone(),
-                authorization_snapshot_sha256: plan.authorization_snapshot_sha256.clone(),
-                payload_ciphertext_sha256: payload.ciphertext_sha256.clone(),
-                object_descriptor_set_sha256: object_set_hash.to_vec(),
-                plan_expires_at: plan.expires_at,
-                sender: plan.author.clone(),
-                sender_signing_key_id: self.lease.session.signing_key_id.clone(),
-            };
-            let binding_bytes = binding.encode_to_vec();
-            let sealed = seal_content_key(
-                ContentPreKeyPublic::from_bytes(public),
-                &binding_bytes,
-                root,
-            )?;
-            envelopes.push(wire::PreparedContentKeyEnvelope {
-                binding: Some(binding),
-                binding_sha256: Sha256::digest(&binding_bytes).to_vec(),
-                hpke_encapsulated_key: sealed.encapsulated_key,
-                hpke_ciphertext: sealed.ciphertext,
-                sender_signature: self.lease.session.sign(&binding_bytes)?,
-            });
-        }
-        Ok(envelopes)
-    }
-
     fn sender_signing_key(
         &self,
         expected_post_id: &str,
@@ -1156,7 +1090,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
                     .as_ref()
                     .ok_or_else(|| "private Moment sender actor is unavailable".to_string())?,
             )
-            .map_err(|_| SENDER_KEY_CONTRACT_GAP.to_string())?;
+            .map_err(|error| error.to_string())?;
         verify_profile_actor_device_signing_key(
             &profile,
             &self.lease.session.trusted_station_signing_key,
@@ -1195,16 +1129,20 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .parse::<u64>()
             .map_err(|_| "private Moment projection generation is invalid".to_string())?;
         let projection_bytes = decrypted.projection.encode_local()?;
-        self.supervisor.with_current(&self.lease.session.key, |_| {
-            self.lease.store.commit_content_root(
-                &decrypted.projection.content_id,
-                generation,
-                &decrypted.projection.post_id,
-                decrypted.content_key.as_bytes(),
-                decrypted.consumed_prekey.as_deref(),
-                &projection_bytes,
-            )
-        })
+        self.supervisor.with_current_renderer(
+            &self.lease.session.key,
+            self.lease.renderer_generation,
+            |_| {
+                self.lease.store.commit_content_root(
+                    &decrypted.projection.content_id,
+                    generation,
+                    &decrypted.projection.post_id,
+                    decrypted.content_key.as_bytes(),
+                    decrypted.consumed_prekey.as_deref(),
+                    &projection_bytes,
+                )
+            },
+        )
     }
 
     fn save_projection_if_current(
@@ -1212,9 +1150,11 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         post_id: &str,
         projection_bytes: &[u8],
     ) -> Result<(), String> {
-        self.supervisor.with_current(&self.lease.session.key, |_| {
-            self.lease.store.save_projection(post_id, projection_bytes)
-        })
+        self.supervisor.with_current_renderer(
+            &self.lease.session.key,
+            self.lease.renderer_generation,
+            |_| self.lease.store.save_projection(post_id, projection_bytes),
+        )
     }
 
     fn purge_private_resource(
@@ -1222,11 +1162,15 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         post_id: &str,
         revoke_media: &dyn Fn(&Path) -> Result<(), String>,
     ) -> Result<(), String> {
-        self.supervisor.with_current(&self.lease.session.key, |_| {
-            self.lease
-                .store
-                .mark_private_resource_purge_pending(post_id)
-        })?;
+        self.supervisor.with_current_renderer(
+            &self.lease.session.key,
+            self.lease.renderer_generation,
+            |_| {
+                self.lease
+                    .store
+                    .mark_private_resource_purge_pending(post_id)
+            },
+        )?;
         let transfers = self.lease.store.object_transfers_for_resource(post_id)?;
         let mut cleanup_error = None;
         for transfer in &transfers {
@@ -1369,6 +1313,24 @@ fn private_moment_intent_hash(intent: &PrivateMomentPublishIntent) -> Result<[u8
     encoder
         .singular_bytes(5, intent.text.as_bytes())
         .map_err(|error| error.to_string())?;
+    if let Some(target_id) = intent.audience_target_id.as_deref() {
+        encoder
+            .singular_bytes(7, target_id.as_bytes())
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(base_kind) = intent.audience_base_kind.as_deref() {
+        encoder
+            .singular_bytes(8, base_kind.as_bytes())
+            .map_err(|error| error.to_string())?;
+    }
+    for actor_ptid in &intent.audience_actor_ptids {
+        encoder
+            .repeated_bytes(9, actor_ptid.as_bytes())
+            .map_err(|error| error.to_string())?;
+    }
+    encoder
+        .singular_bytes(10, intent.moment_kind.as_bytes())
+        .map_err(|error| error.to_string())?;
     for file in &intent.files {
         let mut file_encoder = CanonicalMessageEncoder::new();
         file_encoder
@@ -1401,12 +1363,28 @@ fn remove_file_if_exists(path: &Path) -> Result<(), String> {
     }
 }
 
+fn apply_ready_media(
+    media: &mut super::projection::PrivateMomentMediaProjection,
+    cache_path: &Path,
+    plaintext_sha256: &[u8; 32],
+    plaintext_size: u64,
+) {
+    media.state = PrivateMediaState::MediaReady;
+    media.local_path = Some(cache_path.display().to_string());
+    media.render_url = None;
+    media.plaintext_sha256 = Some(hex::encode(plaintext_sha256));
+    media.plaintext_size = Some(plaintext_size);
+    media.error_code = None;
+}
+
 fn apply_terminal_media_failure(
     media: &mut super::projection::PrivateMomentMediaProjection,
     code: ObjectTransferErrorCode,
 ) {
     media.local_path = None;
     media.render_url = None;
+    media.plaintext_sha256 = None;
+    media.plaintext_size = None;
     media.error_code = Some(code.as_str().to_string());
     media.state = if code == ObjectTransferErrorCode::NotGranted {
         PrivateMediaState::MediaAccessDenied
@@ -1422,6 +1400,8 @@ fn scrub_persisted_media_projection(
         for item in media {
             item.local_path = None;
             item.render_url = None;
+            item.plaintext_sha256 = None;
+            item.plaintext_size = None;
             if item.state == PrivateMediaState::MediaReady {
                 item.state = PrivateMediaState::MediaPlaceholder;
             }
@@ -1436,6 +1416,8 @@ fn apply_media_failure(
 ) {
     if failure.retryable {
         media.state = PrivateMediaState::MediaOfflineRetryable;
+        media.plaintext_sha256 = None;
+        media.plaintext_size = None;
         media.error_code = Some("MEDIA_OFFLINE_RETRYABLE".to_string());
     } else {
         apply_terminal_media_failure(media, failure.code);
@@ -1457,7 +1439,7 @@ fn private_transport_failure_projection(
         content_id: format!("unavailable:{post_id}"),
         generation: "0".to_string(),
         author_ptid: String::new(),
-        audience_kind: "FRIENDS".to_string(),
+        audience_kind: "UNKNOWN".to_string(),
         state,
         content: None,
         error_code: Some(error.message.clone()),
@@ -1522,7 +1504,7 @@ fn private_read_projection(
         content_id: format!("unavailable:{post_id}"),
         generation: "0".to_string(),
         author_ptid: String::new(),
-        audience_kind: "FRIENDS".to_string(),
+        audience_kind: "UNKNOWN".to_string(),
         state: match kind {
             PrivateProjectionFailureKind::RecoveryRequired => {
                 super::projection::PrivateReadState::RecoveryRequired
@@ -1555,11 +1537,26 @@ fn validate_publish_intent(intent: &PrivateMomentPublishIntent) -> Result<(), St
         || intent.renderer_generation == 0
         || intent.draft_id.trim().is_empty()
         || intent.draft_revision == 0
-        || intent.audience_kind != "FRIENDS"
+        || !matches!(
+            intent.audience_kind.as_str(),
+            "FRIENDS" | "FOLLOWERS" | "CIRCLE" | "GROUP" | "SELF" | "CUSTOM_ALLOW" | "CUSTOM_DENY"
+        )
         || intent.text.trim().is_empty()
         || intent.files.len() > 10
     {
         return Err("private Moment publish intent is invalid".to_string());
+    }
+    private_audience(intent)?;
+    let kind = resolve_moment_kind(&intent.moment_kind)?;
+    match kind {
+        social::PrivateMomentKind::Text if !intent.files.is_empty() => {
+            return Err("private text Moment cannot contain files".to_string())
+        }
+        social::PrivateMomentKind::Image if intent.files.is_empty() => {
+            return Err("private image Moment requires a file".to_string())
+        }
+        social::PrivateMomentKind::Text | social::PrivateMomentKind::Image => {}
+        _ => return Err("private Moment subtype is not source-complete".to_string()),
     }
     Ok(())
 }
@@ -1571,87 +1568,20 @@ fn validate_plan(
     kind: social::PrivateMomentKind,
     object_count: usize,
 ) -> Result<(), String> {
-    let resource = plan
-        .resource
-        .as_ref()
-        .ok_or_else(|| "private Moment plan resource is unavailable".to_string())?;
-    let author = plan
-        .author
-        .as_ref()
-        .ok_or_else(|| "private Moment plan author is unavailable".to_string())?;
-    if plan.format_version != 1
-        || plan.plan_id.trim().is_empty()
-        || resource.owner_domain != wire::SecureContentOwnerDomain::Social as i32
-        || resource.content_id != content_id
-        || resource.generation == 0
-        || author.actor.as_ref().map(|actor| actor.ptid.as_str())
-            != Some(lease.session.key.actor_ptid.as_str())
-        || author.device_id != lease.session.key.device_id
-        || plan.authorization_snapshot_sha256.len() != 32
-        || plan.canonical_plan_sha256.len() != 32
-        || plan.domain_binding_sha256.len() != 32
-        || plan.station_signing_key_id != lease.session.trusted_station_signing_key.key_id
-        || plan.station_signature.len() != 64
-        || plan.required_slots.is_empty()
-        || plan.required_slots.len() > 1000
-        || plan.object_ids.len() != object_count
-    {
-        return Err("private Moment plan binding is invalid".to_string());
-    }
-    let mut unsigned = plan.clone();
-    unsigned.canonical_plan_sha256.clear();
-    unsigned.station_signature.clear();
-    if Sha256::digest(unsigned.encode_to_vec()).as_slice() != plan.canonical_plan_sha256 {
-        return Err("private Moment plan hash is invalid".to_string());
-    }
-    let expires_at = plan
-        .expires_at
-        .as_ref()
-        .ok_or_else(|| "private Moment plan expiry is unavailable".to_string())?;
-    let expires_at_ms = expires_at
-        .seconds
-        .checked_mul(1_000)
-        .and_then(|value| value.checked_add(i64::from(expires_at.nanos) / 1_000_000))
-        .ok_or_else(|| "private Moment plan expiry is invalid".to_string())?;
-    let now_ms = now_unix_ms();
-    if expires_at.nanos < 0
-        || expires_at.nanos >= 1_000_000_000
-        || expires_at_ms < now_ms.saturating_sub(PRIVATE_PLAN_CLOCK_SKEW_MS)
-        || expires_at_ms
-            > now_ms
-                .saturating_add(PRIVATE_PLAN_LIFETIME_MS)
-                .saturating_add(PRIVATE_PLAN_CLOCK_SKEW_MS)
-    {
-        return Err("private Moment plan is expired or has an invalid lifetime".to_string());
-    }
-    let signature = Signature::from_slice(&plan.station_signature)
-        .map_err(|_| "private Moment plan Station signature is invalid".to_string())?;
-    let mut signing_input = plan.clone();
-    signing_input.station_signature.clear();
-    lease
-        .session
-        .trusted_station_signing_key
-        .verifying_key
-        .verify(&signing_input.encode_to_vec(), &signature)
-        .map_err(|_| "private Moment plan Station signature is invalid".to_string())?;
-    if !plan
-        .required_slots
-        .windows(2)
-        .all(|slots| slots[0].recipient_slot_id < slots[1].recipient_slot_id)
-        || !plan.object_ids.windows(2).all(|ids| ids[0] < ids[1])
-    {
-        return Err("private Moment plan collections are not canonical".to_string());
-    }
     let domain_binding = social::PrivateMomentDomainBinding {
         format_version: 1,
         kind: kind as i32,
         subtype_prepare_authority_sha256: Vec::new(),
     }
     .encode_to_vec();
-    if Sha256::digest(domain_binding).as_slice() != plan.domain_binding_sha256 {
-        return Err("private Moment plan subtype binding is invalid".to_string());
-    }
-    Ok(())
+    validate_content_plan(
+        plan,
+        lease,
+        content_id,
+        object_count,
+        &domain_binding,
+        "private Moment",
+    )
 }
 
 fn private_payload(
@@ -1675,7 +1605,59 @@ fn private_payload(
                 mentions: Vec::new(),
             })
         }
-        _ => unreachable!("W7 validates only text and image"),
+        social::PrivateMomentKind::Video => {
+            social::private_moment_content::Body::Video(social::PrivateVideoContent {
+                text: text.to_string(),
+                source: images.first().cloned(),
+                poster: images.get(1).cloned(),
+                variants: Vec::new(),
+                hashtags: Vec::new(),
+                mentions: Vec::new(),
+            })
+        }
+        social::PrivateMomentKind::Link => {
+            social::private_moment_content::Body::Link(social::PrivateLinkContent {
+                text: text.to_string(),
+                link: None,
+                hashtags: Vec::new(),
+                mentions: Vec::new(),
+            })
+        }
+        social::PrivateMomentKind::Poll => {
+            social::private_moment_content::Body::Poll(social::PrivatePollContent {
+                text: text.to_string(),
+                question: String::new(),
+                options: Vec::new(),
+                option_set_sha256: Vec::new(),
+                min_choices: 0,
+                max_choices: 0,
+                expires_at: None,
+                mentions: Vec::new(),
+            })
+        }
+        social::PrivateMomentKind::Repost => {
+            social::private_moment_content::Body::Repost(social::PrivateRepostContent {
+                comment: text.to_string(),
+                original_source: None,
+                rendered_source: None,
+                mentions: Vec::new(),
+                rendered_source_commitment_salt: Vec::new(),
+            })
+        }
+        social::PrivateMomentKind::Location => {
+            social::private_moment_content::Body::Location(social::PrivateLocationContent {
+                text: text.to_string(),
+                location: None,
+                images,
+                hashtags: Vec::new(),
+                mentions: Vec::new(),
+            })
+        }
+        _ => social::private_moment_content::Body::Text(social::PrivateTextContent {
+            text: text.to_string(),
+            hashtags: Vec::new(),
+            mentions: Vec::new(),
+        }),
     };
     social::PrivateMomentContent {
         format_version: 1,
@@ -1684,16 +1666,66 @@ fn private_payload(
     }
 }
 
-fn bounded_command_id(prefix: &str, draft_id: &str, revision: u64) -> String {
-    let digest = Sha256::digest(format!("{prefix}:{draft_id}:{revision}").as_bytes());
-    format!("{prefix}-{}", hex::encode(digest))
+fn resolve_moment_kind(kind_str: &str) -> Result<social::PrivateMomentKind, String> {
+    match kind_str {
+        "IMAGE" => Ok(social::PrivateMomentKind::Image),
+        "TEXT" => Ok(social::PrivateMomentKind::Text),
+        _ => Err("private Moment subtype is not source-complete".to_string()),
+    }
 }
 
-fn now_unix_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
-        .unwrap_or_default()
+fn private_audience(intent: &PrivateMomentPublishIntent) -> Result<social::Audience, String> {
+    let mut actor_ptids = intent.audience_actor_ptids.clone();
+    actor_ptids.sort();
+    if actor_ptids
+        .iter()
+        .any(|ptid| ptid.is_empty() || ptid.trim() != ptid || ptid == &intent.actor_ptid)
+        || actor_ptids.windows(2).any(|pair| pair[0] == pair[1])
+    {
+        return Err("private Moment audience actor list is invalid".to_string());
+    }
+    let target_id = match intent.audience_target_id.as_deref() {
+        Some(value) if !value.is_empty() => value
+            .parse::<u64>()
+            .map_err(|_| "private Moment audience target is invalid".to_string())?,
+        _ => 0,
+    };
+    let (kind, base_kind) = match intent.audience_kind.as_str() {
+        "FRIENDS" => (social::audience::Kind::Friends, None),
+        "FOLLOWERS" => (social::audience::Kind::Followers, None),
+        "CIRCLE" if target_id > 0 => (social::audience::Kind::Circle, None),
+        "GROUP" if target_id > 0 => (social::audience::Kind::Group, None),
+        "SELF" => (social::audience::Kind::Self_, None),
+        "CUSTOM_ALLOW" if !actor_ptids.is_empty() => (social::audience::Kind::CustomAllow, None),
+        "CUSTOM_DENY" if !actor_ptids.is_empty() => {
+            let base = match intent.audience_base_kind.as_deref() {
+                Some("PUBLIC") => social::audience::Kind::Public,
+                Some("FOLLOWERS") => social::audience::Kind::Followers,
+                _ => return Err("private Moment custom deny base is invalid".to_string()),
+            };
+            (social::audience::Kind::CustomDeny, Some(base))
+        }
+        _ => return Err("private Moment audience is invalid".to_string()),
+    };
+    if !matches!(
+        kind,
+        social::audience::Kind::Circle | social::audience::Kind::Group
+    ) && target_id != 0
+        || !matches!(
+            kind,
+            social::audience::Kind::CustomAllow | social::audience::Kind::CustomDeny
+        ) && !actor_ptids.is_empty()
+        || kind != social::audience::Kind::CustomDeny && intent.audience_base_kind.is_some()
+    {
+        return Err("private Moment audience fields are inconsistent".to_string());
+    }
+    Ok(social::Audience {
+        kind: kind as i32,
+        target_id,
+        actor_ptids,
+        base_kind: base_kind.map_or(0, |value| value as i32),
+        ..Default::default()
+    })
 }
 
 #[cfg(test)]
@@ -1786,20 +1818,46 @@ mod tests {
     }
 
     #[test]
-    fn secure_content_private_publish_intent_is_friends_text_or_image_only() {
+    fn secure_content_private_publish_intent_validates_audience_kinds() {
         let valid = PrivateMomentPublishIntent {
             actor_ptid: "ptid:alice".to_string(),
             renderer_generation: 1,
             draft_id: "draft-1".to_string(),
             draft_revision: 1,
             audience_kind: "FRIENDS".to_string(),
+            audience_target_id: None,
+            audience_base_kind: None,
+            audience_actor_ptids: Vec::new(),
+            moment_kind: "TEXT".to_string(),
             text: "private".to_string(),
             files: Vec::new(),
         };
         assert!(validate_publish_intent(&valid).is_ok());
+        for kind in &["FOLLOWERS", "SELF"] {
+            let mut variant = valid.clone();
+            variant.audience_kind = kind.to_string();
+            assert!(validate_publish_intent(&variant).is_ok());
+        }
+        for kind in &["CIRCLE", "GROUP"] {
+            let mut variant = valid.clone();
+            variant.audience_kind = kind.to_string();
+            variant.audience_target_id = Some("42".to_string());
+            assert!(validate_publish_intent(&variant).is_ok());
+        }
+        let mut custom_allow = valid.clone();
+        custom_allow.audience_kind = "CUSTOM_ALLOW".to_string();
+        custom_allow.audience_actor_ptids = vec!["ptid:bob".to_string()];
+        assert!(validate_publish_intent(&custom_allow).is_ok());
+        let mut custom_deny = custom_allow;
+        custom_deny.audience_kind = "CUSTOM_DENY".to_string();
+        custom_deny.audience_base_kind = Some("FOLLOWERS".to_string());
+        assert!(validate_publish_intent(&custom_deny).is_ok());
         let mut invalid = valid.clone();
-        invalid.audience_kind = "FOLLOWERS".to_string();
+        invalid.audience_kind = "PUBLIC".to_string();
         assert!(validate_publish_intent(&invalid).is_err());
+        let mut invalid_subtype = valid;
+        invalid_subtype.moment_kind = "BOGUS".to_string();
+        assert!(validate_publish_intent(&invalid_subtype).is_err());
     }
 
     #[test]
@@ -1810,6 +1868,10 @@ mod tests {
             draft_id: "draft-1".to_string(),
             draft_revision: 3,
             audience_kind: "FRIENDS".to_string(),
+            audience_target_id: None,
+            audience_base_kind: None,
+            audience_actor_ptids: Vec::new(),
+            moment_kind: "TEXT".to_string(),
             text: "private".to_string(),
             files: Vec::new(),
         };
@@ -2215,5 +2277,35 @@ mod tests {
             0,
         )
         .is_err());
+    }
+
+    #[test]
+    fn ready_media_projects_native_verified_plaintext_evidence() {
+        let mut media = super::super::projection::PrivateMomentMediaProjection {
+            object_id: "object-1".to_string(),
+            state: PrivateMediaState::MediaDownloading,
+            render_url: None,
+            local_path: None,
+            plaintext_sha256: None,
+            plaintext_size: None,
+            mime_type: Some("image/png".to_string()),
+            width: None,
+            height: None,
+            alt_text: None,
+            error_code: Some("PENDING".to_string()),
+        };
+        let digest = [0xab; 32];
+        let expected_digest = "ab".repeat(32);
+
+        apply_ready_media(&mut media, Path::new("/tmp/private-media"), &digest, 17);
+
+        assert_eq!(media.state, PrivateMediaState::MediaReady);
+        assert_eq!(media.local_path.as_deref(), Some("/tmp/private-media"));
+        assert_eq!(
+            media.plaintext_sha256.as_deref(),
+            Some(expected_digest.as_str())
+        );
+        assert_eq!(media.plaintext_size, Some(17));
+        assert_eq!(media.error_code, None);
     }
 }

@@ -1301,7 +1301,7 @@ func (r *leaveIntentRepository) Save(
 func (r *leaveIntentRepository) ListPending(
 	ctx context.Context,
 	conversationID valueobject.ConversationID,
-	actor valueobject.PTID,
+	excludedActor valueobject.PTID,
 	limit int,
 ) ([]repository.LeaveIntent, error) {
 	var models []ConversationLeaveIntentModel
@@ -1312,8 +1312,8 @@ func (r *leaveIntentRepository) ListPending(
 			string(repository.LeaveIntentStatePending),
 			time.Now().UTC(),
 		)
-	if actor != "" {
-		query = query.Where("actor_ptid = ?", string(actor))
+	if excludedActor != "" {
+		query = query.Where("actor_ptid <> ?", string(excludedActor))
 	}
 	if limit > 0 {
 		query = query.Limit(limit)
@@ -1458,29 +1458,6 @@ func (r *followerRepository) Apply(
 		!conversationdomain.IsCode(statusErr, conversationdomain.ErrorCodeNotFound) {
 		return statusErr
 	}
-	rejoinCheckpoint := projection.Checkpoint == repository.FollowerCheckpointRejoin
-	if projection.Checkpoint != repository.FollowerCheckpointNone &&
-		!rejoinCheckpoint {
-		return conversationdomain.NewError(
-			conversationdomain.ErrorCodeHashChainInvalid,
-			"persistence.apply_follower_event",
-			"checkpoint",
-			"is not supported",
-		)
-	}
-	sequenceGap := err == nil && existing.Sequence+1 < uint64(event.Sequence)
-	if rejoinCheckpoint &&
-		(statusErr != nil ||
-			status != repository.FollowerStatusRetired ||
-			event.Fact.Kind != domainevent.KindMembershipCommitted ||
-			projection.Status != repository.FollowerStatusActive) {
-		return conversationdomain.NewError(
-			conversationdomain.ErrorCodeHashChainInvalid,
-			"persistence.apply_follower_event",
-			"checkpoint",
-			"rejoin does not match the retired follower state",
-		)
-	}
 	switch {
 	case statusErr == nil && status == repository.FollowerStatusReadOnly:
 		return conversationdomain.NewError(
@@ -1496,19 +1473,9 @@ func (r *followerRepository) Apply(
 			"projection",
 			"requires an explicit resynchronization before applying more events",
 		)
-	case statusErr == nil &&
-		status == repository.FollowerStatusRetired &&
-		!rejoinCheckpoint:
-		return conversationdomain.NewError(
-			conversationdomain.ErrorCodeUnauthorized,
-			"persistence.apply_follower_event",
-			"projection",
-			"retired follower accepts only a rejoin checkpoint",
-		)
 	case err == nil &&
 		status == repository.FollowerStatusResyncRequired &&
-		existing.Sequence+1 != uint64(event.Sequence) &&
-		!rejoinCheckpoint:
+		existing.Sequence+1 != uint64(event.Sequence):
 		return conversationdomain.NewError(
 			conversationdomain.ErrorCodeStaleAuthorityHead,
 			"persistence.apply_follower_event",
@@ -1528,13 +1495,11 @@ func (r *followerRepository) Apply(
 			"sequence",
 			"is older than the durable follower head",
 		)
-	case sequenceGap && !rejoinCheckpoint:
+	case err == nil && existing.Sequence+1 < uint64(event.Sequence):
 		return r.markFollowerResyncRequired(ctx, existing, "authority event sequence has a gap")
 	case err == nil && existing.AuthorityStationPeerID != string(event.AuthorityStation):
 		return r.markFollowerReadOnly(ctx, existing, "authority Station changed without a handover")
-	case err == nil &&
-		!bytes.Equal(existing.EventHash, event.PreviousHash[:]) &&
-		!sequenceGap:
+	case err == nil && !bytes.Equal(existing.EventHash, event.PreviousHash[:]):
 		return r.markFollowerReadOnly(ctx, existing, "authority event previous hash mismatch")
 	case errors.Is(err, gorm.ErrRecordNotFound) && event.Sequence != 1:
 		return conversationdomain.NewError(
@@ -1590,21 +1555,10 @@ func (r *followerRepository) Apply(
 	} else if saveErr := r.db.WithContext(ctx).Save(&model).Error; saveErr != nil {
 		return saveErr
 	}
-	if rejoinCheckpoint {
-		if err := r.db.WithContext(ctx).
-			Where(
-				"conversation_id = ? AND sequence <= ?",
-				string(event.ConversationID),
-				uint64(event.Sequence),
-			).
-			Delete(&ConversationFollowerPendingEventModel{}).Error; err != nil {
-			return err
-		}
-	}
 	if err := r.SetStatus(
 		ctx,
 		event.ConversationID,
-		projection.Status,
+		repository.FollowerStatusActive,
 	); err != nil {
 		return err
 	}
@@ -1845,7 +1799,6 @@ func (r *followerRepository) SetStatus(
 ) error {
 	switch status {
 	case repository.FollowerStatusActive,
-		repository.FollowerStatusRetired,
 		repository.FollowerStatusResyncRequired,
 		repository.FollowerStatusDegraded,
 		repository.FollowerStatusReadOnly:

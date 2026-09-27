@@ -29,7 +29,6 @@ var actorIdentityColumnMigrations = []actorIdentityColumnMigration{
 	{table: "ecosystem_agent_groups", legacyColumn: "owner_actor_id", targetColumn: "owner_actor_ptid"},
 	{table: "ecosystem_topic_comments", legacyColumn: "author_id", targetColumn: "author_ptid"},
 	{table: "ecosystem_eval_datasets", legacyColumn: "owner_actor_id", targetColumn: "owner_actor_ptid"},
-	{table: "ecosystem_custom_plugins", legacyColumn: "owner_actor_id", targetColumn: "owner_actor_ptid"},
 }
 
 // MigrateActorIdentityColumns performs the PTID hard cut before AutoMigrate

@@ -13,6 +13,13 @@ export function isPresenceOnline(state: number | string): boolean {
   return resolvePresenceOnline(state) === true;
 }
 
+export function shouldApplyPresenceRevision(
+  currentRevision: number | undefined,
+  incomingRevision: number,
+): boolean {
+  return incomingRevision >= (currentRevision ?? 0);
+}
+
 export function resolveChatPresenceTag(input: {
   presenceKnown: boolean;
   online: boolean;

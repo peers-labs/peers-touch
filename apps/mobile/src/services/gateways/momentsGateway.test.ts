@@ -21,7 +21,6 @@ import {
   Audience_Kind,
   PostDetailOutcome,
   PostType,
-  PostVisibility,
   ReactionKind,
   TimelinePageOutcome,
 } from '../../gen/proto/domain/social/post_pb';
@@ -31,6 +30,8 @@ const session = {
   stationPeerId: 'station-a',
   stationUrl: 'https://station.example',
   sessionId: 'session-a',
+  deviceId: 'device-a',
+  lifecycleGeneration: 1,
   actorRef: { ptid: 'ptid:alice' },
   authenticatedAt: 1,
 } satisfies MobileAuthSession;
@@ -155,7 +156,6 @@ describe('Moments Station protobuf JSON decoding', () => {
           id: 'post-1',
           authorPtid: 'ptid:alice',
           type: PostType.TEXT,
-          visibility: PostVisibility.PUBLIC,
           content: { case: 'textPost', value: { text: 'Hello' } },
           stats: { commentsCount: 4n },
           author: { displayName: 'Alice' },
@@ -333,7 +333,6 @@ function snakePost() {
     id: 'post-1',
     author_ptid: 'ptid:alice',
     type: 'TEXT',
-    visibility: 'PUBLIC',
     created_at: '2026-09-16T10:00:00Z',
     stats: {
       comments_count: '4',

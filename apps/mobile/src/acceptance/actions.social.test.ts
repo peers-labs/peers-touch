@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const socialMocks = vi.hoisted(() => ({
   readCurrentSocialProfile: vi.fn(),
-  readFederationContexts: vi.fn(),
   updateCurrentSocialProfile: vi.fn(),
 }));
 const projectionMocks = vi.hoisted(() => ({
@@ -22,7 +21,6 @@ vi.mock('../features/social/socialRuntime', () => ({
   applySocialFriendRequestProjectionCheckpoints: vi.fn(),
   readSocialRuntimeProjection: vi.fn(),
   readCurrentSocialProfile: socialMocks.readCurrentSocialProfile,
-  readFederationContexts: socialMocks.readFederationContexts,
   reconcileSocialRuntime: vi.fn(),
   searchSocialPeople: vi.fn(),
   sendSocialFriendRequest: vi.fn(),
@@ -44,28 +42,11 @@ vi.mock('../runtimes/deviceSettingsRuntime', () => ({
     deviceMocks.readDeviceSettingsRuntimeSnapshot,
 }));
 
-import { mobileAcceptanceActions, publicCallSnapshot } from './actions';
+import { mobileAcceptanceActions } from './actions';
 
 describe('Mobile Acceptance social actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('reads Federation contexts through the active Social runtime', async () => {
-    socialMocks.readFederationContexts.mockResolvedValue([{
-      federationId: 'fed-1',
-      name: 'Primary',
-      status: 'active',
-    }]);
-
-    await expect(mobileAcceptanceActions['federation.context.read']())
-      .resolves.toEqual({
-        federations: [{
-          federationId: 'fed-1',
-          name: 'Primary',
-          status: 'active',
-        }],
-      });
   });
 
   it('routes Moments mutations through the active owner runtime', async () => {
@@ -290,18 +271,5 @@ describe('Mobile Acceptance social actions', () => {
       .rejects.toThrow('acceptance.mobile.activeMomentsRuntimeRequired');
     await expect(mobileAcceptanceActions['settings.notifications.read']())
       .rejects.toThrow('acceptance.mobile.activeProfileRuntimeRequired');
-  });
-
-  it('projects rejected terminal call state consistently across clients', () => {
-    expect(publicCallSnapshot({
-      callId: '01K5TCALL00000000000000000',
-      state: 'ended',
-      endReason: 'rejected',
-      winningDeviceId: 'bob-mobile',
-    })).toEqual({
-      callId: '01K5TCALL00000000000000000',
-      state: 'rejected',
-      winningDeviceId: 'bob-mobile',
-    });
   });
 });

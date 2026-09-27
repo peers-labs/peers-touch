@@ -77,11 +77,7 @@ pub enum PresenceTrigger {
     /// Frontend collapses `visibilitychange`, `focus`, and `pageshow` into
     /// this single trigger.
     AppForeground,
-    /// App went to background / minimised / lost focus. Used to drive
-    /// `/offline` so station stops queuing for us.
-    AppBackground,
-    /// App is shutting down (window close / process quit). Same effect
-    /// as `AppBackground` but expresses intent.
+    /// App is shutting down (window close / process quit).
     AppShutdown,
 
     /// Auth `restoreSession` succeeded for an existing actor (no new
@@ -100,8 +96,7 @@ pub enum PresenceTrigger {
     /// `navigator.onLine` flipped to false.
     NetworkOffline,
 
-    /// Periodic safety-net trigger (every 5 min). Only honoured if we
-    /// have not heard from any other trigger for `HEARTBEAT_AFTER`.
+    /// Periodic lease renewal while the authenticated runtime is alive.
     Heartbeat,
 
     /// Used by tests and `presence_notify` debug paths.
@@ -115,7 +110,6 @@ impl PresenceTrigger {
         match s {
             "app_launch" => Some(PresenceTrigger::AppLaunch),
             "app_foreground" => Some(PresenceTrigger::AppForeground),
-            "app_background" => Some(PresenceTrigger::AppBackground),
             "app_shutdown" => Some(PresenceTrigger::AppShutdown),
             "identity_restored" => Some(PresenceTrigger::IdentityRestored),
             "identity_switched" => Some(PresenceTrigger::IdentitySwitched),
@@ -132,7 +126,6 @@ impl PresenceTrigger {
         match self {
             PresenceTrigger::AppLaunch => "app_launch",
             PresenceTrigger::AppForeground => "app_foreground",
-            PresenceTrigger::AppBackground => "app_background",
             PresenceTrigger::AppShutdown => "app_shutdown",
             PresenceTrigger::IdentityRestored => "identity_restored",
             PresenceTrigger::IdentitySwitched => "identity_switched",
@@ -157,8 +150,7 @@ impl PresenceTrigger {
             | PresenceTrigger::Heartbeat
             | PresenceTrigger::Manual => PresenceState::Online,
 
-            PresenceTrigger::AppBackground
-            | PresenceTrigger::AppShutdown
+            PresenceTrigger::AppShutdown
             | PresenceTrigger::IdentityLoggedOut
             | PresenceTrigger::NetworkOffline => PresenceState::Offline,
         }
@@ -207,7 +199,6 @@ mod tests {
         for &t in &[
             PresenceTrigger::AppLaunch,
             PresenceTrigger::AppForeground,
-            PresenceTrigger::AppBackground,
             PresenceTrigger::AppShutdown,
             PresenceTrigger::IdentityRestored,
             PresenceTrigger::IdentitySwitched,

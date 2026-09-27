@@ -157,6 +157,10 @@
   "moments.comment.replyingTo": "回复",
   "moments.comment.viewAll": "查看评论",
   "moments.comment.hide": "收起评论",
+  "moments.comment.rateLimited": "重试时间不可用，草稿已保留。",
+  "moments.comment.retryIn": "{{count}} 秒后可重试。",
+  "moments.comment.readbackPending": "评论已提交，但暂时无法确认发布结果。你可以检查结果，系统不会重复发送。",
+  "moments.comment.confirmResult": "确认发布结果",
 
   "moments.author.unknown": "未知用户",
 

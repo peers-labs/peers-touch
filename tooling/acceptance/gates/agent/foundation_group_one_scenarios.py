@@ -6189,6 +6189,138 @@ def evaluate_base_attachment_rejected(
     return assertions
 
 
+def evaluate_base_loop_budget_exhausted(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-LOOP_BUDGET_EXHAUSTED"
+    station_error = _mapping(capture, "stationError", scenario=scenario)
+    station_details = _mapping(
+        station_error,
+        "details",
+        scenario=scenario,
+    )
+    typed_error = _mapping(capture, "typedError", scenario=scenario)
+    typed_details = _mapping(
+        typed_error,
+        "details",
+        scenario=scenario,
+    )
+    resolution = _mapping(capture, "resolution", scenario=scenario)
+    loop = _mapping(capture, "loopBudget", scenario=scenario)
+    turn_id = _nonempty_string(capture, "turnId", scenario=scenario)
+    limit = str(AS_F04_MAX_TOOL_CALLS)
+
+    assertions = {
+        "stationTypedPayload": (
+            station_error.get("error_type") == "TOOL_LOOP_BUDGET_EXHAUSTED"
+            and station_error.get("locale_key")
+            == "agent.errors.toolLoopBudgetExhausted"
+            and station_error.get("retryable") is False
+            and station_error.get("terminal") is True
+            and sorted(station_details) == ["budget_kind", "limit", "turn_id"]
+            and station_details.get("turn_id") == turn_id
+            and station_details.get("budget_kind") == "tool_calls"
+            and station_details.get("limit") == limit
+        ),
+        "typedLoopBudget": (
+            typed_error.get("error_type") == "TOOL_LOOP_BUDGET_EXHAUSTED"
+            and typed_error.get("locale_key")
+            == "agent.errors.toolLoopBudgetExhausted"
+            and typed_error.get("retryable") is False
+            and typed_error.get("terminal") is True
+            and sorted(typed_details) == ["budget_kind", "limit", "turn_id"]
+            and typed_details.get("turn_id") == turn_id
+            and typed_details.get("budget_kind") == "tool_calls"
+            and typed_details.get("limit") == limit
+        ),
+        "localizedInspectBudgetVisible": (
+            capture.get("recoveryVisible") is True
+            and bool(str(capture.get("recoveryLabel") or ""))
+            and resolution.get("type") == "inspectBudget"
+            and resolution.get("turnId") == turn_id
+            and resolution.get("budgetKind") == "tool_calls"
+            and resolution.get("limit") == limit
+        ),
+        "budgetIdentityProjected": (
+            capture.get("projectedTurnId") == turn_id
+            and capture.get("projectedBudgetKind") == "tool_calls"
+            and capture.get("projectedLimit") == limit
+        ),
+        "inspectBudgetOpenedTurnDetails": (
+            capture.get("turnDetailsOpened") is True
+        ),
+        "terminalAtExactLimit": (
+            loop.get("stopped") is True
+            and loop.get("terminalReason") == "max_tool_calls_exhausted"
+            and _nonnegative_int(
+                loop,
+                "requestedLimit",
+                scenario=scenario,
+            )
+            == AS_F04_MAX_TOOL_CALLS
+            and _nonnegative_int(
+                loop,
+                "effectiveLimit",
+                scenario=scenario,
+            )
+            == AS_F04_MAX_TOOL_CALLS
+            and _nonnegative_int(
+                loop,
+                "observedIterations",
+                scenario=scenario,
+            )
+            == AS_F04_MAX_TOOL_CALLS
+            and _nonnegative_int(
+                loop,
+                "maximumIterations",
+                scenario=scenario,
+            )
+            == AS_F04_MAX_TOOL_CALLS
+            and _nonnegative_int(
+                loop,
+                "executionAfterLimit",
+                scenario=scenario,
+            )
+            == 0
+            and _nonnegative_int(
+                capture,
+                "terminalEventCount",
+                scenario=scenario,
+            )
+            == 1
+            and capture.get("terminalEventType") == "error"
+        ),
+        "inspectBudgetHasNoAutomaticRetry": (
+            _nonnegative_int(
+                capture,
+                "providerCallsAfterAction",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                capture,
+                "providerCallsBeforeAction",
+                scenario=scenario,
+            )
+            and _nonnegative_int(
+                capture,
+                "toolCallsAfterAction",
+                scenario=scenario,
+            )
+            == _nonnegative_int(
+                capture,
+                "toolCallsBeforeAction",
+                scenario=scenario,
+            )
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_approval_expired(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

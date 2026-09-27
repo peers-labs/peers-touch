@@ -165,6 +165,11 @@ export function HomePage() {
 
   return (
     <Flexbox
+      data-pt-home=""
+      data-pt-home-freshness={
+        projection ? HomeProjectionFreshness[projection.freshness] : 'MISSING'
+      }
+      data-pt-home-revision={projection?.revision.toString() ?? '0'}
       gap={token.marginLG}
       padding={token.paddingLG}
       style={{ height: '100%', overflow: 'auto' }}
@@ -333,6 +338,7 @@ export function HomePage() {
                       ? t('agent.home.sendChat')
                       : t('agent.home.createTask')
                   }
+                  data-pt-home-submit={mode}
                   disabled={!draft.trim() || submissionBlocked}
                   data-testid="home-work-submit"
                   icon={<ArrowUp size={15} />}
@@ -353,6 +359,7 @@ export function HomePage() {
                 <Flexbox>
                   {recentWork.map((work) => (
                     <button
+                      data-pt-home-work={work.workId}
                       key={`${work.kind}:${work.workId}`}
                       onClick={() => openRecentWork(work)}
                       style={{

@@ -11,7 +11,6 @@ import { GlobalLayout } from '../components/GlobalLayout';
 import { AppSideNav } from '../components/AppSideNav';
 import { PageRouter } from '../components/PageRouter';
 import { CommandMenu } from '../components/CommandMenu';
-import { CallSurface } from '../components/chat/CallSurface';
 import { useHashRouter } from '../hooks/useHashRouter';
 import { useNavigation } from '../hooks/useNavigation';
 import { useAppletPins } from '../hooks/useAppletPins';
@@ -120,7 +119,6 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
         navigateToAgentSurface={navigation.navigateToAgentSurface}
         navigateToSettings={navigation.navigateToSettings}
       />
-      <CallSurface />
     </PageContextProvider>,
   );
 }

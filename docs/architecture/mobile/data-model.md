@@ -51,8 +51,9 @@ Actor identity is a stricter boundary:
   thread list/count, member authority, and durable command results:
   `chat/command.proto`, `chat/conversation.proto`,
   `chat/conversation_api.proto`, and `chat/event.proto`.
-- Retired Friend/Group Chat proto files and generated bindings are absent.
-  Mobile accepts only the canonical Conversation and Messaging contracts.
+- `chat/friend_chat.proto` and `chat/group_chat.proto` are compatibility inputs
+  only where an explicitly bounded read adapter still exists. They are not
+  canonical target owners and cannot receive new Mobile calls.
 - Moments feed, audience, media and reactions: `social/post.proto`.
 - Comments and replies: `social/comment.proto`.
 - Profile and relationship: `actor/actor.proto`, `social/relationship.proto`.
@@ -1019,14 +1020,14 @@ The verified production baseline is:
 
 | Owner | Legacy operation | Current caller count | Canonical target |
 |---|---|---:|---|
-| Conversation | member role/mute update | 0 | `/conversation/member/update` |
-| Conversation | ownership transfer | 0 | `/conversation/ownership/transfer` |
-| Social | block | 0 | generated Social relationship command |
-| Social | unblock | 0 | generated Social relationship command |
-| Social | blocked list | 0 | generated Social paginated projection |
-| Social | relationship status | 0 | generated Social relationship projection |
+| Conversation | member role/mute update | 1 | `/conversation/member/update` |
+| Conversation | ownership transfer | 1 | `/conversation/ownership/transfer` |
+| Social | block | 1 | generated Social relationship command |
+| Social | unblock | 1 | generated Social relationship command |
+| Social | blocked list | 1 | generated Social paginated projection |
+| Social | relationship status | 1 | generated Social relationship projection |
 
-Closure requires zero executable production calls to every route declared in
-the CCU legacy inventory. Explicit negative assertions and historical
-documents are classified separately and cannot be used as fallback runtime
-paths.
+Closure requires zero executable production calls to `/group-chat/*` and
+`/friend-chat/*` for these operations. Generated comments, tests, fixtures, and
+historical documents are classified separately and cannot be used as fallback
+runtime paths.

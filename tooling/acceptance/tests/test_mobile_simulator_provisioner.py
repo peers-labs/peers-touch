@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import base64
 import dataclasses
 import hashlib
 import json
@@ -19,7 +18,6 @@ from unittest.mock import call, patch
 from tooling.acceptance.core import (
     ArtifactRef,
     BlockedError,
-    ClientServiceBinding,
     ClientRuntime,
     EnvironmentContract,
     ProvisioningError,
@@ -35,7 +33,6 @@ from tooling.acceptance.gates.mobile.simulator_e2e import (
     SimulatorDeviceTarget,
 )
 from tooling.acceptance.provisioners import (
-    ChatMixedNativeProvisioner,
     MobileDirectSimulatorProvisioner,
     MobileIOSLayoutSimulatorProvisioner,
     MobileSimulatorProvisioner,
@@ -51,9 +48,6 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     ANDROID_AVD_NAME,
     ANDROID_MANIFEST_RELATIVE_PATH,
     BASE_SIMULATOR_HARNESS_ACTIONS,
-    CHAT_MIXED_NATIVE_ENVIRONMENT_ID,
-    CHAT_MIXED_NATIVE_GATE_IDS,
-    CHAT_MIXED_NATIVE_HARNESS_ACTIONS,
     DIRECT_SIMULATOR_ENVIRONMENT_ID,
     EXPECTED_CLIENTS,
     EXPECTED_DRIVERS,
@@ -64,7 +58,6 @@ from tooling.acceptance.provisioners.mobile_simulator import (
     IOS_RUNTIME,
     MOBILE_WEB_DIST_RELATIVE_PATH,
     SIMULATOR_APPIUM_CAPABILITY_ID,
-    SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
     STATION_BOUND_SIMULATOR_GATE_IDS,
     STATION_LIFECYCLE_ENVIRONMENT_ID,
     STATION_LIFECYCLE_HARNESS_ACTIONS,
@@ -498,7 +491,6 @@ class FakeParentSimulatorSession:
                 "runtimeStationPeerId": (
                     self.active_station_peer_id if active else None
                 ),
-                "deviceId": "mobile-device" if active else None,
                 "social": {
                     "stationPeerId": (
                         self.active_station_peer_id if active else None
@@ -506,6 +498,14 @@ class FakeParentSimulatorSession:
                     "actorPtid": self.actor_ptid,
                     "sessionCount": 1 if active else 0,
                     "requestCount": 0,
+                    "messageThreadCount": 0,
+                },
+                "group": {
+                    "stationPeerId": (
+                        self.active_station_peer_id if active else None
+                    ),
+                    "actorPtid": self.actor_ptid,
+                    "groupCount": 0,
                     "messageThreadCount": 0,
                 },
                 "navigation": {
@@ -529,8 +529,6 @@ class FakeParentSimulatorSession:
                 "webSessionProjectionCleared": True,
                 "stationRegistryCleared": True,
             }
-        if action == "runtime.prepareActorIdentity":
-            return {"prepared": True}
         return {"ok": True}
 
 
@@ -696,101 +694,6 @@ class MobileSimulatorContractTests(unittest.TestCase):
             provisioner._load_overlay()["harness"]["namespace"],
             "__PEERS_MOBILE_ACCEPTANCE__",
         )
-
-    def test_chat_mixed_native_contract_declares_typed_topology(self) -> None:
-        path = ENVIRONMENTS_DIR / "chat-mixed-native.yaml"
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        contract = EnvironmentContract.from_yaml(path)
-
-        self.assertEqual(contract.id, CHAT_MIXED_NATIVE_ENVIRONMENT_ID)
-        self.assertEqual(payload["base_environment"], "mobile-simulator")
-        self.assertEqual(
-            {
-                client.id: (
-                    client.actor,
-                    client.runtime,
-                    client.service_bindings["station"].service_id,
-                )
-                for client in contract.clients
-            },
-            {
-                "desktop-alice": (
-                    "alice",
-                    "native-tauri",
-                    "station-primary",
-                ),
-                "desktop-bob": (
-                    "bob",
-                    "native-tauri",
-                    "station-secondary",
-                ),
-                "sim-ios": (
-                    "bob",
-                    "tauri-ios-simulator",
-                    "station-secondary",
-                ),
-                "sim-ios-peer": (
-                    "charlie",
-                    "tauri-ios-simulator",
-                    "station-primary",
-                ),
-            },
-        )
-        self.assertEqual(
-            set(payload["harness"]["required_actions"]),
-            CHAT_MIXED_NATIVE_HARNESS_ACTIONS,
-        )
-        self.assertIn(
-            "recovery.snapshot",
-            payload["harness"]["required_actions"],
-        )
-        self.assertIsInstance(
-            get_provisioner(
-                contract,
-                station_profiles={
-                    "station-primary": "four",
-                    "station-secondary": "chat-native-disposable",
-                },
-            ),
-            ChatMixedNativeProvisioner,
-        )
-        self.assertEqual(len(CHAT_MIXED_NATIVE_GATE_IDS), 5)
-
-    def test_chat_mixed_native_allocates_isolated_desktop_clients(self) -> None:
-        contract = EnvironmentContract.from_yaml(
-            ENVIRONMENTS_DIR / "chat-mixed-native.yaml"
-        )
-        provisioner = ChatMixedNativeProvisioner(contract)
-
-        clients = provisioner._desktop_clients("run-id")
-        try:
-            self.assertEqual(
-                {client.id for client in clients},
-                {"desktop-alice", "desktop-bob"},
-            )
-            self.assertEqual(
-                {client.runtime for client in clients},
-                {"native-tauri"},
-            )
-            ports = {
-                port
-                for client in clients
-                for port in (
-                    client.gateway_port,
-                    client.renderer_port,
-                    client.webdriver_port,
-                )
-            }
-            self.assertEqual(len(ports), 6)
-            self.assertEqual(
-                {
-                    client.service_bindings["station"].service_id
-                    for client in clients
-                },
-                {"station-primary", "station-secondary"},
-            )
-        finally:
-            provisioner.cleanup()
 
     def test_direct_simulator_binds_two_actors_to_one_station(self) -> None:
         path = ENVIRONMENTS_DIR / "mobile-direct-simulator.yaml"
@@ -1323,96 +1226,6 @@ class MobileSimulatorContractTests(unittest.TestCase):
             1,
         )
         self.assertTrue(actors[0]["federationId"])
-
-    def test_mixed_actor_fixture_seeds_selected_cross_station_friendships(
-        self,
-    ) -> None:
-        path = ENVIRONMENTS_DIR / "chat-mixed-native.yaml"
-        contract = EnvironmentContract.from_yaml(path)
-        provisioner = ChatMixedNativeProvisioner(
-            contract,
-            overlay_path=path,
-        )
-        evidence = FakeEvidenceRun()
-        provisioner.bind_evidence_run(evidence)  # type: ignore[arg-type]
-        bindings = resolve_mobile_service_bindings(
-            contract,
-            path,
-            environment={
-                "PT_MOBILE_STATION_PRIMARY_URL": (
-                    "https://station-primary.example"
-                ),
-                "PT_MOBILE_STATION_PRIMARY_DEPLOY_ENV": "deploy-primary",
-                "PT_MOBILE_STATION_SECONDARY_URL": (
-                    "https://station-secondary.example"
-                ),
-                "PT_MOBILE_STATION_SECONDARY_DEPLOY_ENV": "deploy-secondary",
-            },
-        )
-
-        with (
-            patch.dict(
-                "os.environ",
-                {"MOBILE_ACCEPTANCE_RESET": "1"},
-                clear=False,
-            ),
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
-                "verify_reset_target",
-            ),
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
-                "reset_fixture",
-            ),
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
-                "resolve_actor_identity",
-                side_effect=lambda endpoint, _deployment, role: SimpleNamespace(
-                    role=role,
-                    account_ref=f"station-account:{role}@p.t",
-                    ptid=f"ptid:{role}:{endpoint}",
-                    device_policy="fresh",
-                    federated_handle=f"@{role}@{endpoint}",
-                    home_station_peer_id=(
-                        "peer-primary"
-                        if "primary" in endpoint
-                        else "peer-secondary"
-                    ),
-                ),
-            ),
-            patch(
-                "tooling.acceptance.provisioners.mobile_simulator."
-                "prepare_bound_friendships",
-            ) as prepare_friendships,
-        ):
-            provisioner._prepare_actor_fixture(
-                "chat-lifecycle-mixed-client-multi-device-e2e",
-                bindings,
-                provisioner._load_overlay(),
-            )
-
-        role_targets, actors = prepare_friendships.call_args.args
-        self.assertEqual(
-            role_targets,
-            {
-                "alice": (
-                    "https://station-primary.example",
-                    "deploy-primary",
-                ),
-                "bob": (
-                    "https://station-secondary.example",
-                    "deploy-secondary",
-                ),
-                "charlie": (
-                    "https://station-primary.example",
-                    "deploy-primary",
-                ),
-            },
-        )
-        self.assertEqual(
-            {actor.role for actor in actors},
-            {"alice", "bob", "charlie"},
-        )
 
     def test_direct_actor_fixture_resolves_both_roles_on_same_station(
         self,
@@ -2299,10 +2112,6 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
                 provisioning_run_id=manifest.run_id,
                 required_capabilities=(SIMULATOR_APPIUM_CAPABILITY_ID,),
             )
-            self.assertEqual(
-                context._request_timeout_seconds,
-                SIMULATOR_CAPABILITY_TIMEOUT_SECONDS,
-            )
             context.quiesce()
             context_cleanup = context.close()
             setup_resets = list(reset_calls)
@@ -2582,132 +2391,6 @@ class MobileStationLifecycleSimulatorProvisionerTests(unittest.TestCase):
             },
         )
         self.assertTrue(handler.close().closed)
-
-    def test_parent_prepares_shared_desktop_identity_for_mobile_actor(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            desktop_root = Path(temporary) / "desktop-bob"
-            identity_root = (
-                desktop_root
-                / "peers-touch"
-                / "desktop"
-                / "data"
-                / "secure-store"
-                / "identity-keys"
-            )
-            identity_root.mkdir(parents=True)
-            seed = bytes([7] * 32)
-            identity_key_ref = "station_peer_peer-secondary/ptid_bob"
-            identity_file = (
-                identity_root
-                / f"{hashlib.sha256(identity_key_ref.encode()).hexdigest()}.key"
-            )
-            identity_file.write_text(
-                seed.hex(),
-                encoding="utf-8",
-            )
-            service_binding = {
-                "station": ClientServiceBinding(
-                    service_id="station-secondary",
-                    required_kind="station",
-                )
-            }
-            manifest = dataclasses.replace(
-                new_manifest(
-                    environment_id=CHAT_MIXED_NATIVE_ENVIRONMENT_ID,
-                    gate_id="chat-lifecycle-mixed-client-multi-device-e2e",
-                    requested_profile="profile",
-                    resolved_profile="profile",
-                    slot=7,
-                    commit="a" * 40,
-                    worktree="/tmp/worktree",
-                    workspace_digest="clean",
-                ),
-                state=ProvisioningState.FIXTURE_READY,
-                services={
-                    "station-secondary": self._attestation(
-                        "station-secondary"
-                    )
-                },
-                clients=(
-                    ClientRuntime(
-                        id="desktop-bob",
-                        actor="bob",
-                        runtime="native-tauri",
-                        required_service_roles=("station",),
-                        service_bindings=service_binding,
-                        worktree="/tmp/worktree",
-                        gateway_port=1,
-                        renderer_port=2,
-                        webdriver_port=3,
-                        profile="desktop-bob",
-                        storage_root=str(desktop_root),
-                    ),
-                    ClientRuntime(
-                        id="sim-ios",
-                        actor="bob",
-                        runtime="tauri-ios-simulator",
-                        required_service_roles=("station",),
-                        service_bindings=service_binding,
-                        worktree="/tmp/worktree",
-                        gateway_port=4,
-                        renderer_port=5,
-                        webdriver_port=6,
-                        profile="sim-ios",
-                        storage_root="/tmp/sim-ios",
-                    ),
-                ),
-            ).to_dict()
-            session = FakeParentSimulatorSession("sim-ios")
-            handler = MobileSimulatorAppiumCapabilityHandler(
-                manifest=manifest,
-                artifact_writer=self.evidence_run,
-                session_factory=lambda _client_id: session,
-                harness_actions=tuple(STATION_LIFECYCLE_HARNESS_ACTIONS),
-                actor_manifest={
-                    "clients": [
-                        {
-                            "id": "sim-ios",
-                            "actor": "bob",
-                            "serviceId": "station-secondary",
-                        }
-                    ],
-                    "stations": {
-                        "station-secondary": {
-                            "actors": [
-                                {
-                                    "role": "bob",
-                                    "ptid": "ptid:bob",
-                                }
-                            ]
-                        }
-                    },
-                },
-            )
-
-            prepared = handler._prepare_shared_actor_identity(
-                "sim-ios",
-                session=session,
-            )
-
-            digest = hashlib.sha256(
-                b"peer-secondary|ptid:bob\x1fptid:bob"
-            ).digest()[:16].hex()
-            self.assertTrue(prepared)
-            self.assertEqual(
-                session.calls[-1],
-                (
-                    "runtime.prepareActorIdentity",
-                    {
-                        "storageKey": (
-                            "mobile-crypto-identity.v1.identity."
-                            f"{digest}"
-                        ),
-                        "seedBase64": base64.b64encode(seed).decode("ascii"),
-                    },
-                ),
-            )
 
 
 class MobileSimulatorProvisionerTests(unittest.TestCase):

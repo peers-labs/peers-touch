@@ -9,6 +9,17 @@ pub struct StubPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthLoginInput {
+    pub account: String,
+    pub password: String,
+    pub base_url: Option<String>,
+    /// Device type sent to Station for session scoping.
+    /// When omitted, callers inject a transport-specific default:
+    /// Tauri commands → "desktop-native", HTTP gateway → "desktop-browser".
+    pub device_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthValidateTokenInput {
     pub token: Option<String>,
 }
@@ -764,6 +775,36 @@ pub struct FriendChatCreateSessionInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FriendChatSyncInput {
     pub session_ulid: String,
+    pub limit: Option<u32>,
+    pub max_pages: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatListInput {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatListMessagesInput {
+    pub group_ulid: String,
+    pub limit: Option<u32>,
+    pub before_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatUnreadInput {
+    pub group_ulid: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatMarkReadInput {
+    pub group_ulid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupChatSyncInput {
+    pub group_ulid: String,
     pub limit: Option<u32>,
     pub max_pages: Option<u32>,
 }

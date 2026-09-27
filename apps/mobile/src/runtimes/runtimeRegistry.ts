@@ -36,10 +36,15 @@ import {
   activeStationEntry,
 } from '../features/station/stationRegistry';
 import {
+  startGroupRuntime,
+  type GroupRuntimeController,
+} from '../features/group/groupRuntime';
+import {
   startSocialRuntime,
   type SocialRuntimeController,
 } from '../features/social/socialRuntime';
 import { useSocialStore } from '../features/social/socialStore';
+import { useGroupStore } from '../features/group/groupStore';
 import {
   createAuthRuntimeDescriptor,
   fenceAuthRuntimeProjection,
@@ -223,6 +228,7 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
     controller = await startSocialRuntime(
       session,
       useSocialStore.getState,
+      useGroupStore.getState,
     );
     if (!isCurrent()) {
       await controller.teardown();
@@ -316,6 +322,108 @@ function createSocialRuntimeDescriptor(): MobileRuntimeDescriptor {
       useSocialStore.getState().bindSession(null);
       return {
         runtimeId: 'social',
+        success: true,
+        durationMs: performance.now() - start,
+      };
+    },
+  };
+}
+
+// --- Group Runtime Descriptor ---
+
+function createGroupRuntimeDescriptor(): MobileRuntimeDescriptor {
+  let controller: GroupRuntimeController | null = null;
+  let unsubscribe: (() => void) | null = null;
+  let suspended = false;
+  let transition: Promise<void> = Promise.resolve();
+  let runtimeContext: MobileRuntimeContext;
+
+  const synchronize: RuntimeSessionOperation = async (session, isCurrent) => {
+    const previousController = controller;
+    previousController?.teardown();
+    await previousController?.drain();
+    controller = null;
+    if (!isCurrent()) return;
+    useGroupStore.getState().bindSession(session);
+    if (!session || suspended) return;
+    controller = startGroupRuntime(session, useGroupStore.getState);
+    if (!isCurrent()) {
+      controller.teardown();
+      await controller.drain();
+      controller = null;
+    }
+  };
+
+  const enqueueSession = (
+    session: MobileAuthSession | null,
+    operation: RuntimeSessionOperation = synchronize,
+  ) => {
+    const task = runRuntimeSessionTransition({
+      previous: transition,
+      context: runtimeContext,
+      isScopeCurrent: () => (
+        runtimeSessionKey(admittedRuntimeSession(useAuthStore.getState()))
+        === runtimeSessionKey(session)
+      ),
+      run: (isCurrent) => operation(session, isCurrent),
+      onError: (error) => reportRuntimeDescriptorError('group', error),
+    });
+    transition = task.catch(() => undefined);
+    return task;
+  };
+
+  return {
+    id: 'group',
+    title: 'Group Runtime',
+    responsibility:
+      'Owns Group projections, membership, settings, and reconciliation under the single Social event ingress.',
+    dependsOn: ['session', 'social', 'command'],
+
+    async bootstrap(context): Promise<void> {
+      runtimeContext = context;
+      suspended = false;
+      unsubscribe = useAuthStore.subscribe((state, previous) => {
+        const session = admittedRuntimeSession(state);
+        const previousSession = admittedRuntimeSession(previous);
+        if (runtimeSessionKey(session) === runtimeSessionKey(previousSession)) return;
+        enqueueSession(session);
+      });
+      await enqueueSession(admittedRuntimeSession(useAuthStore.getState()));
+    },
+
+    async suspend(): Promise<void> {
+      suspended = true;
+      await transition;
+      await controller?.suspend();
+    },
+
+    async resume(context): Promise<void> {
+      runtimeContext = context;
+      suspended = false;
+      const session = admittedRuntimeSession(useAuthStore.getState());
+      await enqueueSession(session, async (activeSession, isCurrent) => {
+        if (controller && activeSession) {
+          useGroupStore.getState().bindSession(activeSession);
+          await controller.resume();
+        } else {
+          await synchronize(activeSession, isCurrent);
+        }
+      });
+    },
+
+    async teardown(): Promise<RuntimeOperationResult> {
+      const start = performance.now();
+      unsubscribe?.();
+      unsubscribe = null;
+      suspended = true;
+      await transition;
+      const activeController = controller;
+      activeController?.teardown();
+      await activeController?.drain();
+      controller = null;
+      useGroupStore.getState().bindSession(null);
+      return {
+        runtimeId: 'group',
         success: true,
         durationMs: performance.now() - start,
       };
@@ -638,7 +746,7 @@ function createRecoveryProjectionDescriptor(): MobileRuntimeDescriptor {
       'W6D aggregated recovery and degraded-state projection. Subscribes to lifecycle kernel ' +
       'events and runtime failure signals to produce a unified recovery snapshot consumed by ' +
       'overlay components. Does not own retry, persistence, or lifecycle — delegates to runtime owners.',
-    dependsOn: ['session', 'command', 'social'],
+    dependsOn: ['session', 'command', 'social', 'group'],
 
     async bootstrap(): Promise<void> {
       // Recovery projection initializes by reading the current kernel state
@@ -690,6 +798,7 @@ export function createMobileRuntimeDescriptors(): MobileRuntimeDescriptor[] {
     createChatStorageRuntimeDescriptor(),
     createCommandRuntimeDescriptor(),
     createSocialRuntimeDescriptor(),
+    createGroupRuntimeDescriptor(),
     createAvatarAssetRuntimeDescriptor(),
     createRecoveryProjectionDescriptor(),
   ];
@@ -701,6 +810,7 @@ export function fenceMobileRuntimeProjections(): void {
   fenceSessionRuntimeProjection();
   resetMobileNavigation();
   useSocialStore.getState().bindSession(null);
+  useGroupStore.getState().bindSession(null);
   destroyRecoveryProjection();
   clearAllScrollPositions();
 }
@@ -775,6 +885,7 @@ export async function resolveMobileLaunchState(
 export function readMobileRuntimeScopeProjection() {
   const auth = readActiveSessionProjection();
   const social = useSocialStore.getState();
+  const group = useGroupStore.getState();
   const navigation = readMobileNavigationProjection();
 
   return {
@@ -787,6 +898,12 @@ export function readMobileRuntimeScopeProjection() {
       sessionCount: social.sessions.length,
       requestCount: social.friendRequests.length,
       messageThreadCount: Object.keys(social.messages).length,
+    },
+    group: {
+      stationPeerId: group.authSession?.stationPeerId ?? null,
+      actorPtid: group.authSession?.actorRef.ptid ?? null,
+      groupCount: group.groups.length,
+      messageThreadCount: Object.keys(group.messages).length,
     },
     navigation: {
       primaryRouteId: navigation.primaryRouteId,

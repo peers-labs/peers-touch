@@ -18,8 +18,8 @@ describe('Station registry trust boundary', () => {
     })).toBe('https://station.example');
     expect(buildStationUrl({
       protocol: 'http',
-      address: '192.0.2.8:18080',
-    })).toBe('http://192.0.2.8:18080');
+      address: '192.168.1.8:18080',
+    })).toBe('http://192.168.1.8:18080');
 
     expect(buildStationUrl({
       protocol: 'https',

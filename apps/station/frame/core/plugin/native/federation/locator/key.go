@@ -10,6 +10,7 @@ package locator
 import (
 	"errors"
 	"strings"
+	"unicode"
 )
 
 // Namespace is the kad-DHT namespace registered for actor locator records.
@@ -36,7 +37,7 @@ var ErrInvalidKey = errors.New("locator: invalid DHT key")
 //   - removes a single leading '@' if present (so callers may pass either
 //     "@alice@host" or "alice@host"),
 //   - lower-cases the whole string,
-//   - rejects empty / whitespace-only input.
+//   - requires exactly one separator with non-empty, whitespace-free parts.
 //
 // The function deliberately does NOT enforce DNS-shape on the host portion;
 // that validation belongs in the actor write path so locator stays a pure
@@ -47,14 +48,18 @@ func CanonicalHandle(handle string) (string, error) {
 		return "", errors.New("locator: empty handle")
 	}
 	h = strings.TrimPrefix(h, "@")
-	h = strings.ToLower(h)
 	if h == "" {
 		return "", errors.New("locator: empty handle after canonicalisation")
 	}
-	if !strings.Contains(h, "@") {
+	localPart, host, found := strings.Cut(h, "@")
+	if !found ||
+		localPart == "" ||
+		host == "" ||
+		strings.Contains(host, "@") ||
+		strings.IndexFunc(h, unicode.IsSpace) >= 0 {
 		return "", errors.New("locator: handle must be of form user@host")
 	}
-	return h, nil
+	return strings.ToLower(localPart + "@" + host), nil
 }
 
 // DHTKey builds the canonical DHT key for a federated handle. The handle is

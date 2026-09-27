@@ -54,10 +54,10 @@ export interface FriendChatSession {
   participantBAvatar: string;
   participantAOnline: boolean;
   participantBOnline: boolean;
-  lastMessage?: SocialMessage;
+  lastMessage?: FriendChatMessage;
 }
 
-export interface SocialMessage {
+export interface FriendChatMessage {
   ulid: string;
   eventSequence?: number;
   messagingState?: string;
@@ -86,10 +86,12 @@ export interface SocialMessage {
   pinnedByPtid?: string;
   pinnedAtUnixMs?: number;
   encryptedPayload?: Uint8Array;
-  attachments?: SocialMessageAttachment[];
+  attachments?: FriendMessageAttachment[];
 }
 
-export interface SocialMessageAttachment {
+export type SocialMessage = FriendChatMessage;
+
+export interface FriendMessageAttachment {
   cid: string;
   filename: string;
   mimeType: string;
@@ -111,6 +113,8 @@ export interface SocialMessageAttachment {
     waveform: number[];
   };
 }
+
+export type SocialMessageAttachment = FriendMessageAttachment;
 
 export interface SocialNotification {
   id: string;
@@ -141,7 +145,7 @@ export interface SocialConversation {
   peerAvatar: string;
   peerOnline: boolean;
   unread: number;
-  lastMessage?: SocialMessage;
+  lastMessage?: FriendChatMessage;
 }
 
 export interface FriendshipStatus {

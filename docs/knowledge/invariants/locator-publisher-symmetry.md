@@ -5,6 +5,7 @@ status: active
 owns:
   - apps/station/frame/touch/actor/locator_hook.go
   - apps/station/frame/touch/actor/profile.go
+  - apps/station/frame/touch/actor/federation_self.go
   - apps/station/frame/touch/actor/account.go
   - apps/station/frame/touch/federation/republisher/
   - apps/station/frame/core/plugin/native/subserver/bootstrap/handler.go

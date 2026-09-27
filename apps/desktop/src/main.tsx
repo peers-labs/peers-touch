@@ -7,6 +7,7 @@ import { initI18n } from './i18n';
 import { ErrorBoundary } from './kernel/ErrorBoundary';
 import { installBrowserGateway } from './kernel/gateway';
 import { markPhaseEnd, markPhaseStart } from './kernel/boot';
+import { purgeRetiredStorage } from './kernel/retiredStorage';
 import { registerAppletElements } from './applet/register-elements';
 import {
   installFrontendRuntimeProfiler,
@@ -30,6 +31,7 @@ declare global {
 
 // ── Platform Setup (synchronous, before any async work) ──
 
+purgeRetiredStorage();
 registerAppletElements();
 installFrontendRuntimeProfiler();
 configureFrontendTelemetryUploader(uploadFrontendTelemetryEvents);
@@ -44,15 +46,80 @@ if (import.meta.hot) {
 async function installAcceptanceHarnessesForBuild(): Promise<void> {
   if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') return;
 
-  const [
-    { installAcceptanceHarnesses },
-    { installAgentAcceptanceHarness },
-  ] = await Promise.all([
-    import('./acceptance/registry'),
-    import('./acceptance/agentAcceptanceHarness'),
-  ]);
-  await installAcceptanceHarnesses();
-  installAgentAcceptanceHarness();
+  // #region debug-point E:harness-bootstrap
+  void fetch('http://127.0.0.1:7777/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'marketplace-capability-session',
+      runId: 'pre-fix',
+      hypothesisId: 'E',
+      location: 'apps/desktop/src/main.tsx:installAcceptanceHarnessesForBuild',
+      msg: '[DEBUG] acceptance harness bootstrap started',
+      data: {},
+      ts: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
+  try {
+    const [
+      { installAcceptanceHarnesses },
+      { installAgentAcceptanceHarness },
+    ] = await Promise.all([
+      import('./acceptance/registry'),
+      import('./acceptance/agentAcceptanceHarness'),
+    ]);
+    // #region debug-point E:harness-modules
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'marketplace-capability-session',
+        runId: 'pre-fix',
+        hypothesisId: 'E',
+        location: 'apps/desktop/src/main.tsx:installAcceptanceHarnessesForBuild',
+        msg: '[DEBUG] acceptance harness modules loaded',
+        data: {},
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    await installAcceptanceHarnesses();
+    installAgentAcceptanceHarness();
+    // #region debug-point E:harness-installed
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'marketplace-capability-session',
+        runId: 'pre-fix',
+        hypothesisId: 'E',
+        location: 'apps/desktop/src/main.tsx:installAcceptanceHarnessesForBuild',
+        msg: '[DEBUG] acceptance harnesses installed',
+        data: {
+          namespaces: Object.keys(window.__PT_ACCEPTANCE__ ?? {}).sort(),
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  } catch (error) {
+    // #region debug-point E:harness-bootstrap-error
+    void fetch('http://127.0.0.1:7777/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'marketplace-capability-session',
+        runId: 'pre-fix',
+        hypothesisId: 'E',
+        location: 'apps/desktop/src/main.tsx:installAcceptanceHarnessesForBuild',
+        msg: '[DEBUG] acceptance harness bootstrap failed',
+        data: {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack ?? '' : '',
+        },
+        ts: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    throw error;
+  }
 }
 
 window.__PT_BOOT_STATUS__?.('Initializing…');

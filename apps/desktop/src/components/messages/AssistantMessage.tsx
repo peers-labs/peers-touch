@@ -387,6 +387,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
   const availableModels = useAgentStore(s => s.availableModels);
   const selectedAgent = useAgentStore(s => s.selectedAgent);
   const setAgentSurface = useAgentStore(s => s.setAgentSurface);
+  const focusAgentCapability = useAgentStore(s => s.focusAgentCapability);
   const activeAgent = agents.find((agent) => agent.name === selectedAgent);
   const activeChatConfig = activeAgent ? parseAgentChatConfig(activeAgent) : {};
   const messageModel = message.model ? availableModels.find((model) => model.id === message.model) : undefined;
@@ -406,6 +407,8 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
         ? 'edit-queue'
         : message.resolution?.type === 'selectRuntime'
           ? 'select-runtime'
+        : message.resolution?.type === 'openPermissionSettings'
+          ? 'open-permission-settings'
         : message.resolution?.type === 'retryLater'
           ? 'retry-later'
         : message.resolution?.type === 'retry'
@@ -569,6 +572,32 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
     eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
   }, [activeAgent, setAgentSurface, t]);
 
+  const handleOpenPermissionSettings = useCallback(() => {
+    const resolution = message.resolution;
+    if (
+      !activeAgent
+      || resolution?.type !== 'openPermissionSettings'
+      || !resolution.capabilityId
+      || !resolution.permissionKind
+    ) {
+      toast.error(t('chat.message.resolution.actionFailed'));
+      return;
+    }
+    focusAgentCapability(
+      activeAgent.name,
+      resolution.capabilityId,
+      resolution.permissionKind,
+    );
+    setAgentSurface(activeAgent.name, 'profile');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  }, [
+    activeAgent,
+    focusAgentCapability,
+    message.resolution,
+    setAgentSurface,
+    t,
+  ]);
+
   const handleDelAndRegenerate = useCallback(() => {
     deleteAndRegenerateMessage(message.id);
   }, [deleteAndRegenerateMessage, message.id]);
@@ -650,6 +679,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
       data-pt-agent-error-resource-id={message.typedError?.details.resource_id}
       data-pt-agent-error-terminal-status={message.typedError?.details.terminal_status}
       data-pt-agent-error-capability-id={message.typedError?.details.capability_id}
+      data-pt-agent-error-permission-kind={message.typedError?.details.permission_kind}
       data-pt-agent-error-turn-id={message.typedError?.details.turn_id}
       data-pt-agent-error-reason-code={message.typedError?.details.reason_code}
       data-pt-agent-error-runtime-kind={message.typedError?.details.runtime_kind}
@@ -929,6 +959,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       && message.resolution.type !== 'openResult'
                       && message.resolution.type !== 'editQueue'
                       && message.resolution.type !== 'selectRuntime'
+                              && message.resolution.type !== 'openPermissionSettings'
                       && message.resolution.type !== 'retryLater'
                       && message.resolution.type !== 'retry'
                       && message.resolution.type !== 'inspectBudget'
@@ -944,6 +975,7 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                       || message.resolution.type === 'chooseCompatibleModel'
                       || message.resolution.type === 'chooseTool'
                       || message.resolution.type === 'selectRuntime'
+                      || message.resolution.type === 'openPermissionSettings'
                         ? <Settings size={14} />
                         : message.resolution.type === 'openOriginal'
                           ? <ExternalLink size={14} />
@@ -996,6 +1028,10 @@ export function AssistantMessage({ message, onOpenArtifact }: AssistantMessagePr
                         }
                         if (message.resolution!.type === 'selectRuntime') {
                           handleChooseCompatibleModel();
+                          return;
+                        }
+                        if (message.resolution!.type === 'openPermissionSettings') {
+                          handleOpenPermissionSettings();
                           return;
                         }
                         if (message.resolution!.type === 'retryLater') {

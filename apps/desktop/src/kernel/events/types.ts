@@ -22,7 +22,7 @@ export interface RealtimeMessageReceivedPayload {
   /** Recipient DID (always the local actor's stream target). */
   recipientActorPtid: string;
   /** Raw envelope ciphertext bytes; today this is the marshaled
-   *  ChatMessage protobuf, tomorrow the sealed-sender ciphertext. */
+   *  FriendChatMessage protobuf, tomorrow the sealed-sender ciphertext. */
   ciphertext: Uint8Array;
   /** Sender's claim of when the message was sent. UI display only. */
   sentTsUnixMs: number;
@@ -60,7 +60,12 @@ export type RealtimeCallSignalKind =
   | 'CALL_ACCEPT'
   | 'CALL_REJECT'
   | 'CALL_END'
-  | 'CALL_NO_ANSWER';
+  | 'CALL_NO_ANSWER'
+  // Group call room lifecycle — see CallSignal.Kind in
+  // model/domain/realtime/event.proto. These carry group_ulid and
+  // room_name instead of ciphertext payload.
+  | 'ROOM_ACTIVE'
+  | 'ROOM_ENDED';
 
 export interface RealtimeCallSignalPayload {
   /** Server-assigned event id. Opaque cursor; see contract §2.2. */
@@ -81,11 +86,14 @@ export interface RealtimeCallSignalPayload {
    *  strict in-order delivery and would stall on dropped candidates).
    *  Wire layout: `eph_pub(32B) || nonce(12B) || ciphertext || tag(16B)`. */
   payload: Uint8Array;
-  /** Plaintext call identifier visible to Station (CCU-D06). Present
-   *  on every signal belonging to an active call. */
+  /** Group ULID for group call events (ROOM_ACTIVE / ROOM_ENDED).
+   *  Empty string for 1-to-1 signaling. */
+  groupUlid?: string;
+  /** LiveKit room name for group call events. Empty string for 1-to-1. */
+  roomName?: string;
+  /** Plaintext direct-call identifier used for Station arbitration. */
   callId?: string;
-  /** Populated by Station after first-terminal-action-wins resolution.
-   *  Present on the fan-out of the winning CALL_ACCEPT / CALL_REJECT. */
+  /** Device that won first-terminal-action-wins arbitration. */
   winningDeviceId?: string;
 }
 

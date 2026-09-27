@@ -1,9 +1,14 @@
 package key_exchange
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +23,91 @@ import (
 )
 
 const contentPreKeyTestSession = "session-1"
+
+func TestRustContentPreKeyPublicationWireIsCanonical(t *testing.T) {
+	vectorPath := filepath.Join(
+		"..", "..", "..", "..", "..",
+		"model", "domain", "secure_content", "testdata",
+		"content_prekey_publication.hex",
+	)
+	encoded, err := os.ReadFile(vectorPath)
+	if err != nil {
+		t.Fatalf("read Rust publication wire fixture: %v", err)
+	}
+	rustWire, err := hex.DecodeString(strings.TrimSpace(string(encoded)))
+	if err != nil {
+		t.Fatalf("decode Rust publication wire fixture: %v", err)
+	}
+	var request securecontentpb.PublishContentPreKeysRequest
+	if err := proto.Unmarshal(rustWire, &request); err != nil {
+		t.Fatalf("unmarshal Rust publication wire fixture: %v", err)
+	}
+	canonical, err := proto.MarshalOptions{Deterministic: true}.Marshal(&request)
+	if err != nil {
+		t.Fatalf("marshal canonical publication wire fixture: %v", err)
+	}
+	if !bytes.Equal(rustWire, canonical) {
+		t.Fatalf(
+			"Rust publication wire is not Go canonical\nRust: %x\nGo:   %x",
+			rustWire,
+			canonical,
+		)
+	}
+	request.CommandId = ""
+	request.Proof = nil
+	commandID, err := domain.ContentPreKeyPublicationCommandID(&request)
+	if err != nil {
+		t.Fatalf("derive command ID from shared publication vector: %v", err)
+	}
+	const expectedCommandID = "cpk-pub-v1-5ca0fee4658c8956feeca6d8a9272e70ce8c6127e41cd81a2961dbf1a4dd0d8c"
+	if commandID != expectedCommandID {
+		t.Fatalf("command ID = %q, want %q", commandID, expectedCommandID)
+	}
+	called := false
+	handler := server.NewCanonicalProtobufHandler(
+		"test-content-prekey-publication",
+		"/test/content-prekey-publication",
+		server.POST,
+		func() *securecontentpb.PublishContentPreKeysRequest {
+			return &securecontentpb.PublishContentPreKeysRequest{}
+		},
+		func(
+			_ context.Context,
+			_ *securecontentpb.PublishContentPreKeysRequest,
+		) (*securecontentpb.PublishContentPreKeysResponse, error) {
+			called = true
+			return &securecontentpb.PublishContentPreKeysResponse{}, nil
+		},
+		server.CanonicalProtobufHandlerOptions{
+			MaxBodyBytes: 1024,
+			ErrorCodes: server.CanonicalProtobufErrorCodes{
+				InvalidProtobuf: int32(
+					actormodel.ErrorCode_ERROR_CODE_INVALID_PROTOBUF,
+				),
+			},
+			ProjectError: projectContentPreKeyRouteError,
+		},
+	)
+	response := executeKeyExchangeHandler(
+		t,
+		handler,
+		keyExchangeTestRequest{
+			headers: map[string]string{
+				"Content-Type": server.CanonicalProtobufContentType,
+			},
+			method: server.POST,
+			path:   "/test/content-prekey-publication",
+			body:   rustWire,
+		},
+	)
+	if !called || response.status != 200 {
+		t.Fatalf(
+			"canonical handler called/status = %t/%d, want true/200",
+			called,
+			response.status,
+		)
+	}
+}
 
 func TestContentPreKeyClientRoutesAreExactlyOwnedByKeyExchange(t *testing.T) {
 	fixture := newContentPreKeyOperationalFixture(t)

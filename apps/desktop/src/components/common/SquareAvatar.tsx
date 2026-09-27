@@ -17,7 +17,7 @@ function gatewayAvatarUrl(remoteUrl: string): string {
 type CacheEntry = string | null;
 const resolveCache = new Map<string, CacheEntry>();
 const inflight = new Map<string, Promise<CacheEntry>>();
-const RETIRED_GENERATED_AVATAR_PREFIX = 'https://avatar.example.invalid/api/ide/v1/text_to_image?';
+const RETIRED_GENERATED_AVATAR_PREFIX = 'https://internal.example.invalid/api/ide/v1/text_to_image?';
 
 export function inlineAvatarSource(remoteUrl?: string): string | null {
   const value = remoteUrl?.trim() ?? '';

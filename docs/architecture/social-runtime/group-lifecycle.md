@@ -1,10 +1,10 @@
 # Group Chat Lifecycle — Business Source Of Truth
 
-> **Status**: superseded
+> **Status**: draft
 > **Version**: v0.1
-> **Created**: 2026-07-04 | **Updated**: 2026-09-25
+> **Created**: 2026-07-04 | **Updated**: 2026-07-04
 > **Owner**: Client Architecture Team
-> **Superseded by**: `docs/architecture/chat-lifecycle/` and `docs/architecture/messaging-platform/`
+> **Module**: `apps/station/app/subserver/group_chat/`, `model/domain/chat/group_chat.proto`, `model/domain/realtime/event.proto`, `apps/desktop/src/store/socialChat.ts`
 
 ---
 

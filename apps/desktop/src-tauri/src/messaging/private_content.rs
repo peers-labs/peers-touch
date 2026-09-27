@@ -9,7 +9,8 @@ pub(super) fn test_attachment_metadata(
     attachment_id: &str,
 ) -> crate::model::chat::AttachmentPlaintextMetadata {
     use crate::model::chat::{
-        AttachmentEncryptionSuite, AttachmentNonceStrategy, EncryptedObjectDescriptor,
+        AttachmentContentKind, AttachmentEncryptionSuite, AttachmentNonceStrategy,
+        EncryptedObjectDescriptor,
     };
     use secure_content_core::object::{
         OBJECT_CHUNK_SIZE as ATTACHMENT_CHUNK_SIZE, OBJECT_TAG_SIZE as ATTACHMENT_TAG_SIZE,
@@ -39,7 +40,8 @@ pub(super) fn test_attachment_metadata(
             nonce_strategy: AttachmentNonceStrategy::Counter32Be as i32,
             chunk_ciphertext_sha256: vec![Sha256::digest(&ciphertext).to_vec()],
         }),
-        voice_note: None,
+        content_kind: AttachmentContentKind::File as i32,
+        duration_ms: 0,
     }
 }
 

@@ -64,7 +64,6 @@ describe('Settings truthful unavailable and permission states', () => {
     region: 'CN',
     timezone: 'Asia/Shanghai',
     defaultVisibility: 'followers',
-    discoverability: 'by_handle',
     manuallyApprovesFollowers: true,
     messagePermission: 'friends',
     autoExpireDays: 30,

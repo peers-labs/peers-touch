@@ -22,6 +22,8 @@ pub struct SendTextIntent<'a> {
 }
 
 pub struct EditTextIntent<'a> {
+    pub logical_intent_id: &'a str,
+    pub replaces_command_id: Option<&'a str>,
     pub command_id: &'a str,
     pub message_id: &'a str,
     pub conversation_id: &'a str,
@@ -92,6 +94,8 @@ impl SendPreparer {
             .prepare_edit(
                 plan,
                 &DirectEditIntent {
+                    logical_intent_id: intent.logical_intent_id,
+                    replaces_command_id: intent.replaces_command_id,
                     command_id: intent.command_id,
                     message_id: intent.message_id,
                     conversation_id: intent.conversation_id,
@@ -140,6 +144,8 @@ impl SendPreparer {
         .prepare_edit(
             plan,
             &GroupEditTextIntent {
+                logical_intent_id: intent.logical_intent_id,
+                replaces_command_id: intent.replaces_command_id,
                 command_id: intent.command_id,
                 message_id: intent.message_id,
                 conversation_id: intent.conversation_id,
@@ -502,6 +508,8 @@ mod tests {
             .prepare_direct_edit_with_bootstraps(
                 &plan,
                 &EditTextIntent {
+                    logical_intent_id: "edit-command-1",
+                    replaces_command_id: None,
                     command_id: "edit-command-1",
                     message_id: "message-1",
                     conversation_id: "conversation-1",

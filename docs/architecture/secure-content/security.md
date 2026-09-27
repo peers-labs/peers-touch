@@ -1,8 +1,8 @@
 # Secure Content - Security Contract
 
 > **Status**: active
-> **Version**: v1.2
-> **Created**: 2026-09-13 | **Updated**: 2026-09-15
+> **Version**: v1.3
+> **Created**: 2026-09-13 | **Updated**: 2026-09-16
 > **Owner**: Architecture Team
 
 ---
@@ -101,7 +101,7 @@ recovery pool while authorized, but revocation makes its unclaimed keys
 ineligible for future content. Completed claims remain replayable because their
 public material was already exposed.
 
-Proposed `SC-D20` adds a separate device-possession proof to each client publish
+Accepted `SC-D20` adds a separate device-possession proof to each client publish
 and inventory request. Actor JWT authenticates only the actor;
 `X-Device-ID` is caller-controlled consistency metadata. The request proof
 uses the active Actor Identity Ed25519 key and binds capability ID,
@@ -319,6 +319,33 @@ Station must not retain:
   atomically removed on revoke, logout, account switch, or integrity failure.
 - Crash recovery may retain ciphertext/checkpoints, never partial plaintext.
 
+### 11.1 Proposed Evidence And Fixture Isolation
+
+Under accepted `SC-D21`, lifecycle evidence contains only schema/version
+identities, bounded state enums, opaque digests, monotonic ordinals, runtime
+manifest lineage, boot/session generations, and owner acknowledgement
+references.
+
+The following never enter a barrier record, runtime/fixture manifest, resume
+artifact, stream terminal marker, log, screenshot, trace, or result:
+
+- plaintext, root keys, Content PreKey private material, recovery masters, or
+  recovery phrases;
+- JWTs, possession proofs, signatures, raw request/response bodies, or local
+  storage paths;
+- PTIDs, device IDs, content/object IDs, or unhashed stream identities.
+
+Run-local barrier release tokens and secret-channel references are capabilities,
+not evidence. They are single-use, process-scoped, omitted from result
+serialization, and invalid after restart. Historical recovery secret material
+is delivered directly from the provisioner to the authenticated Native runtime;
+the scenario receives only an opaque fixture handle and expected public epoch.
+
+Acceptance-only controllers are absent from production builds. They cannot
+write business state, supply network responses, weaken authorization, or
+perform runtime lifecycle operations. A controller/configuration mismatch
+fails closed before plaintext release.
+
 ## 12. Required Security Evidence
 
 - fixed known-answer vectors across every Rust consumer and Go descriptor validator;
@@ -330,4 +357,6 @@ Station must not retain:
 - never-opened-content trusted recovery and revoked-resource denial;
 - recipient-slot cross-plan unlinkability test;
 - ciphertext/hash/AEAD corruption with zero partial plaintext;
+- recursive scans proving barrier, manifest, resume, terminal, fixture, and
+  result artifacts contain no prohibited identity or secret fields;
 - tree-wide absence of Social signaling-envelope and duplicate chunk-cipher code.

@@ -38,6 +38,7 @@ export interface MessagingRecoveryStatus {
 
 export interface MessagingRecoveryResult {
   backup: MessagingRecoveryRevision;
+  recoveryEpoch: number;
   messageCount: number;
   conversationCount: number;
   attachmentCount: number;
@@ -111,6 +112,10 @@ export const messagingRecoveryService = {
     return invokeRecovery('messaging_recovery_create_revision', {
       input: { recoveryPhrase },
     });
+  },
+
+  createAcceptanceRevision(): Promise<MessagingRecoveryResult> {
+    return invokeRecovery('messaging_recovery_acceptance_create_revision');
   },
 
   restoreLatest(recoveryPhrase: string): Promise<MessagingRecoveryRestoreResult> {

@@ -127,7 +127,13 @@ function projectAttachment(
     plaintextSize: attachment.plaintextSize,
     ciphertextSize: attachment.ciphertextSize,
     availabilityState: attachment.availabilityState,
-    voiceNote: attachment.voiceNote,
+    voiceNote: attachment.contentKind === 2 && attachment.durationMs > 0
+      ? {
+        durationMs: attachment.durationMs,
+        codec: attachment.mimeType,
+        waveform: [],
+      }
+      : undefined,
   };
 }
 

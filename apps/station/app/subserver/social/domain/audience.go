@@ -44,9 +44,8 @@ type Viewer struct {
 // Rules (in evaluation order):
 //  1. Deleted posts are invisible to everyone, including the author.
 //  2. Author can always read their own (non-deleted) post.
-//  3. nil audience → treated as PUBLIC (legacy compatibility for posts
-//     created before the Moments P0 schema; safe default since legacy
-//     `PostVisibility` already filtered private content at DB layer).
+//  3. nil audience → treated as PUBLIC. Only public Post rows reach this
+//     evaluator; private resources use the Secure Content authority.
 //  4. Otherwise, dispatch on `audience.Kind` (see `Audience` proto doc).
 //
 // The returned `reason` is human-readable and intended for log lines /

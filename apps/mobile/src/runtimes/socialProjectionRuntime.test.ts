@@ -39,13 +39,14 @@ import {
   bindMobileSessionMutationAdmission,
   requireMobileMutationAdmission,
 } from './mutationAdmission';
+import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 import { PostDetailOutcome } from '../gen/proto/domain/social/post_pb';
 
 const session = {
   stationPeerId: 'station-primary',
   stationUrl: 'https://station.example',
   sessionId: 'session-1',
-  deviceId: 'device-alice',
+  deviceId: 'device-1',
   lifecycleGeneration: 1,
   actorRef: { ptid: 'ptid:alice' },
   authenticatedAt: 1,
@@ -56,7 +57,7 @@ describe('social projection runtime', () => {
   beforeEach(() => {
     releaseSessionAdmission?.();
     releaseSessionAdmission = bindMobileSessionMutationAdmission(() => ({
-      scopeKey: 'station-primary|ptid:alice',
+      scopeKey: mobileAuthScopeKey(session),
       open: true,
       reason: 'session_active',
     }));
@@ -134,17 +135,25 @@ describe('social projection runtime', () => {
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
+    const groupStore = {
+      error: null,
+      activeGroupUlid: null,
+      reconcile: vi.fn(async () => undefined),
+      refreshGroups: vi.fn(async () => undefined),
+      loadSettings: vi.fn(async () => undefined),
+      selectGroup: vi.fn(async () => undefined),
+      loadMembers: vi.fn(async () => undefined),
+    };
     const wakeMessaging = vi.fn(async () => undefined);
     const revalidateSession = vi.fn(async () => undefined);
-    const ingestCallSignal = vi.fn();
     const reportError = vi.fn();
     const runtime = createSocialProjectionRuntime(
       session,
       () => socialStore,
+      () => groupStore,
       {
         wakeMessaging,
         revalidateSession,
-        ingestCallSignal,
         reportError,
       },
     );
@@ -154,6 +163,7 @@ describe('social projection runtime', () => {
     expect(readActiveMomentsRuntime(session)).toBe(runtime.moments);
     expect(readActiveProfileRuntime(session)).toBe(runtime.profile);
     expect(socialStore.reconcile).toHaveBeenCalledOnce();
+    expect(groupStore.reconcile).not.toHaveBeenCalled();
     expect(gatewayMocks.fetchFeed).toHaveBeenCalledOnce();
     expect(gatewayMocks.getCurrentProfile).toHaveBeenCalledOnce();
     expect(gatewayMocks.getNotificationPreferences).toHaveBeenCalledOnce();
@@ -168,7 +178,7 @@ describe('social projection runtime', () => {
       },
     });
     expect(() => requireMobileMutationAdmission(
-      'station-primary|ptid:alice',
+      mobileAuthScopeKey(session),
       'social',
     )).not.toThrow();
 
@@ -198,19 +208,8 @@ describe('social projection runtime', () => {
       });
 
     await runtime.reconcile('group-bootstrap', ['group']);
-    expect(wakeMessaging).toHaveBeenCalledOnce();
+    expect(groupStore.reconcile).toHaveBeenCalledOnce();
 
-    runtime.ingestRealtimeEvent({
-      kind: 'call-signal',
-      sessionUlid: 'ptid:alice-ptid:bob',
-      fromActorPtid: 'ptid:bob',
-      signalKind: 'CALL_REQUEST',
-      callId: '01K5TCALL00000000000000000',
-      winningDeviceId: '',
-      payload: new Uint8Array([1, 2, 3]),
-      cursor: 'cursor-call',
-      timestampMs: 9,
-    });
     runtime.ingestRealtimeEvent({
       kind: 'moment',
       momentKind: 'post-commented',
@@ -273,10 +272,6 @@ describe('social projection runtime', () => {
     expect(socialStore.loadFriendshipStatus).toHaveBeenCalledWith('ptid:bob');
     expect(socialStore.refreshNotifications).toHaveBeenCalled();
     expect(socialStore.loadPeerProfile).toHaveBeenCalledWith('ptid:bob', true);
-    expect(ingestCallSignal).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'call-signal',
-      callId: '01K5TCALL00000000000000000',
-    }));
     expect(readActiveSocialIngressState()?.streamCursor).toBe('cursor-3');
 
     await runtime.suspend();
@@ -288,7 +283,7 @@ describe('social projection runtime', () => {
       },
     });
     expect(() => requireMobileMutationAdmission(
-      'station-primary|ptid:alice',
+      mobileAuthScopeKey(session),
       'social',
     )).toThrowError(expect.objectContaining({ reason: 'runtime_suspended' }));
 
@@ -298,7 +293,7 @@ describe('social projection runtime', () => {
       writeAdmission: { open: true },
     });
     expect(() => requireMobileMutationAdmission(
-      'station-primary|ptid:alice',
+      mobileAuthScopeKey(session),
       'social',
     )).not.toThrow();
 
@@ -308,7 +303,7 @@ describe('social projection runtime', () => {
     expect(readActiveProfileRuntime(session)).toBeNull();
     expect(readActiveSocialIngressState()).toBeNull();
     expect(() => requireMobileMutationAdmission(
-      'station-primary|ptid:alice',
+      mobileAuthScopeKey(session),
       'social',
     )).toThrowError(expect.objectContaining({ reason: 'runtime_unavailable' }));
     expect(reportError).not.toHaveBeenCalled();
@@ -339,14 +334,23 @@ describe('social projection runtime', () => {
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
+    const groupStore = {
+      error: null,
+      activeGroupUlid: null,
+      reconcile: vi.fn(async () => undefined),
+      refreshGroups: vi.fn(async () => undefined),
+      loadSettings: vi.fn(async () => undefined),
+      selectGroup: vi.fn(async () => undefined),
+      loadMembers: vi.fn(async () => undefined),
+    };
     const reportError = vi.fn();
     const runtime = createSocialProjectionRuntime(
       session,
       () => socialStore,
+      () => groupStore,
       {
         wakeMessaging: vi.fn(async () => undefined),
         revalidateSession: vi.fn(async () => undefined),
-        ingestCallSignal: vi.fn(),
         reportError,
       },
     );
@@ -387,13 +391,22 @@ describe('social projection runtime', () => {
       applyTypingState: vi.fn(),
       setPeerOnline: vi.fn(),
     };
+    const groupStore = {
+      error: null,
+      activeGroupUlid: null,
+      reconcile: vi.fn(async () => undefined),
+      refreshGroups: vi.fn(async () => undefined),
+      loadSettings: vi.fn(async () => undefined),
+      selectGroup: vi.fn(async () => undefined),
+      loadMembers: vi.fn(async () => undefined),
+    };
     const runtime = createSocialProjectionRuntime(
       session,
       () => socialStore,
+      () => groupStore,
       {
         wakeMessaging: vi.fn(async () => undefined),
         revalidateSession: vi.fn(async () => undefined),
-        ingestCallSignal: vi.fn(),
         reportError: vi.fn(),
       },
     );
@@ -436,10 +449,10 @@ describe('social projection runtime', () => {
         loadCurrentUserProfile: async () => undefined,
         drainProfileCacheWrites: async () => undefined,
       }),
+      () => ({ error: null }),
       {
         wakeMessaging: async () => undefined,
         revalidateSession: async () => undefined,
-        ingestCallSignal: vi.fn(),
         reportError: vi.fn(),
       },
     );
@@ -453,10 +466,7 @@ describe('social projection runtime', () => {
       expect(runtime.moments.projection.state().availability).toEqual({ available: true });
       expect(repairCursor).not.toHaveBeenCalled();
       expect(reopenAdmission).not.toHaveBeenCalled();
-      expect(() => requireMobileMutationAdmission(
-        'station-primary|ptid:alice',
-        'moments',
-      ))
+      expect(() => requireMobileMutationAdmission(mobileAuthScopeKey(session), 'moments'))
         .not.toThrow();
 
       runtime.ingress.markStale('moments', 'lost-event', 'cursor-1', false);

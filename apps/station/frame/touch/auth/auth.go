@@ -13,6 +13,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/facility/session"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 	actoridentity "github.com/peers-labs/peers-touch/station/frame/touch/activitypub/identity"
+	actorservice "github.com/peers-labs/peers-touch/station/frame/touch/actor"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"golang.org/x/crypto/bcrypt"
@@ -177,7 +178,6 @@ type AccessGateSessionBinding struct {
 	AccessAttemptID        string
 	StationPeerID          string
 	AccessDecisionRevision uint64
-	DeviceType             session.DeviceType
 	DeviceID               string
 	LifecycleGeneration    uint64
 }
@@ -248,10 +248,7 @@ func PrepareOAuthSession(
 			ExpiresAt:   token.ExpiresAt.Format(time.RFC3339),
 		},
 		SessionId: sessionID,
-		ActorRef: &model.ActorRef{
-			Ptid: ptid,
-			Kind: model.ActorKind_ACTOR_KIND_PERSON,
-		},
+		ActorRef:  actorservice.ProtoActorRef(actor),
 	}, nil
 }
 
@@ -287,7 +284,7 @@ func AuthenticatePassword(ctx context.Context, credentials *Credentials) (*db.Ac
 	return &user, nil
 }
 
-// PrepareAccessGateSession creates one active device-scoped session record and its
+// PrepareAccessGateSession creates one active Mobile session record and its
 // credential response without persisting either. The Access Gate finalizer
 // persists both the session and the attempt binding in one transaction.
 func PrepareAccessGateSession(
@@ -306,9 +303,6 @@ func PrepareAccessGateSession(
 	}
 	if strings.TrimSpace(binding.AccessAttemptID) == "" ||
 		strings.TrimSpace(binding.StationPeerID) == "" ||
-		(binding.DeviceType != session.DeviceTypeDesktop &&
-			binding.DeviceType != session.DeviceTypeMobile &&
-			binding.DeviceType != session.DeviceTypeWeb) ||
 		strings.TrimSpace(binding.DeviceID) == "" ||
 		binding.LifecycleGeneration == 0 ||
 		binding.AccessDecisionRevision == 0 {
@@ -328,7 +322,7 @@ func PrepareAccessGateSession(
 		SessionID:              sessionID,
 		UserID:                 actor.ID,
 		Email:                  actor.Email,
-		DeviceType:             binding.DeviceType,
+		DeviceType:             session.DeviceTypeMobile,
 		IPAddress:              clientIP,
 		UserAgent:              userAgent,
 		AccessAttemptID:        binding.AccessAttemptID,
@@ -385,10 +379,7 @@ func issueSessionCredential(
 			ExpiresAt:   token.ExpiresAt.Format(time.RFC3339),
 		},
 		SessionId: sessionID,
-		ActorRef: &model.ActorRef{
-			Ptid: ptid,
-			Kind: model.ActorKind_ACTOR_KIND_PERSON,
-		},
+		ActorRef:  actorservice.ProtoActorRef(actor),
 	}, nil
 }
 

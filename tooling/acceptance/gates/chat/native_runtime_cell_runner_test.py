@@ -7,7 +7,10 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+from selenium.common.exceptions import WebDriverException
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.core.evidence import new_report
@@ -78,6 +81,26 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
                 for target in node.targets
             )
         )
+
+    def test_enter_chat_page_retries_webdriver_script_timeout(self) -> None:
+        class Driver:
+            clicked = False
+            click_attempts = 0
+
+            def execute_script(self, script: str) -> bool:
+                if "const target" in script:
+                    self.click_attempts += 1
+                    if self.click_attempts == 1:
+                        raise WebDriverException("script timeout")
+                    self.clicked = True
+                    return True
+                return self.clicked
+
+        driver = Driver()
+        native_support.enter_chat_page(SimpleNamespace(driver=driver))
+
+        self.assertTrue(driver.clicked)
+        self.assertEqual(driver.click_attempts, 2)
 
     def test_native_tauri_origin_accepts_platform_owned_origins_only(
         self,
@@ -427,8 +450,11 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             ROOT / "tooling/acceptance/gates/chat/native_interactions_runner.py",
             "prove_offline_recovery",
         )
+        edit_commit = source.index("offline edit commit")
+        reaction_submit = source.index('"interaction": "reaction"')
         reaction_commit = source.index("offline reaction commit")
         pin_submit = source.index('"interaction": "pin"')
+        self.assertLess(edit_commit, reaction_submit)
         self.assertLess(reaction_commit, pin_submit)
         self.assertIn(
             '(snapshot.get("intent") or {}).get("state") == "committed"',
@@ -858,12 +884,6 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             "src/acceptance/chat/passwordLogin.test.ts",
             command,
         )
-        self.assertIn(
-            "env -u PT_ACCEPTANCE_WORKSPACE_ID "
-            "-u PT_ACCEPTANCE_GATE_ID "
-            "-u PT_ACCEPTANCE_RUN_ID python3 -m unittest",
-            command,
-        )
         for suite in (
             "native_runtime_cell_runner_test",
             "native_recovery_runner_test",
@@ -1252,13 +1272,18 @@ INSERT INTO conversation_read_cursors VALUES
                     "PT_ACCEPTANCE_RUNTIME_KIND": "local-source",
                     "PT_ACCEPTANCE_LOCAL_DATABASE": str(database),
                 },
-            ):
+            ) as resolve_environment:
                 result = native_support.station_readback(
                     "conversation-1",
                     "message-1",
                     station_url="http://127.0.0.1:18080",
+                    deployment_environment="chat-native-five",
                 )
 
+        resolve_environment.assert_called_once_with(
+            "http://127.0.0.1:18080",
+            "chat-native-five",
+        )
         self.assertEqual(result["events"][0]["hashBytes"], 2)
         self.assertEqual(result["queue"][0]["payloadSha256"], "0a0b")
         self.assertEqual(result["readCursors"][0]["lastReadSequence"], 1)

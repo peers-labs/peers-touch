@@ -20,7 +20,13 @@
     "apps/station/app/subserver/events",
     "apps/station/frame/core/federation",
     "apps/desktop",
+    "docs/architecture/prototypes/README.md",
+    "docs/architecture/realtime",
+    "docs/architecture/social/prototype",
+    "packages/prototypes/desktop/features/social-chat",
     "tooling/acceptance",
+    "tooling/make/local-dev.mk",
+    "tooling/scripts/local-dev",
     "packages/locales"
   ],
   "readSet": [
@@ -62,7 +68,7 @@
     "Expose microphone, camera, timeout, network, and relay failures as distinct states",
     "Never restore ICE polling, a second signaling channel, or foreign-Station client access"
   ],
-  "updatedAt": "2026-09-17T07:00:00Z",
+  "updatedAt": "2026-09-21T00:00:00Z",
   "durableEvidence": []
 }
 ```

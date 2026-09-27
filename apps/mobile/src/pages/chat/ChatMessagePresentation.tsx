@@ -4,8 +4,8 @@ import {
   Check,
   CheckCheck,
   Clock,
-  Paperclip,
   Mic,
+  Paperclip,
   RotateCcw,
   X,
 } from 'lucide-react';
@@ -16,7 +16,7 @@ import { useMobileI18n } from '../../app/mobileI18n';
 import { MobileAvatar } from '../../components/MobileAvatar';
 import type { MobileChatAttachmentDraft } from '../../features/chat/chatAttachmentDraftState';
 import type { ChatMessageCommandOutcome } from '../../features/chat/messageCommandState';
-import type { MessageDeliveryDisplayState } from '../../features/chat/messageProjection';
+import type { MessageDeliveryDisplayState } from '../../features/chat/messagingProjectionAdapters';
 
 const { Text } = Typography;
 

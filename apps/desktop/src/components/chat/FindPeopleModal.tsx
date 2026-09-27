@@ -4,12 +4,18 @@ import { Flexbox } from 'react-layout-kit';
 import { Button, Input } from '@lobehub/ui';
 import { Alert, Spin, Tag, theme, Modal, Typography, message } from 'antd';
 import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
-import { api } from '../../services/desktop_api';
+import {
+  api,
+  type MemberStationView,
+} from '../../services/desktop_api';
 import {
   useActiveChatFederationSlice,
   useActiveSocialChatSlice,
   useActiveSocialChatStore,
 } from './useActiveSocialChatStore';
+import {
+  selectFederationReady,
+} from '../../store/federation';
 import { singleFederationId } from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
@@ -26,6 +32,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
 }
+
+type SearchScope = 'all' | 'federation' | 'station';
 
 const FEDERATED_HANDLE_RE = /^@?([a-zA-Z0-9._-]+)(?:@([a-zA-Z0-9.-]+(?::\d+)?))?$/;
 
@@ -84,8 +92,14 @@ export function FindPeopleModal({ open, onClose }: Props) {
     friendRequestsError: s.friendRequestsError,
   }));
   const currentUserPtid = useActiveSocialChatStore((s) => s.currentUserPtid);
-  const { federations, rememberCatalogEntries } = useActiveChatFederationSlice((s) => ({
+  const federationReady = useActiveChatFederationSlice(selectFederationReady);
+  const {
+    federations,
+    listMemberStations,
+    rememberCatalogEntries,
+  } = useActiveChatFederationSlice((s) => ({
     federations: s.federations,
+    listMemberStations: s.listMemberStations,
     rememberCatalogEntries: s.rememberCatalogEntries,
   }));
   const federationOptions = useMemo(
@@ -101,7 +115,11 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const [results, setResults] = useState<ActorSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [searchScope, setSearchScope] = useState<SearchScope>('all');
   const [selectedFederationId, setSelectedFederationId] = useState<string>('');
+  const [memberStations, setMemberStations] = useState<MemberStationView[]>([]);
+  const [selectedStationId, setSelectedStationId] = useState('');
+  const [stationsLoading, setStationsLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [requestErrors, setRequestErrors] = useState<Record<string, string>>({});
 
@@ -133,8 +151,13 @@ export function FindPeopleModal({ open, onClose }: Props) {
   );
 
   const parsed = useMemo(() => parseHandleInput(searchText), [searchText]);
-  const activeFederationId = selectedFederationId || defaultFederationId;
-  const blockedByGate = !activeFederationId;
+  const blockedByGate = parsed.isFederated && parsed.hasHost && !federationReady;
+
+  const activeFederationId = useMemo(() => {
+    if (searchScope === 'all') return '';
+    if (selectedFederationId) return selectedFederationId;
+    return defaultFederationId;
+  }, [defaultFederationId, searchScope, selectedFederationId]);
 
   const handleSearch = async () => {
     const trimmed = searchText.trim();
@@ -142,25 +165,100 @@ export function FindPeopleModal({ open, onClose }: Props) {
     setSearchError('');
     setSearching(true);
     try {
-      if (!activeFederationId) {
-        setSearchError(t('chat.social.findPeople.selectFederation'));
-        return;
-      }
-      if (parsed.isFederated && parsed.hasHost) {
-        const view = await api.federationResolve(activeFederationId, parsed.canonical);
+      if (parsed.isFederated && parsed.hasHost && searchScope === 'all') {
+        if (!federationReady) {
+          setSearchError(t('chat.social.findPeople.resolveNotReady'));
+          return;
+        }
+        const view = await api.federationResolve(parsed.canonical);
         const item = resolvedProfileToSearchResult(view);
         setResults(item ? [item] : []);
         return;
       }
 
-      const resp = await api.federationCatalogSearch({
-        federation_id: activeFederationId,
-        prefix: parsed.localPart || trimmed.replace(/^@/, ''),
-        page_size: 20,
-      });
-      rememberCatalogEntries(resp.entries ?? []);
-      setResults((resp.entries || []).map(catalogEntryToSearchResult));
+      if ((searchScope === 'federation' || searchScope === 'station') && activeFederationId) {
+        // #region debug-point A-E:station-scoped-search-request
+        void fetch('http://127.0.0.1:7780/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'station-scoped-search',
+            runId: 'post-fix',
+            hypothesisId: 'A-E',
+            location: 'FindPeopleModal.tsx:handleSearch:request',
+            msg: '[DEBUG] Station-scoped search request',
+            data: {
+              searchScope,
+              activeFederationId,
+              selectedFederationId,
+              selectedStationId,
+              prefix: parsed.localPart || trimmed.replace(/^@/, ''),
+            },
+          }),
+        }).catch(() => {});
+        // #endregion
+        const resp = await api.federationCatalogSearch({
+          federation_id: activeFederationId,
+          prefix: parsed.localPart || trimmed.replace(/^@/, ''),
+          station_id: searchScope === 'station' ? selectedStationId : undefined,
+          page_size: 20,
+        });
+        rememberCatalogEntries(resp.entries ?? []);
+        // #region debug-point A-E:station-scoped-search-response
+        void fetch('http://127.0.0.1:7780/event', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: 'station-scoped-search',
+            runId: 'post-fix',
+            hypothesisId: 'A-E',
+            location: 'FindPeopleModal.tsx:handleSearch:response',
+            msg: '[DEBUG] Station-scoped search response',
+            data: {
+              searchScope,
+              activeFederationId,
+              selectedStationId,
+              entries: (resp.entries || []).map((entry) => ({
+                actorPtid: entry.actorPtid,
+                homeStationPeerId: entry.homeStationPeerId,
+                visibility: entry.visibility,
+              })),
+            },
+          }),
+        }).catch(() => {});
+        // #endregion
+        setResults((resp.entries || []).map(catalogEntryToSearchResult));
+        return;
+      }
+
+      const query = parsed.localPart || trimmed;
+      const resp = await api.actorSearchActors(query);
+      setResults(
+        resp.items.map((a) => ({
+          id: String(a.actorPtid ?? ''),
+          username: String(a.username ?? ''),
+          displayName: String(a.displayName ?? ''),
+          avatar: String(a.avatar ?? ''),
+          homeStationPeerId: String(a.homeStationPeerId ?? ''),
+        })),
+      );
     } catch (e: unknown) {
+      // #region debug-point E:station-scoped-search-error
+      void fetch('http://127.0.0.1:7780/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'station-scoped-search',
+          runId: 'post-fix',
+          hypothesisId: 'E',
+          location: 'FindPeopleModal.tsx:handleSearch:error',
+          msg: '[DEBUG] Find People search failed',
+          data: {
+            searchScope,
+            activeFederationId,
+            selectedStationId,
+            error: e instanceof Error ? e.message : String(e),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       const fallback = parsed.isFederated && parsed.hasHost
         ? t('chat.social.findPeople.resolveFailed', { handle: parsed.canonical })
         : t('chat.social.findPeople.searchFailed');
@@ -177,6 +275,38 @@ export function FindPeopleModal({ open, onClose }: Props) {
       currentUserPtid,
       receiverPtid,
     );
+    // #region debug-point B-D:friend-request-retry-handler-entry
+    void fetch('http://127.0.0.1:7781/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'friend-request-retry',
+        runId: 'post-fix',
+        hypothesisId: 'B-D',
+        location: 'FindPeopleModal.tsx:handleSendRequest:entry',
+        msg: '[DEBUG] Friend request handler entered',
+        data: {
+          addingId,
+          currentUserPtid,
+          receiverPtid,
+          receiverHomeStationPeerId: target.homeStationPeerId,
+          activeFederationId,
+          previousRequestFederationId,
+          defaultFederationId,
+          matchingRequests: friendRequests
+            .filter((request) => (
+              request.senderPtid === target.id
+              || request.receiverPtid === target.id
+            ))
+            .map((request) => ({
+              id: request.id,
+              senderPtid: request.senderPtid,
+              receiverPtid: request.receiverPtid,
+              status: request.status,
+            })),
+        },
+      }),
+    }).catch(() => {});
+    // #endregion
     if (addingId) return;
     if (!receiverPtid) {
       setSearchError(t('chat.social.findPeople.requestIdentityUnavailable'));
@@ -202,14 +332,62 @@ export function FindPeopleModal({ open, onClose }: Props) {
       return next;
     });
     try {
+      // #region debug-point B-D:friend-request-retry-dispatch
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'post-fix',
+          hypothesisId: 'B-D',
+          location: 'FindPeopleModal.tsx:handleSendRequest:dispatch',
+          msg: '[DEBUG] Dispatching friend request retry',
+          data: {
+            currentUserPtid,
+            receiverPtid,
+            receiverHomeStationPeerId: target.homeStationPeerId,
+            federationId,
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       await sendFriendRequest(
         receiverPtid,
         target.homeStationPeerId,
         federationId,
         '',
       );
+      // #region debug-point B-E:friend-request-retry-handler-success
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'post-fix',
+          hypothesisId: 'B-E',
+          location: 'FindPeopleModal.tsx:handleSendRequest:success',
+          msg: '[DEBUG] Friend request retry handler succeeded',
+          data: { currentUserPtid, receiverPtid },
+        }),
+      }).catch(() => {});
+      // #endregion
       message.success(t('chat.social.findPeople.requestSent'));
     } catch (e: unknown) {
+      // #region debug-point A-B:friend-request-retry-handler-error
+      void fetch('http://127.0.0.1:7781/event', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: 'friend-request-retry',
+          runId: 'post-fix',
+          hypothesisId: 'A-B',
+          location: 'FindPeopleModal.tsx:handleSendRequest:error',
+          msg: '[DEBUG] Friend request retry handler failed',
+          data: {
+            currentUserPtid,
+            receiverPtid,
+            error: e instanceof Error ? e.message : String(e),
+          },
+        }),
+      }).catch(() => {});
+      // #endregion
       setRequestErrors((current) => ({
         ...current,
         [receiverPtid]: (e as { message?: string })?.message
@@ -223,15 +401,62 @@ export function FindPeopleModal({ open, onClose }: Props) {
   const handleClose = () => {
     setSearchText('');
     setResults([]);
+    setSearchScope('all');
     setSelectedFederationId('');
+    setMemberStations([]);
+    setSelectedStationId('');
     setSearchError('');
     setRequestErrors({});
     onClose();
   };
 
-  const handleScopeChange = (federationId: string) => {
-    setSelectedFederationId(federationId);
+  const handleScopeChange = async (
+    scope: SearchScope,
+    federationId?: string,
+    stationId?: string,
+  ) => {
+    // #region debug-point B-C:station-scope-selection
+    void fetch('http://127.0.0.1:7780/event', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId: 'station-scoped-search',
+        runId: 'post-fix',
+        hypothesisId: 'B-C',
+        location: 'FindPeopleModal.tsx:handleScopeChange',
+        msg: '[DEBUG] Find People scope selected',
+        data: {
+          nextScope: scope,
+          federationId: federationId ?? '',
+          stationId: stationId ?? '',
+          previousFederationId: selectedFederationId,
+          previousStationId: selectedStationId,
+        },
+      }),
+    }).catch(() => {});
+    // #endregion
+    setSearchScope(scope);
+    setSelectedStationId(stationId ?? '');
     setSearchError('');
+    if (federationId) {
+      setSelectedFederationId(federationId);
+      if (federationId !== selectedFederationId || memberStations.length === 0) {
+        setStationsLoading(true);
+        try {
+          setMemberStations(await listMemberStations(federationId));
+        } catch (error) {
+          setMemberStations([]);
+          setSearchError(
+            (error as { message?: string })?.message
+              || t('chat.social.findPeople.stationListFailed'),
+          );
+        } finally {
+          setStationsLoading(false);
+        }
+      }
+    } else if (scope === 'all') {
+      setSelectedFederationId('');
+      setMemberStations([]);
+    }
     setResults([]);
   };
 
@@ -251,6 +476,13 @@ export function FindPeopleModal({ open, onClose }: Props) {
           friendRequestsError ? 'error' : friendshipReady ? 'ready' : 'loading'
         }
       >
+        {!federationReady && (
+          <Alert
+            type="info"
+            showIcon
+            message={t('chat.social.findPeople.federationJoining')}
+          />
+        )}
         {friendRequestsError && (
           <Alert
             type="error"
@@ -291,8 +523,25 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
         {/* Scope chips */}
         <Flexbox horizontal gap={6} style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+          <Tag.CheckableTag
+            data-chat-find-people-scope="all"
+            checked={searchScope === 'all'}
+            onChange={() => void handleScopeChange('all')}
+            style={searchScope === 'all' ? {
+              background: token.colorPrimaryBg,
+              color: token.colorPrimary,
+              borderColor: token.colorPrimary,
+            } : {
+              background: 'transparent',
+              color: token.colorTextSecondary,
+              borderColor: token.colorBorder,
+            }}
+          >
+            {t('chat.social.findPeople.scopeAll')}
+          </Tag.CheckableTag>
+
           {federationOptions.map((fed) => {
-            const isActive = activeFederationId === fed.federationId;
+            const isActive = searchScope === 'federation' && selectedFederationId === fed.federationId;
             return (
               <Tag.CheckableTag
                 data-chat-find-people-scope="federation"
@@ -300,8 +549,8 @@ export function FindPeopleModal({ open, onClose }: Props) {
                 key={fed.federationId}
                 checked={isActive}
                 onChange={(checked) => {
-                  if (checked) handleScopeChange(fed.federationId);
-                  else handleScopeChange('');
+                  if (checked) void handleScopeChange('federation', fed.federationId);
+                  else void handleScopeChange('all');
                 }}
                 style={isActive ? {
                   background: token.colorPrimaryBg,
@@ -319,10 +568,52 @@ export function FindPeopleModal({ open, onClose }: Props) {
             );
           })}
 
+          {stationsLoading ? <Spin size="small" /> : null}
+          {selectedFederationId && memberStations.map((station) => {
+            const isActive = searchScope === 'station'
+              && selectedStationId === station.stationPeerId;
+            return (
+              <Tag.CheckableTag
+                data-chat-find-people-scope="station"
+                data-chat-find-people-station-id={station.stationPeerId}
+                key={station.stationPeerId}
+                checked={isActive}
+                onChange={(checked) => {
+                  if (checked) {
+                    void handleScopeChange(
+                      'station',
+                      selectedFederationId,
+                      station.stationPeerId,
+                    );
+                  } else {
+                    void handleScopeChange('federation', selectedFederationId);
+                  }
+                }}
+                style={isActive ? {
+                  background: token.colorPrimaryBg,
+                  color: token.colorPrimary,
+                  borderColor: token.colorPrimary,
+                } : {
+                  background: 'transparent',
+                  color: token.colorTextSecondary,
+                  borderColor: token.colorBorder,
+                }}
+              >
+                <Server size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
+                {station.stationName || station.stationPeerId.slice(0, 8)}
+              </Tag.CheckableTag>
+            );
+          })}
 
-          {federationOptions.length === 0 && (
+          {federationOptions.length === 0 && federationReady && (
             <Text type="secondary" style={{ fontSize: 11 }}>
               {t('chat.social.findPeople.catalogNoFederation')}
+            </Text>
+          )}
+
+          {federationOptions.length === 0 && !federationReady && (
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {t('chat.social.findPeople.joinFederation', { defaultValue: 'Join a federation to enable catalog search' })}
             </Text>
           )}
         </Flexbox>
@@ -347,9 +638,11 @@ export function FindPeopleModal({ open, onClose }: Props) {
             <Flexbox align="center" gap={8} style={{ padding: 24 }}>
               <Spin size="small" />
               <Text type="secondary" style={{ fontSize: 12 }}>
-                {parsed.isFederated && parsed.hasHost
-                  ? t('chat.social.findPeople.resolving')
-                  : t('chat.social.findPeople.catalogSearching')}
+                {searchScope !== 'all'
+                  ? t('chat.social.findPeople.catalogSearching')
+                  : parsed.isFederated && parsed.hasHost
+                    ? t('chat.social.findPeople.resolving')
+                    : undefined}
               </Text>
             </Flexbox>
           ) : results.length === 0 ? (
@@ -478,6 +771,27 @@ export function FindPeopleModal({ open, onClose }: Props) {
                     }
                     onClick={(event) => {
                       event.stopPropagation();
+                      // #region debug-point B:friend-request-retry-click
+                      void fetch('http://127.0.0.1:7781/event', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          sessionId: 'friend-request-retry',
+                          runId: 'post-fix',
+                          hypothesisId: 'B',
+                          location: 'FindPeopleModal.tsx:findPeopleAction:onClick',
+                          msg: '[DEBUG] Friend request action clicked',
+                          data: {
+                            currentUserPtid,
+                            receiverPtid,
+                            isPending,
+                            isFriend,
+                            isSelf,
+                            friendshipReady,
+                            addingId,
+                          },
+                        }),
+                      }).catch(() => {});
+                      // #endregion
                       void handleSendRequest(r);
                     }}
                     style={isPending || isFriend

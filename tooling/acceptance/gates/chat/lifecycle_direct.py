@@ -135,12 +135,20 @@ class LifecycleDirectGate(NativeTwoClientGate):
             return control if opened else None
 
         WebDriverWait(client.driver, 10).until(panel_ready)
-        if adapter.platform == "win32":
-            adapter.select_file_chooser_path_to_process(
-                client.process_id,
-                str(selected_path),
-            )
+        selected_control = adapter.select_file_chooser_path_to_process(
+            client.process_id,
+            str(selected_path),
+        )
+        if selected_control is not None:
+            if selected_control.dialog_count:
+                raise GateError(
+                    "Native file chooser selection was not committed"
+                )
             return
+        if adapter.platform == "win32":
+            raise GateError(
+                "Native file chooser selection returned no Win32 control"
+            )
 
         adapter.reveal_file_chooser_location_to_process(client.process_id)
         WebDriverWait(client.driver, 10).until(

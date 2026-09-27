@@ -247,16 +247,22 @@ pub fn agent_turn_diagnostics_export(
 }
 
 #[tauri::command]
-pub fn agent_submit_tool_decision(
+pub async fn agent_submit_tool_decision(
     input: AgentToolDecisionIntentInput,
-    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
     window: Window,
 ) -> AppResult<StubPayload> {
-    let token = session_resolver::token_for_window(state.inner(), &window).unwrap_or_default();
+    let state: Arc<AppState> = app.state::<Arc<AppState>>().inner().clone();
+    let token = session_resolver::token_for_window(&state, &window).unwrap_or_default();
     if token.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    application_agent_turn::submit_tool_decision(input, &token)
+    run_blocking_agent_command(
+        "agent_submit_tool_decision",
+        "agent.toolDecisionTaskFailed",
+        move || application_agent_turn::submit_tool_decision(input, &token),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -396,13 +402,21 @@ async fn run_revision_command(
     command: &'static str,
     operation: impl FnOnce() -> AppResult<StubPayload> + Send + 'static,
 ) -> AppResult<StubPayload> {
+    run_blocking_agent_command(command, "agent.error.revisionTaskFailed", operation).await
+}
+
+async fn run_blocking_agent_command(
+    command: &'static str,
+    failure_message: &'static str,
+    operation: impl FnOnce() -> AppResult<StubPayload> + Send + 'static,
+) -> AppResult<StubPayload> {
     match tokio::task::spawn_blocking(operation).await {
         Ok(result) => result,
         Err(error) => {
-            tracing::error!(command, error = %error, "Agent revision task failed");
+            tracing::error!(command, error = %error, "Agent blocking task failed");
             AppResult::fail(
                 ErrorCode::InternalError,
-                "agent.error.revisionTaskFailed",
+                failure_message,
                 Some(serde_json::json!({
                     "command": command,
                     "reason": error.to_string(),

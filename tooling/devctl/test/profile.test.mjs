@@ -316,7 +316,7 @@ test('rejects a profile identity mismatch', (t) => {
   );
 });
 
-test('keeps Acceptance profile overrides while retaining machine allocation', (t) => {
+test('keeps Acceptance ports and state run-scoped while retaining the machine slot', (t) => {
   const { root, environment, home } = machineWorkspace(t);
   const profileRoot = path.join(home, 'acceptance-profiles');
   const profilePath = path.join(profileRoot, 'runtime.env');
@@ -332,7 +332,11 @@ test('keeps Acceptance profile overrides while retaining machine allocation', (t
 
   assert.equal(resolved.profile.PT_DEV_PROFILE, 'runtime');
   assert.equal(resolved.profile.PT_DEV_SLOT, '5');
-  assert.equal(resolved.profile.PT_DESKTOP_APP_WEB_PORT, '3710');
+  assert.equal(resolved.profile.PT_DESKTOP_APP_GATEWAY_PORT, '3030');
+  assert.equal(resolved.profile.PT_DESKTOP_APP_WEB_PORT, '3210');
+  const canonicalProfileRoot = fs.realpathSync(profileRoot);
+  assert.equal(resolved.paths.profileData, path.join(canonicalProfileRoot, 'data'));
+  assert.equal(resolved.paths.profileState, canonicalProfileRoot);
   assert.equal(resolved.reference.machineProfileName, 'local-test');
   assert.equal(resolved.reference.canonical, false);
 });

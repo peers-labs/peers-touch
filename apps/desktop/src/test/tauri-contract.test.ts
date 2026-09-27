@@ -13,24 +13,34 @@ describe('TS ↔ Rust command contract', () => {
     invokeMock.mockReset();
   });
 
-  it('调用 access_start 并透传统一错误', async () => {
+  it('调用 auth_login 并透传 input', async () => {
     invokeMock.mockResolvedValue({
       ok: false,
       error: {
         code: 'NOT_IMPLEMENTED',
-        message: 'access_start is not implemented',
+        message: 'auth_login is not implemented',
       },
     });
 
     let rejectedError: unknown;
     let resolvedValue: unknown;
     try {
-      resolvedValue = await api.accessStart();
+      resolvedValue = await api.authLogin({
+        account: 'demo',
+        password: 'pwd',
+        base_url: 'http://localhost:8420',
+      });
     } catch (error) {
       rejectedError = error;
     }
 
-    expect(invokeMock).toHaveBeenCalledWith('access_start', undefined);
+    expect(invokeMock).toHaveBeenCalledWith('auth_login', {
+      input: {
+        account: 'demo',
+        password: 'pwd',
+        base_url: 'http://localhost:8420',
+      },
+    });
     if (rejectedError) {
       expect(rejectedError).toBeInstanceOf(AuthCommandException);
       return;
