@@ -332,6 +332,44 @@ describe('commandRuntime draft recovery', () => {
       'reliability_acknowledge_projection',
     ]);
   });
+
+  it('coalesces concurrent projection application for one runtime scope', async () => {
+    const checkpoint = {
+      commandId: 'command-checkpoint',
+      payloadSha256: [1, 2, 3],
+      authoritativeLookupBytes: [4, 5, 6],
+      createdAtMs: 42,
+    };
+    let releaseProjection!: () => void;
+    const projectionApplied = new Promise<void>((resolve) => {
+      releaseProjection = resolve;
+    });
+    const applyProjection = vi.fn(() => projectionApplied);
+    invokeMock
+      .mockResolvedValueOnce([checkpoint])
+      .mockResolvedValueOnce(undefined);
+
+    const first = applyReliabilityProjectionCheckpoints(
+      'station-a',
+      'ptid:alice',
+      7,
+      applyProjection,
+    );
+    const second = applyReliabilityProjectionCheckpoints(
+      'station-a',
+      'ptid:alice',
+      7,
+      applyProjection,
+    );
+    releaseProjection();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([1, 1]);
+    expect(applyProjection).toHaveBeenCalledOnce();
+    expect(invokeMock.mock.calls.map(([command]) => command)).toEqual([
+      'reliability_list_projection_checkpoints',
+      'reliability_acknowledge_projection',
+    ]);
+  });
 });
 
 function momentDraft(targetId = 'compose') {
