@@ -72,6 +72,10 @@ const (
 // path segment so "/v1/chat/completions" does not match it.
 var apiVersionSuffix = regexp.MustCompile(`(^|/)v\d+$`)
 
+func supportsExplicitThinkingMode(providerType string) bool {
+	return providerType == providerTypeOpenAI || providerType == providerTypeOllama
+}
+
 // #region debug-point A-E:ark-provider-request
 func reportArkProviderRequestDebug(
 	hypothesisID, stage, endpoint string,
@@ -386,7 +390,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		reasoningSupported = providerThinkingControl(provider.Name, model) != ""
 	}
 	if thinkingMode != domain.ThinkingModeAuto &&
-		(providerType != providerTypeOpenAI || !reasoningSupported) {
+		(!supportsExplicitThinkingMode(providerType) || !reasoningSupported) {
 		return nil, errcode.New(
 			errcode.AgentInvalidRequest,
 			http.StatusBadRequest,
@@ -435,7 +439,9 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 					model,
 					req.SystemPrompt,
 					req.Messages,
+					thinkingMode,
 					maxOutputTokens,
+					req.Tools,
 					req.DeltaSink,
 				)
 
@@ -659,27 +665,45 @@ func (s *ProviderService) callOllama(
 	baseURL, model string,
 	systemPrompt string,
 	messages []domain.Message,
+	thinkingMode domain.ThinkingMode,
 	maxOutputTokens int,
+	tools []*domain.ToolDefinition,
 	deltaSink ProviderDeltaSink,
 ) (*ProviderCallResponse, error) {
 
 	endpoint := strings.TrimRight(baseURL, "/") + "/api/chat"
 
-	// Build message slice: prepend system prompt, then conversation history.
-	apiMessages := make([]map[string]string, 0, len(messages)+1)
+	apiMessages := make([]ollamaMessage, 0, len(messages)+1)
 	if systemPrompt != "" {
-		apiMessages = append(apiMessages, map[string]string{
-			"role":    "system",
-			"content": systemPrompt,
+		apiMessages = append(apiMessages, ollamaMessage{
+			Role:    "system",
+			Content: systemPrompt,
 		})
 	}
-	apiMessages = append(apiMessages, s.toAPIMessages(messages)...)
+	convertedMessages, err := toOllamaMessages(messages)
+	if err != nil {
+		return nil, err
+	}
+	apiMessages = append(apiMessages, convertedMessages...)
 
 	payload := map[string]any{
 		"model":    model,
 		"messages": apiMessages,
 		"stream":   false,
 		"options":  map[string]any{"num_predict": maxOutputTokens},
+	}
+	ollamaTools, err := toOpenAITools(tools)
+	if err != nil {
+		return nil, err
+	}
+	if len(ollamaTools) > 0 {
+		payload["tools"] = ollamaTools
+	}
+	switch thinkingMode {
+	case domain.ThinkingModeDisabled:
+		payload["think"] = false
+	case domain.ThinkingModeEnabled:
+		payload["think"] = true
 	}
 	if deltaSink != nil {
 		payload["stream"] = true
@@ -716,10 +740,12 @@ func (s *ProviderService) callOllama(
 
 	var data struct {
 		Message struct {
-			Content string `json:"content"`
+			Content   string           `json:"content"`
+			ToolCalls []ollamaToolCall `json:"tool_calls"`
 		} `json:"message"`
-		Response string `json:"response"`
-		Model    string `json:"model"`
+		Response   string `json:"response"`
+		Model      string `json:"model"`
+		DoneReason string `json:"done_reason"`
 
 		// Ollama token usage (available since v0.1.29+).
 		PromptEvalCount int `json:"prompt_eval_count"`
@@ -734,17 +760,22 @@ func (s *ProviderService) callOllama(
 	if content == "" {
 		content = strings.TrimSpace(data.Response)
 	}
-	if content == "" {
+	toolCalls, err := providerOllamaToolCalls(data.Message.ToolCalls)
+	if err != nil {
+		return nil, err
+	}
+	if content == "" && len(toolCalls) == 0 {
 		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 			"empty ollama response", nil)
 	}
 
 	return &ProviderCallResponse{
 		Content:      content,
+		ToolCalls:    toolCalls,
 		Model:        data.Model,
 		InputTokens:  data.PromptEvalCount,
 		OutputTokens: data.EvalCount,
-		FinishReason: "stop",
+		FinishReason: data.DoneReason,
 	}, nil
 }
 
@@ -783,6 +814,8 @@ func (s *ProviderService) callOllamaStream(
 	var finishReason string
 	var inputTokens int
 	var outputTokens int
+	var toolCalls []ProviderToolCall
+	seenToolCalls := make(map[string]struct{})
 	scanner := bufio.NewScanner(io.LimitReader(resp.Body, maxResponseBytes))
 	scanner.Buffer(make([]byte, 0, 64*1024), maxResponseBytes)
 	for scanner.Scan() {
@@ -803,6 +836,17 @@ func (s *ProviderService) callOllamaStream(
 		if evalCount > 0 {
 			outputTokens = evalCount
 		}
+		parsedToolCalls, toolCallErr := parseOllamaStreamToolCalls(line)
+		if toolCallErr != nil {
+			return nil, toolCallErr
+		}
+		for _, toolCall := range parsedToolCalls {
+			if _, exists := seenToolCalls[toolCall.ID]; exists {
+				continue
+			}
+			seenToolCalls[toolCall.ID] = struct{}{}
+			toolCalls = append(toolCalls, toolCall)
+		}
 		if !ok || delta.Content == "" {
 			continue
 		}
@@ -814,13 +858,14 @@ func (s *ProviderService) callOllamaStream(
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(content.String()) == "" {
+	if strings.TrimSpace(content.String()) == "" && len(toolCalls) == 0 {
 		return nil, errcode.New(errcode.AgentProviderFailed, http.StatusBadGateway,
 			"empty ollama stream response", nil)
 	}
 
 	return &ProviderCallResponse{
 		Content:      content.String(),
+		ToolCalls:    toolCalls,
 		Model:        model,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
@@ -833,7 +878,8 @@ func parseOllamaStreamDelta(data string) (ProviderDelta, string, string, int, in
 	var parsed struct {
 		Model   string `json:"model"`
 		Message struct {
-			Content string `json:"content"`
+			Content  string `json:"content"`
+			Thinking string `json:"thinking"`
 		} `json:"message"`
 		Response        string `json:"response"`
 		Done            bool   `json:"done"`
@@ -843,6 +889,12 @@ func parseOllamaStreamDelta(data string) (ProviderDelta, string, string, int, in
 	}
 	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
 		return ProviderDelta{}, "", "", 0, 0, false
+	}
+	if parsed.Message.Thinking != "" {
+		return ProviderDelta{
+			Type:    "thinking",
+			Content: parsed.Message.Thinking,
+		}, parsed.Model, parsed.DoneReason, parsed.PromptEvalCount, parsed.EvalCount, true
 	}
 	content := parsed.Message.Content
 	if content == "" {
@@ -1599,6 +1651,24 @@ type openAIToolDefinition struct {
 	Function openAIFunctionDefinition `json:"function"`
 }
 
+type ollamaFunctionCall struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+type ollamaToolCall struct {
+	ID       string             `json:"id"`
+	Type     string             `json:"type,omitempty"`
+	Function ollamaFunctionCall `json:"function"`
+}
+
+type ollamaMessage struct {
+	Role      string           `json:"role"`
+	Content   string           `json:"content,omitempty"`
+	ToolCalls []ollamaToolCall `json:"tool_calls,omitempty"`
+	ToolName  string           `json:"tool_name,omitempty"`
+}
+
 func toOpenAITools(definitions []*domain.ToolDefinition) ([]openAIToolDefinition, error) {
 	tools := make([]openAIToolDefinition, 0, len(definitions))
 	for _, definition := range definitions {
@@ -1619,6 +1689,145 @@ func toOpenAITools(definitions []*domain.ToolDefinition) ([]openAIToolDefinition
 		})
 	}
 	return tools, nil
+}
+
+func toOllamaMessages(messages []domain.Message) ([]ollamaMessage, error) {
+	out := make([]ollamaMessage, 0, len(messages))
+	toolNames := make(map[string]string)
+	for _, message := range messages {
+		apiMessage := ollamaMessage{
+			Role:    string(message.Role),
+			Content: message.Content,
+		}
+		switch message.Role {
+		case domain.MessageRoleSystem, domain.MessageRoleUser:
+		case domain.MessageRoleAssistant:
+			if len(message.ToolCallsJSON) > 0 {
+				var calls []openAIToolCall
+				if err := json.Unmarshal(message.ToolCallsJSON, &calls); err != nil {
+					return nil, fmt.Errorf("decode assistant tool_calls: %w", err)
+				}
+				if len(calls) == 0 {
+					return nil, fmt.Errorf("assistant tool_calls cannot be empty")
+				}
+				apiMessage.ToolCalls = make([]ollamaToolCall, 0, len(calls))
+				for _, call := range calls {
+					if call.Type != "" && call.Type != "function" {
+						return nil, fmt.Errorf(
+							"ollama ToolCall %q has unsupported type %q",
+							call.ID,
+							call.Type,
+						)
+					}
+					if strings.TrimSpace(call.ID) == "" ||
+						strings.TrimSpace(call.Function.Name) == "" {
+						return nil, fmt.Errorf(
+							"ollama ToolCall requires id and function name",
+						)
+					}
+					arguments := strings.TrimSpace(call.Function.Arguments)
+					if arguments == "" {
+						arguments = "{}"
+					}
+					if !json.Valid([]byte(arguments)) || arguments[0] != '{' {
+						return nil, fmt.Errorf(
+							"ollama ToolCall %q has invalid arguments",
+							call.ID,
+						)
+					}
+					apiMessage.ToolCalls = append(
+						apiMessage.ToolCalls,
+						ollamaToolCall{
+							ID:   call.ID,
+							Type: call.Type,
+							Function: ollamaFunctionCall{
+								Name:      call.Function.Name,
+								Arguments: json.RawMessage(arguments),
+							},
+						},
+					)
+					toolNames[call.ID] = call.Function.Name
+				}
+			}
+		case domain.MessageRoleTool:
+			var metadata struct {
+				ToolCallID string `json:"tool_call_id"`
+			}
+			if err := json.Unmarshal(message.MetadataJSON, &metadata); err != nil ||
+				strings.TrimSpace(metadata.ToolCallID) == "" {
+				return nil, fmt.Errorf("ollama tool result message requires tool_call_id")
+			}
+			apiMessage.ToolName = toolNames[metadata.ToolCallID]
+			if apiMessage.ToolName == "" {
+				return nil, fmt.Errorf(
+					"ollama tool result message references unknown tool_call_id",
+				)
+			}
+		default:
+			apiMessage.Role = "user"
+		}
+		if strings.TrimSpace(apiMessage.Content) == "" && len(apiMessage.ToolCalls) == 0 {
+			continue
+		}
+		out = append(out, apiMessage)
+	}
+	return out, nil
+}
+
+func providerOllamaToolCalls(calls []ollamaToolCall) ([]ProviderToolCall, error) {
+	converted := make([]openAIToolCall, 0, len(calls))
+	for _, call := range calls {
+		arguments := bytes.TrimSpace(call.Function.Arguments)
+		if len(arguments) == 0 {
+			arguments = []byte("{}")
+		}
+		if arguments[0] == '"' {
+			var encoded string
+			if err := json.Unmarshal(arguments, &encoded); err != nil {
+				return nil, fmt.Errorf(
+					"decode ollama ToolCall %q arguments: %w",
+					call.ID,
+					err,
+				)
+			}
+			arguments = []byte(encoded)
+		}
+		if !json.Valid(arguments) || arguments[0] != '{' {
+			return nil, fmt.Errorf(
+				"ollama ToolCall %q has invalid arguments",
+				call.ID,
+			)
+		}
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, arguments); err != nil {
+			return nil, fmt.Errorf(
+				"compact ollama ToolCall %q arguments: %w",
+				call.ID,
+				err,
+			)
+		}
+		converted = append(converted, openAIToolCall{
+			ID:   call.ID,
+			Type: call.Type,
+			Function: openAIFunctionCall{
+				Name:      call.Function.Name,
+				Arguments: compact.String(),
+			},
+		})
+	}
+	return providerToolCalls(converted)
+}
+
+func parseOllamaStreamToolCalls(data string) ([]ProviderToolCall, error) {
+	var parsed struct {
+		Message struct {
+			ToolCalls []ollamaToolCall `json:"tool_calls"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+		return nil, nil
+	}
+	return providerOllamaToolCalls(parsed.Message.ToolCalls)
 }
 
 func toOpenAIMessages(messages []domain.Message) ([]openAIMessage, error) {
