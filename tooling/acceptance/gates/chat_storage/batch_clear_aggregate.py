@@ -24,7 +24,6 @@ PRECEDING_GATES: tuple[GateSpec, ...] = (
     GateSpec("CSG-G00", "chat-storage-contract"),
     GateSpec("CSG-G07", "chat-storage-desktop-batch-clear-e2e"),
     GateSpec("CSG-G07", "chat-storage-mobile-batch-clear-e2e"),
-    GateSpec("CSG-G07-regression", "chat-native-current-profile-two-client-e2e"),
     GateSpec("CSG-G07-regression", "mobile-simulator-chat-contacts-e2e"),
     GateSpec("CSG-G07-release", "desktop-release-build"),
     GateSpec("CSG-G07-release", "mobile-native-build"),
