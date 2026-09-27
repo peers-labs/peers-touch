@@ -3085,6 +3085,7 @@ def evaluate_base_cancelled(
                 "terminalCleanupCount",
                 scenario=scenario,
             ) == 1
+            and cleanup.get("localProjectionCleared") is True
             and cleanup.get("conversationDeleted") is True
         ),
     }
