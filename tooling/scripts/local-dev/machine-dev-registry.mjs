@@ -43,11 +43,6 @@ export const STATION_CAPABILITIES = new Set([
   'station.deploy',
   'station.reset',
 ]);
-export const AGENT_CONTROL_MODES = new Set([
-  'human-gated',
-  'managed',
-  'disposable',
-]);
 export const LEASE_RESOURCE_KINDS = new Set([
   'local.slot',
   'station.deploy',
@@ -138,6 +133,13 @@ function requiredIdentifier(value, field) {
     fail('INVALID_ARGUMENT', `${field} has an invalid identifier`, { field });
   }
   return normalized;
+}
+
+export function resetPolicyForProfile(profile) {
+  const profileId = requiredIdentifier(profile, 'profile');
+  return profileId.toLowerCase().includes('stable')
+    ? 'stable-protected'
+    : 'agent-resettable';
 }
 
 function requiredSlot(value) {
@@ -455,18 +457,6 @@ export function resolveProfileDefinition(options) {
       declared: values.PT_DEV_PROFILE ?? null,
     });
   }
-  const agentControlMode = values.PT_AGENT_CONTROL_MODE?.trim();
-  if (!AGENT_CONTROL_MODES.has(agentControlMode)) {
-    fail(
-      'PROFILE_AGENT_CONTROL_INVALID',
-      'profile has an unsupported Agent control mode',
-      {
-        profile,
-        agentControlMode,
-        allowed: [...AGENT_CONTROL_MODES],
-      },
-    );
-  }
   const stationMode = requiredText(
     values.PT_STATION_MODE,
     'PT_STATION_MODE',
@@ -495,7 +485,7 @@ export function resolveProfileDefinition(options) {
     profileFile,
     sourceState,
     envRepo,
-    agentControlMode,
+    resetPolicy: resetPolicyForProfile(profile),
     stationMode,
     stationUrl,
     stationHost,
@@ -507,15 +497,15 @@ export function resolveProfileDefinition(options) {
 
 function validateProfileCapabilities(definition, capabilities) {
   if (
-    definition.agentControlMode === 'managed' &&
+    definition.resetPolicy === 'stable-protected' &&
     capabilities.includes('station.reset')
   ) {
     fail(
-      'PROFILE_AGENT_CONTROL_DENIED',
-      'managed profiles cannot grant autonomous Station reset',
+      'PROFILE_RESET_PROTECTED',
+      'stable profiles cannot grant autonomous Station reset',
       {
         profile: definition.profile,
-        agentControlMode: definition.agentControlMode,
+        resetPolicy: definition.resetPolicy,
       },
     );
   }
@@ -1181,7 +1171,7 @@ export function checkWorkspace(options = {}) {
   );
   if (missingCapabilities.length > 0) {
     fail(
-      'AUTHORIZATION_REQUIRED',
+      'WORKSPACE_CAPABILITY_MISSING',
       'workspace binding does not allow requested Station capabilities',
       { missingCapabilities },
     );
@@ -1293,11 +1283,11 @@ export function prepareLease(options) {
   }
   if (
     resourceKind === 'station.reset' &&
-    options.resetAuthorizedScope !== resourceId
+    options.resetScope !== resourceId
   ) {
     fail(
-      'AUTHORIZATION_REQUIRED',
-      'station.reset requires an exact run-scoped authorization',
+      'RESET_SCOPE_MISMATCH',
+      'station.reset requires an exact run-scoped resource identity',
       { resourceId },
     );
   }
@@ -1438,8 +1428,8 @@ export function verifyHeldLease(options) {
     validateLeaseRequest({
       ...options,
       budgetSeconds: options.budgetSeconds ?? 1,
-      resetAuthorizedScope:
-        options.resetAuthorizedScope ??
+      resetScope:
+        options.resetScope ??
         process.env.PT_MACHINE_LEASE_RESET_SCOPE,
     });
     return {
@@ -1485,14 +1475,14 @@ export function statusAll(options = {}) {
     }
     let profileState = 'available';
     let profileError = null;
-    let agentControlMode = null;
+    let resetPolicy = null;
     try {
       const definition = resolveProfileDefinition({
         workspaceRoot: normalized.canonicalRoot,
         envRepo: options.envRepo,
         profile: normalized.profile,
       });
-      agentControlMode = definition.agentControlMode;
+      resetPolicy = definition.resetPolicy;
     } catch (error) {
       profileState = 'blocked';
       profileError = {
@@ -1503,7 +1493,7 @@ export function statusAll(options = {}) {
     return {
       ...normalized,
       ...state,
-      agentControlMode,
+      resetPolicy,
       profileState,
       profileError,
     };
@@ -1548,10 +1538,10 @@ export function buildLeaseCommand(options) {
   if (options.home) {
     validationCommand.push('--home', options.home);
   }
-  if (options.resetAuthorizedScope) {
+  if (options.resetScope) {
     validationCommand.push(
-      '--reset-authorized-scope',
-      options.resetAuthorizedScope,
+      '--reset-scope',
+      options.resetScope,
     );
   }
   const arguments_ = [
@@ -1570,10 +1560,10 @@ export function buildLeaseCommand(options) {
     '--validation-command-json',
     JSON.stringify(validationCommand),
   ];
-  if (options.resetAuthorizedScope) {
+  if (options.resetScope) {
     arguments_.push(
-      '--reset-authorized-scope',
-      options.resetAuthorizedScope,
+      '--reset-scope',
+      options.resetScope,
     );
   }
   arguments_.push('--', ...options.command);
