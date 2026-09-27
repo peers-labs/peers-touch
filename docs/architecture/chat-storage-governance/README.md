@@ -57,6 +57,7 @@ Desktop 与 Mobile 的单条删除终态也不一致。
 | [design.md](./design.md) | Storage Governance Core、边界与流程 |
 | [decisions.md](./decisions.md) | 关键设计决策 |
 | [data-model.md](./data-model.md) | Proto、policy、floor、journal 与 tombstone |
+| [module-layout.md](./module-layout.md) | 代码目录、文件职责与依赖方向 |
 | [integration.md](./integration.md) | 双端接入与旧行为硬切 |
 | [legacy-inventory.json](./legacy-inventory.json) | Chat 存储遗产 matcher 与 owner |
 | [execution-plans/20260926-chat-storage-governance/plan.md](./execution-plans/20260926-chat-storage-governance/plan.md) | 已完成的初始治理 Plan |
