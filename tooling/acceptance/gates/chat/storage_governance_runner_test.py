@@ -252,6 +252,8 @@ class StorageGovernanceRunnerTest(unittest.TestCase):
         self.assertIn("control?.matches('input')", runner)
         self.assertIn("Desktop batch selection controls", runner)
         self.assertIn("self._conversation_selected(", runner)
+        self.assertIn("self.restart_client(actor)", runner)
+        self.assertNotIn("client.driver.refresh()", runner)
         self.assertNotIn('"createGroup"', runner)
 
 

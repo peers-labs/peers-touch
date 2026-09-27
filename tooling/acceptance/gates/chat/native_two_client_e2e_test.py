@@ -280,6 +280,17 @@ class NativeTwoClientEvidenceTest(unittest.TestCase):
         ):
             gate.configure_station_access(object(), "alice")
 
+    def test_native_restart_preserves_the_authenticated_session(self) -> None:
+        source = inspect.getsource(NativeTwoClientGate.restart_client)
+
+        self.assertLess(
+            source.index("stop_preserving_session(predecessor)"),
+            source.index("transfer_preserved_session("),
+        )
+        self.assertIn('"bindingState"', source)
+        self.assertIn('"getRealtimeDevice"', source)
+        self.assertIn("self.client_lifecycles.mark_authenticated(client)", source)
+
     def test_avatar_evidence_requires_each_actor_on_a_remote_client(self) -> None:
         alice = "data:image/svg+xml;base64,alice"
         bob = "data:image/svg+xml;base64,bob"

@@ -318,27 +318,34 @@ class ChatStorageDesktopBatchGate(ChatStorageAccountingGate):
             ),
         )
 
-        client.driver.refresh()
-        client.wait_for_ready(60)
-        client.wait_for_acceptance_harness(60)
-        for conversation_id in (first_id, second_id):
-            projection = async_harness(
-                client,
-                "engineMessages",
-                {"actorPtid": self.ptids[actor], "conversationId": conversation_id},
-            )
-            if (projection != {"messages": []}):
-                raise GateError(
-                    "batch-cleared plaintext returned after Desktop restart"
+        def verify_restart() -> dict[str, Any]:
+            restarted = self.restart_client(actor)
+            for conversation_id in (first_id, second_id):
+                projection = async_harness(
+                    restarted,
+                    "engineMessages",
+                    {
+                        "actorPtid": self.ptids[actor],
+                        "conversationId": conversation_id,
+                    },
                 )
-        self.step("storage.batch.restart", lambda: True, actor)
+                if projection != {"messages": []}:
+                    raise GateError(
+                        "batch-cleared plaintext returned after Desktop restart"
+                    )
+            return {
+                "conversationIds": [first_id, second_id],
+                "native": True,
+            }
+
+        restart = self.step("storage.batch.restart", verify_restart, actor)
         self.assert_condition("storage_batch_restart_stable", True)
         self.report.runtime["batchClear"] = {
             "conversationIds": [first_id, second_id],
             "physicalBytesBefore": int(before.get("physicalTotalBytes") or 0),
             "estimatedReclaimableBytes": estimated_reclaimable_bytes,
             **batch_result,
-            "restartStable": True,
+            "restartStable": restart.get("native") is True,
         }
 
     def run(self) -> dict[str, Any]:
