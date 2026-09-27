@@ -1182,4 +1182,3 @@ export enum MessagingProjectionKind {
  */
 export const MessagingProjectionKindSchema: GenEnum<MessagingProjectionKind> = /*@__PURE__*/
   enumDesc(file_domain_chat_event, 0);
-

@@ -163,7 +163,10 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		privateRecipientDirectory,
 		privateContentKeyExchangePort{},
 		privateStationSigner,
-		privateContentAuthorSignatureVerifier{actors: actorCapabilities},
+		privateContentAuthorSignatureVerifier{
+			actors:             actorCapabilities,
+			localStationPeerID: federationRuntime.LocalStationPeerID(),
+		},
 		privateContentSystemClock{},
 	)
 	if err != nil {

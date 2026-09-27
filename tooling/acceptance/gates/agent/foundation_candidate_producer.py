@@ -17,7 +17,11 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import RunHandle, source_identity
-from tooling.acceptance.core.redaction import is_sensitive_key, redact_text
+from tooling.acceptance.gates.agent.agent_v2_candidate_producer import (
+    AgentV2CandidateAssembler,
+    AgentV2CandidateError,
+    ensure_evidence_safe,
+)
 from tooling.acceptance.gates.agent.agent_v2_gate import (
     GATE_ROLES,
     MATRIX,
@@ -31,9 +35,6 @@ MATRIX_PATH = (
 EXPANDER_PATH = (
     REPO_ROOT / "tooling/scripts/expand-agent-v2-runtime-matrix.py"
 )
-VALIDATOR_PATH = REPO_ROOT / "tooling/scripts/acceptance-validate.py"
-SCHEMA_ROOT = REPO_ROOT / "tooling/acceptance/schemas/agent-v2"
-CONTRACT_PATH = SCHEMA_ROOT / "contract.json"
 TUPLE_FIELDS = (
     "gate",
     "row",
@@ -77,34 +78,17 @@ ROW_ADAPTERS = {
     "foundation-browser-external-absent": "non_advertisement",
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-SAFE_SCHEMA_KEYS = {
-    "actual_tokens",
-    "cacheTokens",
-    "cache_tokens",
-    "contextTokens",
-    "context_tokens",
-    "credentialStatus",
-    "fencingToken",
-    "hasTokenAccounting",
-    "inputTokens",
-    "input_tokens",
-    "limit_tokens",
-    "maxInputTokens",
-    "maxOutputTokens",
-    "outputTokens",
-    "output_tokens",
-    "reasoningTokens",
-    "reasoning_tokens",
-    "tokenAccountingPresent",
-    "tokenUsage",
-    "token_usage",
-    "toolDefinitionTokens",
-    "tool_definition_tokens",
-}
 
 
 class FoundationCandidateError(RuntimeError):
     """The producer cannot establish an exact, observed Foundation candidate."""
+
+
+def _ensure_evidence_safe(value: Any, path: str) -> None:
+    try:
+        ensure_evidence_safe(value, path)
+    except AgentV2CandidateError as error:
+        raise FoundationCandidateError(str(error)) from error
 
 
 @dataclass(frozen=True)
@@ -216,49 +200,11 @@ def _load_module(path: Path, name: str) -> ModuleType:
     return module
 
 
-def _load_json(path: Path) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise FoundationCandidateError(f"cannot load JSON contract {path}: {error}") from error
-    if not isinstance(value, dict):
-        raise FoundationCandidateError(f"JSON contract must be an object: {path}")
-    return value
-
-
 def _sha256_file(path: Path) -> str:
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as error:
         raise FoundationCandidateError(f"cannot hash matrix {path}: {error}") from error
-
-
-def _ensure_evidence_safe(value: Any, path: str) -> None:
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            key_text = str(key)
-            if is_sensitive_key(key_text) and key_text not in SAFE_SCHEMA_KEYS:
-                raise FoundationCandidateError(
-                    f"{path}.{key_text}: secret-bearing evidence field is forbidden"
-                )
-            _ensure_evidence_safe(item, f"{path}.{key_text}")
-    elif isinstance(value, (list, tuple)):
-        for index, item in enumerate(value):
-            _ensure_evidence_safe(item, f"{path}[{index}]")
-    elif isinstance(value, str) and redact_text(value) != value:
-        raise FoundationCandidateError(
-            f"{path}: secret-bearing evidence value is forbidden"
-        )
-
-
-def _schema_descriptor(contract: Mapping[str, Any], schema_name: str) -> dict[str, Any]:
-    definition = contract["schemas"][schema_name]
-    schema_path = SCHEMA_ROOT / definition["file"]
-    return {
-        "id": definition["id"],
-        "version": definition["version"],
-        "sha256": _sha256_file(schema_path),
-    }
 
 
 def load_foundation_tuples() -> tuple[FoundationTuple, ...]:
@@ -339,29 +285,11 @@ def load_foundation_tuples() -> tuple[FoundationTuple, ...]:
 class FoundationCandidateProducer:
     def __init__(self, adapters: FoundationAdapters) -> None:
         self._adapters = adapters
-        self._contract = _load_json(CONTRACT_PATH)
-        self._validator = _load_module(
-            VALIDATOR_PATH,
-            "_foundation_candidate_semantic_validator",
+        self._assembler = AgentV2CandidateAssembler(GATE_ID)
+        self._validator = self._assembler.validator
+        self._required_observation_fields = (
+            self._assembler.required_observation_fields
         )
-        self._runtime_matrix = dict(self._contract["matrix"])
-        self._runtime_matrix.pop("source")
-        if {
-            key: self._runtime_matrix[key]
-            for key in ("id", "version", "sha256")
-        } != MATRIX:
-            raise FoundationCandidateError(
-                "proof contract and Gate runtime matrix identities differ"
-            )
-        role_contracts = _load_json(
-            SCHEMA_ROOT / "evidence-role.schema.json"
-        ).get("x-role-contracts")
-        if not isinstance(role_contracts, dict):
-            raise FoundationCandidateError("evidence role contracts are missing")
-        self._required_observation_fields = {
-            role: frozenset(role_contracts[role]["requiredObservationFields"])
-            for role in EVIDENCE_ROLES
-        }
 
     def _observe(self, runtime_tuple: FoundationTuple) -> FoundationTupleObservation:
         adapter_name = ROW_ADAPTERS[runtime_tuple.row]
@@ -501,167 +429,15 @@ class FoundationCandidateProducer:
             raise FoundationCandidateError(
                 f"candidate run Gate must be {GATE_ID}, got {run.gate_id}"
             )
-        expected_source = source_identity(REPO_ROOT)
-        if run.source != expected_source:
+        if run.source != source_identity(REPO_ROOT):
             raise FoundationCandidateError(
                 "candidate run source identity does not match the current worktree"
             )
-
-        collected = self.collect()
-        observed_at = max(
-            str(observation.runtime_attestation.payload["observedAt"])
-            for _, observation in collected
-        )
-        actor_hash = next(
-            str(actor_hash)
-            for _, observation in collected
-            if (
-                actor_hash
-                := observation.runtime_attestation.payload.get(
-                    "actorIdentityHash"
-                )
+        try:
+            return self._assembler.produce(
+                run,
+                self.collect(),
+                candidate_name="foundation-candidate",
             )
-        )
-        runtime_keys = [runtime_tuple.key for runtime_tuple, _ in collected]
-        evidence_schema = _schema_descriptor(self._contract, "evidence-role")
-
-        runtime_tuples = []
-        for runtime_tuple, observation in collected:
-            runtime_tuples.append(
-                {
-                    **runtime_tuple.to_dict(),
-                    **observation.runtime_attestation.to_dict(),
-                }
-            )
-        runtime_artifact = {
-            "artifactKind": "agent-v2-runtime-attestation-set",
-            "schema": _schema_descriptor(
-                self._contract, "runtime-attestation-set"
-            ),
-            "role": "runtime-attestation-set",
-            "gateId": GATE_ID,
-            "runId": run.run_id,
-            "sourceIdentity": expected_source,
-            "runtimeMatrix": self._runtime_matrix,
-            "tuples": runtime_tuples,
-            "oracle": {
-                "assertionId": "foundation-runtime-matrix-exact",
-                "status": "passed",
-                "expectedTupleCount": 419,
-            },
-            "observedAt": observed_at,
-        }
-        runtime_attestations = dict(zip(runtime_keys, runtime_tuples))
-
-        evidence_artifacts = {}
-        for role in EVIDENCE_ROLES:
-            oracle_id = f"foundation-{role}-oracle"
-            observations = []
-            applicable = tuple(
-                (runtime_tuple, observation)
-                for runtime_tuple, observation in collected
-                if role in runtime_tuple.role_policy.adapter_roles
-            )
-            for runtime_tuple, observation in applicable:
-                payload = dict(observation.role_observations[role])
-                payload.update(
-                    {
-                        "runtimeTupleKey": runtime_tuple.key,
-                        "scenarioId": runtime_tuple.cell,
-                        "sampleId": runtime_tuple.sample_id,
-                        "actorIdentityHash": actor_hash,
-                        "oracleAssertionId": oracle_id,
-                    }
-                )
-                if "cellId" in payload:
-                    payload["cellId"] = runtime_tuple.cell
-                observations.append(payload)
-            role_runtime_keys = [
-                runtime_tuple.key for runtime_tuple, _ in applicable
-            ]
-            role_scenario_ids = sorted(
-                {runtime_tuple.cell for runtime_tuple, _ in applicable}
-            )
-            role_runtime_attestations = {
-                key: runtime_attestations[key] for key in role_runtime_keys
-            }
-            actual_hash = hashlib.sha256(
-                json.dumps(
-                    observations,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode("utf-8")
-            ).hexdigest()
-            artifact = {
-                "artifactKind": "agent-v2-gate-evidence",
-                "schema": evidence_schema,
-                "role": role,
-                "gateId": GATE_ID,
-                "runId": run.run_id,
-                "sourceIdentity": expected_source,
-                "runtimeMatrix": self._runtime_matrix,
-                "actorIdentityHash": actor_hash,
-                "runtimeAttestationRefs": role_runtime_keys,
-                "scenarioIds": role_scenario_ids,
-                "sampleCount": len(observations),
-                "observations": observations,
-                "oracle": {
-                    "assertionId": oracle_id,
-                    "status": "passed",
-                    "expected": (
-                        "every applicable Foundation tuple passed its "
-                        "role-specific oracle"
-                    ),
-                    "actualHash": actual_hash,
-                },
-                "observedAt": observed_at,
-            }
-            try:
-                self._validator.validate_gate_evidence_semantics(
-                    self._contract,
-                    role,
-                    artifact,
-                    runtime_attestations,
-                    set(role_runtime_keys),
-                )
-            except RuntimeError as error:
-                raise FoundationCandidateError(
-                    f"{role}: invalid assembled evidence: {error}"
-                ) from error
-            evidence_artifacts[role] = artifact
-
-        role_references = {
-            "runtime-attestation-set": run.write_json(
-                "roles/runtime-attestation-set.json",
-                runtime_artifact,
-                role="runtime-attestation-set",
-                redact=False,
-            )
-        }
-        for role, artifact in evidence_artifacts.items():
-            role_references[role] = run.write_json(
-                f"roles/{role}.json",
-                artifact,
-                role=role,
-                redact=False,
-            )
-
-        candidate = {
-            "gateId": GATE_ID,
-            "runtimeMatrix": MATRIX,
-            "scenarioExecuted": True,
-            "proofStatus": "UNPROVEN",
-            "artifacts": [
-                {
-                    "role": role,
-                    "path": str(run.store.resolve(reference)),
-                }
-                for role, reference in sorted(role_references.items())
-            ],
-        }
-        candidate_ref = run.write_json(
-            "candidate/foundation-candidate.json",
-            candidate,
-            redact=False,
-        )
-        return run.store.resolve(candidate_ref)
+        except AgentV2CandidateError as error:
+            raise FoundationCandidateError(str(error)) from error

@@ -55,6 +55,7 @@ registerIdentityHandler('refresh-current-session', async (payload) => {
     payload.reason === 'logout'
     || payload.reason === 'revoked'
     || payload.reason === 'switch'
+    || payload.reason === 'unlock'
     || useSessionStore.getState().authenticated
   ) {
     return;

@@ -1,6 +1,8 @@
 import { fromBinary } from '@bufbuild/protobuf';
 
 import { ChatMessageSchema, type ChatMessage } from '../gen/proto/domain/chat/chat_pb';
+import type { FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
+import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import { EVENT, eventBus } from '../kernel/events';
 import type {
   RealtimeConversationSettingsChangedPayload,
@@ -150,19 +152,19 @@ function chatMessageToSocialMessage(kind: 'friend' | 'group', chatMessage: ChatM
   if (kind === 'friend') {
     return {
       ...common,
-      $typeName: 'peers_touch.model.chat.v1.ChatMessage',
+      $typeName: 'peers_touch.model.chat.v1.FriendChatMessage',
       sessionUlid,
       receiverPtid: '',
       status: chatMessage.status as number,
       deliveredAt: undefined,
       readAt: undefined,
-    };
+    } as unknown as FriendChatMessage;
   }
   return {
     ...common,
-    $typeName: 'peers_touch.model.chat.v1.ChatMessage',
+    $typeName: 'peers_touch.model.chat.v1.GroupMessage',
     groupUlid: sessionUlid,
-  };
+  } as unknown as GroupMessage;
 }
 
 function decodeRealtimeMessage(

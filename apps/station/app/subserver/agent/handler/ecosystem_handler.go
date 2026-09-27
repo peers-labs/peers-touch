@@ -1,6 +1,6 @@
 // Changelog:
 // 2026-08-14 — M11 localStorage→Station migration: HTTP handlers for ecosystem
-//   entities (AgentGroups, TopicComments, CustomPlugins).
+//   Agent Groups and Topic Comments.
 
 package handler
 
@@ -182,116 +182,5 @@ func (h *EcosystemHandlers) HandleListTopicComments(ctx context.Context, req ser
 		return nil
 	}
 	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "comments": comments})
-	return nil
-}
-
-// --- Custom Plugins ---
-
-func (h *EcosystemHandlers) HandleCreateCustomPlugin(ctx context.Context, req server.Request, resp server.Response) error {
-	var input struct {
-		Name         string `json:"name"`
-		Description  string `json:"description"`
-		Endpoint     string `json:"endpoint"`
-		Method       string `json:"method"`
-		AuthType     string `json:"auth_type"`
-		InputSchema  string `json:"input_schema"`
-		OutputSchema string `json:"output_schema"`
-		Enabled      bool   `json:"enabled"`
-	}
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
-		return nil
-	}
-	if input.Endpoint == "" {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "endpoint is required"})
-		return nil
-	}
-	actorPTID := subjectActorPTID(ctx)
-	plugin := &persistence.EcosystemCustomPlugin{
-		Name:           input.Name,
-		Description:    input.Description,
-		Endpoint:       input.Endpoint,
-		Method:         input.Method,
-		AuthType:       input.AuthType,
-		InputSchema:    input.InputSchema,
-		OutputSchema:   input.OutputSchema,
-		Enabled:        input.Enabled,
-		OwnerActorPTID: actorPTID,
-	}
-	if err := h.svc.CreateCustomPlugin(ctx, plugin); err != nil {
-		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		return nil
-	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "plugin": plugin})
-	return nil
-}
-
-func (h *EcosystemHandlers) HandleUpdateCustomPlugin(ctx context.Context, req server.Request, resp server.Response) error {
-	var input struct {
-		ID           string `json:"id"`
-		Name         string `json:"name"`
-		Description  string `json:"description"`
-		Endpoint     string `json:"endpoint"`
-		Method       string `json:"method"`
-		AuthType     string `json:"auth_type"`
-		InputSchema  string `json:"input_schema"`
-		OutputSchema string `json:"output_schema"`
-		Enabled      bool   `json:"enabled"`
-	}
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
-		return nil
-	}
-	if input.ID == "" {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "id is required"})
-		return nil
-	}
-	plugin := &persistence.EcosystemCustomPlugin{
-		ID:           input.ID,
-		Name:         input.Name,
-		Description:  input.Description,
-		Endpoint:     input.Endpoint,
-		Method:       input.Method,
-		AuthType:     input.AuthType,
-		InputSchema:  input.InputSchema,
-		OutputSchema: input.OutputSchema,
-		Enabled:      input.Enabled,
-	}
-	if err := h.svc.UpdateCustomPlugin(ctx, plugin); err != nil {
-		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		return nil
-	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
-	return nil
-}
-
-func (h *EcosystemHandlers) HandleDeleteCustomPlugin(ctx context.Context, req server.Request, resp server.Response) error {
-	var input struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(req.Body(), &input); err != nil {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "invalid request"})
-		return nil
-	}
-	if input.ID == "" {
-		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "id is required"})
-		return nil
-	}
-	if err := h.svc.DeleteCustomPlugin(ctx, input.ID); err != nil {
-		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		return nil
-	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true})
-	return nil
-}
-
-func (h *EcosystemHandlers) HandleListCustomPlugins(ctx context.Context, req server.Request, resp server.Response) error {
-	actorPTID := subjectActorPTID(ctx)
-	plugins, err := h.svc.ListCustomPlugins(ctx, actorPTID)
-	if err != nil {
-		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
-		return nil
-	}
-	writeJSON(resp, http.StatusOK, map[string]any{"ok": true, "plugins": plugins})
 	return nil
 }

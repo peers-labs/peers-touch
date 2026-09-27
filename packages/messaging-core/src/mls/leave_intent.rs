@@ -1,6 +1,7 @@
-use super::actor_device_identity::ActorDeviceIdentity;
 use crate::proto::chat::{CryptoEndpoint, MlsLeaveIntent, MlsLeaveIntentSigningInput};
+use ed25519_dalek::{Signer, SigningKey};
 use prost::Message;
+use sha2::{Digest, Sha256};
 use ulid::Ulid;
 
 pub const MLS_LEAVE_INTENT_VERSION: u32 = 1;
@@ -26,15 +27,22 @@ pub trait MlsLeaveIntentTransport: Send + Sync {
 }
 
 pub fn submit_leave_intent<T: MlsLeaveIntentTransport + ?Sized>(
-    identity: &ActorDeviceIdentity,
+    signing_key_id: &str,
+    signing_key: &SigningKey,
     endpoint: &CryptoEndpoint,
     input: &MlsLeaveIntentInput,
     created_at_unix_ms: i64,
     transport: &T,
 ) -> Result<MlsLeaveIntent, String> {
     let intent_id = Ulid::new().to_string();
-    let intent =
-        build_signed_leave_intent(identity, endpoint, input, &intent_id, created_at_unix_ms)?;
+    let intent = build_signed_leave_intent(
+        signing_key_id,
+        signing_key,
+        endpoint,
+        input,
+        &intent_id,
+        created_at_unix_ms,
+    )?;
     let submitted = transport.submit_leave_intent(&intent)?;
     if submitted != intent {
         return Err("Station returned a different MLS leave intent".to_string());
@@ -60,18 +68,19 @@ pub fn list_leave_intents<T: MlsLeaveIntentTransport + ?Sized>(
 }
 
 pub fn build_signed_leave_intent(
-    identity: &ActorDeviceIdentity,
+    signing_key_id: &str,
+    signing_key: &SigningKey,
     endpoint: &CryptoEndpoint,
     input: &MlsLeaveIntentInput,
     intent_id: &str,
     created_at_unix_ms: i64,
 ) -> Result<MlsLeaveIntent, String> {
-    validate_endpoint(identity, endpoint)?;
+    validate_endpoint(endpoint)?;
+    validate_signing_key(signing_key_id, signing_key)?;
     validate_input(input, intent_id, created_at_unix_ms)?;
     let expires_at_unix_ms = created_at_unix_ms
         .checked_add(MLS_LEAVE_INTENT_TTL_MS)
         .ok_or_else(|| "MLS leave intent expiry overflows".to_string())?;
-    let (actor_signing_key_id, _) = identity.signing_identity()?;
     let mut intent = MlsLeaveIntent {
         version: MLS_LEAVE_INTENT_VERSION,
         intent_id: intent_id.to_string(),
@@ -82,7 +91,7 @@ pub fn build_signed_leave_intent(
         conversation_id: input.conversation_id.clone(),
         actor_ptid: endpoint.ptid.clone(),
         actor_device_id: endpoint.device_id.clone(),
-        actor_signing_key_id,
+        actor_signing_key_id: signing_key_id.to_string(),
         observed_membership_epoch: input.observed_membership_epoch,
         observed_mls_epoch: input.observed_mls_epoch,
         created_at_unix_ms,
@@ -91,7 +100,10 @@ pub fn build_signed_leave_intent(
         authority_sequence: input.authority_sequence,
         authority_hash: input.authority_hash.clone(),
     };
-    intent.actor_signature = identity.sign(&leave_intent_signing_bytes(&intent)?)?;
+    intent.actor_signature = signing_key
+        .sign(&leave_intent_signing_bytes(&intent)?)
+        .to_bytes()
+        .to_vec();
     Ok(intent)
 }
 
@@ -153,15 +165,17 @@ pub fn validate_signed_leave_intent(intent: &MlsLeaveIntent) -> Result<(), Strin
     Ok(())
 }
 
-fn validate_endpoint(
-    identity: &ActorDeviceIdentity,
-    endpoint: &CryptoEndpoint,
-) -> Result<(), String> {
+fn validate_endpoint(endpoint: &CryptoEndpoint) -> Result<(), String> {
     if !endpoint.ptid.starts_with("ptid:") || endpoint.device_id.trim().is_empty() {
         return Err("MLS leave intent requires a canonical actor-device endpoint".to_string());
     }
-    if identity.endpoint()? != *endpoint {
-        return Err("MLS leave intent endpoint does not match signing identity".to_string());
+    Ok(())
+}
+
+fn validate_signing_key(signing_key_id: &str, signing_key: &SigningKey) -> Result<(), String> {
+    let expected = hex::encode(Sha256::digest(signing_key.verifying_key().as_bytes()));
+    if signing_key_id != expected {
+        return Err("MLS leave intent signing key ID does not match device key".to_string());
     }
     Ok(())
 }
@@ -189,7 +203,7 @@ fn validate_input(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    use ed25519_dalek::{Signature, Verifier};
     use std::sync::Mutex;
 
     struct RecordingTransport {
@@ -225,45 +239,82 @@ mod tests {
         }
     }
 
+    fn signing_identity() -> (String, SigningKey) {
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let signing_key_id = hex::encode(Sha256::digest(signing_key.verifying_key().as_bytes()));
+        (signing_key_id, signing_key)
+    }
+
     #[test]
     fn canonical_bytes_are_deterministic_and_signature_verifies() {
-        let identity = ActorDeviceIdentity::new();
-        identity.init("ptid:alice", "alice-device").unwrap();
+        let (signing_key_id, signing_key) = signing_identity();
         let endpoint = CryptoEndpoint {
             ptid: "ptid:alice".to_string(),
             device_id: "alice-device".to_string(),
         };
 
-        let first =
-            build_signed_leave_intent(&identity, &endpoint, &input(), "intent-1", 1_000).unwrap();
-        let second =
-            build_signed_leave_intent(&identity, &endpoint, &input(), "intent-1", 1_000).unwrap();
+        let first = build_signed_leave_intent(
+            &signing_key_id,
+            &signing_key,
+            &endpoint,
+            &input(),
+            "intent-1",
+            1_000,
+        )
+        .unwrap();
+        let second = build_signed_leave_intent(
+            &signing_key_id,
+            &signing_key,
+            &endpoint,
+            &input(),
+            "intent-1",
+            1_000,
+        )
+        .unwrap();
         let signing_bytes = leave_intent_signing_bytes(&first).unwrap();
-        let (_, public_key) = identity.signing_identity().unwrap();
-        let verifying_key = VerifyingKey::from_bytes(public_key.as_slice().try_into().unwrap())
-            .expect("valid Ed25519 public key");
         let signature = Signature::from_slice(&first.actor_signature).unwrap();
 
+        assert_eq!(first.actor_signing_key_id, signing_key_id);
         assert_eq!(leave_intent_signing_bytes(&second).unwrap(), signing_bytes);
         assert_eq!(second.actor_signature, first.actor_signature);
-        verifying_key.verify(&signing_bytes, &signature).unwrap();
+        signing_key
+            .verifying_key()
+            .verify(&signing_bytes, &signature)
+            .unwrap();
     }
 
     #[test]
-    fn endpoint_and_time_validation_fail_closed() {
-        let identity = ActorDeviceIdentity::new();
-        identity.init("ptid:alice", "alice-device").unwrap();
-        let wrong_endpoint = CryptoEndpoint {
-            ptid: "ptid:bob".to_string(),
-            device_id: "bob-device".to_string(),
+    fn endpoint_signing_key_and_time_validation_fail_closed() {
+        let (signing_key_id, signing_key) = signing_identity();
+        let invalid_endpoint = CryptoEndpoint {
+            ptid: "alice".to_string(),
+            device_id: String::new(),
         };
 
-        assert!(
-            build_signed_leave_intent(&identity, &wrong_endpoint, &input(), "intent-1", 1_000,)
-                .is_err()
-        );
         assert!(build_signed_leave_intent(
-            &identity,
+            &signing_key_id,
+            &signing_key,
+            &invalid_endpoint,
+            &input(),
+            "intent-1",
+            1_000,
+        )
+        .is_err());
+        assert!(build_signed_leave_intent(
+            "sha256:wrong-key",
+            &signing_key,
+            &CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            },
+            &input(),
+            "intent-1",
+            1_000,
+        )
+        .is_err());
+        assert!(build_signed_leave_intent(
+            &signing_key_id,
+            &signing_key,
             &CryptoEndpoint {
                 ptid: "ptid:alice".to_string(),
                 device_id: "alice-device".to_string(),
@@ -277,22 +328,34 @@ mod tests {
 
     #[test]
     fn submit_and_list_delegate_through_transport() {
-        let identity = ActorDeviceIdentity::new();
-        identity.init("ptid:alice", "alice-device").unwrap();
+        let (signing_key_id, signing_key) = signing_identity();
         let endpoint = CryptoEndpoint {
             ptid: "ptid:alice".to_string(),
             device_id: "alice-device".to_string(),
         };
-        let listed =
-            build_signed_leave_intent(&identity, &endpoint, &input(), "intent-listed", 1_000)
-                .unwrap();
+        let listed = build_signed_leave_intent(
+            &signing_key_id,
+            &signing_key,
+            &endpoint,
+            &input(),
+            "intent-listed",
+            1_000,
+        )
+        .unwrap();
         let transport = RecordingTransport {
             submitted: Mutex::new(Vec::new()),
             listed: vec![listed.clone()],
         };
 
-        let submitted =
-            submit_leave_intent(&identity, &endpoint, &input(), 2_000, &transport).unwrap();
+        let submitted = submit_leave_intent(
+            &signing_key_id,
+            &signing_key,
+            &endpoint,
+            &input(),
+            2_000,
+            &transport,
+        )
+        .unwrap();
         assert_eq!(transport.submitted.lock().unwrap().as_slice(), &[submitted]);
         assert_eq!(
             list_leave_intents("group-1", &transport).unwrap(),

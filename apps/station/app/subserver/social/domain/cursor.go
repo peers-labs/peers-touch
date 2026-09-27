@@ -1,9 +1,12 @@
 package domain
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"strings"
 	"time"
 )
 
@@ -51,13 +54,31 @@ func DecodeCursor(s string) (Cursor, error) {
 	if s == "" {
 		return Cursor{}, nil
 	}
+	if s != strings.TrimSpace(s) {
+		return Cursor{}, fmt.Errorf("decode cursor: non-canonical encoding")
+	}
 	b, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
 		return Cursor{}, fmt.Errorf("decode cursor: %w", err)
 	}
+	if base64.RawURLEncoding.EncodeToString(b) != s {
+		return Cursor{}, fmt.Errorf("decode cursor: non-canonical encoding")
+	}
 	var c Cursor
-	if err := json.Unmarshal(b, &c); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(b))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&c); err != nil {
 		return Cursor{}, fmt.Errorf("unmarshal cursor: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return Cursor{}, fmt.Errorf("unmarshal cursor: trailing data")
+	}
+	if c.LastID == 0 || c.CreatedAt.IsZero() {
+		return Cursor{}, fmt.Errorf("unmarshal cursor: incomplete anchor")
+	}
+	canonical, err := json.Marshal(c)
+	if err != nil || !bytes.Equal(canonical, b) {
+		return Cursor{}, fmt.Errorf("unmarshal cursor: non-canonical encoding")
 	}
 	return c, nil
 }

@@ -227,12 +227,18 @@ message PrepareConversationMembershipResponse {
 }
 
 message PrepareFederatedConversationCommandRequest {
-  PrepareConversationCommandRequest request = 1;
+  oneof preparation {
+    PrepareConversationCommandRequest request = 1;
+    PrepareConversationMembershipRequest membership_request = 3;
+  }
   string source_home_station_peer_id = 2;
 }
 
 message PrepareFederatedConversationCommandResponse {
-  PrepareConversationCommandResponse plan = 1;
+  oneof preparation {
+    PrepareConversationCommandResponse plan = 1;
+    PrepareConversationMembershipResponse membership_plan = 2;
+  }
 }
 
 message SubmitConversationTypingRequest {

@@ -50,6 +50,7 @@ type accessCoordinator interface {
 
 type actorResolver interface {
 	Resolve(context.Context, *coreauth.OAuth2Identity) (*dbmodel.Actor, *model.ActorRef, error)
+	ResolveReference(context.Context, string) (*model.ActorRef, error)
 }
 
 type sessionCredentialIssuer interface {
@@ -270,7 +271,10 @@ func (s *oauthService) Status(
 		}
 		return nil, err
 	}
-	response := snapshotStatus(snapshot)
+	response, err := s.snapshotStatus(ctx, snapshot)
+	if err != nil {
+		return nil, err
+	}
 	if snapshot.Candidate == nil ||
 		snapshot.Envelope != nil ||
 		snapshot.Candidate.State == candidateStateActive ||
@@ -294,11 +298,11 @@ func (s *oauthService) Status(
 				if readErr != nil {
 					return nil, readErr
 				}
-				return snapshotStatus(refreshed), nil
+				return s.snapshotStatus(ctx, refreshed)
 			}
 			return nil, err
 		}
-		return snapshotStatus(finalized), nil
+		return s.snapshotStatus(ctx, finalized)
 	case accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_BLOCKED,
 		accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_FAILED:
 		if err := s.repository.MarkDenied(ctx, binding, "OAUTH_ACCESS_DENIED"); err != nil {
@@ -387,7 +391,13 @@ func (s *oauthService) completeFromDecision(
 		}
 		response.Result = oauthpb.OAuthAttemptResult(snapshot.Attempt.Result)
 		response.SessionCandidate = candidateProto(snapshot.Candidate)
-		response.CredentialEnvelope = envelopeProto(snapshot.Envelope, snapshot.Candidate)
+		response.CredentialEnvelope, err = s.envelopeForSnapshot(
+			ctx,
+			snapshot,
+		)
+		if err != nil {
+			return nil, err
+		}
 	case accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_BLOCKED,
 		accessgatepb.AccessDecisionState_ACCESS_DECISION_STATE_FAILED:
 		if err := s.repository.MarkDenied(ctx, binding, "OAUTH_ACCESS_DENIED"); err != nil {
@@ -467,7 +477,10 @@ func (s *oauthService) failProvider(
 	}, nil
 }
 
-func snapshotStatus(snapshot *oauthSnapshot) *oauthpb.GetOAuthAttemptResponse {
+func (s *oauthService) snapshotStatus(
+	ctx context.Context,
+	snapshot *oauthSnapshot,
+) (*oauthpb.GetOAuthAttemptResponse, error) {
 	response := &oauthpb.GetOAuthAttemptResponse{
 		State:     oauthpb.OAuthAttemptState(snapshot.Attempt.State),
 		Result:    oauthpb.OAuthAttemptResult(snapshot.Attempt.Result),
@@ -476,9 +489,34 @@ func snapshotStatus(snapshot *oauthSnapshot) *oauthpb.GetOAuthAttemptResponse {
 	}
 	if snapshot.Candidate != nil {
 		response.SessionCandidate = candidateProto(snapshot.Candidate)
-		response.CredentialEnvelope = envelopeProto(snapshot.Envelope, snapshot.Candidate)
+		var err error
+		response.CredentialEnvelope, err = s.envelopeForSnapshot(ctx, snapshot)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return response
+	return response, nil
+}
+
+func (s *oauthService) envelopeForSnapshot(
+	ctx context.Context,
+	snapshot *oauthSnapshot,
+) (*oauthpb.OAuthCredentialEnvelope, error) {
+	if snapshot == nil || snapshot.Envelope == nil || snapshot.Candidate == nil {
+		return nil, nil
+	}
+	actorRef, err := s.actors.ResolveReference(
+		ctx,
+		snapshot.Candidate.ActorPTID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("resolve OAuth credential actor reference: %w", err)
+	}
+	if actorRef == nil || actorRef.GetPtid() != snapshot.Candidate.ActorPTID {
+		return nil, errors.New("OAuth credential actor reference is invalid")
+	}
+	actorRef.Kind = model.ActorKind(snapshot.Candidate.ActorKind)
+	return envelopeProto(snapshot.Envelope, snapshot.Candidate, actorRef), nil
 }
 
 func bindingMismatchStatus() *oauthpb.GetOAuthAttemptResponse {
@@ -739,11 +777,26 @@ func (stationActorResolver) Resolve(
 	if err != nil {
 		return nil, nil, err
 	}
-	actorRef := touchactor.ProtoActorRef(actorRecord, baseURL)
+	actorRef := touchactor.ProtoActorRef(actorRecord)
 	if actorRef == nil || strings.TrimSpace(actorRef.GetPtid()) == "" {
 		return nil, nil, fmt.Errorf("resolved OAuth actor has no PTID")
 	}
 	return actorRecord, actorRef, nil
+}
+
+func (stationActorResolver) ResolveReference(
+	ctx context.Context,
+	ptid string,
+) (*model.ActorRef, error) {
+	actorRecord, err := touchactor.GetActorByPTID(ctx, ptid)
+	if err != nil {
+		return nil, err
+	}
+	actorRef := touchactor.ProtoActorRef(actorRecord)
+	if actorRef == nil || strings.TrimSpace(actorRef.GetPtid()) == "" {
+		return nil, fmt.Errorf("resolved OAuth actor has no PTID")
+	}
+	return actorRef, nil
 }
 
 type stationSessionCredentialIssuer struct{}

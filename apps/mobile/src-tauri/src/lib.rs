@@ -5,6 +5,7 @@ pub mod messaging;
 mod platform;
 pub mod runtime;
 pub mod secure_content;
+pub mod social;
 mod station_origin;
 
 use messaging::lifecycle::MobileMessagingRuntime;
@@ -15,6 +16,7 @@ use platform::MobilePlatform;
 use runtime::oauth::OAuthCoordinator;
 use runtime::reliability::ReliabilityRuntime;
 use runtime::station_transport::StationTransportRuntime;
+use social::MobilePrivateSocialRuntime;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,6 +27,7 @@ pub fn run() {
         .manage(MobilePlatform::ios_first())
         .manage(OAuthCoordinator::new().expect("failed to initialize the native OAuth coordinator"))
         .manage(MobileMessagingRuntime::default())
+        .manage(MobilePrivateSocialRuntime::default())
         .manage(PushBridgeRuntime::default())
         .manage(ReliabilityRuntime::default())
         .manage(StationTransportRuntime::default());

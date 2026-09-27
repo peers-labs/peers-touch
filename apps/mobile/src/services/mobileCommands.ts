@@ -100,6 +100,8 @@ export async function pickNativeMedia(
 export interface NativeMomentMediaInput {
   stationPeerId: string;
   actorPtid: string;
+  deviceId: string;
+  lifecycleGeneration: number;
   sessionId: string;
   handle: string;
 }
@@ -108,7 +110,12 @@ export async function uploadNativeMomentMedia(
   input: NativeMomentMediaInput,
 ): Promise<ImageAttachment> {
   requireMobileMutationAdmission(
-    mobileMutationScopeKey(input.stationPeerId, input.actorPtid),
+    mobileMutationScopeKey(
+      input.stationPeerId,
+      input.actorPtid,
+      input.deviceId,
+      input.lifecycleGeneration,
+    ),
     'moments',
   );
   const bytes = await invoke<number[]>('moment_media_upload', { input });
@@ -124,6 +131,11 @@ export async function discardNativeMomentMedia(
 export interface MessagingAccountInput {
   stationPeerId: string;
   actorPtid: string;
+}
+
+export interface MessagingMutationScopeInput extends MessagingAccountInput {
+  deviceId: string;
+  lifecycleGeneration: number;
 }
 
 export async function chatStorageSnapshot(
@@ -218,11 +230,11 @@ export async function chatStorageSetRetention(
   return fromBinary(ChatStorageResultSchema, Uint8Array.from(response));
 }
 
-export interface MessagingConversationMutationInput extends MessagingAccountInput {
+export interface MessagingConversationMutationInput extends MessagingMutationScopeInput {
   admissionDomain?: Extract<MobileMutationDomain, 'social' | 'group'>;
 }
 
-export interface MessagingActivateInput extends MessagingAccountInput {
+export interface MessagingActivateInput extends MessagingMutationScopeInput {
   sessionId: string;
 }
 
@@ -274,7 +286,7 @@ export interface MessagingConversationProjection {
   updatedAtUnixMs: number;
 }
 
-export interface MessagingCreateDirectInput extends MessagingAccountInput {
+export interface MessagingCreateDirectInput extends MessagingMutationScopeInput {
   peerPtid: string;
   federationId: string;
 }
@@ -285,7 +297,7 @@ export interface MessagingCreateDirectResult {
   state: 'pending' | 'projected';
 }
 
-export interface MessagingCreateGroupInput extends MessagingAccountInput {
+export interface MessagingCreateGroupInput extends MessagingMutationScopeInput {
   conversationId: string;
   name: string;
   memberPtids: string[];
@@ -298,7 +310,7 @@ export interface MessagingCreateGroupResult {
   state: 'pending' | 'projected' | 'failed';
 }
 
-export interface MessagingMembershipTransitionInput extends MessagingAccountInput {
+export interface MessagingMembershipTransitionInput extends MessagingMutationScopeInput {
   conversationId: string;
   action: 'add_actor' | 'remove_actor' | 'add_device' | 'remove_device';
   targetPtid: string;
@@ -331,7 +343,7 @@ export interface MessagingMemberAuthorityResult {
   state: 'pending' | 'projected';
 }
 
-export interface MessagingUpdateMemberAuthorityInput extends MessagingAccountInput {
+export interface MessagingUpdateMemberAuthorityInput extends MessagingMutationScopeInput {
   conversationId: string;
   targetPtid: string;
   role?: 'member' | 'admin';
@@ -339,18 +351,18 @@ export interface MessagingUpdateMemberAuthorityInput extends MessagingAccountInp
   mutedUntilUnixMs?: number;
 }
 
-export interface MessagingTransferOwnershipInput extends MessagingAccountInput {
+export interface MessagingTransferOwnershipInput extends MessagingMutationScopeInput {
   conversationId: string;
   nextOwnerPtid: string;
 }
 
-export interface MessagingUpdateConversationInput extends MessagingAccountInput {
+export interface MessagingUpdateConversationInput extends MessagingMutationScopeInput {
   conversationId: string;
   name?: string;
   description?: string;
 }
 
-export interface MessagingSubmitLeaveIntentInput extends MessagingAccountInput {
+export interface MessagingSubmitLeaveIntentInput extends MessagingMutationScopeInput {
   conversationId: string;
 }
 
@@ -359,14 +371,14 @@ export interface MessagingLeaveIntentSubmissionResult {
   state: 'pending';
 }
 
-export interface SocialFriendRequestSendInput extends MessagingAccountInput {
+export interface SocialFriendRequestSendInput extends MessagingMutationScopeInput {
   receiverPtid: string;
   receiverHomeStationPeerId: string;
   federationId: string;
   message?: string;
 }
 
-export interface SocialFriendRequestDecisionInput extends MessagingAccountInput {
+export interface SocialFriendRequestDecisionInput extends MessagingMutationScopeInput {
   requestId: string;
   senderPtid: string;
   receiverPtid: string;
@@ -384,7 +396,7 @@ export interface ReliableFriendRequestResult<Response> {
   checkpointReady: boolean;
 }
 
-export interface SocialRelationshipMutationInput extends MessagingAccountInput {
+export interface SocialRelationshipMutationInput extends MessagingMutationScopeInput {
   targetPtid: string;
   targetHomeStationPeerId: string;
   observedRevision: number;
@@ -408,6 +420,8 @@ export interface MessagingAttachmentProjection {
   storageRef?: string;
   ciphertextSize?: number;
   availabilityState?: 'remote' | 'local';
+  contentKind: number;
+  durationMs: number;
   voiceNote?: MessagingVoiceNoteMetadata;
 }
 
@@ -481,6 +495,8 @@ export interface MessagingAttachmentStageProjection {
   filename: string;
   mimeType: string;
   plaintextSize: number;
+  contentKind: number;
+  durationMs: number;
   voiceNote?: MessagingVoiceNoteMetadata;
   completed: boolean;
   maxChunkBytes: number;
@@ -556,6 +572,144 @@ export async function messagingCallSignalOpen(
     { input },
   );
   return result.plaintext;
+}
+
+export type PrivateSocialActivationInput = MessagingMutationScopeInput;
+
+export interface PrivateSocialAccountInput extends MessagingMutationScopeInput {
+  activationGeneration: number;
+}
+
+export type PrivateSocialAudience =
+  | { kind: 'FOLLOWERS' | 'FRIENDS' | 'SELF' }
+  | { kind: 'CIRCLE' | 'GROUP'; targetId: string }
+  | { kind: 'CUSTOM_ALLOW'; actorPtids: string[] }
+  | {
+    kind: 'CUSTOM_DENY';
+    actorPtids: string[];
+    baseKind: 'PUBLIC' | 'FOLLOWERS';
+  };
+
+export interface PrivateSocialTextIntent {
+  draftId: string;
+  draftRevision: number;
+  text: string;
+  audience: PrivateSocialAudience;
+}
+
+export type PrivateSocialPublishState =
+  | 'PREPARING'
+  | 'PUBLISHING'
+  | 'UNKNOWN_OUTCOME'
+  | 'PUBLISHED'
+  | 'PUBLISH_FAILED';
+
+export interface PrivateMomentProjection {
+  draftId: string;
+  draftRevision: number;
+  contentId: string;
+  generation: number;
+  audienceKind: PrivateSocialAudience['kind'];
+  state: PrivateSocialPublishState;
+  postId?: string;
+  text?: string;
+  errorCode?: number;
+}
+
+export type PrivateSocialReadState =
+  | 'RECOVERY_REQUIRED'
+  | 'CONTENT_READY'
+  | 'AUTHENTICATION_REQUIRED'
+  | 'NOT_FOUND_OR_NOT_AUTHORIZED'
+  | 'INTEGRITY_FAILURE'
+  | 'DELETED_OR_REVOKED';
+
+export interface PrivateTextReadContent {
+  kind: 'TEXT';
+  text: string;
+}
+
+export type PrivateSocialReceiverAudience =
+  | 'FRIENDS'
+  | 'FOLLOWERS'
+  | 'CIRCLE'
+  | 'SELF'
+  | 'CUSTOM_ALLOW';
+
+export interface PrivateMomentReadProjection {
+  postId: string;
+  contentId: string;
+  generation: string;
+  authorPtid: string;
+  audienceKind: PrivateSocialReceiverAudience | 'UNKNOWN';
+  state: PrivateSocialReadState;
+  content?: PrivateTextReadContent;
+  errorCode?: string;
+  retryAfterSeconds?: number;
+  createdAtMillis?: number;
+  updatedAtMillis?: number;
+}
+
+export interface PrivateSocialNativeSnapshot {
+  publishProjections: PrivateMomentProjection[];
+  readProjections: PrivateMomentReadProjection[];
+}
+
+export interface PrivateSocialRuntimeStatus {
+  active: boolean;
+  profileId?: string;
+  stationPeerId?: string;
+  actorPtid?: string;
+  deviceId?: string;
+  activationGeneration: number;
+  workerMode: 'on_demand';
+}
+
+export interface PrivateSocialWorkerReport {
+  endpointPrekeysAvailable: number;
+  submissionsProcessed: number;
+  submissionsUnknown: number;
+  submissionsTerminal: number;
+}
+
+export async function privateSocialActivate(
+  input: PrivateSocialActivationInput,
+): Promise<PrivateSocialRuntimeStatus> {
+  return invoke<PrivateSocialRuntimeStatus>('social_private_activate', { input });
+}
+
+export async function privateSocialStatus(): Promise<PrivateSocialRuntimeStatus> {
+  return invoke<PrivateSocialRuntimeStatus>('social_private_status');
+}
+
+export async function privateSocialPublishText(
+  input: PrivateSocialAccountInput & PrivateSocialTextIntent,
+): Promise<PrivateMomentProjection> {
+  return invoke<PrivateMomentProjection>('social_private_publish_text', { input });
+}
+
+export async function privateSocialReadText(
+  input: PrivateSocialAccountInput & { postId: string },
+): Promise<PrivateMomentReadProjection> {
+  return invoke<PrivateMomentReadProjection>('social_private_read_text', { input });
+}
+
+export async function privateSocialReconcile(
+  input: PrivateSocialAccountInput,
+): Promise<PrivateSocialWorkerReport> {
+  return invoke<PrivateSocialWorkerReport>('social_private_reconcile', { input });
+}
+
+export async function privateSocialSnapshot(
+  input: PrivateSocialAccountInput,
+): Promise<PrivateSocialNativeSnapshot> {
+  return invoke<PrivateSocialNativeSnapshot>('social_private_snapshot', { input });
+}
+
+export async function privateSocialTeardown(
+  input: PrivateSocialAccountInput,
+): Promise<PrivateSocialRuntimeStatus> {
+  return invoke<PrivateSocialRuntimeStatus>('social_private_teardown', { input });
 }
 
 export async function socialFriendRequestSend(
@@ -700,7 +854,7 @@ export async function messagingUpdateConversation(
 }
 
 export async function messagingDissolveConversation(
-  input: MessagingAccountInput & { conversationId: string },
+  input: MessagingMutationScopeInput & { conversationId: string },
 ): Promise<MessagingPendingConversationCommandResult> {
   requireMessagingMutation(input, 'group');
   return invoke<MessagingPendingConversationCommandResult>(
@@ -781,7 +935,7 @@ export async function messagingStageAttachment(
     voiceNote?: MessagingVoiceNoteMetadata;
   },
 ): Promise<MessagingAttachmentStageProjection> {
-  const stage = await invoke<MessagingAttachmentStageProjection>(
+  const stage = await invoke<Omit<MessagingAttachmentStageProjection, 'voiceNote'>>(
     'messaging_attachment_stage_begin',
     {
       input: {
@@ -790,7 +944,8 @@ export async function messagingStageAttachment(
         filename: input.file.name,
         mimeType: input.file.type || 'application/octet-stream',
         plaintextSize: input.file.size,
-        voiceNote: input.voiceNote,
+        contentKind: input.voiceNote ? 2 : 1,
+        durationMs: input.voiceNote?.durationMs ?? 0,
       },
     },
   );
@@ -810,13 +965,17 @@ export async function messagingStageAttachment(
       });
       offset = end;
     }
-    return invoke<MessagingAttachmentStageProjection>('messaging_attachment_stage_complete', {
+    const completed = await invoke<Omit<MessagingAttachmentStageProjection, 'voiceNote'>>('messaging_attachment_stage_complete', {
       input: {
         stationPeerId: input.stationPeerId,
         actorPtid: input.actorPtid,
         stageId: stage.stageId,
       },
     });
+    return {
+      ...completed,
+      ...(input.voiceNote ? { voiceNote: input.voiceNote } : {}),
+    };
   } catch (error) {
     await messagingDiscardAttachmentStage({
       stationPeerId: input.stationPeerId,
@@ -936,11 +1095,16 @@ export async function messagingSubmitTyping(
 }
 
 function requireMessagingMutation(
-  input: MessagingAccountInput,
+  input: MessagingMutationScopeInput,
   domain?: MobileMutationDomain,
 ): void {
   requireMobileMutationAdmission(
-    mobileMutationScopeKey(input.stationPeerId, input.actorPtid),
+    mobileMutationScopeKey(
+      input.stationPeerId,
+      input.actorPtid,
+      input.deviceId,
+      input.lifecycleGeneration,
+    ),
     domain,
   );
 }

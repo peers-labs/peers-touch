@@ -11,6 +11,7 @@ from tooling.acceptance.gates.agent.foundation_candidate_producer import (
     FoundationCandidateProducer,
     FoundationRolePolicy,
     FoundationTuple,
+    load_foundation_tuples,
 )
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeEvidenceError,
@@ -420,6 +421,16 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
                         "cleanup",
                     },
                 )
+
+    def test_required_assertion_cells_use_canonical_matrix_ids(self) -> None:
+        matrix_cells = {
+            item.cell
+            for item in load_foundation_tuples()
+            if item.row
+            in {"foundation-desktop-direct", "foundation-browser-direct"}
+        }
+
+        self.assertEqual(set(REQUIRED_ASSERTIONS) - matrix_cells, set())
 
     def test_unknown_cell_fails_closed(self) -> None:
         with self.assertRaisesRegex(

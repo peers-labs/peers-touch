@@ -1,3 +1,2 @@
 selenium==4.36.0
 PyYAML==6.0.2
-tomli==2.4.1; python_version < "3.11"

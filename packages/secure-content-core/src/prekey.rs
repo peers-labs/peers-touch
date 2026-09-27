@@ -1,6 +1,6 @@
 use crate::codec::{
-    validate_canonical_message, CanonicalMessageEncoder, CanonicalProtobufError, FieldRule,
-    WireType,
+    canonicalize_message_in_rule_order, validate_canonical_message, CanonicalMessageEncoder,
+    CanonicalProtobufError, FieldRule, WireType,
 };
 use rand::rngs::OsRng;
 use thiserror::Error;
@@ -38,6 +38,46 @@ const CONTENT_PREKEY_SIGNING_INPUT_RULES: &[FieldRule] = &[
     FieldRule::message(9, ACTOR_DEVICE_REF_RULES),
     FieldRule::singular(10, WireType::LengthDelimited),
     FieldRule::singular(11, WireType::Varint),
+];
+// Station's generated Go encoder emits concrete fields before generated oneofs.
+const CONTENT_ONE_TIME_PREKEY_STATION_WIRE_RULES: &[FieldRule] = &[
+    FieldRule::singular(1, WireType::Varint),
+    FieldRule::singular(2, WireType::LengthDelimited),
+    FieldRule::singular(3, WireType::LengthDelimited),
+    FieldRule::singular(6, WireType::Varint),
+    FieldRule::singular(7, WireType::LengthDelimited),
+    FieldRule::oneof_message(4, 1, ACTOR_DEVICE_REF_RULES),
+    FieldRule::oneof_message(5, 1, ACTOR_REF_RULES),
+];
+const TIMESTAMP_STATION_WIRE_RULES: &[FieldRule] = &[
+    FieldRule::singular(1, WireType::Varint),
+    FieldRule::singular(2, WireType::Varint),
+];
+const CONTENT_PREKEY_CLIENT_SIGNING_INPUT_STATION_WIRE_RULES: &[FieldRule] = &[
+    FieldRule::singular(1, WireType::Varint),
+    FieldRule::singular(2, WireType::LengthDelimited),
+    FieldRule::singular(3, WireType::LengthDelimited),
+    FieldRule::singular(4, WireType::LengthDelimited),
+    FieldRule::message(5, ACTOR_DEVICE_REF_RULES),
+    FieldRule::singular(6, WireType::LengthDelimited),
+    FieldRule::singular(7, WireType::Varint),
+    FieldRule::singular(8, WireType::LengthDelimited),
+    FieldRule::singular(9, WireType::LengthDelimited),
+    FieldRule::singular(10, WireType::LengthDelimited),
+    FieldRule::message(11, TIMESTAMP_STATION_WIRE_RULES),
+];
+const CONTENT_PREKEY_CLIENT_PROOF_STATION_WIRE_RULES: &[FieldRule] = &[
+    FieldRule::message(1, CONTENT_PREKEY_CLIENT_SIGNING_INPUT_STATION_WIRE_RULES),
+    FieldRule::singular(2, WireType::LengthDelimited),
+];
+const PUBLISH_CONTENT_PREKEYS_REQUEST_STATION_WIRE_RULES: &[FieldRule] = &[
+    FieldRule::message(1, ACTOR_DEVICE_REF_RULES),
+    FieldRule::singular(2, WireType::LengthDelimited),
+    FieldRule::singular(3, WireType::Varint),
+    FieldRule::singular(4, WireType::Varint),
+    FieldRule::repeated_message(5, CONTENT_ONE_TIME_PREKEY_STATION_WIRE_RULES),
+    FieldRule::singular(6, WireType::LengthDelimited),
+    FieldRule::message(7, CONTENT_PREKEY_CLIENT_PROOF_STATION_WIRE_RULES),
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -289,6 +329,12 @@ pub fn validate_content_prekey_signing_input_canonical_bytes(
     validate_canonical_message(input, CONTENT_PREKEY_SIGNING_INPUT_RULES)
 }
 
+pub fn canonicalize_publish_content_prekeys_request(
+    input: &[u8],
+) -> Result<Vec<u8>, CanonicalProtobufError> {
+    canonicalize_message_in_rule_order(input, PUBLISH_CONTENT_PREKEYS_REQUEST_STATION_WIRE_RULES)
+}
+
 fn validate_actor(
     field: &'static str,
     actor: &ContentPreKeyActorRef,
@@ -352,6 +398,10 @@ mod tests {
 
     type SigningInputMutation = fn(&mut ContentPreKeySigningInput);
 
+    const PUBLISH_REQUEST_VECTOR: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../model/domain/secure_content/testdata/content_prekey_publication.hex"
+    ));
     const ENDPOINT_VECTOR_CANONICAL_HEX: &str = concat!(
         "080110011a17636f6e74656e742d7072656b65792d766563746f722d31",
         "22200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
@@ -416,6 +466,15 @@ mod tests {
         assert_eq!(
             hex(&input.canonical_bytes().unwrap()),
             RECOVERY_VECTOR_CANONICAL_HEX
+        );
+    }
+
+    #[test]
+    fn canonicalizes_the_shared_content_prekey_publication_vector() {
+        let vector = decode_hex(PUBLISH_REQUEST_VECTOR);
+        assert_eq!(
+            canonicalize_publish_content_prekeys_request(&vector).unwrap(),
+            vector
         );
     }
 
@@ -635,5 +694,13 @@ mod tests {
 
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    fn decode_hex(value: &str) -> Vec<u8> {
+        let value = value.trim();
+        (0..value.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&value[index..index + 2], 16).unwrap())
+            .collect()
     }
 }

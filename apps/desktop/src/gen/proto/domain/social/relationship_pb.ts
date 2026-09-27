@@ -1935,4 +1935,3 @@ export enum SocialRelationshipCommandLookupState {
  */
 export const SocialRelationshipCommandLookupStateSchema: GenEnum<SocialRelationshipCommandLookupState> = /*@__PURE__*/
   enumDesc(file_domain_social_relationship, 11);
-

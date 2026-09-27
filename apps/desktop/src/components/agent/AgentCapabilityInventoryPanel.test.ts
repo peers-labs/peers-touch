@@ -19,6 +19,7 @@ import {
   isCapabilityBindingToggleDisabled,
   projectCapabilityCompatibility,
   projectCapabilityInventory,
+  resolveFocusedCapabilityKey,
 } from './AgentCapabilityInventoryPanel';
 
 function manifest(
@@ -90,6 +91,22 @@ describe('AgentCapabilityInventoryPanel projection', () => {
     expect(projection[0].binding?.bindingId).toBe('binding-current');
     expect(projection[0].readiness).toBe(toolReadiness);
     expect(projection[1].binding).toBeUndefined();
+  });
+
+  it('resolves an exact capability focus to its rendered detail key', () => {
+    const items = projectCapabilityInventory(
+      [
+        manifest('clipboard.read', CapabilitySourceKind.CLIENT_NATIVE, 'Clipboard'),
+        manifest('filesystem.read', CapabilitySourceKind.CLIENT_NATIVE, 'Files'),
+      ],
+      [],
+      [],
+    );
+
+    expect(resolveFocusedCapabilityKey(items, 'filesystem.read')).toBe(
+      'filesystem.read@1',
+    );
+    expect(resolveFocusedCapabilityKey(items, 'camera.capture')).toBeUndefined();
   });
 
   it('gives Knowledge its own source label and icon', () => {

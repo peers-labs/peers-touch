@@ -25,7 +25,7 @@ const extractedSources = [
 describe('Chat component ownership boundaries', () => {
   it('keeps store, command, attachment I/O, and navigation ownership in ChatPage', () => {
     expect(pageSource).toContain('useSocialStore');
-    expect(pageSource).not.toContain('useGroupStore');
+    expect(pageSource).toContain('useGroupStore');
     expect(pageSource).toContain('useAuthStore');
     expect(pageSource).toContain('dispatchSendMessage');
     expect(pageSource).toContain('messagingOpenAttachment');

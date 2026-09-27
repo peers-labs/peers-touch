@@ -172,6 +172,8 @@ function conversationFromProjection(
       ? 'CONVERSATION_STATUS_ACTIVE'
       : 'CONVERSATION_STATUS_DISSOLVED',
     name: projection.name,
+    description: projection.description,
+    avatarCid: projection.avatarObjectId,
     ownerPtid: projection.ownerPtid,
   })
 }
@@ -270,10 +272,14 @@ const deviceService: DeviceServiceContract = {
   },
 
   async revoke(deviceId, observedProfileVersion) {
-    await cmd('device_revoke', {
+    const resp = await cmd<
+      { device_id: string; observed_profile_version: number },
+      { device: JsonValue }
+    >('device_revoke', {
       device_id: deviceId,
       observed_profile_version: Number(observedProfileVersion),
     })
+    return fromJson(ActorDeviceSchema, resp.device)
   },
 }
 
@@ -288,16 +294,13 @@ interface MessagingMessageWire {
     attachment_id: string
     filename: string
     mime_type: string
+    content_kind: number
+    duration_ms: number
     plaintext_size: number
     object_id: string
     storage_ref: string
     ciphertext_size: number
     availability_state: 'uploading' | 'remote' | 'local' | 'failed'
-    voice_note?: {
-      duration_ms: number
-      codec: string
-      waveform: number[]
-    }
   }>
   state: string
   timestamp_unix_ms: number
@@ -328,18 +331,13 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
       attachmentId: attachment.attachment_id,
       filename: attachment.filename,
       mimeType: attachment.mime_type,
+      contentKind: attachment.content_kind === 2 ? 'voice_note' : 'file',
+      durationMs: attachment.duration_ms,
       plaintextSize: attachment.plaintext_size,
       objectId: attachment.object_id,
       storageRef: attachment.storage_ref,
       ciphertextSize: attachment.ciphertext_size,
       availabilityState: attachment.availability_state,
-      voiceNote: attachment.voice_note
-        ? {
-          durationMs: attachment.voice_note.duration_ms,
-          codec: attachment.voice_note.codec,
-          waveform: attachment.voice_note.waveform,
-        }
-        : undefined,
     })),
     state: message.state,
     timestampUnixMs: message.timestamp_unix_ms,
@@ -423,6 +421,79 @@ const messagingService: MessagingServiceContract = {
       commandId: response.command_id,
       state: response.state,
     }
+  },
+
+  async updateConversation(conversationId, update) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        name?: string
+        description?: string
+        avatar_object_id?: string
+      },
+      { command_id: string; state: string }
+    >('messaging_update_conversation', {
+      conversation_id: conversationId,
+      ...(update.name !== undefined ? { name: update.name } : {}),
+      ...(update.description !== undefined ? { description: update.description } : {}),
+      ...(update.avatarObjectId !== undefined
+        ? { avatar_object_id: update.avatarObjectId }
+        : {}),
+    })
+    return { commandId: response.command_id, state: response.state }
+  },
+
+  async updateMemberAuthority(conversationId, targetPtid, update) {
+    const response = await cmd<
+      {
+        conversation_id: string
+        target_ptid: string
+        role?: number
+        muted?: boolean
+        muted_until_unix_ms?: number
+      },
+      { command_id: string; state: string }
+    >('messaging_update_member_authority', {
+      conversation_id: conversationId,
+      target_ptid: targetPtid,
+      ...(update.role !== undefined ? { role: update.role } : {}),
+      ...(update.muted !== undefined ? { muted: update.muted } : {}),
+      ...(update.mutedUntilUnixMs !== undefined
+        ? { muted_until_unix_ms: update.mutedUntilUnixMs }
+        : {}),
+    })
+    return { commandId: response.command_id, state: response.state }
+  },
+
+  async transferOwnership(conversationId, targetPtid) {
+    const response = await cmd<
+      { conversation_id: string; target_ptid: string },
+      { command_id: string; state: string }
+    >('messaging_transfer_ownership', {
+      conversation_id: conversationId,
+      target_ptid: targetPtid,
+    })
+    return { commandId: response.command_id, state: response.state }
+  },
+
+  async dissolveConversation(conversationId) {
+    const response = await cmd<
+      { conversation_id: string },
+      { command_id: string; state: string }
+    >('messaging_dissolve_conversation', {
+      conversation_id: conversationId,
+    })
+    return { commandId: response.command_id, state: response.state }
+  },
+
+  async leaveConversation(conversationId) {
+    const response = await cmd<
+      { conversation_id: string },
+      { intent_id: string; state: 'pending' }
+    >('messaging_leave_conversation', {
+      conversation_id: conversationId,
+    })
+    return { intentId: response.intent_id, state: response.state }
   },
 
   async requestLeaveIntent(input) {
@@ -534,6 +605,8 @@ const messagingService: MessagingServiceContract = {
           federation_id: string
           kind: number
           name: string
+          description: string
+          avatar_object_id: string
           owner_ptid: string
           members: JsonValue[]
           membership_epoch: number
@@ -554,6 +627,8 @@ const messagingService: MessagingServiceContract = {
       federationId: conversation.federation_id,
       kind: conversation.kind as 1 | 2,
       name: conversation.name,
+      description: conversation.description,
+      avatarObjectId: conversation.avatar_object_id,
       ownerPtid: conversation.owner_ptid,
       members: conversation.members.map(member =>
         fromJson(ConversationMemberSchema, member)
@@ -582,6 +657,8 @@ const messagingService: MessagingServiceContract = {
       filePath: response.file_path,
       filename: response.filename,
       mimeType: response.mime_type,
+      contentKind: 'file',
+      durationMs: 0,
       size: response.size,
     }
   },
@@ -613,6 +690,8 @@ const messagingService: MessagingServiceContract = {
       filePath: response.file_path,
       filename: response.filename,
       mimeType: response.mime_type,
+      contentKind: 'file',
+      durationMs: 0,
     }
   },
 
@@ -628,11 +707,8 @@ const messagingService: MessagingServiceContract = {
           file_path: string
           filename: string
           mime_type: string
-          voice_note?: {
-            duration_ms: number
-            codec: string
-            waveform: number[]
-          }
+          content_kind: 'file' | 'voice_note'
+          duration_ms: number
         }>
       },
       {
@@ -651,13 +727,8 @@ const messagingService: MessagingServiceContract = {
         file_path: attachment.filePath,
         filename: attachment.filename,
         mime_type: attachment.mimeType,
-        voice_note: attachment.voiceNote
-          ? {
-            duration_ms: attachment.voiceNote.durationMs,
-            codec: attachment.voiceNote.codec,
-            waveform: attachment.voiceNote.waveform,
-          }
-          : undefined,
+        content_kind: attachment.contentKind,
+        duration_ms: attachment.durationMs,
       })),
     })
     return {
@@ -785,7 +856,43 @@ const messagingService: MessagingServiceContract = {
         before_message_id?: string
         limit: number
       },
-      { messages: MessagingMessageWire[] }
+      {
+        messages: Array<{
+          event_id?: string
+          event_sequence?: number
+          message_id: string
+          sender_ptid: string
+          sender_device_id: string
+          plaintext: string
+          attachments: Array<{
+            attachment_id: string
+            filename: string
+            mime_type: string
+            content_kind: number
+            duration_ms: number
+            plaintext_size: number
+            object_id: string
+            storage_ref: string
+            ciphertext_size: number
+            availability_state: 'uploading' | 'remote' | 'local' | 'failed'
+          }>
+          state: string
+          timestamp_unix_ms: number
+          reply_to_message_id?: string
+          thread_root_message_id?: string
+          edited_text?: string
+          edited_at_unix_ms?: number
+          retracted: boolean
+          reactions: Array<{
+            actor_ptid: string
+            reaction: string
+            created_at_unix_ms: number
+          }>
+          pinned_by_ptid?: string
+          pinned_at_unix_ms?: number
+          read_by_ptids: string[]
+        }>
+      }
     >('messaging_search_messages', {
       conversation_id: conversationId,
       query,
@@ -793,7 +900,41 @@ const messagingService: MessagingServiceContract = {
       before_message_id: options.beforeMessageId,
       limit: options.limit ?? 50,
     })
-    return response.messages.map(projectMessagingMessage)
+    return response.messages.map(message => ({
+      eventId: message.event_id,
+      eventSequence: message.event_sequence,
+      messageId: message.message_id,
+      senderPtid: message.sender_ptid,
+      senderDeviceId: message.sender_device_id,
+      plaintext: message.plaintext,
+      attachments: message.attachments.map(attachment => ({
+        attachmentId: attachment.attachment_id,
+        filename: attachment.filename,
+        mimeType: attachment.mime_type,
+        contentKind: attachment.content_kind === 2 ? 'voice_note' : 'file',
+        durationMs: attachment.duration_ms,
+        plaintextSize: attachment.plaintext_size,
+        objectId: attachment.object_id,
+        storageRef: attachment.storage_ref,
+        ciphertextSize: attachment.ciphertext_size,
+        availabilityState: attachment.availability_state,
+      })),
+      state: message.state,
+      timestampUnixMs: message.timestamp_unix_ms,
+      replyToMessageId: message.reply_to_message_id,
+      threadRootMessageId: message.thread_root_message_id,
+      editedText: message.edited_text,
+      editedAtUnixMs: message.edited_at_unix_ms,
+      retracted: message.retracted,
+      reactions: message.reactions.map(reaction => ({
+        actorPtid: reaction.actor_ptid,
+        reaction: reaction.reaction,
+        createdAtUnixMs: reaction.created_at_unix_ms,
+      })),
+      pinnedByPtid: message.pinned_by_ptid,
+      pinnedAtUnixMs: message.pinned_at_unix_ms,
+      readByPtids: message.read_by_ptids,
+    }))
   },
 
   async openAttachment(attachmentId) {

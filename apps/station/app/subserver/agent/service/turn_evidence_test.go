@@ -291,6 +291,24 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed diagnostic continuation: %v", err)
 	}
+	if err := db.Create(&persistence.ToolReceiptAttempt{
+		ID:                  "receipt-attempt-late",
+		RequestID:           "request-diagnostic",
+		Sequence:            1,
+		ToolCallID:          "tool-call-diagnostic",
+		FencingToken:        3,
+		Status:              model.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_APPLIED.String(),
+		PayloadHash:         "payload-hash",
+		ReceiptHash:         "late-receipt-hash",
+		ResultID:            "result-late",
+		SideEffectReceiptID: "receipt-1",
+		Accepted:            false,
+		RejectionCode:       "stale_fence",
+		OccurredAt:          toolEndedAt,
+		CreatedAt:           toolEndedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed rejected terminal receipt audit: %v", err)
+	}
 	trace := &domain.TurnTrace{
 		TraceID: "trace-1",
 		TurnID:  "turn-1",
@@ -340,6 +358,7 @@ func TestTurnServiceExportTurnDiagnostics(t *testing.T) {
 		replay.ToolCalls[0].GetReadinessSnapshotId() != "readiness-1" ||
 		replay.ToolCalls[0].GetExecutionClaimId() != "claim-1" ||
 		replay.ToolCalls[0].GetSideEffectReceiptId() != "receipt-1" ||
+		replay.ToolCalls[0].GetTerminalReceiptPayloadHash() != "late-receipt-hash" ||
 		replay.ToolCalls[0].GetContinuationId() != "continuation-1" ||
 		!replay.ToolCalls[0].GetApproved() ||
 		replay.ToolCalls[0].GetExecutionAttemptCount() != 1 ||
@@ -400,6 +419,7 @@ func openTurnEvidenceDB(t *testing.T, name string) *gorm.DB {
 	if err := db.AutoMigrate(
 		&persistence.TurnAttempt{},
 		&persistence.ToolCall{},
+		&persistence.ToolReceiptAttempt{},
 		&persistence.ToolContinuation{},
 		&persistence.TurnTrace{},
 		&persistence.UserFeedback{},

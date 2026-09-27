@@ -201,6 +201,7 @@ class DevRuntimeProfileResolutionTest(unittest.TestCase):
         self.assertIn('node "$MACHINE_DEV_SCRIPT" resolve', src)
         self.assertIn("--format shell", src)
         self.assertIn('PROFILE_FILE="$PT_MACHINE_PROFILE_FILE"', src)
+        self.assertIn('ENV_REPO="${PT_ENV_REPO:-', src)
         self.assertNotIn("ACTIVE_PROFILE", src)
         self.assertNotIn(".local/dev/active", src)
 

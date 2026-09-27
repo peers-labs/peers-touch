@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"gorm.io/gorm"
@@ -426,47 +425,4 @@ func (s *DBStore) ResolveSessionDeviceID(ctx context.Context, sessionID string) 
 	}
 
 	return record.DeviceID
-}
-
-// BindSessionDeviceID establishes the immutable device identity for a live
-// session after Actor Identity has verified the corresponding enrollment.
-func (s *DBStore) BindSessionDeviceID(ctx context.Context, sessionID, deviceID string) error {
-	db, err := s.getDB(ctx)
-	if err != nil {
-		return err
-	}
-
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var record SessionRecord
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("session_id = ?", sessionID).
-			First(&record).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrSessionNotFound
-			}
-			return err
-		}
-		if record.Revoked {
-			return ErrSessionRevoked
-		}
-		if time.Now().After(record.ExpiresAt) {
-			return ErrSessionExpired
-		}
-		if record.DeviceID != "" && record.DeviceID != deviceID {
-			return ErrSessionDeviceConflict
-		}
-		if record.DeviceID == deviceID {
-			return nil
-		}
-		result := tx.Model(&SessionRecord{}).
-			Where("id = ? AND device_id = ''", record.ID).
-			Update("device_id", deviceID)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != 1 {
-			return ErrSessionDeviceConflict
-		}
-		return nil
-	})
 }

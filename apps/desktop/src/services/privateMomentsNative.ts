@@ -12,6 +12,14 @@ export const PRIVATE_MOMENTS_COMMANDS = {
 } as const;
 
 export type PrivateMomentsPlatform = 'native' | 'browser' | 'unknown';
+export type PrivateAudienceKind =
+  | 'FRIENDS'
+  | 'FOLLOWERS'
+  | 'CIRCLE'
+  | 'GROUP'
+  | 'SELF'
+  | 'CUSTOM_ALLOW'
+  | 'CUSTOM_DENY';
 
 export type PrivatePublishState =
   | 'IDLE'
@@ -59,6 +67,8 @@ export interface PrivateMomentMediaProjection {
   objectId: string;
   state: PrivateMediaState;
   renderUrl?: string;
+  plaintextSha256?: string;
+  plaintextSize?: number;
   mimeType?: string;
   width?: number;
   height?: number;
@@ -82,7 +92,7 @@ export interface PrivateMomentProjection {
   contentId: string;
   generation: string;
   authorPtid: string;
-  audienceKind: 'FRIENDS';
+  audienceKind: PrivateAudienceKind | 'UNKNOWN';
   state: PrivateReadState;
   content?: PrivateMomentContentProjection;
   errorCode?: string;
@@ -103,7 +113,11 @@ export interface PrivateMomentPublishIntent {
   rendererGeneration: number;
   draftId: string;
   draftRevision: number;
-  audienceKind: 'FRIENDS';
+  audienceKind: PrivateAudienceKind;
+  audienceTargetId?: string;
+  audienceBaseKind?: 'PUBLIC' | 'FOLLOWERS';
+  audienceActorPtids?: string[];
+  momentKind: 'TEXT' | 'IMAGE';
   text: string;
   files: PrivateMomentLocalFileIntent[];
 }
@@ -195,6 +209,15 @@ const MEDIA_STATES = new Set<PrivateMediaState>([
   'MEDIA_INTEGRITY_FAILURE',
   'MEDIA_OFFLINE_RETRYABLE',
 ]);
+const PRIVATE_AUDIENCE_KINDS = new Set<PrivateAudienceKind>([
+  'FRIENDS',
+  'FOLLOWERS',
+  'CIRCLE',
+  'GROUP',
+  'SELF',
+  'CUSTOM_ALLOW',
+  'CUSTOM_DENY',
+]);
 
 export class PrivateMomentsNativeError extends Error {
   readonly code: string;
@@ -282,17 +305,46 @@ function normalizeMedia(value: unknown): PrivateMomentMediaProjection {
   const renderUrl = grantId
     ? convertFileSrc(grantId, 'private-media')
     : undefined;
+  const plaintextSha256 = stringField(
+    value.plaintext_sha256 ?? value.plaintextSha256,
+  );
+  const plaintextSize = optionalNumber(
+    value.plaintext_size ?? value.plaintextSize,
+  );
   if (renderUrl && !isSafeNativeRenderUrl(renderUrl)) {
     throw privateProjectionContractError('private media projection exposed a non-local render URL');
   }
-  if (state === 'MEDIA_READY' && !renderUrl) {
-    throw privateProjectionContractError('ready private media projection is missing a local render URL');
+  if (
+    plaintextSha256
+    && !/^[0-9a-f]{64}$/.test(plaintextSha256)
+  ) {
+    throw privateProjectionContractError('private media projection exposed an invalid plaintext digest');
+  }
+  if (
+    plaintextSize !== undefined
+    && (!Number.isSafeInteger(plaintextSize) || plaintextSize <= 0)
+  ) {
+    throw privateProjectionContractError('private media projection exposed an invalid byte length');
+  }
+  if (
+    state === 'MEDIA_READY'
+    && (!renderUrl || !plaintextSha256 || plaintextSize === undefined)
+  ) {
+    throw privateProjectionContractError('ready private media projection is incomplete');
+  }
+  if (
+    state !== 'MEDIA_READY'
+    && (plaintextSha256 || plaintextSize !== undefined)
+  ) {
+    throw privateProjectionContractError('non-ready private media projection exposed plaintext evidence');
   }
 
   return {
     objectId,
     state,
     renderUrl,
+    plaintextSha256: plaintextSha256 || undefined,
+    plaintextSize,
     mimeType: stringField(value.mime_type ?? value.mimeType) || undefined,
     width: optionalNumber(value.width),
     height: optionalNumber(value.height),
@@ -342,7 +394,10 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     !postId
     || !contentId
     || !generation
-    || audienceKind !== 'FRIENDS'
+    || (
+      !PRIVATE_AUDIENCE_KINDS.has(audienceKind as PrivateAudienceKind)
+      && !(audienceKind === 'UNKNOWN' && state !== 'CONTENT_READY')
+    )
     || !READ_STATES.has(state)
     || (state === 'CONTENT_READY' && !authorPtid)
   ) {
@@ -362,7 +417,7 @@ export function normalizePrivateMomentProjection(value: unknown): PrivateMomentP
     contentId,
     generation,
     authorPtid,
-    audienceKind: 'FRIENDS',
+    audienceKind: audienceKind as PrivateAudienceKind | 'UNKNOWN',
     state,
     content,
     errorCode: stringField(wire.error_code ?? wire.errorCode) || undefined,
@@ -465,6 +520,10 @@ function nativeIntent(intent: PrivateMomentPublishIntent): Record<string, unknow
     draft_id: intent.draftId,
     draft_revision: intent.draftRevision,
     audience_kind: intent.audienceKind,
+    audience_target_id: intent.audienceTargetId,
+    audience_base_kind: intent.audienceBaseKind,
+    audience_actor_ptids: intent.audienceActorPtids ?? [],
+    moment_kind: intent.momentKind,
     text: intent.text,
     files: intent.files.map((file) => ({
       intent_id: file.intentId,

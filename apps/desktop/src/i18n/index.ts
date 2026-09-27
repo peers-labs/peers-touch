@@ -100,8 +100,8 @@ export async function initI18n() {
 }
 
 export function changeLanguage(lang: string) {
-  i18n.changeLanguage(lang);
   writeDesktopPreferenceSync('peers-touch-lang', lang);
+  return i18n.changeLanguage(lang);
 }
 
 const I18N_PREFIX = 'i18n:';

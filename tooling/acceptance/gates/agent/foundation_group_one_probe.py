@@ -33,6 +33,9 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_invalid_reference,
     evaluate_base_invalid_resource_reference,
     evaluate_base_lease_expired,
+    evaluate_base_loop_budget_exhausted,
+    evaluate_base_model_unavailable,
+    evaluate_base_permission_denied,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -239,6 +242,15 @@ def assert_group_one_capture(
         "BASE-LEASE_EXPIRED": (
             lambda facts: evaluate_base_lease_expired(facts)
         ),
+        "BASE-LOOP_BUDGET_EXHAUSTED": (
+            lambda facts: evaluate_base_loop_budget_exhausted(facts)
+        ),
+        "BASE-MODEL_UNAVAILABLE": (
+            lambda facts: evaluate_base_model_unavailable(facts)
+        ),
+        "BASE-PERMISSION_DENIED": (
+            lambda facts: evaluate_base_permission_denied(facts)
+        ),
         "AS-F02": lambda facts: evaluate_as_f02(facts),
         "AS-F03": lambda facts: evaluate_as_f03(facts),
         "AS-F04": lambda facts: evaluate_as_f04(
@@ -289,6 +301,8 @@ def assert_group_one_capture(
         "BASE-INVALID_REFERENCE",
         "BASE-INVALID_RESOURCE_REF",
         "BASE-LEASE_EXPIRED",
+        "BASE-MODEL_UNAVAILABLE",
+        "BASE-PERMISSION_DENIED",
     }:
         runtime_event = scenario_facts.get("runtimeEvent")
         runtime_role = capture.get("runtime-events")
@@ -321,6 +335,8 @@ def assert_group_one_capture(
             "BASE-INVALID_REFERENCE",
             "BASE-INVALID_RESOURCE_REF",
             "BASE-LEASE_EXPIRED",
+            "BASE-MODEL_UNAVAILABLE",
+            "BASE-PERMISSION_DENIED",
         }:
             expected_role.update(
                 {

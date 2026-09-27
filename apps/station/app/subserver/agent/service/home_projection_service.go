@@ -59,7 +59,7 @@ func NewHomeProjectionService(
 func (s *HomeProjectionService) Get(
 	ctx context.Context,
 	ptid string,
-	_ uint64,
+	afterRevision uint64,
 ) (*model.HomeWorkProjection, error) {
 	ptid = strings.TrimSpace(ptid)
 	if ptid == "" {
@@ -251,6 +251,15 @@ func (s *HomeProjectionService) Get(
 	})
 	if len(projection.RecentWork) > homeRecentWorkLimit {
 		projection.RecentWork = projection.RecentWork[:homeRecentWorkLimit]
+	}
+	if projection.GetRevision() < afterRevision {
+		projection.Freshness = model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_STALE
+		projection.SliceErrors = append(projection.SliceErrors, &model.HomeSliceError{
+			SliceId:        "projection",
+			Code:           model.HomeErrorCode_HOME_ERROR_CODE_PROJECTION_STALE,
+			Retryable:      true,
+			RecoveryAction: "retry",
+		})
 	}
 
 	return projection, nil

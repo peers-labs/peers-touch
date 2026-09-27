@@ -87,7 +87,7 @@ discover_relay_bootstrap() {
   fi
   RELAY_PEER_ID=$(echo "$info" | grep -o '"peer_id":"[^"]*"' | cut -d'"' -f4)
   if [ -n "$RELAY_PEER_ID" ]; then
-    RELAY_BOOTSTRAP_MULTIADDR="/ip4/10.0.0.20/tcp/4001/p2p/${RELAY_PEER_ID}"
+    RELAY_BOOTSTRAP_MULTIADDR="/ip4/192.168.31.24/tcp/4001/p2p/${RELAY_PEER_ID}"
     echo "  Relay PeerID: ${RELAY_PEER_ID}"
     echo "  Bootstrap:    ${RELAY_BOOTSTRAP_MULTIADDR}"
   fi
@@ -127,20 +127,20 @@ PEERS_DB_PASSWORD=$(cat "$WORK_DIR/.db_password" 2>/dev/null || openssl rand -he
 POSTGRES_USER=peers
 POSTGRES_DB=peers_${SAFE_BRANCH}
 
-STATION_HOST=10.0.0.20
+STATION_HOST=192.168.31.24
 STATION_PORT=${STATION_PORT}
 LIBP2P_PORT=${LIBP2P_PORT}
 
 PEERS_BOOTSTRAP_NODES=${RELAY_BOOTSTRAP_MULTIADDR}
-PEERS_LIBP2P_PUBLIC_ADDRS=/ip4/10.0.0.20/tcp/${LIBP2P_PORT}
+PEERS_LIBP2P_PUBLIC_ADDRS=/ip4/192.168.31.24/tcp/${LIBP2P_PORT}
 PEERS_FEDERATION_DIRECT_OUTBOUND=true
 PEERS_FEDERATION_DIRECT_INBOUND=true
 
-PEERS_NODE_SERVER_BASEURL=http://10.0.0.20:${STATION_PORT}
+PEERS_NODE_SERVER_BASEURL=http://192.168.31.24:${STATION_PORT}
 
 RELAY_CLIENT_ENABLED=true
-RELAY_CLIENT_RELAY_URL=http://10.0.0.20:18081
-RELAY_CLIENT_RELAY_STREAM_ADDR=10.0.0.20:4501
+RELAY_CLIENT_RELAY_URL=http://192.168.31.24:18081
+RELAY_CLIENT_RELAY_STREAM_ADDR=192.168.31.24:4501
 RELAY_CLIENT_INVITE_TOKEN=
 RELAY_CLIENT_LABEL=orangepi-${SAFE_BRANCH}
 EOF
@@ -158,7 +158,7 @@ docker compose -p "pt-orangepi-${SAFE_BRANCH}" \
 echo ""
 echo "═══════════════════════════════════════════════════"
 echo "  DEPLOYED: ${BRANCH}"
-echo "  URL:      http://10.0.0.20:${STATION_PORT}"
+echo "  URL:      http://192.168.31.24:${STATION_PORT}"
 echo "  Logs:     docker compose -p pt-orangepi-${SAFE_BRANCH} logs -f station"
-echo "  Health:   curl http://10.0.0.20:${STATION_PORT}/sub-oss/healthz"
+echo "  Health:   curl http://192.168.31.24:${STATION_PORT}/sub-oss/healthz"
 echo "═══════════════════════════════════════════════════"

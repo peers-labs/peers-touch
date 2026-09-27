@@ -174,6 +174,50 @@ input, textarea, [contenteditable="true"] {
   cursor: pointer;
 }
 
+/*
+ * Physical-layer reveal. Logically people connect peer-to-peer; physically the
+ * payload hops through a relay. On hover we dim the logical link to a dashed
+ * whisper and draw the real two-hop path through the relay node.
+ */
+.pt-network-intro__relay-logical {
+  fill: none;
+  stroke: rgba(102, 126, 234, 0.16);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+  stroke-linecap: round;
+}
+
+.pt-network-intro__relay-hop {
+  fill: none;
+  stroke: rgba(118, 90, 162, 0.42);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.pt-network-intro__relay-halo {
+  fill: rgba(118, 90, 162, 0.14);
+  stroke: rgba(118, 90, 162, 0.34);
+  stroke-width: 1;
+}
+
+.pt-network-intro__relay-core {
+  fill: rgba(118, 90, 162, 0.9);
+}
+
+.pt-network-intro__relay-role {
+  fill: rgba(118, 90, 162, 0.92);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.pt-network-intro__relay-label {
+  fill: rgba(82, 64, 120, 0.7);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
 
 /* The on-hover metadata card — a calm frosted chip that names a person or
  * describes a piece of content in motion. Restrained: identity, not telemetry. */
@@ -223,7 +267,26 @@ input, textarea, [contenteditable="true"] {
   margin: 0 2px;
 }
 
+.pt-network-intro__card-via {
+  font-size: 12px;
+  color: rgba(82, 64, 120, 0.78);
+}
 
+/* A small role tag so the relay name in the route card reads as a relay,
+ * not as another person the payload was sent to. */
+.pt-network-intro__card-relay-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: rgba(118, 90, 162, 0.14);
+  color: rgba(82, 64, 120, 0.9);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
 
 /* A person — a soft point of light, felt rather than labeled. No boxes, no text. */
 .pt-network-intro__halo {
@@ -248,6 +311,15 @@ input, textarea, [contenteditable="true"] {
   fill: rgba(102, 126, 234, 0.18);
 }
 
+/* The hovered payload sits still on its relay — slightly stronger so it reads
+ * as a held, inspectable object rather than a fading pulse. */
+.pt-network-intro__flow--held .pt-network-intro__chip-bg {
+  fill: rgba(102, 126, 234, 0.28);
+}
+
+.pt-network-intro__flow--held .pt-network-intro__chip-disc {
+  stroke: rgba(102, 126, 234, 0.5);
+}
 
 .pt-network-intro__chip-disc {
   fill: rgba(255, 255, 255, 0.92);
@@ -288,7 +360,7 @@ input, textarea, [contenteditable="true"] {
   }
 
   /* Drop the moving light; the calm field of people remains. Hovering a
-   * person or a tie still reveals its card — exploration is static,
+   * person or a tie still reveals its card and relay — exploration is static,
    * not animated. */
   .pt-network-intro__flow {
     display: none;

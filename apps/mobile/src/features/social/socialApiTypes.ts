@@ -12,7 +12,6 @@
  */
 
 import { create } from '@bufbuild/protobuf';
-
 import {
   Audience,
   CreateImagePostRequestSchema,
@@ -37,7 +36,6 @@ export function normalizeChatBackgroundId(value: unknown): ChatBackgroundId {
   }
   return 'default';
 }
-
 // ---------------------------------------------------------------------------
 // Friend conversation settings
 // ---------------------------------------------------------------------------

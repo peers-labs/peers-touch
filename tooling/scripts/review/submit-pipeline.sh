@@ -14,7 +14,7 @@ fi
 
 usage() {
   cat <<'USAGE'
-Usage: submit-pipeline.sh [--base <base-ref>] [--range <git-range>] [--skip-ci-gates]
+Usage: submit-pipeline.sh --session <session.json> [--base <base-ref>] [--range <git-range>] [--skip-ci-gates]
 
 Runs the submit-time review pipeline before creating or updating a PR/MR.
 Default base: origin/master when available, otherwise master.
@@ -24,6 +24,7 @@ USAGE
 base_ref=""
 diff_range=""
 skip_ci_gates=0
+session_path=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +40,10 @@ while [[ $# -gt 0 ]]; do
       skip_ci_gates=1
       shift
       ;;
+    --session)
+      session_path="${2:?missing --session value}"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -50,6 +55,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -z "$session_path" ]]; then
+  echo "submit-pipeline: ACCEPTANCE_SESSION_REQUIRED" >&2
+  exit 2
+fi
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
@@ -125,7 +135,7 @@ if [[ "$skip_ci_gates" -eq 1 ]]; then
 else
   echo
   echo "== Acceptance CI gates =="
-  make acceptance-run-ci PLAN="$scope_plan"
+  make acceptance-run-ci PLAN="$scope_plan" SESSION="$session_path"
   make acceptance-report
 fi
 
@@ -134,7 +144,8 @@ echo "== Acceptance gap detector =="
 python3 tooling/scripts/acceptance-gap-detect.py \
   --claim "Change range $diff_range is ready for PR review" \
   --range "$diff_range" \
-  --plan "$scope_plan"
+  --plan "$scope_plan" \
+  --session "$session_path"
 
 echo
 echo "submit-pipeline: pass"

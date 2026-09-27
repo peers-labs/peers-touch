@@ -18,6 +18,7 @@ pub mod desktop_executor_worker;
 pub mod error_resolver;
 pub mod evaluation;
 pub mod federation;
+pub mod group_chat;
 pub mod home;
 pub mod host_events;
 pub mod key_exchange;

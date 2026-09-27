@@ -63,13 +63,18 @@ func (r *circleRepo) Update(ctx context.Context, c *domain.Circle) error {
 	if err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).
-		Model(&db.SocialCircle{}).
-		Where("id = ? AND owner_id = ? AND deleted_at IS NULL", c.ID, ownerID).
-		Updates(map[string]any{
-			"name":        c.Name,
-			"description": c.Description,
-		}).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockSocialRelationshipAuthority(tx, c.OwnerPTID); err != nil {
+			return err
+		}
+		return tx.
+			Model(&db.SocialCircle{}).
+			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", c.ID, ownerID).
+			Updates(map[string]any{
+				"name":        c.Name,
+				"description": c.Description,
+			}).Error
+	})
 }
 
 func (r *circleRepo) Delete(ctx context.Context, id uint64, ownerPTID string) error {
@@ -77,10 +82,15 @@ func (r *circleRepo) Delete(ctx context.Context, id uint64, ownerPTID string) er
 	if err != nil {
 		return err
 	}
-	return r.db.WithContext(ctx).
-		Model(&db.SocialCircle{}).
-		Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, ownerID).
-		Update("deleted_at", gorm.Expr("CURRENT_TIMESTAMP")).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockSocialRelationshipAuthority(tx, ownerPTID); err != nil {
+			return err
+		}
+		return tx.
+			Model(&db.SocialCircle{}).
+			Where("id = ? AND owner_id = ? AND deleted_at IS NULL", id, ownerID).
+			Update("deleted_at", gorm.Expr("CURRENT_TIMESTAMP")).Error
+	})
 }
 
 func (r *circleRepo) ListByOwner(ctx context.Context, ownerPTID string, c domain.Cursor, limit int) ([]*domain.Circle, error) {
@@ -145,50 +155,50 @@ func (r *circleRepo) AddMembers(ctx context.Context, circleID uint64, actorPTIDs
 		uniq = append(uniq, ptid)
 	}
 
-	// Find which PTIDs are already members so we can compute `added`
-	// accurately.
-	var existing []string
-	if err = r.db.WithContext(ctx).
-		Model(&db.SocialCircleMember{}).
-		Where("circle_id = ? AND actor_ptid IN ?", circleID, uniq).
-		Pluck("actor_ptid", &existing).Error; err != nil {
-		return 0, 0, err
-	}
-	already := make(map[string]struct{}, len(existing))
-	for _, d := range existing {
-		already[d] = struct{}{}
-	}
-
-	rows := make([]db.SocialCircleMember, 0, len(uniq))
-	now := time.Now()
-	for _, ptid := range uniq {
-		if _, ok := already[ptid]; ok {
-			continue
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockCircleAudienceAuthority(ctx, tx, circleID); err != nil {
+			return err
 		}
-		rows = append(rows, db.SocialCircleMember{
-			CircleID:  circleID,
-			ActorPtid: ptid,
-			AddedAt:   now,
-		})
-	}
-	if len(rows) > 0 {
-		if err = r.db.WithContext(ctx).Create(&rows).Error; err != nil {
-			return 0, 0, err
+		var existing []string
+		if err := tx.
+			Model(&db.SocialCircleMember{}).
+			Where("circle_id = ? AND actor_ptid IN ?", circleID, uniq).
+			Pluck("actor_ptid", &existing).Error; err != nil {
+			return err
 		}
-		if err = r.db.WithContext(ctx).
-			Model(&db.SocialCircle{}).
-			Where("id = ?", circleID).
-			Update("member_count", gorm.Expr("COALESCE(member_count,0) + ?", len(rows))).Error; err != nil {
-			return 0, 0, err
+		already := make(map[string]struct{}, len(existing))
+		for _, actorPTID := range existing {
+			already[actorPTID] = struct{}{}
 		}
-	}
-
-	var count int64
-	if cerr := r.db.WithContext(ctx).Model(&db.SocialCircleMember{}).
-		Where("circle_id = ?", circleID).Count(&count).Error; cerr != nil {
-		return int32(len(rows)), 0, cerr
-	}
-	return int32(len(rows)), count, nil
+		rows := make([]db.SocialCircleMember, 0, len(uniq))
+		now := time.Now()
+		for _, actorPTID := range uniq {
+			if _, ok := already[actorPTID]; ok {
+				continue
+			}
+			rows = append(rows, db.SocialCircleMember{
+				CircleID:  circleID,
+				ActorPtid: actorPTID,
+				AddedAt:   now,
+			})
+		}
+		if len(rows) > 0 {
+			if err := tx.Create(&rows).Error; err != nil {
+				return err
+			}
+			if err := tx.
+				Model(&db.SocialCircle{}).
+				Where("id = ?", circleID).
+				Update("member_count", gorm.Expr("COALESCE(member_count,0) + ?", len(rows))).Error; err != nil {
+				return err
+			}
+		}
+		added = int32(len(rows))
+		return tx.Model(&db.SocialCircleMember{}).
+			Where("circle_id = ?", circleID).
+			Count(&total).Error
+	})
+	return added, total, err
 }
 
 func (r *circleRepo) RemoveMembers(ctx context.Context, circleID uint64, actorPTIDs []string) (removed int32, total int64, err error) {
@@ -198,27 +208,49 @@ func (r *circleRepo) RemoveMembers(ctx context.Context, circleID uint64, actorPT
 			Where("circle_id = ?", circleID).Count(&count).Error
 		return 0, count, nil
 	}
-	res := r.db.WithContext(ctx).
-		Where("circle_id = ? AND actor_ptid IN ?", circleID, actorPTIDs).
-		Delete(&db.SocialCircleMember{})
-	if res.Error != nil {
-		return 0, 0, res.Error
-	}
-	removed = int32(res.RowsAffected)
-	if removed > 0 {
-		if err = r.db.WithContext(ctx).
-			Model(&db.SocialCircle{}).
-			Where("id = ?", circleID).
-			Update("member_count", gorm.Expr("MAX(0, COALESCE(member_count,0) - ?)", removed)).Error; err != nil {
-			return removed, 0, err
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockCircleAudienceAuthority(ctx, tx, circleID); err != nil {
+			return err
 		}
+		result := tx.
+			Where("circle_id = ? AND actor_ptid IN ?", circleID, actorPTIDs).
+			Delete(&db.SocialCircleMember{})
+		if result.Error != nil {
+			return result.Error
+		}
+		removed = int32(result.RowsAffected)
+		if removed > 0 {
+			if err := tx.
+				Model(&db.SocialCircle{}).
+				Where("id = ?", circleID).
+				Update("member_count", gorm.Expr("MAX(0, COALESCE(member_count,0) - ?)", removed)).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&db.SocialCircleMember{}).
+			Where("circle_id = ?", circleID).
+			Count(&total).Error
+	})
+	return removed, total, err
+}
+
+func lockCircleAudienceAuthority(
+	ctx context.Context,
+	database *gorm.DB,
+	circleID uint64,
+) error {
+	var owner struct {
+		PTID string `gorm:"column:ptid"`
 	}
-	var count int64
-	if cerr := r.db.WithContext(ctx).Model(&db.SocialCircleMember{}).
-		Where("circle_id = ?", circleID).Count(&count).Error; cerr != nil {
-		return removed, 0, cerr
+	if err := database.WithContext(ctx).
+		Table("social_circles AS circle").
+		Select("owner.ptid AS ptid").
+		Joins("JOIN touch_actor AS owner ON owner.id = circle.owner_id").
+		Where("circle.id = ? AND circle.deleted_at IS NULL", circleID).
+		Take(&owner).Error; err != nil {
+		return err
 	}
-	return removed, count, nil
+	return lockSocialRelationshipAuthority(database, owner.PTID)
 }
 
 func (r *circleRepo) ListMembers(ctx context.Context, circleID uint64, c domain.Cursor, limit int) ([]*domain.CircleMember, error) {

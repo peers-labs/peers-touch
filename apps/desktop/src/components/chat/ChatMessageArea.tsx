@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Tooltip, toast } from '@lobehub/ui';
@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import {
   CHAT_COMPOSER_CAPABILITIES_DESKTOP_MAIN,
-  collectChatThreadPreviewMessages,
 } from '@peers-touch/client-chat-core';
 import {
   socialThreadKey,
@@ -21,7 +20,8 @@ import {
 } from './useActiveSocialChatStore';
 import { SearchMessagesModal } from './SearchMessagesModal';
 import { callP2p } from '../../modules/p2p/callP2p';
-import { messagingInteractions } from '../../messaging/runtime';
+import { groupCallManager } from '../../modules/groupCall';
+import { api } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
 import { mapChatError } from '../../services/errorMappings/chatErrorMapping';
 import { presentError, type PresentedError } from '../../services/errorPresenter';
@@ -29,14 +29,17 @@ import { ChatComposer, type ChatComposerDraft } from './ChatComposer';
 import {
   type ChatMessage,
   messageThreadRootUlid,
-  messageTimestampMs,
   replyPreviewForMessage,
 } from './message/chatMessageModel';
 import { ChatMessageTimeline } from './message/ChatMessageTimeline';
-import { chatMessageTailScrollOptions } from './message/chatMessageTimelinePolicy';
 import {
-  loadedThreadReplyCount,
+  chatMessageTailScrollOptions,
+  chatMessageTailScrollTop,
+  isChatMessageTailPinned,
+} from './message/chatMessageTimelinePolicy';
+import {
   loadedThreadReplyIds,
+  resolvedThreadReplyCount,
 } from './message/chatMessageThreadStats';
 import {
   beginMessageReactionMutation,
@@ -100,7 +103,6 @@ export function ChatMessageArea({
     conversationBackgroundPreviews,
     getIMConversations,
     getIMMessages,
-    getIMThreadMessages,
     getIMSenderProfile,
     messageHasMore,
     messageLoadingMore,
@@ -112,7 +114,6 @@ export function ChatMessageArea({
     setScrollToMessageUlid,
     encryptionEnabled,
     groupSecurityState,
-    friendP2pStatus,
     peerOnline,
     typingPeers,
     threadCounts,
@@ -140,7 +141,6 @@ export function ChatMessageArea({
     conversationBackgroundPreviews: s.conversationBackgroundPreviews,
     getIMConversations: s.getIMConversations,
     getIMMessages: s.getIMMessages,
-    getIMThreadMessages: s.getIMThreadMessages,
     getIMSenderProfile: s.getIMSenderProfile,
     messageHasMore: s.messageHasMore,
     messageLoadingMore: s.messageLoadingMore,
@@ -152,7 +152,6 @@ export function ChatMessageArea({
     setScrollToMessageUlid: s.setScrollToMessageUlid,
     encryptionEnabled: s.encryptionEnabled,
     groupSecurityState: s.groupSecurityState,
-    friendP2pStatus: s.friendP2pStatus,
     peerOnline: s.peerOnline,
     typingPeers: s.typingPeers,
     threadCounts: s.threadCounts,
@@ -161,9 +160,13 @@ export function ChatMessageArea({
     reactToMessage: s.reactToMessage,
     pinMessage: s.pinMessage,
   }));
-  const actorStationEntries = useActiveChatFederationSlice(
-    (state) => state.actorStationEntries,
-  );
+  const {
+    actorStationEntries,
+    memberStationsByFederation,
+  } = useActiveChatFederationSlice((state) => ({
+    actorStationEntries: state.actorStationEntries,
+    memberStationsByFederation: state.memberStationsByFederation,
+  }));
   const [inputValue, setInputValue] = useState('');
   const draftsRef = useRef<Record<string, string>>({});
   const prevActiveRef = useRef<string | null>(null);
@@ -183,6 +186,8 @@ export function ChatMessageArea({
   const [reactionMutations, setReactionMutations] = useState<Record<string, MessageReactionMutation>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const tailPinnedRef = useRef(true);
+  const tailReconcilePendingRef = useRef(false);
   const actionOverlayHostRef = useRef<HTMLDivElement>(null);
   const prependRestoreRef = useRef<{ previousHeight: number } | null>(null);
   const reactionRequestIdRef = useRef(0);
@@ -214,8 +219,10 @@ export function ChatMessageArea({
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
+    federationId: activeConversation?.federationId,
     stationPeerId: authorityStationId,
     actorStationEntries,
+    memberStationsByFederation,
   });
 
   const subtitle = (() => {
@@ -278,6 +285,14 @@ export function ChatMessageArea({
     });
   }, [activeTab, activeUlid, loadGroupMembers]);
 
+  const scrollToMessageTail = useCallback(() => {
+    bottomRef.current?.scrollIntoView(chatMessageTailScrollOptions());
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.scrollTop = chatMessageTailScrollTop(container);
+    }
+  }, []);
+
   useLayoutEffect(() => {
     if (prependRestoreRef.current && scrollContainerRef.current) {
       const { previousHeight } = prependRestoreRef.current;
@@ -286,8 +301,29 @@ export function ChatMessageArea({
       prependRestoreRef.current = null;
       return;
     }
-    bottomRef.current?.scrollIntoView(chatMessageTailScrollOptions());
-  }, [mainTimelineMessages.length]);
+    tailReconcilePendingRef.current = true;
+    tailPinnedRef.current = true;
+    scrollToMessageTail();
+  }, [mainTimelineMessages.length, scrollToMessageTail]);
+
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (tailPinnedRef.current) {
+        scrollToMessageTail();
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [scrollToMessageTail]);
+
+  const handleTimelineMeasured = useCallback(() => {
+    if (!tailReconcilePendingRef.current && !tailPinnedRef.current) return;
+    scrollToMessageTail();
+    tailReconcilePendingRef.current = false;
+    tailPinnedRef.current = true;
+  }, [scrollToMessageTail]);
 
   useEffect(() => {
     const prev = prevActiveRef.current;
@@ -340,7 +376,7 @@ export function ChatMessageArea({
 
   const fireTyping = (typing: boolean) => {
     if (!activeUlid) return;
-    messagingInteractions.sendTyping(activeUlid, typing).catch((err) => {
+    api.messagingTypingSend(activeUlid, typing).catch((err) => {
       // Typing is best-effort; debug-level only so a temporarily
       // unreachable station does not spam the user-visible log.
       log.debug('chat', 'typing pulse failed', { typing, error: err });
@@ -401,9 +437,7 @@ export function ChatMessageArea({
         ref.idleTimer = null;
       }
       if (ref.lastTrueAt > 0 && lastTypingConversationRef.current) {
-        messagingInteractions.sendTyping(lastTypingConversationRef.current, false).catch((error) => {
-          log.debug('chat', 'typing stop pulse failed', { error });
-        });
+        api.messagingTypingSend(lastTypingConversationRef.current, false).catch(() => {});
         ref.lastTrueAt = 0;
       }
     };
@@ -458,9 +492,13 @@ export function ChatMessageArea({
   ]);
 
   const handleScroll = async () => {
-    if (!activeUlid || !scrollContainerRef.current) return;
-    if (!messageHasMore[activeUlid] || messageLoadingMore[activeUlid]) return;
     const container = scrollContainerRef.current;
+    if (!container) return;
+    if (!tailReconcilePendingRef.current) {
+      tailPinnedRef.current = isChatMessageTailPinned(container);
+    }
+    if (!activeUlid) return;
+    if (!messageHasMore[activeUlid] || messageLoadingMore[activeUlid]) return;
     if (container.scrollTop > 40) return;
     prependRestoreRef.current = { previousHeight: container.scrollHeight };
     try {
@@ -548,21 +586,25 @@ export function ChatMessageArea({
     }
   };
 
-  /** Voice / video calls are only meaningful for friend chats with
-   *  an active RTCPeerConnection. Text chat uses the realtime SSE
-   *  stream; WebRTC readiness gates calls only. */
+  /** Voice / video calls gate on authoritative peer presence. The
+   *  RTCPeerConnection is established on-demand by startCall when
+   *  no connection exists, so pre-existing P2P state is not required. */
   const callsAvailable = (() => {
-    if (activeTab !== 'friend' || !activeUlid || !currentUserPtid) return false;
-    const s = friendP2pStatus[activeUlid];
-    return !!s && s.state === 'connected';
+    if (activeTab !== 'friend' || !activeUlid || !currentUserPtid || !activePeerDid) return false;
+    return peerOnline[activePeerDid] === true;
   })();
+  const groupCallsAvailable = activeTab === 'group' && Boolean(activeUlid && currentUserPtid);
+  const callAvailable = callsAvailable || groupCallsAvailable;
 
   const handleStartCall = async (kind: 'audio' | 'video') => {
-    if (!callsAvailable || !currentUserPtid) return;
-    const peerPtid = activePeerDid;
-    if (!peerPtid) return;
     try {
-      await callP2p.startCall(currentUserPtid, peerPtid, kind);
+      if (activeTab === 'group') {
+        if (!groupCallsAvailable || !activeUlid) return;
+        await groupCallManager.joinGroupCall(activeUlid, kind);
+        return;
+      }
+      if (!callsAvailable || !currentUserPtid || !activePeerDid) return;
+      await callP2p.startCall(currentUserPtid, activePeerDid, kind);
     } catch (err) {
       log.error('chat', 'startCall failed', err);
       toast.error(t('chat.social.call.mediaDenied'));
@@ -752,16 +794,6 @@ export function ChatMessageArea({
     audio: t('chat.social.messageArea.attachmentTypeAudio'),
     file: t('chat.social.messageArea.attachmentTypeFile'),
   });
-
-  const threadPreviewMessagesForRoot = (rootUlid: string) => {
-    if (!activeUlid || !rootUlid) return [];
-    return collectChatThreadPreviewMessages({
-      rootUlid,
-      currentMessages,
-      loadedThreadMessages: getIMThreadMessages(activeKind, activeUlid, rootUlid),
-      resolveTimestampMs: messageTimestampMs,
-    });
-  };
 
   if (!activeUlid && directOpenIntent) {
     return (
@@ -989,13 +1021,10 @@ export function ChatMessageArea({
           </Flexbox>
         </Flexbox>
         <Flexbox horizontal align="center" gap={4}>
-          {/* Voice / video calls. Only meaningful for friend chats
-              that already have an established WebRTC connection.
-              Group calls and "cold" calls (where no PC is open yet)
-              are deferred until SFU support lands. */}
+          {/* Friend calls use P2P; group calls use the configured SFU. */}
           <Tooltip
             title={
-              callsAvailable
+              callAvailable
                 ? t('chat.social.call.startAudio')
                 : t('chat.social.call.unsupported')
             }
@@ -1003,14 +1032,14 @@ export function ChatMessageArea({
             <Button
               type="text"
               icon={<Phone size={16} />}
-              disabled={!callsAvailable}
+              disabled={!callAvailable}
               style={{ width: 32, height: 32 }}
               onClick={() => handleStartCall('audio')}
             />
           </Tooltip>
           <Tooltip
             title={
-              callsAvailable
+              callAvailable
                 ? t('chat.social.call.startVideo')
                 : t('chat.social.call.unsupported')
             }
@@ -1018,7 +1047,7 @@ export function ChatMessageArea({
             <Button
               type="text"
               icon={<Video size={16} />}
-              disabled={!callsAvailable}
+              disabled={!callAvailable}
               style={{ width: 32, height: 32 }}
               onClick={() => handleStartCall('video')}
             />
@@ -1066,6 +1095,7 @@ export function ChatMessageArea({
             highlightedMessageUlid={highlightedMessageUlid}
             isPinned={(message) => Boolean(pinnedMessages[message.ulid])}
             messages={mainTimelineMessages}
+            onTimelineMeasured={handleTimelineMeasured}
             onDelete={confirmDeleteMessage}
             onEdit={handleStartEdit}
             onForward={setForwardTarget}
@@ -1111,9 +1141,12 @@ export function ChatMessageArea({
               const threadSummary = threadCounts[threadKey];
               const replyIds = loadedThreadReplyIds(currentMessages, message.ulid);
               return {
-                replyCount: loadedThreadReplyCount(currentMessages, message.ulid),
+                replyCount: resolvedThreadReplyCount(
+                  currentMessages,
+                  message.ulid,
+                  threadSummary?.replyCount,
+                ),
                 replyIds,
-                previewMessages: threadPreviewMessagesForRoot(message.ulid),
                 unreadCount: threadSummary?.unreadCount ?? 0,
               };
             }}

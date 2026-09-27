@@ -5,7 +5,7 @@ import {
   MessageReceiptSchema,
   ReceiptType,
 } from '../gen/proto/domain/chat/conversation_pb';
-import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
+import { FriendMessageStatus } from '../gen/proto/domain/chat/friend_chat_pb';
 import {
   decodeChatReceipt,
   receiptKindFromType,
@@ -14,9 +14,9 @@ import {
 
 describe('unified conversation receipt mapping', () => {
   it('maps friend message acknowledgement states to receipt types', () => {
-    expect(receiptTypeForMessageStatus(MessageStatus.DELIVERED)).toBe(ReceiptType.DELIVERED);
-    expect(receiptTypeForMessageStatus(MessageStatus.READ)).toBe(ReceiptType.READ);
-    expect(receiptTypeForMessageStatus(MessageStatus.SENT)).toBeNull();
+    expect(receiptTypeForMessageStatus(FriendMessageStatus.DELIVERED)).toBe(ReceiptType.DELIVERED);
+    expect(receiptTypeForMessageStatus(FriendMessageStatus.READ)).toBe(ReceiptType.READ);
+    expect(receiptTypeForMessageStatus(FriendMessageStatus.SENT)).toBeNull();
   });
 
   it('maps receipt envelopes back to monotonic message status kinds', () => {

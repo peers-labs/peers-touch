@@ -63,6 +63,12 @@ RUN CGO_ENABLED=0 go build -trimpath \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildLabel=${BUILD_LABEL} \
       -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildTime=${BUILD_TIME}" \
     -o /out/peers-touch-station .
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w \
+      -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildCommit=${BUILD_COMMIT} \
+      -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildLabel=secure-content-maintenance \
+      -X github.com/peers-labs/peers-touch/station/app/subserver/app_meta.BuildTime=${BUILD_TIME}" \
+    -o /out/secure-content-maintenance ./cmd/secure_content_maintenance
 
 # ─── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM ${BASE_IMAGE}
@@ -79,10 +85,12 @@ RUN sed -i \
 WORKDIR /app
 
 COPY --from=builder /out/peers-touch-station .
+COPY --from=builder /out/secure-content-maintenance .
 
 COPY apps/station/app/conf/ ./conf/
 
-RUN mkdir -p /app/data && chmod 0700 /app/data
+RUN mkdir -p /app/data && \
+    chmod 0700 /app/data /app/secure-content-maintenance
 
 COPY tooling/docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

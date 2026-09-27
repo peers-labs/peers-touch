@@ -246,4 +246,3 @@ export enum ToolApprovalDecisionErrorCode {
  */
 export const ToolApprovalDecisionErrorCodeSchema: GenEnum<ToolApprovalDecisionErrorCode> = /*@__PURE__*/
   enumDesc(file_domain_agent_agent_config, 0);
-

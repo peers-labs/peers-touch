@@ -21,30 +21,22 @@ func fixturePTID(id uint64) string {
 
 func TestP3_CustomAllow_EnforcesAllowList(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
 	const author, allowedFriend = uint64(100), uint64(200)
-	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type: model.PostType_TEXT,
-		Audience: &model.Audience{
-			Kind:       model.Audience_CUSTOM_ALLOW,
-			ActorPtids: []string{fixturePTID(allowedFriend)},
-		},
-		Content: textBody("hello allow-list"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create CUSTOM_ALLOW: %v", err)
-	}
+	created := seedPrivatePost(t, f, &model.Audience{
+		Kind:       model.Audience_CUSTOM_ALLOW,
+		ActorPtids: []string{fixturePTID(allowedFriend)},
+	}, "hello allow-list", author)
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(author)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(author)); got == nil {
 		t.Fatal("author must always see their own CUSTOM_ALLOW post")
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(allowedFriend)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(allowedFriend)); got == nil {
 		t.Fatal("named PTID must be able to read CUSTOM_ALLOW post")
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id /*stranger*/, fixturePTID(999)); got != nil {
+	if got := getAnyMoment(t, f, created.IDStr /*stranger*/, fixturePTID(999)); got != nil {
 		t.Fatal("strangers must never see CUSTOM_ALLOW post")
 	}
 }
@@ -55,34 +47,26 @@ func TestP3_CustomAllow_EnforcesAllowList(t *testing.T) {
 
 func TestP3_CustomDeny_EnforcesDenyList(t *testing.T) {
 	f := newFixture(t)
-	ctx := context.Background()
 
 	const author, denied, follower = uint64(100), uint64(200), uint64(300)
 	seedFollow(t, f, denied, author)
 	seedFollow(t, f, follower, author)
 
-	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type: model.PostType_TEXT,
-		Audience: &model.Audience{
-			Kind:       model.Audience_CUSTOM_DENY,
-			BaseKind:   model.Audience_FOLLOWERS,
-			ActorPtids: []string{fixturePTID(denied)},
-		},
-		Content: textBody("everyone-but-200 (not yet)"),
-	}, fixturePTID(author))
-	if err != nil {
-		t.Fatalf("create CUSTOM_DENY: %v", err)
-	}
+	created := seedPrivatePost(t, f, &model.Audience{
+		Kind:       model.Audience_CUSTOM_DENY,
+		BaseKind:   model.Audience_FOLLOWERS,
+		ActorPtids: []string{fixturePTID(denied)},
+	}, "everyone-but-200 (not yet)", author)
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(author)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(author)); got == nil {
 		t.Fatal("author must always see their own post")
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(follower)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(follower)); got == nil {
 		t.Fatal("follower must see CUSTOM_DENY post (deny-list does not include them)")
 	}
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(denied)); got != nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(denied)); got != nil {
 		t.Fatal("denied PTID must not be able to read CUSTOM_DENY post")
 	}
 }
@@ -113,29 +97,18 @@ func TestP3_Circle_AlreadyEnforced(t *testing.T) {
 		t.Fatalf("create circle: %v", err)
 	}
 
-	created, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
-		Type: model.PostType_TEXT,
-		Audience: &model.Audience{
-			Kind:     model.Audience_CIRCLE,
-			TargetId: circle.GetId(),
-		},
-		Content: textBody("circle-only"),
-	}, fixturePTID(author))
-	if err != nil {
-		// CIRCLE creation may be rejected if the circle is
-		// considered empty — that's acceptable in P1/P2. Skip
-		// the rest of the test in that case so the skeleton
-		// doesn't fail on legitimate degradation.
-		t.Skipf("CIRCLE create rejected under noop baseline (acceptable): %v", err)
-	}
+	created := seedPrivatePost(t, f, &model.Audience{
+		Kind:     model.Audience_CIRCLE,
+		TargetId: circle.GetId(),
+	}, "circle-only", author)
 
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(author)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(author)); got == nil {
 		t.Fatal("author must always see their own CIRCLE post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(stranger)); got != nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(stranger)); got != nil {
 		t.Fatal("stranger must not see CIRCLE post")
 	}
-	if got, _ := f.moments.GetMoment(ctx, created.Id, fixturePTID(member)); got == nil {
+	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(member)); got == nil {
 		t.Fatal("circle member must be able to read CIRCLE post")
 	}
 }

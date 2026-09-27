@@ -91,7 +91,7 @@ async function loadConnectorAuthority(
   binding: AgentCapabilityBinding | undefined;
 }>> {
   const capabilityStore = useAgentCapabilityStore.getState();
-  await Promise.all([
+  const [manifests] = await Promise.all([
     capabilityStore.loadCatalog(),
     capabilityStore.loadAgent(agentId),
   ]);
@@ -105,7 +105,7 @@ async function loadConnectorAuthority(
     );
   const result = resources.flatMap((resource) =>
     resource.toolManifests.flatMap((reference) => {
-      const manifest = state.manifests.find(
+      const manifest = manifests.find(
         (candidate) =>
           candidate.sourceKind === CapabilitySourceKind.CONNECTOR
           && candidate.capabilityId === reference.capabilityId
@@ -174,6 +174,8 @@ interface AgentConnectorState {
 }
 
 let loadConnectorsPromise: Promise<void> | null = null;
+let loadConnectorsRequestedGeneration = 0;
+let loadConnectorsCompletedGeneration = 0;
 
 export const useAgentConnectorStore = createDesktopStore<AgentConnectorState>(
   'agentConnectors',
@@ -182,30 +184,41 @@ export const useAgentConnectorStore = createDesktopStore<AgentConnectorState>(
     resourceManifests: [],
     loading: false,
 
-    loadConnectors: async () => {
+    loadConnectors: () => {
+      loadConnectorsRequestedGeneration += 1;
       if (loadConnectorsPromise) return loadConnectorsPromise;
 
       loadConnectorsPromise = (async () => {
+        await Promise.resolve();
         set({ loading: true });
         try {
-          // Leverage the existing OAuth2 store to discover connectors
-          const oauth2 = useOAuth2Store.getState();
-          await oauth2.loadAll();
-          await api.syncOAuthConnectorManifests();
-          await oauth2.loadConnections();
-          const resourceManifests = await api.listConnectorResourceManifests(
-            create(ListConnectorResourceManifestsRequestSchema, {}),
-          );
+          while (
+            loadConnectorsCompletedGeneration
+            < loadConnectorsRequestedGeneration
+          ) {
+            const targetGeneration = loadConnectorsRequestedGeneration;
+            // Leverage the existing OAuth2 store to discover connectors.
+            const oauth2 = useOAuth2Store.getState();
+            await oauth2.loadAll();
+            await api.syncOAuthConnectorManifests();
+            await oauth2.loadConnections();
+            const resourceManifests = await api.listConnectorResourceManifests(
+              create(ListConnectorResourceManifestsRequestSchema, {}),
+            );
 
-          const { providers, connections } = useOAuth2Store.getState();
-          const connectors: ConnectorInfo[] = providers
-            .filter((p) => p.enabled)
-            .map((provider) => {
-              const connection = connections.find((c) => c.provider_id === provider.id);
-              return mapOAuth2ToConnector(provider, connection);
-            });
+            const { providers, connections } = useOAuth2Store.getState();
+            const connectors: ConnectorInfo[] = providers
+              .filter((p) => p.enabled)
+              .map((provider) => {
+                const connection = connections.find(
+                  (candidate) => candidate.provider_id === provider.id,
+                );
+                return mapOAuth2ToConnector(provider, connection);
+              });
 
-          set({ availableConnectors: connectors, resourceManifests });
+            set({ availableConnectors: connectors, resourceManifests });
+            loadConnectorsCompletedGeneration = targetGeneration;
+          }
         } catch (error) {
           log.error('agentConnectors', 'Failed to load connectors', { error: String(error) });
           throw error;

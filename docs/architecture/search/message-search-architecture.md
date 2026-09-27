@@ -39,8 +39,8 @@ This document does not define:
 |-------|------------------|--------|
 | Station Conversation | Conversation-scoped reads | Full-text indexing and one canonical search contract remain to be completed |
 | Station frame | Stubbed `HandleSearchMessages` (returns empty) | Not implemented |
-| Desktop Rust | Canonical Messaging SQLCipher projection and `messaging_message_search_fts` | Implemented |
-| Desktop TS | Conversation-scoped history search through `messaging_search_messages` | Implemented |
+| Desktop Rust | SQLCipher FTS5 on `chat_messages_fts` | Exists but **not wired** to TS UI |
+| Desktop TS | No search UI for messages | — |
 
 ### 2.2 Design Goals
 
@@ -227,28 +227,31 @@ handler, repository, or public route family.
 
 ## 6. Client-Side Search (Desktop)
 
-### 6.1 Canonical Infrastructure
+### 6.1 Existing Infrastructure
 
-`apps/desktop/src-tauri/src/messaging/store.rs` owns:
+The `local_chat_store.rs` already has:
 
-- `messaging_message_projections` as the local Conversation message projection;
-- `messaging_message_search_fts` as its FTS5 search index;
-- cursor-bounded `search_message_projections()` for Direct and Group;
-- atomic index updates in the same Messaging store transaction.
+- `chat_messages` table with `scope`, `conversation_id`, `message_id`, `sender_did`, `content`, `sent_at`
+- `chat_messages_fts` FTS5 virtual table indexing `content`
+- `search_local()` function using `MATCH`
+- Conversation ingestion paths that populate the local cache for Direct and Group kinds
 
-### 6.2 Tauri Command
+### 6.2 What Needs Wiring
 
-The existing command delegates to the active actor-scoped Messaging Engine:
+**Tauri command** (new):
 
 ```rust
 #[tauri::command]
-pub fn messaging_search_messages(
-    input: MessagingSearchMessagesInput,
+pub fn chat_search_local(
+    input: ChatSearchInput,
     state: State<'_, Arc<AppState>>,
-    window: Window,
-) -> AppResult<Value> {
-    let (_, _, engine) = active_engine(state.inner(), &window)?;
-    messaging_search_messages_result(&engine, &input)
+) -> AppResult<ChatSearchResult> {
+    let user_scope = user_scope_from_state(&state);
+    let scope = input.scope.unwrap_or_default(); // empty = all scopes
+    let results = chat_storage::search_local(
+        &user_scope, &scope, &input.query, input.limit.unwrap_or(20)
+    );
+    // ... convert to AppResult
 }
 ```
 
@@ -359,12 +362,12 @@ interface SearchResult {
 
 ## 8. Implementation Plan
 
-### Phase 1: Wire Local Search to UI
+### Phase 1: Wire Local Search to UI (Week 1)
 
-- [x] Add `messaging_search_messages` Tauri command.
-- [x] Expose the command through the typed Desktop messaging service.
-- [x] Keep search state in the Chat projection store.
-- [x] Build the conversation-scoped search surface.
+- [ ] Add `chat_search_local` Tauri command
+- [ ] Add `chatSearchLocal` to `desktop_api.ts`
+- [ ] Add search state to `socialChat.ts` store
+- [ ] Build `SearchMessagesModal` component
 - [ ] Wire in-conversation search button
 - [ ] Test with existing local message cache
 

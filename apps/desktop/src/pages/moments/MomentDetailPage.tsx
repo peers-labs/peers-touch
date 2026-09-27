@@ -1,11 +1,19 @@
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, message } from 'antd';
+import { Button } from 'antd';
 import { ChevronLeft } from 'lucide-react';
 import { selectMomentComments } from '../../store/moments';
+import {
+  selectPrivateCommentDraft,
+  selectPrivateCommentThread,
+} from '../../store/privateComments';
 import { MomentCard } from '../../components/moments/MomentCard';
 import { CommentList } from '../../components/moments/CommentList';
-import { useActiveMomentsSlice } from '../../components/moments/useActiveMomentsStore';
+import {
+  useActiveMomentsSlice,
+  useActivePrivateCommentsSlice,
+} from '../../components/moments/useActiveMomentsStore';
+import { isPrivateMomentPost } from '../../runtimes/momentsRuntime';
 import {
   SocialEmptyState,
   SocialThreadDivider,
@@ -63,6 +71,46 @@ export function MomentDetailView({
     reactToPost: s.reactToPost,
     unreactToPost: s.unreactToPost,
   }));
+  const {
+    privateThread,
+    privateDraft,
+    privateScope,
+    loadPrivateComments,
+    submitPrivateComment,
+    retryPrivateComment,
+  } = useActivePrivateCommentsSlice((s) => ({
+    privateThread: selectPrivateCommentThread(s, postId),
+    privateDraft: selectPrivateCommentDraft(s, postId),
+    privateScope: s.scope,
+    loadPrivateComments: s.loadComments,
+    submitPrivateComment: s.submitComment,
+    retryPrivateComment: s.retryComment,
+  }));
+  const privateComments = useMemo(() => (
+    privateThread.comments.map((comment) => ({
+      id: comment.commentId,
+      postId: comment.postId,
+      authorPtid: comment.authorPtid,
+      content: comment.text,
+      replyToCommentId: comment.replyToCommentId,
+      author: {
+        username: comment.authorAcct ?? '',
+        displayName: comment.authorAcct ?? '',
+        avatarUrl: '',
+      },
+    }))
+  ), [privateThread.comments]);
+  const isPrivate = isPrivateMomentPost(post);
+  const visibleComments = isPrivate ? privateComments : comments;
+  const visibleCommentsLoading = isPrivate ? privateThread.loading : commentsLoading;
+  const visibleCommentsHasMore = isPrivate ? privateThread.hasMore : commentsHasMore;
+  const privateParentUnavailable = privateThread.state === 'COMMENT_PARENT_UNAVAILABLE';
+  const privateComposerState = privateParentUnavailable
+    ? privateThread.state
+    : privateDraft?.state ?? privateThread.state;
+  const privateComposerErrorCode = privateParentUnavailable
+    ? privateThread.errorCode
+    : privateDraft?.errorCode ?? privateThread.errorCode;
 
   const handleReact = async (id: string, kind: ReactionKind) => {
     await reactToPost(id, kind);
@@ -122,23 +170,53 @@ export function MomentDetailView({
           >
             <SocialThreadSection>
               <CommentList
+                key={[
+                  postId,
+                  viewerActorPtid ?? 'anonymous',
+                  privateScope.rendererGeneration,
+                  privateDraft?.draftId ?? 'public',
+                  privateDraft?.draftRevision ?? 0,
+                ].join(':')}
                 postId={postId}
-                comments={comments}
-                loading={commentsLoading}
-                hasMore={commentsHasMore}
+                comments={visibleComments}
+                loading={visibleCommentsLoading}
+                hasMore={visibleCommentsHasMore}
+                composerState={isPrivate ? privateComposerState : undefined}
+                composerErrorCode={
+                  isPrivate ? privateComposerErrorCode : undefined
+                }
+                composerRetryAfterSeconds={
+                  isPrivate ? privateDraft?.retryAfterSeconds : undefined
+                }
+                composerRetryNotBeforeUnixMs={
+                  isPrivate ? privateDraft?.retryNotBeforeUnixMs : undefined
+                }
+                composerPublicationState={
+                  isPrivate ? privateDraft?.publicationState : undefined
+                }
+                composerDraftText={isPrivate ? privateDraft?.text : undefined}
                 viewerActorPtid={viewerActorPtid}
-                onLoadMore={() => loadComments(postId).catch(() => {})}
+                onLoadMore={() => {
+                  const pending = isPrivate
+                    ? loadPrivateComments(postId)
+                    : loadComments(postId);
+                  pending.catch(() => {});
+                }}
                 onSubmit={async (content, replyToCommentId) => {
-                  try {
-                    await createComment(postId, content, replyToCommentId);
-                  } catch (err) {
-                    message.error(String(err));
-                    throw err;
+                  if (isPrivate) {
+                    await submitPrivateComment(postId, content, replyToCommentId);
+                    return;
                   }
+                  await createComment(postId, content, replyToCommentId);
                 }}
-                onDelete={async (cid) => {
-                  await deleteComment(postId, cid);
-                }}
+                onRetry={isPrivate
+                  ? () => retryPrivateComment(postId)
+                  : undefined}
+                onDelete={isPrivate
+                  ? undefined
+                  : async (cid) => {
+                      await deleteComment(postId, cid);
+                    }}
               />
             </SocialThreadSection>
           </div>

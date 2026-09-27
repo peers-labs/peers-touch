@@ -105,6 +105,33 @@ export function useChatState() {
     } : c)));
   }, []);
 
+  const sendVoiceMessage = useCallback((id: string, durationSeconds: number) => {
+    const nextMessage = {
+      id: `voice-${Date.now()}`,
+      senderId: CURRENT_USER.id,
+      content: '',
+      timestamp: Date.now(),
+      type: 'voice' as const,
+      status: 'sent' as const,
+      durationSeconds: Math.max(1, Math.round(durationSeconds)),
+      transferState: 'ready' as const,
+    };
+    setMessagesByConversation((prev) => ({
+      ...prev,
+      [id]: [...(prev[id] ?? []), nextMessage],
+    }));
+    setConversations((prev) => prev.map((conversation) => (
+      conversation.id === id
+        ? {
+            ...conversation,
+            lastMessage: `Voice message · ${nextMessage.durationSeconds}s`,
+            lastMessageTime: nextMessage.timestamp,
+            unread: 0,
+          }
+        : conversation
+    )));
+  }, []);
+
   const renameGroup = useCallback((id: string, name: string) => {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, name } : c)));
   }, []);
@@ -177,7 +204,7 @@ export function useChatState() {
       [id]: [{
         id: `system-${Date.now()}`,
         senderId: 'system',
-        content: 'Direct conversation is ready. Production uses /conversation/direct before messaging.',
+        content: 'Friend chat session is ready. Production maps this to /friend-chat/create before messaging.',
         timestamp: Date.now(),
         type: 'system',
       }],
@@ -252,6 +279,7 @@ export function useChatState() {
     clearConversationData,
     setConversationBackgroundImage,
     sendMessage,
+    sendVoiceMessage,
     renameGroup,
     removeGroupMember,
     toggleMemberMute,

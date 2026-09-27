@@ -16,7 +16,7 @@ from tooling.development.secure_content.run import (
 )
 
 
-EXPECTED_PROFILE = "four"
+EXPECTED_PROFILES = ("four", "fiveArm")
 EXPECTED_CLIENTS = (
     "secure-content-browser-authenticated",
     "secure-content-browser-anonymous",
@@ -48,9 +48,11 @@ def _sha256(value: str) -> str:
 def _private_handoff(context: ScenarioContext) -> Mapping[str, Any]:
     if context.artifact_dir is None:
         raise RunnerError("browser-private-boundary artifact root is unavailable")
+    manifest = context.require_runtime_manifest()
     path = (
-        context.artifact_dir.parent
-        / "SC-AS01"
+        context.artifact_dir.parent.parent
+        / "desktop"
+        / manifest.run_id
         / "browser-private-handoff.json"
     )
     if not path.is_file():
@@ -100,12 +102,9 @@ def _require_runtime_binding(context: ScenarioContext) -> None:
         raise RunnerError(
             "browser-private-boundary requires the browser runtime"
         )
-    if (
-        context.profile != EXPECTED_PROFILE
-        or context.profiles != (EXPECTED_PROFILE,)
-    ):
+    if context.profile is not None or set(context.profiles) != set(EXPECTED_PROFILES):
         raise RunnerError(
-            "browser-private-boundary requires exactly --profile four"
+            "browser-private-boundary requires exactly --profiles four,fiveArm"
         )
     if context.clients != EXPECTED_CLIENTS:
         raise RunnerError(
@@ -117,15 +116,19 @@ def _require_runtime_binding(context: ScenarioContext) -> None:
             "browser-private-boundary requires exactly --budget-seconds 1200"
         )
     manifest = context.require_runtime_manifest()
-    expected_actors = {
-        EXPECTED_CLIENTS[0]: "browser_actor",
-        EXPECTED_CLIENTS[1]: "anonymous",
+    expected_bindings = {
+        EXPECTED_CLIENTS[0]: ("browser_actor", "browser"),
+        EXPECTED_CLIENTS[1]: ("anonymous", "browser"),
     }
-    for client_id, actor in expected_actors.items():
-        if manifest.client(client_id).get("actor") != actor:
+    for client_id, (actor_role, runtime_kind) in expected_bindings.items():
+        client = manifest.client(client_id)
+        if (
+            client.get("actor_role") != actor_role
+            or client.get("runtime_kind") != runtime_kind
+        ):
             raise RunnerError(
                 f"browser-private-boundary client {client_id!r} must bind "
-                f"actor {actor!r}"
+                f"actor role {actor_role!r} and runtime kind {runtime_kind!r}"
             )
 
 
@@ -159,6 +162,7 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         )
 
         anonymous.clear_network_log()
+        anonymous.begin_network_capture("anonymous-public-read")
         public_read = _mapping(
             anonymous.call("findPublicMoment", {"text": PUBLIC_TEXT}),
             "anonymous public read",
@@ -177,10 +181,14 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             == hashlib.sha256(PNG_BYTES).hexdigest(),
             "anonymous Browser could not read the exact PUBLIC image bytes",
         )
+        public_read_terminal = anonymous.emit_terminal_marker(
+            "anonymous-public-read"
+        )
         public_read_network = anonymous.network_observation(
             private_plaintext=PRIVATE_TEXT,
             private_resource_id=post_id,
             require_response_body=True,
+            terminal_marker=public_read_terminal,
         )
         _require(
             public_read_network.secret_representation_count == 0
@@ -189,6 +197,7 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         )
 
         authenticated.clear_network_log()
+        authenticated.begin_network_capture("authenticated-public-read")
         authenticated_public_read = _mapping(
             authenticated.call("findPublicMoment", {"text": PUBLIC_TEXT}),
             "authenticated public read",
@@ -199,10 +208,14 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             == _sha256(PUBLIC_TEXT),
             "authenticated Browser could not read the PUBLIC control",
         )
+        authenticated_public_terminal = authenticated.emit_terminal_marker(
+            "authenticated-public-read"
+        )
         authenticated_public_network = authenticated.network_observation(
             private_plaintext=PRIVATE_TEXT,
             private_resource_id=post_id,
             require_response_body=True,
+            terminal_marker=authenticated_public_terminal,
         )
         _require(
             authenticated_public_network.secret_representation_count == 0
@@ -211,6 +224,9 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         )
 
         authenticated.clear_network_log()
+        authenticated.begin_network_capture(
+            "authenticated-private-boundary"
+        )
         authenticated.call(
             "stageFriendsDraft",
             {
@@ -233,9 +249,13 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             ),
             "private read rejection",
         )
+        private_terminal = authenticated.emit_terminal_marker(
+            "authenticated-private-boundary"
+        )
         private_network = authenticated.network_observation(
             private_plaintext=PRIVATE_TEXT,
             private_resource_id=post_id,
+            terminal_marker=private_terminal,
         )
 
         _require(
@@ -322,4 +342,8 @@ SCENARIO = ScenarioDefinition(
     runtimes=frozenset({"browser"}),
     evidence_path=Path("W7/SC-AS10/result.json"),
     execute=_execute,
+    result_prefix=Path("W7"),
+    result_task_id="W7",
+    result_workstream_id="W7",
+    result_variant="browser",
 )

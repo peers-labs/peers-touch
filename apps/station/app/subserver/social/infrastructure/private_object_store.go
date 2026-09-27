@@ -6,12 +6,15 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
+	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
+	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 	"gorm.io/gorm"
@@ -1584,15 +1587,17 @@ func authorizeCurrentPrivateObjectResource(
 	}
 	var comment dbmodel.SocialPrivateContentComment
 	if err := tx.Where(
-		"content_id = ? AND deleted_at IS NULL",
+		"content_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
 		contentID,
+		privateContentLifecycleActive,
 	).First(&comment).Error; err != nil {
 		return ErrPrivateContentNotFound
 	}
 	var parent dbmodel.SocialPrivateContentPost
 	if err := tx.Where(
-		"post_id = ? AND deleted_at IS NULL",
+		"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
 		comment.PostID,
+		privateContentLifecycleActive,
 	).First(&parent).Error; err != nil {
 		return ErrPrivateContentNotFound
 	}
@@ -1609,7 +1614,7 @@ func authorizeCurrentPrivateObjectResource(
 	); err != nil {
 		return err
 	}
-	return authorizePrivateRelationship(
+	return authorizePrivateBlockBoundary(
 		tx,
 		comment.AuthorPTID,
 		viewerPTID,
@@ -1624,6 +1629,13 @@ func authorizePrivatePostViewer(
 	if viewerPTID == post.AuthorPTID {
 		return nil
 	}
+	var snapshot dbmodel.SocialPrivateAudienceSnapshot
+	if err := tx.Where(
+		"snapshot_id = ?",
+		post.AudienceSnapshotID,
+	).First(&snapshot).Error; err != nil {
+		return ErrPrivateContentNotFound
+	}
 	if err := requirePrivateSnapshotGrant(
 		tx,
 		post.AudienceSnapshotID,
@@ -1631,27 +1643,148 @@ func authorizePrivatePostViewer(
 	); err != nil {
 		return err
 	}
-	return authorizePrivateRelationship(tx, post.AuthorPTID, viewerPTID)
+	audience, err := loadPrivatePostAudience(tx, post, snapshot)
+	if err != nil {
+		return err
+	}
+	return authorizePrivateCurrentAudience(
+		tx,
+		snapshot,
+		audience,
+		post.AuthorPTID,
+		viewerPTID,
+	)
 }
 
-func authorizePrivateRelationship(
+func authorizePrivateCurrentAudience(
+	tx *gorm.DB,
+	snapshot dbmodel.SocialPrivateAudienceSnapshot,
+	audience *actormodel.Audience,
+	ownerPTID string,
+	viewerPTID string,
+) error {
+	if audience == nil ||
+		audience.GetKind().String() != snapshot.AudienceKind {
+		return ErrPrivateContentNotFound
+	}
+	if err := authorizePrivateBlockBoundary(tx, ownerPTID, viewerPTID); err != nil {
+		return err
+	}
+	switch snapshot.AudienceKind {
+	case "FRIENDS":
+		var count int64
+		if err := tx.Model(&federatedRelationshipProjectionModel{}).
+			Where(
+				"owner_ptid = ? AND peer_ptid = ?",
+				ownerPTID,
+				viewerPTID,
+			).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 1 {
+			return ErrPrivateContentNotFound
+		}
+	case "FOLLOWERS":
+		return authorizePrivateFollower(tx, ownerPTID, viewerPTID)
+	case "CIRCLE":
+		targetID := audience.GetTargetId()
+		if targetID == 0 ||
+			snapshot.AudienceTargetID != strconv.FormatUint(targetID, 10) {
+			return ErrPrivateContentNotFound
+		}
+		var count int64
+		if err := tx.Table("social_circle_members AS member").
+			Joins("JOIN social_circles AS circle ON circle.id = member.circle_id").
+			Joins("JOIN touch_actor AS owner ON owner.id = circle.owner_id").
+			Where(
+				"member.circle_id = ? AND member.actor_ptid = ? AND circle.deleted_at IS NULL AND owner.ptid = ?",
+				targetID,
+				viewerPTID,
+				ownerPTID,
+			).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 1 {
+			return ErrPrivateContentNotFound
+		}
+	case "GROUP":
+		return ErrPrivateContentNotFound
+	case "CUSTOM_ALLOW", "CUSTOM_DENY":
+		if audience.GetKind() == actormodel.Audience_CUSTOM_DENY &&
+			audience.GetBaseKind() == actormodel.Audience_FOLLOWERS {
+			return authorizePrivateFollower(tx, ownerPTID, viewerPTID)
+		}
+	default:
+		return ErrPrivateContentNotFound
+	}
+	return nil
+}
+
+func loadPrivatePostAudience(
+	tx *gorm.DB,
+	post dbmodel.SocialPrivateContentPost,
+	snapshot dbmodel.SocialPrivateAudienceSnapshot,
+) (*actormodel.Audience, error) {
+	var model dbmodel.SocialPrivateContentPlan
+	if err := tx.Select(
+		"plan_id",
+		"audience_bytes",
+		"audience_sha256",
+		"subtype_prepare_authority_bytes",
+		"subtype_prepare_authority_sha256",
+	).Where(
+		"content_id = ? AND generation = ?",
+		post.ContentID,
+		post.Generation,
+	).First(&model).Error; err != nil {
+		return nil, ErrPrivateContentNotFound
+	}
+	binding := PrivatePrepareBinding{
+		AudienceBytes:                cloneBytes(model.AudienceBytes),
+		AudienceSHA256:               cloneBytes(model.AudienceSHA256),
+		SubtypePrepareAuthorityBytes: cloneBytes(model.SubtypePrepareAuthorityBytes),
+		SubtypePrepareAuthoritySHA256: cloneBytes(
+			model.SubtypePrepareAuthoritySHA256,
+		),
+	}
+	if err := validatePrepareBinding(binding); err != nil {
+		return nil, ErrPrivateContentNotFound
+	}
+	audience := &actormodel.Audience{}
+	if err := proto.Unmarshal(binding.AudienceBytes, audience); err != nil ||
+		socialdomain.ValidateAudience(audience) != nil ||
+		audience.GetKind().String() != snapshot.AudienceKind {
+		return nil, ErrPrivateContentNotFound
+	}
+	return audience, nil
+}
+
+func authorizePrivateFollower(
 	tx *gorm.DB,
 	ownerPTID string,
 	viewerPTID string,
 ) error {
-	var relationshipCount int64
-	if err := tx.Model(&federatedRelationshipProjectionModel{}).
-		Where(
-			"owner_ptid = ? AND peer_ptid = ?",
-			ownerPTID,
-			viewerPTID,
-		).
-		Count(&relationshipCount).Error; err != nil {
+	var count int64
+	if err := tx.Table("follows AS follow").
+		Joins("JOIN touch_actor AS follower ON follower.id = follow.follower_id").
+		Joins("JOIN touch_actor AS owner ON owner.id = follow.following_id").
+		Where("follower.ptid = ? AND owner.ptid = ?", viewerPTID, ownerPTID).
+		Count(&count).Error; err != nil {
 		return err
 	}
-	if relationshipCount != 1 {
+	if count != 1 {
 		return ErrPrivateContentNotFound
 	}
+	return nil
+}
+
+func authorizePrivateBlockBoundary(
+	tx *gorm.DB,
+	ownerPTID string,
+	viewerPTID string,
+) error {
 	var blockCount int64
 	if err := tx.Model(&socialDirectionalRelationshipModel{}).
 		Where(

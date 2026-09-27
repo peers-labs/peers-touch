@@ -44,6 +44,8 @@ interface MutableAdmissionState {
 const account = {
   stationPeerId: 'station-a',
   actorPtid: 'ptid:alice',
+  deviceId: 'device-a',
+  lifecycleGeneration: 1,
 };
 
 let admission: MutableAdmissionState;
@@ -53,12 +55,12 @@ let releaseSession: (() => void) | null = null;
 beforeEach(() => {
   admission = activeAdmission();
   releaseSession = bindMobileSessionMutationAdmission(() => ({
-    scopeKey: 'station-a|ptid:alice',
+    scopeKey: 'station-a|ptid:alice|device-a|1',
     open: true,
     reason: 'session_active',
   }));
   release = bindMobileMutationAdmission(
-    'station-a|ptid:alice',
+    'station-a|ptid:alice|device-a|1',
     () => admission,
   );
   invokeMock.mockReset().mockResolvedValue({});

@@ -48,10 +48,17 @@ func (s *subServer) handleOffline(ctx context.Context, _ *model.PresenceOfflineR
 }
 
 func (s *subServer) handleQuery(ctx context.Context, req *model.PresenceQueryRequest) (*model.PresenceQueryResponse, error) {
-	if auth.GetSubject(ctx) == nil {
+	subject := auth.GetSubject(ctx)
+	if subject == nil {
 		return nil, server.Unauthorized("authentication required")
 	}
-	statuses, err := s.service.Query(req.ActorPtids)
+	if req == nil {
+		return nil, server.BadRequest("presence query is required")
+	}
+	if _, err := normalizePresenceQueryActors(req.ActorPtids); err != nil {
+		return nil, server.BadRequestWithCause("presence query is invalid", err)
+	}
+	statuses, err := s.query.Query(ctx, subject.ID, req.ActorPtids)
 	if err != nil {
 		return nil, server.InternalErrorWithCause("failed to query presence", err)
 	}

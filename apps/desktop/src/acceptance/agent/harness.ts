@@ -14,6 +14,7 @@ import {
   AuthCommandException,
   classifyAgentTurnTerminalEvent,
   isAgentCapabilityReady,
+  isAgentLifecycleTerminalMutationError,
   projectAgentTurnOutcomeErrorPayload,
   projectAgentTypedErrorPayload,
   invokeRustProto,
@@ -57,13 +58,22 @@ import {
   ToolExecutionOwner,
 } from '../../gen/proto/domain/agent/agent_pb';
 import {
+  AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+  ArmCapabilityAcceptanceExecutorHookRequestSchema,
+  CapabilityAcceptanceRuntimeProfile,
+  CapabilityAcceptanceScenarioFamily,
   CapabilityApprovalPolicy,
   CapabilityOperationStatus,
   CapabilitySourceKind,
+  CleanupCapabilityAcceptanceScenarioRequestSchema,
   ConnectorResourceStatus,
   CreateKnowledgeResourceDescriptorRequestSchema,
+  InterruptCapabilityAcceptanceWorkerRequestSchema,
   KnowledgeResourceKind,
+  PrepareCapabilityAcceptanceScenarioRequestSchema,
+  ReleaseCapabilityAcceptanceBarrierRequestSchema,
   TombstoneKnowledgeResourceDescriptorRequestSchema,
+  WaitCapabilityAcceptanceBarrierRequestSchema,
   type AgentCapabilityBinding,
   type CapabilityOperation,
   type CapabilityManifest,
@@ -106,11 +116,12 @@ import {
   RetryEvaluationCasesResponseSchema,
   StartEvaluationRunRequestSchema,
   StartEvaluationRunResponseSchema,
+  UpdateEvaluationDatasetRequestSchema,
+  UpdateEvaluationDatasetResponseSchema,
   type EvaluationCaseAttempt,
   type EvaluationRun,
 } from '../../gen/proto/domain/agent/evaluation_pb';
 import { registerAcceptanceHarness } from '../registry';
-import { configureCurrentAcceptanceStation } from '../stationAccess';
 import {
   assertFoundationCapabilityFixtureCleanupState,
   assertFoundationCapabilityIsolationPrerequisites,
@@ -123,6 +134,21 @@ import {
   type FoundationCapabilityFixtureJournal,
   type FoundationCapabilityIsolationJournal,
 } from './capabilityIsolation';
+import {
+  cleanupHomeCommandCenterScenario,
+  prepareHomeCommandCenterScenario,
+  recoverHomeCommandCenterScenario,
+  type HomeCommandCenterScenarioInput,
+  type HomeCommandCenterScenarioState,
+} from './homeJourney';
+import {
+  runCapabilityBindingScenario as executeCapabilityBindingScenario,
+  type CapabilityBindingScenarioInput,
+} from './capabilityBindingScenario';
+import {
+  runAcceptanceCleanupSteps,
+  type AcceptanceCleanupFailure,
+} from './cleanup';
 
 interface LoginInput {
   account: string;
@@ -394,11 +420,6 @@ let foundationF12MessageListDebugScope: {
   sampleId: string;
   scenarioKey: string;
 } | null = null;
-let foundationApprovalExpiryCleanupDebugScope: {
-  platform: string;
-  sampleId: string;
-} | null = null;
-
 function observedFoundationF06Handoffs(): FoundationF06Handoff[] {
   const byScenario = new Map(
     Object.entries(readFoundationF06Handoffs()),
@@ -1078,6 +1099,7 @@ function observedTurnId(
 }
 
 function observedErrorCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error ?? '');
   if (error && typeof error === 'object') {
     const details = (error as { details?: Record<string, unknown> }).details;
     const serializedDetails = JSON.stringify(details ?? {});
@@ -1096,6 +1118,13 @@ function observedErrorCode(error: unknown): string {
     ) {
       return 'VERSION_CONFLICT';
     }
+    if (
+      serializedDetails.includes('CONTEXT_ATTACHMENT_REJECTED')
+      || message.includes('CONTEXT_ATTACHMENT_REJECTED')
+      || message.includes('agent.errors.attachmentRejected')
+    ) {
+      return 'CONTEXT_ATTACHMENT_REJECTED';
+    }
     const structuredCode = (error as { code?: string }).code;
     if (typeof structuredCode === 'string' && structuredCode) {
       return structuredCode;
@@ -1103,11 +1132,7 @@ function observedErrorCode(error: unknown): string {
     if (serializedDetails.includes('AGENT_4001')) {
       return 'INVALID_REQUEST';
     }
-    if (serializedDetails.includes('CONTEXT_ATTACHMENT_REJECTED')) {
-      return 'CONTEXT_ATTACHMENT_REJECTED';
-    }
   }
-  const message = error instanceof Error ? error.message : String(error ?? '');
   if (message.includes('ADMISSION_QUEUE_FULL') || message.includes('queueFull')) {
     return 'ADMISSION_QUEUE_FULL';
   }
@@ -1187,30 +1212,9 @@ async function observeFoundationActiveDependency(
 async function deleteFoundationConversation(
   conversationId: string,
 ): Promise<string> {
-  // #region debug-point B-D:approval-expiry-delete
-  const debugScope = foundationApprovalExpiryCleanupDebugScope;
-  const conversationIdHash = debugScope
-    ? sha256Hex(conversationId)
-    : Promise.resolve('');
-  // #endregion
   for (let attempt = 0; attempt < 12; attempt += 1) {
     try {
       const conversation = await api.getAgentConversation(conversationId);
-      // #region debug-point B-C:approval-expiry-delete-read
-      if (debugScope) {
-        void conversationIdHash.then((resolvedConversationIdHash) =>
-          reportFoundationApprovalExpiryCleanupDebug(
-            'B-C',
-            'delete-read',
-            {
-              attempt,
-              conversationIdHash: resolvedConversationIdHash,
-              conversationStatus: conversation.status,
-              conversationVersion: conversation.version,
-            },
-          ));
-      }
-      // #endregion
       if (conversation.status === 'deleted') {
         return 'CONVERSATION_DELETED';
       }
@@ -1219,36 +1223,9 @@ async function deleteFoundationConversation(
         conversation.version,
         true,
       );
-      // #region debug-point B-C:approval-expiry-delete-complete
-      if (debugScope) {
-        void conversationIdHash.then((resolvedConversationIdHash) =>
-          reportFoundationApprovalExpiryCleanupDebug(
-            'B-C',
-            'delete-complete',
-            {
-              attempt,
-              conversationIdHash: resolvedConversationIdHash,
-            },
-          ));
-      }
-      // #endregion
       return '';
     } catch (error) {
       const code = observedErrorCode(error);
-      // #region debug-point B-C-D:approval-expiry-delete-error
-      if (debugScope) {
-        void conversationIdHash.then((resolvedConversationIdHash) =>
-          reportFoundationApprovalExpiryCleanupDebug(
-            'B-C-D',
-            'delete-attempt-error',
-            {
-              attempt,
-              conversationIdHash: resolvedConversationIdHash,
-              error: foundationApprovalExpiryCleanupErrorDebug(error),
-            },
-          ));
-      }
-      // #endregion
       if (isFoundationResourceNotFound(error)) return 'AGENT_4004';
       if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
         try {
@@ -1260,14 +1237,6 @@ async function deleteFoundationConversation(
       await new Promise((resolve) => window.setTimeout(resolve, 250));
     }
   }
-  // #region debug-point C:approval-expiry-delete-exhausted
-  if (debugScope) {
-    void conversationIdHash.then((resolvedConversationIdHash) =>
-      reportFoundationApprovalExpiryCleanupDebug('C', 'delete-exhausted', {
-        conversationIdHash: resolvedConversationIdHash,
-      }));
-  }
-  // #endregion
   throw new Error('agent.acceptance.foundationConversationDeleteBlocked');
 }
 
@@ -1275,58 +1244,12 @@ async function cleanupFoundationToolConversation(
   conversationId: string,
   turnId: string,
 ): Promise<void> {
-  // #region debug-point B-D:approval-expiry-cleanup-start
-  const debugScope = foundationApprovalExpiryCleanupDebugScope;
-  const identityHashes = debugScope
-    ? Promise.all([
-        sha256Hex(conversationId),
-        turnId ? sha256Hex(turnId) : Promise.resolve(''),
-      ])
-    : Promise.resolve(['', '']);
-  if (debugScope) {
-    void identityHashes.then(([conversationIdHash, turnIdHash]) =>
-      reportFoundationApprovalExpiryCleanupDebug('B-D', 'cleanup-start', {
-        conversationIdHash,
-        platform: debugScope.platform,
-        sampleId: debugScope.sampleId,
-        turnIdHash,
-      }));
-  }
-  // #endregion
   let cancellationError: unknown = null;
   if (turnId) {
     try {
-      const cancellation = await api.cancelAgentTurn(turnId);
-      // #region debug-point B:approval-expiry-cancel-complete
-      if (debugScope) {
-        void identityHashes.then(([conversationIdHash, turnIdHash]) =>
-          reportFoundationApprovalExpiryCleanupDebug(
-            'B',
-            'cancel-complete',
-            {
-              cancellationStatus: String(cancellation.status ?? ''),
-              conversationIdHash,
-              turnIdHash,
-            },
-          ));
-      }
-      // #endregion
+      await api.cancelAgentTurn(turnId);
     } catch (error) {
       cancellationError = error;
-      // #region debug-point B-D:approval-expiry-cancel-error
-      if (debugScope) {
-        void identityHashes.then(([conversationIdHash, turnIdHash]) =>
-          reportFoundationApprovalExpiryCleanupDebug(
-            'B-D',
-            'cancel-error',
-            {
-              conversationIdHash,
-              error: foundationApprovalExpiryCleanupErrorDebug(error),
-              turnIdHash,
-            },
-          ));
-      }
-      // #endregion
     }
   }
 
@@ -1347,40 +1270,7 @@ async function cleanupFoundationToolConversation(
         'agent.acceptance.foundationCleanupConversationNotDeleted',
       );
     }
-    // #region debug-point B-C:approval-expiry-cleanup-complete
-    if (debugScope) {
-      void identityHashes.then(([conversationIdHash, turnIdHash]) =>
-        reportFoundationApprovalExpiryCleanupDebug(
-          'B-C',
-          'cleanup-complete',
-          {
-            cancellationError:
-              foundationApprovalExpiryCleanupErrorDebug(cancellationError),
-            conversationIdHash,
-            deletionErrorCode,
-            turnIdHash,
-          },
-        ));
-    }
-    // #endregion
   } catch (cleanupError) {
-    // #region debug-point B-C-D:approval-expiry-cleanup-error
-    if (debugScope) {
-      void identityHashes.then(([conversationIdHash, turnIdHash]) =>
-        reportFoundationApprovalExpiryCleanupDebug(
-          'B-C-D',
-          'cleanup-error',
-          {
-            cancellationError:
-              foundationApprovalExpiryCleanupErrorDebug(cancellationError),
-            cleanupError:
-              foundationApprovalExpiryCleanupErrorDebug(cleanupError),
-            conversationIdHash,
-            turnIdHash,
-          },
-        ));
-    }
-    // #endregion
     throw Object.assign(
       new Error('agent.acceptance.foundationToolConversationCleanupFailed'),
       {
@@ -1705,7 +1595,7 @@ async function capabilitySessionEvidence() {
   };
 }
 
-async function waitForCapabilitySessionEvidence(timeoutMs = 60_000) {
+async function waitForCapabilitySessionEvidence(timeoutMs = 180_000) {
   const start = Date.now();
   let latest = await capabilitySessionEvidence();
   while (
@@ -1746,7 +1636,6 @@ function foundationDomSnapshot() {
 }
 
 async function foundationConversationReadback(conversationId: string) {
-  // #region debug-point A-E:f12-message-list-boundary
   const debugScope = foundationF12MessageListDebugScope;
   const readbackSequence = debugScope
     ? ++debugScope.readbackSequence
@@ -1830,7 +1719,6 @@ async function foundationConversationReadback(conversationId: string) {
     observedConversationRequest,
     observedMessagesRequest,
   ]);
-  // #endregion
   return {
     conversation,
     messages: result.messages.map((message) => ({
@@ -1851,6 +1739,42 @@ async function foundationConversationReadback(conversationId: string) {
     nextCursor: result.next_cursor,
     hasMore: result.has_more,
   };
+}
+
+async function waitForFoundationCanonicalAssistantReadback(input: {
+  conversationId: string;
+  turnId: string;
+  expectedContent: string;
+  timeoutMs?: number;
+}) {
+  const startedAt = Date.now();
+  const timeoutMs = input.timeoutMs ?? 30_000;
+  let lastError: unknown = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const readback = await foundationConversationReadback(
+        input.conversationId,
+      );
+      const matching = readback.messages.filter(
+        (message) => (
+          message.role === 'assistant'
+          && message.turnId === input.turnId
+          && String(message.status).toLowerCase() === 'completed'
+          && message.content.trim() === input.expectedContent
+        ),
+      );
+      if (matching.length === 1) return readback;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw Object.assign(
+    new Error(
+      'timed out waiting for: canonical Station assistant response',
+    ),
+    { cause: lastError },
+  );
 }
 
 async function foundationTurnEvidence(
@@ -1986,6 +1910,8 @@ async function waitFor(
 const FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS = 180_000;
 const FOUNDATION_TOOL_RECONCILE_TIMEOUT_MS = 90_000;
 const FOUNDATION_LOOP_MAX_TOOL_CALLS = 2;
+const FOUNDATION_LOOP_PROVIDER_MARKER =
+  'PT_ACCEPTANCE_REPEAT_TOOL_UNTIL_BUDGET';
 
 interface FoundationToolFixture {
   manifest: CapabilityManifest;
@@ -2032,6 +1958,16 @@ const foundationLeaseExpiredScenarios =
 const foundationInvalidResourceReferenceScenarios =
   new Map<string, { conversationId: string; turnId: string }>();
 
+interface FoundationPermissionDeniedScenario {
+  agentName: string;
+  conversationId: string;
+  priorSurface: 'chat' | 'profile';
+  turnId: string;
+}
+
+const foundationPermissionDeniedScenarios =
+  new Map<string, FoundationPermissionDeniedScenario>();
+
 interface FoundationForbiddenActorOwnerScenario {
   scenarioKey: string;
   agentId: string;
@@ -2075,6 +2011,7 @@ interface McpLifecycleDevelopmentInput {
   sampleId: string;
   serverName: string;
   providerBaseUrl?: string;
+  providerApiKey?: string;
   command?: string;
   args?: string[];
   env?: Record<string, string>;
@@ -2083,10 +2020,35 @@ interface McpLifecycleDevelopmentInput {
   state?: McpLifecycleDevelopmentState;
 }
 
+interface McpLifecycleScenarioInput {
+  runId: string;
+  scenarioExecutionId: string;
+  cell: string;
+  platform: 'desktop_app' | 'browser';
+  locale: 'en' | 'zh-CN';
+  ordering: 'single' | 'A' | 'B';
+  sampleId: string;
+  serverName: string;
+  providerBaseUrl?: string;
+  providerApiKey?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  toolName?: string;
+  expectedResult?: string;
+}
+
 interface ConnectorInvocationDevelopmentInput {
   sampleId: string;
   providerBaseUrl: string;
+  providerApiKey: string;
   connectorId: string;
+  runId?: string;
+  scenarioExecutionId?: string;
+  cell?: string;
+  platform?: 'desktop_app' | 'browser';
+  locale?: 'en' | 'zh-CN';
+  ordering?: 'single' | 'A' | 'B';
 }
 
 type EvaluationDevelopmentPhase =
@@ -2121,7 +2083,45 @@ interface EvaluationDevelopmentInput {
   phase: EvaluationDevelopmentPhase;
   sampleId: string;
   providerBaseUrl?: string;
+  providerApiKey?: string;
   state?: EvaluationDevelopmentState;
+}
+
+type EvaluationScenarioPhase = 'execute' | 'prepare' | 'recover' | 'cleanup';
+
+interface EvaluationScenarioState {
+  ownerActorId: string;
+  agentId: string;
+  agentName: string;
+  providerId: string;
+  modelId: string;
+  benchmarkId: string;
+  datasetId: string;
+  datasetRevision: string;
+  caseIds: string[];
+  runIds: string[];
+  evidenceRunId: string;
+  restartRunId: string;
+  readinessSnapshotId: string;
+  scenarioHandle: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+}
+
+interface EvaluationScenarioInput {
+  phase: EvaluationScenarioPhase;
+  runId: string;
+  scenarioExecutionId: string;
+  cell: string;
+  platform: 'desktop_app' | 'browser';
+  locale: 'en' | 'zh-CN';
+  ordering: 'single' | 'A' | 'B';
+  sampleId: string;
+  providerBaseUrl: string;
+  providerApiKey: string;
+  state?: EvaluationScenarioState;
+  stationRestart?: Record<string, unknown>;
+  staleScenarioExpected?: boolean;
 }
 
 function toolStatusName(value: unknown): string {
@@ -2928,7 +2928,7 @@ function foundationToolTurnContent(
 ): string {
   const argumentsJSON = JSON.stringify(fixture.arguments);
   return repeatUntilStopped
-    ? `Call ${fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
+    ? `[${FOUNDATION_LOOP_PROVIDER_MARKER}] Call ${fixture.toolName} with ${argumentsJSON}. After every tool result, call the same tool again with the same arguments. Do not stop voluntarily; let the runtime tool-loop budget stop the turn.`
     : `Call ${fixture.toolName} exactly once with ${argumentsJSON}. After the tool result, answer with one short sentence and do not call another tool.`;
 }
 
@@ -2997,6 +2997,16 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
   const startedAt = performance.now();
 
   try {
+    useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector('[data-pt-agent-composer]')
+          ?.getClientRects().length,
+      ),
+      'invalid-resource Agent chat surface',
+      30_000,
+    );
     const invalidResourceStreamId = crypto.randomUUID();
     currentBinding = await updateFoundationToolPolicy(
       agent,
@@ -3131,6 +3141,14 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
     if (!assistant) {
       throw new Error('agent.acceptance.invalidResourceMessageMissing');
     }
+    if (
+      useChatStore.getState().currentSessionKey !== turn.conversationId
+    ) {
+      throw new Error(
+        'agent.acceptance.invalidResourceReceiverSessionChanged',
+      );
+    }
+    await useChatStore.getState().syncMessages();
     const persistedOutcome = evidenceRecord(
       JSON.parse(String(assistant.errorJson || '{}')),
       'invalidResourcePersistedOutcome',
@@ -3139,21 +3157,85 @@ async function runDevelopmentInvalidResourceReferenceScenario(input: {
       persistedOutcome.details,
       'invalidResourcePersistedDetails',
     );
-    const errorSurface = Array.from(
+    const findVisibleInvalidResourceErrorSurface = () => Array.from(
       document.querySelectorAll<HTMLElement>(errorSurfaceSelector),
     ).reverse().find((element) => element.getClientRects().length > 0);
+    let errorSurface = findVisibleInvalidResourceErrorSurface();
     const errorTextSelector =
       '[data-pt-agent-message-error-text='
       + '"agent.errors.invalidResourceReference"]';
+    // #region debug-point A-D:foundation-invalid-resource-toggle
+    const invalidResourceSurfaceSnapshot = () => {
+      const freshSurface = Array.from(
+        document.querySelectorAll<HTMLElement>(errorSurfaceSelector),
+      ).reverse().find((element) => element.getClientRects().length > 0);
+      return {
+        capturedConnected: errorSurface?.isConnected ?? false,
+        capturedErrorTextPresent:
+          Boolean(errorSurface?.querySelector(errorTextSelector)),
+        capturedTogglePresent: Boolean(errorSurface?.querySelector(
+          '[data-pt-agent-message-error-toggle]',
+        )),
+        freshErrorTextPresent:
+          Boolean(freshSurface?.querySelector(errorTextSelector)),
+        freshSurfacePresent: Boolean(freshSurface),
+        sameSurface: freshSurface === errorSurface,
+        locale: i18n.language,
+      };
+    };
+    await reportFoundationInvalidResourceToggleDebug(
+      'A-D',
+      'before-error-toggle',
+      invalidResourceSurfaceSnapshot(),
+    );
+    // #endregion
     if (!errorSurface?.querySelector(errorTextSelector)) {
-      errorSurface?.querySelector<HTMLElement>(
-        '[data-pt-agent-message-error-toggle]',
-      )?.click();
       await waitFor(
-        () => Boolean(errorSurface?.querySelector(errorTextSelector)),
-        'localized invalid-resource text',
+        () => {
+          const currentSurface = findVisibleInvalidResourceErrorSurface();
+          return Boolean(
+            currentSurface?.querySelector(errorTextSelector)
+            || currentSurface?.querySelector(
+              '[data-pt-agent-message-error-toggle]',
+            ),
+          );
+        },
+        'invalid-resource current error surface',
         10_000,
       );
+      errorSurface = findVisibleInvalidResourceErrorSurface();
+      if (!errorSurface?.querySelector(errorTextSelector)) {
+        errorSurface?.querySelector<HTMLElement>(
+          '[data-pt-agent-message-error-toggle]',
+        )?.click();
+      }
+      // #region debug-point A-D:foundation-invalid-resource-toggle
+      await reportFoundationInvalidResourceToggleDebug(
+        'A-D',
+        'after-error-toggle',
+        invalidResourceSurfaceSnapshot(),
+      );
+      // #endregion
+      try {
+        await waitFor(
+          () => Boolean(
+            findVisibleInvalidResourceErrorSurface()
+              ?.querySelector(errorTextSelector),
+          ),
+          'localized invalid-resource text',
+          10_000,
+        );
+      } catch (error) {
+        // #region debug-point A-D:foundation-invalid-resource-toggle
+        await reportFoundationInvalidResourceToggleDebug(
+          'A-D',
+          'error-toggle-timeout',
+          invalidResourceSurfaceSnapshot(),
+        );
+        // #endregion
+        throw error;
+      }
+      errorSurface = findVisibleInvalidResourceErrorSurface();
     }
     const errorText = errorSurface?.querySelector<HTMLElement>(
       errorTextSelector,
@@ -4227,6 +4309,31 @@ async function resolveFoundationToolTurnSession(
   };
 }
 
+async function refreshGovernedToolCapabilitySession(
+  platform: 'desktop_app' | 'browser',
+): Promise<void> {
+  if (platform === 'browser') {
+    await api.closeBrowserCapabilitySession();
+    await api.openBrowserCapabilitySession();
+  } else {
+    await api.stopAgentClientExecutorSupervisor();
+    await api.startAgentClientExecutorSupervisor();
+  }
+  await waitForCapabilitySessionEvidence();
+}
+
+async function refreshConnectorCapabilitySession(
+  platform: 'desktop_app' | 'browser',
+  agentId: string,
+): Promise<FoundationToolTurnSession> {
+  await refreshGovernedToolCapabilitySession(platform);
+  const session = await resolveFoundationToolTurnSession();
+  await useAgentCapabilityStore.getState().loadAgent(agentId, {
+    clientCapabilitySessionId: session.capabilitySessionId,
+  });
+  return session;
+}
+
 function withoutDiagnosticGenerationTime(
   replay: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -4285,6 +4392,7 @@ function diagnosticToolCase(
     ),
     lineage: {
       toolCallId: stringField('toolCallId', 'tool_call_id'),
+      attemptId: stringField('attemptId', 'attempt_id'),
       toolBatchId: stringField('toolBatchId', 'tool_batch_id'),
       manifestId: stringField('manifestId', 'manifest_id'),
       manifestVersion: stringField('manifestVersion', 'manifest_version'),
@@ -4304,10 +4412,40 @@ function diagnosticToolCase(
         'executionClaimId',
         'execution_claim_id',
       ),
+      executorLeaseId: stringField(
+        'executorLeaseId',
+        'executor_lease_id',
+      ),
+      capabilitySessionId: stringField(
+        'capabilitySessionId',
+        'capability_session_id',
+      ),
+      targetDeviceId: stringField(
+        'targetDeviceId',
+        'target_device_id',
+      ),
       fencingToken: numberField('fencingToken', 'fencing_token'),
       sideEffectReceiptId: stringField(
         'sideEffectReceiptId',
         'side_effect_receipt_id',
+      ),
+      terminalReceiptPayloadHash: stringField(
+        'terminalReceiptPayloadHash',
+        'terminal_receipt_payload_hash',
+      ),
+      stationReceiptStatus: stringField(
+        'stationReceiptStatus',
+        'station_receipt_status',
+      ),
+      stationEffectStartedAt: evidenceField(
+        fact,
+        'stationEffectStartedAt',
+        'station_effect_started_at',
+      ),
+      stationReceiptCommittedAt: evidenceField(
+        fact,
+        'stationReceiptCommittedAt',
+        'station_receipt_committed_at',
       ),
       resultId: stringField('resultId', 'result_id'),
       continuationId: stringField('continuationId', 'continuation_id'),
@@ -4326,6 +4464,14 @@ async function foundationToolSideEffectCount(
   platform: string,
   fact: Record<string, unknown>,
 ): Promise<number> {
+  const executionAttemptCount = Number(
+    evidenceField(
+      fact,
+      'executionAttemptCount',
+      'execution_attempt_count',
+    ) ?? 0,
+  );
+  if (executionAttemptCount === 0) return 0;
   const toolCallId = String(
     evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '',
   );
@@ -4333,13 +4479,7 @@ async function foundationToolSideEffectCount(
     throw new Error('agent.acceptance.foundationToolCallIdMissing');
   }
   if (platform === 'browser') {
-    return Number(
-      evidenceField(
-        fact,
-        'executionAttemptCount',
-        'execution_attempt_count',
-      ) ?? 0,
-    );
+    return executionAttemptCount;
   }
   const startedAt = Date.now();
   while (Date.now() - startedAt < 30_000) {
@@ -4365,6 +4505,32 @@ function diagnosticReplayTerminal(replay: Record<string, unknown>): boolean {
     AgentTurnStatus.INTERRUPTED,
     AgentTurnStatus.REJECTED,
   ].includes(Number(replay.status) as AgentTurnStatus);
+}
+
+function foundationLoopBudgetReached(
+  facts: Record<string, unknown>[],
+  replay: Record<string, unknown>,
+): boolean {
+  const terminalReason = String(
+    evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+  );
+  const reached = facts.length > 0
+    && facts.every(
+      (fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED,
+    )
+    && Number(replay.status) === AgentTurnStatus.FAILED
+    && terminalReason === 'max_tool_calls_exhausted';
+  if (!reached && diagnosticReplayTerminal(replay)) {
+    const toolStatuses = facts.map((fact) =>
+      toolStatusName(evidenceField(fact, 'status', 'status')));
+    throw new Error(
+      `agent.acceptance.foundationToolLoopUnexpectedTerminal:`
+      + `status=${String(replay.status)};`
+      + `reason=${terminalReason || 'missing'};`
+      + `tools=${toolStatuses.join(',') || 'missing'}`,
+    );
+  }
+  return reached;
 }
 
 async function runFoundationToolLoopBudget(input: {
@@ -4451,13 +4617,7 @@ async function runFoundationToolLoopBudget(input: {
   try {
     const source = await waitForFoundationToolFacts(
       turnId,
-      (facts, replay) =>
-        facts.length > 0
-        && facts.every((fact) => Number(fact.status) === ToolCallStatus.SUCCEEDED)
-        && Number(replay.status) === AgentTurnStatus.FAILED
-        && String(
-          evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
-        ) === 'max_tool_calls_exhausted',
+      foundationLoopBudgetReached,
       'Foundation ToolCall loop budget',
       600_000,
     );
@@ -5435,7 +5595,6 @@ async function prepareFoundationLeaseExpiredScenario(input: {
   return prepared;
 }
 
-// #region debug-point A-E:lease-approval-stall
 async function reportFoundationLeaseApprovalStallDebug(
   hypothesisId: string,
   stage: string,
@@ -5472,7 +5631,6 @@ async function reportFoundationLeaseApprovalStallDebug(
     }).catch(() => undefined);
   }
 }
-// #endregion
 
 function foundationLeaseObservedEventSummary(
   scenario: FoundationExecutorUnavailableScenario,
@@ -5614,7 +5772,6 @@ async function dispatchFoundationLeaseExpiredScenario(
   if (!approve || approve.disabled) {
     throw new Error('agent.acceptance.foundationToolApproveMissing');
   }
-  // #region debug-point A-C-E:lease-approval-before-click
   await reportFoundationLeaseApprovalStallDebug('A-C-E', 'before-click', {
     scenarioKey,
     turnId: scenario.turn.turnId,
@@ -5625,14 +5782,11 @@ async function dispatchFoundationLeaseExpiredScenario(
     buttonDisabled: approve.disabled,
     projection: toolRuntime.getProjection(scenario.toolCallId) ?? null,
   });
-  // #endregion
   approve.click();
-  // #region debug-point A-B:lease-approval-after-click
   void reportFoundationLeaseApprovalStallDebug('A-B', 'after-click', {
     buttonDisabled: approve.disabled,
     projection: toolRuntime.getProjection(scenario.toolCallId) ?? null,
   });
-  // #endregion
   let previousFactSnapshot = '';
   try {
     const dispatched = await waitForFoundationToolFacts(
@@ -5678,13 +5832,11 @@ async function dispatchFoundationLeaseExpiredScenario(
         const serialized = stableJson(snapshot);
         if (serialized !== previousFactSnapshot) {
           previousFactSnapshot = serialized;
-          // #region debug-point B-D-E:lease-approval-fact-change
           void reportFoundationLeaseApprovalStallDebug(
             'B-D-E',
             'fact-change',
             snapshot,
           );
-          // #endregion
         }
         return (
           facts.length === 1
@@ -5694,13 +5846,11 @@ async function dispatchFoundationLeaseExpiredScenario(
       },
       'lease-expired Station dispatch',
     );
-    // #region debug-point D:lease-approval-dispatch-observed
     await reportFoundationLeaseApprovalStallDebug(
       'D',
       'dispatch-observed',
       { facts: dispatched.facts },
     );
-    // #endregion
     return {
       scenarioKey,
       conversationId: scenario.turn.conversationId,
@@ -5720,7 +5870,6 @@ async function dispatchFoundationLeaseExpiredScenario(
     } catch {
       // Preserve the primary timeout; the missing final readback is diagnostic.
     }
-    // #region debug-point A-E:lease-approval-timeout
     await reportFoundationLeaseApprovalStallDebug('A-B-C-D-E', 'timeout', {
       error: error instanceof Error ? error.message : String(error),
       projection: projection ?? null,
@@ -5728,7 +5877,6 @@ async function dispatchFoundationLeaseExpiredScenario(
       replay,
       facts,
     });
-    // #endregion
     throw error;
   }
 }
@@ -5798,7 +5946,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
     throw new Error('agent.acceptance.foundationLeaseOutcomeMissing');
   }
 
-  // #region debug-point F-I:lease-expired-complete-entry
   await reportFoundationLeaseApprovalStallDebug('F-G-H-I', 'complete-entry', {
     sourceHttpStatus:
       evidenceField(sourceStation, 'httpStatus', 'http_status') ?? null,
@@ -5810,7 +5957,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
     observedEvents: foundationLeaseObservedEventSummary(scenario),
     messages: foundationLeaseMessageDebugSummary(scenario.turn.turnId),
   });
-  // #endregion
   try {
     await waitFor(
       () => useChatStore.getState().messages.some((message) => (
@@ -5832,7 +5978,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
     } catch {
       // Preserve the projection timeout as the primary failure.
     }
-    // #region debug-point F-I:lease-expired-receiver-timeout
     await reportFoundationLeaseApprovalStallDebug(
       'F-G-H-I',
       'receiver-timeout',
@@ -5846,7 +5991,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
         factStatuses: facts.map(diagnosticToolPersistenceStatus),
       },
     );
-    // #endregion
     throw error;
   }
   const receiverMessage = useChatStore.getState().messages.find(
@@ -5876,7 +6020,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
     };
   };
   let surface = readRecoverySurface();
-  // #region debug-point N-Q:lease-expired-recovery-surface
   await reportFoundationLeaseApprovalStallDebug('N-O-P-Q', 'surface-probe', {
     currentSessionMatches:
       useChatStore.getState().currentSessionKey === scenario.turn.conversationId,
@@ -5897,7 +6040,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
       '[data-pt-agent-message-error-recovery="reconcile"]',
     ).length,
   });
-  // #endregion
   try {
     await waitFor(
       () => {
@@ -5922,7 +6064,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
     const rendered = Array.from(
       document.querySelectorAll<HTMLElement>(messageSelector),
     );
-    // #region debug-point R-U:lease-expired-recovery-surface-timeout
     await reportFoundationLeaseApprovalStallDebug(
       'R-S-T-U',
       'surface-timeout',
@@ -5964,14 +6105,12 @@ async function completeFoundationLeaseExpiredScenario(input: {
         })),
       },
     );
-    // #endregion
     throw error;
   }
   const { messageElement, errorElement, recovery } = surface;
   if (!messageElement || !errorElement || !recovery) {
     throw new Error('agent.acceptance.foundationLeaseRecoverySurfaceMissing');
   }
-  // #region debug-point N-Q:lease-expired-recovery-surface-ready
   await reportFoundationLeaseApprovalStallDebug('N-O-P-Q', 'surface-ready', {
     currentSessionMatches:
       useChatStore.getState().currentSessionKey === scenario.turn.conversationId,
@@ -5979,7 +6118,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
     errorElementPresent: true,
     recoveryPresent: true,
   });
-  // #endregion
 
   const currentSessionHash = String(
     evidenceField(
@@ -6092,7 +6230,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
   scenario.bindingRestored = bindingRestored;
   const sourceDelivery = runtimeEvent.sourceDelivery;
   const streamId = scenario.turn.streamId;
-  // #region debug-point Z:lease-runtime-identity
   const sourcePayload = sourceDelivery
     ? normalizeProjectedStationPayload(sourceDelivery.rawPayload.data)
     : null;
@@ -6115,7 +6252,6 @@ async function completeFoundationLeaseExpiredScenario(input: {
       sourcePayload === null ? null : await sha256Hex(stableJson(sourcePayload)),
     runtimePayloadHash: await sha256Hex(stableJson(runtimePayload)),
   });
-  // #endregion
   if (
     !sourceDelivery
     || !streamId
@@ -6367,12 +6503,12 @@ async function runFoundationApprovalDeniedScenario(input: {
       'approval-observed',
       await approvalProjectionDiagnostics(),
     );
+    const findToolCallElement = () => Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+    ).find((element) => element.dataset.ptAgentToolCall === toolCallId);
     try {
       await waitFor(
-        () => Array.from(
-          document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
-        ).some((element) =>
-          element.dataset.ptAgentToolCall === toolCallId),
+        () => Boolean(findToolCallElement()),
         'approval-denied ToolCall receiver',
         30_000,
       );
@@ -6384,9 +6520,7 @@ async function runFoundationApprovalDeniedScenario(input: {
       );
       throw error;
     }
-    const toolCallElement = Array.from(
-      document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
-    ).find((element) => element.dataset.ptAgentToolCall === toolCallId);
+    const toolCallElement = findToolCallElement();
     if (!toolCallElement) {
       throw new Error('agent.acceptance.foundationToolCallSurfaceMissing');
     }
@@ -6476,7 +6610,7 @@ async function runFoundationApprovalDeniedScenario(input: {
     );
     try {
       await waitFor(
-        () => Boolean(toolCallElement.querySelector(
+        () => Boolean(findToolCallElement()?.querySelector(
           '[data-pt-agent-tool-error="agent.errors.toolApprovalDenied"]',
         )),
         'approval-denied error surface',
@@ -6506,7 +6640,7 @@ async function runFoundationApprovalDeniedScenario(input: {
       );
       throw error;
     }
-    const errorElement = toolCallElement.querySelector<HTMLElement>(
+    const errorElement = findToolCallElement()?.querySelector<HTMLElement>(
       '[data-pt-agent-tool-error="agent.errors.toolApprovalDenied"]',
     );
     const runtimeEvent = [...turn.observed.events]
@@ -6654,25 +6788,6 @@ async function runFoundationApprovalExpiredScenario(input: {
   };
   facts: Record<string, unknown>;
 }> {
-  // #region debug-point A-E:approval-expiry-scenario-entry
-  foundationApprovalExpiryCleanupDebugScope = {
-    platform: input.platform,
-    sampleId: input.sampleId,
-  };
-  const sessionState = useSessionStore.getState();
-  const actorPtid = sessionState.currentUser?.actorPtid.trim() || '';
-  void Promise.all([
-    sha256Hex(input.agent.id || input.agent.name),
-    actorPtid ? sha256Hex(actorPtid) : Promise.resolve(''),
-  ]).then(([agentIdHash, actorPtidHash]) =>
-    reportFoundationApprovalExpiryCleanupDebug('A-E', 'scenario-entry', {
-      actorPtidHash,
-      agentIdHash,
-      authenticated: sessionState.authenticated,
-      platform: input.platform,
-      sampleId: input.sampleId,
-    }));
-  // #endregion
   const fixture = await foundationToolFixture(
     input.agent.id || input.agent.name,
     input.platform,
@@ -7068,32 +7183,9 @@ async function runFoundationApprovalExpiredScenario(input: {
     };
   } catch (error) {
     operationError = error;
-    // #region debug-point E:approval-expiry-primary-error
-    void reportFoundationApprovalExpiryCleanupDebug(
-      'E',
-      'operation-error',
-      {
-        error: foundationApprovalExpiryCleanupErrorDebug(error),
-      },
-    );
-    // #endregion
   } finally {
     const cleanupErrors: unknown[] = [];
     try {
-      // #region debug-point A:approval-expiry-binding-restore
-      void reportFoundationApprovalExpiryCleanupDebug(
-        'A',
-        'binding-restore-start',
-        {
-          currentBindingPresent: Boolean(currentBinding),
-          currentBindingRevision:
-            currentBinding?.revision?.toString() ?? null,
-          originalBindingPresent: Boolean(originalBinding),
-          originalBindingRevision:
-            originalBinding?.revision?.toString() ?? null,
-        },
-      );
-      // #endregion
       if (originalBinding) {
         await updateFoundationToolPolicy(
           input.agent,
@@ -7110,23 +7202,8 @@ async function runFoundationApprovalExpiredScenario(input: {
           'acceptance_fixture_cleanup',
         );
       }
-      // #region debug-point A:approval-expiry-binding-restored
-      void reportFoundationApprovalExpiryCleanupDebug(
-        'A',
-        'binding-restore-complete',
-      );
-      // #endregion
     } catch (error) {
       cleanupErrors.push(error);
-      // #region debug-point A-D:approval-expiry-binding-error
-      void reportFoundationApprovalExpiryCleanupDebug(
-        'A-D',
-        'binding-restore-error',
-        {
-          error: foundationApprovalExpiryCleanupErrorDebug(error),
-        },
-      );
-      // #endregion
     }
     if ((operationError || cleanupErrors.length > 0) && conversationId) {
       try {
@@ -7136,31 +7213,9 @@ async function runFoundationApprovalExpiredScenario(input: {
         );
       } catch (error) {
         cleanupErrors.push(error);
-        // #region debug-point B-D:approval-expiry-conversation-cleanup-error
-        void reportFoundationApprovalExpiryCleanupDebug(
-          'B-D',
-          'conversation-cleanup-error',
-          {
-            error: foundationApprovalExpiryCleanupErrorDebug(error),
-          },
-        );
-        // #endregion
       }
     }
     if (cleanupErrors.length > 0) {
-      // #region debug-point A-E:approval-expiry-cleanup-failed
-      void reportFoundationApprovalExpiryCleanupDebug(
-        'A-E',
-        'scenario-cleanup-failed',
-        {
-          cleanupErrors: cleanupErrors.map(
-            foundationApprovalExpiryCleanupErrorDebug,
-          ),
-          primaryError:
-            foundationApprovalExpiryCleanupErrorDebug(operationError),
-        },
-      );
-      // #endregion
       throw Object.assign(
         new Error('agent.acceptance.foundationToolExpiryCleanupFailed'),
         {
@@ -7190,7 +7245,6 @@ async function runFoundationApprovalExpiredScenario(input: {
       : restoredBinding === null,
     conversationDeleted: false,
   };
-  foundationApprovalExpiryCleanupDebugScope = null;
   return result;
 }
 
@@ -7353,14 +7407,12 @@ async function runFoundationAttachmentTurn(input: {
   turnId: string;
 }> {
   const startedAt = performance.now();
-  // #region debug-point I-L:foundation-f05-turn
   void reportFoundationAttachmentTimeoutDebug('I-L', 'turn-submission-started', {
     attachmentCount: input.attachments.length,
     capabilitySessionPresent: Boolean(input.capabilitySessionId),
     providerPresent: Boolean(input.provider),
     modelPresent: Boolean(input.model),
   });
-  // #endregion
   const observed = startObservedFoundationTurn({
     conversationId: input.conversationId,
     agentId: input.agentId,
@@ -7371,7 +7423,6 @@ async function runFoundationAttachmentTurn(input: {
     thinkingMode: 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     attachments: input.attachments,
-    // #region debug-point J-K:foundation-f05-events
     onEvent: (event, events) => {
       void reportFoundationAttachmentTimeoutDebug('J-K', 'turn-event-observed', {
         eventCount: events.length,
@@ -7380,10 +7431,8 @@ async function runFoundationAttachmentTurn(input: {
         terminal: classifyAgentTurnTerminalEvent(event),
       });
     },
-    // #endregion
   });
   const result = await observed.result;
-  // #region debug-point J-K:foundation-f05-settled
   await reportFoundationAttachmentTimeoutDebug('J-K', 'turn-submission-settled', {
     elapsedMs: Math.round(performance.now() - startedAt),
     errorCode: result.error
@@ -7393,7 +7442,6 @@ async function runFoundationAttachmentTurn(input: {
     lastEventType: result.events[result.events.length - 1]?.event ?? '',
     ok: result.ok,
   });
-  // #endregion
   return {
     result,
     turnId: observedTurnId(result.events),
@@ -7565,13 +7613,11 @@ async function runFoundationF05Scenario(input: {
         `sha256:${await sha256Bytes(await foundationResolvedBytes(attachment.object_ref))}`),
     );
 
-    // #region debug-point I-L:foundation-f05-positive-turn
     void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-started', {
       capabilitySessionPresent: Boolean(input.capabilitySessionId),
       platform: input.platform,
       uploadedAttachmentCount: 2,
     });
-    // #endregion
     const valid = await withFoundationCapabilitiesDisabled(
       input.agent,
       input.capabilitySessionId,
@@ -7585,14 +7631,12 @@ async function runFoundationF05Scenario(input: {
         content: 'Acknowledge the attached files in one short sentence.',
       }),
     );
-    // #region debug-point I-L:foundation-f05-positive-turn-result
     void reportFoundationAttachmentTimeoutDebug('I-L', 'positive-turn-finished', {
       eventCount: valid.result.events.length,
       ok: valid.result.ok,
       platform: input.platform,
       turnIdPresent: Boolean(valid.turnId),
     });
-    // #endregion
     if (!valid.result.ok || !valid.turnId) {
       throw new Error(
         valid.result.error || 'agent.acceptance.foundationAttachmentTurnFailed',
@@ -8247,7 +8291,6 @@ async function runFoundationAttachmentRejectedScenario(input: {
       ?? removeAction.getAttribute('title')
       ?? '';
     const draftTextAfterRejection = textarea.value;
-    // #region debug-point I-L:attachment-removal-visibility
     const rejectedDraftRect = rejectedDraft.getBoundingClientRect();
     const removeActionRect = removeAction.getBoundingClientRect();
     const rejectedDraftStyle = window.getComputedStyle(rejectedDraft);
@@ -8299,7 +8342,6 @@ async function runFoundationAttachmentRejectedScenario(input: {
           rejectedDraft.dataset.ptAgentComposerAttachment === attachmentId,
       },
     );
-    // #endregion
     removeAction.click();
     await waitFor(
       () => !Array.from(
@@ -8311,7 +8353,6 @@ async function runFoundationAttachmentRejectedScenario(input: {
       'attachment removal',
       10_000,
     );
-    // #region debug-point I-L:attachment-removal-completed
     await reportFoundationAttachmentTimeoutDebug(
       'I-L',
       'rejected-removal-completed',
@@ -8326,7 +8367,6 @@ async function runFoundationAttachmentRejectedScenario(input: {
           element.dataset.ptAgentComposerAttachment === attachmentId),
       },
     );
-    // #endregion
 
     const deletionReadback =
       await foundationAttachmentDeletionReadback(objectRef);
@@ -8446,6 +8486,35 @@ async function runFoundationContextOverflowScenario(input: {
     + 'bounded-input '.repeat(32);
   const reducedDraft = `Reduced context ${input.sampleId}`;
   let baselineTurnId = '';
+  const receiverSnapshot = () => {
+    const chat = useChatStore.getState();
+    const currentAssistants = chat.messages.filter(
+      (message) => message.role === 'assistant',
+    );
+    const bufferedMessages = chat.sessionBuffers[conversation.conversation_id] ?? [];
+    const bufferedAssistants = bufferedMessages.filter(
+      (message) => message.role === 'assistant',
+    );
+    return {
+      currentSessionMatches:
+        chat.currentSessionKey === conversation.conversation_id,
+      currentMessageCount: chat.messages.length,
+      currentAssistantCount: currentAssistants.length,
+      currentContextOverflowCount: currentAssistants.filter(
+        (message) => message.typedError?.error_type === 'CONTEXT_OVERFLOW',
+      ).length,
+      bufferedMessageCount: bufferedMessages.length,
+      bufferedContextOverflowCount: bufferedAssistants.filter(
+        (message) => message.typedError?.error_type === 'CONTEXT_OVERFLOW',
+      ).length,
+      assistantDomCount:
+        document.querySelectorAll('[data-pt-agent-message="assistant"]').length,
+      contextOverflowDomCount: document.querySelectorAll(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+      ).length,
+    };
+  };
 
   try {
     await useChatStore.getState().selectSession(conversation.conversation_id);
@@ -8527,6 +8596,15 @@ async function runFoundationContextOverflowScenario(input: {
           timestampMs: payload.timestampMs,
           sourceDelivery,
         };
+        void reportFoundationContextOverflowRecoveryDebug(
+          'A-C',
+          'typed-error-event-observed',
+          {
+            ...receiverSnapshot(),
+            observationSequence,
+            sourceTransport: sourceDelivery?.transport ?? null,
+          },
+        );
       },
     );
 
@@ -8549,14 +8627,31 @@ async function runFoundationContextOverflowScenario(input: {
         'typed context overflow rejection',
         60_000,
       );
-      await waitFor(
-        () => Boolean(document.querySelector(
-          '[data-pt-agent-message="assistant"]'
-          + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
-        )),
-        'context overflow receiver',
-        10_000,
+      await reportFoundationContextOverflowRecoveryDebug(
+        'A-D',
+        'receiver-wait-started',
+        receiverSnapshot(),
       );
+      try {
+        await waitFor(
+          () => Boolean(document.querySelector(
+            '[data-pt-agent-message="assistant"]'
+            + '[data-pt-agent-error-type="CONTEXT_OVERFLOW"]',
+          )),
+          'context overflow receiver',
+          10_000,
+        );
+      } catch (error) {
+        await reportFoundationContextOverflowRecoveryDebug(
+          'A-D',
+          'receiver-wait-failed',
+          {
+            ...receiverSnapshot(),
+            errorType: error instanceof Error ? error.name : typeof error,
+          },
+        );
+        throw error;
+      }
     } finally {
       unsubscribe();
     }
@@ -8604,7 +8699,6 @@ async function runFoundationContextOverflowScenario(input: {
     const receiverRecoveryVisible =
       recoveryAction.getClientRects().length > 0;
     const receiverRecoveryText = recoveryAction.textContent?.trim() ?? '';
-    // #region debug-point A-D:context-overflow-pre-recovery
     await reportFoundationContextOverflowRecoveryDebug(
       'A-D',
       'pre-recovery-snapshot',
@@ -8628,7 +8722,6 @@ async function runFoundationContextOverflowScenario(input: {
         expectedRecoveryTextHash: await sha256Hex(expectedRecoveryText),
       },
     );
-    // #endregion
     if (
       !errorEvent.streamId
       || errorEvent.streamGeneration <= 0
@@ -8672,7 +8765,6 @@ async function runFoundationContextOverflowScenario(input: {
       reducedDraft,
       'context overflow reduced draft',
     );
-    // #region debug-point A-D:context-overflow-post-recovery
     await reportFoundationContextOverflowRecoveryDebug(
       'A-D',
       'post-recovery-snapshot',
@@ -8690,7 +8782,6 @@ async function runFoundationContextOverflowScenario(input: {
         reducedDraftApplied: textarea.value === reducedDraft,
       },
     );
-    // #endregion
 
     const after = await foundationExecutionSnapshot(
       agentId,
@@ -8740,7 +8831,6 @@ async function runFoundationContextOverflowScenario(input: {
       '',
       'context overflow composer cleanup',
     );
-    // #region debug-point E-H:context-overflow-scenario-cleanup
     await reportFoundationContextOverflowRecoveryDebug(
       'E-H',
       'scenario-cleanup-sampled',
@@ -8762,7 +8852,6 @@ async function runFoundationContextOverflowScenario(input: {
           ],
       },
     );
-    // #endregion
 
     return {
       conversationId: conversation.conversation_id,
@@ -8877,12 +8966,34 @@ async function runFoundationInvalidReferenceScenario(input: {
   const referenceToken = `@file:/missing/${input.sampleId}`;
   const responseMarker =
     `INVALID_REFERENCE_RECOVERED_${input.sampleId.replace(/[^a-z0-9]/gi, '_')}`;
-  const correctedDraft = `Reply with exactly ${responseMarker}.`;
+  const correctedDraft = [
+    'Return only the exact ASCII token below.',
+    'Do not translate it or add quotes, punctuation, Markdown, or other text.',
+    responseMarker,
+  ].join('\n');
   const rejectedDraft = `${correctedDraft} ${referenceToken}`;
+  const originalThinkingMode = input.agent.thinkingMode ?? 'auto';
+  let scenarioAgent = input.agent;
+  let thinkingModeChanged = false;
+  let thinkingModeRestored = originalThinkingMode === 'disabled';
   let successfulTurnId = '';
   const startedAt = performance.now();
+  const restoreThinkingMode = async () => {
+    if (!thinkingModeChanged || thinkingModeRestored) return;
+    await useAgentStore.getState().updateAgentProfile(agentId, {
+      thinkingMode: originalThinkingMode,
+    });
+    thinkingModeRestored = true;
+  };
 
   try {
+    if (!thinkingModeRestored) {
+      scenarioAgent = await useAgentStore.getState().updateAgentProfile(
+        agentId,
+        { thinkingMode: 'disabled' },
+      );
+      thinkingModeChanged = true;
+    }
     await useChatStore.getState().selectSession(conversationId);
     await useChatStore.getState().syncMessages();
     const [beforeExecution, beforeReadback, beforeQueue] = await Promise.all([
@@ -9054,7 +9165,6 @@ async function runFoundationInvalidReferenceScenario(input: {
       stableJson(afterRejectedReadback),
     );
 
-    // #region debug-point A-E:invalid-reference-resend-snapshot
     const invalidReferenceResendSnapshot = () => {
       const state = useChatStore.getState();
       const operation = state.operations[conversationId];
@@ -9091,9 +9201,11 @@ async function runFoundationInvalidReferenceScenario(input: {
           ? send.disabled
           : null,
         sendPresent: Boolean(send),
+        thinkingMode: useAgentStore.getState().agents.find(
+          (agent) => (agent.id || agent.name) === agentId,
+        )?.thinkingMode ?? 'auto',
       };
     };
-    // #endregion
 
     let completionObservationSequence = 0;
     const completionEventRef: {
@@ -9112,7 +9224,6 @@ async function runFoundationInvalidReferenceScenario(input: {
             sourceDelivery?: AgentTurnSourceDelivery;
           }
         ).sourceDelivery;
-        // #region debug-point C-E:invalid-reference-resend-event
         void Promise.all([
           sha256Hex(payload.conversationId),
           payloadTurnId ? sha256Hex(payloadTurnId) : Promise.resolve(''),
@@ -9146,7 +9257,6 @@ async function runFoundationInvalidReferenceScenario(input: {
               }),
             },
           ));
-        // #endregion
         if (payload.conversationId !== conversationId) return;
         completionObservationSequence += 1;
         const event = {
@@ -9188,7 +9298,7 @@ async function runFoundationInvalidReferenceScenario(input: {
     });
     try {
       await withFoundationCapabilitiesDisabled(
-        input.agent,
+        scenarioAgent,
         input.capabilitySessionId,
         async () => {
           const send = document.querySelector<HTMLElement>(
@@ -9197,34 +9307,28 @@ async function runFoundationInvalidReferenceScenario(input: {
           if (!send) {
             throw new Error('agent.acceptance.foundationComposerSendMissing');
           }
-          // #region debug-point A-B:invalid-reference-resend-before-click
           await reportFoundationInvalidReferenceResendDebug(
             'A-B',
             'before-corrected-send-click',
             invalidReferenceResendSnapshot(),
           );
-          // #endregion
           send.click();
-          // #region debug-point A-B:invalid-reference-resend-after-click
           await reportFoundationInvalidReferenceResendDebug(
             'A-B',
             'after-corrected-send-click',
             invalidReferenceResendSnapshot(),
           );
-          // #endregion
           try {
             await waitFor(
               () => completionEventRef.current !== null,
               'invalid reference corrected resend',
               FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
             );
-            // #region debug-point C-E:invalid-reference-resend-completed
             await reportFoundationInvalidReferenceResendDebug(
               'C-D-E',
               'corrected-resend-completed',
               invalidReferenceResendSnapshot(),
             );
-            // #endregion
           } catch (error) {
             const [readbackResult, queueResult, executionResult] =
               await Promise.allSettled([
@@ -9232,7 +9336,6 @@ async function runFoundationInvalidReferenceScenario(input: {
                 api.listAgentTurnQueue(conversationId),
                 foundationExecutionSnapshot(agentId, conversationId),
               ]);
-            // #region debug-point A-E:invalid-reference-resend-timeout
             await reportFoundationInvalidReferenceResendDebug(
               'A-B-C-D-E',
               'corrected-resend-timeout',
@@ -9282,7 +9385,6 @@ async function runFoundationInvalidReferenceScenario(input: {
                     },
               },
             );
-            // #endregion
             throw error;
           }
         },
@@ -9322,6 +9424,11 @@ async function runFoundationInvalidReferenceScenario(input: {
         'agent.acceptance.foundationInvalidReferenceCompletionIdentityMismatch',
       );
     }
+    await waitForFoundationCanonicalAssistantReadback({
+      conversationId,
+      turnId: successfulTurnId,
+      expectedContent: responseMarker,
+    });
     await useChatStore.getState().syncMessages();
     await waitFor(
       () => {
@@ -9337,6 +9444,15 @@ async function runFoundationInvalidReferenceScenario(input: {
       },
       'invalid reference canonical assistant response',
       30_000,
+    );
+    await waitFor(
+      () => countVisibleSuccessfulAssistants() === 1,
+      'invalid reference canonical assistant receiver',
+      30_000,
+    );
+    successfulAssistantPeakCount = Math.max(
+      successfulAssistantPeakCount,
+      countVisibleSuccessfulAssistants(),
     );
 
     const successfulAssistants = useChatStore.getState().messages.filter(
@@ -9401,7 +9517,7 @@ async function runFoundationInvalidReferenceScenario(input: {
       '',
       'invalid reference composer cleanup',
     );
-    return {
+    const result = {
       conversationId,
       turnId: successfulTurnId,
       durationMs: performance.now() - startedAt,
@@ -9505,7 +9621,10 @@ async function runFoundationInvalidReferenceScenario(input: {
         },
       },
     };
+    await restoreThinkingMode();
+    return result;
   } catch (error) {
+    const cleanupErrors: unknown[] = [];
     try {
       clearFoundationLocalConversationProjection(conversationId);
       const textarea = document.querySelector<HTMLTextAreaElement>(
@@ -9522,11 +9641,19 @@ async function runFoundationInvalidReferenceScenario(input: {
         successfulTurnId,
       );
     } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    try {
+      await restoreThinkingMode();
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+    if (cleanupErrors.length > 0) {
       throw Object.assign(
         new Error(
           'agent.acceptance.foundationInvalidReferenceCleanupFailed',
         ),
-        { primaryError: error, cleanupError },
+        { primaryError: error, cleanupErrors },
       );
     }
     throw error;
@@ -9560,6 +9687,30 @@ async function runFoundationDuplicateConflictScenario(input: {
   let cleanupError: unknown = null;
   let facts: Record<string, unknown> | null = null;
   const startedAt = performance.now();
+  // #region debug-point J-M:duplicate-conflict-original-wait
+  const duplicateConflictOriginalSnapshot = () => {
+    const chatState = useChatStore.getState();
+    const summarizeMessages = (
+      messages: typeof chatState.messages,
+    ) => messages
+      .filter((message) => message.turnId === originalTurnId)
+      .map((message) => ({
+        loading: message.loading === true,
+        role: message.role,
+        typedErrorType: message.typedError?.error_type ?? '',
+      }));
+    return {
+      currentSessionMatches: chatState.currentSessionKey === conversationId,
+      currentTurnMessages: summarizeMessages(chatState.messages),
+      bufferedTurnMessages: summarizeMessages(
+        chatState.sessionBuffers[conversationId] ?? [],
+      ),
+      operationStatus:
+        chatState.operations[conversationId]?.status ?? 'absent',
+      isStreaming: chatState.isStreaming,
+    };
+  };
+  // #endregion
 
   try {
     await useChatStore.getState().selectSession(conversationId);
@@ -9589,18 +9740,82 @@ async function runFoundationDuplicateConflictScenario(input: {
       );
     }
 
-    await useChatStore.getState().syncMessages();
-    await waitFor(
-      () => useChatStore.getState().messages.some(
-        (message) => (
-          message.role === 'assistant'
-          && message.turnId === originalTurnId
-          && message.loading !== true
-        ),
-      ),
-      'duplicate conflict original message',
-      30_000,
+    // #region debug-point J-M:duplicate-conflict-original-wait
+    await reportFoundationDuplicateConflictOriginalDetailsDebug(
+      'J-M',
+      'original-result-observed',
+      {
+        ...duplicateConflictOriginalSnapshot(),
+        originalEventCount: originalResult.events.length,
+        originalEventTypes: originalResult.events.map((event) => event.event),
+        originalResultOk: originalResult.ok,
+        originalTurnIdPresent: Boolean(originalTurnId),
+      },
     );
+    // #endregion
+    await useChatStore.getState().syncMessages();
+    // #region debug-point J-M:duplicate-conflict-original-wait
+    await reportFoundationDuplicateConflictOriginalDetailsDebug(
+      'J-M',
+      'original-sync-completed',
+      duplicateConflictOriginalSnapshot(),
+    );
+    // #endregion
+    try {
+      await waitFor(
+        () => useChatStore.getState().messages.some(
+          (message) => (
+            message.role === 'assistant'
+            && message.turnId === originalTurnId
+            && message.loading !== true
+          ),
+        ),
+        'duplicate conflict original message',
+        30_000,
+      );
+    } catch (error) {
+      // #region debug-point J-M:duplicate-conflict-original-wait
+      let stationReadback: Record<string, unknown>;
+      try {
+        const [readback, execution] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          foundationExecutionSnapshot(agentId, conversationId),
+        ]);
+        stationReadback = {
+          conversationStatus: readback.conversation.status,
+          conversationVersion: readback.conversation.version,
+          execution,
+          turnMessages: readback.messages
+            .filter((message) => message.turnId === originalTurnId)
+            .map((message) => ({
+              role: message.role,
+              status: message.status,
+              errorPresent: message.errorJson.length > 0,
+            })),
+        };
+      } catch (readbackError) {
+        stationReadback = {
+          errorCode: observedErrorCode(readbackError),
+        };
+      }
+      await reportFoundationDuplicateConflictOriginalDetailsDebug(
+        'J-M',
+        'original-wait-timeout',
+        {
+          ...duplicateConflictOriginalSnapshot(),
+          stationReadback,
+        },
+      );
+      // #endregion
+      throw error;
+    }
+    // #region debug-point J-M:duplicate-conflict-original-wait
+    await reportFoundationDuplicateConflictOriginalDetailsDebug(
+      'J-M',
+      'original-message-ready',
+      duplicateConflictOriginalSnapshot(),
+    );
+    // #endregion
 
     const [beforeExecution, beforeReadback, beforeQueue] = await Promise.all([
       foundationExecutionSnapshot(agentId, conversationId),
@@ -9612,7 +9827,6 @@ async function runFoundationDuplicateConflictScenario(input: {
       .map((message) => message.messageId)
       .sort();
 
-    // #region debug-point F-I:duplicate-conflict-receiver
     const duplicateConflictReceiverSnapshot = (): Record<string, unknown> => {
       const chatState = useChatStore.getState();
       const currentMessages = chatState.messages;
@@ -9665,7 +9879,6 @@ async function runFoundationDuplicateConflictScenario(input: {
         ).length,
       };
     };
-    // #endregion
     const rejectedOutcomeRef: {
       current: Record<string, unknown> | null;
     } = { current: null };
@@ -9683,7 +9896,6 @@ async function runFoundationDuplicateConflictScenario(input: {
       if (nextCount === receiverDomConflictCount) return;
       receiverDomConflictCount = nextCount;
       receiverDomConflictPeak = Math.max(receiverDomConflictPeak, nextCount);
-      // #region debug-point I:duplicate-conflict-receiver-dom-transition
       void reportFoundationDuplicateConflictOriginalDetailsDebug(
         'I',
         'receiver-dom-transition',
@@ -9692,7 +9904,6 @@ async function runFoundationDuplicateConflictScenario(input: {
           receiverDomConflictPeak,
         },
       );
-      // #endregion
     });
     receiverObserver.observe(document.body, {
       attributes: true,
@@ -9725,23 +9936,19 @@ async function runFoundationDuplicateConflictScenario(input: {
           timestampMs: payload.timestampMs,
           sourceDelivery,
         };
-        // #region debug-point F-I:duplicate-conflict-event
         void reportFoundationDuplicateConflictOriginalDetailsDebug(
           'F-I',
           'typed-rejection-event-observed',
           duplicateConflictReceiverSnapshot(),
         );
-        // #endregion
       },
     );
     try {
-      // #region debug-point F-I:duplicate-conflict-before-send
       await reportFoundationDuplicateConflictOriginalDetailsDebug(
         'F-I',
         'before-conflicting-send',
         duplicateConflictReceiverSnapshot(),
       );
-      // #endregion
       const sent = useChatStore.getState().sendMessage(
         conflictingContent,
         [],
@@ -9751,13 +9958,11 @@ async function runFoundationDuplicateConflictScenario(input: {
             if (error) {
               rejectedOutcomeRef.current =
                 evidenceValue(error) as Record<string, unknown>;
-              // #region debug-point F-I:duplicate-conflict-rejection-callback
               void reportFoundationDuplicateConflictOriginalDetailsDebug(
                 'F-I',
                 'rejection-callback-observed',
                 duplicateConflictReceiverSnapshot(),
               );
-              // #endregion
             }
           },
         },
@@ -9775,13 +9980,11 @@ async function runFoundationDuplicateConflictScenario(input: {
         'typed duplicate conflict rejection',
         60_000,
       );
-      // #region debug-point F-I:duplicate-conflict-typed-ready
       await reportFoundationDuplicateConflictOriginalDetailsDebug(
         'F-I',
         'typed-rejection-ready',
         duplicateConflictReceiverSnapshot(),
       );
-      // #endregion
       try {
         await waitFor(
           () => Boolean(document.querySelector(
@@ -9792,7 +9995,6 @@ async function runFoundationDuplicateConflictScenario(input: {
           10_000,
         );
       } catch (error) {
-        // #region debug-point F-I:duplicate-conflict-receiver-timeout
         await reportFoundationDuplicateConflictOriginalDetailsDebug(
           'F-I',
           'receiver-timeout',
@@ -9803,16 +10005,13 @@ async function runFoundationDuplicateConflictScenario(input: {
             receiverDomConflictPeak,
           },
         );
-        // #endregion
         throw error;
       }
-      // #region debug-point F-I:duplicate-conflict-receiver-observed
       await reportFoundationDuplicateConflictOriginalDetailsDebug(
         'F-I',
         'receiver-observed',
         duplicateConflictReceiverSnapshot(),
       );
-      // #endregion
     } finally {
       receiverObserver.disconnect();
       unsubscribe();
@@ -9895,7 +10094,6 @@ async function runFoundationDuplicateConflictScenario(input: {
     const projectedOriginalMessages = useChatStore.getState().messages.filter(
       (candidate) => candidate.turnId === originalTurnId,
     );
-    // #region debug-point A-E:duplicate-conflict-recovery-click
     await reportFoundationDuplicateConflictOriginalDetailsDebug(
       'A-E',
       'pre-click-snapshot',
@@ -10012,7 +10210,6 @@ async function runFoundationDuplicateConflictScenario(input: {
       recoveryAction.removeEventListener('click', observeRecoveryClick);
       unsubscribePortalDebug();
     }
-    // #endregion
     await waitFor(
       () => Boolean(document.querySelector(
         `[data-agent-turn-details="${originalTurnId}"]`
@@ -10206,6 +10403,14 @@ async function runFoundationCredentialMissingScenario(input: {
       'agent.acceptance.foundationCredentialMissingFixtureUnavailable',
     );
   }
+  // #region debug-point C-D:foundation-credential-missing
+  await reportFoundationCredentialMissingDebug('C-D', 'fixture-selected', {
+    providerId: missingProvider.id,
+    providerStatus: missingProvider.status,
+    modelId: missingProvider.modelId,
+    locale: i18n.language,
+  });
+  // #endregion
 
   const disposable = await store.createAgent({
     name: `foundation-credential-${input.sampleId}-${crypto.randomUUID()}`,
@@ -10267,6 +10472,28 @@ async function runFoundationCredentialMissingScenario(input: {
         ).sourceDelivery;
         if (payload.conversationId !== rejectedConversationId) return;
         observationSequence += 1;
+        // #region debug-point A-D:foundation-credential-missing
+        void reportFoundationCredentialMissingDebug(
+          'A-D',
+          'runtime-event-observed',
+          {
+            observationSequence,
+            eventType: payload.event,
+            eventSequence: Number(payload.data.seq ?? 0),
+            errorType: String(
+              payload.data.error_type ?? payload.data.errorType ?? '',
+            ),
+            localeKey: String(
+              payload.data.locale_key ?? payload.data.localeKey ?? '',
+            ),
+            error: String(payload.data.error ?? ''),
+            dataKeys: Object.keys(payload.data).sort(),
+            sourceTransport: sourceDelivery?.transport ?? '',
+            sourceSequence: sourceDelivery?.sequence ?? -1,
+            sourceTurnPresent: Boolean(sourceDelivery?.turnId),
+          },
+        );
+        // #endregion
         if (
           payload.event !== 'error'
           || payload.data.error_type !== 'PROVIDER_CREDENTIAL_MISSING'
@@ -10293,11 +10520,58 @@ async function runFoundationCredentialMissingScenario(input: {
           'agent.acceptance.foundationCredentialMissingSendRejected',
         );
       }
-      await waitFor(
-        () => errorEventRef.current !== null,
-        'typed credential missing rejection',
-        60_000,
-      );
+      try {
+        await waitFor(
+          () => errorEventRef.current !== null,
+          'typed credential missing rejection',
+          60_000,
+        );
+      } catch (error) {
+        // #region debug-point A-D:foundation-credential-missing
+        const chatState = useChatStore.getState();
+        await reportFoundationCredentialMissingDebug(
+          'A-D',
+          'typed-rejection-timeout',
+          {
+            locale: i18n.language,
+            currentSessionMatches:
+              chatState.currentSessionKey === rejectedConversationId,
+            isStreaming: chatState.isStreaming,
+            operation: chatState.operations[rejectedConversationId]
+              ? {
+                  status:
+                    chatState.operations[rejectedConversationId].status,
+                  runState:
+                    chatState.operations[rejectedConversationId].runState,
+                  lastEventSeq:
+                    chatState.operations[rejectedConversationId].lastEventSeq,
+                }
+              : null,
+            messages: chatState.messages.map((message) => ({
+              role: message.role,
+              loading: Boolean(message.loading),
+              error: message.error ?? '',
+              errorType: message.typedError?.error_type ?? '',
+              localeKey: message.typedError?.locale_key ?? '',
+              turnPresent: Boolean(message.turnId),
+            })),
+            receiverErrors: Array.from(
+              document.querySelectorAll<HTMLElement>(
+                '[data-pt-agent-message="assistant"]',
+              ),
+            ).map((element) => ({
+              errorType:
+                element.dataset.ptAgentErrorType ?? '',
+              visible: element.getClientRects().length > 0,
+            })),
+            waitError: error instanceof Error
+              ? error.message
+              : String(error),
+          },
+        );
+        // #endregion
+        throw error;
+      }
       await waitFor(
         () => Boolean(document.querySelector(
           '[data-pt-agent-message="assistant"]'
@@ -10570,13 +10844,11 @@ async function runFoundationF06Prepare(input: {
 }): Promise<FoundationF06Handoff> {
   const scenarioStartedAt = new Date().toISOString();
   const preparationStartedAt = performance.now();
-  // #region debug-point A-D:f06-terminal-race-start
   void reportFoundationF06TerminalRaceDebug('A-D', 'preparation-started', {
     platform: input.platform,
     locale: input.locale,
     scenarioKey: input.scenarioKey,
   });
-  // #endregion
   foundationF06Controllers.get(input.scenarioKey)?.abort();
   foundationF06Controllers.delete(input.scenarioKey);
   removeFoundationF06Handoff(input.scenarioKey);
@@ -10612,7 +10884,6 @@ async function runFoundationF06Prepare(input: {
     const activeTurnId = activeRecord?.turnId ?? '';
     const authDiagnostic = redactedAuthError(error);
     const primary = error instanceof Error ? error.message : String(error);
-    // #region debug-point A-D:f06-terminal-race-primary
     void reportFoundationF06TerminalRaceDebug(
       'A-D',
       'preparation-failed-before-cleanup',
@@ -10630,7 +10901,6 @@ async function runFoundationF06Prepare(input: {
           readFoundationF06CleanupLocators()[input.scenarioKey] !== undefined,
       },
     );
-    // #endregion
     // The coordinator restores the cut proxy before invoking the registered
     // cleanup locator. Cleanup through the intentionally severed transport
     // would hide the primary failure and can lose the locator on client restart.
@@ -10675,6 +10945,15 @@ async function prepareFoundationF06Conversation(
     rejectBoundary(new Error(errorKey));
   };
 
+  // #region debug-point A:foundation-recovery-prefix
+  void reportFoundationRecoveryPrefixDebug('A', 'observer-created', {
+    scenarioKey: input.scenarioKey,
+    platform: input.platform,
+    locale: input.locale,
+    streamId,
+    faultBoundaryMode,
+  });
+  // #endregion
   const observed = startObservedFoundationTurn({
     conversationId: conversation.conversation_id,
     agentId,
@@ -10688,6 +10967,30 @@ async function prepareFoundationF06Conversation(
     clientCapabilitySessionId: input.capabilitySessionId,
     timeoutMs: 300_000,
     onEvent: (event, events, controller, complete) => {
+      // #region debug-point A-C:foundation-recovery-prefix
+      const activeAtObservation = useAgentTurnRecoveryStore.getState()
+        .active[conversation.conversation_id];
+      const observedContent = String(
+        event.data.content ?? event.data.text ?? '',
+      );
+      void reportFoundationRecoveryPrefixDebug(
+        'A-C',
+        'event-observed',
+        {
+          eventIndex: events.length - 1,
+          eventType: event.event,
+          eventSequence: Number(event.data.seq ?? 0),
+          eventDataKeys: Object.keys(event.data).sort(),
+          contentLength: observedContent.length,
+          terminal: classifyAgentTurnTerminalEvent(event),
+          boundaryRequested,
+          boundarySettled,
+          activeRecordPresent: activeAtObservation !== undefined,
+          activeCursor: activeAtObservation?.cursor ?? 0,
+          activePhase: activeAtObservation?.phase ?? 'MISSING',
+        },
+      );
+      // #endregion
       if (boundarySettled || boundaryRequested) return;
       if (!cleanupTurnId) {
         cleanupTurnId = observedTurnId(events);
@@ -10703,7 +11006,6 @@ async function prepareFoundationF06Conversation(
       if (classifyAgentTurnTerminalEvent(event) !== null) {
         const active = useAgentTurnRecoveryStore.getState()
           .active[conversation.conversation_id];
-        // #region debug-point A-B:f06-terminal-before-cut
         void reportFoundationF06TerminalRaceDebug(
           'A-B',
           'terminal-event-before-fault-boundary',
@@ -10726,7 +11028,6 @@ async function prepareFoundationF06Conversation(
             activePhase: active?.phase ?? 'MISSING',
           },
         );
-        // #endregion
         failBoundary('agent.acceptance.foundationRecoveryTurnAlreadyTerminal');
         return;
       }
@@ -10826,7 +11127,20 @@ async function prepareFoundationF06Conversation(
       };
       foundationF06PendingHandoffs.set(input.scenarioKey, handoff);
       boundaryRequested = true;
-      // #region debug-point A-C:f06-fault-request
+      // #region debug-point A-C:foundation-recovery-prefix
+      void reportFoundationRecoveryPrefixDebug('A-C', 'fault-cut-requested', {
+        eventCount: events.length,
+        observedSequences: events.map((candidate) => ({
+          event: candidate.event,
+          sequence: Number(candidate.data.seq ?? 0),
+          contentLength: String(
+            candidate.data.content ?? candidate.data.text ?? '',
+          ).length,
+        })),
+        requestedCursor,
+        activePhase: active.phase,
+      });
+      // #endregion
       void reportFoundationF06TerminalRaceDebug('A-C', 'fault-cut-requested', {
         platform: input.platform,
         locale: input.locale,
@@ -10842,7 +11156,6 @@ async function prepareFoundationF06Conversation(
         requestedCursor,
         activePhase: active.phase,
       });
-      // #endregion
       void reportFoundationF06RegistrationDebug(
         'A-E',
         'fault-cut-requested',
@@ -10858,7 +11171,6 @@ async function prepareFoundationF06Conversation(
           await controller.disconnectTransport();
           const activeAfterAcknowledgement = useAgentTurnRecoveryStore.getState()
             .active[conversation.conversation_id];
-          // #region debug-point C:f06-fault-ack
           void reportFoundationF06TerminalRaceDebug(
             'C',
             'fault-cut-acknowledged',
@@ -10874,12 +11186,10 @@ async function prepareFoundationF06Conversation(
               activeCursor: activeAfterAcknowledgement?.cursor ?? 0,
             },
           );
-          // #endregion
           await waitFor(() => {
             const current = useAgentTurnRecoveryStore.getState()
               .active[conversation.conversation_id];
             if (!current) {
-              // #region debug-point C:f06-terminal-after-ack
               void reportFoundationF06TerminalRaceDebug(
                 'C',
                 'recovery-record-missing-after-fault-acknowledgement',
@@ -10890,7 +11200,6 @@ async function prepareFoundationF06Conversation(
                   elapsedMs: Date.now() - Date.parse(scenarioStartedAt),
                 },
               );
-              // #endregion
               throw new Error(
                 'agent.acceptance.foundationRecoveryTurnAlreadyTerminal',
               );
@@ -10929,6 +11238,30 @@ async function prepareFoundationF06Conversation(
             .reverse()
             .find((candidate) =>
               Number(candidate.data.seq ?? 0) < acknowledgedCursor);
+          // #region debug-point B-D:foundation-recovery-prefix
+          void reportFoundationRecoveryPrefixDebug(
+            'B-D',
+            'fault-cut-acknowledged',
+            {
+              acknowledgedCursor,
+              activePhase: activeAtCut.phase,
+              sequencedEvents: sequencedEvents.map((candidate) => ({
+                event: candidate.event,
+                sequence: Number(candidate.data.seq ?? 0),
+                contentLength: String(
+                  candidate.data.content ?? candidate.data.text ?? '',
+                ).length,
+              })),
+              durableEvents: durableEvents.map((candidate) => ({
+                event: candidate.event,
+                sequence: Number(candidate.data.seq ?? 0),
+                contentLength: String(
+                  candidate.data.content ?? candidate.data.text ?? '',
+                ).length,
+              })),
+            },
+          );
+          // #endregion
           if (!duplicateSource || !outOfOrderSource) {
             void reportFoundationF06TerminalRaceDebug(
               'E',
@@ -10957,7 +11290,22 @@ async function prepareFoundationF06Conversation(
           const textEvents = durableEvents.filter((candidate) =>
             candidate.event === 'text'
             && Number(candidate.data.seq ?? 0) <= acknowledgedCursor);
-          if (textEvents.length === 0) {
+          if (
+            textEvents.length === 0
+            && faultBoundaryMode === 'text-prefix'
+          ) {
+            // #region debug-point B-C:foundation-recovery-prefix
+            void reportFoundationRecoveryPrefixDebug(
+              'B-C',
+              'prefix-filter-empty',
+              {
+                acknowledgedCursor,
+                textSequences: durableEvents
+                  .filter((candidate) => candidate.event === 'text')
+                  .map((candidate) => Number(candidate.data.seq ?? 0)),
+              },
+            );
+            // #endregion
             void reportFoundationF06PrefixDebug(
               'B-C',
               'prefix-not-acknowledged',
@@ -11174,7 +11522,6 @@ async function prepareFoundationF06Conversation(
   const boundary = await Promise.race([
     faultBoundary,
     observed.result.then((result) => {
-      // #region debug-point A-C:f06-result-before-boundary
       void reportFoundationF06TerminalRaceDebug(
         'A-C',
         'turn-result-settled-before-fault-boundary',
@@ -11189,7 +11536,6 @@ async function prepareFoundationF06Conversation(
           boundarySettled,
         },
       );
-      // #endregion
       throw new Error(
         result.error || 'agent.acceptance.foundationRecoveryTurnAlreadyTerminal',
       );
@@ -11251,13 +11597,11 @@ async function finalizeFoundationF06Preparation(
   foundationF06PendingHandoffs.delete(scenarioKey);
   foundationF06FaultBoundaries.delete(scenarioKey);
   writeFoundationF06Handoff(handoff);
-  // #region debug-point R-U:f06-handoff-storage
   void reportFoundationF06TerminalRaceDebug(
     'R-U',
     'handoff-persisted-before-navigation',
     foundationF06HandoffStorageSnapshot(scenarioKey),
   );
-  // #endregion
 
   void reportFoundationF06PageSwitchDebug(
     'A-D',
@@ -11300,7 +11644,6 @@ async function restoreFoundationF06CapabilityIsolation(
   scenarioKey: string,
 ): Promise<FoundationF06Handoff> {
   const handoff = readFoundationF06Handoff(scenarioKey);
-  // #region debug-point R-U:f06-handoff-storage
   void reportFoundationF06TerminalRaceDebug(
     'R-U',
     'handoff-read-after-station-restart',
@@ -11309,7 +11652,6 @@ async function restoreFoundationF06CapabilityIsolation(
       parsedHandoffPresent: handoff !== null,
     },
   );
-  // #endregion
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }
@@ -11673,7 +12015,6 @@ async function cleanupFoundationF06Scenario(input: {
     ?? readFoundationF06Handoff(input.scenarioKey);
   const cleanupLocator =
     readFoundationF06CleanupLocators()[input.scenarioKey];
-  // #region debug-point D:f06-cleanup-start
   void reportFoundationF06TerminalRaceDebug('D', 'cleanup-started', {
     scenarioKey: input.scenarioKey,
     inputConversationPresent: input.conversationId.length > 0,
@@ -11682,7 +12023,6 @@ async function cleanupFoundationF06Scenario(input: {
     cleanupLocatorPresent: cleanupLocator !== undefined,
     cleanupLocatorTurnPresent: Boolean(cleanupLocator?.turnId),
   });
-  // #endregion
   if (
     handoff
     && (
@@ -11780,7 +12120,6 @@ async function cleanupFoundationF06Scenario(input: {
   try {
     cleanupStage = 'conversation-delete';
     deletionErrorCode = await deleteFoundationConversation(conversationId);
-    // #region debug-point D:f06-cleanup-actions
     void reportFoundationF06TerminalRaceDebug(
       'D',
       'cleanup-actions-completed',
@@ -11794,10 +12133,8 @@ async function cleanupFoundationF06Scenario(input: {
         deletionErrorCodePresent: deletionErrorCode.length > 0,
       },
     );
-    // #endregion
   } catch (error) {
     deletionErrorCode = observedErrorCode(error);
-    // #region debug-point D:f06-cleanup-action-failed
     void reportFoundationF06TerminalRaceDebug(
       'D',
       'cleanup-action-failed',
@@ -11810,7 +12147,6 @@ async function cleanupFoundationF06Scenario(input: {
         deletionErrorCode,
       },
     );
-    // #endregion
     if (!deletionErrorCode.includes('AGENT_4004')) {
       cleanupError = error;
     }
@@ -11865,7 +12201,6 @@ async function cleanupFoundationF06Scenario(input: {
     && cleanupLocatorCleared
     && recoveryRecordCleared
     && localProjectionCleared;
-  // #region debug-point D:f06-cleanup-result
   void reportFoundationF06TerminalRaceDebug('D', 'cleanup-result-sampled', {
     scenarioKey: input.scenarioKey,
     cleanupStage,
@@ -11877,7 +12212,6 @@ async function cleanupFoundationF06Scenario(input: {
     localProjectionCleared,
     cleanupComplete,
   });
-  // #endregion
   if (cleanupError !== null || !cleanupComplete) {
     const detail = cleanupError instanceof Error
       ? cleanupError.message
@@ -11916,7 +12250,6 @@ async function runFoundationF06Complete(
   facts: Record<string, unknown>;
 }> {
   const handoff = readFoundationF06Handoff(input.scenarioKey);
-  // #region debug-point R-U:f06-handoff-storage
   void reportFoundationF06TerminalRaceDebug(
     'R-U',
     'handoff-read-after-client-restart',
@@ -11925,7 +12258,6 @@ async function runFoundationF06Complete(
       parsedHandoffPresent: handoff !== null,
     },
   );
-  // #endregion
   if (!handoff) {
     throw new Error('agent.acceptance.foundationRecoveryHandoffMissing');
   }
@@ -11988,6 +12320,32 @@ async function runFoundationF06Complete(
   const stationSnapshot = await foundationConversationReadback(
     handoff.conversationId,
   );
+  const stationAssistant = [...stationSnapshot.messages]
+    .reverse()
+    .find((message) =>
+      message.role === 'assistant' && message.turnId === handoff.turnId);
+  if (!stationAssistant) {
+    throw new Error('agent.acceptance.foundationRecoveryProjectionMissing');
+  }
+  await useChatStore.getState().syncMessages();
+  await waitFor(
+    () => {
+      const projected = [...useChatStore.getState().messages]
+        .reverse()
+        .find((message) =>
+          message.role === 'assistant' && message.turnId === handoff.turnId);
+      return Boolean(
+        projected
+        && projected.content === stationAssistant.content
+        && (
+          projected.terminalStatus
+          || useChatStore.getState().operations[handoff.conversationId]?.status
+        ) === String(stationAssistant.status).toLowerCase(),
+      );
+    },
+    'Foundation AS-F06 canonical terminal projection',
+    30_000,
+  );
   const terminalEvidence = await foundationTurnEvidence(
     handoff.conversationId,
     handoff.turnId,
@@ -12003,11 +12361,7 @@ async function runFoundationF06Complete(
     .reverse()
     .find((message) =>
       message.role === 'assistant' && message.turnId === handoff.turnId);
-  const stationAssistant = [...stationSnapshot.messages]
-    .reverse()
-    .find((message) =>
-      message.role === 'assistant' && message.turnId === handoff.turnId);
-  if (!projectedAssistant || !stationAssistant) {
+  if (!projectedAssistant) {
     throw new Error('agent.acceptance.foundationRecoveryProjectionMissing');
   }
   const clientTerminalStatus =
@@ -12147,28 +12501,6 @@ async function runFoundationF06Complete(
     turnId: stationAssistant.turnId,
     content: stationAssistant.content,
   }));
-  // #region debug-point A-D:final-terminal-projection
-  void fetch('http://127.0.0.1:7777/event', {
-    method: 'POST',
-    body: JSON.stringify({
-      sessionId: 'browser-terminal-projection',
-      runId: 'post-fix',
-      hypothesisId: 'A-D',
-      location: 'harness.ts:runFoundationF06Complete',
-      msg: '[DEBUG] final terminal projection sampled',
-      data: {
-        operationStatus: operation?.status ?? null,
-        messageTerminalStatus: projectedAssistant.terminalStatus ?? null,
-        clientContentLength: projectedAssistant.content.length,
-        clientHash: projectionHash,
-        stationStatus: terminalStatus,
-        stationContentLength: stationAssistant.content.length,
-        stationHash,
-      },
-      ts: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   const runtimeEvent = replayedEvents[replayedEvents.length - 1]
     ?? latestHandoff.transitions[latestHandoff.transitions.length - 1];
   if (!runtimeEvent) {
@@ -12763,7 +13095,6 @@ async function runFoundationF12Prepare(input: {
   locale: string;
   sampleId: string;
 }): Promise<FoundationF12Handoff> {
-  // #region debug-point A-B-E:f12-prepare-entry
   foundationF12MessageListDebugScope = {
     locale: input.locale,
     platform: input.platform,
@@ -12785,7 +13116,6 @@ async function runFoundationF12Prepare(input: {
       platform: input.platform,
       sampleId: input.sampleId,
     }));
-  // #endregion
   const existing = readFoundationF12Handoff(input.scenarioKey);
   if (existing) {
     await cleanupFoundationF12Scenario({
@@ -12819,7 +13149,6 @@ async function runFoundationF12Prepare(input: {
           model_name: input.agent.model,
         });
         createdConversationIds.push(beta.conversation_id);
-        // #region debug-point B-E:f12-conversations-created
         void Promise.all([
           sha256Hex(alpha.conversation_id),
           sha256Hex(beta.conversation_id),
@@ -12829,7 +13158,6 @@ async function runFoundationF12Prepare(input: {
             betaConversationIdHash,
             createdConversationCount: createdConversationIds.length,
           }));
-        // #endregion
 
         const runtimeEvents: FoundationF12RuntimeEvent[] = [];
         const alphaFirst = await runFoundationF12Turn({
@@ -13111,7 +13439,6 @@ async function runFoundationF12Prepare(input: {
     writeFoundationF12Handoff(handoff);
     return handoff;
   } catch (error) {
-    // #region debug-point A-E:f12-prepare-failure
     void Promise.all(createdConversationIds.map((conversationId) =>
       sha256Hex(conversationId))).then((createdConversationIdHashes) =>
       reportFoundationF12MessageListDebug('A-B-C-D-E', 'prepare-error', {
@@ -13121,7 +13448,6 @@ async function runFoundationF12Prepare(input: {
         readbackSequence:
           foundationF12MessageListDebugScope?.readbackSequence ?? 0,
       }));
-    // #endregion
     try {
       await cleanupFoundationF12Scenario({
         scenarioKey: input.scenarioKey,
@@ -13343,7 +13669,6 @@ async function foundationRevisionMessageFact(
   };
 }
 
-// #region debug-point A-D:as-f04-denial-evidence
 function reportFoundationF04DenialDebug(
   hypothesisId: string,
   stage: string,
@@ -13362,9 +13687,7 @@ function reportFoundationF04DenialDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:base-cancelled-localization
 function reportFoundationCancelledLocalizationDebug(
   hypothesisId: string,
   stage: string,
@@ -13383,9 +13706,7 @@ function reportFoundationCancelledLocalizationDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point J-M:base-credential-runtime-event
 function reportFoundationCredentialRuntimeEventDebug(
   data: Record<string, unknown>,
 ): Promise<void> {
@@ -13402,9 +13723,28 @@ function reportFoundationCredentialRuntimeEventDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
+
+// #region debug-point A-D:foundation-credential-missing
+function reportFoundationCredentialMissingDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7799/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-credential-missing',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runFoundationCredentialMissingScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
 // #endregion
 
-// #region debug-point A-D:foundation-capability-isolation
 function reportFoundationCapabilityIsolationDebug(
   hypothesisId: string,
   stage: string,
@@ -13423,9 +13763,28 @@ function reportFoundationCapabilityIsolationDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
+
+// #region debug-point A-E:foundation-runtime-identity
+function reportFoundationRuntimeIdentityDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7783/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-runtime-identity',
+      runId: 'pre-fix',
+      hypothesisId,
+      location: 'harness.ts:runDevelopmentClientPermissionDeniedScenario',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
 // #endregion
 
-// #region debug-point A-E:foundation-queue-capacity
 function reportFoundationQueueCapacityDebug(
   hypothesisId: string,
   stage: string,
@@ -13444,9 +13803,7 @@ function reportFoundationQueueCapacityDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:foundation-queue-projection
 function reportFoundationQueueProjectionDebug(
   hypothesisId: string,
   stage: string,
@@ -13467,7 +13824,6 @@ function reportFoundationQueueProjectionDebug(
 }
 // #endregion
 
-// #region debug-point A-D:foundation-attachment-timeout
 function reportFoundationAttachmentTimeoutDebug(
   hypothesisId: string,
   stage: string,
@@ -13486,18 +13842,17 @@ function reportFoundationAttachmentTimeoutDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:as-f07-revision-stage
+// #region debug-point A-D:foundation-retry-turn
 function reportFoundationF07Debug(
   hypothesisId: string,
   stage: string,
   data: Record<string, unknown> = {},
 ): Promise<void> {
-  return fetch('http://127.0.0.1:7783/event', {
+  return fetch('http://127.0.0.1:7798/event', {
     method: 'POST',
     body: JSON.stringify({
-      sessionId: 'revision-retry-cancellation',
+      sessionId: 'foundation-retry-turn',
       runId: 'pre-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationF07Scenario',
@@ -13507,9 +13862,7 @@ function reportFoundationF07Debug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:as-f06-recovery-prefix
 function reportFoundationF06PrefixDebug(
   hypothesisId: string,
   stage: string,
@@ -13528,9 +13881,28 @@ function reportFoundationF06PrefixDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
+
+// #region debug-point A-D:foundation-recovery-prefix
+function reportFoundationRecoveryPrefixDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7797/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-recovery-prefix',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:prepareFoundationF06Conversation',
+      msg: `[DEBUG] ${stage}`,
+      data,
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
 // #endregion
 
-// #region debug-point A-E:foundation-recovery-registration
 function reportFoundationF06RegistrationDebug(
   hypothesisId: string,
   stage: string,
@@ -13549,9 +13921,7 @@ function reportFoundationF06RegistrationDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:foundation-f06-terminal-race
 function reportFoundationF06TerminalRaceDebug(
   hypothesisId: string,
   stage: string,
@@ -13570,9 +13940,7 @@ function reportFoundationF06TerminalRaceDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:as-f06-page-switch
 function foundationF06PageSwitchSnapshot(): Record<string, unknown> {
   const composer =
     document.querySelector<HTMLElement>('[data-pt-agent-composer]');
@@ -13621,9 +13989,7 @@ function reportFoundationF06PageSwitchDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:foundation-recovery-error-key
 function reportFoundationRecoveryErrorKeyDebug(
   hypothesisId: string,
   stage: string,
@@ -13642,9 +14008,7 @@ function reportFoundationRecoveryErrorKeyDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:foundation-f04-expiry-settlement
 function reportFoundationF04ExpirySettlementDebug(
   hypothesisId: string,
   stage: string,
@@ -13663,9 +14027,7 @@ function reportFoundationF04ExpirySettlementDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:foundation-approval-receiver
 function reportFoundationApprovalReceiverDebug(
   hypothesisId: string,
   stage: string,
@@ -13684,9 +14046,7 @@ function reportFoundationApprovalReceiverDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:approval-retry-cancellation
 function reportFoundationApprovalRetryCancellationDebug(
   hypothesisId: string,
   stage: string,
@@ -13705,9 +14065,7 @@ function reportFoundationApprovalRetryCancellationDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:foundation-readiness-timeout
 function reportFoundationF01Debug(
   hypothesisId: string,
   stage: string,
@@ -13848,9 +14206,7 @@ async function reportFoundationF01FailureReadback(
     });
   }
 }
-// #endregion
 
-// #region debug-point A-D:as-f03-cancel-race
 function reportFoundationF03CancelDebug(
   hypothesisId: string,
   stage: string,
@@ -13869,9 +14225,7 @@ function reportFoundationF03CancelDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:base-cancelled-race
 function reportFoundationBaseCancelledDebug(
   hypothesisId: string,
   stage: string,
@@ -13890,9 +14244,7 @@ function reportFoundationBaseCancelledDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:forbidden-actor-account-gate
 function reportFoundationForbiddenActorAccountGateDebug(
   hypothesisId: string,
   stage: string,
@@ -13911,9 +14263,7 @@ function reportFoundationForbiddenActorAccountGateDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:incompatible-capability-cleanup
 function reportFoundationIncompatibleCleanupDebug(
   hypothesisId: string,
   stage: string,
@@ -13932,9 +14282,7 @@ function reportFoundationIncompatibleCleanupDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:incompatible-capability-turn-count
 function reportFoundationIncompatibleTurnCountDebug(
   hypothesisId: string,
   stage: string,
@@ -13953,9 +14301,7 @@ function reportFoundationIncompatibleTurnCountDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-D:context-overflow-recovery-locale
 function reportFoundationContextOverflowRecoveryDebug(
   hypothesisId: string,
   stage: string,
@@ -13974,9 +14320,7 @@ function reportFoundationContextOverflowRecoveryDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:duplicate-conflict-original-details
 function reportFoundationDuplicateConflictOriginalDetailsDebug(
   hypothesisId: string,
   stage: string,
@@ -13995,9 +14339,7 @@ function reportFoundationDuplicateConflictOriginalDetailsDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:as-f12-projection
 function reportFoundationF12ProjectionDebug(
   hypothesisId: string,
   stage: string,
@@ -14016,9 +14358,7 @@ function reportFoundationF12ProjectionDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:foundation-f12-message-list
 function foundationF12MessageListErrorDebug(
   error: unknown,
 ): Record<string, unknown> {
@@ -14079,58 +14419,7 @@ function reportFoundationF12MessageListDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:foundation-approval-expiry-cleanup
-function foundationApprovalExpiryCleanupErrorDebug(
-  error: unknown,
-): Record<string, unknown> | null {
-  if (error === null || error === undefined) return null;
-  const candidate = error && typeof error === 'object'
-    ? error as {
-        code?: unknown;
-        details?: Record<string, unknown>;
-        message?: unknown;
-        name?: unknown;
-      }
-    : null;
-  const details = candidate?.details;
-  return {
-    code: typeof candidate?.code === 'string' ? candidate.code : null,
-    detailCode:
-      typeof details?.error_code === 'string' ? details.error_code : null,
-    message:
-      typeof candidate?.message === 'string'
-        ? candidate.message
-        : String(error),
-    name: typeof candidate?.name === 'string' ? candidate.name : typeof error,
-    observedCode: observedErrorCode(error),
-    stationStatus:
-      typeof details?.status === 'number' ? details.status : null,
-  };
-}
-
-function reportFoundationApprovalExpiryCleanupDebug(
-  hypothesisId: string,
-  stage: string,
-  data: Record<string, unknown> = {},
-): Promise<void> {
-  return fetch('http://127.0.0.1:7811/event', {
-    method: 'POST',
-    body: JSON.stringify({
-      sessionId: 'foundation-approval-expiry-cleanup',
-      runId: 'pre-fix',
-      hypothesisId,
-      location: 'harness.ts:runFoundationApprovalExpiredScenario',
-      msg: `[DEBUG] ${stage}`,
-      data,
-      ts: Date.now(),
-    }),
-  }).then(() => undefined).catch(() => undefined);
-}
-// #endregion
-
-// #region debug-point A-E:foundation-invalid-reference-resend
 function reportFoundationInvalidReferenceResendDebug(
   hypothesisId: string,
   stage: string,
@@ -14140,7 +14429,7 @@ function reportFoundationInvalidReferenceResendDebug(
     method: 'POST',
     body: JSON.stringify({
       sessionId: 'foundation-invalid-reference-resend',
-      runId: 'pre-fix',
+      runId: 'post-fix',
       hypothesisId,
       location: 'harness.ts:runFoundationInvalidReferenceScenario',
       msg: `[DEBUG] ${stage}`,
@@ -14149,9 +14438,49 @@ function reportFoundationInvalidReferenceResendDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
+
+// #region debug-point A-D:foundation-invalid-resource-toggle
+function reportFoundationInvalidResourceToggleDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7813/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-invalid-resource-toggle',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runDevelopmentInvalidResourceReferenceScenario',
+      msg: `[DEBUG] ${stage}`,
+      data: evidenceValue(data),
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
 // #endregion
 
-// #region debug-point A-H:base-active-mutation-conflict
+// #region debug-point A-D:foundation-model-recovery
+function reportFoundationModelRecoveryDebug(
+  hypothesisId: string,
+  stage: string,
+  data: Record<string, unknown> = {},
+): Promise<void> {
+  return fetch('http://127.0.0.1:7814/event', {
+    method: 'POST',
+    body: JSON.stringify({
+      sessionId: 'foundation-model-recovery',
+      runId: 'post-fix',
+      hypothesisId,
+      location: 'harness.ts:runDevelopmentProviderModelUnavailable',
+      msg: `[DEBUG] ${stage}`,
+      data: evidenceValue(data),
+      ts: Date.now(),
+    }),
+  }).then(() => undefined).catch(() => undefined);
+}
+// #endregion
+
 function reportActiveMutationConflictDebug(
   stage: string,
   data: Record<string, unknown> = {},
@@ -14169,9 +14498,7 @@ function reportActiveMutationConflictDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
-// #region debug-point A-E:as-f10-capability-contract
 function reportFoundationF10Debug(
   stage: string,
   data: Record<string, unknown> = {},
@@ -14189,7 +14516,6 @@ function reportFoundationF10Debug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
 function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
   const evidence = evidenceRecord(value, 'foundationF07TurnEvidence');
@@ -14221,7 +14547,7 @@ function foundationTurnAttemptFacts(value: unknown): Record<string, unknown>[] {
 }
 
 function foundationTurnStatusName(value: unknown): string {
-  return ({
+  const generatedName = ({
     [AgentTurnStatus.RUNNING]: 'running',
     [AgentTurnStatus.WAITING_LOCAL_TOOL]: 'waiting_local_tool',
     [AgentTurnStatus.COMPLETED]: 'completed',
@@ -14229,7 +14555,21 @@ function foundationTurnStatusName(value: unknown): string {
     [AgentTurnStatus.CANCELLED]: 'cancelled',
     [AgentTurnStatus.INTERRUPTED]: 'interrupted',
     [AgentTurnStatus.REJECTED]: 'rejected',
-  } as Record<number, string>)[Number(value)] ?? 'unknown';
+  } as Record<number, string>)[Number(value)];
+  if (generatedName) return generatedName;
+
+  const canonicalName = String(value ?? '').trim().toLowerCase();
+  return [
+    'running',
+    'waiting_local_tool',
+    'completed',
+    'failed',
+    'cancelled',
+    'interrupted',
+    'rejected',
+  ].includes(canonicalName)
+    ? canonicalName
+    : 'unknown';
 }
 
 async function runFoundationF07Scenario(input: {
@@ -14481,7 +14821,6 @@ async function runFoundationF07Scenario(input: {
     'foundationF07OriginalEvidenceBefore',
   );
 
-  // #region debug-point Y-AB:as-f07-regenerate-failure
   const reportRegenerateFailure = async (
     operation: 'first' | 'second',
     expectedConversationVersion: number,
@@ -14528,7 +14867,6 @@ async function runFoundationF07Scenario(input: {
         : '',
     });
   };
-  // #endregion
 
   const firstRegenerateStartedAt = performance.now();
   await reportFoundationF07Debug('Y-AB', 'regenerate-started', {
@@ -14732,6 +15070,7 @@ async function runFoundationF07Scenario(input: {
   if (branchStoreBefore.currentSessionKey !== conversation.conversation_id) {
     await branchStoreBefore.selectSession(conversation.conversation_id);
   }
+  await branchStoreBefore.loadSessions();
   try {
     await useChatStore.getState().branchFromMessage(
       String(firstRegenerateMessage.messageId),
@@ -14873,7 +15212,6 @@ async function runFoundationF07Scenario(input: {
     ).feedback,
     'foundationF07OriginalFeedbackEntriesAfter',
   );
-  // #region debug-point P-R:as-f07-assertion-inputs
   await reportFoundationF07Debug('P-R', 'revision-assertion-inputs', {
     edit: {
       sourceUserMessageId: sourceUser.messageId,
@@ -14909,7 +15247,6 @@ async function runFoundationF07Scenario(input: {
       feedbackCountAfter: originalFeedbackAfter.length,
     },
   });
-  // #endregion
 
   return {
     conversationId: conversation.conversation_id,
@@ -15064,14 +15401,6 @@ async function runFoundationF10Scenario(input: {
   if (!stationSession || !localSession) {
     throw new Error('agent.acceptance.capabilitySessionUnavailable');
   }
-  const crossDeviceSession = input.capabilitySessions.station.sessions.find(
-    (session) =>
-      session.session_id !== stationSession.session_id
-      && session.device_id !== stationSession.device_id,
-  );
-  if (!crossDeviceSession) {
-    throw new Error('agent.acceptance.crossDeviceSessionUnavailable');
-  }
 
   const agentId = input.agent.id || input.agent.name;
   const core = await withFoundationCapabilitiesDisabled(
@@ -15123,6 +15452,55 @@ async function runFoundationF10Scenario(input: {
     { requireEffectiveCapabilities: true },
   );
 
+  const stationSessionsBeforeControls =
+    await api.listAgentCapabilitySessions();
+  const crossDeviceCandidates = stationSessionsBeforeControls.sessions
+    .filter((session) =>
+      session.session_id !== stationSession.session_id
+      && session.device_id !== stationSession.device_id)
+    .sort((left, right) => {
+      const expiryOrder =
+        Date.parse(timestampIso(right.expires_at))
+        - Date.parse(timestampIso(left.expires_at));
+      return expiryOrder !== 0
+        ? expiryOrder
+        : right.session_id.localeCompare(left.session_id);
+    });
+  const crossDeviceSession = crossDeviceCandidates[0];
+  if (!crossDeviceSession) {
+    throw new Error('agent.acceptance.crossDeviceSessionUnavailable');
+  }
+  // #region debug-point A-B-E:as-f10-cross-device-session
+  await reportFoundationF10Debug('cross-device-session-selected', {
+    stationSessionCount: stationSessionsBeforeControls.sessions.length,
+    selectedSessionHash: await sha256Hex(stationSession.session_id),
+    crossDeviceSessionHash: await sha256Hex(crossDeviceSession.session_id),
+    crossDevicePlatform: clientPlatformName(crossDeviceSession.platform),
+    crossDeviceLeaseRevision: crossDeviceSession.lease_revision,
+    crossDeviceExpiresAt: timestampIso(crossDeviceSession.expires_at),
+    crossDeviceRemainingMs:
+      Date.parse(timestampIso(crossDeviceSession.expires_at)) - Date.now(),
+  });
+  await reportFoundationF10Debug('negative-controls-starting', {
+    stationSessionCount: stationSessionsBeforeControls.sessions.length,
+    selectedSessionStillPresent: stationSessionsBeforeControls.sessions.some(
+      (session) => session.session_id === stationSession.session_id,
+    ),
+    crossDeviceSessionStillPresent:
+      stationSessionsBeforeControls.sessions.some(
+        (session) => session.session_id === crossDeviceSession.session_id,
+      ),
+    crossDeviceCandidates: await Promise.all(
+      crossDeviceCandidates.map(async (session) => ({
+        sessionHash: await sha256Hex(session.session_id),
+        platform: clientPlatformName(session.platform),
+        leaseRevision: session.lease_revision,
+        expiresAt: timestampIso(session.expires_at),
+        remainingMs: Date.parse(timestampIso(session.expires_at)) - Date.now(),
+      })),
+    ),
+  });
+  // #endregion
   const controls = Object.fromEntries(await Promise.all(
     ([
       'unsupported',
@@ -15452,7 +15830,6 @@ async function foundationInterruptedReceiverSnapshot(
   const projected = [...useChatStore.getState().messages]
     .reverse()
     .find((message) => message.id === messageId);
-  // #region debug-point AA-AD:interrupted-receiver-snapshot
   await reportFoundationF06TerminalRaceDebug(
     'AA-AD',
     'interrupted-receiver-post-wait',
@@ -15479,7 +15856,6 @@ async function foundationInterruptedReceiverSnapshot(
       projectedMessageCount: useChatStore.getState().messages.length,
     },
   );
-  // #endregion
   if (!messageElement || !recovery || !error || !projected?.turnId) {
     throw new Error(
       'agent.acceptance.foundationInterruptedReceiverMissing',
@@ -15621,7 +15997,6 @@ async function readFoundationForbiddenActorOwner(
   };
 }
 
-// #region debug-point A-E:forbidden-actor-cleanup
 function reportForbiddenActorCleanupDebug(
   hypothesisId: string,
   stage: string,
@@ -15640,7 +16015,6 @@ function reportForbiddenActorCleanupDebug(
     }),
   }).then(() => undefined).catch(() => undefined);
 }
-// #endregion
 
 async function cleanupFoundationForbiddenActorOwner(
   scenarioKey: string,
@@ -15944,11 +16318,60 @@ async function rejectFoundationForbiddenActor(input: {
   const idempotencyKey = crypto.randomUUID();
   const content = `Forbidden actor ${input.sampleId}`;
   const startedAt = performance.now();
+  // #region debug-point F-J:forbidden-actor-receiver
+  const forbiddenActorReceiverSnapshot = () => {
+    const chatState = useChatStore.getState();
+    const currentMessages = chatState.messages;
+    const bufferedMessages = chatState.sessionBuffers[resourceId] ?? [];
+    const domAssistants = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]',
+      ),
+    );
+    return {
+      locale: i18n.language,
+      currentSessionMatches: chatState.currentSessionKey === resourceId,
+      currentMessageCount: currentMessages.length,
+      currentAssistantErrorTypes: currentMessages
+        .filter((message) => message.role === 'assistant')
+        .map((message) => message.typedError?.error_type ?? '')
+        .filter(Boolean),
+      bufferedMessageCount: bufferedMessages.length,
+      bufferedAssistantErrorTypes: bufferedMessages
+        .filter((message) => message.role === 'assistant')
+        .map((message) => message.typedError?.error_type ?? '')
+        .filter(Boolean),
+      operationStatus: chatState.operations[resourceId]?.status ?? 'absent',
+      isStreaming: chatState.isStreaming,
+      domAssistantCount: domAssistants.length,
+      domAssistantErrorTypes: domAssistants
+        .map((element) => element.dataset.ptAgentErrorType ?? '')
+        .filter(Boolean),
+      domForbiddenActorCount: document.querySelectorAll(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
+      ).length,
+      activeViewType: usePortalStore.getState().activeView?.type ?? 'none',
+    };
+  };
+  await reportFoundationForbiddenActorAccountGateDebug(
+    'F-J',
+    'before-first-rejection',
+    forbiddenActorReceiverSnapshot(),
+  );
+  // #endregion
   const first = await runFoundationForbiddenActorAttempt({
     conversationId: resourceId,
     idempotencyKey,
     content,
   });
+  // #region debug-point F-J:forbidden-actor-receiver
+  await reportFoundationForbiddenActorAccountGateDebug(
+    'F-J',
+    'after-first-rejection',
+    forbiddenActorReceiverSnapshot(),
+  );
+  // #endregion
   const replayed = await runFoundationForbiddenActorAttempt({
     conversationId: resourceId,
     idempotencyKey,
@@ -15976,14 +16399,32 @@ async function rejectFoundationForbiddenActor(input: {
   );
   // #endregion
 
-  await waitFor(
-    () => Boolean(document.querySelector(
-      '[data-pt-agent-message="assistant"]'
-      + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
-    )),
-    'forbidden actor receiver',
-    10_000,
+  try {
+    await waitFor(
+      () => Boolean(document.querySelector(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="OWNERSHIP_FORBIDDEN_ACTOR"]',
+      )),
+      'forbidden actor receiver',
+      10_000,
+    );
+  } catch (error) {
+    // #region debug-point F-J:forbidden-actor-receiver
+    await reportFoundationForbiddenActorAccountGateDebug(
+      'F-J',
+      'receiver-timeout',
+      forbiddenActorReceiverSnapshot(),
+    );
+    // #endregion
+    throw error;
+  }
+  // #region debug-point F-J:forbidden-actor-receiver
+  await reportFoundationForbiddenActorAccountGateDebug(
+    'F-J',
+    'receiver-observed',
+    forbiddenActorReceiverSnapshot(),
   );
+  // #endregion
   const errorSurface = Array.from(
     document.querySelectorAll<HTMLElement>(
       '[data-pt-agent-message="assistant"]'
@@ -16028,7 +16469,6 @@ async function rejectFoundationForbiddenActor(input: {
     receiverActorHash,
   };
   const identityBeforeRecovery = identityRuntime.getSnapshot();
-  // #region debug-point A-E:forbidden-actor-recovery-click
   await reportFoundationForbiddenActorAccountGateDebug(
     'A-E',
     'before-recovery-click',
@@ -16111,7 +16551,6 @@ async function rejectFoundationForbiddenActor(input: {
   } finally {
     recovery.removeEventListener('click', observeRecoveryClick);
   }
-  // #endregion
   receiver.accountGateObserved = true;
   receiver.recoveryExecuted = true;
 
@@ -16340,6 +16779,7 @@ interface FoundationDisposableRuntimeFixture {
 async function createGovernedToolRuntimeFixture(
   purpose: string,
   baseUrl: string,
+  apiKey: string,
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
   const purposeKey = purpose.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
@@ -16350,7 +16790,7 @@ async function createGovernedToolRuntimeFixture(
     name: requestedProviderId,
     description: `Development ${purpose}`,
     base_url: baseUrl,
-    api_key: crypto.randomUUID(),
+    api_key: apiKey,
   });
   const providerId = String(created.provider?.id || '');
   if (providerId !== requestedProviderId) {
@@ -16472,14 +16912,30 @@ async function deleteFoundationDisposableRuntimeFixture(
     (provider) => provider.id === fixture.providerId && provider.version > 0,
   );
   if (configuredProvider) {
-    await api.deleteProvider(fixture.providerId);
+    await api.deleteModel(
+      fixture.providerId,
+      fixture.modelId,
+    ).catch((error: unknown) => {
+      if (!isFoundationResourceNotFound(error)) throw error;
+    });
+    await api.deleteProvider(fixture.providerId).catch((error: unknown) => {
+      if (!isFoundationResourceNotFound(error)) throw error;
+    });
   }
-  const restoredProvider = await api.getProvider(fixture.providerId);
+  const restoredProvider = await api.getProvider(fixture.providerId).catch(
+    (error: unknown) => {
+      if (isFoundationResourceNotFound(error)) return null;
+      throw error;
+    },
+  );
   return {
     providerRestored:
-      restoredProvider.version === 0
-      && restoredProvider.has_api_key === false,
-    modelDeleted: !restoredProvider.models.some(
+      restoredProvider === null
+      || (
+        restoredProvider.version === 0
+        && restoredProvider.has_api_key === false
+      ),
+    modelDeleted: restoredProvider === null || !restoredProvider.models.some(
       (model) => model.id === fixture.modelId,
     ),
   };
@@ -16801,7 +17257,6 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
       tracedTurnDelta,
       diagnosticRejectedTurnCount,
     );
-    // #region debug-point A-D:incompatible-capability-turn-count-boundary
     await reportFoundationIncompatibleTurnCountDebug(
       'A-D',
       'turn-count-boundary',
@@ -16822,7 +17277,6 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
         diagnosticErrorCode,
       },
     );
-    // #endregion
     const afterReadback = await foundationConversationReadback(
       rejectedConversationId,
     );
@@ -16831,7 +17285,6 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
     const afterHash = await sha256Hex(stableJson(afterReadback.messages));
     const providerCallDelta =
       afterExecution.providerCallCount - beforeExecution.providerCallCount;
-    // #region debug-point E-H:incompatible-capability-readiness
     await reportFoundationIncompatibleCleanupDebug(
       'E-H',
       'readiness-readback-boundary',
@@ -16850,7 +17303,6 @@ async function runFoundationIncompatibleCapabilityScenario(input: {
         messageHashStable: beforeHash === afterHash,
       },
     );
-    // #endregion
 
     facts = {
       outcome: first.outcome,
@@ -17164,7 +17616,6 @@ async function runFoundationCancelledScenario(input: {
       let cancellationRequestCount = 0;
       const streamId = crypto.randomUUID();
 
-      // #region debug-point D:base-cancelled-start
       void reportFoundationBaseCancelledDebug('D', 'scenario-started', {
         attemptIndex,
         sampleId: input.sampleId,
@@ -17173,7 +17624,6 @@ async function runFoundationCancelledScenario(input: {
           useChatStore.getState().currentSessionKey
           === conversation.conversation_id,
       });
-      // #endregion
 
       const result = await withFoundationCapabilitiesDisabled(
         input.agent,
@@ -17214,7 +17664,6 @@ async function runFoundationCancelledScenario(input: {
               turnId = observedTurn;
               cancellationRequestCount += 1;
               cancellationRequestedAt = performance.now();
-              // #region debug-point B-D:base-cancelled-request
               void reportFoundationBaseCancelledDebug(
                 'B-D',
                 'cancel-requested',
@@ -17237,7 +17686,6 @@ async function runFoundationCancelledScenario(input: {
                   ),
                 },
               );
-              // #endregion
               resolveCancellation({
                 turnId,
                 result: api.cancelAgentTurn(turnId),
@@ -17266,7 +17714,6 @@ async function runFoundationCancelledScenario(input: {
             ['done', 'error', 'cancelled'].includes(event.event));
           const terminalEvent = terminalEvents[terminalEvents.length - 1];
 
-          // #region debug-point A-D:base-cancelled-result
           await reportFoundationBaseCancelledDebug(
             'A-D',
             'cancel-and-terminal-observed',
@@ -17288,7 +17735,6 @@ async function runFoundationCancelledScenario(input: {
               })),
             },
           );
-          // #endregion
 
           if (
             cancellationStatus === 'completed'
@@ -17351,7 +17797,6 @@ async function runFoundationCancelledScenario(input: {
                 || undefined,
             },
           );
-          // #region debug-point J-M:post-cancellation-reconcile
           const postReconcileState = useChatStore.getState();
           const postReconcileOperation =
             postReconcileState.operations[conversation.conversation_id];
@@ -17385,7 +17830,6 @@ async function runFoundationCancelledScenario(input: {
               ),
             },
           );
-          // #endregion
           const liveReceiver = await foundationCancelledReceiverSnapshot(
             turnId,
             'Foundation live cancellation receiver',
@@ -17748,6 +18192,25 @@ async function runFoundationInterruptedScenario(input: {
 
   await foundationF06ReplayRecording;
   await useChatStore.getState().selectSession(handoff.conversationId);
+  // #region debug-point E-G:foundation-recovery-prefix
+  const localBeforeInterruptedSync = useChatStore.getState();
+  await reportFoundationRecoveryPrefixDebug(
+    'E-G',
+    'interrupted-before-message-sync',
+    {
+      currentSessionMatches:
+        localBeforeInterruptedSync.currentSessionKey === handoff.conversationId,
+      matchingLocalMessages: localBeforeInterruptedSync.messages
+        .filter((message) => message.turnId === handoff.turnId)
+        .map((message) => ({
+          role: message.role,
+          contentLength: message.content.length,
+          terminalStatus: message.terminalStatus ?? '',
+          error: message.error ?? '',
+        })),
+    },
+  );
+  // #endregion
   await useChatStore.getState().syncMessages();
 
   const sourceReadback = await foundationConversationReadback(
@@ -17758,7 +18221,6 @@ async function runFoundationInterruptedScenario(input: {
       message.role === 'assistant' && message.turnId === handoff.turnId,
   );
   const sourceAssistant = sourceAssistants[sourceAssistants.length - 1];
-  // #region debug-point V-W:interrupted-message-readback
   await reportFoundationF06TerminalRaceDebug(
     'V-W',
     'interrupted-message-readback',
@@ -17783,8 +18245,64 @@ async function runFoundationInterruptedScenario(input: {
       })),
     },
   );
+  // #region debug-point E-G:foundation-recovery-prefix
+  await reportFoundationRecoveryPrefixDebug(
+    'E-G',
+    'interrupted-message-readback',
+    {
+      conversationStatus: String(sourceReadback.conversation.status ?? ''),
+      expectedTurnPresent: Boolean(handoff.turnId),
+      messages: sourceReadback.messages.map((message) => ({
+        role: message.role,
+        turnMatches: message.turnId === handoff.turnId,
+        turnPresent: Boolean(message.turnId),
+        contentLength: message.content.length,
+        status: message.status,
+        errorJsonPresent:
+          Boolean(String(message.errorJson ?? '').trim()),
+      })),
+      localMessages: useChatStore.getState().messages
+        .filter((message) => message.turnId === handoff.turnId)
+        .map((message) => ({
+          role: message.role,
+          contentLength: message.content.length,
+          terminalStatus: message.terminalStatus ?? '',
+          error: message.error ?? '',
+        })),
+    },
+  );
   // #endregion
   if (!sourceAssistant) {
+    // #region debug-point E-G:foundation-recovery-prefix
+    let attemptFacts: Record<string, unknown>[] = [];
+    let evidenceError = '';
+    try {
+      attemptFacts = foundationTurnAttemptFacts(
+        await foundationTurnEvidence(
+          handoff.conversationId,
+          handoff.turnId,
+        ),
+      ).map((attempt) => ({
+        attemptId: attempt.attemptId,
+        turnIdMatches: attempt.turnId === handoff.turnId,
+        index: attempt.index,
+        status: attempt.status,
+        errorCode: attempt.errorCode,
+      }));
+    } catch (error) {
+      evidenceError = error instanceof Error
+        ? error.message
+        : String(error);
+    }
+    await reportFoundationRecoveryPrefixDebug(
+      'E-G',
+      'interrupted-assistant-missing',
+      {
+        attemptFacts,
+        evidenceError,
+      },
+    );
+    // #endregion
     throw new Error('agent.acceptance.foundationInterruptedMessageMissing');
   }
   const persistedOutcomeCandidate = JSON.parse(
@@ -17807,7 +18325,6 @@ async function runFoundationInterruptedScenario(input: {
   )
     ? persistedOutcomeRecord.details as Record<string, unknown>
     : {};
-  // #region debug-point X-Y:interrupted-outcome-projection
   await reportFoundationF06TerminalRaceDebug(
     'X-Y',
     'interrupted-outcome-projection',
@@ -17834,7 +18351,6 @@ async function runFoundationInterruptedScenario(input: {
       persistedOutcomePresent: persistedOutcome !== undefined,
     },
   );
-  // #endregion
   if (!persistedOutcome) {
     throw new Error(
       'agent.acceptance.foundationInterruptedPersistedOutcomeMissing',
@@ -17936,7 +18452,6 @@ async function runFoundationInterruptedScenario(input: {
     recoveryChatBefore.operations[handoff.conversationId];
   const recoveryRecordBefore =
     useAgentTurnRecoveryStore.getState().active[handoff.conversationId];
-  // #region debug-point AE-AI:interrupted-recovery-click
   await reportFoundationF06TerminalRaceDebug(
     'AE-AI',
     'interrupted-recovery-click-started',
@@ -17961,12 +18476,10 @@ async function runFoundationInterruptedScenario(input: {
       recoveryPhase: recoveryRecordBefore?.phase ?? 'MISSING',
     },
   );
-  // #endregion
   recoveryAction.addEventListener('click', observeRecovery);
   recoveryAction.click();
   recoveryAction.removeEventListener('click', observeRecovery);
   await Promise.resolve();
-  // #region debug-point AE-AI:interrupted-recovery-click
   const recoveryChatAfter = useChatStore.getState();
   const recoveryOperationAfter =
     recoveryChatAfter.operations[handoff.conversationId];
@@ -17985,7 +18498,6 @@ async function runFoundationInterruptedScenario(input: {
         recoveryOperationAfter?.turnId === handoff.turnId,
     },
   );
-  // #endregion
 
   const recoveryDeadline = Date.now() + 30_000;
   let recoveryEvidence = await foundationTurnEvidence(
@@ -18013,7 +18525,6 @@ async function runFoundationInterruptedScenario(input: {
     const recoveryChatAtDeadline = useChatStore.getState();
     const recoveryOperationAtDeadline =
       recoveryChatAtDeadline.operations[handoff.conversationId];
-    // #region debug-point AE-AI:interrupted-recovery-attempt
     await reportFoundationF06TerminalRaceDebug(
       'AE-AI',
       'interrupted-recovery-attempt-missing',
@@ -18034,7 +18545,6 @@ async function runFoundationInterruptedScenario(input: {
           recoveryOperationAtDeadline?.turnId === handoff.turnId,
       },
     );
-    // #endregion
     throw new Error(
       'agent.acceptance.foundationInterruptedRecoveryAttemptMissing',
     );
@@ -18828,10 +19338,14 @@ async function evaluateDirectCellAssertions(
       return evaluateBaseInvalidReference(ctx);
     case 'BASE-INVALID_RESOURCE_REF':
       return evaluateBaseInvalidResourceReference(ctx);
+    case 'BASE-PERMISSION_DENIED':
+      return evaluateBasePermissionDenied(ctx);
     case 'BASE-DUPLICATE_CONFLICT':
       return evaluateBaseDuplicateConflict(ctx);
     case 'BASE-CREDENTIAL_MISSING':
       return evaluateBaseCredentialMissing(ctx);
+    case 'BASE-MODEL_UNAVAILABLE':
+      return evaluateBaseProviderModelUnavailable(ctx);
     case 'BASE-EXECUTOR_UNAVAILABLE':
       return evaluateBaseExecutorUnavailable(ctx);
     case 'BASE-LEASE_EXPIRED':
@@ -20468,6 +20982,117 @@ function evaluateBaseCredentialMissing(
   };
 }
 
+function evaluateBaseProviderModelUnavailableFacts(
+  facts: Record<string, unknown>,
+): Record<string, boolean> {
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationProviderModelUnavailableOutcome',
+  );
+  const typedError = evidenceRecord(
+    facts.typedError,
+    'foundationProviderModelUnavailableTypedError',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationProviderModelUnavailableDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationProviderModelUnavailableReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationProviderModelUnavailableStation',
+  );
+  const resolution = evidenceRecord(
+    facts.resolution,
+    'foundationProviderModelUnavailableResolution',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationProviderModelUnavailableReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationProviderModelUnavailableCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationProviderModelUnavailableRuntimeEvent',
+  );
+
+  return {
+    typedModelUnavailable: (
+      outcome.error === 'agent.errors.providerModelUnavailable'
+      && outcome.error_type === 'PROVIDER_MODEL_UNAVAILABLE'
+      && outcome.locale_key === 'agent.errors.providerModelUnavailable'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && stableJson(typedError) === stableJson(outcome)
+      && stableJson(Object.keys(details).sort())
+        === stableJson(['model_id', 'provider_id'])
+      && details.provider_id === station.providerId
+      && details.model_id === station.modelId
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'PROVIDER_MODEL_UNAVAILABLE'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && String(runtimeEvent.eventId).length === 64
+      && String(runtimeEvent.streamIdHash).length === 64
+      && String(runtimeEvent.conversationIdHash).length === 64
+      && String(runtimeEvent.payloadHash).length === 64
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && Number(runtimeEvent.sourceSequence) > 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRecoveryVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    chooseModelOpened: (
+      receiver.chooseModelExecuted === true
+      && resolution.type === 'chooseCompatibleModel'
+      && resolution.providerId === station.providerId
+      && resolution.modelId === station.modelId
+    ),
+    oneTerminalProviderAttempt: (
+      Number(station.traceDelta) === 1
+      && Number(station.providerCallCount) === 1
+      && Number(station.messageDelta) === 2
+    ),
+    zeroSuccessfulCompletion:
+      Number(station.completedAssistantCount) === 0,
+    queueUnchanged: Number(station.queueDelta) === 0,
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replay.sourceHash === station.stateHash
+    ),
+    cleanupComplete: (
+      cleanup.modelAdded === true
+      && cleanup.modelRemoved === true
+      && cleanup.agentRestored === true
+      && cleanup.conversationDeleted === true
+      && cleanup.localProjectionCleared === true
+    ),
+  };
+}
+
+function evaluateBaseProviderModelUnavailable(
+  ctx: DirectCellAssertionContext,
+): Record<string, boolean> {
+  return evaluateBaseProviderModelUnavailableFacts(evidenceRecord(
+    ctx.scenarioFacts,
+    'foundationProviderModelUnavailableFacts',
+  ));
+}
+
 function evaluateBaseAttachmentRejected(
   ctx: DirectCellAssertionContext,
 ): Record<string, boolean> {
@@ -22001,7 +22626,6 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
     betaMessageIds,
     String(betaConversation.conversationId),
   );
-  // #region debug-point F-K:as-f12-cross-topic
   void reportFoundationF12ProjectionDebug('F-K', 'cross-topic-checks', {
     alphaForeignFactHidden: alphaReceiver.foreignFactVisible === false,
     alphaOwnFactVisible: alphaReceiver.ownFactVisible === true,
@@ -22022,7 +22646,6 @@ function evaluateF12(ctx: DirectCellAssertionContext): Record<string, boolean | 
     betaRuntimeMatches: runtimeMatches(beta),
     betaReferenceDiagnostics,
   });
-  // #endregion
 
   return {
     twoTopicsDistinct:
@@ -22243,6 +22866,7 @@ const MCP_TERMINAL_OPERATION_STATUSES = new Set<CapabilityOperationStatus>([
   CapabilityOperationStatus.FAILED,
   CapabilityOperationStatus.CLEANUP_FAILED,
   CapabilityOperationStatus.UNKNOWN_SIDE_EFFECT,
+  CapabilityOperationStatus.DISCONNECTED,
 ]);
 
 function mcpOperationStatusName(status: CapabilityOperationStatus): string {
@@ -22278,12 +22902,12 @@ function mcpOperationStatusName(status: CapabilityOperationStatus): string {
   }
 }
 
-function mcpOperationEvidence(
+async function mcpOperationEvidence(
   operation: CapabilityOperation,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   return evidenceValue({
     operationId: operation.operationId,
-    idempotencyKey: operation.idempotencyKey,
+    idempotencyKeyHash: await sha256Hex(operation.idempotencyKey),
     payloadHash: operation.payloadHash,
     capabilityId: operation.capabilityId,
     capabilityVersion: operation.capabilityVersion,
@@ -22384,14 +23008,14 @@ async function mcpOperationReplayEvidence(
   if (!source.operation || !replay.operation) {
     throw new Error('agent.acceptance.mcpOperationReadbackMissing');
   }
-  const project = (
+  const project = async (
     value: typeof source,
-  ): Record<string, unknown> => ({
-    operation: mcpOperationEvidence(value.operation!),
+  ): Promise<Record<string, unknown>> => ({
+    operation: await mcpOperationEvidence(value.operation!),
     events: evidenceValue(value.events),
   });
-  const sourceProjection = project(source);
-  const replayProjection = project(replay);
+  const sourceProjection = await project(source);
+  const replayProjection = await project(replay);
   const sourceHash = await sha256Hex(stableJson(sourceProjection));
   const replayHash = await sha256Hex(stableJson(replayProjection));
   if (sourceHash !== replayHash) {
@@ -22526,7 +23150,7 @@ async function cleanupMcpLifecycleDevelopmentState(
         new Set([CapabilityOperationStatus.SUCCEEDED]),
         'MCP uninstall',
       );
-      uninstallOperation = mcpOperationEvidence(settled);
+      uninstallOperation = await mcpOperationEvidence(settled);
       await useMCPStore.getState().loadServers();
     }
     serverRemoved = !useMCPStore.getState().servers.some(
@@ -22619,6 +23243,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
 ): Promise<Record<string, unknown>> {
   if (
     !input.providerBaseUrl
+    || !input.providerApiKey
     || !input.command
     || !input.args
     || !input.env
@@ -22747,6 +23372,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
     const runtimeFixture = await createGovernedToolRuntimeFixture(
       'mcp-lifecycle',
       providerUrl.toString(),
+      input.providerApiKey,
     );
     state.providerId = runtimeFixture.providerId;
     state.modelId = runtimeFixture.modelId;
@@ -22908,13 +23534,72 @@ async function prepareMcpLifecycleDevelopmentJourney(
       'mcpToolLineage',
     );
     const lifecycleOperations = {
-      install: mcpOperationEvidence(install),
-      test: mcpOperationEvidence(test),
-      disconnect: mcpOperationEvidence(disconnect),
-      connect: mcpOperationEvidence(connect),
-      running: mcpOperationEvidence(running),
-      cancelled: mcpOperationEvidence(cancelled),
-      retry: mcpOperationEvidence(retry),
+      install: await mcpOperationEvidence(install),
+      test: await mcpOperationEvidence(test),
+      disconnect: await mcpOperationEvidence(disconnect),
+      connect: await mcpOperationEvidence(connect),
+      running: await mcpOperationEvidence(running),
+      cancelled: await mcpOperationEvidence(cancelled),
+      retry: await mcpOperationEvidence(retry),
+    };
+    const [
+      candidateCapabilitySessions,
+      candidateRuntimeProfile,
+      candidateTurnEvidence,
+      candidateConversations,
+    ] = await Promise.all([
+      waitForCapabilitySessionEvidence(),
+      api.getAgentEffectiveRuntimeProfile({ agent_id: state.agentId }),
+      foundationTurnEvidence(turn.conversationId, turn.turnId),
+      api.listAgentConversations(state.agentId, {
+        page: 1,
+        pageSize: 200,
+      }),
+    ]);
+    const candidateDirectAttestation = await buildDirectRuntimeAttestation(
+      {
+        cell: 'AS-04',
+        agent: disposableAgent,
+        agentId: state.agentId,
+        profile: candidateRuntimeProfile,
+        readiness,
+        capabilitySessions: candidateCapabilitySessions,
+        conversations: candidateConversations,
+        conversationReadback,
+        turnQueue: null,
+        turnEvidence: candidateTurnEvidence,
+        chatState: useChatStore.getState(),
+        sessionState: useSessionStore.getState(),
+        providerState: useProviderStore.getState(),
+        operation: useChatStore.getState().operations[turn.turnId],
+        lastAssistant: undefined,
+        scenarioFacts: stationFact,
+        platform: 'desktop_app',
+        locale: i18n.language,
+        sampleId: input.sampleId,
+      },
+      input.sampleId,
+    );
+    const candidateClientSession = evidenceRecord(
+      candidateDirectAttestation.clientSession,
+      'mcpCandidateClientSession',
+    );
+    const candidateRuntimeAttestation = {
+      ...candidateDirectAttestation,
+      networkPath: 'desktop-client-capability->station-mcp-operation',
+      toolCallBinding: {
+        toolCallId: String(toolLineage.toolCallId),
+        turnId: turn.turnId,
+        attemptId: String(toolLineage.attemptId),
+        capabilityId: String(toolLineage.manifestId),
+        capabilityVersion: String(toolLineage.manifestVersion),
+        bindingId: String(toolLineage.bindingId),
+        bindingRevision: Number(toolLineage.bindingRevision),
+        readinessSnapshotId: String(toolLineage.readinessSnapshotId),
+        sideEffectReceiptId: String(toolLineage.sideEffectReceiptId),
+        selectedDeviceId: String(candidateClientSession.deviceId),
+        selectedLeaseId: String(candidateClientSession.leaseId),
+      },
     };
     const assertions = {
       manifestAndConfigurationVisible:
@@ -23007,6 +23692,16 @@ async function prepareMcpLifecycleDevelopmentJourney(
         toolLineage,
       },
       replay: operationReplay,
+      candidateBaseline: {
+        runtimeAttestation: candidateRuntimeAttestation,
+        toolCallId,
+        toolCallSelector,
+        toolLineage,
+        sideEffectCount,
+        receiverText:
+          document.querySelector<HTMLElement>(toolCallSelector)
+            ?.textContent?.trim() ?? '',
+      },
     }) as Record<string, unknown>;
   } catch (error) {
     primaryError = error;
@@ -23132,7 +23827,7 @@ async function recoverMcpLifecycleDevelopmentJourney(
         binding: bindingReadback,
       },
       'executor-receipts': {
-        reconnect: mcpOperationEvidence(reconnect),
+        reconnect: await mcpOperationEvidence(reconnect),
       },
       replay: {
         terminalOperations: terminalReadback,
@@ -23181,6 +23876,637 @@ async function runMcpLifecycleDevelopmentJourney(
     default:
       throw new Error('agent.acceptance.mcpDevelopmentPhaseInvalid');
   }
+}
+
+const MCP_LIFECYCLE_CANDIDATE_CELLS = new Set([
+  'AS-04',
+  'R-01',
+  'R-02',
+  'R-03',
+  'R-04',
+  'ERR-O01',
+  'ERR-O02',
+  'ERR-O03',
+  'ERR-O04',
+  'ERR-O05',
+  'ERR-O06',
+  'ERR-O07',
+  'ERR-O08',
+]);
+
+async function waitForChangedMcpOperation(
+  serverName: string,
+  previousOperationId: string,
+  description: string,
+): Promise<CapabilityOperation> {
+  await waitFor(
+    () => {
+      const operation =
+        useMCPStore.getState().operationsByServer[serverName];
+      return Boolean(
+        operation?.operationId
+        && operation.operationId !== previousOperationId,
+      );
+    },
+    description,
+    60_000,
+  );
+  return currentMcpOperation(serverName, description);
+}
+
+async function waitForMcpCandidateOutcome(
+  serverName: string,
+  operationId: string,
+  cell: string,
+): Promise<CapabilityOperation> {
+  const expected = cell === 'ERR-O05'
+    ? new Set([CapabilityOperationStatus.DISCONNECTED])
+    : MCP_TERMINAL_OPERATION_STATUSES;
+  return waitForMcpOperation(
+    serverName,
+    operationId,
+    expected,
+    `MCP candidate ${cell} outcome`,
+    120_000,
+  );
+}
+
+function mcpCandidateExpectedStatus(
+  cell: string,
+  ordering: 'single' | 'A' | 'B',
+): string | null {
+  switch (cell) {
+    case 'AS-04':
+    case 'R-01':
+    case 'R-02':
+      return 'succeeded';
+    case 'R-03':
+      return ordering === 'A' ? 'cancelled' : 'succeeded';
+    case 'R-04':
+    case 'ERR-O04':
+      return 'timed_out';
+    case 'ERR-O01':
+      return null;
+    case 'ERR-O03':
+      return 'cancelled';
+    case 'ERR-O05':
+      return 'disconnected';
+    case 'ERR-O06':
+      return 'cleanup_failed';
+    case 'ERR-O02':
+    case 'ERR-O07':
+    case 'ERR-O08':
+      return 'unknown_side_effect';
+    default:
+      throw new Error(
+        `DESIGN_AMENDMENT_REQUIRED: MCP lifecycle cell ${cell} `
+        + 'has no expected terminal state',
+      );
+  }
+}
+
+async function runMcpUnavailableScenario(
+  input: McpLifecycleScenarioInput,
+): Promise<Record<string, unknown>> {
+  if (
+    input.platform !== 'browser'
+    || !['AS-04-UNAVAILABLE', 'TAX-04'].includes(input.cell)
+  ) {
+    throw new Error(
+      'DESIGN_AMENDMENT_REQUIRED: unsupported Browser MCP tuple',
+    );
+  }
+  await changeLanguage(input.locale);
+  useMCPStore.getState().reset();
+  const activity = () => ({
+    servers: useMCPStore.getState().servers.map((server) => server.name),
+    operationIds: Object.values(
+      useMCPStore.getState().operationsByServer,
+    ).map((operation) => operation.operationId),
+  });
+  const before = activity();
+  const beforeHash = await sha256Hex(stableJson(before));
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+    resource: 'settings',
+    id: 'mcp',
+  });
+  await useMCPStore.getState().loadServers();
+  await waitFor(
+    () => Boolean(
+      useMCPStore.getState().error
+      && document.querySelector<HTMLElement>('.ant-alert')
+        ?.getClientRects().length,
+    ),
+    'Browser MCP unavailable receiver',
+    30_000,
+  );
+  const after = activity();
+  const afterHash = await sha256Hex(stableJson(after));
+  const alert = document.querySelector<HTMLElement>('.ant-alert');
+  const actorPtid = authenticatedFoundationActorPtid();
+  const actorIdentityHash = await sha256Hex(actorPtid);
+  const readinessSnapshotId = await sha256Hex(stableJson({
+    actorIdentityHash,
+    cell: input.cell,
+    reasonCode: 'local_mcp_unavailable',
+    scenarioExecutionId: input.scenarioExecutionId,
+  }));
+  const assertions = {
+    browserUnavailableVisible: Boolean(alert?.getClientRects().length),
+    zeroLocalMcpActivity:
+      beforeHash === afterHash
+      && before.operationIds.length === 0
+      && after.operationIds.length === 0,
+  };
+  const failed = Object.entries(assertions)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  useMCPStore.getState().reset();
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  if (failed.length > 0) {
+    throw new Error(
+      `agent.acceptance.mcpUnavailableAssertionsFailed:${failed.join(',')}`,
+    );
+  }
+  const stateHash = await sha256Hex(stableJson({
+    state: 'unavailable',
+    reasonCode: 'local_mcp_unavailable',
+    beforeHash,
+    afterHash,
+  }));
+  return evidenceValue({
+    assertions,
+    runtimeAttestation: {
+      scenarioExecutionId: input.scenarioExecutionId,
+      actorIdentityHash,
+      unavailableAttestation: {
+        readinessSnapshotId,
+        state: 'unavailable',
+        reasonCode: 'local_mcp_unavailable',
+        activityBeforeHash: beforeHash,
+        activityAfterHash: afterHash,
+        zeroExecutionCount: 0,
+      },
+      stationProfile: 'mcp-unavailable',
+      desktopMode: input.platform,
+      networkPath: 'browser->desktop-rust-unavailable-guard',
+      machine: navigator.userAgent,
+      coldWarmState: 'neutral',
+      observedAt: new Date().toISOString(),
+    },
+    roles: {
+      'receiver-dom': {
+        scenarioId: input.cell,
+        cellId: input.cell,
+        selector: '.ant-alert',
+        locale: input.locale,
+        textHash: await sha256Hex(alert?.textContent?.trim() ?? ''),
+        expectedVisible: true,
+        visible: true,
+      },
+      'station-readback': {
+        entityKind: 'mcp-runtime-unavailable',
+        entityIdHash: readinessSnapshotId,
+        revision: 1,
+        stateHash,
+      },
+      'side-effect-count': {
+        counterId: `mcp-unavailable:${input.scenarioExecutionId}`,
+        count: 0,
+        maximum: 0,
+      },
+      'zero-execution': {
+        counterKind: 'local-mcp-operation',
+        count: 0,
+        expected: 0,
+      },
+      cleanup: {
+        resourceKind: 'browser-mcp-unavailable-projection',
+        resourceIdHash: await sha256Hex(input.scenarioExecutionId),
+        status: 'clean',
+      },
+    },
+  }) as Record<string, unknown>;
+}
+
+async function runMcpDesktopCandidateScenario(
+  input: McpLifecycleScenarioInput,
+): Promise<Record<string, unknown>> {
+  if (
+    input.platform !== 'desktop_app'
+    || !MCP_LIFECYCLE_CANDIDATE_CELLS.has(input.cell)
+  ) {
+    throw new Error(
+      'DESIGN_AMENDMENT_REQUIRED: unsupported Desktop MCP tuple',
+    );
+  }
+  await changeLanguage(input.locale);
+  await refreshGovernedToolCapabilitySession('desktop_app');
+  const prepared = await prepareMcpLifecycleDevelopmentJourney({
+    phase: 'prepare',
+    sampleId: input.sampleId,
+    serverName: input.serverName,
+    providerBaseUrl: input.providerBaseUrl,
+    providerApiKey: input.providerApiKey,
+    command: input.command,
+    args: input.args,
+    env: input.env,
+    toolName: input.toolName,
+    expectedResult: input.expectedResult,
+  });
+  const state = prepared.state as unknown as McpLifecycleDevelopmentState;
+  const baseline = evidenceRecord(
+    prepared.candidateBaseline,
+    'mcpCandidateBaseline',
+  );
+  const baselineRuntimeAttestation = evidenceRecord(
+    baseline.runtimeAttestation,
+    'mcpCandidateRuntimeAttestation',
+  );
+  const toolLineage = evidenceRecord(
+    baseline.toolLineage,
+    'mcpCandidateToolLineage',
+  );
+  const previousOperationId = currentMcpOperation(
+    input.serverName,
+    'MCP candidate baseline',
+  ).operationId;
+  let preparedScenario:
+    Awaited<ReturnType<typeof api.prepareCapabilityAcceptanceScenario>>
+    | null = null;
+  let operation: CapabilityOperation | null = null;
+  let operationReplay: Record<string, unknown> | null = null;
+  let operationStartError = '';
+  let controlFacts: Record<string, unknown> = {};
+  let capture: Record<string, unknown> | null = null;
+  let primaryError: unknown = null;
+  let cleanupError: unknown = null;
+  const scenarioStartedAt = performance.now();
+
+  try {
+    preparedScenario = await api.prepareCapabilityAcceptanceScenario(create(
+      PrepareCapabilityAcceptanceScenarioRequestSchema,
+      {
+        runId: input.runId,
+        scenarioExecutionId: input.scenarioExecutionId,
+        cell: input.cell,
+        platform: input.platform,
+        locale: input.locale,
+        ordering: input.ordering,
+        sampleId: input.sampleId,
+        family: CapabilityAcceptanceScenarioFamily.MCP_J04,
+        runtimeAttestationProfile:
+          CapabilityAcceptanceRuntimeProfile.CLIENT_CAPABILITY_TURN,
+      },
+    ));
+    const scenarioBarrier = capabilityScenarioBarrier(
+      preparedScenario.opaqueResourceIds,
+    );
+    if (preparedScenario.executorHookTicket) {
+      await api.armCapabilityAcceptanceExecutorHook(create(
+        ArmCapabilityAcceptanceExecutorHookRequestSchema,
+        {
+          scenarioHandle: preparedScenario.scenarioHandle,
+          executorHookTicket: preparedScenario.executorHookTicket,
+        },
+      ));
+    }
+
+    const controlBarrier = async (): Promise<void> => {
+      if (!scenarioBarrier || !preparedScenario) return;
+      const reached = await api.waitCapabilityAcceptanceBarrier(create(
+        WaitCapabilityAcceptanceBarrierRequestSchema,
+        {
+          scenarioHandle: preparedScenario.scenarioHandle,
+          barrier: scenarioBarrier,
+        },
+      ));
+      if (!reached.reached) {
+        throw new Error(
+          'agent.acceptance.capabilityScenarioBarrierNotReached',
+        );
+      }
+      if (input.cell === 'R-03' || input.cell === 'ERR-O03') {
+        if (input.cell === 'R-03' && input.ordering === 'B') {
+          await api.releaseCapabilityAcceptanceBarrier(create(
+            ReleaseCapabilityAcceptanceBarrierRequestSchema,
+            {
+              scenarioHandle: preparedScenario.scenarioHandle,
+              barrier: scenarioBarrier,
+            },
+          ));
+          const current = await waitForChangedMcpOperation(
+            input.serverName,
+            previousOperationId,
+            'MCP R-03/B operation identity',
+          );
+          await waitForMcpCandidateOutcome(
+            input.serverName,
+            current.operationId,
+            input.cell,
+          );
+          await useMCPStore.getState().cancelOperation(input.serverName);
+          controlFacts = {
+            ordering: 'B',
+            firstCommit: 'terminal-result',
+          };
+          return;
+        }
+        const current = await waitForChangedMcpOperation(
+          input.serverName,
+          previousOperationId,
+          'MCP cancellation operation identity',
+        );
+        await waitForMcpOperation(
+          input.serverName,
+          current.operationId,
+          new Set([CapabilityOperationStatus.RUNNING]),
+          'MCP cancellation operation to reach RUNNING',
+        );
+        await useMCPStore.getState().cancelOperation(input.serverName);
+        await api.releaseCapabilityAcceptanceBarrier(create(
+          ReleaseCapabilityAcceptanceBarrierRequestSchema,
+          {
+            scenarioHandle: preparedScenario.scenarioHandle,
+            barrier: scenarioBarrier,
+          },
+        ));
+        controlFacts = {
+          ordering: input.ordering,
+          firstCommit: 'cancel-fence',
+        };
+        return;
+      }
+      if (input.cell === 'ERR-O07') {
+        const interrupted =
+          await api.interruptCapabilityAcceptanceWorker(create(
+            InterruptCapabilityAcceptanceWorkerRequestSchema,
+            {
+              scenarioHandle: preparedScenario.scenarioHandle,
+              barrier: scenarioBarrier,
+            },
+          ));
+        if (!interrupted.interrupted) {
+          throw new Error(
+            'agent.acceptance.capabilityScenarioWorkerNotInterrupted',
+          );
+        }
+        controlFacts = { workerInterrupted: true };
+        return;
+      }
+      try {
+        await api.releaseCapabilityAcceptanceBarrier(create(
+          ReleaseCapabilityAcceptanceBarrierRequestSchema,
+          {
+            scenarioHandle: preparedScenario.scenarioHandle,
+            barrier: scenarioBarrier,
+          },
+        ));
+      } catch (error) {
+        if (input.cell !== 'ERR-O05') throw error;
+        controlFacts = {
+          releaseResponseLostAfterExecutorDisconnect:
+            observedErrorCode(error),
+        };
+      }
+      controlFacts = {
+        ...controlFacts,
+        ordering: input.ordering,
+        firstCommit: input.ordering === 'A'
+          ? 'scenario-action'
+          : 'operation-event',
+      };
+    };
+
+    if (input.cell === 'R-04') {
+      const barrierControl = controlBarrier();
+      try {
+        await useMCPStore.getState().testServer(input.serverName);
+      } catch (error) {
+        operationStartError = observedErrorCode(error);
+      }
+      await barrierControl;
+      const started = await waitForChangedMcpOperation(
+        input.serverName,
+        previousOperationId,
+        'MCP R-04 operation identity',
+      );
+      operation = await waitForMcpCandidateOutcome(
+        input.serverName,
+        started.operationId,
+        input.cell,
+      );
+    } else {
+      const barrierControl = controlBarrier();
+      try {
+        await useMCPStore.getState().testServer(input.serverName);
+      } catch (error) {
+        operationStartError = observedErrorCode(error);
+      }
+      await barrierControl;
+      if (input.cell !== 'ERR-O01') {
+        const started = await waitForChangedMcpOperation(
+          input.serverName,
+          previousOperationId,
+          `MCP ${input.cell} operation identity`,
+        );
+        operation = await waitForMcpCandidateOutcome(
+          input.serverName,
+          started.operationId,
+          input.cell,
+        );
+      }
+    }
+
+    if (operation) {
+      operationReplay = await mcpOperationReplayEvidence(
+        operation.operationId,
+      );
+    }
+    await navigateToMcpSettings(input.serverName);
+    const receiver = mcpReceiverSnapshot(input.serverName);
+    const expectedStatus = mcpCandidateExpectedStatus(
+      input.cell,
+      input.ordering,
+    );
+    const actualStatus = operation
+      ? mcpOperationStatusName(operation.status)
+      : null;
+    const replaySourceHash = operationReplay
+      ? String(operationReplay.sourceHash)
+      : await sha256Hex(stableJson({
+          cell: input.cell,
+          error: operationStartError,
+          operationCreated: false,
+        }));
+    const replayHash = operationReplay
+      ? String(operationReplay.replayHash)
+      : replaySourceHash;
+    const toolCallId = String(baseline.toolCallId);
+    const toolCallBinding = evidenceRecord(
+      baselineRuntimeAttestation.toolCallBinding,
+      'mcpCandidateToolCallBinding',
+    );
+    const payloadHash = String(
+      toolLineage.terminalReceiptPayloadHash ?? '',
+    );
+    const assertions = {
+      baselineLifecyclePassed: Object.values(
+        evidenceRecord(prepared.assertions, 'mcpBaselineAssertions'),
+      ).every(Boolean),
+      cellOutcomeMatched:
+        actualStatus === expectedStatus
+        && (
+          input.cell !== 'ERR-O01'
+          || Boolean(operationStartError)
+        ),
+      receiverVisible: receiver.visible === true,
+      replayEqual: replaySourceHash === replayHash,
+      oneMcpToolSideEffect: Number(baseline.sideEffectCount) === 1,
+      receiptBound:
+        Boolean(toolCallId)
+        && Boolean(toolCallBinding.sideEffectReceiptId)
+        && /^[0-9a-f]{64}$/.test(payloadHash),
+    };
+    const failed = Object.entries(assertions)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
+    if (failed.length > 0) {
+      throw new Error(
+        `agent.acceptance.mcpCandidateAssertionsFailed:${failed.join(',')}`,
+      );
+    }
+    const entityId = operation?.operationId ?? input.scenarioExecutionId;
+    const revision = Math.max(Number(operation?.revision ?? 0), 1);
+    const card = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-pt-mcp-server]'),
+    ).find((element) =>
+      element.dataset.ptMcpServer === input.serverName);
+    capture = evidenceValue({
+      assertions,
+      runtimeAttestation: {
+        ...baselineRuntimeAttestation,
+        scenarioExecutionId: input.scenarioExecutionId,
+        desktopMode: input.platform,
+        networkPath: 'desktop-client-capability->station-mcp-operation',
+      },
+      roles: {
+        'receiver-dom': {
+          scenarioId: input.cell,
+          cellId: input.cell,
+          selector: `[data-pt-mcp-server="${input.serverName}"]`,
+          locale: input.locale,
+          textHash: await sha256Hex(card?.textContent?.trim() ?? ''),
+          expectedVisible: true,
+          visible: receiver.visible === true,
+        },
+        'station-readback': {
+          entityKind: operation
+            ? 'capability-operation'
+            : 'capability-operation-rejection',
+          entityIdHash: await sha256Hex(entityId),
+          revision,
+          stateHash: replaySourceHash,
+        },
+        'executor-receipts': {
+          receiptId: String(toolCallBinding.sideEffectReceiptId),
+          toolCallId,
+          fencingToken: Number(toolLineage.fencingToken),
+          status: 'APPLIED',
+          payloadHash,
+          operation: operation
+            ? await mcpOperationEvidence(operation)
+            : null,
+        },
+        'measurement-report': {
+          metric: 'mcp-lifecycle-settlement-ms',
+          sampleIds: [input.sampleId],
+          threshold: 900_000,
+          actual: Math.round(performance.now() - scenarioStartedAt),
+          passed: performance.now() - scenarioStartedAt <= 900_000,
+        },
+        'side-effect-count': {
+          counterId: `mcp-tool-call:${toolCallId}`,
+          count: Number(baseline.sideEffectCount),
+          maximum: 1,
+        },
+        replay: {
+          sourceHash: replaySourceHash,
+          replayHash,
+          equal: replaySourceHash === replayHash,
+        },
+      },
+      facts: {
+        operation: operation ? await mcpOperationEvidence(operation) : null,
+        operationStartError,
+        controlFacts,
+      },
+    }) as Record<string, unknown>;
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    if (preparedScenario) {
+      try {
+        await api.cleanupCapabilityAcceptanceScenario(create(
+          CleanupCapabilityAcceptanceScenarioRequestSchema,
+          { scenarioHandle: preparedScenario.scenarioHandle },
+        ));
+        await refreshGovernedToolCapabilitySession('desktop_app');
+      } catch (error) {
+        cleanupError = error;
+      }
+    }
+    try {
+      const cleanup = await cleanupMcpLifecycleDevelopmentState(state);
+      if (cleanup.status !== 'clean') {
+        cleanupError = new Error(
+          'agent.acceptance.mcpCandidateResourceCleanupIncomplete',
+        );
+      }
+    } catch (error) {
+      cleanupError = error;
+    }
+  }
+  if (cleanupError) {
+    const primaryMessage = primaryError instanceof Error
+      ? primaryError.message
+      : String(primaryError ?? 'none');
+    const cleanupMessage = cleanupError instanceof Error
+      ? cleanupError.message
+      : String(cleanupError);
+    throw new Error(
+      'agent.acceptance.mcpCandidateCleanupFailed: '
+      + `primary=${primaryMessage}; cleanup=${cleanupMessage}`,
+    );
+  }
+  if (primaryError) throw primaryError;
+  if (!capture) {
+    throw new Error('agent.acceptance.mcpCandidateCaptureMissing');
+  }
+  return capture;
+}
+
+async function runMcpLifecycleScenario(
+  input: McpLifecycleScenarioInput,
+): Promise<Record<string, unknown>> {
+  if (input.platform === 'browser') {
+    return runMcpUnavailableScenario(input);
+  }
+  const capture = await runMcpDesktopCandidateScenario(input);
+  const roles = evidenceRecord(capture.roles, 'mcpCandidateRoles');
+  const cleanup = {
+    resourceKind: 'mcp-lifecycle-candidate-scenario',
+    resourceIdHash: await sha256Hex(input.scenarioExecutionId),
+    status: 'clean',
+  };
+  return evidenceValue({
+    ...capture,
+    roles: {
+      ...roles,
+      cleanup,
+    },
+    cleanup,
+  }) as Record<string, unknown>;
 }
 
 async function completeConnectorOAuthFixture(input: {
@@ -23253,6 +24579,7 @@ async function completeConnectorOAuthFixture(input: {
 async function connectorDevelopmentFixture(
   agentId: string,
   connectorId: string,
+  resourceId = 'connection.status',
 ): Promise<{
   fixture: FoundationToolFixture;
   resource: ConnectorResourceManifest;
@@ -23262,7 +24589,7 @@ async function connectorDevelopmentFixture(
   const resource = useAgentConnectorStore.getState().resourceManifests.find(
     (candidate) =>
       candidate.connectorId === connectorId
-      && candidate.resourceId === 'connection.status'
+      && candidate.resourceId === resourceId
       && candidate.status === ConnectorResourceStatus.READY,
   );
   if (!resource || resource.toolManifests.length !== 1) {
@@ -23365,9 +24692,39 @@ function connectorResourceEvidence(
   };
 }
 
+function connectorZeroExecution(
+  cell: string,
+  ordering: 'single' | 'A' | 'B',
+): boolean {
+  return cell.startsWith('ERR-CON')
+    || (['R-06', 'R-07'].includes(cell) && ordering === 'A');
+}
+
+function connectorExpectedErrorType(cell: string): string {
+  switch (cell) {
+    case 'ERR-CON01':
+      return 'CONNECTOR_OAUTH_EXPIRED';
+    case 'ERR-CON02':
+      return 'CONNECTOR_SCOPE_DENIED';
+    case 'ERR-CON03':
+      return 'CONNECTOR_RESOURCE_REMOVED';
+    case 'ERR-CON04':
+      return 'CONNECTOR_MANIFEST_STALE';
+    case 'R-06':
+      return 'CONNECTOR_REVOCATION_UNCONFIRMED';
+    case 'R-07':
+      return 'CAPABILITY_BINDING_VERSION_CONFLICT';
+    default:
+      return '';
+  }
+}
+
 async function runConnectorInvocationDevelopmentJourney(
   input: ConnectorInvocationDevelopmentInput,
 ): Promise<Record<string, unknown>> {
+  if (!input.providerApiKey) {
+    throw new Error('agent.acceptance.connectorProviderCredentialMissing');
+  }
   const providerUrl = new URL(input.providerBaseUrl);
   if (
     providerUrl.protocol !== 'http:'
@@ -23380,7 +24737,23 @@ async function runConnectorInvocationDevelopmentJourney(
   if (!connectorId) {
     throw new Error('agent.acceptance.connectorIdMissing');
   }
+  const candidateMode = Boolean(
+    input.runId
+    && input.scenarioExecutionId
+    && input.cell
+    && input.platform
+    && input.locale
+    && input.ordering,
+  );
+  const platform = input.platform ?? 'desktop_app';
+  const cell = input.cell ?? 'AS-06';
+  const ordering = input.ordering ?? 'single';
+  const zeroExecution = connectorZeroExecution(cell, ordering);
+  const resourceId = cell === 'ERR-CON02'
+    ? 'connection.profile'
+    : 'connection.status';
 
+  await useAgentStore.getState().loadAgents();
   const agentStore = useAgentStore.getState();
   const priorSelection = agentStore.selectedAgent;
   const priorSurface = agentStore.getAgentSurface(priorSelection);
@@ -23391,18 +24764,42 @@ async function runConnectorInvocationDevelopmentJourney(
   let conversationId = '';
   let turn: FoundationToolTurn | null = null;
   let capture: Record<string, unknown> | null = null;
+  let preparedScenario:
+    Awaited<ReturnType<typeof api.prepareCapabilityAcceptanceScenario>>
+    | null = null;
+  let scenarioBarrier = '';
+  let barrierControl: Promise<void> | null = null;
+  let candidateRuntimeAttestation: Record<string, unknown> | null = null;
+  let candidateRoles: Record<string, Record<string, unknown>> | null = null;
+  let candidateCapabilitySessions:
+    Awaited<ReturnType<typeof waitForCapabilitySessionEvidence>> | null = null;
+  let candidateRuntimeProfile:
+    Awaited<ReturnType<typeof api.getAgentEffectiveRuntimeProfile>> | null =
+      null;
+  let candidateReadiness:
+    Awaited<ReturnType<typeof api.getAgentCapabilityReadiness>> | null = null;
+  let raceDisconnect:
+    Awaited<ReturnType<typeof api.oauth2Disconnect>> | null = null;
   let primaryError: unknown = null;
-  let cleanupError: unknown = null;
+  let cleanupErrors: AcceptanceCleanupFailure[] = [];
+  const scenarioStartedAt = performance.now();
   const cleanup: Record<string, boolean> = {
     connectorDisabled: false,
     conversationDeleted: false,
+    connectorBindingsDeleted: false,
     disposableAgentDeleted: false,
     fixtureModelDeleted: false,
     fixtureProviderDeleted: false,
     selectionRestored: false,
+    scenarioCleaned: !candidateMode,
   };
 
   try {
+    if (candidateMode) {
+      if (input.locale === 'en' || input.locale === 'zh-CN') {
+        await changeLanguage(input.locale);
+      }
+    }
     const connected = await completeConnectorOAuthFixture({
       connectorId,
       sampleId: `${input.sampleId}-connected`,
@@ -23412,6 +24809,7 @@ async function runConnectorInvocationDevelopmentJourney(
     runtimeFixture = await createGovernedToolRuntimeFixture(
       'connector-invocation',
       providerUrl.toString(),
+      input.providerApiKey,
     );
     disposableAgent = await agentStore.createAgent({
       name: `connector-${input.sampleId}-${crypto.randomUUID()}`,
@@ -23437,6 +24835,9 @@ async function runConnectorInvocationDevelopmentJourney(
     document.querySelector<HTMLElement>(
       '[data-pt-agent-profile-tab="capabilities"]',
     )?.click();
+    if (candidateMode) {
+      await refreshConnectorCapabilitySession(platform, disposableAgentId);
+    }
     await useAgentConnectorStore.getState().loadConnectors();
     await useAgentConnectorStore.getState().bindConnector(
       disposableAgentId,
@@ -23445,6 +24846,7 @@ async function runConnectorInvocationDevelopmentJourney(
     const initial = await connectorDevelopmentFixture(
       disposableAgentId,
       connectorId,
+      resourceId,
     );
     if (!initial.fixture.binding) {
       throw new Error('agent.acceptance.connectorBindingReadbackMissing');
@@ -23486,53 +24888,170 @@ async function runConnectorInvocationDevelopmentJourney(
     if (!toolCallElement) {
       throw new Error('agent.acceptance.connectorReceiverMissing');
     }
-    let approve = toolCallElement.querySelector<HTMLButtonElement>(
-      '[data-pt-agent-tool-decision="approve"]',
+    const approvalId = String(
+      evidenceField(approval, 'approvalId', 'approval_id') ?? '',
     );
-    if (!approve) {
-      toolCallElement.querySelector<HTMLElement>(
-        '[data-pt-agent-tool-call-toggle]',
-      )?.click();
-      await waitFor(
-        () => Boolean(toolCallElement.querySelector(
-          '[data-pt-agent-tool-decision="approve"]',
-        )),
-        'Connector ToolCall approval control',
-        10_000,
+    const decisionRevision = Number(
+      evidenceField(approval, 'decisionRevision', 'decision_revision') ?? 0,
+    );
+    if (!approvalId || !Number.isInteger(decisionRevision)) {
+      throw new Error('agent.acceptance.connectorApprovalInvalid');
+    }
+    if (candidateMode) {
+      [candidateRuntimeProfile, candidateReadiness] = await Promise.all([
+        api.getAgentEffectiveRuntimeProfile({ agent_id: disposableAgentId }),
+        api.getAgentCapabilityReadiness({
+          agent_id: disposableAgentId,
+          client_capability_session_id:
+            capabilitySession.capabilitySessionId,
+        }),
+      ]);
+      candidateCapabilitySessions = await waitForCapabilitySessionEvidence();
+      preparedScenario = await api.prepareCapabilityAcceptanceScenario(create(
+        PrepareCapabilityAcceptanceScenarioRequestSchema,
+        {
+          runId: input.runId,
+          scenarioExecutionId: input.scenarioExecutionId,
+          cell,
+          platform,
+          locale: input.locale,
+          ordering,
+          sampleId: input.sampleId,
+          family: CapabilityAcceptanceScenarioFamily.CONNECTOR_J05,
+          runtimeAttestationProfile: zeroExecution
+            ? CapabilityAcceptanceRuntimeProfile.STATION_TURN
+            : CapabilityAcceptanceRuntimeProfile.CLIENT_CAPABILITY_TURN,
+        },
+      ));
+      scenarioBarrier = capabilityScenarioBarrier(
+        preparedScenario.opaqueResourceIds,
       );
-      approve = toolCallElement.querySelector<HTMLButtonElement>(
+      if (scenarioBarrier) {
+        const barrierTurnId = turn.turnId;
+        barrierControl = (async () => {
+          const reached = await api.waitCapabilityAcceptanceBarrier(create(
+            WaitCapabilityAcceptanceBarrierRequestSchema,
+            {
+              scenarioHandle: preparedScenario?.scenarioHandle ?? '',
+              barrier: scenarioBarrier,
+            },
+          ));
+          if (!reached.reached) {
+            throw new Error(
+              'agent.acceptance.connectorScenarioBarrierNotReached',
+            );
+          }
+          if (cell === 'R-06' && ordering === 'A') {
+            raceDisconnect = await api.oauth2Disconnect(connectorId);
+          }
+          await api.releaseCapabilityAcceptanceBarrier(create(
+            ReleaseCapabilityAcceptanceBarrierRequestSchema,
+            {
+              scenarioHandle: preparedScenario?.scenarioHandle ?? '',
+              barrier: scenarioBarrier,
+            },
+          ));
+          if (cell === 'R-06' && ordering === 'B') {
+            await waitForFoundationToolFacts(
+              barrierTurnId,
+              governedToolSettlementSucceeded,
+              'Connector dispatch-first settlement',
+            );
+            raceDisconnect = await api.oauth2Disconnect(connectorId);
+          }
+        })();
+      }
+    }
+
+    let decisionAttempt:
+      ReturnType<typeof toolRuntime.getDecisionAttempt> | undefined;
+    if (candidateMode) {
+      const decisionInput = {
+        approval_id: approvalId,
+        tool_call_id: toolCallId,
+        decision_id: crypto.randomUUID(),
+        expected_revision: decisionRevision,
+        approved: true,
+        idempotency_key: crypto.randomUUID(),
+      };
+      const decisionResponse = await api.submitAgentToolDecision(decisionInput);
+      decisionAttempt = {
+        input: decisionInput,
+        response: decisionResponse,
+      };
+      if (barrierControl) await barrierControl;
+    } else {
+      let approve = toolCallElement.querySelector<HTMLButtonElement>(
         '[data-pt-agent-tool-decision="approve"]',
       );
+      if (!approve) {
+        toolCallElement.querySelector<HTMLElement>(
+          '[data-pt-agent-tool-call-toggle]',
+        )?.click();
+        await waitFor(
+          () => Boolean(toolCallElement.querySelector(
+            '[data-pt-agent-tool-decision="approve"]',
+          )),
+          'Connector ToolCall approval control',
+          10_000,
+        );
+        approve = toolCallElement.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-tool-decision="approve"]',
+        );
+      }
+      if (!approve || approve.disabled) {
+        throw new Error('agent.acceptance.connectorApprovalUnavailable');
+      }
+      approve.click();
+      await waitFor(
+        () => Boolean(toolRuntime.getDecisionAttempt(toolCallId)),
+        'Connector ToolCall decision acknowledgement',
+        30_000,
+      );
+      decisionAttempt = toolRuntime.getDecisionAttempt(toolCallId);
     }
-    if (!approve || approve.disabled) {
-      throw new Error('agent.acceptance.connectorApprovalUnavailable');
+    if (!decisionAttempt) {
+      throw new Error('agent.acceptance.connectorDecisionMissing');
     }
-    approve.click();
-    await waitFor(
-      () => Boolean(toolRuntime.getDecisionAttempt(toolCallId)),
-      'Connector ToolCall decision acknowledgement',
-      30_000,
-    );
-    const decisionAttempt = toolRuntime.getDecisionAttempt(toolCallId);
-    if (!decisionAttempt?.response.accepted || !decisionAttempt.response.approved) {
-      throw new Error('agent.acceptance.connectorDecisionRejected');
+    if (
+      zeroExecution
+        ? decisionAttempt.response.accepted
+        : !decisionAttempt.response.accepted
+          || !decisionAttempt.response.approved
+    ) {
+      throw new Error('agent.acceptance.connectorDecisionOutcomeUnexpected');
     }
     const replayedDecision = await api.submitAgentToolDecision(
       decisionAttempt.input,
     );
+    const zeroSettlement = (
+      facts: Record<string, unknown>[],
+      replay: Record<string, unknown>,
+    ): boolean => (
+      facts.length === 1
+      && Number(evidenceField(
+        facts[0],
+        'executionAttemptCount',
+        'execution_attempt_count',
+      ) ?? 0) === 0
+      && diagnosticReplayTerminal(replay)
+    );
+    const settlement = zeroExecution
+      ? zeroSettlement
+      : governedToolSettlementSucceeded;
     const source = await waitForFoundationToolFacts(
       turn.turnId,
-      governedToolSettlementSucceeded,
+      settlement,
       'Connector ToolCall settlement',
     );
     const replayed = await waitForFoundationToolFacts(
       turn.turnId,
-      governedToolSettlementSucceeded,
+      settlement,
       'Connector ToolCall replay',
     );
     await toolRuntime.reconcileMessages(useChatStore.getState().messages);
     await waitFor(
-      () => toolRuntime.getProjection(toolCallId)?.status === 'success',
+      () => toolRuntime.getProjection(toolCallId)?.pending === false,
       'Connector ToolCall terminal receiver projection',
       30_000,
     );
@@ -23556,12 +25075,24 @@ async function runConnectorInvocationDevelopmentJourney(
       'Connector ToolCall terminal native receiver',
       30_000,
     );
+    const terminalReceiverElement = document.querySelector<HTMLElement>(
+      toolCallSelector,
+    );
+    const terminalReceiverVisible = Boolean(
+      terminalReceiverElement?.getClientRects().length,
+    );
+    const terminalReceiverText =
+      terminalReceiverElement?.textContent?.trim() ?? '';
     const sourceFact = source.facts[0];
     const sideEffectCount = await foundationToolSideEffectCount(
-      'desktop_app',
+      platform,
       sourceFact,
     );
     const stationFact = diagnosticToolCase(sourceFact, sideEffectCount);
+    const lineage = evidenceRecord(
+      stationFact.lineage,
+      'connectorToolLineage',
+    );
     const sourceHash = await sha256Hex(stableJson(
       withoutDiagnosticGenerationTime(source.replay),
     ));
@@ -23569,13 +25100,12 @@ async function runConnectorInvocationDevelopmentJourney(
       withoutDiagnosticGenerationTime(replayed.replay),
     ));
     const receiverProjection = toolRuntime.getProjection(toolCallId);
-    const terminalReceiverVisible = Boolean(
-      document.querySelector<HTMLElement>(
-        toolCallSelector,
-      )?.getClientRects().length,
-    );
 
-    const firstDisconnect = await api.oauth2Disconnect(connectorId);
+    if (candidateMode && cell.startsWith('ERR-CON')) {
+      await api.syncOAuthConnectorManifests();
+    }
+    const firstDisconnect = raceDisconnect
+      ?? await api.oauth2Disconnect(connectorId);
     const replayedDisconnect = await api.oauth2Disconnect(connectorId);
     await useAgentConnectorStore.getState().loadConnectors();
     const disconnected = useOAuth2Store.getState().connections.find(
@@ -23591,9 +25121,17 @@ async function runConnectorInvocationDevelopmentJourney(
       scopes: ['read:user', 'user:email'],
       expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
+    if (candidateMode) {
+      await refreshConnectorCapabilitySession(platform, disposableAgentId);
+    }
+    await useAgentConnectorStore.getState().bindConnector(
+      disposableAgentId,
+      connectorId,
+    );
     const rebound = await connectorDevelopmentFixture(
       disposableAgentId,
       connectorId,
+      resourceId,
     );
     const reboundBinding = rebound.fixture.binding;
     if (!reboundBinding) {
@@ -23630,6 +25168,21 @@ async function runConnectorInvocationDevelopmentJourney(
     );
     const manifestEvidence = connectorResourceEvidence(initial.resource);
     const providerRevoke = firstDisconnect.provider_revoke;
+    const expectedErrorType = zeroExecution
+      ? connectorExpectedErrorType(cell)
+      : '';
+    const decisionResponseEvidence = evidenceRecord(
+      evidenceValue(decisionAttempt.response),
+      'Connector decision response',
+    );
+    const outcomeError = evidenceRecord(
+      evidenceField(
+        decisionResponseEvidence,
+        'outcomeError',
+        'outcome_error',
+      ) ?? {},
+      'Connector decision outcome error',
+    );
     const assertions = {
       oauthConnectionProjected:
         connected.status === 'active'
@@ -23637,7 +25190,7 @@ async function runConnectorInvocationDevelopmentJourney(
         && connected.projected_revision === connected.revision,
       resourceManifestVersionedAndCredentialFree:
         initial.resource.connectionRevision === BigInt(connected.revision)
-        && initial.resource.resourceId === 'connection.status'
+        && initial.resource.resourceId === resourceId
         && initial.resource.resourceVersion.length > 0
         && !/(access_token|refresh_token|client_secret)/i.test(
           stableJson(manifestEvidence),
@@ -23646,19 +25199,26 @@ async function runConnectorInvocationDevelopmentJourney(
         initial.fixture.binding.enabled
         && initial.fixture.binding.approvalPolicy
           === CapabilityApprovalPolicy.MANUAL,
-      governedInvocationPersistedOnce:
-        stationFact.executionAttemptCount === 1
-        && stationFact.sideEffectCount === 1
-        && stationFact.resultCount === 1
-        && stationFact.continuationCount === 1,
+      governedInvocationPersistedOnce: zeroExecution
+        ? stationFact.executionAttemptCount === 0
+          && stationFact.sideEffectCount === 0
+          && stationFact.resultCount === 0
+          && stationFact.continuationCount === 0
+        : stationFact.executionAttemptCount === 1
+          && stationFact.sideEffectCount === 1
+          && stationFact.resultCount === 1
+          && stationFact.continuationCount === 1,
       nativeReceiverVisible:
-        receiverProjection?.status === 'success'
-        && receiverProjection.pending === false
+        receiverProjection?.pending === false
         && terminalReceiverVisible,
       decisionAndStationReplayEqual:
         decisionAttempt.response.decision_id
           === replayedDecision.decision_id
         && sourceHash === replayHash,
+      typedConnectorFailure:
+        !expectedErrorType
+        || outcomeError.errorType === expectedErrorType
+        || outcomeError.error_type === expectedErrorType,
       providerRevokeUnconfirmedAndIdempotent:
         firstDisconnect.status === 'revocation_unconfirmed'
         && providerRevoke.status === 'unconfirmed'
@@ -23676,7 +25236,10 @@ async function runConnectorInvocationDevelopmentJourney(
         reconnected.status === 'active'
         && reconnected.revision > connected.revision
         && reconnected.projected_revision === reconnected.revision
-        && reboundBinding.bindingId === initial.fixture.binding.bindingId
+        && (
+          cell === 'R-07'
+          || reboundBinding.bindingId === initial.fixture.binding.bindingId
+        )
         && reboundBinding.capabilityVersion
           === rebound.fixture.manifest.version
         && reboundBinding.approvalPolicy
@@ -23691,6 +25254,150 @@ async function runConnectorInvocationDevelopmentJourney(
       throw new Error(
         `agent.acceptance.connectorInvocationAssertionsFailed:${failed.join(',')}`,
       );
+    }
+    if (candidateMode) {
+      const [turnEvidence, conversations] = await Promise.all([
+        foundationTurnEvidence(turn.conversationId, turn.turnId),
+        api.listAgentConversations(disposableAgentId, {
+          page: 1,
+          pageSize: 200,
+        }),
+      ]);
+      if (!candidateCapabilitySessions) {
+        throw new Error(
+          'agent.acceptance.connectorCapabilitySessionSnapshotMissing',
+        );
+      }
+      if (!candidateRuntimeProfile || !candidateReadiness) {
+        throw new Error(
+          'agent.acceptance.connectorAdmissionSnapshotMissing',
+        );
+      }
+      const directAttestation = await buildDirectRuntimeAttestation(
+        {
+          cell,
+          agent: disposableAgent,
+          agentId: disposableAgentId,
+          profile: candidateRuntimeProfile,
+          readiness: candidateReadiness,
+          capabilitySessions: candidateCapabilitySessions,
+          conversations,
+          conversationReadback,
+          turnQueue: null,
+          turnEvidence,
+          chatState: useChatStore.getState(),
+          sessionState: useSessionStore.getState(),
+          providerState: useProviderStore.getState(),
+          operation: useChatStore.getState().operations[turn.turnId],
+          lastAssistant: undefined,
+          scenarioFacts: stationFact,
+          platform,
+          locale: input.locale ?? 'en',
+          sampleId: input.sampleId,
+        },
+        input.sampleId,
+      );
+      if (zeroExecution) {
+        const stationTurnAttestation = { ...directAttestation };
+        delete stationTurnAttestation.clientSession;
+        candidateRuntimeAttestation = {
+          ...stationTurnAttestation,
+          scenarioExecutionId: input.scenarioExecutionId,
+          desktopMode: platform,
+          networkPath: `${platform}->station-connector-admission`,
+          oauthProviderId: connectorId,
+        };
+      } else {
+        const clientSession = evidenceRecord(
+          directAttestation.clientSession,
+          'connectorClientSession',
+        );
+        candidateRuntimeAttestation = {
+          ...directAttestation,
+          scenarioExecutionId: input.scenarioExecutionId,
+          desktopMode: platform,
+          networkPath: `${platform}->oauth-owner-client-executor`,
+          oauthProviderId: connectorId,
+          toolCallBinding: {
+            toolCallId: String(lineage.toolCallId),
+            turnId: turn.turnId,
+            attemptId: String(lineage.attemptId),
+            capabilityId: String(lineage.manifestId),
+            capabilityVersion: String(lineage.manifestVersion),
+            bindingId: String(lineage.bindingId),
+            bindingRevision: Number(lineage.bindingRevision),
+            readinessSnapshotId: String(lineage.readinessSnapshotId),
+            selectedDeviceId: String(clientSession.deviceId),
+            selectedLeaseId: String(clientSession.leaseId),
+            sideEffectReceiptId: String(lineage.sideEffectReceiptId),
+          },
+        };
+      }
+      candidateRoles = {
+        'receiver-dom': {
+          scenarioId: cell,
+          cellId: cell,
+          selector: toolCallSelector,
+          locale: input.locale,
+          textHash: await sha256Hex(terminalReceiverText),
+          expectedVisible: true,
+          visible: terminalReceiverVisible,
+        },
+        'station-readback': {
+          entityKind: 'connector-tool-call-lineage',
+          entityIdHash: await sha256Hex(toolCallId),
+          revision: Math.max(
+            Number(lineage.bindingRevision),
+            Number(lineage.decisionRevision),
+            Number(lineage.fencingToken),
+            1,
+          ),
+          stateHash: sourceHash,
+        },
+        'oauth-resource-manifest': {
+          connectionRevision: Number(initial.resource.connectionRevision),
+          resourceId: initial.resource.resourceId,
+          resourceVersion: initial.resource.resourceVersion,
+          scopesHash: await sha256Hex(stableJson(initial.resource.scopes)),
+          connectorId,
+          status: initial.resource.status,
+        },
+        'provider-revoke': {
+          providerId: connectorId,
+          status: 'revocation_unconfirmed',
+          observedProviderStatus: providerRevoke.status,
+          errorCode: providerRevoke.error_code,
+          idempotencyKeyHash: await sha256Hex(
+            providerRevoke.idempotency_key,
+          ),
+        },
+        'measurement-report': {
+          metric: 'connector-invocation-settlement-ms',
+          sampleIds: [input.sampleId],
+          threshold: 1_200_000,
+          actual: Math.round(performance.now() - scenarioStartedAt),
+          passed: performance.now() - scenarioStartedAt <= 1_200_000,
+        },
+        'side-effect-count': {
+          counterId: `tool-call:${toolCallId}`,
+          count: sideEffectCount,
+          maximum: zeroExecution ? 0 : 1,
+        },
+        ...(zeroExecution
+          ? {
+              'zero-execution': {
+                counterKind: 'connector-tool-execution-attempt',
+                count: Number(stationFact.executionAttemptCount),
+                expected: 0,
+              },
+            }
+          : {}),
+        replay: {
+          sourceHash,
+          replayHash,
+          equal: sourceHash === replayHash,
+        },
+      };
     }
     capture = {
       assertions,
@@ -23741,70 +25448,212 @@ async function runConnectorInvocationDevelopmentJourney(
         reconnected,
         reboundResource: connectorResourceEvidence(rebound.resource),
       },
+      ...(candidateMode
+        ? {
+            runtimeAttestation: candidateRuntimeAttestation,
+            roles: candidateRoles,
+          }
+        : {}),
     };
   } catch (error) {
     primaryError = error;
   } finally {
-    try {
-      const connection = useOAuth2Store.getState().connections.find(
-        (candidate) => candidate.provider_id === connectorId,
-      );
-      if (connection?.status === 'active') {
-        await api.oauth2Disconnect(connectorId);
-      }
-      cleanup.connectorDisabled = true;
-      if (conversationId) {
-        await cleanupFoundationToolConversation(
-          conversationId,
-          turn?.turnId ?? '',
-        );
-        cleanup.conversationDeleted = true;
-      }
-      if (disposableAgentId) {
-        await api.deleteAgent(disposableAgentId);
-        await useAgentStore.getState().loadAgents();
-        cleanup.disposableAgentDeleted = true;
-      }
-      if (runtimeFixture) {
-        await api.deleteModel(
-          runtimeFixture.providerId,
-          runtimeFixture.modelId,
-        );
-        cleanup.fixtureModelDeleted = true;
-        await api.deleteProvider(runtimeFixture.providerId);
-        cleanup.fixtureProviderDeleted = true;
-      }
-      if (priorSelection) {
-        useAgentStore.getState().setSelectedAgent(priorSelection);
-        useAgentStore.getState().setAgentSurface(
-          priorSelection,
-          priorSurface,
-        );
-        await api.setSelectedAgent(priorSelection);
-      }
-      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
-      cleanup.selectionRestored =
-        !priorSelection
-        || useAgentStore.getState().selectedAgent === priorSelection;
-    } catch (error) {
-      cleanupError = error;
-    }
-  }
+    cleanupErrors = await runAcceptanceCleanupSteps([
+      {
+        name: 'scenario',
+        run: async () => {
+          if (!preparedScenario) return;
+          const cleaned = await api.cleanupCapabilityAcceptanceScenario(create(
+            CleanupCapabilityAcceptanceScenarioRequestSchema,
+            { scenarioHandle: preparedScenario.scenarioHandle },
+          ));
+          cleanup.scenarioCleaned =
+            cleaned.scenarioHandle === preparedScenario.scenarioHandle;
+          if (!cleanup.scenarioCleaned) {
+            throw new Error(
+              'agent.acceptance.connectorScenarioCleanupIncomplete',
+            );
+          }
+        },
+      },
+      {
+        name: 'barrier',
+        run: async () => {
+          if (!barrierControl) return;
+          await barrierControl;
+        },
+      },
+      {
+        name: 'conversation',
+        run: async () => {
+          if (!conversationId) return;
+          await cleanupFoundationToolConversation(
+            conversationId,
+            turn?.turnId ?? '',
+          );
+          cleanup.conversationDeleted = true;
+        },
+      },
+      {
+        name: 'selection',
+        run: async () => {
+          eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+            resource: 'sessions',
+          });
+          if (priorSelection) {
+            await api.setSelectedAgent(priorSelection);
+            useAgentStore.getState().setSelectedAgent(priorSelection);
+            useAgentStore.getState().setAgentSurface(
+              priorSelection,
+              priorSurface,
+            );
+          }
+          cleanup.selectionRestored =
+            !priorSelection
+            || useAgentStore.getState().selectedAgent === priorSelection;
+          if (!cleanup.selectionRestored) {
+            throw new Error(
+              'agent.acceptance.connectorSelectionRestoreIncomplete',
+            );
+          }
+        },
+      },
+      {
+        name: 'bindings',
+        run: async () => {
+          if (!disposableAgentId) return;
+          const bindings = (
+            await api.listAgentCapabilityBindings(disposableAgentId)
+          ).filter((binding) => !binding.tombstonedAt);
+          const failures = await runAcceptanceCleanupSteps(
+            bindings.map((binding) => ({
+              name: binding.bindingId,
+              run: async () => {
+                await api.deleteAgentCapabilityBinding(
+                  binding.bindingId,
+                  binding.revision,
+                  crypto.randomUUID(),
+                  'acceptance_fixture_cleanup',
+                );
+              },
+            })),
+          );
+          if (failures.length > 0) {
+            throw new Error(
+              'agent.acceptance.connectorBindingCleanupFailed:'
+              + failures.map((failure) => failure.name).join(','),
+            );
+          }
+          const remainingBindings = (
+            await api.listAgentCapabilityBindings(disposableAgentId)
+          ).filter((binding) => !binding.tombstonedAt);
+          cleanup.connectorBindingsDeleted = remainingBindings.length === 0;
+          if (!cleanup.connectorBindingsDeleted) {
+            throw new Error(
+              'agent.acceptance.connectorBindingCleanupIncomplete',
+            );
+          }
+        },
+      },
+      {
+        name: 'agent',
+        run: async () => {
+          if (!disposableAgentId) return;
+          try {
+            await api.deleteAgent(disposableAgentId);
+          } catch (error) {
+            if (!isFoundationResourceNotFound(error)) throw error;
+          }
+          await useAgentStore.getState().loadAgents();
+          cleanup.disposableAgentDeleted = !useAgentStore.getState().agents
+            .some((agent) => agent.id === disposableAgentId);
+          if (!cleanup.disposableAgentDeleted) {
+            throw new Error(
+              'agent.acceptance.connectorAgentCleanupIncomplete',
+            );
+          }
+        },
+      },
+      {
+        name: 'runtime-fixture',
+        run: async () => {
+          if (!runtimeFixture) return;
+          const fixtureCleanup =
+            await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
+          cleanup.fixtureModelDeleted = fixtureCleanup.modelDeleted;
+          cleanup.fixtureProviderDeleted = fixtureCleanup.providerRestored;
+          if (
+            !cleanup.fixtureModelDeleted
+            || !cleanup.fixtureProviderDeleted
+          ) {
+            throw new Error(
+              'agent.acceptance.connectorRuntimeFixtureCleanupIncomplete',
+            );
+          }
+        },
+      },
+      {
+        name: 'connector',
+        run: async () => {
+          let connection: OAuth2Connection | null = null;
+          try {
+            connection = await api.oauth2GetConnection(connectorId);
+          } catch (error) {
+            if (!isFoundationResourceNotFound(error)) throw error;
+          }
+          if (connection?.status === 'active') {
+            for (let disconnectAttempt = 0; disconnectAttempt < 3; disconnectAttempt++) {
+              try {
+                await api.oauth2Disconnect(connectorId);
+                break;
+              } catch (error) {
+                if (disconnectAttempt === 2) throw error;
+                await new Promise((resolve) => setTimeout(resolve, 1_000));
+              }
+            }
+          }
+          for (let attempt = 0; attempt < 20; attempt++) {
+            try {
+              connection = await api.oauth2GetConnection(connectorId);
+            } catch (error) {
+              if (!isFoundationResourceNotFound(error)) throw error;
+              connection = null;
+            }
+            if (connection === null || connection.status !== 'active') break;
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+          }
+          cleanup.connectorDisabled =
+            connection === null || connection.status !== 'active';
+          if (!cleanup.connectorDisabled) {
+            throw new Error(
+              'agent.acceptance.connectorDisableIncomplete',
+            );
+          }
+        },
+      },
+    ]);
 
-  if (cleanupError) {
-    throw Object.assign(
-      new Error('agent.acceptance.connectorInvocationCleanupFailed'),
-      { primaryError, cleanupError },
-    );
   }
   if (primaryError) throw primaryError;
   if (!capture) {
     throw new Error('agent.acceptance.connectorInvocationCaptureMissing');
   }
-  const cleanupComplete = Object.values(cleanup).every(Boolean);
-  if (!cleanupComplete) {
-    throw new Error('agent.acceptance.connectorInvocationCleanupIncomplete');
-  }
+  const cleanupComplete = Object.values(cleanup).every(Boolean)
+    && cleanupErrors.length === 0;
+  const cleanupStatus = cleanupComplete ? 'clean' : 'degraded';
+  const runtimeCleanup = {
+    resourceKind: 'connector-invocation-candidate-scenario',
+    resourceIdHash: await sha256Hex(
+      input.scenarioExecutionId ?? input.sampleId,
+    ),
+    status: cleanupStatus,
+  };
+  const roles = candidateMode
+    ? {
+        ...evidenceRecord(capture.roles, 'connectorInvocationRoles'),
+        cleanup: runtimeCleanup,
+      }
+    : undefined;
   return evidenceValue({
     ...capture,
     assertions: {
@@ -23813,8 +25662,9 @@ async function runConnectorInvocationDevelopmentJourney(
     },
     cleanup: {
       ...cleanup,
-      status: 'clean',
+      status: cleanupStatus,
     },
+    ...(roles ? { roles } : {}),
   }) as Record<string, unknown>;
 }
 
@@ -23833,6 +25683,7 @@ const EVALUATION_COMMANDS = {
   listBenchmarks: 'agent_evaluation_benchmark_list',
   deleteBenchmark: 'agent_evaluation_benchmark_delete',
   createDataset: 'agent_evaluation_dataset_create',
+  updateDataset: 'agent_evaluation_dataset_update',
   listDatasets: 'agent_evaluation_dataset_list',
   deleteDataset: 'agent_evaluation_dataset_delete',
   createTestCase: 'agent_evaluation_case_create',
@@ -23992,6 +25843,14 @@ async function openEvaluationRunsTab(): Promise<void> {
     EVALUATION_SELECTORS.createRun,
   );
   if (!createRun?.getClientRects().length) {
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(EVALUATION_SELECTORS.runsTab)
+          ?.getClientRects().length,
+      ),
+      'Evaluation runs tab',
+      10_000,
+    );
     clickEvaluationTab(EVALUATION_SELECTORS.runsTab);
   }
   await waitFor(
@@ -24383,6 +26242,9 @@ async function prepareEvaluationDevelopmentJourney(
   if (!input.providerBaseUrl) {
     throw new Error('agent.acceptance.evaluationProviderUrlMissing');
   }
+  if (!input.providerApiKey) {
+    throw new Error('agent.acceptance.evaluationProviderCredentialMissing');
+  }
   const providerUrl = new URL(input.providerBaseUrl);
   if (
     providerUrl.protocol !== 'http:'
@@ -24420,6 +26282,7 @@ async function prepareEvaluationDevelopmentJourney(
     const runtimeFixture = await createGovernedToolRuntimeFixture(
       'evaluation',
       providerUrl.toString(),
+      input.providerApiKey,
     );
     state.providerId = runtimeFixture.providerId;
     state.modelId = runtimeFixture.modelId;
@@ -25152,10 +27015,1710 @@ async function runEvaluationDevelopmentJourney(
   }
 }
 
-async function runGovernedToolDevelopmentJourney(input: {
+const EVALUATION_SCENARIO_CELLS = new Set([
+  'AS-07',
+  'AS-08',
+  'AS-14',
+  'R-08',
+  'R-09',
+  'R-10',
+  'ERR-E01',
+  'ERR-E02',
+  'ERR-E03',
+  'ERR-E04',
+  'ERR-E05',
+]);
+
+const EVALUATION_CONTROL_PLANE_CELLS = new Set([
+  'ERR-E01',
+  'ERR-E02',
+  'ERR-E05',
+]);
+
+interface EvaluationScenarioFixture {
+  state: EvaluationScenarioState;
+  agent: NonNullable<ReturnType<typeof selectedAgent>>;
+  caseIds: string[];
+  datasetRevision: bigint;
+}
+
+interface EvaluationScenarioOutcome {
+  evidenceRunId: string;
+  expected: string;
+  actual: string;
+  errorCode: string;
+  readback: Awaited<ReturnType<typeof getEvaluationRun>> | null;
+  controlState: Record<string, unknown>;
+  raceObserved: boolean;
+  restartObserved: boolean;
+  durationMs?: number;
+}
+
+function evaluationScenarioProfile(
+  cell: string,
+): CapabilityAcceptanceRuntimeProfile {
+  return EVALUATION_CONTROL_PLANE_CELLS.has(cell)
+    ? CapabilityAcceptanceRuntimeProfile.STATION_CONTROL_PLANE
+    : CapabilityAcceptanceRuntimeProfile.STATION_TURN;
+}
+
+function evaluationErrorCodeName(value: unknown): string {
+  switch (Number(value)) {
+    case 1:
+      return 'EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT';
+    case 2:
+      return 'EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID';
+    case 3:
+      return 'EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE';
+    case 4:
+      return 'EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT';
+    case 5:
+      return 'EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE';
+    case 6:
+      return 'EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT';
+    case 7:
+      return 'EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT';
+    default:
+      return String(value ?? '');
+  }
+}
+
+function evaluationScenarioError(error: unknown): Record<string, unknown> {
+  const details = (
+    error
+    && typeof error === 'object'
+    && !Array.isArray(error)
+    && (error as { details?: unknown }).details
+    && typeof (error as { details?: unknown }).details === 'object'
+    && !Array.isArray((error as { details?: unknown }).details)
+  )
+    ? (error as { details: Record<string, unknown> }).details
+    : {};
+  const detailCode = String(details.error_code ?? '');
+  return {
+    code: detailCode === 'AGENT_4009'
+      ? 'VERSION_CONFLICT'
+      : detailCode || observedErrorCode(error),
+    localeKey: String(details.locale_key ?? ''),
+    retryable: String(details.retryable ?? '') === 'true',
+    terminal: String(details.terminal ?? '') === 'true',
+    details: Object.fromEntries(
+      Object.entries(details).filter(([key]) =>
+        !['status', 'body', 'error_code', 'locale_key', 'retryable', 'terminal']
+          .includes(key)),
+    ),
+  };
+}
+
+async function expectEvaluationScenarioError(
+  action: () => Promise<unknown>,
+  expectedCode: string,
+): Promise<Record<string, unknown>> {
+  try {
+    await action();
+  } catch (error) {
+    const observed = evaluationScenarioError(error);
+    if (observed.code !== expectedCode) {
+      throw new Error(
+        'agent.acceptance.evaluationUnexpectedError:'
+        + `${observed.code}:${expectedCode}`,
+      );
+    }
+    return observed;
+  }
+  throw new Error(`agent.acceptance.evaluationErrorMissing:${expectedCode}`);
+}
+
+function evaluationScenarioCaseDefinitions(cell: string) {
+  if (cell === 'AS-08') {
+    return [
+      {
+        input: 'J06_FAIL_ONCE_CASE',
+        expected: 'J06_RETRY_OK',
+        tags: ['j06', 'retry'],
+      },
+      {
+        input: 'J06_CANCEL_CASE',
+        expected: 'J06_CANCELLED',
+        tags: ['j06', 'cancel'],
+      },
+    ];
+  }
+  if (cell === 'AS-14' || cell === 'R-10') {
+    return [{
+      input: 'J06_FAIL_ONCE_CASE',
+      expected: 'J06_RETRY_OK',
+      tags: ['j06', 'retry'],
+    }];
+  }
+  if (cell === 'ERR-E04') {
+    return [
+      {
+        input: 'J06_FAIL_ONCE_CASE',
+        expected: 'J06_RETRY_OK',
+        tags: ['j06', 'retry-conflict-a'],
+      },
+      {
+        input: 'J06_PASS_CASE',
+        expected: 'J06_OK',
+        tags: ['j06', 'retry-conflict-b'],
+      },
+    ];
+  }
+  return [{
+    input: 'J06_PASS_CASE',
+    expected: 'J06_OK',
+    tags: ['j06', 'pass'],
+  }];
+}
+
+async function prepareEvaluationScenarioFixture(
+  input: EvaluationScenarioInput,
+  scenarioHandle: string,
+): Promise<EvaluationScenarioFixture> {
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (!actorId) throw new Error('agent.acceptance.evaluationActorMissing');
+  const providerUrl = new URL(input.providerBaseUrl);
+  if (
+    providerUrl.protocol !== 'http:'
+    || !providerUrl.hostname
+    || !providerUrl.port
+  ) {
+    throw new Error('agent.acceptance.evaluationProviderUrlInvalid');
+  }
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const runtimeFixture = await createGovernedToolRuntimeFixture(
+    'evaluation-scenario',
+    providerUrl.toString(),
+    input.providerApiKey,
+  );
+  const agent = await agentStore.createAgent({
+    name: `evaluation-${input.sampleId}-${crypto.randomUUID()}`,
+    title: `Evaluation ${input.cell} ${input.locale}`,
+    description: 'V2-J06 Evaluation candidate scenario',
+    provider: runtimeFixture.providerId,
+    model: runtimeFixture.modelId,
+  });
+  const agentId = agent.id || agent.name;
+  await api.setSelectedAgent(agent.name);
+  useAgentStore.getState().setSelectedAgent(agent.name);
+  useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  const capabilitySession = await resolveFoundationToolTurnSession();
+  await refreshEvaluationTargetProjection(agentId, {
+    clientCapabilitySessionId: capabilitySession.capabilitySessionId,
+  });
+  const readiness = await api.getAgentCapabilityReadiness({
+    agent_id: agentId,
+    client_capability_session_id: capabilitySession.capabilitySessionId,
+  });
+  if (!readiness.snapshot_id) {
+    throw new Error('agent.acceptance.evaluationReadinessMissing');
+  }
+  const benchmark = await invokeEvaluationProto(
+    EVALUATION_COMMANDS.createBenchmark,
+    CreateEvaluationBenchmarkRequestSchema,
+    CreateEvaluationBenchmarkResponseSchema,
+    create(CreateEvaluationBenchmarkRequestSchema, {
+      name: `V2-J06 ${input.scenarioExecutionId}`,
+      rubric: 'case_insensitive_contains',
+      idempotencyKey: crypto.randomUUID(),
+    }),
+  );
+  if (!benchmark.benchmark) {
+    throw new Error('agent.acceptance.evaluationBenchmarkMissing');
+  }
+  const dataset = await invokeEvaluationProto(
+    EVALUATION_COMMANDS.createDataset,
+    CreateEvaluationDatasetRequestSchema,
+    CreateEvaluationDatasetResponseSchema,
+    create(CreateEvaluationDatasetRequestSchema, {
+      benchmarkId: benchmark.benchmark.benchmarkId,
+      name: `V2-J06 dataset ${input.scenarioExecutionId}`,
+      description: `Fresh ${input.cell}/${input.ordering} fixture`,
+      expectedBenchmarkRevision: benchmark.benchmark.revision,
+      idempotencyKey: crypto.randomUUID(),
+    }),
+  );
+  if (!dataset.dataset) {
+    throw new Error('agent.acceptance.evaluationDatasetMissing');
+  }
+  let datasetRevision = dataset.dataset.revision;
+  const caseIds: string[] = [];
+  for (const definition of evaluationScenarioCaseDefinitions(input.cell)) {
+    const created = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.createTestCase,
+      CreateEvaluationTestCaseRequestSchema,
+      CreateEvaluationTestCaseResponseSchema,
+      create(CreateEvaluationTestCaseRequestSchema, {
+        datasetId: dataset.dataset.datasetId,
+        input: `${definition.input} ${input.scenarioExecutionId}`,
+        expected: definition.expected,
+        expectedDatasetRevision: datasetRevision,
+        idempotencyKey: crypto.randomUUID(),
+        tags: definition.tags,
+      }),
+    );
+    if (!created.testCase || !created.dataset) {
+      throw new Error('agent.acceptance.evaluationCaseMissing');
+    }
+    caseIds.push(created.testCase.caseId);
+    datasetRevision = created.dataset.revision;
+  }
+  return {
+    agent,
+    caseIds,
+    datasetRevision,
+    state: {
+      ownerActorId: actorId,
+      agentId,
+      agentName: agent.name,
+      providerId: runtimeFixture.providerId,
+      modelId: runtimeFixture.modelId,
+      benchmarkId: benchmark.benchmark.benchmarkId,
+      datasetId: dataset.dataset.datasetId,
+      datasetRevision: datasetRevision.toString(),
+      caseIds,
+      runIds: [],
+      evidenceRunId: '',
+      restartRunId: '',
+      readinessSnapshotId: readiness.snapshot_id,
+      scenarioHandle,
+      priorSelection,
+      priorSurface,
+    },
+  };
+}
+
+async function createEvaluationScenarioRun(
+  fixture: EvaluationScenarioFixture,
+  idempotencyKey = crypto.randomUUID(),
+  datasetRevision = fixture.datasetRevision,
+): Promise<EvaluationRun> {
+  const response = await invokeEvaluationProto(
+    EVALUATION_COMMANDS.createRun,
+    CreateEvaluationRunRequestSchema,
+    CreateEvaluationRunResponseSchema,
+    create(CreateEvaluationRunRequestSchema, {
+      datasetId: fixture.state.datasetId,
+      datasetRevision,
+      readinessSnapshotId: fixture.state.readinessSnapshotId,
+      idempotencyKey,
+      targetAgentId: fixture.state.agentId,
+      expectedAgentRevision: BigInt(fixture.agent.version),
+      modelId: fixture.state.modelId,
+    }),
+  );
+  if (!response.run) {
+    throw new Error('agent.acceptance.evaluationRunMissing');
+  }
+  fixture.state.runIds.push(response.run.runId);
+  return response.run;
+}
+
+async function startEvaluationScenarioRun(run: EvaluationRun) {
+  return invokeEvaluationProto(
+    EVALUATION_COMMANDS.startRun,
+    StartEvaluationRunRequestSchema,
+    StartEvaluationRunResponseSchema,
+    create(StartEvaluationRunRequestSchema, {
+      runId: run.runId,
+      expectedRevision: run.revision,
+      idempotencyKey: evaluationRevisionMutationKey(
+        'run:start',
+        run.runId,
+        run.revision,
+      ),
+    }),
+  );
+}
+
+async function waitForEvaluationReadback(
+  runId: string,
+  predicate: (
+    readback: Awaited<ReturnType<typeof getEvaluationRun>>,
+  ) => boolean,
+  description: string,
+  timeoutMs = 300_000,
+) {
+  const startedAt = Date.now();
+  let latest = await getEvaluationRun(runId);
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate(latest)) return latest;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    latest = await getEvaluationRun(runId);
+  }
+  throw new Error(`timed out waiting for: ${description}`);
+}
+
+async function waitForEvaluationTurnTrace(
+  turnId: string,
+  timeoutMs = 30_000,
+) {
+  const startedAt = Date.now();
+  let latest: Awaited<ReturnType<typeof api.getAgentTurnTrace>> | null = null;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      latest = await api.getAgentTurnTrace({ turnId });
+      const trace = latest.entry?.trace;
+      if (
+        trace
+        && evidenceField(
+          trace as unknown as Record<string, unknown>,
+          'traceId',
+          'trace_id',
+        )
+      ) {
+        return latest;
+      }
+    } catch (error) {
+      if (!isFoundationResourceNotFound(error)) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  throw new Error('agent.acceptance.evaluationTurnTraceMissing');
+}
+
+async function waitForEvaluationScenarioBarrier(
+  scenarioHandle: string,
+  barrier: string,
+) {
+  const reached = await api.waitCapabilityAcceptanceBarrier(create(
+    WaitCapabilityAcceptanceBarrierRequestSchema,
+    { scenarioHandle, barrier },
+  ));
+  if (!reached.reached) {
+    throw new Error('agent.acceptance.evaluationBarrierNotReached');
+  }
+  return reached;
+}
+
+async function releaseEvaluationScenarioBarrier(
+  scenarioHandle: string,
+  barrier: string,
+): Promise<void> {
+  await api.releaseCapabilityAcceptanceBarrier(create(
+    ReleaseCapabilityAcceptanceBarrierRequestSchema,
+    { scenarioHandle, barrier },
+  ));
+}
+
+async function runEvaluationScenarioCell(
+  input: EvaluationScenarioInput,
+  fixture: EvaluationScenarioFixture,
+  barrier: string,
+): Promise<EvaluationScenarioOutcome> {
+  const runTerminal = (runId: string) => waitForEvaluationReadback(
+    runId,
+    (readback) => Boolean(readback.run && evaluationRunIsTerminal(readback.run)),
+    `Evaluation scenario run ${runId}`,
+  );
+  const retryableParent = async () => {
+    const parent = await createEvaluationScenarioRun(fixture);
+    await startEvaluationScenarioRun(parent);
+    const terminal = await runTerminal(parent.runId);
+    if (
+      !terminal.run
+      || (
+        terminal.run.status !== EvaluationRunStatus.FAILED
+        && terminal.run.status !== EvaluationRunStatus.PARTIAL
+      )
+    ) {
+      throw new Error('agent.acceptance.evaluationRetryableParentMissing');
+    }
+    return terminal;
+  };
+  const retry = (
+    parent: EvaluationRun,
+    caseIds: string[],
+    idempotencyKey: string,
+  ) => invokeEvaluationProto(
+    EVALUATION_COMMANDS.retryCases,
+    RetryEvaluationCasesRequestSchema,
+    RetryEvaluationCasesResponseSchema,
+    create(RetryEvaluationCasesRequestSchema, {
+      parentRunId: parent.runId,
+      caseIds,
+      idempotencyKey,
+      expectedParentRevision: parent.revision,
+    }),
+  );
+
+  if (input.cell === 'ERR-E01') {
+    const staleRevision = fixture.datasetRevision;
+    const updated = await invokeEvaluationProto(
+      EVALUATION_COMMANDS.updateDataset,
+      UpdateEvaluationDatasetRequestSchema,
+      UpdateEvaluationDatasetResponseSchema,
+      create(UpdateEvaluationDatasetRequestSchema, {
+        datasetId: fixture.state.datasetId,
+        name: `superseded-${input.scenarioExecutionId}`,
+        description: 'Superseded before stale run creation.',
+        expectedRevision: fixture.datasetRevision,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    );
+    if (!updated.dataset) {
+      throw new Error('agent.acceptance.evaluationDatasetUpdateMissing');
+    }
+    fixture.datasetRevision = updated.dataset.revision;
+    fixture.state.datasetRevision = updated.dataset.revision.toString();
+    const error = await expectEvaluationScenarioError(
+      () => createEvaluationScenarioRun(
+        fixture,
+        crypto.randomUUID(),
+        staleRevision,
+      ),
+      'EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT',
+    );
+    return {
+      evidenceRunId: '',
+      expected: 'EVALUATION_ERROR_CODE_DATASET_REVISION_CONFLICT',
+      actual: String(error.code),
+      errorCode: String(error.code),
+      readback: null,
+      controlState: {
+        dataset: updated.dataset,
+        error,
+      },
+      raceObserved: true,
+      restartObserved: true,
+    };
+  }
+
+  if (input.cell === 'ERR-E02') {
+    const run = await createEvaluationScenarioRun(fixture);
+    const error = await expectEvaluationScenarioError(
+      () => startEvaluationScenarioRun(run),
+      'EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID',
+    );
+    const readback = await getEvaluationRun(run.runId);
+    return {
+      evidenceRunId: run.runId,
+      expected: 'EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID',
+      actual: String(error.code),
+      errorCode: String(error.code),
+      readback,
+      controlState: { run: readback.run, error },
+      raceObserved: true,
+      restartObserved: true,
+    };
+  }
+
+  if (input.cell === 'ERR-E05') {
+    const run = await createEvaluationScenarioRun(fixture);
+    await startEvaluationScenarioRun(run);
+    const readback = await runTerminal(run.runId);
+    return {
+      evidenceRunId: run.runId,
+      expected: 'EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE',
+      actual: evaluationErrorCodeName(readback.run?.error?.code),
+      errorCode: evaluationErrorCodeName(readback.run?.error?.code),
+      readback,
+      controlState: { run: readback.run, attempts: readback.attempts },
+      raceObserved: true,
+      restartObserved: true,
+    };
+  }
+
+  if (input.cell === 'R-10' || input.cell === 'ERR-E04' || input.cell === 'AS-14') {
+    const parentReadback = await retryableParent();
+    const parent = parentReadback.run;
+    if (!parent) throw new Error('agent.acceptance.evaluationParentMissing');
+    const retryKey = crypto.randomUUID();
+    if (input.cell === 'ERR-E04') {
+      const created = await retry(parent, [fixture.caseIds[0]], retryKey);
+      if (!created.childRun) {
+        throw new Error('agent.acceptance.evaluationRetryChildMissing');
+      }
+      fixture.state.runIds.push(created.childRun.runId);
+      const error = await expectEvaluationScenarioError(
+        () => retry(parent, [fixture.caseIds[1]], retryKey),
+        'EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT',
+      );
+      const childCurrent = await getEvaluationRun(created.childRun.runId);
+      if (
+        childCurrent.run
+        && (
+          childCurrent.run.status === EvaluationRunStatus.DRAFT
+          || childCurrent.run.status === EvaluationRunStatus.PENDING
+        )
+      ) {
+        await startEvaluationScenarioRun(childCurrent.run);
+      }
+      await runTerminal(created.childRun.runId);
+      return {
+        evidenceRunId: parent.runId,
+        expected: 'EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT',
+        actual: String(error.code),
+        errorCode: String(error.code),
+        readback: parentReadback,
+        controlState: { parent: parentReadback, child: created.childRun, error },
+        raceObserved: true,
+        restartObserved: true,
+      };
+    }
+    if (input.cell === 'R-10') {
+      const first = retry(parent, [fixture.caseIds[0]], retryKey);
+      await waitForEvaluationScenarioBarrier(
+        fixture.state.scenarioHandle,
+        barrier,
+      );
+      const duplicate = await retry(parent, [fixture.caseIds[0]], retryKey);
+      await releaseEvaluationScenarioBarrier(
+        fixture.state.scenarioHandle,
+        barrier,
+      );
+      const original = await first;
+      if (
+        !original.childRun
+        || !duplicate.childRun
+        || original.childRun.runId !== duplicate.childRun.runId
+      ) {
+        throw new Error('agent.acceptance.evaluationRetryRaceDuplicatedChild');
+      }
+      fixture.state.runIds.push(original.childRun.runId);
+      const childCurrent = await getEvaluationRun(original.childRun.runId);
+      if (
+        childCurrent.run
+        && (
+          childCurrent.run.status === EvaluationRunStatus.DRAFT
+          || childCurrent.run.status === EvaluationRunStatus.PENDING
+        )
+      ) {
+        await startEvaluationScenarioRun(childCurrent.run);
+      }
+      await runTerminal(original.childRun.runId);
+      return {
+        evidenceRunId: parent.runId,
+        expected: 'one retry child',
+        actual: original.childRun.runId,
+        errorCode: '',
+        readback: parentReadback,
+        controlState: {
+          parent: parentReadback,
+          child: original.childRun,
+          duplicateChild: duplicate.childRun,
+          ordering: input.ordering,
+        },
+        raceObserved: true,
+        restartObserved: true,
+      };
+    }
+    const child = await retry(parent, [fixture.caseIds[0]], retryKey);
+    if (!child.childRun) {
+      throw new Error('agent.acceptance.evaluationRetryChildMissing');
+    }
+    fixture.state.runIds.push(child.childRun.runId);
+    await startEvaluationScenarioRun(child.childRun);
+    const childTerminal = await runTerminal(child.childRun.runId);
+    fixture.state.evidenceRunId = child.childRun.runId;
+    if (input.cell === 'AS-14') {
+      const createdCase = await invokeEvaluationProto(
+        EVALUATION_COMMANDS.createTestCase,
+        CreateEvaluationTestCaseRequestSchema,
+        CreateEvaluationTestCaseResponseSchema,
+        create(CreateEvaluationTestCaseRequestSchema, {
+          datasetId: fixture.state.datasetId,
+          input: `J06_CANCEL_CASE ${input.scenarioExecutionId}`,
+          expected: 'J06_CANCELLED',
+          expectedDatasetRevision: fixture.datasetRevision,
+          idempotencyKey: crypto.randomUUID(),
+          tags: ['j06', 'restart'],
+        }),
+      );
+      if (!createdCase.testCase || !createdCase.dataset) {
+        throw new Error('agent.acceptance.evaluationRestartCaseMissing');
+      }
+      fixture.caseIds.push(createdCase.testCase.caseId);
+      fixture.datasetRevision = createdCase.dataset.revision;
+      fixture.state.datasetRevision = createdCase.dataset.revision.toString();
+      const restartRun = await createEvaluationScenarioRun(fixture);
+      fixture.state.restartRunId = restartRun.runId;
+      await startEvaluationScenarioRun(restartRun);
+      await waitForEvaluationReadback(
+        restartRun.runId,
+        (readback) => readback.attempts.some((attempt) => Boolean(attempt.turnId)),
+        `Evaluation restart run ${restartRun.runId} Turn`,
+      );
+    }
+    return {
+      evidenceRunId: child.childRun.runId,
+      expected: input.cell === 'AS-14'
+        ? 'durable parent, child, and running restart fixture'
+        : 'retry child completed',
+      actual: childTerminal.run?.runId ?? '',
+      errorCode: '',
+      readback: childTerminal,
+      controlState: {
+        parent: parentReadback,
+        child: childTerminal,
+        restartRunId: fixture.state.restartRunId,
+      },
+      raceObserved: true,
+      restartObserved: input.cell !== 'AS-14',
+    };
+  }
+
+  if (input.cell === 'AS-08') {
+    const run = await createEvaluationScenarioRun(fixture);
+    const started = await startEvaluationScenarioRun(run);
+    if (!started.run) throw new Error('agent.acceptance.evaluationStartMissing');
+    await waitForEvaluationReadback(
+      run.runId,
+      (readback) => readback.attempts.some((attempt) => Boolean(attempt.turnId)),
+      `Evaluation cancellable run ${run.runId}`,
+    );
+    let cancellationCommitted = false;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const current = await getEvaluationRun(run.runId);
+      if (!current.run) {
+        throw new Error('agent.acceptance.evaluationRunMissing');
+      }
+      try {
+        await invokeEvaluationProto(
+          EVALUATION_COMMANDS.cancelRun,
+          CancelEvaluationRunRequestSchema,
+          CancelEvaluationRunResponseSchema,
+          create(CancelEvaluationRunRequestSchema, {
+            runId: run.runId,
+            expectedRevision: current.run.revision,
+            idempotencyKey: evaluationRevisionMutationKey(
+              'run:cancel',
+              run.runId,
+              current.run.revision,
+            ),
+          }),
+        );
+        cancellationCommitted = true;
+        break;
+      } catch (error) {
+        if (observedErrorCode(error) !== 'VERSION_CONFLICT') throw error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    if (!cancellationCommitted) {
+      throw new Error('agent.acceptance.evaluationCancellationConflict');
+    }
+    const cancelled = await runTerminal(run.runId);
+    if (!cancelled.run) {
+      throw new Error('agent.acceptance.evaluationCancelledRunMissing');
+    }
+    const retryable = cancelled.attempts.find(
+      (attempt) => attempt.caseId === fixture.caseIds[0],
+    );
+    if (!retryable) {
+      throw new Error('agent.acceptance.evaluationRetrySourceMissing');
+    }
+    const child = await retry(
+      cancelled.run,
+      [retryable.caseId],
+      crypto.randomUUID(),
+    );
+    if (!child.childRun) {
+      throw new Error('agent.acceptance.evaluationRetryChildMissing');
+    }
+    fixture.state.runIds.push(child.childRun.runId);
+    await startEvaluationScenarioRun(child.childRun);
+    const childTerminal = await runTerminal(child.childRun.runId);
+    return {
+      evidenceRunId: child.childRun.runId,
+      expected: 'cancel acknowledgement and retry lineage',
+      actual: child.childRun.runId,
+      errorCode: '',
+      readback: childTerminal,
+      controlState: { cancelled, child: childTerminal },
+      raceObserved: cancelled.attempts.some(
+        (attempt) => Boolean(attempt.cancellationAckAt),
+      ),
+      restartObserved: true,
+    };
+  }
+
+  const run = await createEvaluationScenarioRun(fixture);
+  const started = await startEvaluationScenarioRun(run);
+  const startedRun = started.run;
+  if (!startedRun) throw new Error('agent.acceptance.evaluationStartMissing');
+  let completionFirstCancellationError: Record<string, unknown> | null = null;
+  if (input.cell === 'R-08') {
+    await waitForEvaluationScenarioBarrier(
+      fixture.state.scenarioHandle,
+      barrier,
+    );
+    await releaseEvaluationScenarioBarrier(
+      fixture.state.scenarioHandle,
+      barrier,
+    );
+  }
+  if (input.cell === 'R-09' && input.ordering === 'A') {
+    await waitForEvaluationScenarioBarrier(
+      fixture.state.scenarioHandle,
+      barrier,
+    );
+    const current = await getEvaluationRun(run.runId);
+    if (!current.run) throw new Error('agent.acceptance.evaluationRunMissing');
+    await invokeEvaluationProto(
+      EVALUATION_COMMANDS.cancelRun,
+      CancelEvaluationRunRequestSchema,
+      CancelEvaluationRunResponseSchema,
+      create(CancelEvaluationRunRequestSchema, {
+        runId: run.runId,
+        expectedRevision: current.run.revision,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    );
+    await releaseEvaluationScenarioBarrier(
+      fixture.state.scenarioHandle,
+      barrier,
+    );
+    await api.advanceCapabilityAcceptanceScenarioClock(create(
+      AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+      {
+        scenarioHandle: fixture.state.scenarioHandle,
+        milestone: 'evaluation-cancel-ack-deadline',
+      },
+    ));
+  } else if (input.cell === 'R-09' && input.ordering === 'B') {
+    const cancellation = expectEvaluationScenarioError(
+      () => invokeEvaluationProto(
+        EVALUATION_COMMANDS.cancelRun,
+        CancelEvaluationRunRequestSchema,
+        CancelEvaluationRunResponseSchema,
+        create(CancelEvaluationRunRequestSchema, {
+          runId: run.runId,
+          expectedRevision: startedRun.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      ),
+      'VERSION_CONFLICT',
+    );
+    await waitForEvaluationScenarioBarrier(
+      fixture.state.scenarioHandle,
+      barrier,
+    );
+    await runTerminal(run.runId);
+    await releaseEvaluationScenarioBarrier(
+      fixture.state.scenarioHandle,
+      barrier,
+    );
+    completionFirstCancellationError = await cancellation;
+  }
+  const terminal = await runTerminal(run.runId);
+  if (!terminal.run) throw new Error('agent.acceptance.evaluationRunMissing');
+  if (input.cell === 'ERR-E03') {
+    const beforeHash = await sha256Hex(stableJson(evidenceValue(terminal.run)));
+    const error = await expectEvaluationScenarioError(
+      () => invokeEvaluationProto(
+        EVALUATION_COMMANDS.cancelRun,
+        CancelEvaluationRunRequestSchema,
+        CancelEvaluationRunResponseSchema,
+        create(CancelEvaluationRunRequestSchema, {
+          runId: run.runId,
+          expectedRevision: terminal.run!.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      ),
+      'EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE',
+    );
+    const after = await getEvaluationRun(run.runId);
+    const afterHash = await sha256Hex(stableJson(evidenceValue(after.run)));
+    return {
+      evidenceRunId: run.runId,
+      expected: 'EVALUATION_ERROR_CODE_RUN_NOT_CANCELLABLE',
+      actual: String(error.code),
+      errorCode: String(error.code),
+      readback: after,
+      controlState: { run: after.run, error, beforeHash, afterHash },
+      raceObserved: beforeHash === afterHash,
+      restartObserved: true,
+    };
+  }
+  const cancellationTimedOut = input.cell === 'R-09' && input.ordering === 'A';
+  const completionWon = input.cell === 'R-09' && input.ordering === 'B';
+  return {
+    evidenceRunId: run.runId,
+    expected: cancellationTimedOut
+      ? 'EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT'
+      : completionWon
+        ? 'VERSION_CONFLICT'
+      : 'one terminal Evaluation result',
+    actual: cancellationTimedOut
+      ? evaluationErrorCodeName(terminal.run.error?.code)
+      : completionWon
+        ? String(completionFirstCancellationError?.code ?? '')
+      : terminal.run.runId,
+    errorCode: cancellationTimedOut
+      ? evaluationErrorCodeName(terminal.run.error?.code)
+      : completionWon
+        ? String(completionFirstCancellationError?.code ?? '')
+        : '',
+    readback: terminal,
+    controlState: {
+      run: terminal.run,
+      attempts: terminal.attempts,
+      results: terminal.results,
+      ordering: input.ordering,
+      completionFirstCancellationError,
+    },
+    raceObserved: completionWon
+      ? completionFirstCancellationError?.code === 'VERSION_CONFLICT'
+      : true,
+    restartObserved: true,
+  };
+}
+
+async function buildEvaluationScenarioRuntimeAttestation(
+  input: EvaluationScenarioInput,
+  fixture: EvaluationScenarioFixture,
+  outcome: EvaluationScenarioOutcome,
+): Promise<Record<string, unknown>> {
+  const actorIdentityHash = await sha256Hex(fixture.state.ownerActorId);
+  if (EVALUATION_CONTROL_PLANE_CELLS.has(input.cell)) {
+    const stateHash = await sha256Hex(stableJson(evidenceValue(
+      outcome.controlState,
+    )));
+    return {
+      scenarioExecutionId: input.scenarioExecutionId,
+      actorIdentityHash,
+      controlPlaneAttestation: {
+        authority: 'station-evaluation',
+        entityIdHash: await sha256Hex(
+          outcome.evidenceRunId || fixture.state.datasetId,
+        ),
+        readinessSnapshotId: fixture.state.readinessSnapshotId,
+        revision: Number(
+          outcome.readback?.run?.revision ?? fixture.datasetRevision,
+        ),
+        stateHash,
+        zeroExecutionCount: outcome.readback?.attempts.filter(
+          (attempt) => Boolean(attempt.turnId),
+        ).length ?? 0,
+      },
+      stationProfile: 'two',
+      desktopMode: input.platform,
+      networkPath: `${input.platform}->station-evaluation`,
+      machine: navigator.userAgent,
+      coldWarmState: 'neutral',
+      observedAt: new Date().toISOString(),
+    };
+  }
+  const readback = outcome.readback;
+  const attempt = readback?.attempts.find((candidate) => candidate.turnId);
+  if (!attempt?.turnId) {
+    throw new Error('agent.acceptance.evaluationTurnAttemptMissing');
+  }
+  const traceResponse = await waitForEvaluationTurnTrace(attempt.turnId);
+  const traceEntry = evidenceRecord(
+    evidenceValue(traceResponse.entry),
+    'evaluationTurnTraceEntry',
+  );
+  const turn = evidenceRecord(traceEntry.turn, 'evaluationTurn');
+  const conversationId = String(
+    evidenceField(turn, 'conversationId', 'conversation_id') ?? '',
+  );
+  if (!conversationId) {
+    throw new Error('agent.acceptance.evaluationConversationMissing');
+  }
+  const profileRequest = api.getAgentEffectiveRuntimeProfile({
+    agent_id: fixture.state.agentId,
+  });
+  const capabilitySession = await resolveFoundationToolTurnSession();
+  const [
+    profile,
+    readiness,
+    capabilitySessions,
+    conversations,
+    conversationReadback,
+    turnEvidence,
+  ] = await Promise.all([
+    profileRequest,
+    api.getAgentCapabilityReadiness({
+      agent_id: fixture.state.agentId,
+      client_capability_session_id: capabilitySession.capabilitySessionId,
+    }),
+    waitForCapabilitySessionEvidence(),
+    api.listAgentConversations(fixture.state.agentId, {
+      page: 1,
+      pageSize: 200,
+    }),
+    foundationConversationReadback(conversationId),
+    foundationTurnEvidence(conversationId, attempt.turnId),
+  ]);
+  const direct = await buildDirectRuntimeAttestation(
+    {
+      cell: input.cell,
+      agent: fixture.agent,
+      agentId: fixture.state.agentId,
+      profile,
+      readiness,
+      capabilitySessions,
+      conversations,
+      conversationReadback,
+      turnQueue: null,
+      turnEvidence,
+      chatState: useChatStore.getState(),
+      sessionState: useSessionStore.getState(),
+      providerState: useProviderStore.getState(),
+      operation: undefined,
+      lastAssistant: undefined,
+      scenarioFacts: outcome.controlState,
+      platform: input.platform,
+      locale: input.locale,
+      sampleId: input.sampleId,
+    },
+    input.sampleId,
+  );
+  delete direct.clientSession;
+  return {
+    ...direct,
+    scenarioExecutionId: input.scenarioExecutionId,
+    desktopMode: input.platform,
+    networkPath: `${input.platform}->station-evaluation-turn`,
+  };
+}
+
+function evaluationScenarioTurnMaximum(cell: string): number {
+  switch (cell) {
+    case 'AS-08':
+    case 'ERR-E04':
+      return 3;
+    case 'AS-14':
+      return 4;
+    case 'R-10':
+      return 2;
+    default:
+      return EVALUATION_CONTROL_PLANE_CELLS.has(cell) ? 0 : 1;
+  }
+}
+
+const EVALUATION_EVIDENCE_OMITTED_KEYS = new Set([
+  'idempotencyKey',
+  'idempotency_key',
+]);
+
+function evaluationEvidenceValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(evaluationEvidenceValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !EVALUATION_EVIDENCE_OMITTED_KEYS.has(key))
+        .map(([key, item]) => [key, evaluationEvidenceValue(item)]),
+    );
+  }
+  return evidenceValue(value);
+}
+
+async function buildEvaluationScenarioCapture(
+  input: EvaluationScenarioInput,
+  fixture: EvaluationScenarioFixture,
+  outcome: EvaluationScenarioOutcome,
+): Promise<Record<string, unknown>> {
+  await refreshEvaluationTargetProjection(fixture.state.agentId);
+  await openEvaluationRunsTab();
+  const selector = outcome.evidenceRunId
+    ? `[data-pt-evaluation-run="${outcome.evidenceRunId}"]`
+    : EVALUATION_SELECTORS.page;
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(selector)?.getClientRects().length,
+    ),
+    `Evaluation receiver ${selector}`,
+    30_000,
+  );
+  const receiver = document.querySelector<HTMLElement>(selector);
+  if (!receiver) {
+    throw new Error('agent.acceptance.evaluationReceiverMissing');
+  }
+  const sourceRunReadbacks = await Promise.all(
+    fixture.state.runIds.map(getEvaluationRun),
+  );
+  const sourceState = evidenceValue(
+    sourceRunReadbacks.length > 0
+      ? sourceRunReadbacks
+      : await listEvaluationDatasets(fixture.state.benchmarkId),
+  );
+  const replayRunReadbacks = await Promise.all(
+    fixture.state.runIds.map(getEvaluationRun),
+  );
+  const replayState = evidenceValue(
+    replayRunReadbacks.length > 0
+      ? replayRunReadbacks
+      : await listEvaluationDatasets(fixture.state.benchmarkId),
+  );
+  const sourceHash = await sha256Hex(stableJson(sourceState));
+  const replayHash = await sha256Hex(stableJson(replayState));
+  const stateHash = replayHash;
+  const attempts = sourceRunReadbacks.flatMap(
+    (readback) => readback.attempts,
+  );
+  const results = sourceRunReadbacks.flatMap(
+    (readback) => readback.results,
+  );
+  const evidenceAttempts = outcome.readback?.attempts ?? [];
+  const uniqueAttempts = new Set(
+    attempts.map((attempt) => attempt.attemptId),
+  ).size;
+  const uniqueResults = new Set(
+    results.map((result) => result.resultId),
+  ).size;
+  const schedulerClaims = attempts
+    .map((attempt) => attempt.schedulerClaim)
+    .filter(Boolean);
+  const uniqueSchedulerClaims = new Set(schedulerClaims).size;
+  const turnExecutionCount = attempts.filter(
+    (attempt) => Boolean(attempt.turnId),
+  ).length;
+  const roles: Record<string, Record<string, unknown>> = {
+    'cell-results': {
+      cellId: input.cell,
+      status: 'passed',
+      expected: outcome.expected,
+      actual: outcome.actual,
+    },
+    'receiver-dom': {
+      scenarioId: input.cell,
+      cellId: input.cell,
+      selector,
+      locale: input.locale,
+      textHash: await sha256Hex(receiver.textContent?.trim() ?? ''),
+      expectedVisible: true,
+      visible: receiver.getClientRects().length > 0,
+    },
+    'station-readback': {
+      entityKind: 'evaluation-run-lineage',
+      entityIdHash: await sha256Hex(
+        outcome.evidenceRunId || fixture.state.datasetId,
+      ),
+      revision: Number(
+        outcome.readback?.run?.revision ?? fixture.datasetRevision,
+      ),
+      stateHash,
+      facts: evaluationEvidenceValue(outcome.controlState),
+    },
+    'measurement-report': {
+      metric: 'evaluation-scenario-settlement-ms',
+      sampleIds: [input.sampleId],
+      threshold: 1_200_000,
+      actual: Math.round(outcome.durationMs ?? 0),
+      passed: (outcome.durationMs ?? 0) <= 1_200_000,
+    },
+    'side-effect-count': {
+      counterId: `evaluation-run:${outcome.evidenceRunId || fixture.state.datasetId}`,
+      count: turnExecutionCount,
+      maximum: evaluationScenarioTurnMaximum(input.cell),
+    },
+    replay: {
+      sourceHash,
+      replayHash,
+      equal: sourceHash === replayHash,
+    },
+  };
+  if (!EVALUATION_CONTROL_PLANE_CELLS.has(input.cell)) {
+    const run = outcome.readback?.run;
+    const attempt = evidenceAttempts.find((candidate) => candidate.turnId);
+    if (!run || !attempt?.turnId || !run.metrics) {
+      throw new Error('agent.acceptance.evaluationTurnEvidenceMissing');
+    }
+    const events = await listEvaluationRunEvents(run.runId);
+    const event = events.events[events.events.length - 1];
+    if (!event || !event.occurredAt) {
+      throw new Error('agent.acceptance.evaluationRuntimeEventMissing');
+    }
+    const trace = await waitForEvaluationTurnTrace(attempt.turnId);
+    const traceId = String(
+      evidenceField(
+        evidenceRecord(
+          evidenceValue(trace.entry?.trace),
+          'evaluationRuntimeTrace',
+        ),
+        'traceId',
+        'trace_id',
+      ) ?? '',
+    );
+    if (!traceId) {
+      throw new Error('agent.acceptance.evaluationTurnTraceMissing');
+    }
+    roles['runtime-events'] = {
+      eventId: await sha256Hex(stableJson(evidenceValue(event))),
+      sequence: Number(event.sequence),
+      eventType: String(event.status),
+      occurredAt: timestampIso(event.occurredAt),
+    };
+    roles['turn-trace'] = {
+      turnId: attempt.turnId,
+      traceId,
+      terminalStatus: evaluationAttemptStatusName(attempt.status),
+      traceHash: await sha256Hex(stableJson(evidenceValue(trace))),
+    };
+    roles['metrics-lineage'] = {
+      runId: run.runId,
+      metricsVersion: run.metrics.metricsVersion,
+      metricsHash: await sha256Hex(stableJson(evidenceValue(run.metrics))),
+      sourceAttemptIds: evidenceAttempts.map(
+        (candidate) => candidate.attemptId,
+      ),
+    };
+  }
+  const assertions = {
+    expectedOutcomeObserved: (
+      outcome.errorCode
+        ? outcome.actual === outcome.expected
+        : Boolean(outcome.actual)
+    ),
+    receiverVisible: receiver.getClientRects().length > 0,
+    stationReplayStable: sourceHash === replayHash,
+    attemptIdentityUnique: uniqueAttempts === attempts.length,
+    resultIdentityUnique: uniqueResults === results.length,
+    schedulerClaimIdentityUnique:
+      uniqueSchedulerClaims === schedulerClaims.length,
+    sideEffectBound:
+      turnExecutionCount <= evaluationScenarioTurnMaximum(input.cell),
+    withinRuntimeBudget: (outcome.durationMs ?? 0) <= 1_200_000,
+    raceOrderingObserved: outcome.raceObserved,
+    restartObserved: outcome.restartObserved,
+  };
+  const failed = Object.entries(assertions)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  if (failed.length > 0) {
+    throw new Error(
+      `agent.acceptance.evaluationScenarioAssertionsFailed:${failed.join(',')}`,
+    );
+  }
+  return evidenceValue({
+    assertions,
+    runtimeAttestation: await buildEvaluationScenarioRuntimeAttestation(
+      input,
+      fixture,
+      outcome,
+    ),
+    roles,
+  }) as Record<string, unknown>;
+}
+
+async function cleanupEvaluationScenarioState(
+  state: EvaluationScenarioState,
+  options: { staleScenarioExpected?: boolean } = {},
+): Promise<Record<string, unknown>> {
+  const staleScenarioExpected = options.staleScenarioExpected ?? false;
+  const failures: string[] = [];
+  for (const runId of [...state.runIds].reverse()) {
+    try {
+      let readback = await getEvaluationRun(runId);
+      if (readback.run && !evaluationRunIsTerminal(readback.run)) {
+        const cancelled = await invokeEvaluationProto(
+          EVALUATION_COMMANDS.cancelRun,
+          CancelEvaluationRunRequestSchema,
+          CancelEvaluationRunResponseSchema,
+          create(CancelEvaluationRunRequestSchema, {
+            runId,
+            expectedRevision: readback.run.revision,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+        if (cancelled.run && !evaluationRunIsTerminal(cancelled.run)) {
+          readback = await waitForEvaluationRun(
+            runId,
+            evaluationRunIsTerminal,
+            `Evaluation cleanup cancellation ${runId}`,
+          );
+        } else {
+          readback = await getEvaluationRun(runId);
+        }
+      }
+      if (readback.run) {
+        await invokeEvaluationProto(
+          EVALUATION_COMMANDS.deleteRun,
+          DeleteEvaluationRunRequestSchema,
+          DeleteEvaluationRunResponseSchema,
+          create(DeleteEvaluationRunRequestSchema, {
+            runId,
+            expectedRevision: readback.run.revision,
+            idempotencyKey: crypto.randomUUID(),
+          }),
+        );
+      }
+    } catch (error) {
+      if (!/NOT_FOUND/.test(observedErrorCode(error))) {
+        failures.push(`run:${runId}:${observedErrorCode(error)}`);
+      }
+    }
+  }
+  for (const caseId of [...state.caseIds].reverse()) {
+    try {
+      const current = (await listEvaluationTestCases(state.datasetId))
+        .testCases.find((candidate) => candidate.caseId === caseId);
+      if (!current) continue;
+      await invokeEvaluationProto(
+        EVALUATION_COMMANDS.deleteTestCase,
+        DeleteEvaluationTestCaseRequestSchema,
+        DeleteEvaluationTestCaseResponseSchema,
+        create(DeleteEvaluationTestCaseRequestSchema, {
+          caseId,
+          expectedRevision: current.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+    } catch (error) {
+      failures.push(`case:${caseId}:${observedErrorCode(error)}`);
+    }
+  }
+  try {
+    const dataset = (await listEvaluationDatasets(state.benchmarkId))
+      .datasets.find((candidate) => candidate.datasetId === state.datasetId);
+    if (dataset) {
+      await invokeEvaluationProto(
+        EVALUATION_COMMANDS.deleteDataset,
+        DeleteEvaluationDatasetRequestSchema,
+        DeleteEvaluationDatasetResponseSchema,
+        create(DeleteEvaluationDatasetRequestSchema, {
+          datasetId: dataset.datasetId,
+          expectedRevision: dataset.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+    }
+  } catch (error) {
+    failures.push(`dataset:${observedErrorCode(error)}`);
+  }
+  try {
+    const benchmark = (await listEvaluationBenchmarks()).benchmarks.find(
+      (candidate) => candidate.benchmarkId === state.benchmarkId,
+    );
+    if (benchmark) {
+      await invokeEvaluationProto(
+        EVALUATION_COMMANDS.deleteBenchmark,
+        DeleteEvaluationBenchmarkRequestSchema,
+        DeleteEvaluationBenchmarkResponseSchema,
+        create(DeleteEvaluationBenchmarkRequestSchema, {
+          benchmarkId: benchmark.benchmarkId,
+          expectedRevision: benchmark.revision,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      );
+    }
+  } catch (error) {
+    failures.push(`benchmark:${observedErrorCode(error)}`);
+  }
+  try {
+    await api.deleteAgent(state.agentId);
+    await useAgentStore.getState().loadAgents();
+  } catch (error) {
+    failures.push(`agent:${observedErrorCode(error)}`);
+  }
+  try {
+    const runtimeCleanup = await deleteFoundationDisposableRuntimeFixture({
+      providerId: state.providerId,
+      modelId: state.modelId,
+    });
+    if (!runtimeCleanup.modelDeleted || !runtimeCleanup.providerRestored) {
+      failures.push('runtime-fixture:incomplete');
+    }
+  } catch (error) {
+    failures.push(`runtime-fixture:${observedErrorCode(error)}`);
+  }
+  if (state.priorSelection) {
+    useAgentStore.getState().setSelectedAgent(state.priorSelection);
+    useAgentStore.getState().setAgentSurface(
+      state.priorSelection,
+      state.priorSurface,
+    );
+    await api.setSelectedAgent(state.priorSelection).catch((error) => {
+      failures.push(`selection:${observedErrorCode(error)}`);
+    });
+  }
+  try {
+    await api.cleanupCapabilityAcceptanceScenario(create(
+      CleanupCapabilityAcceptanceScenarioRequestSchema,
+      { scenarioHandle: state.scenarioHandle },
+    ));
+    if (staleScenarioExpected) {
+      failures.push('scenario:stale-handle-remained-live');
+    }
+  } catch (error) {
+    if (
+      !staleScenarioExpected
+      || !/NOT_FOUND/.test(observedErrorCode(error))
+    ) {
+      failures.push(`scenario:${observedErrorCode(error)}`);
+    }
+  }
+  return {
+    status: failures.length === 0 ? 'clean' : 'failed',
+    resourceDeletionComplete: failures.length === 0,
+    failures,
+  };
+}
+
+async function executeEvaluationScenario(
+  input: EvaluationScenarioInput,
+): Promise<Record<string, unknown>> {
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (!actorId) throw new Error('agent.acceptance.evaluationActorMissing');
+  if (!EVALUATION_SCENARIO_CELLS.has(input.cell)) {
+    throw new Error(
+      `DESIGN_AMENDMENT_REQUIRED: Evaluation cell ${input.cell} `
+      + 'has no runtime implementation',
+    );
+  }
+  await changeLanguage(input.locale);
+  const prepared = await api.prepareCapabilityAcceptanceScenario(create(
+    PrepareCapabilityAcceptanceScenarioRequestSchema,
+    {
+      runId: input.runId,
+      scenarioExecutionId: input.scenarioExecutionId,
+      cell: input.cell,
+      platform: input.platform,
+      locale: input.locale,
+      ordering: input.ordering,
+      sampleId: input.sampleId,
+      family: CapabilityAcceptanceScenarioFamily.EVALUATION_J06,
+      runtimeAttestationProfile: evaluationScenarioProfile(input.cell),
+    },
+  ));
+  const barrier = capabilityScenarioBarrier(prepared.opaqueResourceIds);
+  const startedAt = performance.now();
+  let fixture: EvaluationScenarioFixture | null = null;
+  let primaryError: unknown = null;
+  let capture: Record<string, unknown> | null = null;
+  try {
+    fixture = await prepareEvaluationScenarioFixture(
+      input,
+      prepared.scenarioHandle,
+    );
+    const outcome = await runEvaluationScenarioCell(input, fixture, barrier);
+    outcome.durationMs = performance.now() - startedAt;
+    fixture.state.evidenceRunId = outcome.evidenceRunId;
+    if (input.cell === 'AS-14') {
+      return {
+        state: evidenceValue(fixture.state),
+        assertions: {
+          restartFixturePrepared: Boolean(
+            fixture.state.evidenceRunId && fixture.state.restartRunId,
+          ),
+        },
+      };
+    }
+    capture = await buildEvaluationScenarioCapture(input, fixture, outcome);
+  } catch (error) {
+    primaryError = error;
+  }
+  let cleanup: Record<string, unknown>;
+  if (fixture) {
+    cleanup = await cleanupEvaluationScenarioState(fixture.state);
+  } else {
+    try {
+      await api.cleanupCapabilityAcceptanceScenario(create(
+        CleanupCapabilityAcceptanceScenarioRequestSchema,
+        { scenarioHandle: prepared.scenarioHandle },
+      ));
+      cleanup = {
+        status: 'failed',
+        resourceDeletionComplete: false,
+        failures: ['fixture:not-created'],
+      };
+    } catch (error) {
+      cleanup = {
+        status: 'failed',
+        resourceDeletionComplete: false,
+        failures: [
+          'fixture:not-created',
+          `scenario:${observedErrorCode(error)}`,
+        ],
+      };
+    }
+  }
+  if (primaryError) {
+    throw Object.assign(
+      new Error(
+        `agent.acceptance.evaluationScenarioFailed:${
+          observedErrorCode(primaryError)
+        }`,
+      ),
+      { cause: primaryError, cleanup },
+    );
+  }
+  if (!capture || cleanup.status !== 'clean') {
+    throw new Error('agent.acceptance.evaluationScenarioCleanupFailed');
+  }
+  const roles = evidenceRecord(capture.roles, 'evaluationScenarioRoles');
+  roles.cleanup = {
+    resourceKind: 'evaluation-candidate-scenario',
+    resourceIdHash: await sha256Hex(input.scenarioExecutionId),
+    status: 'clean',
+  };
+  return evidenceValue({
+    ...capture,
+    assertions: {
+      ...evidenceRecord(capture.assertions, 'evaluationScenarioAssertions'),
+      cleanupComplete: true,
+    },
+    roles,
+    cleanup,
+  }) as Record<string, unknown>;
+}
+
+async function recoverEvaluationScenario(
+  input: EvaluationScenarioInput,
+  state: EvaluationScenarioState,
+): Promise<Record<string, unknown>> {
+  const startedAt = performance.now();
+  const actorId = useSessionStore.getState().currentUser?.actorPtid ?? '';
+  if (actorId !== state.ownerActorId) {
+    throw new Error('agent.acceptance.evaluationRecoveryActorMismatch');
+  }
+  await changeLanguage(input.locale);
+  const fixture: EvaluationScenarioFixture = {
+    state,
+    agent: (
+      useAgentStore.getState().agents.find(
+        (candidate) => (candidate.id || candidate.name) === state.agentId,
+      ) ?? selectedAgent()
+    ) as NonNullable<ReturnType<typeof selectedAgent>>,
+    caseIds: [...state.caseIds],
+    datasetRevision: BigInt(state.datasetRevision),
+  };
+  if (!fixture.agent) {
+    throw new Error('agent.acceptance.evaluationRecoveryAgentMissing');
+  }
+  const restartReadback = await waitForEvaluationReadback(
+    state.restartRunId,
+    (readback) => Boolean(readback.run && evaluationRunIsTerminal(readback.run)),
+    `Evaluation restart recovery ${state.restartRunId}`,
+  );
+  const evidenceReadback = await getEvaluationRun(state.evidenceRunId);
+  const outcome: EvaluationScenarioOutcome = {
+    evidenceRunId: state.evidenceRunId,
+    expected: 'Evaluation lineage survives Desktop and Station restart',
+    actual: state.evidenceRunId,
+    errorCode: '',
+    readback: evidenceReadback,
+    controlState: {
+      evidence: evidenceReadback,
+      restarted: restartReadback,
+      stationRestart: input.stationRestart ?? {},
+    },
+    raceObserved: true,
+    restartObserved: Boolean(
+      input.stationRestart
+      && Object.keys(input.stationRestart).length > 0
+      && restartReadback.run
+      && evaluationRunIsTerminal(restartReadback.run),
+    ),
+    durationMs: performance.now() - startedAt,
+  };
+  const capture = await buildEvaluationScenarioCapture(input, fixture, outcome);
+  const cleanup = await cleanupEvaluationScenarioState(
+    state,
+    { staleScenarioExpected: true },
+  );
+  if (cleanup.status !== 'clean') {
+    throw new Error('agent.acceptance.evaluationRestartCleanupFailed');
+  }
+  const roles = evidenceRecord(capture.roles, 'evaluationScenarioRoles');
+  roles.cleanup = {
+    resourceKind: 'evaluation-candidate-restart-scenario',
+    resourceIdHash: await sha256Hex(input.scenarioExecutionId),
+    status: 'clean',
+  };
+  return evidenceValue({
+    ...capture,
+    assertions: {
+      ...evidenceRecord(capture.assertions, 'evaluationScenarioAssertions'),
+      cleanupComplete: true,
+    },
+    roles,
+    cleanup,
+  }) as Record<string, unknown>;
+}
+
+async function runEvaluationScenario(
+  input: EvaluationScenarioInput,
+): Promise<Record<string, unknown>> {
+  if (
+    !input.runId
+    || !input.scenarioExecutionId
+    || !input.cell
+    || !input.platform
+    || !input.locale
+    || !input.ordering
+    || !input.sampleId
+  ) {
+    throw new Error('agent.acceptance.evaluationScenarioInputInvalid');
+  }
+  if (input.phase === 'recover') {
+    if (!input.state || input.cell !== 'AS-14') {
+      throw new Error('agent.acceptance.evaluationRecoveryStateMissing');
+    }
+    return recoverEvaluationScenario(input, input.state);
+  }
+  if (input.phase === 'cleanup') {
+    if (!input.state) {
+      throw new Error('agent.acceptance.evaluationCleanupStateMissing');
+    }
+    return cleanupEvaluationScenarioState(input.state, {
+      staleScenarioExpected: input.staleScenarioExpected,
+    });
+  }
+  if (input.phase === 'prepare' && input.cell !== 'AS-14') {
+    throw new Error('agent.acceptance.evaluationPreparePhaseInvalid');
+  }
+  if (input.phase === 'execute' && input.cell === 'AS-14') {
+    throw new Error('agent.acceptance.evaluationRestartPhaseRequired');
+  }
+  return executeEvaluationScenario(input);
+}
+
+interface GovernedToolDevelopmentInput {
   sampleId: string;
   providerBaseUrl: string;
-}): Promise<Record<string, unknown>> {
+  providerApiKey: string;
+  runId?: string;
+  scenarioExecutionId?: string;
+  cell?: string;
+  platform?: 'desktop_app' | 'browser';
+  locale?: 'en' | 'zh-CN' | 'neutral';
+  ordering?: 'single' | 'A' | 'B';
+}
+
+function capabilityScenarioBarrier(
+  resources: readonly string[],
+): string {
+  return resources.find((value) => value.startsWith('barrier:'))
+    ?.slice('barrier:'.length) ?? '';
+}
+
+function governedToolRuntimeProfile(
+  platform: 'desktop_app' | 'browser',
+  cell: string,
+  ordering: 'single' | 'A' | 'B',
+): CapabilityAcceptanceRuntimeProfile {
+  if (governedToolZeroExecution(cell, ordering)) {
+    return CapabilityAcceptanceRuntimeProfile.STATION_TURN;
+  }
+  return platform === 'desktop_app'
+    ? CapabilityAcceptanceRuntimeProfile.CLIENT_CAPABILITY_TURN
+    : CapabilityAcceptanceRuntimeProfile.STATION_CAPABILITY_TURN;
+}
+
+function governedToolZeroExecution(
+  cell: string,
+  ordering: 'single' | 'A' | 'B',
+): boolean {
+  return cell === 'ERR-O01'
+    || cell === 'ERR-O05'
+    || ((cell === 'R-05' || cell === 'R-07') && ordering === 'A');
+}
+
+function governedToolBarrierInterruptsWorker(cell: string): boolean {
+  return cell.startsWith('CR-')
+    || cell === 'ERR-O06'
+    || cell === 'ERR-O07'
+    || cell === 'REPLAY-O07I';
+}
+
+interface GovernedToolExpectedOutcome {
+  status: ToolCallStatus;
+  executionAttemptCount: number;
+  sideEffectCount: number;
+  resultCount: number;
+  continuationCount: number;
+  receiptStatus: 'APPLIED' | 'RECONCILED_UNKNOWN';
+}
+
+function governedToolReceiptRejectionCode(cell: string): string {
+  switch (cell) {
+    case 'ERR-O02':
+    case 'ERR-O04':
+      return 'CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_EXPIRED';
+    case 'ERR-O06':
+      return 'CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_RECOVERY_CREDENTIAL_EXPIRED';
+    case 'ERR-O08':
+      return 'CLIENT_CAPABILITY_RECEIPT_ERROR_CODE_STALE_FENCE';
+    default:
+      return '';
+  }
+}
+
+function governedToolExpectedOutcome(
+  cell: string,
+  ordering: 'single' | 'A' | 'B',
+  platform: 'desktop_app' | 'browser',
+): GovernedToolExpectedOutcome {
+  if (
+    cell === 'CR-04N'
+    || cell === 'ERR-O07'
+    || (cell === 'R-05' && ordering === 'B' && platform === 'desktop_app')
+    || ['ERR-O02', 'ERR-O04', 'ERR-O06', 'ERR-O08'].includes(cell)
+  ) {
+    return {
+      status: ToolCallStatus.UNKNOWN_SIDE_EFFECT,
+      executionAttemptCount: 1,
+      sideEffectCount: 1,
+      resultCount: 0,
+      continuationCount: 0,
+      receiptStatus: cell === 'R-05'
+        || ['ERR-O02', 'ERR-O04', 'ERR-O06', 'ERR-O08'].includes(cell)
+        ? 'APPLIED'
+        : 'RECONCILED_UNKNOWN',
+    };
+  }
+  if ((cell === 'R-03' && ordering === 'A') || cell === 'ERR-O03') {
+    return {
+      status: ToolCallStatus.CANCELLED,
+      executionAttemptCount: 1,
+      sideEffectCount: 1,
+      resultCount: 0,
+      continuationCount: 0,
+      receiptStatus: 'APPLIED',
+    };
+  }
+  return {
+    status: ToolCallStatus.SUCCEEDED,
+    executionAttemptCount: (
+      ['CR-04I', 'REPLAY-O07I'].includes(cell)
+      && platform === 'desktop_app'
+    ) ? 2 : 1,
+    sideEffectCount: 1,
+    resultCount: 1,
+    continuationCount: 1,
+    receiptStatus: 'APPLIED',
+  };
+}
+
+const GOVERNED_TOOL_IMPLEMENTED_CANDIDATE_CELLS = new Set([
+  'AS-05A',
+  'AS-05',
+  'CR-00',
+  'CR-01',
+  'CR-02',
+  'CR-03',
+  'CR-04N',
+  'CR-04I',
+  'CR-05',
+  'CR-06',
+  'R-03',
+  'R-05',
+  'R-07',
+  'ERR-O01',
+  'ERR-O02',
+  'ERR-O03',
+  'ERR-O04',
+  'ERR-O05',
+  'ERR-O06',
+  'ERR-O07',
+  'ERR-O08',
+  'REPLAY-O07I',
+]);
+
+async function runGovernedToolDevelopmentJourney(
+  input: GovernedToolDevelopmentInput,
+): Promise<Record<string, unknown>> {
+  if (!input.providerApiKey) {
+    throw new Error('agent.acceptance.governedToolProviderCredentialMissing');
+  }
   const providerUrl = new URL(input.providerBaseUrl);
   if (
     providerUrl.protocol !== 'http:'
@@ -25164,7 +28727,27 @@ async function runGovernedToolDevelopmentJourney(input: {
   ) {
     throw new Error('agent.acceptance.governedToolProviderUrlInvalid');
   }
+  const candidateMode = Boolean(
+    input.runId
+    && input.scenarioExecutionId
+    && input.cell
+    && input.platform
+    && input.locale
+    && input.ordering,
+  );
+  const platform = input.platform ?? 'desktop_app';
+  const cell = input.cell ?? 'AS-05A';
+  if (
+    candidateMode
+    && !GOVERNED_TOOL_IMPLEMENTED_CANDIDATE_CELLS.has(cell)
+  ) {
+    throw new Error(
+      `DESIGN_AMENDMENT_REQUIRED: governed ToolCall cell ${cell} `
+      + 'has no runtime implementation',
+    );
+  }
 
+  await useAgentStore.getState().loadAgents();
   const agentStore = useAgentStore.getState();
   const priorSelection = agentStore.selectedAgent;
   const priorSurface = agentStore.getAgentSurface(priorSelection);
@@ -25175,10 +28758,27 @@ async function runGovernedToolDevelopmentJourney(input: {
   let toolFixture: FoundationToolFixture | null = null;
   let currentBinding: AgentCapabilityBinding | null = null;
   let turn: FoundationToolTurn | null = null;
+  let preparedScenario:
+    Awaited<ReturnType<typeof api.prepareCapabilityAcceptanceScenario>>
+    | null = null;
+  let scenarioBarrier = '';
+  let barrierControl: Promise<void> | null = null;
   let conversationId = '';
   let capture: Record<string, unknown> | null = null;
+  let candidateRuntimeAttestation: Record<string, unknown> | null = null;
+  let candidateRoles: Record<string, Record<string, unknown>> | null = null;
+  let approvalAggregate: Record<string, unknown> | null = null;
+  let scenarioControlFacts: Record<string, unknown> | null = null;
+  let candidateCapabilitySessions:
+    Awaited<ReturnType<typeof waitForCapabilitySessionEvidence>> | null = null;
+  let candidateRuntimeProfile:
+    Awaited<ReturnType<typeof api.getAgentEffectiveRuntimeProfile>> | null =
+      null;
+  let candidateReadiness:
+    Awaited<ReturnType<typeof api.getAgentCapabilityReadiness>> | null = null;
   let primaryError: unknown = null;
   let cleanupError: unknown = null;
+  const scenarioStartedAt = performance.now();
   const cleanup: Record<string, boolean> = {
     bindingRestored: false,
     conversationDeleted: false,
@@ -25186,12 +28786,17 @@ async function runGovernedToolDevelopmentJourney(input: {
     fixtureModelDeleted: false,
     fixtureProviderDeleted: false,
     selectionRestored: false,
+    scenarioCleaned: !candidateMode,
   };
 
   try {
+    if (candidateMode) {
+      await refreshGovernedToolCapabilitySession(platform);
+    }
     runtimeFixture = await createGovernedToolRuntimeFixture(
       'governed-tool',
       providerUrl.toString(),
+      input.providerApiKey,
     );
     disposableAgent = await agentStore.createAgent({
       name: `governed-tool-${input.sampleId}-${crypto.randomUUID()}`,
@@ -25206,11 +28811,62 @@ async function runGovernedToolDevelopmentJourney(input: {
     useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
     eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
 
+    if (candidateMode) {
+      if (input.locale === 'en' || input.locale === 'zh-CN') {
+        await changeLanguage(input.locale);
+      }
+      preparedScenario = await api.prepareCapabilityAcceptanceScenario(create(
+        PrepareCapabilityAcceptanceScenarioRequestSchema,
+        {
+          runId: input.runId,
+          scenarioExecutionId: input.scenarioExecutionId,
+          cell,
+          platform,
+          locale: input.locale,
+          ordering: input.ordering,
+          sampleId: input.sampleId,
+          family: CapabilityAcceptanceScenarioFamily.GOVERNED_TOOL_J03,
+          runtimeAttestationProfile: governedToolRuntimeProfile(
+            platform,
+            cell,
+            input.ordering ?? 'single',
+          ),
+        },
+      ));
+      scenarioBarrier = capabilityScenarioBarrier(
+        preparedScenario.opaqueResourceIds,
+      );
+      if (preparedScenario.executorHookTicket) {
+        await api.armCapabilityAcceptanceExecutorHook(create(
+          ArmCapabilityAcceptanceExecutorHookRequestSchema,
+          {
+            scenarioHandle: preparedScenario.scenarioHandle,
+            executorHookTicket: preparedScenario.executorHookTicket,
+          },
+        ));
+      }
+    }
+
     const capabilitySession = await resolveFoundationToolTurnSession();
+    if (candidateMode) {
+      candidateCapabilitySessions = await waitForCapabilitySessionEvidence();
+    }
     toolFixture = await foundationToolFixture(
       disposableAgentId,
-      'desktop_app',
+      platform,
     );
+    if (candidateMode && cell === 'AS-05A') {
+      const aggregate = await runFoundationF04Scenario({
+        agent: disposableAgent,
+        platform,
+        sampleId: input.sampleId,
+      });
+      approvalAggregate = aggregate.facts;
+      toolFixture = await foundationToolFixture(
+        disposableAgentId,
+        platform,
+      );
+    }
     currentBinding = await updateFoundationToolPolicy(
       disposableAgent,
       toolFixture,
@@ -25248,61 +28904,512 @@ async function runGovernedToolDevelopmentJourney(input: {
     if (!toolCallElement) {
       throw new Error('agent.acceptance.governedToolReceiverMissing');
     }
-    let approve = toolCallElement.querySelector<HTMLButtonElement>(
-      '[data-pt-agent-tool-decision="approve"]',
+    const approvalId = String(
+      evidenceField(approval, 'approvalId', 'approval_id') ?? '',
     );
-    if (!approve) {
-      toolCallElement.querySelector<HTMLElement>(
-        '[data-pt-agent-tool-call-toggle]',
-      )?.click();
-      await waitFor(
-        () => Boolean(toolCallElement.querySelector(
-          '[data-pt-agent-tool-decision="approve"]',
-        )),
-        'governed ToolCall approval control',
-        10_000,
-      );
-      approve = toolCallElement.querySelector<HTMLButtonElement>(
+    const decisionRevision = Number(
+      evidenceField(approval, 'decisionRevision', 'decision_revision') ?? 0,
+    );
+    if (!approvalId || !Number.isInteger(decisionRevision)) {
+      throw new Error('agent.acceptance.governedToolApprovalInvalid');
+    }
+    if (candidateMode) {
+      [candidateRuntimeProfile, candidateReadiness] = await Promise.all([
+        api.getAgentEffectiveRuntimeProfile({ agent_id: disposableAgentId }),
+        api.getAgentCapabilityReadiness({
+          agent_id: disposableAgentId,
+          client_capability_session_id:
+            capabilitySession.capabilitySessionId,
+        }),
+      ]);
+    }
+    if (candidateMode && preparedScenario && scenarioBarrier) {
+      const scenarioHandle = preparedScenario.scenarioHandle;
+      const scenarioTurn = turn;
+      const barrier = scenarioBarrier;
+      barrierControl = (async () => {
+        const reached = await api.waitCapabilityAcceptanceBarrier(create(
+          WaitCapabilityAcceptanceBarrierRequestSchema,
+          { scenarioHandle, barrier },
+        ));
+        if (!reached.reached) {
+          throw new Error(
+            'agent.acceptance.capabilityScenarioBarrierNotReached',
+          );
+        }
+        if (cell === 'R-03') {
+          if (input.ordering === 'A') {
+            const cancellation = await api.cancelAgentTurn(
+              scenarioTurn.turnId,
+            );
+            scenarioControlFacts = {
+              ordering: 'A',
+              firstCommit: 'cancel-fence',
+              cancellationStatus: String(
+                cancellation.status ?? '',
+              ).toLowerCase(),
+            };
+            await api.releaseCapabilityAcceptanceBarrier(create(
+              ReleaseCapabilityAcceptanceBarrierRequestSchema,
+              { scenarioHandle, barrier },
+            ));
+          } else {
+            await api.releaseCapabilityAcceptanceBarrier(create(
+              ReleaseCapabilityAcceptanceBarrierRequestSchema,
+              { scenarioHandle, barrier },
+            ));
+            const terminalBeforeCancellation = await waitForFoundationToolFacts(
+              scenarioTurn.turnId,
+              (facts, replay) => (
+                facts.length === 1
+                && Boolean(evidenceField(
+                  facts[0],
+                  'resultId',
+                  'result_id',
+                ))
+                && Number(replay.status) === AgentTurnStatus.COMPLETED
+              ),
+              'R-03 result commit before cancellation',
+            );
+            let cancellationStatus = foundationTurnStatusName(
+              terminalBeforeCancellation.replay.status,
+            );
+            try {
+              const cancellation = await api.cancelAgentTurn(
+                scenarioTurn.turnId,
+              );
+              if (cancellation?.status) {
+                cancellationStatus = foundationTurnStatusName(
+                  cancellation.status,
+                );
+              }
+            } catch (error) {
+              const details = evidenceRecord(
+                (error as { details?: unknown }).details ?? {},
+                'R-03 terminal cancellation error',
+              );
+              const typedError = projectAgentTypedErrorPayload(details);
+              if (
+                !isAgentLifecycleTerminalMutationError(typedError)
+                || typedError.details.resource_id !== scenarioTurn.turnId
+              ) {
+                throw error;
+              }
+              cancellationStatus = typedError.details.terminal_status;
+            }
+            scenarioControlFacts = {
+              ordering: 'B',
+              firstCommit: 'terminal-result',
+              cancellationStatus,
+            };
+          }
+          return;
+        }
+        if (cell === 'R-05' || cell === 'R-07') {
+          scenarioControlFacts = {
+            ordering: input.ordering,
+            firstCommit: input.ordering === 'A'
+              ? (cell === 'R-05' ? 'executor-revoke' : 'binding-delete')
+              : 'tool-dispatch',
+          };
+          await api.releaseCapabilityAcceptanceBarrier(create(
+            ReleaseCapabilityAcceptanceBarrierRequestSchema,
+            { scenarioHandle, barrier },
+          ));
+          if (cell === 'R-07') {
+            currentBinding = null;
+            cleanup.bindingRestored = true;
+          }
+          return;
+        }
+        if (cell === 'ERR-O03') {
+          const cancellation = await api.cancelAgentTurn(
+            scenarioTurn.turnId,
+          );
+          scenarioControlFacts = {
+            firstCommit: 'cancel-fence',
+            cancellationStatus: String(
+              cancellation.status ?? '',
+            ).toLowerCase(),
+          };
+          await api.releaseCapabilityAcceptanceBarrier(create(
+            ReleaseCapabilityAcceptanceBarrierRequestSchema,
+            { scenarioHandle, barrier },
+          ));
+          return;
+        }
+        if (governedToolBarrierInterruptsWorker(cell)) {
+          const interrupted =
+            await api.interruptCapabilityAcceptanceWorker(create(
+              InterruptCapabilityAcceptanceWorkerRequestSchema,
+              { scenarioHandle, barrier },
+            ));
+          if (!interrupted.interrupted) {
+            throw new Error(
+              'agent.acceptance.capabilityScenarioWorkerNotInterrupted',
+            );
+          }
+        } else {
+          await api.releaseCapabilityAcceptanceBarrier(create(
+            ReleaseCapabilityAcceptanceBarrierRequestSchema,
+            { scenarioHandle, barrier },
+          ));
+        }
+      })();
+    }
+    let decisionAttempt:
+      ReturnType<typeof toolRuntime.getDecisionAttempt> | undefined;
+    if (candidateMode) {
+      const decisionInput = {
+        approval_id: approvalId,
+        tool_call_id: toolCallId,
+        decision_id: crypto.randomUUID(),
+        expected_revision: decisionRevision,
+        approved: true,
+        idempotency_key: crypto.randomUUID(),
+      };
+      let decisionResponse:
+        Awaited<ReturnType<typeof api.submitAgentToolDecision>>;
+      try {
+        decisionResponse = await api.submitAgentToolDecision(decisionInput);
+      } catch (error) {
+        if (cell !== 'CR-00') throw error;
+        await barrierControl;
+        decisionResponse = await api.submitAgentToolDecision(decisionInput);
+      }
+      decisionAttempt = {
+        input: decisionInput,
+        response: decisionResponse,
+      };
+    } else {
+      let approve = toolCallElement.querySelector<HTMLButtonElement>(
         '[data-pt-agent-tool-decision="approve"]',
       );
+      if (!approve) {
+        toolCallElement.querySelector<HTMLElement>(
+          '[data-pt-agent-tool-call-toggle]',
+        )?.click();
+        await waitFor(
+          () => Boolean(toolCallElement.querySelector(
+            '[data-pt-agent-tool-decision="approve"]',
+          )),
+          'governed ToolCall approval control',
+          10_000,
+        );
+        approve = toolCallElement.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-tool-decision="approve"]',
+        );
+      }
+      if (!approve || approve.disabled) {
+        throw new Error('agent.acceptance.governedToolApprovalUnavailable');
+      }
+      approve.click();
+      await waitFor(
+        () => Boolean(toolRuntime.getDecisionAttempt(toolCallId)),
+        'governed ToolCall decision acknowledgement',
+        30_000,
+      );
+      decisionAttempt = toolRuntime.getDecisionAttempt(toolCallId);
     }
-    if (!approve || approve.disabled) {
-      throw new Error('agent.acceptance.governedToolApprovalUnavailable');
+    if (!decisionAttempt) {
+      throw new Error('agent.acceptance.governedToolDecisionMissing');
     }
-    approve.click();
-    await waitFor(
-      () => Boolean(toolRuntime.getDecisionAttempt(toolCallId)),
-      'governed ToolCall decision acknowledgement',
-      30_000,
+    const zeroExecution = governedToolZeroExecution(
+      cell,
+      input.ordering ?? 'single',
     );
-    const decisionAttempt = toolRuntime.getDecisionAttempt(toolCallId);
-    if (!decisionAttempt?.response.accepted || !decisionAttempt.response.approved) {
-      throw new Error('agent.acceptance.governedToolDecisionRejected');
-    }
     const replayedDecision = await api.submitAgentToolDecision(
       decisionAttempt.input,
     );
+    if (zeroExecution) {
+      const expectedDecisionError = cell === 'R-07'
+        ? 'TOOL_APPROVAL_DECISION_ERROR_CODE_STALE_REVISION'
+        : 'TOOL_APPROVAL_DECISION_ERROR_CODE_EXECUTOR_UNAVAILABLE';
+      const source = await waitForFoundationToolFacts(
+        turn.turnId,
+        (facts) => (
+          facts.length === 1
+          && Number(evidenceField(
+            facts[0],
+            'executionAttemptCount',
+            'execution_attempt_count',
+          ) ?? 0) === 0
+          && !evidenceField(
+            facts[0],
+            'executionClaimId',
+            'execution_claim_id',
+          )
+          && !evidenceField(facts[0], 'resultId', 'result_id')
+        ),
+        'governed ToolCall zero-execution settlement',
+      );
+      const replayed = await waitForFoundationToolFacts(
+        turn.turnId,
+        (facts) => (
+          facts.length === 1
+          && Number(evidenceField(
+            facts[0],
+            'executionAttemptCount',
+            'execution_attempt_count',
+          ) ?? 0) === 0
+        ),
+        'governed ToolCall zero-execution replay',
+      );
+      await barrierControl;
+      await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+      const sourceFact = source.facts[0];
+      const sideEffectCount = await foundationToolSideEffectCount(
+        platform,
+        sourceFact,
+      );
+      const stationFact = diagnosticToolCase(sourceFact, sideEffectCount);
+      const lineage = evidenceRecord(
+        stationFact.lineage,
+        'governedToolZeroExecutionLineage',
+      );
+      const readback = await foundationConversationReadback(
+        turn.conversationId,
+      );
+      const sourceHash = await sha256Hex(stableJson(
+        withoutDiagnosticGenerationTime(source.replay),
+      ));
+      const replayHash = await sha256Hex(stableJson(
+        withoutDiagnosticGenerationTime(replayed.replay),
+      ));
+      const receiverText = toolCallElement.textContent?.trim() ?? '';
+      const [turnEvidence, conversations] = await Promise.all([
+        foundationTurnEvidence(turn.conversationId, turn.turnId),
+        api.listAgentConversations(disposableAgentId, {
+          page: 1,
+          pageSize: 200,
+        }),
+      ]);
+      if (!candidateCapabilitySessions) {
+        throw new Error(
+          'agent.acceptance.governedToolCapabilitySessionSnapshotMissing',
+        );
+      }
+      if (!candidateRuntimeProfile || !candidateReadiness) {
+        throw new Error(
+          'agent.acceptance.governedToolAdmissionSnapshotMissing',
+        );
+      }
+      const directAttestation = await buildDirectRuntimeAttestation(
+        {
+          cell,
+          agent: disposableAgent,
+          agentId: disposableAgentId,
+          profile: candidateRuntimeProfile,
+          readiness: candidateReadiness,
+          capabilitySessions: candidateCapabilitySessions,
+          conversations,
+          conversationReadback: readback,
+          turnQueue: null,
+          turnEvidence,
+          chatState: useChatStore.getState(),
+          sessionState: useSessionStore.getState(),
+          providerState: useProviderStore.getState(),
+          operation: useChatStore.getState().operations[turn.turnId],
+          lastAssistant: undefined,
+          scenarioFacts: stationFact,
+          platform,
+          locale: input.locale ?? 'en',
+          sampleId: input.sampleId,
+        },
+        input.sampleId,
+      );
+      const {
+        clientSession: _clientSession,
+        ...stationTurnAttestation
+      } = directAttestation;
+      candidateRuntimeAttestation = {
+        ...stationTurnAttestation,
+        scenarioExecutionId: input.scenarioExecutionId,
+        desktopMode: platform,
+        networkPath: `${platform}->station-tool-admission`,
+      };
+      candidateRoles = {
+        'receiver-dom': {
+          scenarioId: cell,
+          cellId: cell,
+          selector: toolCallSelector,
+          locale: input.locale,
+          textHash: await sha256Hex(receiverText),
+          expectedVisible: true,
+          visible: toolCallElement.getClientRects().length > 0,
+        },
+        'station-readback': {
+          entityKind: 'agent-tool-call-lineage',
+          entityIdHash: await sha256Hex(toolCallId),
+          revision: Math.max(
+            Number(lineage.bindingRevision),
+            Number(lineage.decisionRevision),
+            1,
+          ),
+          stateHash: sourceHash,
+        },
+        'measurement-report': {
+          metric: 'governed-tool-zero-execution-ms',
+          sampleIds: [input.sampleId],
+          threshold: 900_000,
+          actual: Math.round(performance.now() - scenarioStartedAt),
+          passed: performance.now() - scenarioStartedAt <= 900_000,
+        },
+        'side-effect-count': {
+          counterId: `tool-call:${toolCallId}`,
+          count: sideEffectCount,
+          maximum: 0,
+        },
+        'zero-execution': {
+          counterKind: 'governed-tool-execution-attempt',
+          count: Number(stationFact.executionAttemptCount),
+          expected: 0,
+        },
+        replay: {
+          sourceHash,
+          replayHash,
+          equal: sourceHash === replayHash,
+        },
+      };
+      const assertions = {
+        decisionRejectedBeforeExecution:
+          decisionAttempt.response.accepted === false
+          && decisionAttempt.response.error_code === expectedDecisionError
+          && stableJson(decisionAttempt.response)
+            === stableJson(replayedDecision),
+        oneToolCallZeroExecution:
+          stationFact.executionAttemptCount === 0
+          && stationFact.sideEffectCount === 0
+          && stationFact.resultCount === 0
+          && stationFact.continuationCount === 0
+          && !lineage.executionClaimId
+          && !lineage.sideEffectReceiptId,
+        stationReplayEqual: sourceHash === replayHash,
+        nativeReceiverAuthoritative:
+          toolCallElement.getClientRects().length > 0
+          && JSON.stringify(readback.messages).includes(toolCallId),
+        raceOrderingCommitted:
+          !['R-05', 'R-07'].includes(cell)
+          || (
+            evidenceField(
+              scenarioControlFacts ?? {},
+              'ordering',
+              'ordering',
+            ) === input.ordering
+            && evidenceField(
+              scenarioControlFacts ?? {},
+              'firstCommit',
+              'first_commit',
+            ) === (
+              cell === 'R-05'
+                ? 'executor-revoke'
+                : 'binding-delete'
+            )
+          ),
+      };
+      const failed = Object.entries(assertions)
+        .filter(([, passed]) => !passed)
+        .map(([name]) => name);
+      if (failed.length > 0) {
+        throw new Error(
+          `agent.acceptance.governedToolAssertionsFailed:${failed.join(',')}`,
+        );
+      }
+      capture = {
+        assertions,
+        'receiver-dom': {
+          visible: toolCallElement.getClientRects().length > 0,
+          toolCallId,
+          status: toolRuntime.getProjection(toolCallId)?.status ?? '',
+        },
+        'station-readback': {
+          entityKind: 'agent-tool-call-lineage',
+          conversationId: turn.conversationId,
+          turnId: turn.turnId,
+          fact: stationFact,
+          replayHash,
+          sourceHash,
+        },
+        facts: {
+          capabilitySession: capabilitySession.facts,
+          decision: decisionAttempt.response,
+          replayedDecision,
+          lineage,
+          scenarioControlFacts,
+        },
+        runtimeAttestation: candidateRuntimeAttestation,
+        roles: candidateRoles,
+      };
+    } else {
+    if (!decisionAttempt.response.accepted || !decisionAttempt.response.approved) {
+      throw new Error('agent.acceptance.governedToolDecisionRejected');
+    }
 
-    const source = await waitForFoundationToolFacts(
+    const expectedOutcome = governedToolExpectedOutcome(
+      cell,
+      input.ordering ?? 'single',
+      platform,
+    );
+    const settled = (
+      facts: Record<string, unknown>[],
+      replay: Record<string, unknown>,
+    ): boolean => (
+      facts.length === 1
+      && Number(facts[0].status) === expectedOutcome.status
+      && Boolean(evidenceField(
+        facts[0],
+        'terminalReceiptPayloadHash',
+        'terminal_receipt_payload_hash',
+      ))
+      && diagnosticReplayTerminal(replay)
+    );
+    let source = await waitForFoundationToolFacts(
       turn.turnId,
-      governedToolSettlementSucceeded,
+      settled,
       'governed ToolCall settlement',
     );
-    const replayed = await waitForFoundationToolFacts(
+    let replayed = await waitForFoundationToolFacts(
       turn.turnId,
-      governedToolSettlementSucceeded,
+      settled,
       'governed ToolCall replay',
     );
+    const replayStabilityStartedAt = Date.now();
+    while (
+      stableJson(withoutDiagnosticGenerationTime(source.replay))
+        !== stableJson(withoutDiagnosticGenerationTime(replayed.replay))
+    ) {
+      if (
+        Date.now() - replayStabilityStartedAt
+          >= FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS
+      ) {
+        throw new Error(
+          'timed out waiting for: governed ToolCall replay stability',
+        );
+      }
+      source = replayed;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      replayed = await waitForFoundationToolFacts(
+        turn.turnId,
+        settled,
+        'governed ToolCall replay stability',
+      );
+    }
+    await barrierControl;
     await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    const expectedProjectionStatus =
+      expectedOutcome.status === ToolCallStatus.SUCCEEDED
+      ? 'success'
+      : toolStatusName(expectedOutcome.status);
     await waitFor(
-      () => toolRuntime.getProjection(toolCallId)?.status === 'success',
+      () => toolRuntime.getProjection(toolCallId)?.status
+        === expectedProjectionStatus,
       'governed ToolCall terminal receiver projection',
       30_000,
     );
 
     const sourceFact = source.facts[0];
     const sideEffectCount = await foundationToolSideEffectCount(
-      'desktop_app',
+      platform,
       sourceFact,
     );
     const stationFact = diagnosticToolCase(sourceFact, sideEffectCount);
@@ -25320,6 +29427,8 @@ async function runGovernedToolDevelopmentJourney(input: {
       withoutDiagnosticGenerationTime(replayed.replay),
     ));
     const receiverProjection = toolRuntime.getProjection(toolCallId);
+    const expectedReceiptRejection =
+      governedToolReceiptRejectionCode(cell);
     const toolCallGroupSelector =
       `[data-pt-agent-tool-call-group="${turn.turnId}"]`;
     await waitFor(
@@ -25369,6 +29478,7 @@ async function runGovernedToolDevelopmentJourney(input: {
         `${toolCallSelector} [data-pt-agent-tool-governance="${toolCallId}"]`,
       );
     }
+    const terminalResultExpected = expectedOutcome.resultCount === 1;
     const lineageComplete = [
       lineage.toolCallId,
       lineage.toolBatchId,
@@ -25380,12 +29490,15 @@ async function runGovernedToolDevelopmentJourney(input: {
       lineage.decisionId,
       lineage.executionClaimId,
       lineage.sideEffectReceiptId,
-      lineage.resultId,
-      lineage.continuationId,
     ].every((value) => typeof value === 'string' && value.length > 0)
       && Number(lineage.bindingRevision) > 0
       && Number(lineage.decisionRevision) > 0
-      && Number(lineage.fencingToken) > 0;
+      && Number(lineage.fencingToken) > 0
+      && (
+        terminalResultExpected
+          ? Boolean(lineage.resultId) && Boolean(lineage.continuationId)
+          : !lineage.continuationId
+      );
     const assertions = {
       nativeApprovalSubmittedOnce:
         decisionAttempt.response.decision_id
@@ -25395,18 +29508,106 @@ async function runGovernedToolDevelopmentJourney(input: {
         && decisionAttempt.response.payload_hash
           === replayedDecision.payload_hash,
       oneExecutionAndSideEffect:
-        stationFact.executionAttemptCount === 1
-        && stationFact.sideEffectCount === 1
-        && stationFact.resultCount === 1
-        && stationFact.continuationCount === 1,
+        stationFact.executionAttemptCount
+          === expectedOutcome.executionAttemptCount
+        && stationFact.sideEffectCount === expectedOutcome.sideEffectCount
+        && stationFact.resultCount === expectedOutcome.resultCount
+        && stationFact.continuationCount
+          === expectedOutcome.continuationCount,
       durableLineageComplete: lineageComplete,
       stationReplayEqual:
         sourceHash === replayHash,
       nativeReceiverAuthoritative:
-        receiverProjection?.status === 'success'
+        receiverProjection?.status === expectedProjectionStatus
         && receiverProjection.pending === false
         && Boolean(governance?.getClientRects().length)
         && JSON.stringify(readback.messages).includes(toolCallId),
+      approvalBranchesComplete:
+        !candidateMode
+        || cell !== 'AS-05A'
+        || (() => {
+          const cases = evidenceRecord(
+            approvalAggregate?.cases,
+            'governedToolApprovalAggregateCases',
+          );
+          const auto = evidenceRecord(cases.auto, 'governedToolAutoCase');
+          const manual = evidenceRecord(
+            cases.manual,
+            'governedToolManualCase',
+          );
+          const deny = evidenceRecord(cases.deny, 'governedToolDenyCase');
+          const expiry = evidenceRecord(
+            cases.expiry,
+            'governedToolExpiryCase',
+          );
+          return auto.sideEffectCount === 1
+            && manual.sideEffectCount === 1
+            && deny.sideEffectCount === 0
+            && expiry.sideEffectCount === 0;
+        })(),
+      raceOrderingCommitted:
+        cell === 'R-03'
+          ? (
+              evidenceField(
+                scenarioControlFacts ?? {},
+                'ordering',
+                'ordering',
+              ) === input.ordering
+              && evidenceField(
+                scenarioControlFacts ?? {},
+                'firstCommit',
+                'first_commit',
+              ) === (
+                input.ordering === 'A'
+                  ? 'cancel-fence'
+                  : 'terminal-result'
+              )
+              && (
+                input.ordering === 'A'
+                  ? evidenceField(
+                      scenarioControlFacts ?? {},
+                      'cancellationStatus',
+                      'cancellation_status',
+                    ) === 'cancelled'
+                  : ['completed', 'cancelled'].includes(
+                      String(evidenceField(
+                        scenarioControlFacts ?? {},
+                        'cancellationStatus',
+                        'cancellation_status',
+                      )),
+                    )
+              )
+            )
+          : !['R-05', 'R-07'].includes(cell)
+            || (
+              evidenceField(
+                scenarioControlFacts ?? {},
+                'ordering',
+                'ordering',
+              ) === input.ordering
+              && evidenceField(
+                scenarioControlFacts ?? {},
+                'firstCommit',
+                'first_commit',
+              ) === 'tool-dispatch'
+            ),
+      cancellationFenceCommitted:
+        cell !== 'ERR-O03'
+        || (
+          evidenceField(
+            scenarioControlFacts ?? {},
+            'firstCommit',
+            'first_commit',
+          ) === 'cancel-fence'
+          && evidenceField(
+            scenarioControlFacts ?? {},
+            'cancellationStatus',
+            'cancellation_status',
+          ) === 'cancelled'
+        ),
+      terminalRejectionProjected:
+        !expectedReceiptRejection
+        || String(stationFact.errorCode) === expectedReceiptRejection,
     };
     const failed = Object.entries(assertions)
       .filter(([, passed]) => !passed)
@@ -25415,6 +29616,173 @@ async function runGovernedToolDevelopmentJourney(input: {
       throw new Error(
         `agent.acceptance.governedToolAssertionsFailed:${failed.join(',')}`,
       );
+    }
+    if (candidateMode) {
+      const [turnEvidence, conversations] =
+        await Promise.all([
+          foundationTurnEvidence(turn.conversationId, turn.turnId),
+          api.listAgentConversations(disposableAgentId, {
+            page: 1,
+            pageSize: 200,
+          }),
+        ]);
+      if (!candidateCapabilitySessions) {
+        throw new Error(
+          'agent.acceptance.governedToolCapabilitySessionSnapshotMissing',
+        );
+      }
+      if (!candidateRuntimeProfile || !candidateReadiness) {
+        throw new Error(
+          'agent.acceptance.governedToolAdmissionSnapshotMissing',
+        );
+      }
+      const directAttestation = await buildDirectRuntimeAttestation(
+        {
+          cell,
+          agent: disposableAgent,
+          agentId: disposableAgentId,
+          profile: candidateRuntimeProfile,
+          readiness: candidateReadiness,
+          capabilitySessions: candidateCapabilitySessions,
+          conversations,
+          conversationReadback: readback,
+          turnQueue: null,
+          turnEvidence,
+          chatState: useChatStore.getState(),
+          sessionState: useSessionStore.getState(),
+          providerState: useProviderStore.getState(),
+          operation: useChatStore.getState().operations[turn.turnId],
+          lastAssistant: undefined,
+          scenarioFacts: stationFact,
+          platform,
+          locale: input.locale ?? 'en',
+          sampleId: input.sampleId,
+        },
+        input.sampleId,
+      );
+      const commonToolBinding = {
+        toolCallId: String(lineage.toolCallId),
+        turnId: turn.turnId,
+        attemptId: String(lineage.attemptId),
+        capabilityId: String(lineage.manifestId),
+        capabilityVersion: String(lineage.manifestVersion),
+        bindingId: String(lineage.bindingId),
+        bindingRevision: Number(lineage.bindingRevision),
+        readinessSnapshotId: String(lineage.readinessSnapshotId),
+        sideEffectReceiptId: String(lineage.sideEffectReceiptId),
+      };
+      const zeroExecution = governedToolZeroExecution(
+        cell,
+        input.ordering ?? 'single',
+      );
+      if (zeroExecution) {
+        const {
+          clientSession: _clientSession,
+          ...stationTurnAttestation
+        } = directAttestation;
+        candidateRuntimeAttestation = {
+          ...stationTurnAttestation,
+          scenarioExecutionId: input.scenarioExecutionId,
+          desktopMode: platform,
+          networkPath: `${platform}->station-tool-admission`,
+        };
+      } else if (platform === 'desktop_app') {
+        const clientSession = evidenceRecord(
+          directAttestation.clientSession,
+          'governedToolClientSession',
+        );
+        candidateRuntimeAttestation = {
+          ...directAttestation,
+          scenarioExecutionId: input.scenarioExecutionId,
+          desktopMode: platform,
+          networkPath: 'desktop-client-capability->station-tool-dispatch',
+          toolCallBinding: {
+            ...commonToolBinding,
+            selectedDeviceId: String(clientSession.deviceId),
+            selectedLeaseId: String(clientSession.leaseId),
+          },
+        };
+      } else {
+        const {
+          clientSession: _clientSession,
+          ...stationAttestation
+        } = directAttestation;
+        candidateRuntimeAttestation = {
+          ...stationAttestation,
+          scenarioExecutionId: input.scenarioExecutionId,
+          desktopMode: platform,
+          networkPath: 'browser->station-tool-executor',
+          stationToolCallBinding: commonToolBinding,
+          stationExecutorAttestation: {
+            executorId: String(lineage.executorLeaseId),
+            executorKind: 'station',
+            executorRevision: Number(lineage.fencingToken),
+          },
+        };
+      }
+      const receiptPayloadHash = String(
+        lineage.terminalReceiptPayloadHash ?? '',
+      );
+      if (!zeroExecution && !/^[0-9a-f]{64}$/.test(receiptPayloadHash)) {
+        throw new Error(
+          'agent.acceptance.governedToolReceiptPayloadHashMissing',
+        );
+      }
+      const receiverText = settledToolCallElement.textContent?.trim() ?? '';
+      candidateRoles = {
+        'receiver-dom': {
+          scenarioId: cell,
+          cellId: cell,
+          selector: toolCallSelector,
+          locale: input.locale,
+          textHash: await sha256Hex(receiverText),
+          expectedVisible: true,
+          visible: settledToolCallElement.getClientRects().length > 0,
+        },
+        'station-readback': {
+          entityKind: 'agent-tool-call-lineage',
+          entityIdHash: await sha256Hex(toolCallId),
+          revision: Math.max(
+            Number(lineage.decisionRevision),
+            Number(lineage.fencingToken),
+          ),
+          stateHash: sourceHash,
+        },
+        ...(zeroExecution
+          ? {
+              'zero-execution': {
+                counterKind: 'governed-tool-execution-attempt',
+                count: 0,
+                expected: 0,
+              },
+            }
+          : {
+              'executor-receipts': {
+                receiptId: String(lineage.sideEffectReceiptId),
+                toolCallId,
+                fencingToken: Number(lineage.fencingToken),
+                status: expectedOutcome.receiptStatus,
+                payloadHash: receiptPayloadHash,
+              },
+            }),
+        'measurement-report': {
+          metric: 'governed-tool-settlement-ms',
+          sampleIds: [input.sampleId],
+          threshold: 900_000,
+          actual: Math.round(performance.now() - scenarioStartedAt),
+          passed: performance.now() - scenarioStartedAt <= 900_000,
+        },
+        'side-effect-count': {
+          counterId: `tool-call:${toolCallId}`,
+          count: sideEffectCount,
+          maximum: 1,
+        },
+        replay: {
+          sourceHash,
+          replayHash,
+          equal: sourceHash === replayHash,
+        },
+      };
     }
     capture = {
       assertions,
@@ -25437,11 +29805,39 @@ async function runGovernedToolDevelopmentJourney(input: {
         decision: decisionAttempt.response,
         replayedDecision,
         lineage,
+        approvalAggregate,
+        scenarioControlFacts,
       },
+      ...(candidateMode
+        ? {
+            runtimeAttestation: candidateRuntimeAttestation,
+            roles: candidateRoles,
+          }
+        : {}),
     };
+    }
   } catch (error) {
     primaryError = error;
   } finally {
+    if (preparedScenario) {
+      try {
+        const cleaned = await api.cleanupCapabilityAcceptanceScenario(create(
+          CleanupCapabilityAcceptanceScenarioRequestSchema,
+          { scenarioHandle: preparedScenario.scenarioHandle },
+        ));
+        cleanup.scenarioCleaned =
+          cleaned.scenarioHandle === preparedScenario.scenarioHandle;
+      } catch (error) {
+        cleanupError = error;
+      }
+      if (barrierControl) {
+        try {
+          await barrierControl;
+        } catch (error) {
+          cleanupError ??= error;
+        }
+      }
+    }
     try {
       if (conversationId) {
         await cleanupFoundationToolConversation(
@@ -25475,23 +29871,20 @@ async function runGovernedToolDevelopmentJourney(input: {
         cleanup.disposableAgentDeleted = true;
       }
       if (runtimeFixture) {
-        await api.deleteModel(
-          runtimeFixture.providerId,
-          runtimeFixture.modelId,
-        );
-        cleanup.fixtureModelDeleted = true;
-        await api.deleteProvider(runtimeFixture.providerId);
-        cleanup.fixtureProviderDeleted = true;
+        const fixtureCleanup =
+          await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
+        cleanup.fixtureModelDeleted = fixtureCleanup.modelDeleted;
+        cleanup.fixtureProviderDeleted = fixtureCleanup.providerRestored;
       }
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
       if (priorSelection) {
+        await api.setSelectedAgent(priorSelection);
         useAgentStore.getState().setSelectedAgent(priorSelection);
         useAgentStore.getState().setAgentSurface(
           priorSelection,
           priorSurface,
         );
-        await api.setSelectedAgent(priorSelection);
       }
-      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
       cleanup.selectionRestored =
         !priorSelection
         || useAgentStore.getState().selectedAgent === priorSelection;
@@ -25501,9 +29894,15 @@ async function runGovernedToolDevelopmentJourney(input: {
   }
 
   if (cleanupError) {
-    throw Object.assign(
-      new Error('agent.acceptance.governedToolCleanupFailed'),
-      { primaryError, cleanupError },
+    const primaryMessage = primaryError instanceof Error
+      ? primaryError.message
+      : String(primaryError ?? 'none');
+    const cleanupMessage = cleanupError instanceof Error
+      ? cleanupError.message
+      : String(cleanupError);
+    throw new Error(
+      'agent.acceptance.governedToolCleanupFailed: '
+      + `primary=${primaryMessage}; cleanup=${cleanupMessage}`,
     );
   }
   if (primaryError) throw primaryError;
@@ -25512,10 +29911,35 @@ async function runGovernedToolDevelopmentJourney(input: {
   }
   const cleanupComplete = Object.values(cleanup).every(Boolean);
   if (!cleanupComplete) {
-    throw new Error('agent.acceptance.governedToolCleanupIncomplete');
+    const incomplete = Object.entries(cleanup)
+      .filter(([, complete]) => !complete)
+      .map(([name]) => name)
+      .sort();
+    throw new Error(
+      `agent.acceptance.governedToolCleanupIncomplete:${incomplete.join(',')}`,
+    );
   }
+  const finalizedRoles = candidateMode && candidateRoles && preparedScenario
+    ? {
+        ...candidateRoles,
+        cleanup: {
+          resourceKind: 'capability-operation-scenario',
+          resourceIdHash: await sha256Hex(
+            `${preparedScenario.sourceInventoryHash}:`
+            + preparedScenario.scenarioHandle,
+          ),
+          status: 'clean',
+        },
+      }
+    : candidateRoles;
   return evidenceValue({
     ...capture,
+    ...(candidateMode
+      ? {
+          runtimeAttestation: candidateRuntimeAttestation,
+          roles: finalizedRoles,
+        }
+      : {}),
     assertions: {
       ...evidenceRecord(capture.assertions, 'governedToolAssertions'),
       cleanupComplete,
@@ -25524,6 +29948,95 @@ async function runGovernedToolDevelopmentJourney(input: {
       ...cleanup,
       status: 'clean',
     },
+  }) as Record<string, unknown>;
+}
+
+interface CapabilityBindingCandidateFixture {
+  agentId: string;
+  agentName: string;
+  providerId: string;
+  modelId: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+}
+
+async function prepareCapabilityBindingCandidate(
+  sampleId: string,
+): Promise<CapabilityBindingCandidateFixture> {
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const runtimeFixture = await createFoundationDisposableRuntimeFixture(
+    'capability-binding-candidate',
+  );
+  try {
+    const agent = await agentStore.createAgent({
+      name: `capability-binding-candidate-${sampleId}-${crypto.randomUUID()}`,
+      title: `Capability binding candidate ${sampleId}`,
+      description: 'V2-J02 capability binding candidate fixture',
+      provider: runtimeFixture.providerId,
+      model: runtimeFixture.modelId,
+    });
+    const agentId = agent.id || agent.name;
+    await api.setSelectedAgent(agent.name);
+    useAgentStore.getState().setSelectedAgent(agent.name);
+    return {
+      agentId,
+      agentName: agent.name,
+      providerId: runtimeFixture.providerId,
+      modelId: runtimeFixture.modelId,
+      priorSelection,
+      priorSurface,
+    };
+  } catch (error) {
+    await deleteFoundationDisposableRuntimeFixture(runtimeFixture);
+    throw error;
+  }
+}
+
+async function cleanupCapabilityBindingCandidate(
+  fixture: CapabilityBindingCandidateFixture,
+): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  try {
+    await api.deleteAgent(fixture.agentId);
+  } catch (error) {
+    failures.push(`agent:${observedErrorCode(error)}`);
+  }
+  try {
+    const runtimeCleanup = await deleteFoundationDisposableRuntimeFixture({
+      providerId: fixture.providerId,
+      modelId: fixture.modelId,
+    });
+    if (!runtimeCleanup.providerRestored || !runtimeCleanup.modelDeleted) {
+      failures.push('runtime-fixture:restore-not-observed');
+    }
+  } catch (error) {
+    failures.push(`runtime-fixture:${observedErrorCode(error)}`);
+  }
+  await useAgentStore.getState().loadAgents().catch((error) => {
+    failures.push(`agent-refresh:${observedErrorCode(error)}`);
+  });
+  if (
+    fixture.priorSelection
+    && useAgentStore.getState().agents.some(
+      (agent) => agent.name === fixture.priorSelection,
+    )
+  ) {
+    useAgentStore.getState().setSelectedAgent(fixture.priorSelection);
+    useAgentStore.getState().setAgentSurface(
+      fixture.priorSelection,
+      fixture.priorSurface,
+    );
+    await api.setSelectedAgent(fixture.priorSelection).catch((error) => {
+      failures.push(`selection:${observedErrorCode(error)}`);
+    });
+  }
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  return evidenceValue({
+    resourceKind: 'capability-binding-candidate-fixture',
+    status: failures.length === 0 ? 'clean' : 'failed',
+    failures,
   }) as Record<string, unknown>;
 }
 
@@ -26455,40 +30968,61 @@ export function installAcceptanceHarness(): void {
     },
 
     async configureStation({ stationUrl }: ConfigureStationInput) {
-      return configureCurrentAcceptanceStation(stationUrl);
+      const expectedUrl = stationUrl.trim().replace(/\/+$/, '');
+      const probed = await api.stationAdd(expectedUrl);
+      await api.stationSetActive(expectedUrl);
+      const registry = await api.stationList();
+      const activeUrl = registry.active_url?.trim().replace(/\/+$/, '') ?? null;
+      const activeEntry = registry.entries.find(
+        (entry) => entry.url.trim().replace(/\/+$/, '') === expectedUrl,
+      );
+      const activeStationPeerId = (
+        activeEntry?.peer_id?.trim() || probed.peer_id?.trim() || null
+      );
+
+      return {
+        configured:
+          activeUrl === expectedUrl
+          && activeEntry?.online === true
+          && Boolean(activeStationPeerId),
+        activeUrl,
+        online: activeEntry?.online === true,
+        peerIdAvailable: Boolean(activeStationPeerId),
+        activeStationPeerId,
+      };
     },
 
     async loginWithPassword({ account, password }: LoginInput) {
-      // #region debug-point A-B-D-E:identity-login-precondition
       const reportIdentityDebug = (
         hypothesisId: string,
         msg: string,
+        data: Record<string, unknown> = {},
       ): void => {
-        const snapshot = identityRuntime.getSnapshot();
-        void fetch('http://127.0.0.1:7778/event', {
+        void fetch('http://127.0.0.1:7781/event', {
           method: 'POST',
           body: JSON.stringify({
-            sessionId: 'foundation-identity-boot',
-            runId: 'post-fix',
+            sessionId: 'browser-renderer-closed',
+            runId: 'pre-fix-386c0444-login',
             hypothesisId,
-            location: 'apps/desktop/src/acceptance/agent/harness.ts:loginWithPassword',
+            location: 'harness.ts:loginWithPassword',
             msg: `[DEBUG] ${msg}`,
-            data: {
-              phaseKind: snapshot.phase.kind,
-              phaseReason:
-                'reason' in snapshot.phase ? snapshot.phase.reason : null,
-              lifecycleState: snapshot.lifecycle.state,
-              dataReady: snapshot.lifecycle.dataReady,
-              authenticated: useSessionStore.getState().authenticated,
-            },
+            data,
             ts: Date.now(),
           }),
         }).catch(() => {});
       };
       let priorIdentityDebugState = '';
-      reportIdentityDebug('E', 'login entry');
+      const entrySnapshot = identityRuntime.getSnapshot();
+      reportIdentityDebug('E', 'login entry', {
+        phaseKind: entrySnapshot.phase.kind,
+        lifecycleState: entrySnapshot.lifecycle.state,
+        dataReady: entrySnapshot.lifecycle.dataReady,
+        authenticated: useSessionStore.getState().authenticated,
+      });
       identityRuntime.boot();
-      reportIdentityDebug('D', 'boot requested');
+      reportIdentityDebug('D', 'boot requested', {
+        phaseKind: identityRuntime.getSnapshot().phase.kind,
+      });
       try {
         await waitFor(
           () => {
@@ -26503,7 +31037,11 @@ export function installAcceptanceHarness(): void {
             });
             if (currentIdentityDebugState !== priorIdentityDebugState) {
               priorIdentityDebugState = currentIdentityDebugState;
-              reportIdentityDebug('A', 'identity phase changed');
+              reportIdentityDebug(
+                'A',
+                'identity phase changed',
+                { state: currentIdentityDebugState },
+              );
             }
             return (
               snapshot.phase.kind === 'accountGate'
@@ -26517,10 +31055,16 @@ export function installAcceptanceHarness(): void {
           30_000,
         );
       } catch (error) {
-        reportIdentityDebug('B', 'identity login precondition failed');
+        const timeoutSnapshot = identityRuntime.getSnapshot();
+        reportIdentityDebug('B', 'identity login precondition failed', {
+          phaseKind: timeoutSnapshot.phase.kind,
+          lifecycleState: timeoutSnapshot.lifecycle.state,
+          dataReady: timeoutSnapshot.lifecycle.dataReady,
+          authenticated: useSessionStore.getState().authenticated,
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
         throw error;
       }
-      // #endregion
       if (useSessionStore.getState().authenticated) {
         await identityRuntime.logout();
       }
@@ -26613,21 +31157,74 @@ export function installAcceptanceHarness(): void {
       return runCapabilityBindingDevelopmentJourney(sampleId);
     },
 
+    async runCapabilityBindingScenario(
+      input: CapabilityBindingScenarioInput,
+    ) {
+      return executeCapabilityBindingScenario(input);
+    },
+
+    async prepareCapabilityBindingCandidate({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return prepareCapabilityBindingCandidate(sampleId);
+    },
+
+    async cleanupCapabilityBindingCandidate({
+      fixture,
+    }: {
+      fixture: CapabilityBindingCandidateFixture;
+    }) {
+      return cleanupCapabilityBindingCandidate(fixture);
+    },
+
+    async prepareHomeCommandCenterScenario(
+      input: HomeCommandCenterScenarioInput,
+    ) {
+      return prepareHomeCommandCenterScenario(input);
+    },
+
+    async recoverHomeCommandCenterScenario(
+      state: HomeCommandCenterScenarioState,
+    ) {
+      return recoverHomeCommandCenterScenario(state);
+    },
+
+    async cleanupHomeCommandCenterScenario(
+      state: HomeCommandCenterScenarioState,
+    ) {
+      return cleanupHomeCommandCenterScenario(state);
+    },
+
     async runGovernedToolDevelopment({
       sampleId,
       providerBaseUrl,
+      providerApiKey,
     }: {
       sampleId: string;
       providerBaseUrl: string;
+      providerApiKey: string;
     }) {
       return runGovernedToolDevelopmentJourney({
         sampleId,
         providerBaseUrl,
+        providerApiKey,
       });
+    },
+
+    async runGovernedToolScenario(
+      input: GovernedToolDevelopmentInput,
+    ) {
+      return runGovernedToolDevelopmentJourney(input);
     },
 
     async runMcpLifecycleDevelopment(input: McpLifecycleDevelopmentInput) {
       return runMcpLifecycleDevelopmentJourney(input);
+    },
+
+    async runMcpLifecycleScenario(input: McpLifecycleScenarioInput) {
+      return runMcpLifecycleScenario(input);
     },
 
     async runConnectorInvocationDevelopment(
@@ -26636,8 +31233,18 @@ export function installAcceptanceHarness(): void {
       return runConnectorInvocationDevelopmentJourney(input);
     },
 
+    async runConnectorInvocationScenario(
+      input: ConnectorInvocationDevelopmentInput,
+    ) {
+      return runConnectorInvocationDevelopmentJourney(input);
+    },
+
     async runEvaluationDevelopment(input: EvaluationDevelopmentInput) {
       return runEvaluationDevelopmentJourney(input);
+    },
+
+    async runEvaluationScenario(input: EvaluationScenarioInput) {
+      return runEvaluationScenario(input);
     },
 
     async runMarketplaceCatalogDevelopment({
@@ -26712,25 +31319,11 @@ export function installAcceptanceHarness(): void {
         imageOutput: boolean;
       };
     }) {
-      // #region debug-point F-I:ensure-provider-stage
       const reportEnsureProviderStage = (
-        stage: string,
-        data: Record<string, unknown> = {},
+        _stage: string,
+        _data: Record<string, unknown> = {},
       ): void => {
-        void fetch('http://127.0.0.1:7778/event', {
-          method: 'POST',
-          body: JSON.stringify({
-            sessionId: 'foundation-identity-boot',
-            runId: 'pre-fix',
-            hypothesisId: 'F-I',
-            location: 'apps/desktop/src/acceptance/agent/harness.ts:ensureProvider',
-            msg: `[DEBUG] ${stage}`,
-            data,
-            ts: Date.now(),
-          }),
-        }).catch(() => {});
       };
-      // #endregion
 
       let stage = 'load-providers';
       reportEnsureProviderStage('started', { stage });
@@ -26865,6 +31458,30 @@ export function installAcceptanceHarness(): void {
         });
         throw error;
       }
+    },
+
+    async setupProviderFixture({ baseUrl, apiKey }: { providerId?: string; apiKey: string; modelId?: string; baseUrl: string }) {
+      const runtimeFixture = await createGovernedToolRuntimeFixture(
+        'evaluation-pre-auth',
+        baseUrl,
+        apiKey,
+      );
+      const agentStore = useAgentStore.getState();
+      await agentStore.loadAgents();
+      const refreshed = useAgentStore.getState();
+      const agent = refreshed.agents.find((a) => a.name === refreshed.selectedAgent)
+        || refreshed.agents[0];
+      if (agent) {
+        const agentId = agent.id || agent.name;
+        if (agent.provider !== runtimeFixture.providerId || agent.model !== runtimeFixture.modelId) {
+          await agentStore.updateAgentProfile(agentId, {
+            provider: runtimeFixture.providerId,
+            model: runtimeFixture.modelId,
+          });
+          await agentStore.loadAgents();
+        }
+      }
+      return { configured: true, providerId: runtimeFixture.providerId, modelId: runtimeFixture.modelId };
     },
 
     async runDevelopmentRuntimeUnavailable({
@@ -27062,8 +31679,12 @@ export function installAcceptanceHarness(): void {
 
     async runDevelopmentProviderModelUnavailable({
       sampleId,
+      platform = 'desktop_app',
+      locale = i18n.language,
     }: {
       sampleId: string;
+      platform?: 'desktop_app' | 'browser';
+      locale?: string;
     }) {
       const sourceAgent = selectedAgent();
       if (!sourceAgent?.provider || !sourceAgent.model) {
@@ -27090,6 +31711,7 @@ export function installAcceptanceHarness(): void {
         );
       }
       const missingModel = `pt-missing-model-${sampleId}`;
+      const startedAt = performance.now();
       let modelAdded = false;
       let modelRemoved = false;
       let agentRestored = false;
@@ -27098,6 +31720,7 @@ export function installAcceptanceHarness(): void {
       let conversationDeleted = false;
       let localProjectionCleared = false;
       let conversationId = '';
+      let turnId = '';
       let capture: Record<string, unknown> | null = null;
       try {
         await api.addModel(sourceAgent.provider, {
@@ -27136,7 +31759,6 @@ export function installAcceptanceHarness(): void {
           model_name: missingModel,
         });
         conversationId = conversation.conversation_id;
-        await useChatStore.getState().selectSession(conversationId);
         const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
           foundationConversationReadback(conversationId),
           api.listAgentTurnTraces(agentId, {
@@ -27146,6 +31768,7 @@ export function installAcceptanceHarness(): void {
           }),
           api.listAgentTurnQueue(conversationId),
         ]);
+        await useChatStore.getState().selectSession(conversationId);
 
         let observationSequence = 0;
         const errorEventRef: {
@@ -27332,6 +31955,7 @@ export function installAcceptanceHarness(): void {
           'before-send',
           modelUnavailableSurfaceSnapshot(),
         );
+        // #endregion
         let errorMessage = useChatStore.getState().messages
           .slice(messageCountBefore)
           .find((message) => (
@@ -27339,39 +31963,113 @@ export function installAcceptanceHarness(): void {
             && message.typedError?.error_type
               === 'PROVIDER_MODEL_UNAVAILABLE'
           ));
-        await waitFor(
-          () => {
-            errorMessage = useChatStore.getState().messages
-              .slice(messageCountBefore)
-              .find((message) => (
-                message.role === 'assistant'
-                && message.typedError?.error_type
-                  === 'PROVIDER_MODEL_UNAVAILABLE'
-                && message.resolution?.type === 'chooseCompatibleModel'
-              ));
-            const recovery = document.querySelector<HTMLButtonElement>(
-              '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+        try {
+          const sendAccepted = useChatStore.getState().sendMessage(
+            `Model unavailable ${sampleId}`,
+          );
+          // #region debug-point A-D:foundation-model-recovery
+          void reportFoundationModelRecoveryDebug(
+            'A-D',
+            'send-returned',
+            {
+              ...modelUnavailableSurfaceSnapshot(),
+              sendAccepted,
+            },
+          );
+          // #endregion
+          try {
+            await waitFor(
+              () => {
+                errorMessage = useChatStore.getState().messages
+                  .slice(messageCountBefore)
+                  .find((message) => (
+                    message.role === 'assistant'
+                    && message.typedError?.error_type
+                      === 'PROVIDER_MODEL_UNAVAILABLE'
+                    && message.resolution?.type === 'chooseCompatibleModel'
+                  ));
+                const recovery = document.querySelector<HTMLButtonElement>(
+                  '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
+                );
+                return Boolean(
+                  errorEventRef.current
+                  && errorMessage
+                  && recovery
+                  && recovery.getClientRects().length > 0,
+                );
+              },
+              'provider-model-unavailable recovery surface',
+              120_000,
             );
-            return Boolean(
-              errorMessage
-              && recovery
-              && recovery.getClientRects().length > 0,
+          } catch (error) {
+            // #region debug-point A-D:foundation-model-recovery
+            await reportFoundationModelRecoveryDebug(
+              'A-D',
+              'recovery-surface-timeout',
+              modelUnavailableSurfaceSnapshot(),
             );
-          },
-          'provider-model-unavailable recovery surface',
-          120_000,
-        );
+            // #endregion
+            throw error;
+          }
+        } finally {
+          unsubscribe();
+        }
         const recovery = document.querySelector<HTMLButtonElement>(
           '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
         );
-        if (!errorMessage || !recovery) {
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="PROVIDER_MODEL_UNAVAILABLE"]',
+        );
+        const errorText = errorSurface?.querySelector<HTMLElement>(
+          '[data-pt-agent-message-error-text='
+          + '"agent.errors.providerModelUnavailable"]',
+        );
+        const errorEvent =
+          errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+        if (
+          !errorMessage
+          || !recovery
+          || !errorSurface
+          || !errorText
+          || !errorEvent
+        ) {
           throw new Error(
             'agent.acceptance.providerModelUnavailableRecoveryMissing',
           );
         }
+        const sourceDelivery = errorEvent.sourceDelivery;
+        turnId = String(
+          errorMessage.turnId
+          ?? errorEvent.data.turnId
+          ?? errorEvent.data.turn_id
+          ?? sourceDelivery?.turnId
+          ?? '',
+        );
+        if (
+          !turnId
+          || !sourceDelivery
+          || sourceDelivery.transport !== 'station-sse'
+          || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+          || sourceDelivery.conversationId !== conversationId
+          || sourceDelivery.turnId !== turnId
+          || sourceDelivery.sequence <= 0
+          || sourceDelivery.rawPayload.eventType !== 'error'
+          || stableJson(
+            normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+          ) !== stableJson(
+            normalizeProjectedStationPayload(errorEvent.data),
+          )
+        ) {
+          throw new Error(
+            'agent.acceptance.providerModelUnavailableRuntimeIdentityMismatch',
+          );
+        }
         const recoveryVisibleBeforeAction =
           recovery.getClientRects().length > 0;
+        const errorVisibleBeforeAction =
+          errorText.getClientRects().length > 0;
         const recoveryLabelBeforeAction = recovery.textContent?.trim() ?? '';
+        const errorTextBeforeAction = errorText.textContent?.trim() ?? '';
         recovery.click();
         await waitFor(
           () => (
@@ -27396,6 +32094,11 @@ export function installAcceptanceHarness(): void {
           api.listAgentTurnQueue(conversationId),
         ]);
         const typedError = errorMessage.typedError;
+        if (!typedError) {
+          throw new Error(
+            'agent.acceptance.providerModelUnavailableTypedErrorMissing',
+          );
+        }
         const resolution = errorMessage.resolution;
         const latestTrace =
           tracesAfter.entries[tracesAfter.entries.length - 1];
@@ -27419,46 +32122,107 @@ export function installAcceptanceHarness(): void {
             && String(message.status).toLowerCase() === 'completed'
           ),
         );
-        capture = {
-          assertions: {
-            typedModelUnavailable:
-              typedError?.error_type === 'PROVIDER_MODEL_UNAVAILABLE'
-              && typedError.locale_key
-                === 'agent.errors.providerModelUnavailable'
-              && typedError.retryable === true
-              && typedError.terminal === true
-              && stableJson(Object.keys(typedError.details).sort())
-                === stableJson(['model_id', 'provider_id'])
-              && typedError.details.provider_id === agent.provider
-              && typedError.details.model_id === missingModel,
-            localizedRecoveryVisible:
-              recoveryVisibleBeforeAction
-              && recoveryLabelBeforeAction.length > 0,
-            chooseModelOpened:
-              resolution?.type === 'chooseCompatibleModel'
-              && resolution.providerId === agent.provider
-              && resolution.modelId === missingModel
-              && useAgentStore.getState().getAgentSurface(agent.name)
-                === 'profile',
-            oneTerminalProviderAttempt:
-              tracesAfter.entries.length === tracesBefore.entries.length + 1
-              && latestProviderCalls.length === 1,
-            zeroSuccessfulCompletion: completedAssistantMessages.length === 0,
-            queueUnchanged:
-              queueAfter.entries.length === queueBefore.entries.length,
-          },
-          facts: {
+        const replayReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const sourceReadbackHash = await sha256Hex(
+          stableJson(readbackAfter),
+        );
+        const replayReadbackHash = await sha256Hex(
+          stableJson(replayReadback),
+        );
+        const typedOutcome = evidenceRecord(
+          evidenceValue(typedError),
+          'providerModelUnavailableOutcome',
+        );
+        const payloadHash = await sha256Hex(
+          stableJson(sourceDelivery.rawPayload),
+        );
+        const runtimeEvent: FoundationRuntimeEventObservation = {
+          eventId: await sha256Hex(stableJson({
             conversationId,
-            providerId: typedError?.details.provider_id ?? '',
-            modelId: typedError?.details.model_id ?? '',
-            resolution,
-            recoveryLabel: recoveryLabelBeforeAction,
+            turnId,
+            sequence: sourceDelivery.sequence,
+            payloadHash,
+          })),
+          eventType: errorEvent.eventType,
+          sequence: sourceDelivery.sequence,
+          observedAt: errorEvent.observedAt,
+          streamGeneration: errorEvent.streamGeneration,
+          streamIdHash: await sha256Hex(errorEvent.streamId),
+          conversationIdHash: await sha256Hex(conversationId),
+          payloadHash,
+          errorType: String(typedOutcome.error_type ?? ''),
+          sourceTransport: sourceDelivery.transport,
+          sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+          sourceConversationId: sourceDelivery.conversationId,
+          sourceTurnId: sourceDelivery.turnId,
+          sourceSequence: sourceDelivery.sequence,
+          sourceEventType: sourceDelivery.rawPayload.eventType,
+        };
+        const [
+          profile,
+          readiness,
+          conversations,
+          turnEvidence,
+        ] = await Promise.all([
+          api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
+          api.getAgentCapabilityReadiness({
+            agent_id: agentId,
+            client_capability_session_id: capabilitySessionId,
+          }),
+          api.listAgentConversations(agentId, {
+            page: 1,
+            pageSize: 200,
+          }),
+          foundationTurnEvidence(conversationId, turnId),
+        ]);
+        const scenarioFacts = {
+          outcome: typedOutcome,
+          typedError,
+          resolution,
+          receiver: {
+            errorVisible: errorVisibleBeforeAction,
+            errorText: errorTextBeforeAction,
+            expectedErrorText: i18n.t(
+              'agent.errors.providerModelUnavailable',
+              { ns: 'agent' },
+            ),
+            recoveryVisible: recoveryVisibleBeforeAction,
+            recoveryText: recoveryLabelBeforeAction,
+            expectedRecoveryText: i18n.t(
+              'agent.recovery.chooseCompatibleModel',
+              { ns: 'agent' },
+            ),
+            chooseModelExecuted: (
+              useAgentStore.getState().getAgentSurface(agent.name) === 'profile'
+            ),
+          },
+          station: {
+            conversationId,
+            turnId,
+            providerId: typedOutcome.details
+              ? evidenceRecord(
+                  typedOutcome.details,
+                  'providerModelUnavailableDetails',
+                ).provider_id
+              : '',
+            modelId: typedOutcome.details
+              ? evidenceRecord(
+                  typedOutcome.details,
+                  'providerModelUnavailableDetails',
+                ).model_id
+              : '',
+            conversationVersion: readbackAfter.conversation.version,
+            stateHash: sourceReadbackHash,
             messageDelta:
               readbackAfter.messages.length - readbackBefore.messages.length,
             traceDelta:
               tracesAfter.entries.length - tracesBefore.entries.length,
             queueDelta:
               queueAfter.entries.length - queueBefore.entries.length,
+            providerCallCount: latestProviderCalls.length,
+            completedAssistantCount: completedAssistantMessages.length,
           },
           replay: {
             sourceHash: sourceReadbackHash,
@@ -27650,6 +32414,9 @@ export function installAcceptanceHarness(): void {
       scenarioFacts.cleanup = cleanup;
       return evidenceValue({
         ...capture,
+        assertions: evaluateBaseProviderModelUnavailableFacts(scenarioFacts),
+        facts: scenarioFacts,
+        scenarioFacts,
         cleanup,
       });
     },
@@ -28177,16 +32944,21 @@ export function installAcceptanceHarness(): void {
 
     async runDevelopmentLoopBudget({
       sampleId,
+      platform = 'desktop_app',
+      locale = i18n.language,
     }: {
       sampleId: string;
+      platform?: 'desktop_app' | 'browser';
+      locale?: string;
     }) {
       const agent = selectedAgent();
       if (!agent?.provider || !agent.model) {
         throw new Error('agent.acceptance.loopBudget');
       }
       const agentId = agent.id || agent.name;
-      const fixture = await foundationToolFixture(agentId, 'browser');
+      const fixture = await foundationToolFixture(agentId, platform);
       const originalBinding = fixture.binding;
+      const startedAt = performance.now();
       let currentBinding = originalBinding;
       let conversationId = '';
       let turnId = '';
@@ -28327,85 +33099,268 @@ export function installAcceptanceHarness(): void {
           'loopBudgetStationDetails',
         );
         const activeView = usePortalStore.getState().activeView;
-
-        capture = {
-          assertions: {
-            stationTypedPayload:
-              stationError.error_type === 'TOOL_LOOP_BUDGET_EXHAUSTED'
-              && stationError.locale_key
-                === 'agent.errors.toolLoopBudgetExhausted'
-              && stationError.retryable === false
-              && stationError.terminal === true
-              && stableJson(Object.keys(stationDetails).sort())
-                === stableJson(['budget_kind', 'limit', 'turn_id'])
-              && stationDetails.turn_id === turnId
-              && stationDetails.budget_kind === 'tool_calls'
-              && stationDetails.limit
-                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
-            typedLoopBudget:
-              typedError?.error_type === 'TOOL_LOOP_BUDGET_EXHAUSTED'
-              && typedError.locale_key
-                === 'agent.errors.toolLoopBudgetExhausted'
-              && typedError.retryable === false
-              && typedError.terminal === true
-              && stableJson(Object.keys(typedError.details).sort())
-                === stableJson(['budget_kind', 'limit', 'turn_id'])
-              && typedError.details.turn_id === turnId
-              && typedError.details.budget_kind === 'tool_calls'
-              && typedError.details.limit
-                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
-            localizedInspectBudgetVisible:
-              recovery.getClientRects().length > 0
-              && recoveryLabel === i18n.t(
-                'agent.recovery.inspectBudget',
-                { ns: 'agent' },
-              )
-              && resolution?.type === 'inspectBudget'
-              && resolution.turnId === turnId
-              && resolution.budgetKind === 'tool_calls'
-              && resolution.limit === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
-            budgetIdentityProjected:
-              errorSurface.dataset.ptAgentErrorTurnId === turnId
-              && errorSurface.dataset.ptAgentErrorBudgetKind === 'tool_calls'
-              && errorSurface.dataset.ptAgentErrorBudgetLimit
-                === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
-            inspectBudgetOpenedTurnDetails:
-              activeView?.type === 'turnDetails'
-              && activeView.turnId === turnId,
-            terminalAtExactLimit:
-              loop.facts.stopped === true
-              && loop.facts.executionAfterLimit === 0
-              && terminalEvents.length === 1
-              && terminalEvents[0]?.event === 'error',
-            inspectBudgetHasNoAutomaticRetry:
-              providerCallsAfterAction === providerCallsBeforeAction
-              && toolCallsAfterAction === toolCallsBeforeAction,
-          },
-          facts: {
+        const sourceDelivery = terminalEvents[0]?.sourceDelivery;
+        if (
+          !sourceDelivery
+          || sourceDelivery.transport !== 'station-sse'
+          || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+          || sourceDelivery.conversationId !== conversationId
+          || sourceDelivery.turnId !== turnId
+          || sourceDelivery.sequence <= 0
+          || sourceDelivery.rawPayload.eventType !== 'error'
+          || stableJson(
+            normalizeProjectedStationPayload(
+              sourceDelivery.rawPayload.data,
+            ),
+          ) !== stableJson(
+            normalizeProjectedStationPayload(stationError),
+          )
+        ) {
+          throw new Error('agent.acceptance.loopBudgetRuntimeIdentityMismatch');
+        }
+        const payloadHash = await sha256Hex(
+          stableJson(sourceDelivery.rawPayload),
+        );
+        const runtimeEvent: FoundationRuntimeEventObservation = {
+          eventId: await sha256Hex(stableJson({
             conversationId,
             turnId,
-            typedError,
-            stationError,
-            resolution,
-            recoveryLabel,
-            recoveryVisible: recovery.getClientRects().length > 0,
-            projectedTurnId:
-              errorSurface.dataset.ptAgentErrorTurnId ?? '',
-            projectedBudgetKind:
-              errorSurface.dataset.ptAgentErrorBudgetKind ?? '',
-            projectedLimit:
-              errorSurface.dataset.ptAgentErrorBudgetLimit ?? '',
-            loopBudget: loop.facts,
-            providerCallsBeforeAction,
-            providerCallsAfterAction,
-            toolCallsBeforeAction,
-            toolCallsAfterAction,
-            terminalEventCount: terminalEvents.length,
-            terminalEventType: terminalEvents[0]?.event ?? '',
-            turnDetailsOpened:
-              activeView?.type === 'turnDetails'
-              && activeView.turnId === turnId,
+            sequence: sourceDelivery.sequence,
+            payloadHash,
+          })),
+          eventType: terminalEvents[0]?.event ?? '',
+          sequence: sourceDelivery.sequence,
+          observedAt: terminalEvents[0]?.observedAt ?? '',
+          payloadHash,
+          errorType: String(stationError.error_type ?? ''),
+          sourceTransport: sourceDelivery.transport,
+          sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+          sourceConversationId: sourceDelivery.conversationId,
+          sourceTurnId: sourceDelivery.turnId,
+          sourceSequence: sourceDelivery.sequence,
+          sourceEventType: sourceDelivery.rawPayload.eventType,
+        };
+        const sourceReplayHash = await sha256Hex(stableJson(
+          withoutDiagnosticGenerationTime(loop.sourceReplay),
+        ));
+        const replayHash = await sha256Hex(stableJson(
+          withoutDiagnosticGenerationTime(loop.replay),
+        ));
+        const scenarioFacts = {
+          conversationId,
+          turnId,
+          typedError,
+          stationError,
+          resolution,
+          recoveryLabel,
+          recoveryVisible: recovery.getClientRects().length > 0,
+          projectedTurnId:
+            errorSurface.dataset.ptAgentErrorTurnId ?? '',
+          projectedBudgetKind:
+            errorSurface.dataset.ptAgentErrorBudgetKind ?? '',
+          projectedLimit:
+            errorSurface.dataset.ptAgentErrorBudgetLimit ?? '',
+          loopBudget: loop.facts,
+          providerCallsBeforeAction,
+          providerCallsAfterAction,
+          toolCallsBeforeAction,
+          toolCallsAfterAction,
+          terminalEventCount: terminalEvents.length,
+          terminalEventType: terminalEvents[0]?.event ?? '',
+          turnDetailsOpened:
+            activeView?.type === 'turnDetails'
+            && activeView.turnId === turnId,
+          runtimeEvent,
+          replay: {
+            sourceHash: sourceReplayHash,
+            replayHash,
+            equal: sourceReplayHash === replayHash,
           },
+        };
+        const assertions = {
+          stationTypedPayload:
+            stationError.error_type === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+            && stationError.locale_key
+              === 'agent.errors.toolLoopBudgetExhausted'
+            && stationError.retryable === false
+            && stationError.terminal === true
+            && stableJson(Object.keys(stationDetails).sort())
+              === stableJson(['budget_kind', 'limit', 'turn_id'])
+            && stationDetails.turn_id === turnId
+            && stationDetails.budget_kind === 'tool_calls'
+            && stationDetails.limit
+              === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+          typedLoopBudget:
+            typedError?.error_type === 'TOOL_LOOP_BUDGET_EXHAUSTED'
+            && typedError.locale_key
+              === 'agent.errors.toolLoopBudgetExhausted'
+            && typedError.retryable === false
+            && typedError.terminal === true
+            && stableJson(Object.keys(typedError.details).sort())
+              === stableJson(['budget_kind', 'limit', 'turn_id'])
+            && typedError.details.turn_id === turnId
+            && typedError.details.budget_kind === 'tool_calls'
+            && typedError.details.limit
+              === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+          localizedInspectBudgetVisible:
+            recovery.getClientRects().length > 0
+            && recoveryLabel === i18n.t(
+              'agent.recovery.inspectBudget',
+              { ns: 'agent' },
+            )
+            && resolution?.type === 'inspectBudget'
+            && resolution.turnId === turnId
+            && resolution.budgetKind === 'tool_calls'
+            && resolution.limit === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+          budgetIdentityProjected:
+            errorSurface.dataset.ptAgentErrorTurnId === turnId
+            && errorSurface.dataset.ptAgentErrorBudgetKind === 'tool_calls'
+            && errorSurface.dataset.ptAgentErrorBudgetLimit
+              === String(FOUNDATION_LOOP_MAX_TOOL_CALLS),
+          inspectBudgetOpenedTurnDetails:
+            activeView?.type === 'turnDetails'
+            && activeView.turnId === turnId,
+          terminalAtExactLimit:
+            loop.facts.stopped === true
+            && loop.facts.executionAfterLimit === 0
+            && terminalEvents.length === 1
+            && terminalEvents[0]?.event === 'error',
+          inspectBudgetHasNoAutomaticRetry:
+            providerCallsAfterAction === providerCallsBeforeAction
+            && toolCallsAfterAction === toolCallsBeforeAction,
+        };
+        const capabilitySessions = await waitForCapabilitySessionEvidence();
+        const stationSession = capabilitySessions.selectedStationSession;
+        if (!stationSession) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const [
+          profile,
+          readiness,
+          conversations,
+          conversationReadback,
+          turnEvidence,
+        ] = await Promise.all([
+          api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
+          api.getAgentCapabilityReadiness({
+            agent_id: agentId,
+            client_capability_session_id: stationSession.session_id,
+          }),
+          api.listAgentConversations(agentId, {
+            page: 1,
+            pageSize: 200,
+          }),
+          foundationConversationReadback(conversationId),
+          foundationTurnEvidence(conversationId, turnId),
+        ]);
+        let runtimeAttestation = await buildDirectRuntimeAttestation(
+          {
+            cell: 'BASE-LOOP_BUDGET_EXHAUSTED',
+            agent,
+            agentId,
+            profile,
+            readiness,
+            capabilitySessions,
+            conversations,
+            conversationReadback,
+            turnQueue: null,
+            turnEvidence,
+            chatState: useChatStore.getState(),
+            sessionState: useSessionStore.getState(),
+            providerState: useProviderStore.getState(),
+            operation: useChatStore.getState().operations[conversationId],
+            lastAssistant: errorMessage,
+            scenarioFacts,
+            platform,
+            locale,
+            sampleId,
+          },
+          sampleId,
+        );
+        if (platform === 'desktop_app') {
+          const toolFacts = foundationDiagnosticToolFacts(loop.replay);
+          const lastToolFact = toolFacts[toolFacts.length - 1];
+          if (!lastToolFact) {
+            throw new Error('agent.acceptance.loopBudgetToolFactMissing');
+          }
+          const lineage = evidenceRecord(
+            diagnosticToolCase(lastToolFact, 0).lineage,
+            'loopBudgetToolLineage',
+          );
+          const clientSession = evidenceRecord(
+            runtimeAttestation.clientSession,
+            'loopBudgetClientSession',
+          );
+          runtimeAttestation = {
+            ...runtimeAttestation,
+            toolCallBinding: {
+              toolCallId: String(lineage.toolCallId),
+              turnId,
+              attemptId: String(lineage.attemptId),
+              capabilityId: String(lineage.manifestId),
+              capabilityVersion: String(lineage.manifestVersion),
+              bindingId: String(lineage.bindingId),
+              bindingRevision: Number(lineage.bindingRevision),
+              readinessSnapshotId: String(lineage.readinessSnapshotId),
+              selectedDeviceId: String(clientSession.deviceId),
+              selectedLeaseId: String(clientSession.leaseId),
+              sideEffectReceiptId: String(lineage.sideEffectReceiptId),
+            },
+          };
+        }
+        const receiverVisible =
+          recovery.getClientRects().length > 0
+          && errorSurface.getClientRects().length > 0;
+        const durationMs = performance.now() - startedAt;
+        capture = {
+          assertions,
+          facts: scenarioFacts,
+          scenarioFacts,
+          runtimeAttestation,
+          'receiver-dom': {
+            scenarioId: 'BASE-LOOP_BUDGET_EXHAUSTED',
+            cellId: 'BASE-LOOP_BUDGET_EXHAUSTED',
+            selector:
+              '[data-pt-agent-error-type="TOOL_LOOP_BUDGET_EXHAUSTED"],'
+              + '[data-pt-agent-message-error-recovery="inspect-budget"]',
+            locale,
+            textHash: await sha256Hex(stableJson({
+              recoveryLabel,
+              errorType: typedError?.error_type ?? '',
+            })),
+            visible: receiverVisible,
+          },
+          'station-readback': {
+            entityKind: 'agent-loop-budget-turn',
+            entityIdHash: await sha256Hex(stableJson({
+              conversationId,
+              turnId,
+            })),
+            revision: Number(conversationReadback.conversation.version),
+            stateHash: await sha256Hex(stableJson(conversationReadback)),
+          },
+          'runtime-events': {
+            eventId: runtimeEvent.eventId,
+            sequence: runtimeEvent.sequence,
+            eventType: runtimeEvent.eventType,
+            occurredAt: runtimeEvent.observedAt,
+          },
+          'measurement-report': {
+            metric: 'foundation-loop-budget-duration-ms',
+            sampleIds: [sampleId],
+            threshold: '<=660000',
+            passed: durationMs <= 660_000,
+            latencyMs: durationMs,
+          },
+          'side-effect-count': {
+            counterId: await sha256Hex(stableJson({
+              cell: 'BASE-LOOP_BUDGET_EXHAUSTED',
+              turnId,
+            })),
+            count: Number(loop.facts.executionAfterLimit),
+            maximum: 0,
+          },
+          replay: scenarioFacts.replay,
         };
       } catch (error) {
         primaryError = error;
@@ -28460,6 +33415,12 @@ export function installAcceptanceHarness(): void {
       return evidenceValue({
         ...capture,
         cleanup: {
+          resourceKind: 'loop-budget-fixture',
+          resourceIdHash: await sha256Hex(stableJson({
+            conversationId,
+            turnId,
+            platform,
+          })),
           bindingRestored,
           conversationDeleted,
           localProjectionCleared,
@@ -29736,6 +34697,33 @@ export function installAcceptanceHarness(): void {
       );
     },
 
+    async runDevelopmentClientPermissionDenied({
+      sampleId,
+      capabilitySessionId,
+      deferConversationCleanup,
+      externalExecutorEvidence,
+      scenarioKey,
+      receiverPlatform,
+    }: {
+      sampleId: string;
+      capabilitySessionId: string;
+      deferConversationCleanup: boolean;
+      externalExecutorEvidence: boolean;
+      scenarioKey: string;
+      receiverPlatform: 'browser' | 'desktop_app';
+    }) {
+      return evidenceValue(
+        await runDevelopmentClientPermissionDeniedScenario({
+          sampleId,
+          capabilitySessionId,
+          deferConversationCleanup,
+          externalExecutorEvidence,
+          scenarioKey,
+          receiverPlatform,
+        }),
+      );
+    },
+
     async resolveFoundationInvalidResourceExecutorTarget() {
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
@@ -29760,6 +34748,15 @@ export function installAcceptanceHarness(): void {
         );
       }
       const target = targets[0];
+      const targetCapability = target.typed_capabilities.find(
+        (capability) =>
+          capability.capability_id === fixture.manifest.capabilityId,
+      );
+      if (!targetCapability) {
+        throw new Error(
+          'agent.acceptance.foundationInvalidResourceExecutorUnavailable',
+        );
+      }
       return {
         capabilitySessionId: target.session_id,
         capabilitySessionIdHash: await sha256Hex(target.session_id),
@@ -29767,6 +34764,8 @@ export function installAcceptanceHarness(): void {
         targetDeviceIdHash: await sha256Hex(target.device_id),
         targetCapabilityId: fixture.manifest.capabilityId,
         targetPlatform: clientPlatformName(target.platform),
+        targetPermission: targetCapability.permission,
+        targetPermissionKind: targetCapability.permission_kind,
       };
     },
 
@@ -29886,6 +34885,22 @@ export function installAcceptanceHarness(): void {
         conversationDeleted: true,
         localProjectionCleared: true,
       };
+    },
+
+    async abortFoundationClientPermissionDenied({
+      scenarioKey,
+      conversationId,
+      turnId,
+    }: {
+      scenarioKey: string;
+      conversationId?: string;
+      turnId?: string;
+    }) {
+      return cleanupFoundationPermissionDeniedScenario({
+        scenarioKey,
+        conversationId,
+        turnId,
+      });
     },
 
     async setFoundationClientExecutorAvailable({
@@ -30093,6 +35108,8 @@ export function installAcceptanceHarness(): void {
       control,
       capabilitySessionIdHash,
       crossDeviceSessionId,
+      capabilityId,
+      permissionKind,
     }: {
       control:
         | 'unsupported'
@@ -30101,14 +35118,26 @@ export function installAcceptanceHarness(): void {
         | 'schemaMismatch'
         | 'crossDevice'
         | 'leasePause'
-        | 'leaseExpired';
+        | 'leaseExpired'
+        | 'permissionDenied'
+        | 'permissionGranted';
       capabilitySessionIdHash: string;
       crossDeviceSessionId?: string;
+      capabilityId?: string;
+      permissionKind?:
+        | 'clipboard'
+        | 'filesystem'
+        | 'camera'
+        | 'microphone'
+        | 'notifications'
+        | 'screen_capture';
     }) {
       return api.runAgentCapabilityNegativeControl(
         control,
         capabilitySessionIdHash,
         crossDeviceSessionId,
+        capabilityId,
+        permissionKind,
       );
     },
 
@@ -30870,6 +35899,16 @@ export function installAcceptanceHarness(): void {
       const agentState = useAgentStore.getState();
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
+      agentState.setAgentSurface(agent.name, 'chat');
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+      await waitFor(
+        () => Boolean(
+          document.querySelector('[data-pt-agent-composer]')
+            ?.getClientRects().length,
+        ),
+        'Foundation direct-probe Agent chat surface',
+        30_000,
+      );
       await reportFoundationCapabilityIsolationDebug(
         'C-D',
         'entry-restoration-complete',
@@ -31172,7 +36211,6 @@ export function installAcceptanceHarness(): void {
         preparedRuntimeEvent.current = scenario.runtimeEvent;
         turnDurationMs = scenario.durationMs;
         scenarioFacts = scenario.facts;
-        // #region debug-point E-H:context-overflow-scenario-return
         await reportFoundationContextOverflowRecoveryDebug(
           'E-H',
           'scenario-returned',
@@ -31189,7 +36227,6 @@ export function installAcceptanceHarness(): void {
               && scenarioFacts.cleanup !== null,
           },
         );
-        // #endregion
       }
 
       if (cell === 'BASE-INVALID_REFERENCE') {
@@ -31257,6 +36294,57 @@ export function installAcceptanceHarness(): void {
         ) {
           throw new Error(
             'agent.acceptance.foundationInvalidResourcePreparedScenarioInvalid',
+          );
+        }
+      }
+
+      if (cell === 'BASE-PERMISSION_DENIED') {
+        const scenario = evidenceRecord(
+          preparedScenario,
+          'foundationPermissionDeniedPreparedScenario',
+        );
+        preparedConversationId = String(scenario.conversationId ?? '');
+        preparedTurnId = String(scenario.turnId ?? '');
+        turnDurationMs = Number(scenario.durationMs ?? 0);
+        scenarioFacts = evidenceRecord(
+          scenario.facts,
+          'foundationPermissionDeniedFacts',
+        );
+        const runtimeEvent = evidenceRecord(
+          scenario.runtimeEvent,
+          'foundationPermissionDeniedRuntimeEvent',
+        );
+        preparedRuntimeEvent.current = {
+          eventId: String(runtimeEvent.eventId ?? ''),
+          eventType: String(runtimeEvent.eventType ?? ''),
+          sequence: Number(runtimeEvent.sequence ?? 0),
+          observedAt: String(runtimeEvent.observedAt ?? ''),
+          streamGeneration: Number(runtimeEvent.streamGeneration ?? 0),
+          streamIdHash: String(runtimeEvent.streamIdHash ?? ''),
+          conversationIdHash: String(
+            runtimeEvent.conversationIdHash ?? '',
+          ),
+          payloadHash: String(runtimeEvent.payloadHash ?? ''),
+          errorType: String(runtimeEvent.errorType ?? ''),
+          sourceTransport: String(runtimeEvent.sourceTransport ?? ''),
+          sourcePtidHash: String(runtimeEvent.sourcePtidHash ?? ''),
+          sourceConversationId: String(
+            runtimeEvent.sourceConversationId ?? '',
+          ),
+          sourceTurnId: String(runtimeEvent.sourceTurnId ?? ''),
+          sourceSequence: Number(runtimeEvent.sourceSequence ?? 0),
+          sourceEventType: String(runtimeEvent.sourceEventType ?? ''),
+        };
+        if (
+          !preparedConversationId
+          || !preparedTurnId
+          || !scenarioKey
+          || !turnDurationMs
+          || !preparedRuntimeEvent.current.eventId
+          || preparedRuntimeEvent.current.sequence <= 0
+        ) {
+          throw new Error(
+            'agent.acceptance.foundationPermissionDeniedPreparedScenarioInvalid',
           );
         }
       }
@@ -31893,6 +36981,8 @@ export function installAcceptanceHarness(): void {
         if (!queueFullMessage || !queueFullRecovery) {
           throw new Error('agent.acceptance.foundationQueueFullRecoveryMissing');
         }
+        const recoveryVisibleBeforeAction =
+          queueFullRecovery.getClientRects().length > 0;
         queueFullRecovery.click();
         await waitFor(
           () => (
@@ -31903,6 +36993,10 @@ export function installAcceptanceHarness(): void {
           'Foundation queue editor focus',
           10_000,
         );
+        const queueFocusedAfterAction =
+          document.activeElement instanceof HTMLElement
+          && document.activeElement.dataset.ptAgentTurnQueue
+            === conversation.conversation_id;
         const queueAfterEditAction = await api.listAgentTurnQueue(
           conversation.conversation_id,
         );
@@ -31912,12 +37006,6 @@ export function installAcceptanceHarness(): void {
         const queueFullTypedError = queueFullMessage.typedError;
         const queueFullResolution = queueFullMessage.resolution;
         if (developmentSlice === 'queue-full') {
-          const queueFocused =
-            document.activeElement instanceof HTMLElement
-            && document.activeElement.dataset.ptAgentTurnQueue
-              === conversation.conversation_id;
-          const recoveryVisible =
-            queueFullRecovery.getClientRects().length > 0;
           await cancelFoundationQueuedTurns(conversation.conversation_id);
           const activeCancellation = await api.cancelAgentTurn(activeTurnId);
           active.controller.abort();
@@ -31954,9 +37042,9 @@ export function installAcceptanceHarness(): void {
               && details.conversation_id === conversation.conversation_id
               && Number(details.capacity) === queueAtCapacity.queue_capacity,
             localizedRecoveryVisible:
-              recoveryVisible
+              recoveryVisibleBeforeAction
               && Boolean(queueFullRecovery.textContent?.trim()),
-            editQueueFocused: queueFocused,
+            editQueueFocused: queueFocusedAfterAction,
             queueStateUnchanged:
               queueAfterEditAction.entries.length
                 === queueBeforeEditAction.entries.length
@@ -31976,8 +37064,8 @@ export function installAcceptanceHarness(): void {
               typedError: queueFullTypedError,
               resolution: queueFullResolution,
               recovery: {
-                visible: recoveryVisible,
-                queueFocused,
+                visible: recoveryVisibleBeforeAction,
+                queueFocused: queueFocusedAfterAction,
               },
               activeCancellationStatus: activeCancellation.status,
               deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
@@ -32331,11 +37419,8 @@ export function installAcceptanceHarness(): void {
                 capacity: queueFullResolution?.capacity ?? 0,
               },
               recovery: {
-                visible: queueFullRecovery.getClientRects().length > 0,
-                queueFocused:
-                  document.activeElement instanceof HTMLElement
-                  && document.activeElement.dataset.ptAgentTurnQueue
-                    === conversation.conversation_id,
+                visible: recoveryVisibleBeforeAction,
+                queueFocused: queueFocusedAfterAction,
               },
               queueSizeAfterAction: queueAfterEditAction.entries.length,
               conversationVersionBeforeAction:
@@ -32663,6 +37748,7 @@ export function installAcceptanceHarness(): void {
                 unavailableReason: control.unavailable_reason ?? null,
                 accepted: control.accepted ?? null,
                 errorCode: control.errorCode ?? null,
+                source: control.source ?? null,
               }];
             }),
           ),
@@ -32803,7 +37889,6 @@ export function installAcceptanceHarness(): void {
         };
       }
       if (cell === 'BASE-CONTEXT_OVERFLOW') {
-        // #region debug-point E-H:context-overflow-cleanup-branch
         await reportFoundationContextOverflowRecoveryDebug(
           'E-H',
           'cleanup-branch-evaluated',
@@ -32818,7 +37903,6 @@ export function installAcceptanceHarness(): void {
               && currentConversationId === preparedConversationId,
           },
         );
-        // #endregion
       }
       if (
         cell === 'BASE-CONTEXT_OVERFLOW'
@@ -32829,7 +37913,6 @@ export function installAcceptanceHarness(): void {
           scenarioFacts.cleanup,
           'foundationContextOverflowCleanup',
         );
-        // #region debug-point E-H:context-overflow-cleanup-dispatch
         await reportFoundationContextOverflowRecoveryDebug(
           'E-H',
           'cleanup-dispatch-entered',
@@ -32842,7 +37925,27 @@ export function installAcceptanceHarness(): void {
               contextOverflowCleanup.conversationDeleted === true,
           },
         );
-        // #endregion
+      }
+      if (
+        cell === 'BASE-PERMISSION_DENIED'
+        && scenarioFacts
+        && scenarioKey
+        && currentConversationId
+      ) {
+        preservedReplayReadback = conversationReadback;
+        const permissionCleanup =
+          await cleanupFoundationPermissionDeniedScenario({
+            scenarioKey,
+            conversationId: currentConversationId,
+            turnId: turnId ?? '',
+          });
+        scenarioFacts.cleanup = {
+          ...evidenceRecord(
+            scenarioFacts.cleanup,
+            'foundationPermissionDeniedCleanup',
+          ),
+          ...permissionCleanup,
+        };
       }
       if (
         (
@@ -32970,7 +38073,6 @@ export function installAcceptanceHarness(): void {
             scenarioFacts.cleanup,
             'foundationContextOverflowCleanup',
           );
-          // #region debug-point E-H:context-overflow-cleanup-result
           await reportFoundationContextOverflowRecoveryDebug(
             'E-H',
             'cleanup-deletion-completed',
@@ -32983,7 +38085,6 @@ export function installAcceptanceHarness(): void {
                 contextOverflowCleanup.conversationDeleted === true,
             },
           );
-          // #endregion
         }
         if (cell === 'BASE-ACTIVE_MUTATION_CONFLICT') {
           await reportActiveMutationConflictDebug(
@@ -33028,7 +38129,6 @@ export function installAcceptanceHarness(): void {
           scenarioFacts?.cleanup,
           'foundationContextOverflowCleanup',
         );
-        // #region debug-point E-H:context-overflow-assertion-input
         await reportFoundationContextOverflowRecoveryDebug(
           'E-H',
           'assertion-input',
@@ -33040,7 +38140,6 @@ export function installAcceptanceHarness(): void {
               contextOverflowCleanup.conversationDeleted === true,
           },
         );
-        // #endregion
       }
       const assertions = await evaluateDirectCellAssertions(assertionContext);
 
@@ -33267,6 +38366,45 @@ export function installAcceptanceHarness(): void {
             ).sideEffectCountBefore),
           providerContinuation:
             station.continuationId === '' ? 0 : 1,
+        };
+      }
+      if (cell === 'BASE-PERMISSION_DENIED' && scenarioFacts) {
+        const station = evidenceRecord(
+          scenarioFacts.station,
+          'foundationPermissionDeniedStation',
+        );
+        const executor = evidenceRecord(
+          scenarioFacts.executor,
+          'foundationPermissionDeniedExecutor',
+        );
+        const before = evidenceRecord(
+          executor.before,
+          'foundationPermissionDeniedExecutorBefore',
+        );
+        const after = evidenceRecord(
+          executor.after,
+          'foundationPermissionDeniedExecutorAfter',
+        );
+        stationReadback.entityKind = 'agent-client-permission';
+        stationReadback.entityIdHash = await sha256Hex(
+          stableJson({
+            conversationId: station.conversationId,
+            turnId: station.turnId,
+          }),
+        );
+        stationReadback.revision = Number(station.messageCount);
+        stationReadback.stateHash = await sha256Hex(stableJson(station));
+        stationReadback.typedError = scenarioFacts.outcome;
+        stationReadback.deltas = {
+          toolCall: Number(station.toolCallCount),
+          toolResult: Number(station.toolResultCount),
+          providerContinuation: Number(station.providerContinuationCount),
+          executionAttempt:
+            Number(after.executionAttemptCount)
+            - Number(before.executionAttemptCount),
+          localSideEffect:
+            Number(after.sideEffectCount)
+            - Number(before.sideEffectCount),
         };
       }
       if (cell === 'BASE-LEASE_EXPIRED' && scenarioFacts) {
@@ -33503,6 +38641,7 @@ export function installAcceptanceHarness(): void {
             || cell === 'BASE-CONTEXT_OVERFLOW'
             || cell === 'BASE-INVALID_REFERENCE'
             || cell === 'BASE-INVALID_RESOURCE_REF'
+            || cell === 'BASE-PERMISSION_DENIED'
             || cell === 'BASE-LEASE_EXPIRED'
             || cell === 'BASE-DUPLICATE_CONFLICT'
             || cell === 'BASE-CREDENTIAL_MISSING'
@@ -33526,6 +38665,7 @@ export function installAcceptanceHarness(): void {
                     || cell === 'BASE-CONTEXT_OVERFLOW'
                     || cell === 'BASE-INVALID_REFERENCE'
                     || cell === 'BASE-INVALID_RESOURCE_REF'
+                    || cell === 'BASE-PERMISSION_DENIED'
                     || cell === 'BASE-LEASE_EXPIRED'
                     || cell === 'BASE-DUPLICATE_CONFLICT'
                     || cell === 'BASE-CREDENTIAL_MISSING'
@@ -33579,6 +38719,7 @@ export function installAcceptanceHarness(): void {
           : cell === 'AS-F06'
             || cell === 'BASE-INVALID_REFERENCE'
             || cell === 'BASE-INVALID_RESOURCE_REF'
+            || cell === 'BASE-PERMISSION_DENIED'
             ? 300_000
             : 120_000;
       const measurementReport: Record<string, unknown> = {
@@ -33802,6 +38943,49 @@ export function installAcceptanceHarness(): void {
                     executionAttemptDelta,
                     sideEffectDelta,
                     providerContinuationDelta,
+                  },
+                };
+              })()
+          : cell === 'BASE-PERMISSION_DENIED' && scenarioFacts
+            ? (() => {
+                const station = evidenceRecord(
+                  scenarioFacts.station,
+                  'foundationPermissionDeniedStation',
+                );
+                const executor = evidenceRecord(
+                  scenarioFacts.executor,
+                  'foundationPermissionDeniedExecutor',
+                );
+                const before = evidenceRecord(
+                  executor.before,
+                  'foundationPermissionDeniedExecutorBefore',
+                );
+                const after = evidenceRecord(
+                  executor.after,
+                  'foundationPermissionDeniedExecutorAfter',
+                );
+                const executionAttemptDelta =
+                  Number(after.executionAttemptCount)
+                  - Number(before.executionAttemptCount);
+                const sideEffectDelta =
+                  Number(after.sideEffectCount)
+                  - Number(before.sideEffectCount);
+                return {
+                  counterId: String(station.turnId),
+                  count:
+                    Number(station.toolCallCount)
+                    + Number(station.toolResultCount)
+                    + Number(station.providerContinuationCount)
+                    + executionAttemptDelta
+                    + sideEffectDelta,
+                  maximum: 0,
+                  measurements: {
+                    toolCallCount: station.toolCallCount,
+                    toolResultCount: station.toolResultCount,
+                    providerContinuationCount:
+                      station.providerContinuationCount,
+                    executionAttemptDelta,
+                    sideEffectDelta,
                   },
                 };
               })()
@@ -34113,6 +39297,13 @@ export function installAcceptanceHarness(): void {
               'foundationInvalidResourceReferenceCleanup',
             )
           : null;
+      const permissionDeniedCleanup =
+        cell === 'BASE-PERMISSION_DENIED' && scenarioFacts
+          ? evidenceRecord(
+              scenarioFacts.cleanup,
+              'foundationPermissionDeniedCleanup',
+            )
+          : null;
       const leaseExpiredCleanup =
         cell === 'BASE-LEASE_EXPIRED' && scenarioFacts
           ? evidenceRecord(
@@ -34152,6 +39343,13 @@ export function installAcceptanceHarness(): void {
                     === true
                   && invalidResourceReferenceCleanup.conversationDeleted
                     === true
+                )
+            : permissionDeniedCleanup
+              ? (
+                  permissionDeniedCleanup.bindingRestored === true
+                  && permissionDeniedCleanup.localProjectionCleared === true
+                  && permissionDeniedCleanup.conversationDeleted === true
+                  && permissionDeniedCleanup.permissionRestored === true
                 )
             : leaseExpiredCleanup
               ? (
@@ -34340,6 +39538,8 @@ export function installAcceptanceHarness(): void {
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-INVALID_RESOURCE_REF' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
+          : cell === 'BASE-PERMISSION_DENIED' && scenarioFacts
+            ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-LEASE_EXPIRED' && scenarioFacts
             ? { proof: scenarioFacts.cleanup }
           : cell === 'BASE-DUPLICATE_CONFLICT' && scenarioFacts
@@ -34362,6 +39562,7 @@ export function installAcceptanceHarness(): void {
         || cell === 'BASE-CONTEXT_OVERFLOW'
         || cell === 'BASE-INVALID_REFERENCE'
         || cell === 'BASE-INVALID_RESOURCE_REF'
+        || cell === 'BASE-PERMISSION_DENIED'
         || cell === 'BASE-LEASE_EXPIRED'
         || cell === 'BASE-DUPLICATE_CONFLICT'
         || cell === 'BASE-CREDENTIAL_MISSING'
@@ -34516,6 +39717,26 @@ export function installAcceptanceHarness(): void {
           receiverText = {
             errorText: receiver.errorText,
             recoveryText: receiver.recoveryText,
+          };
+        } else if (cell === 'BASE-PERMISSION_DENIED') {
+          receiverVisible =
+            receiver.errorVisible === true
+            && receiver.recoveryVisible === true
+            && receiver.recoveryExecuted === true
+            && receiver.profileVisible === true
+            && receiver.capabilitiesTabVisible === true
+            && receiver.capabilityDetailVisible === true;
+          receiverSelector =
+            '[data-pt-agent-message-error-text='
+            + '"agent.errors.clientPermissionDenied"],'
+            + '[data-pt-agent-message-error-recovery='
+            + '"open-permission-settings"],'
+            + '[data-pt-agent-capability-detail="filesystem.read@1"]';
+          receiverText = {
+            errorText: receiver.errorText,
+            recoveryText: receiver.recoveryText,
+            capabilityId: receiver.capabilityId,
+            permissionKind: receiver.permissionKind,
           };
         } else if (cell === 'BASE-LEASE_EXPIRED') {
           receiverVisible =
@@ -34696,6 +39917,19 @@ export function installAcceptanceHarness(): void {
         replayEvidence.turnId = evidenceRecord(
           scenarioFacts.station,
           'foundationInvalidResourceReferenceStation',
+        ).turnId;
+      }
+      if (cell === 'BASE-PERMISSION_DENIED' && scenarioFacts) {
+        const replay = evidenceRecord(
+          scenarioFacts.replay,
+          'foundationPermissionDeniedReplay',
+        );
+        replayEvidence.sourceHash = replay.sourceHash;
+        replayEvidence.replayHash = replay.replayHash;
+        replayEvidence.equal = replay.equal;
+        replayEvidence.turnId = evidenceRecord(
+          scenarioFacts.station,
+          'foundationPermissionDeniedStation',
         ).turnId;
       }
       if (cell === 'BASE-LEASE_EXPIRED' && scenarioFacts) {
@@ -35015,6 +40249,28 @@ export function installAcceptanceHarness(): void {
             throw Object.assign(
               new Error(
                 'agent.acceptance.foundationInvalidResourceCleanupFailed',
+              ),
+              {
+                primaryError: error,
+                cleanupError,
+              },
+            );
+          }
+        }
+        if (
+          cell === 'BASE-PERMISSION_DENIED'
+          && scenarioKey
+        ) {
+          try {
+            await cleanupFoundationPermissionDeniedScenario({
+              scenarioKey,
+              conversationId: preparedConversationId ?? '',
+              turnId: preparedTurnId ?? '',
+            });
+          } catch (cleanupError) {
+            throw Object.assign(
+              new Error(
+                'agent.acceptance.foundationPermissionDeniedCleanupFailed',
               ),
               {
                 primaryError: error,

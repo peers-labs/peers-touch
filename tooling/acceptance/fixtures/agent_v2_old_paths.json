@@ -288,7 +288,7 @@
       "id": "client-submitted-platform-turn-contract",
       "closures": ["C10"],
       "disposition": "deleted-authority",
-      "pattern": "optional string platform =|platform:\\s*['\"]desktop['\"]|platform\\?: string|pub platform: Option<String>|req\\.GetPlatform\\(\\)|platformHints|matchesPlatform",
+      "pattern": "optional string platform =|platform:\\s*['\"]desktop['\"]|platform\\?: string|pub platform: Option<String>|platformHints|matchesPlatform",
       "paths": [
         "model/domain/agent/agent.proto",
         "apps/desktop/src",
@@ -685,15 +685,97 @@
       ]
     },
     {
+      "id": "mcp-acceptance-local-executor",
+      "closures": ["C13-OPERATION"],
+      "disposition": "retained-local-executor",
+      "pattern": "useMCPStore",
+      "paths": [
+        "apps/desktop/src/acceptance/agent/harness.ts"
+      ]
+    },
+    {
+      "id": "mcp-store-test-fixture",
+      "closures": ["C13-OPERATION"],
+      "disposition": "test-fixture",
+      "pattern": "useMCPStore",
+      "paths": [
+        "apps/desktop/src/store/mcp.test.ts"
+      ]
+    },
+    {
+      "id": "evaluation-retirement-test-fixture",
+      "closures": ["C15"],
+      "disposition": "test-fixture",
+      "pattern": "quickCompletion",
+      "paths": [
+        "apps/desktop/src/pages/EvaluationPage.test.tsx"
+      ]
+    },
+    {
+      "id": "typed-capability-session-service-test",
+      "closures": ["C10"],
+      "disposition": "test-fixture",
+      "pattern": "\\bClientCapabilitySession\\b",
+      "paths": [
+        "apps/station/app/subserver/agent/service/runtime_authority_service_test.go"
+      ]
+    },
+    {
       "id": "rejected-custom-http-plugin",
-      "closures": ["C14"],
+      "closures": ["C14-CUSTOM-PLUGIN", "C14"],
       "disposition": "deleted-authority",
       "pattern": "CustomPlugin|customPlugins|custom-plugins|peers-ai-custom-plugins|ecosystem/plugin|ecosystem_custom_plugins",
       "paths": [
-        "apps/desktop/src",
-        "apps/station/app/subserver/agent",
+        "apps/desktop/src/hooks/useCommandMenuItems.ts",
+        "apps/desktop/src/pages/CustomPluginsPage.descriptor.tsx",
+        "apps/desktop/src/pages/CustomPluginsPage.tsx",
+        "apps/desktop/src/pages/CustomPluginsPageContainer.tsx",
+        "apps/desktop/src/pages/registry.ts",
+        "apps/desktop/src/store/customPlugins.ts",
+        "apps/desktop/src/types/navigation.ts",
+        "apps/desktop/src/gen/proto/domain/agent/ecosystem_pb.ts",
+        "apps/mobile/src/gen/proto/domain/agent/ecosystem_pb.ts",
+        "apps/station/app/subserver/agent/agent.go",
+        "apps/station/app/subserver/agent/handler/ecosystem_handler.go",
+        "apps/station/app/subserver/agent/infrastructure/persistence/ecosystem.go",
+        "apps/station/app/subserver/agent/infrastructure/persistence/migrations.go",
+        "apps/station/app/subserver/agent/infrastructure/persistence/models.go",
+        "apps/station/app/subserver/agent/model/ecosystem.pb.go",
+        "apps/station/app/subserver/agent/service/capability_backfill_service.go",
+        "apps/station/app/subserver/agent/service/ecosystem_service.go",
         "model/domain/agent/ecosystem.proto",
-        "packages/locales"
+        "packages/locales",
+        "tooling/acceptance/features/agent-ecosystem.yaml",
+        "tooling/acceptance/gates/agent/foundation_runtime_client.py"
+      ]
+    },
+    {
+      "id": "retired-custom-http-plugin-storage-tombstone",
+      "closures": ["C14-CUSTOM-PLUGIN", "C14"],
+      "disposition": "historical-migration-reader",
+      "pattern": "peers-ai-custom-plugins",
+      "paths": [
+        "apps/desktop/src/kernel/retiredStorage.ts"
+      ]
+    },
+    {
+      "id": "retired-custom-http-plugin-schema-migration",
+      "closures": ["C14-CUSTOM-PLUGIN", "C14"],
+      "disposition": "historical-migration-reader",
+      "pattern": "ecosystem_custom_plugins",
+      "paths": [
+        "apps/station/app/subserver/agent/infrastructure/persistence/retired_extension_endpoint_migration.go"
+      ]
+    },
+    {
+      "id": "retired-custom-http-plugin-test-fixtures",
+      "closures": ["C14-CUSTOM-PLUGIN", "C14"],
+      "disposition": "test-fixture",
+      "pattern": "peers-ai-custom-plugins|ecosystem_custom_plugins",
+      "paths": [
+        "apps/desktop/src/kernel/retiredStorage.test.ts",
+        "apps/station/app/subserver/agent/infrastructure/persistence/retired_extension_endpoint_migration_test.go",
+        "apps/station/app/subserver/agent/service/capability_authority_service_test.go"
       ]
     }
   ]

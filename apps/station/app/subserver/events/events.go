@@ -13,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/option"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
+	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
 )
 
 const callResolutionSweepInterval = time.Second
@@ -26,10 +28,6 @@ type eventsSubServer struct {
 	addrs                []string
 	bus                  EventBus
 	callResolution       *callResolutionStore
-	federation           realtimeFederationRuntime
-	actorHomes           actorHomeStationResolver
-	federatedCallSignals *federatedCallSignalSender
-	localStationPeerID   string
 	callResolutionCancel context.CancelFunc
 	callResolutionDone   chan struct{}
 }
@@ -60,10 +58,6 @@ func (s *eventsSubServer) Init(ctx context.Context, opts ...option.Option) error
 func (s *eventsSubServer) Start(ctx context.Context, opts ...option.Option) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.bindFederation(); err != nil {
-		s.status = server.StatusError
-		return err
-	}
 	if s.callResolution != nil && s.callResolutionCancel == nil {
 		reaperContext, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})
@@ -159,4 +153,118 @@ func GetBus() EventBus {
 	busMu.RLock()
 	defer busMu.RUnlock()
 	return globalBus
+}
+
+// PublishPeerSignal handles an inbound Federation-forwarded signal by
+// re-authorizing the sender/recipient pair and publishing to the local
+// EventBus. It satisfies the realtimeSignalPeerCapabilities interface
+// consumed by the federation peer route handler.
+func (s *eventsSubServer) PublishPeerSignal(
+	ctx context.Context,
+	recipientPTID string,
+	signal *realtime.CallSignal,
+) error {
+	if signal == nil || recipientPTID == "" {
+		return server.BadRequest("signal and recipient are required")
+	}
+	senderPTID := signal.GetFromActorPtid()
+	if isCallLifecycleSignal(signal.GetKind()) && signal.GetCallId() == "" {
+		return server.BadRequest("call lifecycle signal requires call_id")
+	}
+	if senderPTID != recipientPTID {
+		authorizer := getSignalAuthorizer()
+		if authorizer == nil {
+			logger.DefaultHelper.Warnf(
+				"events: peer signal authorizer not registered sender_ptid=%s",
+				senderPTID,
+			)
+			return server.NewHandlerError(503, "signal authorization unavailable")
+		}
+		allowed, err := authorizer.CanSignal(senderPTID, recipientPTID)
+		if err != nil {
+			return server.InternalErrorWithCause("signal authorization check", err)
+		}
+		if !allowed {
+			return server.Forbidden("not authorized to signal this recipient")
+		}
+	}
+	if signal.GetKind() == realtime.CallSignal_CALL_REQUEST {
+		if s.callResolution == nil {
+			return server.NewHandlerError(503, "call resolution unavailable")
+		}
+		if _, err := s.callResolution.open(
+			ctx,
+			senderPTID,
+			recipientPTID,
+			signal.GetSessionUlid(),
+			signal.GetCallId(),
+			callRequestDigest(
+				senderPTID,
+				recipientPTID,
+				signal.GetSessionUlid(),
+				signal.GetCallId(),
+				signal.GetPayload(),
+			),
+		); err != nil {
+			return callResolutionHandlerError(err)
+		}
+	}
+	bus := GetBus()
+	if bus == nil {
+		return server.NewHandlerError(503, "event bus not initialized")
+	}
+	ev := &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Signaling{Signaling: signal},
+	}
+	if _, err := bus.Publish(recipientPTID, ev); err != nil {
+		logger.DefaultHelper.Warnf(
+			"events: peer signal publish failed recipient_ptid=%s: %v",
+			recipientPTID, err,
+		)
+		return server.InternalErrorWithCause("publish peer signal", err)
+	}
+
+	return nil
+}
+
+func (s *eventsSubServer) fanOutNoAnswer(
+	ctx context.Context,
+	record callResolutionModel,
+) {
+	signal := &realtime.CallSignal{
+		SessionUlid:   record.SessionULID,
+		FromActorPtid: record.CalleeActorPTID,
+		Kind:          realtime.CallSignal_CALL_NO_ANSWER,
+		CallId:        record.CallID,
+	}
+	if s.bus != nil {
+		if _, err := s.bus.Publish(
+			record.CalleeActorPTID,
+			streamEventForSignal(signal),
+		); err != nil {
+			logger.DefaultHelper.Warnf(
+				"events: no-answer fan-out failed call_id=%s actor_ptid=%s: %v",
+				record.CallID,
+				record.CalleeActorPTID,
+				err,
+			)
+		}
+	}
+	if record.CallerActorPTID == record.CalleeActorPTID {
+		return
+	}
+	if _, err := s.routeSignal(
+		ctx,
+		record.CalleeActorPTID,
+		record.CallerActorPTID,
+		record.SessionULID,
+		signal,
+	); err != nil {
+		logger.DefaultHelper.Warnf(
+			"events: no-answer fan-out failed call_id=%s actor_ptid=%s: %v",
+			record.CallID,
+			record.CallerActorPTID,
+			err,
+		)
+	}
 }

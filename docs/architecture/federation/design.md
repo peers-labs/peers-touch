@@ -17,7 +17,7 @@
 6. **用户不记地址** — 用户通过搜索、联系人、好友列表等日常入口自然接触联邦内的人，而不是手动输入 `@user@host`。
 7. **Federation 语境显式化** — Catalog、Resolver、Station list、Public actor list 都必须带 `federation_id`，禁止默认全局联邦范围。
 8. **身份模型复用 ActorRef** — 跨 Station 身份以 `ActorRef`、federated handle、`station_peer_id` 表达；`Account` 只作为产品语言，不成为新的 wire identity。
-9. **Station 是真源，Client 是投影** — Federation membership、policy、ledger、权限裁决归 Station；普通客户端只消费 context，Dashboard/CLI 承担治理。
+9. **Station 是真源，Client 是投影** — Federation membership、policy、ledger、权限裁决归 Station；Desktop Settings/Dashboard 只消费 Station 投影。
 
 ---
 
@@ -31,8 +31,8 @@ Desktop
   │   └─ 跨联邦 handle 解析、好友来源标注、联邦 scope 筛选
   └─ Settings → Federation（低频配置入口）
       ├─ Actor Identity & Visibility
-      ├─ Connection Status
-      └─ Available Federation Contexts
+      ├─ Routing Health
+      └─ Joined Federations (Join / Leave)
 
 Dashboard → Federation（治理入口）
   ├─ Create Federation
@@ -63,7 +63,7 @@ Relay / Bootstrap
 Station Picker 和 Federation 入口的边界必须保持清晰：
 
 - Station Picker 回答“Desktop 当前连接哪个 Home Station”。
-- Settings → Federation 回答“我的联邦身份、可见性、可用 context 和连接状态”。
+- Settings → Federation 回答“我的联邦身份、可见性和已加入的联邦”。
 - Dashboard → Federation 回答“联邦治理：创建、审批、Ledger、策略”。
 - 搜索/联系人/聊天 回答“我能找到谁、跟谁聊天”——联邦作为底层 scope 自然生效，用户无需“进入联邦”。
 
@@ -278,7 +278,7 @@ Federation Discovery（由 Station API 提供，Client 按入口消费）
 这意味着：
 
 - **搜索和联系人** 是用户发现联邦内其他人的自然入口。搜索框支持跨联邦 handle 解析（`@user@station.example.com`），联系人列表显示来自各联邦的好友，不需要先"进入联邦"再"找人"。
-- **Settings → Federation** 是低频状态入口——查看联邦身份、调整 Actor 可见性、查看可用 context 和连接状态；不承担 membership 或 Relay 治理。
+- **Settings → Federation** 是低频配置入口——查看联邦身份、调整 Actor 可见性、查看路由健康、加入/离开联邦。类似护照管理：偶尔需要，不是日常动作。
 - **Dashboard → Federation** 是治理入口——创建联邦、审批 Station 加入、管理 Ledger、策略变更。这是 Station 管理员的低频但重要的操作。
 - **不设独立的"联邦广场"一级页面**。联邦存在感通过社交流（好友来源标注 Station/Federation）、搜索结果（跨联邦发现）和偶尔的 Settings 配置自然渗透，而不是要求用户主动进入一个专门页面浏览联邦拓扑。
 
@@ -287,7 +287,7 @@ Federation Discovery（由 Station API 提供，Client 按入口消费）
 | 入口 | 频率 | 用户角色 | 职责 |
 |------|------|---------|------|
 | 搜索/联系人/聊天 | 日常 | 所有用户 | 发现联邦内的人、加好友、聊天、follow |
-| Settings → Federation | 低频 | 所有用户 | 查看身份、调 visibility、查看 context 与连接状态 |
+| Settings → Federation | 低频 | 所有用户 | 查看身份、调 visibility、查健康、Join/Leave |
 | Dashboard → Federation | 极低频 | Station 管理员 | 创建联邦、审批 Station、Ledger 管理、策略治理 |
 
 ### 7.3 联邦上下文的渗透方式

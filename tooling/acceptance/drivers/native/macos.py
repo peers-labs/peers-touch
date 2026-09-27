@@ -4,6 +4,7 @@ import ctypes
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from tooling.acceptance.core.errors import DriverError
@@ -308,8 +309,420 @@ sys.stdout.write(
         }
     )
 )
-if not request_accepted:
-    raise SystemExit("AppKit rejected Native actor activation")
+"""
+
+_FILE_CHOOSER_SELECTION_PROBE = r"""
+import ctypes
+import json
+import sys
+import time
+from pathlib import Path
+
+process_id = int(sys.argv[1])
+target_path = Path(sys.argv[2]).expanduser().resolve()
+home = Path.home().resolve()
+try:
+    path_parts = target_path.relative_to(home).parts
+except ValueError:
+    raise SystemExit("Native file chooser target must be under the user home")
+if not target_path.is_file() or not path_parts:
+    raise SystemExit("Native file chooser target is not a file")
+
+application_services = ctypes.CDLL(
+    "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+)
+core_foundation = ctypes.CDLL(
+    "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+)
+CFRef = ctypes.c_void_p
+CFIndex = ctypes.c_long
+CFTypeID = ctypes.c_ulong
+UTF8 = 0x08000100
+
+application_services.AXUIElementCreateApplication.argtypes = [ctypes.c_int32]
+application_services.AXUIElementCreateApplication.restype = CFRef
+application_services.AXUIElementCopyAttributeValue.argtypes = [
+    CFRef,
+    CFRef,
+    ctypes.POINTER(CFRef),
+]
+application_services.AXUIElementCopyAttributeValue.restype = ctypes.c_int32
+application_services.AXUIElementCopyActionNames.argtypes = [
+    CFRef,
+    ctypes.POINTER(CFRef),
+]
+application_services.AXUIElementCopyActionNames.restype = ctypes.c_int32
+application_services.AXUIElementIsAttributeSettable.argtypes = [
+    CFRef,
+    CFRef,
+    ctypes.POINTER(ctypes.c_bool),
+]
+application_services.AXUIElementIsAttributeSettable.restype = ctypes.c_int32
+application_services.AXUIElementSetAttributeValue.argtypes = [
+    CFRef,
+    CFRef,
+    CFRef,
+]
+application_services.AXUIElementSetAttributeValue.restype = ctypes.c_int32
+application_services.AXUIElementPerformAction.argtypes = [CFRef, CFRef]
+application_services.AXUIElementPerformAction.restype = ctypes.c_int32
+application_services.AXUIElementSetMessagingTimeout.argtypes = [
+    CFRef,
+    ctypes.c_float,
+]
+application_services.AXUIElementSetMessagingTimeout.restype = ctypes.c_int32
+core_foundation.CFStringCreateWithCString.argtypes = [
+    CFRef,
+    ctypes.c_char_p,
+    ctypes.c_uint32,
+]
+core_foundation.CFStringCreateWithCString.restype = CFRef
+core_foundation.CFStringGetTypeID.restype = CFTypeID
+core_foundation.CFArrayGetTypeID.restype = CFTypeID
+core_foundation.CFGetTypeID.argtypes = [CFRef]
+core_foundation.CFGetTypeID.restype = CFTypeID
+core_foundation.CFStringGetLength.argtypes = [CFRef]
+core_foundation.CFStringGetLength.restype = CFIndex
+core_foundation.CFStringGetMaximumSizeForEncoding.argtypes = [
+    CFIndex,
+    ctypes.c_uint32,
+]
+core_foundation.CFStringGetMaximumSizeForEncoding.restype = CFIndex
+core_foundation.CFStringGetCString.argtypes = [
+    CFRef,
+    ctypes.c_char_p,
+    CFIndex,
+    ctypes.c_uint32,
+]
+core_foundation.CFStringGetCString.restype = ctypes.c_bool
+core_foundation.CFArrayGetCount.argtypes = [CFRef]
+core_foundation.CFArrayGetCount.restype = CFIndex
+core_foundation.CFArrayGetValueAtIndex.argtypes = [CFRef, CFIndex]
+core_foundation.CFArrayGetValueAtIndex.restype = CFRef
+core_foundation.CFArrayCreate.argtypes = [
+    CFRef,
+    ctypes.POINTER(CFRef),
+    CFIndex,
+    CFRef,
+]
+core_foundation.CFArrayCreate.restype = CFRef
+core_foundation.CFRetain.argtypes = [CFRef]
+core_foundation.CFRetain.restype = CFRef
+core_foundation.CFRelease.argtypes = [CFRef]
+
+
+def create_string(value):
+    return core_foundation.CFStringCreateWithCString(
+        None,
+        value.encode("utf-8"),
+        UTF8,
+    )
+
+
+def copy_attribute(element, name):
+    key = create_string(name)
+    value = CFRef()
+    try:
+        error = application_services.AXUIElementCopyAttributeValue(
+            element,
+            key,
+            ctypes.byref(value),
+        )
+    finally:
+        core_foundation.CFRelease(key)
+    return value if error == 0 and value else None
+
+
+def decode_text(value):
+    if (
+        not value
+        or core_foundation.CFGetTypeID(value)
+        != core_foundation.CFStringGetTypeID()
+    ):
+        return ""
+    size = (
+        core_foundation.CFStringGetMaximumSizeForEncoding(
+            core_foundation.CFStringGetLength(value),
+            UTF8,
+        )
+        + 1
+    )
+    buffer = ctypes.create_string_buffer(size)
+    if not core_foundation.CFStringGetCString(
+        value,
+        buffer,
+        size,
+        UTF8,
+    ):
+        return ""
+    return buffer.value.decode("utf-8")
+
+
+def array_items(value):
+    if (
+        not value
+        or core_foundation.CFGetTypeID(value)
+        != core_foundation.CFArrayGetTypeID()
+    ):
+        return []
+    return [
+        core_foundation.CFArrayGetValueAtIndex(value, index)
+        for index in range(core_foundation.CFArrayGetCount(value))
+    ]
+
+
+def copied_text(element, name):
+    value = copy_attribute(element, name)
+    try:
+        return decode_text(value)
+    finally:
+        if value:
+            core_foundation.CFRelease(value)
+
+
+def copied_actions(element):
+    value = CFRef()
+    error = application_services.AXUIElementCopyActionNames(
+        element,
+        ctypes.byref(value),
+    )
+    try:
+        return (
+            [decode_text(item) for item in array_items(value)]
+            if error == 0 and value
+            else []
+        )
+    finally:
+        if value:
+            core_foundation.CFRelease(value)
+
+
+def attribute_is_settable(element, name):
+    key = create_string(name)
+    result = ctypes.c_bool()
+    try:
+        error = application_services.AXUIElementIsAttributeSettable(
+            element,
+            key,
+            ctypes.byref(result),
+        )
+    finally:
+        core_foundation.CFRelease(key)
+    return error == 0 and bool(result.value)
+
+
+def find_path(element, predicate, path=(), depth=0):
+    current_path = (*path, element)
+    if predicate(element, current_path):
+        return tuple(
+            core_foundation.CFRetain(item)
+            for item in current_path
+        )
+    if depth >= 14:
+        return None
+    children = copy_attribute(element, "AXChildren")
+    try:
+        for child in array_items(children):
+            result = find_path(
+                child,
+                predicate,
+                current_path,
+                depth + 1,
+            )
+            if result is not None:
+                return result
+    finally:
+        if children:
+            core_foundation.CFRelease(children)
+    return None
+
+
+def release_path(path):
+    if path is None:
+        return
+    for element in path:
+        core_foundation.CFRelease(element)
+
+
+application = application_services.AXUIElementCreateApplication(process_id)
+application_services.AXUIElementSetMessagingTimeout(application, 1.0)
+
+
+def open_panel():
+    windows_value = copy_attribute(application, "AXWindows")
+    fallback = None
+    try:
+        for window in array_items(windows_value):
+            if copied_text(window, "AXIdentifier") == "open-panel":
+                return core_foundation.CFRetain(window)
+            button = find_path(
+                window,
+                lambda element, _: (
+                    copied_text(element, "AXIdentifier") == "OKButton"
+                ),
+            )
+            if button is not None:
+                release_path(button)
+                fallback = window
+        return (
+            core_foundation.CFRetain(fallback)
+            if fallback is not None
+            else None
+        )
+    finally:
+        if windows_value:
+            core_foundation.CFRelease(windows_value)
+
+
+def find_in_panel(predicate):
+    panel = open_panel()
+    if panel is None:
+        return None
+    try:
+        return find_path(panel, predicate)
+    finally:
+        core_foundation.CFRelease(panel)
+
+
+def wait_for_path(predicate, timeout):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = find_in_panel(predicate)
+        if result is not None:
+            return result
+        time.sleep(0.05)
+    return None
+
+
+def perform_action(element, action_name):
+    action = create_string(action_name)
+    try:
+        return application_services.AXUIElementPerformAction(
+            element,
+            action,
+        )
+    finally:
+        core_foundation.CFRelease(action)
+
+
+def select_visible_item(filename):
+    item_path = wait_for_path(
+        lambda element, _: (
+            copied_text(element, "AXFilename") == filename
+        ),
+        5.0,
+    )
+    button_path = wait_for_path(
+        lambda element, _: (
+            copied_text(element, "AXIdentifier") == "OKButton"
+        ),
+        2.0,
+    )
+    if item_path is None or button_path is None:
+        release_path(item_path)
+        release_path(button_path)
+        raise RuntimeError(
+            f"Native file chooser item is unavailable: {filename}"
+        )
+    try:
+        selection_container_index = next(
+            index
+            for index in range(len(item_path) - 1, -1, -1)
+            if attribute_is_settable(
+                item_path[index],
+                "AXSelectedChildren",
+            )
+        )
+        selection_item = item_path[selection_container_index + 1]
+        values = (CFRef * 1)(selection_item)
+        selection = core_foundation.CFArrayCreate(
+            None,
+            values,
+            1,
+            None,
+        )
+        selected_children = create_string("AXSelectedChildren")
+        try:
+            application_services.AXUIElementSetAttributeValue(
+                item_path[selection_container_index],
+                selected_children,
+                selection,
+            )
+        finally:
+            core_foundation.CFRelease(selected_children)
+            core_foundation.CFRelease(selection)
+        perform_action(button_path[-1], "AXPress")
+    finally:
+        release_path(item_path)
+        release_path(button_path)
+
+
+try:
+    home_path = wait_for_path(
+        lambda element, path: (
+            copied_text(element, "AXValue") == home.name
+            and any(
+                copied_text(ancestor, "AXRole") == "AXOutline"
+                and copied_text(ancestor, "AXDescription") == "sidebar"
+                for ancestor in path
+            )
+        ),
+        5.0,
+    )
+    if home_path is None:
+        raise RuntimeError("Native file chooser home sidebar item is unavailable")
+    try:
+        home_action = next(
+            element
+            for element in reversed(home_path)
+            if "AXOpen" in copied_actions(element)
+        )
+        perform_action(home_action, "AXOpen")
+    finally:
+        release_path(home_path)
+
+    for index, part in enumerate(path_parts):
+        select_visible_item(part)
+        if index + 1 < len(path_parts):
+            next_part = wait_for_path(
+                lambda element, _: (
+                    copied_text(element, "AXFilename")
+                    == path_parts[index + 1]
+                ),
+                5.0,
+            )
+            if next_part is None:
+                raise RuntimeError(
+                    "Native file chooser did not navigate to "
+                    f"{part}"
+                )
+            release_path(next_part)
+
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        panel = open_panel()
+        if panel is None:
+            break
+        core_foundation.CFRelease(panel)
+        time.sleep(0.05)
+    else:
+        raise RuntimeError(
+            "Native file chooser remained open after file selection"
+        )
+except Exception as error:
+    core_foundation.CFRelease(application)
+    raise SystemExit(f"{type(error).__name__}: {error}")
+
+core_foundation.CFRelease(application)
+sys.stdout.write(
+    json.dumps(
+        {
+            "selected": True,
+            "path": str(target_path),
+            "pathParts": list(path_parts),
+        }
+    )
+)
 """
 
 _WINDOW_STACK_PROBE = r"""
@@ -411,11 +824,13 @@ _MOUSE_EVENT_TYPES = {
     MouseAction.LEFT_DOWN: 1,
     MouseAction.LEFT_UP: 2,
     MouseAction.MOVE: 5,
+    MouseAction.LEFT_DRAG: 6,
 }
 _CONTROL_KINDS = {
     "AXList": "list",
     "AXTextField": "text-field",
 }
+_MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER = "action-button-1"
 
 
 class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
@@ -584,6 +999,162 @@ class MacOSNativeDesktopAdapter(NativeDesktopAdapter):
         self.post_key(
             NativeKey.G,
             modifiers=(NativeModifier.PRIMARY, NativeModifier.SHIFT),
+        )
+
+    def reveal_file_chooser_location_to_process(
+        self,
+        process_id: int,
+    ) -> NativeControlSnapshot | None:
+        process_id = self._validated_process_id(process_id)
+        owner = self.focused_control(process_id)
+        if (
+            not owner.frontmost
+            or owner.actual_frontmost_pid != process_id
+        ):
+            raise DriverError(
+                "Native file chooser shortcut target is not frontmost: "
+                f"{owner.to_dict()}"
+            )
+        self.reveal_file_chooser_location()
+        deadline = time.monotonic() + 2.5
+        while time.monotonic() < deadline:
+            control = self.focused_control(process_id)
+            if control.kind == "text-field":
+                return control
+            time.sleep(0.05)
+        return None
+
+    def select_file_chooser_path_to_process(
+        self,
+        process_id: int,
+        path: str,
+    ) -> NativeControlSnapshot | None:
+        process_id = self._validated_process_id(process_id)
+        target = Path(path).expanduser().resolve()
+        if not target.is_file():
+            raise DriverError(
+                f"Native file chooser target is missing: {target}"
+            )
+        try:
+            target.relative_to(Path.home().resolve())
+        except ValueError as error:
+            raise DriverError(
+                "Native file chooser target must be staged under the user home"
+            ) from error
+        owner = self.focused_control(process_id)
+        if (
+            not owner.frontmost
+            or owner.actual_frontmost_pid != process_id
+        ):
+            raise DriverError(
+                "Native file chooser selection target is not frontmost: "
+                f"{owner.to_dict()}"
+            )
+        try:
+            completed = subprocess.run(
+                (
+                    sys.executable,
+                    "-c",
+                    _FILE_CHOOSER_SELECTION_PROBE,
+                    str(process_id),
+                    str(target),
+                ),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise DriverError(
+                "Native file chooser Accessibility selection timed out"
+            ) from error
+        if completed.returncode != 0:
+            raise DriverError(
+                "Native file chooser Accessibility selection failed: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
+            )
+        try:
+            result = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            raise DriverError(
+                "Native file chooser returned an invalid selection result: "
+                f"{completed.stdout!r}"
+            ) from error
+        if (
+            not isinstance(result, dict)
+            or result.get("selected") is not True
+            or result.get("path") != str(target)
+        ):
+            raise DriverError(
+                f"Native file chooser did not select the staged path: {result!r}"
+            )
+        control = self.focused_control(process_id)
+        return NativeControlSnapshot(
+            kind="file-selection",
+            value=str(target),
+            window_count=control.window_count,
+            dialog_count=control.dialog_count,
+            frontmost=control.frontmost,
+            main_window=control.main_window,
+            focused_window=control.focused_window,
+            actual_frontmost_pid=control.actual_frontmost_pid,
+            platform_role=control.platform_role,
+            platform_subrole=control.platform_subrole,
+            error=control.error,
+        )
+
+    def accept_media_capture_permission_to_process(
+        self,
+        process_id: int,
+    ) -> bool:
+        process_id = self._validated_process_id(process_id)
+        script = f"""
+        tell application "System Events"
+          tell first application process whose unix id is {process_id}
+            repeat 40 times
+              repeat with candidateWindow in windows
+                repeat with candidateSheet in sheets of candidateWindow
+                  repeat with candidateButton in buttons of candidateSheet
+                    try
+                      if (value of attribute "AXIdentifier" of candidateButton as text) is "{_MEDIA_PERMISSION_ALLOW_BUTTON_IDENTIFIER}" then
+                        click candidateButton
+                        return "pressed"
+                      end if
+                    end try
+                  end repeat
+                end repeat
+              end repeat
+              delay 0.05
+            end repeat
+            return "missing"
+          end tell
+        end tell
+        """
+        try:
+            completed = subprocess.run(
+                ("osascript", "-e", script),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise DriverError(
+                "Native media-capture permission inspection timed out"
+            ) from error
+        if completed.returncode != 0:
+            raise DriverError(
+                "Native media-capture permission action failed: "
+                f"{completed.stderr.strip() or completed.stdout.strip()}"
+            )
+        result = completed.stdout.strip()
+        if result == "pressed":
+            return True
+        if result == "missing":
+            return False
+        raise DriverError(
+            "Native media-capture permission action returned an invalid result: "
+            f"{result!r}"
         )
 
     def focused_control(self, process_id: int) -> NativeControlSnapshot:

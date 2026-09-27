@@ -27,9 +27,9 @@ function texts(en = locale(), zh = locale()) {
 
 test('accepts exact, non-empty, parity-complete locale contracts', () => {
   const result = validateLocaleTexts(texts());
-  assert.equal(result.errorKeyCount, 55);
+  assert.equal(result.errorKeyCount, 66);
   assert.equal(result.recoveryKeyCount, 46);
-  assert.equal(STABLE_ERROR_CODES.length, 55);
+  assert.equal(STABLE_ERROR_CODES.length, 65);
   assert.ok(STABLE_ERROR_CODES.includes('AGENT_CANVAS_SINGLE_AGENT_NOT_READY'));
 });
 
@@ -95,4 +95,18 @@ test('rejects stable codes in locale copy and receiver source copy', () => {
     }),
     /receiver source hardcodes stable code PROVIDER_TIMEOUT as user copy/,
   );
+});
+
+test('ignores stable codes used only inside debug-point instrumentation', () => {
+  assert.doesNotThrow(() => validateLocaleTexts({
+    ...texts(),
+    sourceFiles: [{
+      file: 'apps/desktop/src/components/MessageList.tsx',
+      content: [
+        '// #region debug-point S-U:lease-expired-list-commit',
+        "const expired = errorType === 'CLIENT_LEASE_EXPIRED';",
+        '// #endregion',
+      ].join('\n'),
+    }],
+  }));
 });

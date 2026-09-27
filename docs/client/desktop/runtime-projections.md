@@ -14,8 +14,7 @@ Cross-end architecture source:
 Read this before changing:
 
 - `apps/desktop/src/kernel/runtime.ts`, `kernel/page.ts`, `kernel/boot.ts`, `kernel/PageHost.tsx`, `kernel/usePrefetch.ts`
-- `apps/desktop/src/runtimes/socialRuntime.ts`, `messagingRuntime.ts`, `momentsRuntime.ts`, `searchRuntime.ts`, `settingsRuntime.ts`
-- `apps/desktop/src/messaging/runtime.ts`
+- `apps/desktop/src/runtimes/socialRuntime.ts`, `momentsRuntime.ts`, `searchRuntime.ts`, `settingsRuntime.ts`
 - `apps/desktop/src/services/socialRealtime.ts`
 - `apps/desktop/src/services/appRuntime.ts`
 - `apps/desktop/src/store/socialChat.ts`
@@ -31,9 +30,7 @@ Inside `desktop-web`, long-lived runtimes own projection freshness:
 
 | Runtime | Owns |
 |---|---|
-| `socialRealtime` | Friendship, contact, profile, presence, social graph events, social notification projection, realtime stream supervisor, periodic social reconciliation |
-| `messaging` | Session-scoped Chat command admission, message event consumption (received/receipt/typing/mutation), group membership/federation, conversation settings, cold/periodic resync, and actor/Station/endpoint scope reset |
-| `call` | Session-scoped encrypted call signaling, durable resolution readback, WebRTC/media ownership, reconnect convergence, and actor-scope teardown |
+| `socialRealtime` | Chat/contact/social projections, realtime event consumption, cold sync, periodic reconciliation |
 | `momentsRuntime` | Moments HOME / Explore / Circles projection bootstrap, periodic reconciliation, and actor-scoped reset |
 | `agent-capability` | Provider, model, Agent, applet, MCP, Skill, and Tool projection bootstrap |
 | `agent-topic` | Selected Agent topic/message bootstrap, Agent-switch refresh, and periodic reconciliation |
@@ -60,53 +57,18 @@ If a feature only refreshes on component mount, tab switch, or button click, the
 `socialRealtime` is responsible for keeping social projections current after login:
 
 - own the `/events/stream` supervisor lifecycle after authentication, independent of page or presence-hook mounts;
-- bootstrap current user profile, friend requests, relationship state,
-  notification counts, and notification list;
-- consume presence, social graph, and notification-derived social signals;
+- bootstrap current user profile, encryption state, sessions, groups, friend requests, notification counts, and notification list;
+- consume realtime message, receipt, typing, mutation, group membership, presence, and resync events;
+- project message facts into `socialChat` immediately; sync/list API calls are reconciliation paths, not the first visible source of a received message;
 - consume notification-derived social signals such as friend request and friend accepted notifications;
-- periodically reconcile friend requests, relationship state, peer identity,
-  presence, and Social notifications;
+- periodically reconcile sessions, groups, friend requests, unread counts, and conversation previews;
 - keep UI components as pure readers of `socialChat` store whenever possible.
-
-Chat/Messaging event consumption (messages, receipts, typing, mutations, group membership, group federation, conversation settings, cold resync) has been extracted to the `messaging` runtime (see §4.x Messaging Runtime Contract below).
 
 Friend request handling specifically belongs here. A notification saying "User B sent a friend request" must cause the social projection to refresh friend requests and related counters without waiting for Contacts to remount.
 
 Peer public profile is also part of this projection. The chat layer needs the rich public profile (display name, bio, avatar/header, region, tags, links, counts) of any peer it can converse with. The cache lives in `socialChat.peerProfiles` and is filled by `loadPeerProfile(did)`; UI panels (Contacts detail, Chat detail) call it lazily on view, while authoritative invalidation must come from the runtime — when an `actor.profile.updated` realtime signal lands (or, until then, on supervisor resync) `socialRealtime` must call `loadPeerProfile(did, true)` for every peer currently visible in `sessions`/`groupMembers` so the next render sees the new profile.
 
-## 4.1 Messaging Runtime Contract
-
-`apps/desktop/src/messaging/runtime.ts` is the domain owner.
-`runtimes/messagingRuntime.ts` is its thin Kernel adapter, while
-`services/messagingRealtime.ts` and `services/messagingProjection.ts` are
-inbound event adapters:
-
-- consume realtime message received, receipt, typing, mutation, group membership, group federation, conversation settings, and resync events;
-- project message facts into `socialChat` immediately; sync/list API calls are reconciliation paths, not the first visible source of a received message;
-- decode incoming messages using the canonical `ChatMessageSchema` and map to the `SocialMessage` structural interface;
-- manage conversation decoration refresh (sessions, group unread counts, conversation previews) after message events;
-- handle cold resync (full re-pull of sessions, groups, active conversation
-  messages, unread counts, and conversation previews);
-- manage the typing indicator sweep timer;
-- debounce group federation refresh per group.
-- admit all production Chat commands before they reach `im-service` or
-  `desktop_api` transport adapters;
-- bind each command, event, timer, queued callback and readback to
-  `(actorPtid, stationPeerId, profileId, endpointId, activationGeneration)`;
-- reject stale completions and clear the old Chat projection before activating
-  a new identity scope.
-- decode native invalidation payloads through canonical
-  `MessagingProjectionInvalidation`; duplicate or stale lane positions are
-  no-ops, while lane gaps, `RESYNC`, and unknown kinds trigger full canonical
-  reconciliation instead of local inference.
-
-The `messaging` runtime is registered with `scope: 'session'` and bootstrapped
-as an authenticated-critical runtime. `socialRuntime` and `messaging` may use
-the same Zustand container only for disjoint slices: Social owns
-friendship/profile/presence; Messaging owns conversations/messages/receipts/
-typing/attachments/settings. They interact only through typed projection state.
-
-## 4.2 Moments Runtime Contract
+## 4.1 Moments Runtime Contract
 
 `momentsRuntime` is responsible for the first runtime-owned Moments projection slice:
 
@@ -224,7 +186,7 @@ Prefetch is **not** a substitute for a runtime — runtimes own *long-lived* pro
 | Page | PageDescriptor | Runtimes | Status |
 |---|---|---|---|
 | `search` | `pages/SearchPage.descriptor.tsx` | `search` | migrated |
-| `chat` | `pages/SocialChatPage.descriptor.tsx` | `social`, `messaging`, `call` | migrated |
+| `chat` | `pages/SocialChatPage.descriptor.tsx` | `social` | migrated |
 | `settings` | `pages/SettingsPage.descriptor.tsx` | `settings` | migrated |
 | `applets` | `pages/AppletsPage.descriptor.tsx` | `applets` | migrated |
 | `applet:*` | `pages/AppletRuntimePage.descriptor.tsx` | `applets` | migrated dynamic route; `appletsRuntime` owns `acquirePage/releasePage` session lease |

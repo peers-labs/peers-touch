@@ -153,6 +153,56 @@ func (s *CommentService) DeleteComment(ctx context.Context, commentID uint64, au
 	return nil
 }
 
+func (s *CommentService) GetByPost(
+	ctx context.Context,
+	parentPostID uint64,
+	commentID uint64,
+	viewerPTID string,
+) (*model.Comment, error) {
+	parent, err := s.moments.GetMoment(
+		ctx,
+		fmt.Sprintf("%d", parentPostID),
+		viewerPTID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("lookup parent post: %w", err)
+	}
+	if parent == nil {
+		return nil, nil
+	}
+	if blocked, err := postAuthorStationModerated(
+		ctx,
+		s.repos.Moderation,
+		parent,
+	); err != nil {
+		return nil, err
+	} else if blocked {
+		return nil, nil
+	}
+	comment, err := s.repos.Comments.GetByID(ctx, commentID)
+	if err != nil {
+		return nil, err
+	}
+	if comment == nil ||
+		comment.PostID != parentPostID ||
+		comment.PostClass != domain.PostClassPublic {
+		return nil, nil
+	}
+	visibility, err := buildInteractionVisibility(
+		ctx,
+		s.repos,
+		viewerPTID,
+		parent.GetAuthorPtid(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build interaction visibility: %w", err)
+	}
+	if !visibility.CanSeeActor(comment.AuthorPTID) {
+		return nil, nil
+	}
+	return s.commentToProto(ctx, comment), nil
+}
+
 // ListByPost returns one page of comments for a parent post. Parent post
 // readability is checked here, then each comment actor is filtered by
 // InteractionVisibility so third-party replies are only shown to common
@@ -196,18 +246,7 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, vi
 		if len(comments) >= limit {
 			break
 		}
-		out := s.conv.CommentToProto(row)
-		if a, err := actor.GetActorByPTID(ctx, row.AuthorPTID); err == nil && a != nil {
-			out.Author = &model.PostAuthor{
-				Id:                a.PTID,
-				Username:          a.PreferredUsername,
-				DisplayName:       a.Name,
-				AvatarUrl:         a.Icon,
-				FederatedHandle:   federatedHandleOf(a),
-				HomeStationDomain: homeStationDomainOf(a),
-			}
-		}
-		comments = append(comments, out)
+		comments = append(comments, s.commentToProto(ctx, row))
 		lastVisible = row
 	}
 	hasMore := len(rows) > limit*3 || len(comments) == limit
@@ -222,13 +261,32 @@ func (s *CommentService) ListByPost(ctx context.Context, parentPostID uint64, vi
 	}, nil
 }
 
+func (s *CommentService) commentToProto(
+	ctx context.Context,
+	comment *domain.Comment,
+) *model.Comment {
+	result := s.conv.CommentToProto(comment)
+	if authorRecord, err := actor.GetActorByPTID(
+		ctx,
+		comment.AuthorPTID,
+	); err == nil && authorRecord != nil {
+		result.Author = &model.PostAuthor{
+			Id:                authorRecord.PTID,
+			Username:          authorRecord.PreferredUsername,
+			DisplayName:       authorRecord.Name,
+			AvatarUrl:         authorRecord.Icon,
+			FederatedHandle:   federatedHandleOf(authorRecord),
+			HomeStationDomain: homeStationDomainOf(authorRecord),
+		}
+	}
+	return result
+}
+
 func (s *CommentService) bumpCommentsCount(ctx context.Context, postID uint64, class domain.PostClass, delta int64) (int64, error) {
 	switch class {
 	case domain.PostClassPublic:
 		return s.repos.PublicPosts.UpdateCommentsCount(ctx, postID, delta)
-	case domain.PostClassPrivate:
-		return s.repos.PrivatePosts.UpdateCommentsCount(ctx, postID, delta)
 	default:
-		return 0, fmt.Errorf("unknown post class %q", class)
+		return 0, fmt.Errorf("unknown or unreachable post class %q", class)
 	}
 }

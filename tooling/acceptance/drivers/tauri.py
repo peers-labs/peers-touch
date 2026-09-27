@@ -611,18 +611,21 @@ class MakeDesktopLauncher(AppLauncher):
         return owned[0]
 
     def _managed_process_pid(self) -> int:
-        environment = self._launch_environment or self.environment
-        home = Path(environment.get("HOME") or Path.home()).expanduser()
-        state_path = (
-            home
-            / ".peers-touch"
-            / "dev"
-            / "workspaces"
-            / workspace_id(self.worktree)
-            / "runtime"
-            / self.profile
-            / "desktop-app-tauri.json"
-        )
+        if self._runtime_profile_root is not None:
+            state_path = self._runtime_profile_root / "desktop-app-tauri.json"
+        else:
+            environment = self._launch_environment or self.environment
+            home = Path(environment.get("HOME") or Path.home()).expanduser()
+            state_path = (
+                home
+                / ".peers-touch"
+                / "dev"
+                / "workspaces"
+                / workspace_id(self.worktree)
+                / "runtime"
+                / self.profile
+                / "desktop-app-tauri.json"
+            )
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
@@ -663,6 +666,10 @@ class MakeDesktopLauncher(AppLauncher):
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
         }
+        for key in ("PT_STATION_URL", "PT_STATION_HEALTH_URL"):
+            value = self.environment.get(key, "").strip()
+            if value:
+                overrides[key] = value
         found: set[str] = set()
         rendered: list[str] = []
         for line in lines:

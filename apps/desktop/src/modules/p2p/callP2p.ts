@@ -374,6 +374,9 @@ interface Conn {
    *  by `RTCRtpReceiver.track.id`, so we don't double-attach
    *  remote tracks to the snapshot's `remoteStream`. */
   remoteTrackIds: Set<string>;
+  /** Serializes every local offer so transport bootstrap, call acceptance,
+   *  and reconnect negotiation cannot race each other. */
+  offerInFlight: Promise<void> | null;
   /** Pending unanswered-ring timeout handle. Armed while a call is
    *  `outgoing` / `incoming`, cleared the moment it is answered or
    *  terminated. `null` when no ring is in flight. */
@@ -382,37 +385,28 @@ interface Conn {
    *  drops to `reconnecting`, cleared when ICE recovers or the call ends.
    *  `null` when the call is not reconnecting. */
   reconnectTimer: ReturnType<typeof setTimeout> | null;
-  /** Deferred completed after an accepted callee has acquired and attached
-   *  local media. An early OFFER waits here so its ANSWER includes tracks. */
-  acceptMediaReady: Promise<void> | null;
-  resolveAcceptMediaReady: (() => void) | null;
 }
 
 class CallP2pManager {
   private conns = new Map<ConnKey, Conn>();
+  private localActorPtid: string | null = null;
+  private localDeviceId = '';
   private onStatus: ((myDid: string, peerPtid: string, status: CallP2pStatus) => void) | null = null;
   private onCall: ((myDid: string, peerPtid: string, snapshot: CallSnapshot) => void) | null = null;
   private signalSubscription: (() => void) | null = null;
-  private activeActorPtid = '';
-  private localDeviceId = '';
 
   setOnStatus(handler: ((myDid: string, peerPtid: string, status: CallP2pStatus) => void) | null) {
     this.onStatus = handler;
   }
 
   /** Listen for call lifecycle changes (ringing in / out, accepted,
-   *  ended) so the chat UI can render its modal + HUD. The manager
+   *  ended) so the chat UI can render its tray and video surface. The manager
    *  emits a fresh snapshot whenever any field of `Conn.call`
    *  changes — consumers should snapshot defensively (the object
    *  identity is stable across emits, so `useState({...snapshot})`
    *  is the right pattern). */
   setOnCall(handler: ((myDid: string, peerPtid: string, snapshot: CallSnapshot) => void) | null) {
     this.onCall = handler;
-    if (!handler) return;
-    const active = [...this.conns.values()].find(
-      (conn) => conn.call.state !== 'idle' && conn.call.state !== 'ended',
-    );
-    if (active) handler(active.myDid, active.peerPtid, { ...active.call });
   }
 
   private emitStatus(myDid: string, peerPtid: string, status: CallP2pStatus) {
@@ -423,9 +417,11 @@ class CallP2pManager {
     this.onCall?.(conn.myDid, conn.peerPtid, { ...conn.call });
   }
 
-  /** Arm the local UI timeout for a freshly-ringing call. The callee Home
-   *  Station owns the durable NO_ANSWER transition and fan-out; this timer
-   *  only prevents a disconnected client from ringing indefinitely. */
+  /** Arm the unanswered-ring timeout for a freshly-ringing call. If the
+   *  call is still ringing (`outgoing` / `incoming`) when the window
+   *  elapses, the caller side notifies the peer with CALL_END and both
+   *  sides tear down with a `no-answer` result. Re-arming clears any
+   *  previous timer so a renegotiation can't leak handles. */
   private armRingTimeout(conn: Conn): void {
     this.clearRingTimeout(conn);
     const callId = conn.call.callId;
@@ -436,6 +432,12 @@ class CallP2pManager {
       // still race a state change.
       if (conn.call.callId !== callId) return;
       if (conn.call.state !== 'outgoing' && conn.call.state !== 'incoming') return;
+      // The originator (outgoing side) owns the missed-call notification
+      // so the peer's ringing UI clears too; the callee just tears down
+      // its own incoming ring locally.
+      if (conn.call.state === 'outgoing') {
+        this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId })).catch(() => {});
+      }
       this.teardownCallLocal(conn, 'no-answer');
     }, RING_TIMEOUT_MS);
   }
@@ -446,6 +448,48 @@ class CallP2pManager {
       clearTimeout(conn.ringTimer);
       conn.ringTimer = null;
     }
+  }
+
+  private negotiateOffer(
+    conn: Conn,
+    options: { iceRestart: boolean; reason: string },
+  ): Promise<void> {
+    if (!conn.isOfferer) return Promise.resolve();
+    if (conn.offerInFlight) {
+      return conn.offerInFlight
+        .catch(() => undefined)
+        .then(() => this.negotiateOffer(conn, options));
+    }
+
+    const negotiation = (async () => {
+      if (conn.pc.signalingState === 'have-local-offer') {
+        await conn.pc.setLocalDescription({ type: 'rollback' });
+      }
+      if (conn.pc.signalingState !== 'stable') {
+        throw new Error(
+          `cannot negotiate ${options.reason} from ${conn.pc.signalingState}`,
+        );
+      }
+
+      conn.remoteDescriptionApplied = false;
+      const offer = await conn.pc.createOffer(
+        options.iceRestart ? { iceRestart: true } : undefined,
+      );
+      await conn.pc.setLocalDescription(offer);
+      await this.sendSignal(
+        conn,
+        'OFFER',
+        JSON.stringify({ sdp: offer.sdp || '' }),
+      );
+    })();
+
+    const trackedNegotiation = negotiation.finally(() => {
+      if (conn.offerInFlight === trackedNegotiation) {
+        conn.offerInFlight = null;
+      }
+    });
+    conn.offerInFlight = trackedNegotiation;
+    return trackedNegotiation;
   }
 
   /**
@@ -470,15 +514,12 @@ class CallP2pManager {
     // Only the offerer may drive renegotiation; the answerer waits for
     // the restart OFFER to arrive over the (reliable) SSE signaling path.
     if (conn.isOfferer) {
-      void (async () => {
-        try {
-          const offer = await conn.pc.createOffer({ iceRestart: true });
-          await conn.pc.setLocalDescription(offer);
-          await this.sendSignal(conn, 'OFFER', JSON.stringify({ sdp: offer.sdp || '' }));
-        } catch (error) {
-          log.warn('p2p', 'ICE restart offer failed', error);
-        }
-      })();
+      void this.negotiateOffer(conn, {
+        iceRestart: true,
+        reason: 'call reconnect',
+      }).catch((error) => {
+        log.warn('p2p', 'ICE restart offer failed', error);
+      });
     }
 
     if (conn.reconnectTimer !== null) return;
@@ -489,7 +530,7 @@ class CallP2pManager {
       // recovery can race this callback.
       if (conn.call.callId !== callId) return;
       if (conn.call.state !== 'reconnecting') return;
-      this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId }), callId).catch(() => {});
+      this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId })).catch(() => {});
       this.teardownCallLocal(conn, 'network-failed');
     }, RECONNECT_TIMEOUT_MS);
   }
@@ -517,24 +558,30 @@ class CallP2pManager {
    *  collision-resistant for the 16-byte random tail. */
   private newCallId(): string {
     const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-    let timestamp = BigInt(Date.now());
-    let timePart = '';
-    for (let i = 0; i < 10; i++) {
-      timePart = ALPHABET[Number(timestamp & 31n)] + timePart;
-      timestamp >>= 5n;
+    const time = Date.now();
+    const tBytes = new Uint8Array(6);
+    let t = time;
+    for (let i = 5; i >= 0; i--) {
+      tBytes[i] = t & 0xff;
+      t = Math.floor(t / 256);
     }
     const rand = new Uint8Array(10);
     crypto.getRandomValues(rand);
-    let randomness = 0n;
-    for (const byte of rand) {
-      randomness = (randomness << 8n) | BigInt(byte);
+    const all = new Uint8Array(16);
+    all.set(tBytes, 0);
+    all.set(rand, 6);
+    // Encode 16 bytes (128 bits) as 26 chars of base32.
+    let out = '';
+    for (let i = 0; i < 26; i++) {
+      const bitOffset = i * 5;
+      const byteIdx = Math.floor(bitOffset / 8);
+      const bitInByte = bitOffset % 8;
+      const hi = all[byteIdx] ?? 0;
+      const lo = all[byteIdx + 1] ?? 0;
+      const val = ((hi << 8) | lo) >>> (16 - 5 - bitInByte);
+      out += ALPHABET[val & 0x1f];
     }
-    let randomPart = '';
-    for (let i = 0; i < 16; i++) {
-      randomPart = ALPHABET[Number(randomness & 31n)] + randomPart;
-      randomness >>= 5n;
-    }
-    return timePart + randomPart;
+    return out;
   }
 
   /**
@@ -547,7 +594,7 @@ class CallP2pManager {
    */
   private ensureSignalSubscription() {
     if (this.signalSubscription) return;
-    const unsubscribeSignal = eventBus.subscribe(
+    this.signalSubscription = eventBus.subscribe(
       EVENT.REALTIME_CALL_SIGNAL,
       (payload) => {
         // Fire-and-forget — eventBus listeners are sync. Errors inside
@@ -557,24 +604,6 @@ class CallP2pManager {
         });
       },
     );
-    const unsubscribeConnection = eventBus.subscribe(
-      EVENT.REALTIME_CONNECTION_STATE,
-      (payload) => {
-        if (!payload.connected) return;
-        for (const conn of this.conns.values()) {
-          if (!conn.call.callId || conn.call.state === 'idle' || conn.call.state === 'ended') {
-            continue;
-          }
-          void this.reconcileCallResolution(conn, conn.call.callId).catch((error) => {
-            log.warn('p2p', 'call resolution reconciliation failed', error);
-          });
-        }
-      },
-    );
-    this.signalSubscription = () => {
-      unsubscribeSignal();
-      unsubscribeConnection();
-    };
   }
 
   /**
@@ -590,11 +619,12 @@ class CallP2pManager {
    * the SSE inbound path is wired by the time an OFFER lands.
    */
   async ensurePeerRegistered(myDid: string): Promise<void> {
-    if (!myDid.trim()) return;
-    if (this.activeActorPtid && this.activeActorPtid !== myDid) {
+    const actorPtid = myDid.trim();
+    if (this.localActorPtid && this.localActorPtid !== actorPtid) {
       this.localDeviceId = '';
     }
-    this.activeActorPtid = myDid;
+    this.localActorPtid = actorPtid || null;
+    if (!actorPtid) return;
     await this.ensureLocalDeviceId();
     this.ensureSignalSubscription();
   }
@@ -666,10 +696,9 @@ class CallP2pManager {
       transportProbeStopped: false,
       call: { callId: '', mediaKind: 'audio', state: 'idle' },
       remoteTrackIds: new Set(),
+      offerInFlight: null,
       ringTimer: null,
       reconnectTimer: null,
-      acceptMediaReady: null,
-      resolveAcceptMediaReady: null,
     };
     this.conns.set(key, conn);
 
@@ -695,28 +724,6 @@ class CallP2pManager {
       };
       conn.call = { ...conn.call, remoteStream: stream };
       this.emitCall(conn);
-    };
-
-    // Renegotiation: adding/removing media tracks after the initial
-    // SDP requires a fresh OFFER. We only let the impolite side
-    // (offerer) start renegotiation — the polite side answers. That
-    // matches Mozilla's "perfect negotiation" pattern minus the
-    // collision recovery, which we don't need because our
-    // signaling channel is reliable+ordered per kind (SSE).
-    pc.onnegotiationneeded = () => {
-      if (!conn.isOfferer) return;
-      // Skip if the connection isn't even open yet — the initial
-      // offer in `ensureConnected` will pick this state up.
-      if (pc.signalingState !== 'stable') return;
-      void (async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          await this.sendSignal(conn, 'OFFER', JSON.stringify({ sdp: offer.sdp || '' }));
-        } catch (error) {
-          log.warn('p2p', 'renegotiation offer failed', error);
-        }
-      })();
     };
 
     pc.onconnectionstatechange = () => {
@@ -822,9 +829,10 @@ class CallP2pManager {
     // the SSE-delivered OFFER.
     if (isOfferer) {
       try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        await this.sendSignal(conn, 'OFFER', JSON.stringify({ sdp: offer.sdp || '' }));
+        await this.negotiateOffer(conn, {
+          iceRestart: false,
+          reason: 'transport bootstrap',
+        });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         conn.status = { state: 'failed', detail, signalingSessionId };
@@ -846,40 +854,56 @@ class CallP2pManager {
     callId?: string,
   ): Promise<void> {
     const effectiveCallId = callId || conn.call.callId || undefined;
-    const peerIkPub = await loadPeerIk(conn.peerPtid);
-    const sealed = await api.signalingEnvelopeSeal(
-      peerIkPub,
-      conn.signalingSessionId,
-      kind,
-      plaintext,
-    );
-    const deviceId = effectiveCallId ? await this.ensureLocalDeviceId() : undefined;
+    let peerIkPub: string;
+    try {
+      peerIkPub = await loadPeerIk(conn.peerPtid);
+    } catch (error) {
+      log.warn('p2p', 'loadPeerIk failed', { peerPtid: conn.peerPtid, error });
+      throw error;
+    }
+    let payloadB64: string;
+    try {
+      const sealed = await api.signalingEnvelopeSeal(
+        peerIkPub,
+        conn.signalingSessionId,
+        kind,
+        plaintext,
+      );
+      payloadB64 = sealed.payload_b64;
+    } catch (error) {
+      log.warn('p2p', 'signaling envelope seal failed', { kind, error });
+      throw error;
+    }
     try {
       await api.realtimeSignalSend(
         conn.peerPtid,
         conn.signalingSessionId,
         kind,
-        sealed.payload_b64,
+        payloadB64,
         effectiveCallId,
-        deviceId,
+        effectiveCallId ? await this.ensureLocalDeviceId() : undefined,
       );
     } catch (error) {
       if (effectiveCallId && isLifecycleSignal(kind)) {
-        const resolution = await this.reconcileCallResolution(conn, effectiveCallId).catch(() => null);
+        const resolution = await this.reconcileCallResolution(
+          conn,
+          effectiveCallId,
+        ).catch(() => null);
         if (
           resolution
           && (
             (kind === 'CALL_ACCEPT'
               && resolution.state === 'ACCEPTED'
-              && resolution.winning_device_id === deviceId)
+              && resolution.winning_device_id === this.localDeviceId)
             || (kind === 'CALL_REJECT'
               && resolution.state === 'REJECTED'
-              && resolution.winning_device_id === deviceId)
+              && resolution.winning_device_id === this.localDeviceId)
           )
         ) {
           return;
         }
       }
+      log.warn('p2p', 'realtimeSignalSend failed', { kind, error });
       throw error;
     }
   }
@@ -941,14 +965,24 @@ class CallP2pManager {
   private async handleInboundSignal(payload: RealtimeCallSignalPayload): Promise<void> {
     const { sessionUlid, fromActorPtid, kind, payload: ciphertext } = payload;
     let conn = this.findConnBySession(sessionUlid);
-    if (
-      !conn
-      && kind === 'CALL_REQUEST'
-      && this.activeActorPtid
-      && fromActorPtid !== this.activeActorPtid
-    ) {
-      await this.ensureConnected(this.activeActorPtid, fromActorPtid);
-      conn = this.findConnBySession(sessionUlid);
+    if (!conn && kind === 'CALL_REQUEST') {
+      // Callee cold path: use the authenticated local actor identity
+      // registered by the social runtime. The session id is an AAD value,
+      // not a parseable identity container, so validate the canonical pair
+      // instead of splitting PTIDs that may themselves contain dashes.
+      const myDid = this.localActorPtid;
+      if (
+        myDid
+        && myDid !== fromActorPtid
+        && deriveSignalingSessionId(myDid, fromActorPtid) === sessionUlid
+      ) {
+        try {
+          await this.ensureConnected(myDid, fromActorPtid);
+          conn = this.findConnBySession(sessionUlid);
+        } catch (error) {
+          log.warn('p2p', 'cold-call ensureConnected failed', { sessionUlid, error });
+        }
+      }
     }
     if (!conn) {
       // Two legitimate cases land here:
@@ -985,9 +1019,6 @@ class CallP2pManager {
       // session, the call has been handled elsewhere — stop ringing
       // here so the user isn't pestered on every device
       // (voice-video-calls.md §11 multi-device ringing resolution).
-      //
-      // Station-arbitrated path (CCU-D06): when `winningDeviceId` is
-      // present, Station has confirmed the resolution is atomic.
       if (
         conn.call.state === 'incoming'
         && (kind === 'CALL_ACCEPT' || kind === 'CALL_REJECT')
@@ -1036,13 +1067,15 @@ class CallP2pManager {
         return;
       }
       try {
-        await conn.acceptMediaReady;
         await conn.pc.setRemoteDescription({ type: 'offer', sdp });
         conn.remoteDescriptionApplied = true;
         await this.flushPendingRemoteCandidates(conn);
         const answer = await conn.pc.createAnswer();
         await conn.pc.setLocalDescription(answer);
         await this.sendSignal(conn, 'ANSWER', JSON.stringify({ sdp: answer.sdp || '' }));
+        if (conn.call.state === 'reconnecting' && conn.pc.connectionState === 'connected') {
+          this.recoverReconnectingCall(conn);
+        }
       } catch (error) {
         log.warn('p2p', 'apply OFFER failed', error);
       }
@@ -1056,6 +1089,9 @@ class CallP2pManager {
         await conn.pc.setRemoteDescription({ type: 'answer', sdp });
         conn.remoteDescriptionApplied = true;
         await this.flushPendingRemoteCandidates(conn);
+        if (conn.call.state === 'reconnecting' && conn.pc.connectionState === 'connected') {
+          this.recoverReconnectingCall(conn);
+        }
       } catch (error) {
         log.warn('p2p', 'apply ANSWER failed', error);
       }
@@ -1088,7 +1124,7 @@ class CallP2pManager {
       try { conn.pc.close(); } catch { /* best-effort */ }
     } else if (kind === 'CALL_REQUEST') {
       // Peer is calling us. Park the call in `incoming` so the UI
-      // can render the ringing modal; we don't add tracks until the
+      // can render the ringing tray; we don't add tracks until the
       // user accepts. Multi-device collision: if we receive
       // CALL_REQUEST while we already have an active call (or our
       // own outgoing one) for this peer, we auto-reject the new
@@ -1103,7 +1139,7 @@ class CallP2pManager {
         // Decline the colliding attempt without disturbing the
         // existing call. We only echo the rejected callId, never
         // our own current one.
-        await this.sendSignal(conn, 'CALL_REJECT', JSON.stringify({ callId, reason: 'busy' }), callId);
+        await this.sendSignal(conn, 'CALL_REJECT', JSON.stringify({ callId, reason: 'busy' }));
         return;
       }
       conn.call = { callId, mediaKind, state: 'incoming' };
@@ -1112,25 +1148,15 @@ class CallP2pManager {
       // clears its modal instead of ringing forever.
       this.armRingTimeout(conn);
     } else if (kind === 'CALL_ACCEPT') {
-      // Peer accepted our call. Flip to active; the WebRTC
-      // renegotiation kicked off by `addTrack` (in startCall)
-      // produces the OFFER independently. We don't gate on call-id
-      // matching here because a stale ACCEPT is harmless — at
-      // worst we light up an already-ended call for one tick before
-      // CALL_END arrives.
+      // Peer accepted our call. Flip to active and let the designated
+      // offerer explicitly replace any stale readiness offer with a fresh
+      // media-bearing offer. We still gate on callId so a late acceptance
+      // cannot revive an ended attempt.
       const callId = String(json?.callId || '');
       if (conn.call.state !== 'outgoing' || (callId && callId !== conn.call.callId)) {
         return;
       }
       this.clearRingTimeout(conn);
-      if (conn.call.localStream) {
-        const senderTrackIds = new Set(
-          conn.pc.getSenders().map((sender) => sender.track?.id).filter(Boolean),
-        );
-        for (const track of conn.call.localStream.getTracks()) {
-          if (!senderTrackIds.has(track.id)) conn.pc.addTrack(track, conn.call.localStream);
-        }
-      }
       conn.call = {
         ...conn.call,
         state: 'active',
@@ -1138,6 +1164,22 @@ class CallP2pManager {
         winningDeviceId: payload.winningDeviceId,
       };
       this.emitCall(conn);
+      if (conn.isOfferer) {
+        try {
+          await this.negotiateOffer(conn, {
+            iceRestart: conn.pc.connectionState !== 'connected',
+            reason: 'outgoing call accepted',
+          });
+        } catch (error) {
+          log.warn('p2p', 'accepted-call offer failed', error);
+          await this.sendSignal(
+            conn,
+            'CALL_END',
+            JSON.stringify({ callId }),
+          ).catch(() => {});
+          this.teardownCallLocal(conn, 'network-failed');
+        }
+      }
     } else if (kind === 'CALL_REJECT') {
       const callId = String(json?.callId || '');
       if (callId && callId !== conn.call.callId) return;
@@ -1181,9 +1223,10 @@ class CallP2pManager {
   // The ringing protocol (CALL_REQUEST / CALL_ACCEPT / CALL_REJECT /
   // CALL_END) lives on top of the same sealed-envelope signaling
   // channel used for SDP. The actual media negotiation is plain
-  // WebRTC: `addTrack` triggers `onnegotiationneeded` → fresh
-  // OFFER → ANSWER → re-running ICE if needed. The data channel
-  // stays up across renegotiation.
+  // WebRTC: after CALL_ACCEPT, the designated offerer creates a fresh
+  // media-bearing OFFER → ANSWER exchange, restarting ICE when the
+  // readiness connection never completed. The data channel stays up
+  // across successful renegotiation.
 
   async initiateCallForAcceptance(
     myDid: string,
@@ -1232,8 +1275,6 @@ class CallP2pManager {
         this.teardownCallLocal(conn, 'rejected');
       }
     } catch {
-      // The resolver readback inside sendSignal has already converged local
-      // state. Return that projection so the harness can assert the 409 path.
       conflict = true;
     }
     return {
@@ -1246,42 +1287,44 @@ class CallP2pManager {
     const conn = [...this.conns.values()].find((candidate) => candidate.call.callId === callId);
     if (!conn) throw new Error(`call ${callId} is unavailable`);
     const resolution = await api.realtimeCallResolutionGet(callId, conn.peerPtid);
-    if (conn) await this.reconcileCallResolution(conn, callId);
-    const snapshot = conn?.call;
-    const state = snapshot?.state === 'incoming' || snapshot?.state === 'outgoing'
+    await this.reconcileCallResolution(conn, callId);
+    const snapshot = conn.call;
+    const state = snapshot.state === 'incoming' || snapshot.state === 'outgoing'
       ? 'ringing_all_devices'
-      : snapshot?.state === 'active'
+      : snapshot.state === 'active'
         ? 'active_here'
-        : snapshot?.endReason === 'handled-elsewhere'
+        : snapshot.endReason === 'handled-elsewhere'
           ? 'handled_elsewhere'
           : resolution.state.toLowerCase();
     return {
       callId,
       state,
-      winningDeviceId: resolution.winning_device_id || snapshot?.winningDeviceId || '',
+      winningDeviceId: resolution.winning_device_id || snapshot.winningDeviceId || '',
       terminalAction: resolution.terminal_action || '',
       httpStatus: 200,
     };
   }
 
-  /** Look up the local conn for a peer, returning null if no chat
-   *  PC has been opened yet. The UI must call `ensureConnected`
-   *  *before* `startCall` — we can't bring up media without the
-   *  underlying RTCPeerConnection. */
+  /** Look up the local call projection for a peer. `startCall` creates
+   *  the underlying RTCPeerConnection on demand when needed. */
   getCall(myDid: string, peerPtid: string): CallSnapshot | null {
     const conn = this.conns.get(`${myDid}::${peerPtid}`);
     return conn ? { ...conn.call } : null;
   }
 
   /** Initiate an outbound call. Acquires local media via
-   *  `getUserMedia`, attaches the resulting tracks to the PC (which
-   *  will trigger `onnegotiationneeded`), and sends CALL_REQUEST so
-   *  the peer's UI can ring. The promise resolves once the local
+   *  `getUserMedia`, attaches the resulting tracks to the PC, and sends
+   *  CALL_REQUEST so the peer's UI can ring. Media negotiation starts
+   *  explicitly after CALL_ACCEPT. The promise resolves once the local
    *  media is captured + tracks added; it does NOT wait for the
    *  peer to accept (subscribe to `setOnCall` for that). */
   async startCall(myDid: string, peerPtid: string, mediaKind: CallMediaKind): Promise<void> {
-    const conn = this.conns.get(`${myDid}::${peerPtid}`);
-    if (!conn) throw new Error('startCall: no PC; call ensureConnected first');
+    let conn = this.conns.get(`${myDid}::${peerPtid}`);
+    if (!conn || conn.status.state === 'failed' || conn.status.state === 'closed') {
+      await this.ensureConnected(myDid, peerPtid);
+      conn = this.conns.get(`${myDid}::${peerPtid}`);
+    }
+    if (!conn) throw new Error('startCall: connection setup failed');
     if (conn.call.state === 'active' || conn.call.state === 'outgoing') {
       throw new Error('startCall: call already in progress');
     }
@@ -1299,10 +1342,16 @@ class CallP2pManager {
       this.teardownCallLocal(conn, 'media-failed');
       throw error;
     }
+    for (const track of stream.getTracks()) {
+      conn.pc.addTrack(track, stream);
+    }
     conn.call = { ...conn.call, localStream: stream };
     this.emitCall(conn);
+    // Notify the peer. The designated offerer emits a fresh media-bearing
+    // OFFER only after CALL_ACCEPT so a missed readiness probe cannot leave
+    // the call stuck on the earlier data-channel-only description.
     try {
-      await this.sendSignal(conn, 'CALL_REQUEST', JSON.stringify({ callId, kind: mediaKind }), callId);
+      await this.sendSignal(conn, 'CALL_REQUEST', JSON.stringify({ callId, kind: mediaKind }));
     } catch (error) {
       this.teardownCallLocal(conn, 'network-failed');
       throw error;
@@ -1319,21 +1368,9 @@ class CallP2pManager {
     if (!conn) throw new Error('acceptCall: no PC');
     if (conn.call.state !== 'incoming') return;
     const { callId, mediaKind } = conn.call;
-    // Durable arbitration happens before media activation. A loser never
-    // opens the microphone/camera or creates a second media session.
+    // The user answered — stop the unanswered-ring countdown before we
+    // pay the getUserMedia round-trip.
     this.clearRingTimeout(conn);
-    conn.acceptMediaReady = new Promise<void>((resolve) => {
-      conn.resolveAcceptMediaReady = resolve;
-    });
-    try {
-      await this.sendSignal(conn, 'CALL_ACCEPT', JSON.stringify({ callId }), callId);
-    } catch (error) {
-      conn.resolveAcceptMediaReady?.();
-      conn.acceptMediaReady = null;
-      conn.resolveAcceptMediaReady = null;
-      if (conn.call.state === 'incoming') this.armRingTimeout(conn);
-      throw error;
-    }
     const audioDeviceId = readPreferredDevice(PREFERRED_AUDIO_DEVICE_KEY);
     const videoDeviceId = readPreferredDevice(PREFERRED_VIDEO_DEVICE_KEY);
     let stream: MediaStream;
@@ -1344,12 +1381,13 @@ class CallP2pManager {
     } catch (error) {
       // Acquisition failed — politely reject so the caller doesn't
       // wait for a ring-out.
-      await this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId, reason: 'media-failed' }), callId)
-        .catch(() => undefined);
-      conn.resolveAcceptMediaReady?.();
-      conn.acceptMediaReady = null;
-      conn.resolveAcceptMediaReady = null;
-      this.teardownCallLocal(conn, 'media-failed');
+      try {
+        await this.sendSignal(conn, 'CALL_REJECT', JSON.stringify({ callId, reason: 'media-failed' }));
+      } catch (signalError) {
+        log.warn('p2p', 'media-failure rejection delivery failed', signalError);
+      } finally {
+        this.teardownCallLocal(conn, 'media-failed');
+      }
       throw error;
     }
     for (const track of stream.getTracks()) {
@@ -1362,12 +1400,31 @@ class CallP2pManager {
       startedAt: Date.now(),
       audioDeviceId,
       videoDeviceId,
-      winningDeviceId: await this.ensureLocalDeviceId(),
     };
-    conn.resolveAcceptMediaReady?.();
-    conn.acceptMediaReady = null;
-    conn.resolveAcceptMediaReady = null;
     this.emitCall(conn);
+    try {
+      await this.sendSignal(conn, 'CALL_ACCEPT', JSON.stringify({ callId }));
+    } catch (error) {
+      this.teardownCallLocal(conn, 'network-failed');
+      throw error;
+    }
+    if (conn.isOfferer) {
+      try {
+        await this.negotiateOffer(conn, {
+          iceRestart: conn.pc.connectionState !== 'connected',
+          reason: 'incoming call accepted',
+        });
+      } catch (error) {
+        log.warn('p2p', 'accepted-call offer failed', error);
+        await this.sendSignal(
+          conn,
+          'CALL_END',
+          JSON.stringify({ callId }),
+        ).catch(() => {});
+        this.teardownCallLocal(conn, 'network-failed');
+        throw error;
+      }
+    }
   }
 
   /** Reject a ringing incoming call without acquiring media. */
@@ -1376,8 +1433,11 @@ class CallP2pManager {
     if (!conn) return;
     if (conn.call.state !== 'incoming') return;
     const { callId } = conn.call;
-    await this.sendSignal(conn, 'CALL_REJECT', JSON.stringify({ callId, reason }), callId);
-    this.teardownCallLocal(conn, 'rejected');
+    try {
+      await this.sendSignal(conn, 'CALL_REJECT', JSON.stringify({ callId, reason }));
+    } finally {
+      this.teardownCallLocal(conn, 'rejected');
+    }
   }
 
   /** End the active call (or cancel an outbound ringing one). */
@@ -1391,8 +1451,11 @@ class CallP2pManager {
     // vs "Call ended".
     const reason: CallEndReason =
       conn.call.state === 'active' || conn.call.state === 'reconnecting' ? 'hangup' : 'canceled';
-    await this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId }), callId);
-    this.teardownCallLocal(conn, reason);
+    try {
+      await this.sendSignal(conn, 'CALL_END', JSON.stringify({ callId }));
+    } finally {
+      this.teardownCallLocal(conn, reason);
+    }
   }
 
   /** Mute or unmute the local microphone in-place. The track stays
@@ -1420,6 +1483,21 @@ class CallP2pManager {
     }
     conn.call = { ...conn.call, cameraOff: off };
     this.emitCall(conn);
+  }
+
+  /** Request a real ICE restart for an active call.
+   *
+   * The automatic connection-state handler uses the same recovery owner.
+   * Exposing the intent also gives diagnostics and Acceptance a production
+   * action that exercises sealed OFFER/ANSWER renegotiation without
+   * synthesizing browser connection-state events.
+   */
+  restartCallConnection(myDid: string, peerPtid: string): void {
+    const conn = this.conns.get(`${myDid}::${peerPtid}`);
+    if (!conn || (conn.call.state !== 'active' && conn.call.state !== 'reconnecting')) {
+      return;
+    }
+    this.enterReconnectingCall(conn);
   }
 
   /** Enumerate the available microphones and cameras for the device
@@ -1552,9 +1630,6 @@ class CallP2pManager {
   private teardownCallLocal(conn: Conn, reason: CallEndReason): void {
     this.clearRingTimeout(conn);
     this.clearReconnectTimeout(conn);
-    conn.resolveAcceptMediaReady?.();
-    conn.acceptMediaReady = null;
-    conn.resolveAcceptMediaReady = null;
     if (conn.call.localStream) {
       for (const t of conn.call.localStream.getTracks()) {
         try { t.stop(); } catch { /* best-effort */ }
@@ -1569,13 +1644,7 @@ class CallP2pManager {
       }
     }
     conn.remoteTrackIds.clear();
-    conn.call = {
-      ...conn.call,
-      state: 'ended',
-      endReason: reason,
-      localStream: undefined,
-      remoteStream: undefined,
-    };
+    conn.call = { callId: '', mediaKind: 'audio', state: 'ended', endReason: reason };
     this.emitCall(conn);
   }
 
@@ -1622,8 +1691,6 @@ class CallP2pManager {
       try { conn.pc.close(); } catch { /* best-effort */ }
     }
     this.conns.clear();
-    this.activeActorPtid = '';
-    this.localDeviceId = '';
     // Note: signalSubscription is intentionally NOT torn down here.
     // See `ensureSignalSubscription` for the reasoning.
   }

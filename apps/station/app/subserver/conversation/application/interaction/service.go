@@ -775,19 +775,29 @@ func (s *Service) SubmitDeliveryReceipt(
 			"is beyond the accepted clock skew",
 		)
 	}
-	route, err := s.conversations.ResolveRoute(
+	view, conversation, err := s.authorizeMemberEndpoint(
 		ctx,
 		receipt.ConversationID,
+		receipt.Consumer,
+		receipt.SourceStation,
+		"interaction.submit_delivery_receipt",
 	)
 	if err != nil {
 		return DeliveryRecordResult{}, err
 	}
-	// Receipt authorization is event-time truth. A removal event must remain
-	// acknowledgeable after it makes the consuming endpoint inactive.
-	switch route.Source {
+	if receipt.EventSequence > conversation.AuthorityHead().Sequence {
+		return DeliveryRecordResult{}, NewError(
+			ErrorCodeIntegrityFailed,
+			"interaction.submit_delivery_receipt",
+			"event_sequence",
+			"exceeds the current Conversation authority head",
+		)
+	}
+	switch view.Source {
 	case query.SourceFollower:
 		if receipt.SourceStation != "" ||
-			route.AuthorityStation == s.localStation {
+			view.FollowerStatus != repository.FollowerStatusActive ||
+			view.Conversation.AuthorityStation == s.localStation {
 			return DeliveryRecordResult{}, NewError(
 				ErrorCodeIntegrityFailed,
 				"interaction.submit_delivery_receipt",
@@ -797,7 +807,7 @@ func (s *Service) SubmitDeliveryReceipt(
 		}
 		replay, err := s.forwarder.ForwardDeliveryReceipt(
 			ctx,
-			route.AuthorityStation,
+			view.Conversation.AuthorityStation,
 			receipt,
 		)
 		if err != nil {
@@ -813,7 +823,7 @@ func (s *Service) SubmitDeliveryReceipt(
 
 		return DeliveryRecordResult{Replay: replay, Forwarded: true}, nil
 	case query.SourceAuthority:
-		if route.AuthorityStation != s.localStation {
+		if view.Conversation.AuthorityStation != s.localStation {
 			return DeliveryRecordResult{}, NewError(
 				ErrorCodeIntegrityFailed,
 				"interaction.submit_delivery_receipt",

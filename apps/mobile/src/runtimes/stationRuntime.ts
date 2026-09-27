@@ -6,6 +6,7 @@ import {
   persistStationRegistry,
   type StoredStationRegistry,
 } from '../features/station/stationRegistry';
+import { purgeLegacyMobileIdentityStorage } from '../storage/mobileClientStorage';
 
 interface StationRegistryPersistence {
   load(): Promise<StoredStationRegistry>;
@@ -24,7 +25,10 @@ export interface StationRegistryRuntime {
 
 export function createStationRegistryRuntime(
   persistence: StationRegistryPersistence = {
-    load: loadStationRegistry,
+    load: async () => {
+      purgeLegacyMobileIdentityStorage();
+      return loadStationRegistry();
+    },
     persist: persistStationRegistry,
   },
 ): StationRegistryRuntime {

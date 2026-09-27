@@ -111,24 +111,27 @@ func (r *followRepository) Follow(ctx context.Context, followerPTID, followingPT
 		return gorm.ErrInvalidData
 	}
 
-	var existing db.Follow
-	err = r.db.WithContext(ctx).
-		Where("follower_id = ? AND following_id = ?", followerID, followingID).
-		First(&existing).Error
-	if err == nil {
-		return nil // idempotent: already following
-	}
-	if err != gorm.ErrRecordNotFound {
-		return err
-	}
-
-	follow := &db.Follow{
-		ID:          id.NextID(),
-		FollowerID:  followerID,
-		FollowingID: followingID,
-		CreatedAt:   time.Now(),
-	}
-	return r.db.WithContext(ctx).Create(follow).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockSocialRelationshipAuthority(tx, followingPTID); err != nil {
+			return err
+		}
+		var existing db.Follow
+		err := tx.
+			Where("follower_id = ? AND following_id = ?", followerID, followingID).
+			First(&existing).Error
+		if err == nil {
+			return nil
+		}
+		if err != gorm.ErrRecordNotFound {
+			return err
+		}
+		return tx.Create(&db.Follow{
+			ID:          id.NextID(),
+			FollowerID:  followerID,
+			FollowingID: followingID,
+			CreatedAt:   time.Now(),
+		}).Error
+	})
 }
 
 func (r *followRepository) Unfollow(ctx context.Context, followerPTID, followingPTID string) error {
@@ -137,6 +140,9 @@ func (r *followRepository) Unfollow(ctx context.Context, followerPTID, following
 		return err
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockSocialRelationshipAuthority(tx, followingPTID); err != nil {
+			return err
+		}
 		if err := tx.
 			Where("follower_id = ? AND following_id = ?", ids[0], ids[1]).
 			Delete(&db.Follow{}).Error; err != nil {

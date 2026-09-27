@@ -16,7 +16,8 @@ import {
   type IMMessageProjection,
 } from '@peers-touch/client-chat-core';
 
-import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
+import { FriendMessageStatus, type FriendChatMessage } from '../gen/proto/domain/chat/friend_chat_pb';
+import type { GroupMessage } from '../gen/proto/domain/chat/group_chat_pb';
 import type { ConversationEvent } from '../gen/proto/domain/chat/event_pb';
 import type { MessagingConversationProjection } from '../services/im-service-contract';
 
@@ -88,81 +89,7 @@ export function normalizeChatBackgroundId(value: unknown): ChatBackgroundId {
   return 'default';
 }
 
-/**
- * Structural message type used by the projection and chat stores.
- * Replaces the deleted legacy message union while
- * preserving field-level compatibility with the shapes constructed
- * throughout the codebase.
- */
-export interface SocialMessage {
-  $typeName?: string;
-  ulid: string;
-  senderPtid: string;
-  content: string;
-  type: number;
-  attachments: readonly { filename?: string; [k: string]: unknown }[];
-  sentAt?: unknown;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-  encryptedPayload?: Uint8Array;
-  recalled?: boolean;
-  editedAt?: unknown;
-  replyToUlid?: string;
-  threadRootUlid?: string;
-  sessionUlid?: string;
-  receiverPtid?: string;
-  groupUlid?: string;
-  mentionedPtids?: string[];
-  mentionAll?: boolean;
-  status?: number;
-  deliveredAt?: unknown;
-  readAt?: unknown;
-  readByPtids?: string[];
-  deliveryState?: string;
-  senderDeviceId?: string;
-}
-
-export interface FriendChatSession {
-  $typeName?: string;
-  ulid: string;
-  participantAPtid: string;
-  participantBPtid: string;
-  participantADisplayName: string;
-  participantAAvatar: string;
-  participantBDisplayName: string;
-  participantBAvatar: string;
-  unreadCountA: number;
-  unreadCountB: number;
-  lastMessageAt?: unknown;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-}
-
-export interface Group {
-  $typeName?: string;
-  ulid: string;
-  name: string;
-  avatarCid?: string;
-  ownerPtid?: string;
-  description?: string;
-  memberCount?: number;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-}
-
-export interface GroupMember {
-  $typeName?: string;
-  groupUlid: string;
-  ptid: string;
-  role: number;
-  nickname: string;
-  muted: boolean;
-  mutedUntil?: unknown;
-  joinedAt?: unknown;
-  invitedBy: string;
-  actorHomeStationPeerId: string;
-  actorHomeStationDomain: string;
-}
+export type SocialMessage = FriendChatMessage | GroupMessage;
 
 type SequencedSocialMessage = SocialMessage & { groupSeq?: bigint };
 
@@ -195,16 +122,16 @@ export function projectConversationMessageEvents(
         const message = kind === 'friend'
           ? {
               ...common,
-              $typeName: 'peers_touch.model.chat.v1.ChatMessage' as const,
+              $typeName: 'peers_touch.model.chat.v1.FriendChatMessage' as const,
               sessionUlid: event.conversationId,
               receiverPtid: '',
-              status: MessageStatus.SENT,
+              status: FriendMessageStatus.SENT,
               deliveredAt: undefined,
               readAt: undefined,
             }
           : {
               ...common,
-              $typeName: 'peers_touch.model.chat.v1.ChatMessage' as const,
+              $typeName: 'peers_touch.model.chat.v1.GroupMessage' as const,
               groupUlid: event.conversationId,
               mentionedPtids: [],
               mentionAll: false,
@@ -305,16 +232,29 @@ export function visibleConversationUnread(unread: number, state: ConversationLoc
 }
 
 export function messageSentMs(message: SocialMessage): number {
-  const sentAt = (message as { sentAt?: unknown }).sentAt;
-  const createdAt = (message as { createdAt?: unknown }).createdAt;
+  const sentAt = (message as { sentAt?: unknown }).sentAt as FriendChatMessage['sentAt'] | undefined;
+  const createdAt = (message as { createdAt?: unknown }).createdAt as FriendChatMessage['createdAt'] | undefined;
   const ts = sentAt || createdAt;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return ts ? timestampDate(ts as any).getTime() : 0;
+  return ts ? timestampDate(ts).getTime() : 0;
 }
 
 export function mergeConversationMessages(existing: SocialMessage[], incoming: SocialMessage): SocialMessage[] {
-  return mergeChatMessages(existing, incoming, {
+  const merged = mergeChatMessages(existing, incoming, {
     resolveTimestampMs: messageSentMs,
+  });
+  return merged.sort((left, right) => {
+    const leftSequence = messageGroupSeq(left);
+    const rightSequence = messageGroupSeq(right);
+    const leftConfirmed = leftSequence > 0;
+    const rightConfirmed = rightSequence > 0;
+    if (leftConfirmed && rightConfirmed) {
+      return leftSequence - rightSequence;
+    }
+    if (leftConfirmed !== rightConfirmed) {
+      return leftConfirmed ? -1 : 1;
+    }
+    const timestampDelta = messageSentMs(left) - messageSentMs(right);
+    return timestampDelta || left.ulid.localeCompare(right.ulid);
   });
 }
 
@@ -326,7 +266,7 @@ export function preserveMessageReceiptStatuses(
   return reconciled.map((message) => {
     if (!('status' in message)) return message;
     const current = existingByUlid.get(message.ulid);
-    if (!current || !('status' in current) || (current.status ?? 0) <= (message.status ?? 0)) return message;
+    if (!current || !('status' in current) || current.status <= message.status) return message;
     return {
       ...message,
       status: current.status,
@@ -385,7 +325,7 @@ export function projectDesktopIMMessage(
   message: SocialMessage,
 ): DesktopIMMessageProjection {
   const encryptedPayload = (message as { encryptedPayload?: Uint8Array }).encryptedPayload;
-  const editedAt = (message as { editedAt?: unknown }).editedAt as SocialMessage['editedAt'];
+  const editedAt = (message as { editedAt?: unknown }).editedAt as FriendChatMessage['editedAt'] | undefined;
   const projection = projectIMMessage<ChatAttachmentLike>({
     id: message.ulid ?? '',
     conversationKind: kind,
@@ -397,8 +337,7 @@ export function projectDesktopIMMessage(
     status: (message as { status?: number }).status,
     sentAtMs: messageSentMs(message),
     recalled: Boolean((message as { recalled?: boolean }).recalled),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    editedAtMs: editedAt ? timestampDate(editedAt as any).getTime() : undefined,
+    editedAtMs: editedAt ? timestampDate(editedAt).getTime() : undefined,
     replyToId: (message as { replyToUlid?: string }).replyToUlid,
     threadRootId: (message as { threadRootUlid?: string }).threadRootUlid,
     encrypted: Boolean(encryptedPayload?.byteLength && !message.content),
@@ -433,11 +372,11 @@ export function applyPresenceToMap(
   return applyChatPresenceToMap(presence, actorPtid, online);
 }
 
-export function receiptStatus(kind: 'DELIVERED' | 'READ'): MessageStatus | null {
+export function receiptStatus(kind: 'DELIVERED' | 'READ'): FriendMessageStatus | null {
   return resolveChatMessageReceiptStatus(kind, {
-    delivered: MessageStatus.DELIVERED,
-    read: MessageStatus.READ,
-  }) as MessageStatus | null;
+    delivered: FriendMessageStatus.DELIVERED,
+    read: FriendMessageStatus.READ,
+  }) as FriendMessageStatus | null;
 }
 
 export function applyMessageReceiptToList(
@@ -455,7 +394,7 @@ export function applyMessageMutationToList(
   mutation: MessageMutationProjection,
 ): SocialMessage[] | null {
   return applyChatMessageMutationToList(messages, messageUlid, mutation, {
-    createEditedAt: (unixMs) => timestampFromUnixMs(unixMs) as unknown as SocialMessage['editedAt'],
+    createEditedAt: (unixMs) => timestampFromUnixMs(unixMs) as unknown as FriendChatMessage['editedAt'],
     canMutateMessage: (message) => 'recalled' in message,
   });
 }

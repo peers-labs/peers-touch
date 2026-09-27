@@ -18,7 +18,6 @@ import { registerMomentsPage } from './moments/MomentsApp.descriptor';
 import { registerAgentChatPage } from './AgentChatPage.descriptor';
 import { registerMarketplacePage } from './MarketplacePage.descriptor';
 import { registerAgentGroupsPage } from './AgentGroupsPage.descriptor';
-import { registerCustomPluginsPage } from './CustomPluginsPage.descriptor';
 import { registerTasksPage } from './TasksPage.descriptor';
 import { registerEvaluationPage } from './EvaluationPage.descriptor';
 
@@ -38,7 +37,6 @@ export function registerKernelPages(): void {
   registerMomentsPage();
   registerMarketplacePage();
   registerAgentGroupsPage();
-  registerCustomPluginsPage();
   registerTasksPage();
   registerEvaluationPage();
 }

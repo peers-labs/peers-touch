@@ -15,7 +15,7 @@ from tooling.acceptance.core import (
     RuntimeCellContract,
     RuntimeCellState,
 )
-from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.errors import BlockedError, DriverError
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
@@ -25,6 +25,7 @@ from tooling.acceptance.drivers.native.base import (
 )
 from tooling.acceptance.drivers.native.macos import (
     MacOSNativeDesktopAdapter,
+    _ACTIVATION_PROBE,
     _pixel_buffer_has_visible_alpha,
 )
 from tooling.acceptance.provisioners import get_runtime_cell_lifecycle
@@ -132,6 +133,26 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             )
         )
 
+    def test_media_permission_targets_positive_webkit_action_by_process(
+        self,
+    ) -> None:
+        adapter = MacOSNativeDesktopAdapter()
+        completed = Mock(returncode=0, stdout="pressed\n", stderr="")
+
+        with patch(
+            "tooling.acceptance.drivers.native.macos.subprocess.run",
+            return_value=completed,
+        ) as run:
+            self.assertTrue(
+                adapter.accept_media_capture_permission_to_process(42)
+            )
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[:2], ("osascript", "-e"))
+        self.assertIn("unix id is 42", command[2])
+        self.assertIn('"action-button-1"', command[2])
+        self.assertNotIn('button "Allow"', command[2])
+
     def test_focus_wait_retries_until_exact_process_owns_focus(self) -> None:
         wrong = NativeControlSnapshot(
             window_count=1,
@@ -152,7 +173,86 @@ class NativeDesktopMacOSProvisionerTests(unittest.TestCase):
             interval_seconds=0,
         )
         self.assertEqual(control.actual_frontmost_pid, 42)
+        self.assertEqual(adapter.activate_process.call_count, 1)
+
+    def test_focus_wait_preserves_already_focused_process(self) -> None:
+        accepted = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=42,
+        )
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.return_value = accepted
+
+        control = NativeDesktopMacOSProvisioner._await_focused_process(
+            adapter,
+            42,
+            timeout_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertEqual(control.actual_frontmost_pid, 42)
+        adapter.activate_process.assert_not_called()
+
+    def test_focus_wait_clicks_an_owned_window_before_activation(self) -> None:
+        wrong = NativeControlSnapshot(
+            window_count=1,
+            frontmost=False,
+            actual_frontmost_pid=41,
+        )
+        accepted = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=42,
+        )
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.focused_control.side_effect = [wrong, accepted]
+
+        control = NativeDesktopMacOSProvisioner._await_focused_process(
+            adapter,
+            42,
+            timeout_seconds=1,
+            interval_seconds=0,
+            activation_point=(640.0, 400.0),
+        )
+
+        self.assertEqual(control.actual_frontmost_pid, 42)
+        adapter.post_mouse.assert_called_once_with(
+            (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+            (640.0, 400.0),
+        )
+        adapter.activate_process.assert_not_called()
+
+    def test_focus_wait_retries_transient_activation_rejection(self) -> None:
+        wrong = NativeControlSnapshot(
+            window_count=1,
+            frontmost=False,
+            actual_frontmost_pid=41,
+        )
+        accepted = NativeControlSnapshot(
+            window_count=1,
+            frontmost=True,
+            actual_frontmost_pid=42,
+        )
+        adapter = Mock(spec=MacOSNativeDesktopAdapter)
+        adapter.activate_process.side_effect = [
+            DriverError("Native actor process 42 did not become frontmost"),
+            None,
+        ]
+        adapter.focused_control.side_effect = [wrong, accepted]
+
+        control = NativeDesktopMacOSProvisioner._await_focused_process(
+            adapter,
+            42,
+            timeout_seconds=1,
+            interval_seconds=0,
+        )
+
+        self.assertEqual(control.actual_frontmost_pid, 42)
         self.assertEqual(adapter.activate_process.call_count, 2)
+
+    def test_appkit_rejection_does_not_skip_accessibility_activation(self) -> None:
+        self.assertNotIn("if not request_accepted:", _ACTIVATION_PROBE)
 
     def test_focus_wait_fails_closed_without_exact_process_focus(
         self,

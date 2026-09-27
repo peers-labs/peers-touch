@@ -151,6 +151,10 @@ class ConnectorInvocationDevelopmentTest(unittest.TestCase):
             replayed = fixture.server.resolve_tool_name([
                 f"{CONNECTOR_TOOL_PREFIX}{'c' * 24}",
             ])
+            fixture.reset_tool_selection()
+            reset = fixture.server.resolve_tool_name([
+                f"{CONNECTOR_TOOL_PREFIX}{'c' * 24}",
+            ])
         finally:
             fixture.stop()
 
@@ -159,6 +163,26 @@ class ConnectorInvocationDevelopmentTest(unittest.TestCase):
             f"{CONNECTOR_TOOL_PREFIX}{'a' * 24}",
         )
         self.assertEqual(replayed, selected)
+        self.assertEqual(reset, f"{CONNECTOR_TOOL_PREFIX}{'c' * 24}")
+
+    def test_provider_fixture_selects_connector_named_in_prompt(self) -> None:
+        fixture = OpenAIProviderFixture(
+            tool_name="",
+            tool_name_prefix=CONNECTOR_TOOL_PREFIX,
+        )
+        requested = f"{CONNECTOR_TOOL_PREFIX}{'b' * 24}"
+        try:
+            selected = fixture.server.resolve_tool_name(
+                [
+                    f"{CONNECTOR_TOOL_PREFIX}{'a' * 24}",
+                    requested,
+                ],
+                f"Call {requested} exactly once with {{}}.",
+            )
+        finally:
+            fixture.stop()
+
+        self.assertEqual(selected, requested)
 
     def test_runner_uses_profile_two_native_harness_and_source_identity(self) -> None:
         source = (
@@ -172,8 +196,25 @@ class ConnectorInvocationDevelopmentTest(unittest.TestCase):
         self.assertIn("source_identity(ROOT)", source)
         self.assertIn("provider_revoke", source)
         self.assertIn("copy_native_runtime_logs(", source)
+        self.assertIn("OPERATION_SCENARIO_ACTOR_ACCOUNT", source)
+        self.assertIn("OPERATION_SCENARIO_IDENTITY_FIXTURE", source)
+        self.assertIn('"providerApiKey": provider_fixture.api_key', source)
         self.assertNotIn("agent_v2_gate.py", source)
+        self.assertNotIn("J02_ACTOR_ACCOUNT", source)
+        self.assertNotIn("J02_IDENTITY_FIXTURE", source)
         self.assertNotIn("reset_fixture", source)
+        enrollment = source.find("confirm_native_actor_identity_enrollment(")
+        persistence = source.find(
+            "persist_native_actor_identity(",
+            enrollment,
+        )
+        journey = source.find(
+            '"runConnectorInvocationDevelopment"',
+            persistence,
+        )
+        self.assertGreaterEqual(enrollment, 0)
+        self.assertGreater(persistence, enrollment)
+        self.assertGreater(journey, persistence)
 
 
 if __name__ == "__main__":

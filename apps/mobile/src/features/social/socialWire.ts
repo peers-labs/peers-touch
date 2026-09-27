@@ -1,7 +1,9 @@
 import { fromBinary } from '@bufbuild/protobuf';
 import type { Timestamp } from '@bufbuild/protobuf/wkt';
-import { ChatMessageSchema } from '../../gen/proto/domain/chat/chat_pb';
-import type { ChatMessage } from '../../gen/proto/domain/chat/chat_pb';
+import { GroupMessageSchema } from '../../gen/proto/domain/chat/group_chat_pb';
+import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
+import { FriendChatMessageSchema } from '../../gen/proto/domain/chat/friend_chat_pb';
+import type { FriendChatMessage as ProtoFriendChatMessage } from '../../gen/proto/domain/chat/friend_chat_pb';
 import {
   CallSignal_Kind,
   ConversationSettingsChanged_Kind,
@@ -12,7 +14,7 @@ import {
   StreamEventSchema,
 } from '../../gen/proto/domain/realtime/event_pb';
 import type { MessageMutationKind } from './socialProjection';
-import type { SocialMessage, SocialTimestamp } from './socialTypes';
+import type { FriendChatMessage, SocialTimestamp } from './socialTypes';
 
 interface RealtimeWireMetadata {
   readonly cursor: string;
@@ -21,8 +23,8 @@ interface RealtimeWireMetadata {
 
 export type RealtimeWireEvent = RealtimeWireMetadata & (
   | { kind: 'heartbeat'; floorEventId: string }
-  | { kind: 'message'; sessionUlid: string; message: SocialMessage }
-  | { kind: 'group-message'; groupUlid: string; message: ChatMessage }
+  | { kind: 'message'; sessionUlid: string; message: FriendChatMessage }
+  | { kind: 'group-message'; groupUlid: string; message: GroupMessage }
   | { kind: 'receipt'; sessionUlid: string; messageUlid: string; receiptKind: number }
   | {
     kind: 'mutation';
@@ -108,7 +110,7 @@ function decodeRealtimeEvent(bytes: Uint8Array): RealtimeWireEvent {
       ? {
           ...metadata,
           kind: 'group-message',
-          groupUlid: message.message.sessionId || frame.value.sessionUlid,
+          groupUlid: message.message.groupUlid || frame.value.sessionUlid,
           message: message.message,
         }
       : {
@@ -248,18 +250,33 @@ function parseSseData(chunk: string): string[] {
   return dataLines.length > 0 ? [dataLines.join('')] : [];
 }
 
+function decodeFriendChatMessage(bytes: Uint8Array): FriendChatMessage | null {
+  const message = fromBinary(FriendChatMessageSchema, bytes);
+  if (!message.ulid || !message.receiverPtid) return null;
+  return adaptFriendChatMessage(message);
+}
+
 function decodeRealtimeMessage(
   sessionUlid: string,
   bytes: Uint8Array,
-): { kind: 'friend'; message: SocialMessage } | { kind: 'group'; message: ChatMessage } | null {
+): { kind: 'friend'; message: FriendChatMessage } | { kind: 'group'; message: GroupMessage } | null {
   try {
-    const chatMessage = fromBinary(ChatMessageSchema, bytes);
-    if (chatMessage.id && chatMessage.sessionId) {
-      const adapted = adaptChatMessageToSocial(chatMessage);
-      if (adapted) return { kind: 'friend', message: adapted };
+    const friendMessage = decodeFriendChatMessage(bytes);
+    if (friendMessage) return { kind: 'friend', message: friendMessage };
+  } catch {
+    // Try group payload below; both arms use generated proto decoders.
+  }
+
+  try {
+    const groupMessage = fromBinary(GroupMessageSchema, bytes);
+    if (groupMessage.ulid && (groupMessage.groupUlid || sessionUlid)) {
       return {
         kind: 'group',
-        message: chatMessage,
+        message: {
+          ...groupMessage,
+          groupUlid: groupMessage.groupUlid || sessionUlid,
+          encryptedPayload: copyBytes(groupMessage.encryptedPayload),
+        },
       };
     }
   } catch {
@@ -268,26 +285,25 @@ function decodeRealtimeMessage(
   return null;
 }
 
-function adaptChatMessageToSocial(message: ChatMessage): SocialMessage | null {
-  const metadata = message.metadata ?? {};
-  const receiverPtid = metadata['receiver_ptid'] ?? '';
-  if (!receiverPtid) return null;
+function adaptFriendChatMessage(message: ProtoFriendChatMessage): FriendChatMessage {
   return {
-    ulid: message.id,
-    sessionUlid: message.sessionId,
+    ulid: message.ulid,
+    sessionUlid: message.sessionUlid,
     senderPtid: message.senderPtid,
-    receiverPtid,
+    receiverPtid: message.receiverPtid,
     type: message.type,
     content: message.content,
     status: message.status,
     sentAt: adaptTimestamp(message.sentAt),
-    createdAt: adaptTimestamp(message.sentAt),
-    updatedAt: adaptTimestamp(message.sentAt),
-    replyToUlid: message.replyToId,
-    threadRootUlid: metadata['thread_root_id'] ?? '',
-    recalled: message.isDeleted,
-    editedAt: adaptTimestamp(message.deletedAt),
-    encryptedPayload: new Uint8Array(),
+    deliveredAt: adaptTimestamp(message.deliveredAt),
+    readAt: adaptTimestamp(message.readAt),
+    createdAt: adaptTimestamp(message.createdAt),
+    updatedAt: adaptTimestamp(message.updatedAt),
+    replyToUlid: message.replyToUlid,
+    threadRootUlid: message.threadRootUlid,
+    recalled: message.recalled,
+    editedAt: adaptTimestamp(message.editedAt),
+    encryptedPayload: copyBytes(message.encryptedPayload),
   };
 }
 

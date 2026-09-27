@@ -93,6 +93,12 @@ type ToolCall struct {
 	CapabilityLeaseRevision     uint64     `gorm:"not null;default:0"`
 	FencingToken                uint64     `gorm:"not null;default:0"`
 	SideEffectReceipt           string     `gorm:"not null;type:varchar(100);default:''"`
+	StationEffectStartedAt      *time.Time `gorm:"type:timestamp"`
+	StationReceiptStatus        string     `gorm:"not null;type:varchar(32);default:''"`
+	StationReceiptPayloadHash   string     `gorm:"not null;type:varchar(64);default:''"`
+	StationReceiptResult        []byte     `gorm:"type:bytea"`
+	StationReceiptErrorCode     string     `gorm:"not null;type:varchar(100);default:''"`
+	StationReceiptCommittedAt   *time.Time `gorm:"type:timestamp"`
 	IdempotencyKey              string     `gorm:"not null;type:varchar(100);default:''"`
 	DispatchSequence            uint64     `gorm:"not null;default:0"`
 	DispatchCommittedAt         *time.Time `gorm:"type:timestamp"`

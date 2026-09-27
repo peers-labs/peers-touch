@@ -988,6 +988,22 @@ func (s *subServer) privateContentAuthor(
 		return domain.PrivateContentAuthor{},
 			server.InternalError("Social private-content service is unavailable")
 	}
+	actorRecord, err := actor.GetActorByPTID(ctx, actorPTID)
+	if err != nil {
+		return domain.PrivateContentAuthor{},
+			server.InternalErrorWithCause(
+				"load authenticated private-content actor identity",
+				err,
+			)
+	}
+	authorRef, err := canonicalPrivateContentActorRef(actorPTID, actorRecord)
+	if err != nil {
+		return domain.PrivateContentAuthor{},
+			server.InternalErrorWithCause(
+				"authenticated private-content actor identity is incomplete",
+				err,
+			)
+	}
 	actors, err := resolvePrivateContentActorCapabilities()
 	if err != nil {
 		return domain.PrivateContentAuthor{},
@@ -1006,14 +1022,25 @@ func (s *subServer) privateContentAuthor(
 	}
 	return domain.PrivateContentAuthor{
 		Endpoint: &model.ActorDeviceRef{
-			Actor: &model.ActorRef{
-				Ptid: actorPTID,
-				Kind: model.ActorKind_ACTOR_KIND_PERSON,
-			},
+			Actor:    authorRef,
 			DeviceId: deviceID,
 		},
 		HomeStationPeerID: homeStation,
 	}, nil
+}
+
+func canonicalPrivateContentActorRef(
+	actorPTID string,
+	record *db.Actor,
+) (*model.ActorRef, error) {
+	ref := actor.ProtoActorRef(record)
+	if ref == nil ||
+		ref.GetPtid() != actorPTID ||
+		strings.TrimSpace(ref.GetAcct()) == "" ||
+		ref.GetKind() == model.ActorKind_ACTOR_KIND_UNSPECIFIED {
+		return nil, errors.New("persisted ActorRef is not canonical")
+	}
+	return ref, nil
 }
 
 func privateContentHandlerError(err error) error {
@@ -1112,9 +1139,7 @@ func (s *subServer) handleCreatePost(ctx context.Context, req *model.CreatePostR
 		return nil, server.BadRequest("request body is required")
 	}
 	if req.Audience == nil {
-		// Backward-compat: synthesize an Audience from the legacy
-		// `visibility` field for clients that haven't migrated yet.
-		req.Audience = audienceFromLegacyVisibility(req.Visibility)
+		return nil, server.BadRequest("audience is required")
 	}
 	if !domain.IsPublic(req.Audience) {
 		return nil, server.BadRequest(
@@ -1843,7 +1868,7 @@ func actorSearchResult(a *db.Actor) *model.Actor {
 		FederatedHandle:   a.FederatedHandle,
 		HomeStationPeerId: a.HomeStationPeerID,
 		HomeStationDomain: a.HomeStationDomain,
-		Ref:               actor.ProtoActorRef(a, ""),
+		Ref:               actor.ProtoActorRef(a),
 	}
 }
 
@@ -1863,7 +1888,7 @@ func (s *subServer) handleGetMe(ctx context.Context, _ *model.GetMeRequest) (*mo
 		Avatar:       a.Icon,
 		ServerDomain: a.HomeStationDomain,
 		Acct:         a.FederatedHandle,
-		Ref:          actor.ProtoActorRef(a, ""),
+		Ref:          actor.ProtoActorRef(a),
 	}, nil
 }
 
@@ -2020,20 +2045,6 @@ func (s *subServer) handleListStationModerationPolicies(
 }
 
 // --- Helpers ----------------------------------------------------
-
-// audienceFromLegacyVisibility synthesizes an Audience from the old
-// `PostVisibility` enum so legacy clients (without an audience field)
-// still get a sensible default during the transition window.
-func audienceFromLegacyVisibility(v model.PostVisibility) *model.Audience {
-	switch v {
-	case model.PostVisibility_PRIVATE:
-		return &model.Audience{Kind: model.Audience_SELF}
-	case model.PostVisibility_FOLLOWERS_ONLY:
-		return &model.Audience{Kind: model.Audience_FOLLOWERS}
-	default:
-		return &model.Audience{Kind: model.Audience_PUBLIC}
-	}
-}
 
 // --- Friend Request handlers -------------------------------------------------
 

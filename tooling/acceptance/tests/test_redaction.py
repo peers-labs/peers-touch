@@ -69,6 +69,7 @@ class SensitiveKeyTests(unittest.TestCase):
             "public_key",
             "publicKeys",
             "authorization_url_ref",
+            "cleanupFencingToken",
             "contextTokens",
             "fencing_token",
             "hostKeySha256",
@@ -89,6 +90,22 @@ class SensitiveKeyTests(unittest.TestCase):
 
 
 class StructuredRedactionTests(unittest.TestCase):
+    def test_preserves_fencing_metadata_and_redacts_credentials(self) -> None:
+        self.assertEqual(
+            redact_value(
+                {
+                    "cleanupFencingToken": 7,
+                    "fencingToken": 8,
+                    "accessToken": "sensitive",
+                }
+            ),
+            {
+                "cleanupFencingToken": 7,
+                "fencingToken": 8,
+                "accessToken": REDACTED,
+            },
+        )
+
     def test_redacts_nested_sensitive_values_and_preserves_boolean_metadata(self) -> None:
         value = {
             "apiKey": "api-secret",

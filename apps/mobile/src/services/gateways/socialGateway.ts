@@ -102,15 +102,8 @@ export interface SocialGateway {
   rejectFriendRequest: (request: FriendRequestDecisionContext) => Promise<CommandOutcome<FriendRequestMutationResult>>;
 
   // Conversation settings
-  getConversationSettings: (
-    conversationId: string,
-    kind?: 'friend' | 'group',
-  ) => Promise<CommandOutcome<FriendConversationSettings>>;
-  updateConversationSettings: (
-    conversationId: string,
-    input: UpdateFriendConversationSettingsInput,
-    kind?: 'friend' | 'group',
-  ) => Promise<CommandOutcome<FriendConversationSettings>>;
+  getConversationSettings: (sessionUlid: string) => Promise<CommandOutcome<FriendConversationSettings>>;
+  updateConversationSettings: (sessionUlid: string, input: UpdateFriendConversationSettingsInput) => Promise<CommandOutcome<FriendConversationSettings>>;
 
   // Block
   blockUser: (targetPtid: string, targetHomeStationPeerId: string, observedRevision: number) => Promise<CommandOutcome<RelationshipMutationResult>>;
@@ -125,15 +118,11 @@ export interface SocialGateway {
 
 export function createSocialGateway(session: MobileAuthSession): SocialGateway {
   const { command } = createGatewayTransport(session, 'social');
-  const { command: groupCommand } = createGatewayTransport(session, 'group');
 
   const getConversationSettings = async (
     conversationId: string,
-    kind: 'friend' | 'group' = 'friend',
   ): Promise<CommandOutcome<FriendConversationSettings>> => {
-    const result = await (kind === 'group' ? groupCommand : command)<{
-      settings?: Record<string, unknown>;
-    }>({
+    const result = await command<{ settings?: Record<string, unknown> }>({
       method: 'GET',
       path: '/conversation/member/settings',
       query: { conversation_id: conversationId },
@@ -167,6 +156,8 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
         const response = await socialFriendRequestSend({
           stationPeerId: session.stationPeerId,
           actorPtid: session.actorRef.ptid,
+          deviceId: session.deviceId,
+          lifecycleGeneration: session.lifecycleGeneration,
           receiverPtid,
           receiverHomeStationPeerId,
           federationId,
@@ -180,6 +171,8 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
         const response = await socialFriendRequestAccept({
           stationPeerId: session.stationPeerId,
           actorPtid: session.actorRef.ptid,
+          deviceId: session.deviceId,
+          lifecycleGeneration: session.lifecycleGeneration,
           requestId: request.requestId,
           senderPtid: request.senderPtid,
           receiverPtid: request.receiverPtid,
@@ -195,6 +188,8 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
         const response = await socialFriendRequestReject({
           stationPeerId: session.stationPeerId,
           actorPtid: session.actorRef.ptid,
+          deviceId: session.deviceId,
+          lifecycleGeneration: session.lifecycleGeneration,
           requestId: request.requestId,
           senderPtid: request.senderPtid,
           receiverPtid: request.receiverPtid,
@@ -208,8 +203,8 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
     // --- Conversation settings ---
     getConversationSettings,
 
-    updateConversationSettings: async (conversationId, input, kind = 'friend') => {
-      const result = await (kind === 'group' ? groupCommand : command)<Record<string, unknown>>({
+    updateConversationSettings: async (conversationId, input) => {
+      const result = await command<Record<string, unknown>>({
         method: 'PUT',
         path: '/conversation/member/settings',
         body: {
@@ -223,7 +218,7 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
         },
       });
       if (!result.ok) return result;
-      return getConversationSettings(conversationId, kind);
+      return getConversationSettings(conversationId);
     },
 
     // --- Block ---
@@ -232,6 +227,8 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
         const response = await socialRelationshipBlock({
           stationPeerId: session.stationPeerId,
           actorPtid: session.actorRef.ptid,
+          deviceId: session.deviceId,
+          lifecycleGeneration: session.lifecycleGeneration,
           targetPtid,
           targetHomeStationPeerId,
           observedRevision,
@@ -244,6 +241,8 @@ export function createSocialGateway(session: MobileAuthSession): SocialGateway {
         const response = await socialRelationshipUnblock({
           stationPeerId: session.stationPeerId,
           actorPtid: session.actorRef.ptid,
+          deviceId: session.deviceId,
+          lifecycleGeneration: session.lifecycleGeneration,
           targetPtid,
           targetHomeStationPeerId,
           observedRevision,

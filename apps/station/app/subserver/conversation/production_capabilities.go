@@ -16,6 +16,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/ports"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/application/query"
 	conversationdomain "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/aggregate"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/entity"
 	domainevent "github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/conversation/domain/repository"
@@ -1573,8 +1574,10 @@ func (s *subServer) forwardPrepareCommand(
 			federationruntime.ClaimTargetStationPeerID: targetStation,
 		},
 		Request: &chatmodel.PrepareFederatedConversationCommandRequest{
-			Request:                 proto.Clone(request).(*chatmodel.PrepareConversationCommandRequest),
 			SourceHomeStationPeerId: string(s.localStation),
+			Preparation: &chatmodel.PrepareFederatedConversationCommandRequest_Request{
+				Request: proto.Clone(request).(*chatmodel.PrepareConversationCommandRequest),
+			},
 		},
 		Response: response,
 	})
@@ -1593,6 +1596,75 @@ func (s *subServer) forwardPrepareCommand(
 	}
 
 	return response.GetPlan(), nil
+}
+
+func (s *subServer) forwardPrepareMembership(
+	ctx context.Context,
+	request *chatmodel.PrepareConversationMembershipRequest,
+	conversation aggregate.Snapshot,
+) (*chatmodel.PrepareConversationMembershipResponse, error) {
+	if request == nil ||
+		request.GetSender() == nil ||
+		request.GetSender().GetActor() == nil ||
+		conversation.ID != valueobject.ConversationID(request.GetConversationId()) ||
+		conversation.FederationID == "" ||
+		conversation.AuthorityStation == "" ||
+		conversation.AuthorityStation == s.localStation {
+		return nil, server.BadRequest(
+			"remote Conversation membership preparation is incomplete",
+		)
+	}
+	targetStation := string(conversation.AuthorityStation)
+	runtime, err := s.composition.FederationRuntime()
+	if err != nil {
+		return nil, err
+	}
+	response := &chatmodel.PrepareFederatedConversationCommandResponse{}
+	err = runtime.CallPeer(ctx, federationruntime.PeerCall{
+		TargetStationPeerID: targetStation,
+		Route: federationruntime.
+			PeerRouteConversationCommandPrepare,
+		Subject: request.GetSender().GetActor().GetPtid(),
+		Claims: map[string]string{
+			federationruntime.ClaimFederationID: string(
+				conversation.FederationID,
+			),
+			federationruntime.ClaimConversationID: request.GetConversationId(),
+			federationruntime.ClaimActorPTID: request.GetSender().
+				GetActor().
+				GetPtid(),
+			federationruntime.ClaimDeviceID: request.GetSender().GetDeviceId(),
+			federationruntime.ClaimAuthorityEpoch: strconv.FormatInt(
+				int64(conversation.AuthorityEpoch),
+				10,
+			),
+			federationruntime.ClaimSourceStationPeerID: string(
+				s.localStation,
+			),
+			federationruntime.ClaimTargetStationPeerID: targetStation,
+		},
+		Request: &chatmodel.PrepareFederatedConversationCommandRequest{
+			SourceHomeStationPeerId: string(s.localStation),
+			Preparation: &chatmodel.PrepareFederatedConversationCommandRequest_MembershipRequest{
+				MembershipRequest: proto.Clone(request).(*chatmodel.PrepareConversationMembershipRequest),
+			},
+		},
+		Response: response,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if response.GetMembershipPlan() == nil ||
+		response.GetMembershipPlan().GetAuthorityStationPeerId() != targetStation {
+		return nil, conversationdomain.NewError(
+			conversationdomain.ErrorCodeProposalBinding,
+			"production_federation.prepare_membership",
+			"response",
+			"does not match the requested Conversation authority",
+		)
+	}
+
+	return response.GetMembershipPlan(), nil
 }
 
 // EnsureAcceptedRelationshipDirectConversation is the typed Social effect

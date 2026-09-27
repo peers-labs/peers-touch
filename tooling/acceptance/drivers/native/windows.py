@@ -499,6 +499,10 @@ class Win32NativeDesktopAdapter(NativeDesktopAdapter):
                 inputs.append(
                     _make_mouse_input(x, y, _MOUSEEVENTF_MOVE | _MOUSEEVENTF_LEFTUP)
                 )
+            elif action == MouseAction.LEFT_DRAG:
+                inputs.append(
+                    _make_mouse_input(x, y, _MOUSEEVENTF_MOVE)
+                )
             else:
                 raise DriverError(
                     f"unsupported Win32 mouse action: {action.value}"

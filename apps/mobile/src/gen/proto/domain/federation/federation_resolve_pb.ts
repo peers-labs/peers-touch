@@ -12,29 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/federation/federation_resolve.proto.
  */
 export const file_domain_federation_federation_resolve: GenFile = /*@__PURE__*/
-  fileDesc("Cipkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3Jlc29sdmUucHJvdG8SH3BlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEiUAoYRmVkZXJhdGlvblJlc29sdmVSZXF1ZXN0EiQKDWZlZGVyYXRpb25faWQYASABKAlSDWZlZGVyYXRpb25faWQSDgoGaGFuZGxlGAIgASgJIvADChVGZWRlcmF0aW9uUmVzb2x2ZVZpZXcSKgoQZmVkZXJhdGVkX2hhbmRsZRgBIAEoCVIQZmVkZXJhdGVkX2hhbmRsZRIyChRob21lX3N0YXRpb25fcGVlcl9pZBgCIAEoCVIUaG9tZV9zdGF0aW9uX3BlZXJfaWQSMAoTaG9tZV9zdGF0aW9uX2RvbWFpbhgDIAEoCVITaG9tZV9zdGF0aW9uX2RvbWFpbhIaCghpc19sb2NhbBgEIAEoCFIIaXNfbG9jYWwSHgoKZnJvbV9jYWNoZRgFIAEoCFIKZnJvbV9jYWNoZRI5Cgdwcm9maWxlGAYgASgLMigucGVlcnNfdG91Y2gubW9kZWwuYWN0b3IudjEuQWN0b3JQcm9maWxlEiAKC2xvY2F0b3Jfc2VxGAcgASgEUgtsb2NhdG9yX3NlcRIsChFpc3N1ZWRfYXRfdW5peF9tcxgIIAEoA1IRaXNzdWVkX2F0X3VuaXhfbXMSLgoSZXhwaXJlc19hdF91bml4X21zGAkgASgDUhJleHBpcmVzX2F0X3VuaXhfbXMSKAoPc2lnbmluZ19rZXlfa2lkGAogASgJUg9zaWduaW5nX2tleV9raWQSJAoNZmVkZXJhdGlvbl9pZBgLIAEoCVINZmVkZXJhdGlvbl9pZEJMWkpnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9mZWRlcmF0aW9uL2FwaS9wYjtwYmIGcHJvdG8z", [file_domain_actor_actor]);
-
-/**
- * @generated from message peers_touch.model.federation.v1.FederationResolveRequest
- */
-export type FederationResolveRequest = Message<"peers_touch.model.federation.v1.FederationResolveRequest"> & {
-  /**
-   * @generated from field: string federation_id = 1 [json_name = "federation_id"];
-   */
-  federationId: string;
-
-  /**
-   * @generated from field: string handle = 2;
-   */
-  handle: string;
-};
-
-/**
- * Describes the message peers_touch.model.federation.v1.FederationResolveRequest.
- * Use `create(FederationResolveRequestSchema)` to create a new message.
- */
-export const FederationResolveRequestSchema: GenMessage<FederationResolveRequest> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_resolve, 0);
+  fileDesc("Cipkb21haW4vZmVkZXJhdGlvbi9mZWRlcmF0aW9uX3Jlc29sdmUucHJvdG8SH3BlZXJzX3RvdWNoLm1vZGVsLmZlZGVyYXRpb24udjEiygMKFUZlZGVyYXRpb25SZXNvbHZlVmlldxIqChBmZWRlcmF0ZWRfaGFuZGxlGAEgASgJUhBmZWRlcmF0ZWRfaGFuZGxlEjIKFGhvbWVfc3RhdGlvbl9wZWVyX2lkGAIgASgJUhRob21lX3N0YXRpb25fcGVlcl9pZBIwChNob21lX3N0YXRpb25fZG9tYWluGAMgASgJUhNob21lX3N0YXRpb25fZG9tYWluEhoKCGlzX2xvY2FsGAQgASgIUghpc19sb2NhbBIeCgpmcm9tX2NhY2hlGAUgASgIUgpmcm9tX2NhY2hlEjkKB3Byb2ZpbGUYBiABKAsyKC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclByb2ZpbGUSIAoLbG9jYXRvcl9zZXEYByABKARSC2xvY2F0b3Jfc2VxEiwKEWlzc3VlZF9hdF91bml4X21zGAggASgDUhFpc3N1ZWRfYXRfdW5peF9tcxIuChJleHBpcmVzX2F0X3VuaXhfbXMYCSABKANSEmV4cGlyZXNfYXRfdW5peF9tcxIoCg9zaWduaW5nX2tleV9raWQYCiABKAlSD3NpZ25pbmdfa2V5X2tpZEJMWkpnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9mZWRlcmF0aW9uL2FwaS9wYjtwYmIGcHJvdG8z", [file_domain_actor_actor]);
 
 /**
  * @generated from message peers_touch.model.federation.v1.FederationResolveView
@@ -117,14 +95,6 @@ export type FederationResolveView = Message<"peers_touch.model.federation.v1.Fed
    * @generated from field: string signing_key_kid = 10 [json_name = "signing_key_kid"];
    */
   signingKeyKid: string;
-
-  /**
-   * Explicit context in which both the local and Home Stations were
-   * verified as active members before this result was returned.
-   *
-   * @generated from field: string federation_id = 11 [json_name = "federation_id"];
-   */
-  federationId: string;
 };
 
 /**
@@ -132,4 +102,4 @@ export type FederationResolveView = Message<"peers_touch.model.federation.v1.Fed
  * Use `create(FederationResolveViewSchema)` to create a new message.
  */
 export const FederationResolveViewSchema: GenMessage<FederationResolveView> = /*@__PURE__*/
-  messageDesc(file_domain_federation_federation_resolve, 1);
+  messageDesc(file_domain_federation_federation_resolve, 0);

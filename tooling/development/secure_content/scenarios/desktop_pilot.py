@@ -8,12 +8,9 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Mapping
 
-from tooling.acceptance.core.provisioning import (
-    ProvisioningError,
-    require_runtime_client_service,
-)
 from tooling.development.secure_content.attached_client import (
     AttachedProductClient,
+    reconcile_private_moment_publish,
 )
 from tooling.development.secure_content.run import (
     RunnerError,
@@ -22,24 +19,59 @@ from tooling.development.secure_content.run import (
 )
 
 
-EXPECTED_PROFILE = "four"
+EXPECTED_PROFILES = ("four", "fiveArm")
 EXPECTED_CLIENTS = (
     "secure-content-desktop-alice",
     "secure-content-desktop-bob",
     "secure-content-desktop-eve",
 )
 EXPECTED_BUDGET_SECONDS = 1200
+REQUIRED_FIXTURE_CAPABILITIES = frozenset(
+    {
+        "account-switch",
+        "station-switch",
+        "publisher-device-revocation",
+        "historical-recovery-epoch",
+    }
+)
 PUBLIC_TEXT = "secure-content-w7-browser-public"
 PRIVATE_TEXT = "secure-content-w7-friends-image"
 PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
     "+A8AAQUBAScY42YAAAAASUVORK5CYII="
 )
+DIAGNOSTIC_TOKEN_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
+)
 
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise RunnerError(message)
+
+
+def _diagnostic_token(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return "<missing>"
+    if len(value) > 64 or any(
+        char not in DIAGNOSTIC_TOKEN_CHARS for char in value
+    ):
+        return "<redacted>"
+    return value
+
+
+def _require_projection_state(
+    projection: Mapping[str, Any],
+    expected: str,
+    message: str,
+) -> None:
+    if projection.get("state") == expected:
+        return
+    raise RunnerError(
+        f"{message} "
+        f"(state={_diagnostic_token(projection.get('state'))}; "
+        f"errorCode={_diagnostic_token(projection.get('errorCode'))})"
+    )
 
 
 def _sha256(value: bytes | str) -> str:
@@ -53,16 +85,26 @@ def _mapping(value: Any, field: str) -> Mapping[str, Any]:
     return value
 
 
+def _fixture_action(
+    context: ScenarioContext,
+    capability: str,
+    operation: str,
+) -> Mapping[str, Any]:
+    acknowledgement = context.invoke_fixture_action(capability, operation)
+    outcome = _mapping(
+        acknowledgement.get("outcome"),
+        f"{capability} fixture acknowledgement",
+    )
+    _require(
+        outcome.get("completed") is True,
+        f"desktop-pilot {capability} fixture action did not complete",
+    )
+    return outcome
+
+
 def _station_url(context: ScenarioContext, client_id: str) -> str:
     manifest = context.require_runtime_manifest()
-    try:
-        _, station = require_runtime_client_service(
-            dict(manifest.payload),
-            client_id,
-            "station",
-        )
-    except ProvisioningError as error:
-        raise RunnerError("desktop-pilot Station binding is invalid") from error
+    _, station = manifest.service_for_client(client_id, "station")
     endpoint = station.get("endpoint")
     if not isinstance(endpoint, str) or not endpoint.startswith(("http://", "https://")):
         raise RunnerError("desktop-pilot Station endpoint is invalid")
@@ -79,8 +121,9 @@ def _load_resume_artifact(
     path = _resume_artifact(context)
     if not path.is_file():
         return None
-    payload = context.consume_bound_artifact_json(
+    payload = context.consume_owner_continuation(
         path,
+        client_id=EXPECTED_CLIENTS[1],
         kind="secure-content-desktop-pilot-resume",
         producer_scenario_id="desktop-pilot",
         producer_journey_id="sc-dj-desktop-pilot",
@@ -131,12 +174,9 @@ def _require_runtime_binding(context: ScenarioContext) -> None:
         )
     if context.runtime != "desktop":
         raise RunnerError("desktop-pilot requires the desktop runtime")
-    if (
-        context.profile != EXPECTED_PROFILE
-        or context.profiles != (EXPECTED_PROFILE,)
-    ):
+    if context.profile is not None or set(context.profiles) != set(EXPECTED_PROFILES):
         raise RunnerError(
-            "desktop-pilot requires exactly --profile four"
+            "desktop-pilot requires exactly --profiles four,fiveArm"
         )
     if context.clients != EXPECTED_CLIENTS:
         raise RunnerError(
@@ -148,33 +188,25 @@ def _require_runtime_binding(context: ScenarioContext) -> None:
             "desktop-pilot requires exactly --budget-seconds 1200"
         )
     manifest = context.require_runtime_manifest()
-    expected_actors = {
-        EXPECTED_CLIENTS[0]: "alice",
-        EXPECTED_CLIENTS[1]: "bob",
-        EXPECTED_CLIENTS[2]: "eve",
+    expected_bindings = {
+        EXPECTED_CLIENTS[0]: ("alice", "native-tauri"),
+        EXPECTED_CLIENTS[1]: ("bob", "native-tauri"),
+        EXPECTED_CLIENTS[2]: ("eve", "native-tauri"),
     }
-    for client_id, actor in expected_actors.items():
-        if manifest.client(client_id).get("actor") != actor:
+    for client_id, (actor_role, runtime_kind) in expected_bindings.items():
+        client = manifest.client(client_id)
+        if (
+            client.get("actor_role") != actor_role
+            or client.get("runtime_kind") != runtime_kind
+        ):
             raise RunnerError(
-                f"desktop-pilot client {client_id!r} must bind actor {actor!r}"
+                f"desktop-pilot client {client_id!r} must bind actor role "
+                f"{actor_role!r} and runtime kind {runtime_kind!r}"
             )
 
 
 def _execute(context: ScenarioContext) -> Mapping[str, Any]:
     _require_runtime_binding(context)
-    context.block(
-        (
-            "DESIGN_AMENDMENT_REQUIRED: desktop-pilot cannot produce "
-            "FUNCTIONAL_CHECK/PASS until the accepted design defines "
-            "deterministic persist/send/response lifecycle barriers, "
-            "runtime-owner restart acknowledgement and fresh-manifest "
-            "continuation, and account/Station switch, publisher-device "
-            "revocation, and historical-recovery-epoch fixture inputs"
-        ),
-        kind="DESIGN_AMENDMENT_REQUIRED",
-        owner="secure-content-architecture",
-        retryable=False,
-    )
     resume = _load_resume_artifact(context)
     if resume is not None:
         with AttachedProductClient(context, EXPECTED_CLIENTS[1]) as bob:
@@ -214,7 +246,53 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
                 and media[0].get("plaintextSha256") == _sha256(PNG_BYTES),
                 "Bob private image did not survive Native client restart",
             )
+            recovery = _fixture_action(
+                context,
+                "historical-recovery-epoch",
+                "advance",
+            )
+            _require(
+                isinstance(recovery.get("previousEpoch"), int)
+                and recovery.get("currentEpoch")
+                == int(recovery["previousEpoch"]) + 1,
+                "historical recovery fixture did not advance exactly one epoch",
+            )
+            historical_read = _mapping(
+                bob.call(
+                    "recoverPrivateMoment",
+                    {
+                        "postId": resume["postId"],
+                        "openMedia": True,
+                    },
+                ),
+                "Bob historical-epoch private read",
+            )
+            _require(
+                historical_read.get("state") == "CONTENT_READY"
+                and historical_read.get("textSha256") == _sha256(PRIVATE_TEXT),
+                "Bob could not reopen content from the prior recovery epoch",
+            )
             bob.call("clearLocalState")
+
+        station_switch = _fixture_action(
+            context,
+            "station-switch",
+            "round-trip",
+        )
+        publisher_revoke = _fixture_action(
+            context,
+            "publisher-device-revocation",
+            "revoke",
+        )
+        account_switch = _fixture_action(
+            context,
+            "account-switch",
+            "round-trip",
+        )
+        _require(
+            account_switch.get("sessionGenerationAdvanced") is True,
+            "account-switch fixture did not advance the session generation",
+        )
 
         context.write_bound_artifact_json(
             "browser-private-handoff.json",
@@ -233,6 +311,10 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
                 "bobExactText": True,
                 "bobExactMediaBytes": True,
                 "bobNativeProcessRestartRead": True,
+                "historicalRecoveryEpochRead": True,
+                "accountSwitchRoundTrip": account_switch.get("completed"),
+                "stationSwitchRoundTrip": station_switch.get("completed"),
+                "publisherDeviceRevoked": publisher_revoke.get("completed"),
                 "eveDenied": True,
                 "invalidCredentialStatus": 401,
             },
@@ -283,6 +365,23 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             if actor == "bob":
                 bob_runtime_identity = runtime_identity
 
+        public_publish = _mapping(
+            alice.call(
+                "publishPublicMoment",
+                {
+                    "text": PUBLIC_TEXT,
+                    "filePath": str(fixture_path),
+                },
+            ),
+            "Alice public control publish",
+        )
+        _require(
+            public_publish.get("published") is True
+            and public_publish.get("mediaCount") == 1
+            and public_publish.get("textSha256") == _sha256(PUBLIC_TEXT),
+            "Alice PUBLIC image control did not publish",
+        )
+
         staged = _mapping(
             alice.call(
                 "stageFriendsDraft",
@@ -305,25 +404,12 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         )
         _require(staged.get("fileCount") == 1, "Alice image draft is incomplete")
 
-        public_publish = _mapping(
-            alice.call(
-                "publishPublicMoment",
-                {
-                    "text": PUBLIC_TEXT,
-                    "filePath": str(fixture_path),
-                },
-            ),
-            "Alice public control publish",
-        )
-        _require(
-            public_publish.get("published") is True
-            and public_publish.get("mediaCount") == 1
-            and public_publish.get("textSha256") == _sha256(PUBLIC_TEXT),
-            "Alice PUBLIC image control did not publish",
-        )
-
         published = _mapping(
-            alice.call("publishFriendsDraft"),
+            reconcile_private_moment_publish(
+                alice,
+                "publishFriendsDraft",
+                label="Alice private Moment publish",
+            ),
             "Alice publish result",
         )
         _require(
@@ -343,8 +429,9 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             ),
             "Bob private read",
         )
-        _require(
-            bob_read.get("state") == "CONTENT_READY",
+        _require_projection_state(
+            bob_read,
+            "CONTENT_READY",
             "Bob private Moment did not reach CONTENT_READY",
         )
         _require(
@@ -397,17 +484,15 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         bob.call("clearLocalState")
         eve.call("clearLocalState")
 
-    context.block(
-        (
-            "desktop-pilot pre-restart phase passed; restart the Bob Native "
-            "client with retained storage, publish a refreshed immutable "
-            "runtime manifest, and replay the same Journey command"
+    context.request_restart(
+        EXPECTED_CLIENTS[1],
+        reason=(
+            "desktop-pilot pre-restart phase passed; restart Bob with "
+            "retained storage and a changed boot identity to verify "
+            "post-restart private read"
         ),
-        kind="DRIVER_FAILED",
-        owner="secure-content-w7-runtime",
-        retryable=True,
     )
-    raise AssertionError("unreachable after desktop-pilot resume publication")
+    raise AssertionError("unreachable after desktop-pilot restart request")
 
 
 SCENARIO = ScenarioDefinition(
@@ -417,4 +502,9 @@ SCENARIO = ScenarioDefinition(
     runtimes=frozenset({"desktop"}),
     evidence_path=Path("W7/SC-AS01/result.json"),
     execute=_execute,
+    required_fixture_capabilities=REQUIRED_FIXTURE_CAPABILITIES,
+    result_prefix=Path("W7"),
+    result_task_id="W7",
+    result_workstream_id="W7",
+    result_variant="desktop",
 )

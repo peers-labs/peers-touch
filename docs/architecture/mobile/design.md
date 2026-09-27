@@ -24,7 +24,7 @@
 |---|---|---|---|---|
 | Tauri v2 Mobile is the mainline | verified_fact | `docs/client/mobile/base.md`, `apps/mobile/src-tauri/` | high | none |
 | Station selection/access gates and signed peer-ID handshake are implemented | verified_fact | `features/auth/`, `features/station/`, `station.rs`, W1 evidence | high | canonical simulator runtime proof |
-| Conversation and Social projection runtimes exist | verified_fact | `runtimes/messagingRuntime.ts`, `features/chat/`, `features/social/` | high | lifecycle/performance evidence |
+| Friend/group projection runtimes exist | verified_fact | `features/social/`, `features/group/` | high | lifecycle/performance evidence |
 | Runtime registry is executable and lifecycle-owned | verified_fact | `app/lifecycle/MobileLifecycleKernel.ts`, `runtimes/runtimeRegistry.ts`, `mobile-simulator-runtime-lifecycle-e2e` | high | Station-bound simulator lifecycle proof |
 | Navigation route identity is descriptor-owned | verified_fact | `app/navigation/navigationStore.ts`, `components/MobileShell.tsx`, focused navigation and Harness tests | high | visible native focus/no-leak proof |
 | Moments feed, publish, reaction, comment, and reply sources exist | verified_fact | `MomentsPage.tsx`, `features/social/momentsFeedStore.ts`, `pages/moments/` | high | two-actor simulator convergence and receiver proof |
@@ -62,7 +62,7 @@ Tauri Mobile App
   |     sessionRuntime
   |     commandRuntime
   |     socialRuntime
-  |     messagingRuntime
+  |     groupRuntime
   |     momentsRuntime
   |     notificationRuntime
   |     profileRuntime
@@ -623,7 +623,7 @@ Owner transfer is one aggregate commit: the prior owner becomes admin, the new
 owner becomes unmuted owner, the membership epoch advances once, and one event,
 receipt, delivery set, Federation outbox, and follower snapshot commit
 atomically. Mobile success requires matching command readback plus the resulting
-member/owner projection. No retired Chat route fallback, two-call transfer, or
+member/owner projection. No `/group-chat/*` fallback, two-call transfer, or
 client-side owner patch is permitted.
 
 ### 12.5 Chat Forward, Retract, Hide, And Moderation
@@ -820,7 +820,7 @@ Allowed temporary compatibility:
 
 Forbidden target paths:
 
-- executable routes listed in the CCU legacy inventory;
+- executable `/friend-chat/*` or `/group-chat/*` business calls;
 - alias endpoints, fallback retries, or dual writes to retired owners;
 - direct Web credential attachment;
 - manual public DTOs duplicating generated domain contracts;

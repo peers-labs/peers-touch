@@ -84,9 +84,17 @@ export function useChatVoiceRecorder({
   }, [disabled, editing, onDenied, onRecorded, onUnsupported, recording]);
 
   useEffect(() => () => {
+    cancelledRef.current = true;
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+    recorderRef.current = null;
     streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
     if (timerRef.current != null) {
       window.clearInterval(timerRef.current);
+      timerRef.current = null;
     }
   }, []);
 

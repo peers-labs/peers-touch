@@ -11,8 +11,7 @@
   "truth_sources": [
     "running Station agent API",
     "agent_ecosystem_groups table",
-    "agent_ecosystem_comments table",
-    "agent_ecosystem_plugins table"
+    "agent_ecosystem_comments table"
   ],
   "visible_surfaces": [
     {"type": "api", "route": "/agent/ecosystem/groups"},
@@ -22,28 +21,21 @@
     {"type": "api", "route": "/agent/ecosystem/groups/:id/delete"},
     {"type": "api", "route": "/agent/ecosystem/comments"},
     {"type": "api", "route": "/agent/ecosystem/comments/create"},
-    {"type": "api", "route": "/agent/ecosystem/comments/:id/delete"},
-    {"type": "api", "route": "/agent/ecosystem/plugins"},
-    {"type": "api", "route": "/agent/ecosystem/plugins/:id"},
-    {"type": "api", "route": "/agent/ecosystem/plugins/create"},
-    {"type": "api", "route": "/agent/ecosystem/plugins/:id/update"},
-    {"type": "api", "route": "/agent/ecosystem/plugins/:id/delete"}
+    {"type": "api", "route": "/agent/ecosystem/comments/:id/delete"}
   ],
   "required_gates": ["agent-ecosystem-e2e"],
   "acceptance": {
     "service": [
       "group CRUD manages collections of agents for discovery and organization",
-      "comment CRUD allows users to leave feedback on shared agents or plugins",
-      "plugin CRUD manages ecosystem plugins with metadata, version, and compatibility info"
+      "comment CRUD allows users to leave feedback on shared agents"
     ],
     "visible": [
       "Marketplace page is reachable from the primary sidebar navigation without keyboard shortcuts",
-      "ecosystem browser in Desktop shows groups and plugins",
+      "ecosystem browser in Desktop shows groups",
       "comments appear under shared agent profiles"
     ]
   },
   "negative": [
-    "deleting a group must not delete the agents within it",
-    "plugins must not be installable if marked incompatible with the current agent version"
+    "deleting a group must not delete the agents within it"
   ]
 }

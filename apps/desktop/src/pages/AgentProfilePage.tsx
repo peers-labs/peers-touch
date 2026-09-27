@@ -522,6 +522,8 @@ interface ProfileCapabilityProjection {
   skills: CapabilitySourceProjection;
   knowledge: CapabilitySourceProjection;
   knowledgeDescriptors: KnowledgeResourceDescriptor[];
+  catalogIssues: AgentCapabilityState['catalogIssues'];
+  lastMutationError: AgentCapabilityState['lastMutationError'];
   loadingAgent: boolean;
   pendingMutations: AgentCapabilityState['pendingMutations'];
   loadAgent: AgentCapabilityState['loadAgent'];
@@ -538,6 +540,8 @@ function createProfileCapabilitySelector(agentId: string) {
   let knowledgeDescriptorsReference: KnowledgeResourceDescriptor[] | undefined;
   let bindingsReference: AgentCapabilityBinding[] | undefined;
   let readinessReference: AgentCapabilityState['readinessByAgentId'][string];
+  let catalogIssuesReference: AgentCapabilityState['catalogIssues'] | undefined;
+  let lastMutationErrorReference: AgentCapabilityState['lastMutationError'] | undefined;
   let loadingAgentReference: boolean | undefined;
   let pendingMutationsReference: AgentCapabilityState['pendingMutations'] | undefined;
   let projection: ProfileCapabilityProjection | undefined;
@@ -552,6 +556,8 @@ function createProfileCapabilitySelector(agentId: string) {
       && knowledgeDescriptorsReference === state.knowledgeDescriptors
       && bindingsReference === bindings
       && readinessReference === readiness
+      && catalogIssuesReference === state.catalogIssues
+      && lastMutationErrorReference === state.lastMutationError
       && loadingAgentReference === loadingAgent
       && pendingMutationsReference === state.pendingMutations
     ) {
@@ -569,6 +575,8 @@ function createProfileCapabilitySelector(agentId: string) {
     knowledgeDescriptorsReference = state.knowledgeDescriptors;
     bindingsReference = bindings;
     readinessReference = readiness;
+    catalogIssuesReference = state.catalogIssues;
+    lastMutationErrorReference = state.lastMutationError;
     loadingAgentReference = loadingAgent;
     pendingMutationsReference = state.pendingMutations;
     projection = {
@@ -582,6 +590,8 @@ function createProfileCapabilitySelector(agentId: string) {
       skills: source(CapabilitySourceKind.SKILL),
       knowledge: source(CapabilitySourceKind.KNOWLEDGE),
       knowledgeDescriptors: selectKnowledgeResourceDescriptors(state),
+      catalogIssues: state.catalogIssues,
+      lastMutationError: state.lastMutationError,
       loadingAgent,
       pendingMutations: state.pendingMutations,
       loadAgent: state.loadAgent,
@@ -1278,7 +1288,25 @@ export function AgentProfilePage({
   const [systemPromptDirty, setSystemPromptDirty] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
-  const [activeTab, setActiveTab] = useState<ProfileTab>('soul');
+  const capabilityFocus = useAgentStore(
+    (state) => state.capabilityFocusByAgent[profileAgentName] ?? null,
+  );
+  const [tabSelection, setTabSelection] = useState<{
+    handledFocusRequestId?: string;
+    tab: ProfileTab;
+  }>({ tab: 'soul' });
+  const activeTab = (
+    capabilityFocus?.requestId
+    && capabilityFocus.requestId !== tabSelection.handledFocusRequestId
+  )
+    ? 'capabilities'
+    : tabSelection.tab;
+  const setActiveTab = useCallback((tab: ProfileTab) => {
+    setTabSelection({
+      handledFocusRequestId: capabilityFocus?.requestId,
+      tab,
+    });
+  }, [capabilityFocus?.requestId]);
   const [descriptionGenerating, setDescriptionGenerating] = useState(false);
   const [allowedRootsText, setAllowedRootsText] = useState('');
   const [persistedActivityProjection, setPersistedActivityProjection] = useState<{
@@ -1299,6 +1327,7 @@ export function AgentProfilePage({
     [agent?.id],
   );
   const capabilityProjection = useAgentCapabilityStore(capabilitySelector);
+
   const filteredProfileAgents = useMemo(() => {
     const query = agentSearch.trim().toLowerCase();
     if (!query) return agents;
@@ -2723,9 +2752,14 @@ export function AgentProfilePage({
                         ...capabilityProjection.skills.readiness,
                         ...capabilityProjection.knowledge.readiness,
                       ]}
+                      catalogIssues={capabilityProjection.catalogIssues}
+                      lastMutationError={capabilityProjection.lastMutationError}
                       pendingMutations={capabilityProjection.pendingMutations}
                       loading={capabilityProjection.loadingAgent}
                       loadAgent={capabilityProjection.loadAgent}
+                      focusCapabilityId={capabilityFocus?.capabilityId}
+                      focusPermissionKind={capabilityFocus?.permissionKind}
+                      focusRequestId={capabilityFocus?.requestId}
                       upsertBinding={capabilityProjection.upsertBinding}
                       deleteBinding={capabilityProjection.deleteBinding}
                     />

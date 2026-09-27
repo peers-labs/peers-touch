@@ -480,7 +480,13 @@ function isInFlightMessage(message: ChatMessage): boolean {
 }
 
 function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): ChatMessage {
-  const targetOwnsTerminal = Boolean(target.terminalStatus);
+  const sourceOwnsNonTerminalLeaseIncident =
+    source.loading === true
+    && source.terminalStatus === undefined
+    && source.typedError?.error_type === 'CLIENT_LEASE_EXPIRED'
+    && source.typedError?.terminal === false;
+  const targetOwnsTerminal =
+    Boolean(target.terminalStatus) && !sourceOwnsNonTerminalLeaseIncident;
   const terminalStatusMatches = targetOwnsTerminal
     && target.terminalStatus === source.terminalStatus;
   const hasCot = source.toolCalls
@@ -522,6 +528,18 @@ function carryChainOfThoughtFields(target: ChatMessage, source: ChatMessage): Ch
       targetOwnsTerminal ? target.resolution : target.resolution ?? source.resolution,
     budgetNotice: target.budgetNotice ?? source.budgetNotice,
   } : target;
+  if (sourceOwnsNonTerminalLeaseIncident) {
+    return {
+      ...merged,
+      error: source.error,
+      typedError: source.typedError,
+      errorDetail: source.errorDetail,
+      resolution: source.resolution,
+      loading: true,
+      cancelled: false,
+      terminalStatus: undefined,
+    };
+  }
   if (!source.terminalStatus || targetOwnsTerminal) return merged;
   return {
     ...merged,
@@ -603,14 +621,18 @@ export function mergeServerMessages(currentMessages: ChatMessage[], serverMessag
     }
     const isLocalOnly = isOptimisticMessageId(message.id) || isInFlightMessage(message);
     if (!isLocalOnly) continue;
-    if (isSupersededByServer(message, merged)) continue;
+    if (isSupersededByServer(message, serverMessages, currentMessages)) continue;
     merged.push(message);
   }
 
   return merged;
 }
 
-function isSupersededByServer(localMessage: ChatMessage, serverMessages: ChatMessage[]): boolean {
+function isSupersededByServer(
+  localMessage: ChatMessage,
+  serverMessages: ChatMessage[],
+  currentMessages: ChatMessage[],
+): boolean {
   if (localMessage.role === 'user') {
     return serverMessages.some(
       (serverMessage) => serverMessage.role === 'user'
@@ -619,6 +641,28 @@ function isSupersededByServer(localMessage: ChatMessage, serverMessages: ChatMes
     );
   }
   if (localMessage.role === 'assistant') {
+    if (
+      localMessage.error
+      || localMessage.typedError
+      || localMessage.terminalStatus
+    ) {
+      return false;
+    }
+    const localIndex = currentMessages.indexOf(localMessage);
+    const pairedUser = localIndex > 0 ? currentMessages[localIndex - 1] : undefined;
+    if (pairedUser?.role === 'user' && isOptimisticMessageId(pairedUser.id)) {
+      const serverUserIndex = serverMessages.findIndex(
+        (serverMessage) => serverMessage.role === 'user'
+          && serverMessage.content === pairedUser.content
+          && serverMessage.timestamp >= pairedUser.timestamp - 1000,
+      );
+      if (serverUserIndex === -1) return false;
+      return serverMessages.slice(serverUserIndex + 1).some(
+        (serverMessage) => serverMessage.role === 'assistant'
+          && !serverMessage.loading
+          && Boolean(serverMessage.content),
+      );
+    }
     const serverHasCompletedReply = serverMessages.some(
       (serverMessage) => serverMessage.role === 'assistant'
         && !serverMessage.loading
@@ -1368,6 +1412,15 @@ export function isMessageRetryBlocked(
   const matchesActiveTurn = Boolean(
     sourceTurnId && operation?.turnId === sourceTurnId,
   );
+  const sourceIsRetryableTerminal =
+    sourceTerminalStatus === 'failed'
+    || sourceTerminalStatus === 'cancelled'
+    || sourceTerminalStatus === 'interrupted';
+  const matchesTerminalOperation =
+    matchesActiveTurn
+    && sourceIsRetryableTerminal
+    && operation?.runState === sourceTerminalStatus;
+  if (matchesTerminalOperation) return false;
   if (
     matchesActiveTurn
     && sourceTerminalStatus === 'interrupted'

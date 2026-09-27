@@ -45,7 +45,10 @@ func TestPrivateContentAuthorSignatureVerifierUsesAuthorHomeStation(
 		DeviceId: "alice-device",
 	}
 
-	err = (privateContentAuthorSignatureVerifier{actors: actors}).Verify(
+	err = (privateContentAuthorSignatureVerifier{
+		actors:             actors,
+		localStationPeerID: actors.homeStationPeerID,
+	}).Verify(
 		context.Background(),
 		testFederationTransaction{},
 		sender,
@@ -277,6 +280,68 @@ func TestPrivateContentStationSignerUsesCallerTransactionOnSingleConnectionSQLit
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("transactional proof-key access deadlocked")
+	}
+}
+
+type recordingPrivateContentAuthorKeyResolver struct {
+	privateContentActorCapabilities
+	expectedHomeStationPeerID string
+	publicKey                 ed25519.PublicKey
+}
+
+func (r *recordingPrivateContentAuthorKeyResolver) ResolveVerifiedActorDeviceSigningKey(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	_ string,
+	expectedHomeStationPeerID string,
+	_ string,
+	_ string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	r.expectedHomeStationPeerID = expectedHomeStationPeerID
+	return &actormodel.VerifiedActorDeviceSigningKey{
+		Ed25519PublicKey: append([]byte(nil), r.publicKey...),
+	}, nil
+}
+
+func (r *recordingPrivateContentAuthorKeyResolver) ResolveActorHomeStationPeerID(
+	_ context.Context,
+	_ string,
+) (string, error) {
+	return "station-local", nil
+}
+
+func TestPrivateContentAuthorSignatureVerifierBindsLocalHomeStation(
+	t *testing.T,
+) {
+	privateKey := ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize))
+	canonical := []byte("private-content-author-signature")
+	resolver := &recordingPrivateContentAuthorKeyResolver{
+		publicKey: privateKey.Public().(ed25519.PublicKey),
+	}
+	verifier := privateContentAuthorSignatureVerifier{
+		actors:             resolver,
+		localStationPeerID: "station-local",
+	}
+
+	err := verifier.Verify(
+		context.Background(),
+		nil,
+		&actormodel.ActorDeviceRef{
+			Actor:    &actormodel.ActorRef{Ptid: "actor-alice"},
+			DeviceId: "device-one",
+		},
+		"signing-key-one",
+		canonical,
+		ed25519.Sign(privateKey, canonical),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolver.expectedHomeStationPeerID != "station-local" {
+		t.Fatalf(
+			"expected Home Station = %q, want station-local",
+			resolver.expectedHomeStationPeerID,
+		)
 	}
 }
 

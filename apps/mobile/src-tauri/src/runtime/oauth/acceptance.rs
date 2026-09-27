@@ -807,7 +807,7 @@ mod tests {
             assert!(headers.starts_with("POST /oauth/mobile/status HTTP/1.1\r\n"));
             assert!(headers
                 .to_ascii_lowercase()
-                .contains("content-type: application/protobuf"));
+                .contains("content-type: application/x-protobuf"));
             let content_length = headers
                 .lines()
                 .find_map(|line| {
@@ -834,7 +834,7 @@ mod tests {
             .encode_to_vec();
             write!(
                 stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
             )
             .expect("write OAuth response headers");

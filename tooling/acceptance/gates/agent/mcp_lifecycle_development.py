@@ -30,9 +30,10 @@ from tooling.acceptance.core.evidence_store import (
     workspace_id,
 )
 from tooling.acceptance.gates.agent.capability_binding_development import (
-    J02_ACTOR_ACCOUNT,
-    J02_IDENTITY_FIXTURE,
+    OPERATION_SCENARIO_ACTOR_ACCOUNT,
+    OPERATION_SCENARIO_IDENTITY_FIXTURE,
     authenticate_native_client,
+    confirm_native_actor_identity_enrollment,
     copy_native_runtime_logs,
     identity_fixture_evidence,
     persist_native_actor_identity,
@@ -76,7 +77,11 @@ state_dir.mkdir(parents=True, exist_ok=True)
 secret = os.environ["MCA_J04_SECRET_CANARY"]
 tool_name = os.environ["MCA_J04_TOOL_NAME"]
 result_text = os.environ["MCA_J04_RESULT_TEXT"]
-block_on_launch = int(os.environ["MCA_J04_BLOCK_ON_LAUNCH"])
+block_on_launches = {
+    int(value)
+    for value in os.environ["MCA_J04_BLOCK_ON_LAUNCH"].split(",")
+    if value.strip()
+}
 
 def atomic_write(path, value):
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -150,7 +155,7 @@ while True:
     elif method == "notifications/initialized":
         continue
     elif method == "tools/list":
-        if launch == block_on_launch:
+        if launch in block_on_launches:
             atomic_write(
                 state_dir / "blocked-process.json",
                 json.dumps({"launch": launch, "pid": os.getpid(), "port": port}),
@@ -391,11 +396,18 @@ def _client_from_manifest(
         isinstance(station, Mapping) and bool(station.get("endpoint")),
         "J04 runtime manifest has no Station endpoint",
     )
+    require(isinstance(clients, list), "J04 runtime manifest must contain clients")
+    native_clients = [
+        require_mapping(client, "J04 client")
+        for client in clients
+        if isinstance(client, Mapping)
+        and client.get("runtime") == "native-tauri"
+    ]
     require(
-        isinstance(clients, list) and len(clients) == 1,
+        len(native_clients) == 1,
         "J04 runtime manifest must contain exactly one Native client",
     )
-    client = require_mapping(clients[0], "J04 Native client")
+    client = native_clients[0]
     require(
         client.get("runtime") == "native-tauri",
         "J04 runtime manifest client must be native-tauri",
@@ -552,12 +564,32 @@ def main() -> int:
             profile_env,
         )
         seeded_identity = seed_native_actor_identity(
-            fixture_root=J02_IDENTITY_FIXTURE,
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
             target_root=runtime_client.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
         )
         runtime_client.start()
-        login = authenticate_native_client(runtime_client, profile_env)
+        login = authenticate_native_client(
+            runtime_client,
+            profile_env,
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
+        identity_enrollment = confirm_native_actor_identity_enrollment(
+            runtime_client,
+            actor_id=str(login["actorId"]),
+        )
+        identity_metadata = persist_native_actor_identity(
+            source_root=runtime_client.actor_identity_root,
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=str(login["actorId"]),
+            station_accepted=identity_enrollment["accepted"] is True,
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
         prepared_value = runtime_client.harness(
             "runMcpLifecycleDevelopment",
             {
@@ -565,6 +597,7 @@ def main() -> int:
                 "sampleId": f"mca-j04-{artifact_run_id}",
                 "serverName": server_name,
                 "providerBaseUrl": provider_base_url,
+                "providerApiKey": provider_fixture.api_key,
                 "command": sys.executable,
                 "args": [str(fixture_script)],
                 "env": {
@@ -601,7 +634,12 @@ def main() -> int:
         )
 
         runtime_client.restart()
-        authenticate_native_client(runtime_client, profile_env)
+        authenticate_native_client(
+            runtime_client,
+            profile_env,
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
         recovered_value = runtime_client.harness(
             "runMcpLifecycleDevelopment",
             {
@@ -647,17 +685,11 @@ def main() -> int:
             process_evidence,
             canary_leaked=canary_leaked,
         )
-        identity_metadata = persist_native_actor_identity(
-            source_root=runtime_client.actor_identity_root,
-            fixture_root=J02_IDENTITY_FIXTURE,
-            station_url=profile_env["PT_STATION_URL"],
-            actor_id=str(login["actorId"]),
-            station_accepted=True,
-        )
         capture_without_secret["identityFixture"] = identity_fixture_evidence(
             identity_metadata,
             reused=seeded_identity is not None,
         )
+        capture_without_secret["identityEnrollment"] = identity_enrollment
     except BaseException as error:
         primary_error = error
     finally:
@@ -780,7 +812,7 @@ def main() -> int:
             "stationDeploymentEnvironment": deployment_environment,
             "stationBuildCommit": station.live_commit if station else "",
             "clientRuntime": "native-tauri",
-            "actorAccount": J02_ACTOR_ACCOUNT,
+            "actorAccount": OPERATION_SCENARIO_ACTOR_ACCOUNT,
         },
         "assertions": assertions,
         "capture": {
@@ -830,4 +862,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--formal-candidate"]:
+        from tooling.acceptance.gates.agent.mcp_lifecycle_candidate import (
+            main as candidate_main,
+        )
+
+        raise SystemExit(candidate_main())
+    if sys.argv[1:]:
+        raise SystemExit(
+            "usage: mcp_lifecycle_development.py [--formal-candidate]"
+        )
     raise SystemExit(main())

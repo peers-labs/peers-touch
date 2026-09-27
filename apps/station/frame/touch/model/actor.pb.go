@@ -1780,10 +1780,6 @@ type ActorProfile struct {
 	AutoExpireDays            int32                  `protobuf:"varint,27,opt,name=auto_expire_days,proto3" json:"auto_expire_days,omitempty"`
 	Ref                       *ActorRef              `protobuf:"bytes,28,opt,name=ref,proto3" json:"ref,omitempty"`
 	ProfileRevision           uint64                 `protobuf:"varint,29,opt,name=profile_revision,proto3" json:"profile_revision,omitempty"`
-	FederatedHandle           string                 `protobuf:"bytes,30,opt,name=federated_handle,proto3" json:"federated_handle,omitempty"`
-	HomeStationPeerId         string                 `protobuf:"bytes,31,opt,name=home_station_peer_id,proto3" json:"home_station_peer_id,omitempty"`
-	HomeStationDomain         string                 `protobuf:"bytes,32,opt,name=home_station_domain,proto3" json:"home_station_domain,omitempty"`
-	Discoverability           ActorVisibility        `protobuf:"varint,33,opt,name=discoverability,proto3,enum=peers_touch.model.actor.v1.ActorVisibility" json:"discoverability,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -2021,34 +2017,6 @@ func (x *ActorProfile) GetProfileRevision() uint64 {
 	return 0
 }
 
-func (x *ActorProfile) GetFederatedHandle() string {
-	if x != nil {
-		return x.FederatedHandle
-	}
-	return ""
-}
-
-func (x *ActorProfile) GetHomeStationPeerId() string {
-	if x != nil {
-		return x.HomeStationPeerId
-	}
-	return ""
-}
-
-func (x *ActorProfile) GetHomeStationDomain() string {
-	if x != nil {
-		return x.HomeStationDomain
-	}
-	return ""
-}
-
-func (x *ActorProfile) GetDiscoverability() ActorVisibility {
-	if x != nil {
-		return x.Discoverability
-	}
-	return ActorVisibility_ACTOR_VISIBILITY_UNSPECIFIED
-}
-
 type UpdateProfileRequest struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName               *string                `protobuf:"bytes,1,opt,name=display_name,proto3,oneof" json:"display_name,omitempty"`
@@ -2064,7 +2032,6 @@ type UpdateProfileRequest struct {
 	MessagePermission         *string                `protobuf:"bytes,11,opt,name=message_permission,proto3,oneof" json:"message_permission,omitempty"`
 	AutoExpireDays            *int32                 `protobuf:"varint,12,opt,name=auto_expire_days,proto3,oneof" json:"auto_expire_days,omitempty"`
 	ObservedRevision          uint64                 `protobuf:"varint,13,opt,name=observed_revision,proto3" json:"observed_revision,omitempty"`
-	Discoverability           *ActorVisibility       `protobuf:"varint,14,opt,name=discoverability,proto3,enum=peers_touch.model.actor.v1.ActorVisibility,oneof" json:"discoverability,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
 }
@@ -2188,13 +2155,6 @@ func (x *UpdateProfileRequest) GetObservedRevision() uint64 {
 		return x.ObservedRevision
 	}
 	return 0
-}
-
-func (x *UpdateProfileRequest) GetDiscoverability() ActorVisibility {
-	if x != nil && x.Discoverability != nil {
-		return *x.Discoverability
-	}
-	return ActorVisibility_ACTOR_VISIBILITY_UNSPECIFIED
 }
 
 type UpdateProfileResponse struct {
@@ -2511,8 +2471,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x0ePeersTouchInfo\x12\x1e\n" +
 	"\n" +
 	"network_id\x18\x01 \x01(\tR\n" +
-	"network_id\"\x9b\n" +
-	"\n" +
+	"network_id\"\xb2\b\n" +
 	"\fActorProfile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\"\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\fdisplay_name\x12\x1a\n" +
@@ -2545,11 +2504,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x12message_permission\x18\x1a \x01(\tR\x12message_permission\x12*\n" +
 	"\x10auto_expire_days\x18\x1b \x01(\x05R\x10auto_expire_days\x126\n" +
 	"\x03ref\x18\x1c \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x03ref\x12*\n" +
-	"\x10profile_revision\x18\x1d \x01(\x04R\x10profile_revision\x12*\n" +
-	"\x10federated_handle\x18\x1e \x01(\tR\x10federated_handle\x122\n" +
-	"\x14home_station_peer_id\x18\x1f \x01(\tR\x14home_station_peer_id\x120\n" +
-	"\x13home_station_domain\x18  \x01(\tR\x13home_station_domain\x12U\n" +
-	"\x0fdiscoverability\x18! \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityR\x0fdiscoverability\"\xcb\x06\n" +
+	"\x10profile_revision\x18\x1d \x01(\x04R\x10profile_revision\"\xdb\x05\n" +
 	"\x14UpdateProfileRequest\x12'\n" +
 	"\fdisplay_name\x18\x01 \x01(\tH\x00R\fdisplay_name\x88\x01\x01\x12\x17\n" +
 	"\x04note\x18\x02 \x01(\tH\x01R\x04note\x88\x01\x01\x12\x1b\n" +
@@ -2564,9 +2519,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	" \x01(\bH\aR\x1bmanually_approves_followers\x88\x01\x01\x123\n" +
 	"\x12message_permission\x18\v \x01(\tH\bR\x12message_permission\x88\x01\x01\x12/\n" +
 	"\x10auto_expire_days\x18\f \x01(\x05H\tR\x10auto_expire_days\x88\x01\x01\x12,\n" +
-	"\x11observed_revision\x18\r \x01(\x04R\x11observed_revision\x12Z\n" +
-	"\x0fdiscoverability\x18\x0e \x01(\x0e2+.peers_touch.model.actor.v1.ActorVisibilityH\n" +
-	"R\x0fdiscoverability\x88\x01\x01B\x0f\n" +
+	"\x11observed_revision\x18\r \x01(\x04R\x11observed_revisionB\x0f\n" +
 	"\r_display_nameB\a\n" +
 	"\x05_noteB\t\n" +
 	"\a_avatarB\t\n" +
@@ -2576,8 +2529,7 @@ const file_domain_actor_actor_proto_rawDesc = "" +
 	"\x13_default_visibilityB\x1e\n" +
 	"\x1c_manually_approves_followersB\x15\n" +
 	"\x13_message_permissionB\x13\n" +
-	"\x11_auto_expire_daysB\x12\n" +
-	"\x10_discoverability\"\xa7\x01\n" +
+	"\x11_auto_expire_days\"\xa7\x01\n" +
 	"\x15UpdateProfileResponse\x12J\n" +
 	"\aoutcome\x18\x01 \x01(\x0e20.peers_touch.model.actor.v1.ProfileUpdateOutcomeR\aoutcome\x12B\n" +
 	"\aprofile\x18\x02 \x01(\v2(.peers_touch.model.actor.v1.ActorProfileR\aprofile\"Z\n" +
@@ -2702,17 +2654,15 @@ var file_domain_actor_actor_proto_depIdxs = []int32{
 	23, // 28: peers_touch.model.actor.v1.ActorProfile.links:type_name -> peers_touch.model.actor.v1.UserLink
 	24, // 29: peers_touch.model.actor.v1.ActorProfile.peers_touch:type_name -> peers_touch.model.actor.v1.PeersTouchInfo
 	6,  // 30: peers_touch.model.actor.v1.ActorProfile.ref:type_name -> peers_touch.model.actor.v1.ActorRef
-	2,  // 31: peers_touch.model.actor.v1.ActorProfile.discoverability:type_name -> peers_touch.model.actor.v1.ActorVisibility
-	23, // 32: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
-	2,  // 33: peers_touch.model.actor.v1.UpdateProfileRequest.discoverability:type_name -> peers_touch.model.actor.v1.ActorVisibility
-	5,  // 34: peers_touch.model.actor.v1.UpdateProfileResponse.outcome:type_name -> peers_touch.model.actor.v1.ProfileUpdateOutcome
-	25, // 35: peers_touch.model.actor.v1.UpdateProfileResponse.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
-	21, // 36: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
-	37, // [37:37] is the sub-list for method output_type
-	37, // [37:37] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	23, // 31: peers_touch.model.actor.v1.UpdateProfileRequest.links:type_name -> peers_touch.model.actor.v1.UserLink
+	5,  // 32: peers_touch.model.actor.v1.UpdateProfileResponse.outcome:type_name -> peers_touch.model.actor.v1.ProfileUpdateOutcome
+	25, // 33: peers_touch.model.actor.v1.UpdateProfileResponse.profile:type_name -> peers_touch.model.actor.v1.ActorProfile
+	21, // 34: peers_touch.model.actor.v1.ActorList.items:type_name -> peers_touch.model.actor.v1.Actor
+	35, // [35:35] is the sub-list for method output_type
+	35, // [35:35] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_domain_actor_actor_proto_init() }

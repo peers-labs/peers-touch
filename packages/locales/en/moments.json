@@ -157,6 +157,10 @@
   "moments.comment.replyingTo": "Replying to",
   "moments.comment.viewAll": "View comments",
   "moments.comment.hide": "Hide comments",
+  "moments.comment.rateLimited": "Retry time is unavailable. The draft is preserved.",
+  "moments.comment.retryIn": "Try again in {{count}} seconds.",
+  "moments.comment.readbackPending": "Your comment was submitted, but its posting result could not be confirmed. Check the result without sending it again.",
+  "moments.comment.confirmResult": "Confirm posting result",
 
   "moments.author.unknown": "Unknown",
 

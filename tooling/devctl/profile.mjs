@@ -273,15 +273,22 @@ export function resolveProfile(
     resolvedPath,
   );
   const profile = validateProfile(
-    applyMachineAllocation(selectedProfile, machine),
+    explicit
+      ? {
+          ...selectedProfile,
+          PT_DEV_SLOT: String(machine.binding.slot),
+        }
+      : applyMachineAllocation(selectedProfile, machine),
     selectedProfile.PT_DEV_PROFILE,
     resolvedPath,
   );
-  const runtimeRoot = path.join(
-    machine.workspaceStateRoot,
-    'runtime',
-    profile.PT_DEV_PROFILE,
-  );
+  const runtimeRoot = explicit
+    ? path.dirname(explicit)
+    : path.join(
+        machine.workspaceStateRoot,
+        'runtime',
+        profile.PT_DEV_PROFILE,
+      );
 
   return {
     profile,

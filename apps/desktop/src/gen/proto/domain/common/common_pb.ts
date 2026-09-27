@@ -213,4 +213,3 @@ export type EncryptedMediaDescriptor = Message<"peers_touch.model.common.v1.Encr
  */
 export const EncryptedMediaDescriptorSchema: GenMessage<EncryptedMediaDescriptor> = /*@__PURE__*/
   messageDesc(file_domain_common_common, 4);
-

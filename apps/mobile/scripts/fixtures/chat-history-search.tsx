@@ -5,6 +5,7 @@ import { mockIPC } from '@tauri-apps/api/mocks';
 import type { MobileAuthSession } from '../../src/features/auth/authSession';
 import type { ChatConversationKind } from '../../src/features/chat/chatCommands';
 import { useChatHistorySearch } from '../../src/features/chat/useChatHistorySearch';
+import { useGroupStore } from '../../src/features/group/groupStore';
 import { useSocialStore } from '../../src/features/social/socialStore';
 import type {
   MessagingMessageProjection, messagingSearchMessages,
@@ -99,6 +100,7 @@ function account(actor: string): MobileAuthSession {
 
 // Set only inert test identity data. Never bind/install/reconcile a runtime.
 useSocialStore.setState({ authSession: account('alice'), messages: {}, threadMessages: {} });
+useGroupStore.setState({ messages: {}, threadMessages: {} });
 
 function SearchProbe({ kind, conversationId }: {
   kind: ChatConversationKind;
@@ -172,6 +174,8 @@ function IpcControls() {
   const [completion, setCompletion] = useState<Completion>('fresh');
   const socialMessages = useSocialStore((state) => state.messages);
   const socialThreads = useSocialStore((state) => state.threadMessages);
+  const groupMessages = useGroupStore((state) => state.messages);
+  const groupThreads = useGroupStore((state) => state.threadMessages);
   return (
     <section aria-label="Component IPC controls">
       <label>
@@ -197,6 +201,7 @@ function IpcControls() {
       <pre aria-label="Unexpected IPC">{JSON.stringify(unexpectedCommands)}</pre>
       <pre aria-label="Projection keys">{JSON.stringify({
         socialMessages: Object.keys(socialMessages), socialThreads: Object.keys(socialThreads),
+        groupMessages: Object.keys(groupMessages), groupThreads: Object.keys(groupThreads),
       })}</pre>
     </section>
   );

@@ -3,8 +3,8 @@
   "status": "active",
   "product_area": "federation",
   "owners": [
+    "apps/desktop/src/pages/FederationGovernancePage.tsx",
     "apps/desktop/src/components/common/StationPicker.tsx",
-    "apps/desktop/src/components/settings/FederationTab.tsx",
     "apps/desktop/src/components/chat/FindPeopleModal.tsx",
     "apps/desktop/src/store/stationRegistry.ts",
     "apps/desktop/src-tauri/src/application/federation/mod.rs",
@@ -17,7 +17,7 @@
   ],
   "visible_surfaces": [
     {"type": "desktop", "route": "onboarding station picker"},
-    {"type": "desktop", "route": "settings federation context"},
+    {"type": "desktop", "route": "federation governance page"},
     {"type": "desktop", "route": "find people modal"}
   ],
   "required_gates": ["desktop-check", "federation-desktop-gateway-smoke"],
@@ -29,14 +29,13 @@
     ],
     "visible": [
       "StationPicker exposes current station",
-      "Federation settings expose identity, discoverability, context, and connection status",
+      "Federation page exposes Station and Federation context",
       "Find People explains local and federation search context"
     ]
   },
   "negative": [
     "Desktop must not silently connect to the wrong Station",
     "Federation Catalog must not decode a direct typed response as a PeersResponse envelope",
-    "UI labels must not hide Station Federation or Actor identity context",
-    "ordinary Desktop surfaces must not expose Federation governance or Relay topology controls"
+    "UI labels must not hide Station Federation or Actor identity context"
   ]
 }

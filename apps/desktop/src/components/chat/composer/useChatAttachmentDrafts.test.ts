@@ -76,6 +76,8 @@ describe('chat attachment preview substrate', () => {
       filePath: '/tmp/empty.png',
       filename: 'empty.png',
       mimeType: 'image/png',
+      contentKind: 'file',
+      durationMs: 0,
       size: 0,
     }, 'Attachment');
 
@@ -83,6 +85,7 @@ describe('chat attachment preview substrate', () => {
       filePath: '/tmp/empty.png',
       name: 'empty.png',
       mimeType: 'image/png',
+      contentKind: 'file',
       size: 0,
       attempt: 0,
       status: 'failed',
@@ -97,6 +100,8 @@ describe('chat attachment preview substrate', () => {
       filePath: '/tmp/photo.png',
       filename: 'photo.png',
       mimeType: 'image/png',
+      contentKind: 'file' as const,
+      durationMs: 0,
       size: 42,
     };
     const draft = createPickedDraftAttachment(attachment, 'Attachment');
@@ -105,6 +110,7 @@ describe('chat attachment preview substrate', () => {
       filePath: '/tmp/photo.png',
       name: 'photo.png',
       mimeType: 'image/png',
+      contentKind: 'file',
       size: 42,
       attempt: 0,
       status: 'ready',

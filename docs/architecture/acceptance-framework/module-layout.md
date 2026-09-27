@@ -161,7 +161,7 @@ tooling/acceptance/
 | `core/harness.py` | async_harness 通用 JS 桥接，支持命名空间调用 |
 | `core/provisioning.py` | 定义 EnvironmentProvisioner 生命周期、typed service topology、client-to-service bindings、Runtime Resource Manifest、blocked artifact 和 cleanup result |
 | `core/provisioner.py` | 解析并验证worktree Profile、管理Provisioner状态和reverse-order cleanup；D-19后不持有或执行business finalizer |
-| `core/launch_context.py` | 定义不可持久化launch context、capability registry、anonymous channel backend、child binding、隔离Gate bootstrap、framing与cleanup；portable `python3`绑定当前runner exact executable，bootstrap仅直接追加显式venv内经containment校验的`site-packages`，不启用site hook |
+| `core/launch_context.py` | 定义不可持久化launch context、capability registry、anonymous channel backend、child binding、framing与cleanup |
 | `core/bounded_http.py` | 以mandatory byte limit和monotonic deadline读取urllib response；无法控制底层socket deadline时fail closed |
 | `core/result_contracts.py` | 定义无I/O、无Evidence Store依赖的`CanonicalResultTuple`、`PlatformCellResult`、`PlatformMatrixResult`及唯一fold；供Runtime Cell与D-19共同使用 |
 | `core/execution_plan.py` | 解析正式Execution Plan的worktree绑定、current closure与Acceptance Execution合同；不持久化第二套计划状态 |

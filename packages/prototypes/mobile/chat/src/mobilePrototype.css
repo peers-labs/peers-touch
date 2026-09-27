@@ -837,23 +837,6 @@
     &:disabled { pointer-events: none; }
   }
 
-  .mp-call-surface {
-    position: absolute; inset: 0; z-index: 90; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 22px; padding: 32px 24px;
-    background: rgba(17,24,39,0.97); color: #f8fafc;
-  }
-  .mp-call-avatar {
-    display: flex; width: 84px; height: 84px; align-items: center; justify-content: center;
-    border-radius: 50%; background: #f8fafc; color: #111827;
-  }
-  .mp-call-copy { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-  .mp-call-copy strong { font-size: 20px; }
-  .mp-call-copy span { color: rgba(248,250,252,0.7); }
-  .mp-call-end {
-    display: flex; width: 52px; height: 52px; align-items: center; justify-content: center;
-    border: 0; border-radius: 50%; background: #dc2626; color: #fff;
-  }
-
   /* ── Pinned message banner ── */
   .mp-pinned-banner {
     display: flex; align-items: center; gap: 8px; padding: 7px 14px;
@@ -988,29 +971,6 @@
   .peer .mp-file-size { color: var(--mp-gray-400) !important; }
   .mine .mp-file-size { color: rgba(255,255,255,0.7) !important; }
 
-  /* ── Recorded voice ── */
-  .mp-message-voice {
-    display: flex; align-items: center; gap: 9px; width: min(220px, 100%);
-    padding: 10px 12px; border-radius: var(--mp-r-md);
-  }
-  .peer .mp-message-voice { background: var(--mp-bubble-peer); color: var(--mp-gray-800); }
-  .mine .mp-message-voice { background: var(--mp-bubble-own); color: #fff; }
-  .mp-message-voice > button {
-    display: grid; width: 30px; height: 30px; place-items: center; flex: 0 0 auto;
-    border: 0; border-radius: var(--mp-r-sm); color: inherit;
-    background: rgba(255,255,255,0.18);
-  }
-  .peer .mp-message-voice > button { background: var(--mp-gray-100); }
-  .mp-message-voice > span { min-width: 34px; font-size: 12px; font-weight: 650; }
-  .mp-voice-progress {
-    height: 3px; flex: 1; overflow: hidden; border-radius: var(--mp-r-pill);
-    background: rgba(255,255,255,0.28);
-  }
-  .peer .mp-voice-progress { background: var(--mp-gray-200); }
-  .mp-voice-progress > span {
-    display: block; width: 38%; height: 100%; background: currentColor;
-  }
-
   /* ── Message meta ── */
   .mp-message-meta { display: flex; align-items: center; gap: 4px; margin-top: 3px; padding: 0 2px; }
   .mp-message-time { font-size: 10px; color: var(--mp-gray-400); }
@@ -1057,28 +1017,11 @@
     display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px;
     background: #fff; border-top: 0.5px solid var(--mp-gray-200);
   }
-  .mp-composer-attach,
-  .mp-composer-voice {
+  .mp-composer-attach {
     display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;
     border: none; background: var(--mp-gray-100); color: var(--mp-gray-600); cursor: pointer;
     border-radius: var(--mp-r-md); flex: 0 0 auto; transition: background 0.12s; -webkit-tap-highlight-color: transparent;
     &:active { background: var(--mp-gray-200); }
-  }
-  .mp-composer-voice.active { color: var(--mp-error); background: rgba(239,68,68,0.1); }
-  .mp-voice-composer {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 12px; border-top: 0.5px solid var(--mp-gray-200); background: var(--mp-gray-50);
-  }
-  .mp-voice-composer-status,
-  .mp-voice-composer-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .mp-voice-status-dot {
-    width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; background: var(--mp-primary);
-  }
-  .mp-voice-status-dot.recording { background: var(--mp-error); }
-  .mp-voice-composer-status .ant-typography { font-size: 12px; }
-  .mp-voice-composer-actions > button {
-    display: grid; width: 32px; height: 32px; place-items: center;
-    border: 0; border-radius: var(--mp-r-sm); color: var(--mp-gray-600); background: #fff;
   }
   .mp-composer-input {
     flex: 1; min-width: 0;

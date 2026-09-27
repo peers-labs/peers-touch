@@ -5,6 +5,7 @@ import {
 
 import type { MobileAuthSession } from '../features/auth/authSession';
 import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
+import type { GroupState } from '../features/group/groupStore';
 import type { SocialState } from '../features/social/socialStore';
 import {
   createMomentsFeedStore,
@@ -31,10 +32,7 @@ import {
   type NotificationPreferenceProjectionController,
   type ProfileProjectionController,
 } from './profileProjectionDescriptor';
-import {
-  bindMobileMutationAdmission,
-  mobileMutationScopeKey,
-} from './mutationAdmission';
+import { bindMobileMutationAdmission } from './mutationAdmission';
 import { getRecoveryProjection } from './recoveryProjection';
 import {
   createSocialEventIngress,
@@ -152,13 +150,10 @@ export function readActiveSocialIngressState() {
 export function createSocialProjectionRuntime(
   session: MobileAuthSession,
   getSocialStore: () => SocialState,
+  getGroupStore: () => GroupState,
   dependencies: SocialProjectionRuntimeDependencies,
 ): SocialProjectionRuntimeController {
   const sessionKey = mobileAuthScopeKey(session);
-  const mutationScopeKey = mobileMutationScopeKey(
-    session.stationPeerId,
-    session.actorRef.ptid,
-  );
   const momentsGateway = createMomentsGateway(session);
   const momentsProjection = createMomentsProjection();
   const momentsFeed = createMomentsFeedStore(momentsGateway);
@@ -270,13 +265,15 @@ export function createSocialProjectionRuntime(
 
   async function reconcileDomain(domain: ProjectionDomain): Promise<boolean> {
     const socialStore = getSocialStore();
+    const groupStore = getGroupStore();
     switch (domain) {
       case 'social':
         await socialStore.reconcile();
         if (getSocialStore().error) throw getSocialStore().error;
         return true;
       case 'group':
-        await dependencies.wakeMessaging();
+        await groupStore.reconcile();
+        if (getGroupStore().error) throw getGroupStore().error;
         return true;
       case 'moments': {
         const reconciled = await momentsFeed.reconcile();
@@ -393,18 +390,28 @@ export function createSocialProjectionRuntime(
   }
 
   async function routeGroupEvent(event: GroupDataEvent): Promise<void> {
+    const groupStore = getGroupStore();
     switch (event.kind) {
       case 'group-message':
       case 'group-mutation':
         await dependencies.wakeMessaging();
         return;
       case 'group-settings-changed':
-        if (event.groupUlid) {
-          await getSocialStore().loadConversationSettings(event.groupUlid);
-        }
+        if (event.groupUlid) await groupStore.loadSettings(event.groupUlid);
         return;
       case 'group-membership':
-        await dependencies.wakeMessaging();
+        await groupStore.refreshGroups();
+        if (!event.groupUlid) return;
+        if (
+          event.payload.membershipKind === 'DISSOLVED'
+          && groupStore.activeGroupUlid === event.groupUlid
+        ) {
+          await groupStore.selectGroup(null);
+          return;
+        }
+        if (groupStore.activeGroupUlid === event.groupUlid) {
+          await groupStore.loadMembers(event.groupUlid);
+        }
     }
   }
 
@@ -495,7 +502,7 @@ export function createSocialProjectionRuntime(
         throw new Error('mobile.social.projectionRuntimeAlreadyActive');
       }
       releaseMutationAdmission ??= bindMobileMutationAdmission(
-        mutationScopeKey,
+        sessionKey,
         () => ingress.state(),
       );
       activeRuntime = publicRuntime;

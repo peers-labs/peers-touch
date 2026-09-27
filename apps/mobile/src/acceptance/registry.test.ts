@@ -67,6 +67,18 @@ function activateAcceptanceSession(): void {
   }, decision);
 }
 
+function activeAcceptanceScopeKey(): string | null {
+  const current = readSessionRuntimeSnapshot().session;
+  return current
+    ? [
+        current.stationPeerId,
+        current.actorPtid,
+        current.deviceId,
+        current.lifecycleGeneration,
+      ].join('|')
+    : null;
+}
+
 describe('Mobile Acceptance Harness', () => {
   beforeEach(() => {
     invokeMock.mockReset();
@@ -83,9 +95,7 @@ describe('Mobile Acceptance Harness', () => {
     releaseSessionAdmission = bindMobileSessionMutationAdmission(() => {
       const current = readSessionRuntimeSnapshot();
       return {
-        scopeKey: current.session
-          ? `${current.session.stationPeerId}|${current.session.actorPtid}`
-          : null,
+        scopeKey: activeAcceptanceScopeKey(),
         open: current.phase === 'active' && current.writesAllowed,
         reason: `session_${current.phase}`,
       };
@@ -227,7 +237,7 @@ describe('Mobile Acceptance Harness', () => {
   it('reports the effective mutation admission in recovery snapshots', async () => {
     activateAcceptanceSession();
     const releaseAdmission = bindMobileMutationAdmission(
-      'station-peer|ptid:alice',
+      activeAcceptanceScopeKey()!,
       () => ({
         lifecycle: 'active',
         writeAdmission: { open: true },
@@ -548,7 +558,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(source).not.toMatch(/window\.location\.reload/);
   });
 
-  it('requires and projects the explicit Federation search context', () => {
+  it('projects Federation identity from the authoritative search result', () => {
     const source = readFileSync(
       new URL('./actions.ts', import.meta.url),
       'utf8',
@@ -559,10 +569,12 @@ describe('Mobile Acceptance Harness', () => {
     );
 
     expect(searchAction).toContain(
-      "federationId,\n      'social.people.search.federationId'",
+      "requireString(query, 'social.people.search.query')",
     );
-    expect(searchAction).toContain('federationId: contextId');
-    expect(searchAction).not.toContain('result.federationId');
+    expect(searchAction).toContain(
+      "federationId: searchResult.federation?.handle ?? ''",
+    );
+    expect(searchAction).toContain('federationId: result.federationId');
   });
 
   it('routes platform evidence through production Rust commands', async () => {
@@ -841,7 +853,7 @@ describe('Mobile Acceptance Harness', () => {
       state: 'projected',
     });
     const releaseAdmission = bindMobileMutationAdmission(
-      'station-peer|ptid:alice',
+      activeAcceptanceScopeKey()!,
       () => ({
         lifecycle: 'active',
         writeAdmission: { open: true },
@@ -870,6 +882,8 @@ describe('Mobile Acceptance Harness', () => {
       input: {
         stationPeerId: 'station-peer',
         actorPtid: 'ptid:alice',
+        deviceId: 'device-1',
+        lifecycleGeneration: 1,
         peerPtid: 'ptid:bob',
         federationId: 'federation-1',
       },

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS messaging_conversations (
     kind INTEGER NOT NULL,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
+    avatar_object_id TEXT NOT NULL DEFAULT '',
     owner_ptid TEXT NOT NULL,
     membership_epoch INTEGER NOT NULL,
     mls_epoch INTEGER NOT NULL,
@@ -210,6 +211,8 @@ CREATE TABLE IF NOT EXISTS messaging_command_attempts (
 );
 CREATE TABLE IF NOT EXISTS messaging_interaction_intents (
     command_id TEXT PRIMARY KEY,
+    intent_id TEXT NOT NULL,
+    replaces_command_id TEXT NOT NULL DEFAULT '',
     conversation_id TEXT NOT NULL,
     target_message_id TEXT NOT NULL,
     interaction_kind TEXT NOT NULL,
@@ -218,6 +221,28 @@ CREATE TABLE IF NOT EXISTS messaging_interaction_intents (
     created_at_unix_ms INTEGER NOT NULL,
     FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
 );
+CREATE TABLE IF NOT EXISTS messaging_conversation_command_intents (
+    command_id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    intent_kind TEXT NOT NULL
+        CHECK(intent_kind IN ('update', 'dissolve')),
+    state TEXT NOT NULL,
+    created_at_unix_ms INTEGER NOT NULL,
+    FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
+);
+CREATE INDEX IF NOT EXISTS idx_messaging_conversation_command_intents_pending
+    ON messaging_conversation_command_intents(state, created_at_unix_ms);
+CREATE TABLE IF NOT EXISTS messaging_member_authority_intents (
+    command_id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    action INTEGER NOT NULL,
+    target_ptid TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at_unix_ms INTEGER NOT NULL,
+    FOREIGN KEY(command_id) REFERENCES messaging_local_commands(command_id)
+);
+CREATE INDEX IF NOT EXISTS idx_messaging_member_authority_intents_pending
+    ON messaging_member_authority_intents(state, created_at_unix_ms);
 CREATE TABLE IF NOT EXISTS messaging_command_outbox (
     command_id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
@@ -350,12 +375,14 @@ CREATE TABLE IF NOT EXISTS messaging_attachment_drafts (
     filename TEXT NOT NULL,
     mime_type TEXT NOT NULL,
     plaintext_sha256 BLOB NOT NULL CHECK(length(plaintext_sha256) = 32),
+    content_kind INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
     descriptor_bytes BLOB,
-    voice_note_bytes BLOB NOT NULL DEFAULT X'',
     created_at_unix_ms INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messaging_attachment_drafts_message
     ON messaging_attachment_drafts(message_id, attachment_id);
+DROP TABLE IF EXISTS messaging_attachment_metadata;
 CREATE TABLE IF NOT EXISTS messaging_attachment_projections (
     message_id TEXT NOT NULL,
     attachment_id TEXT NOT NULL,
@@ -363,12 +390,13 @@ CREATE TABLE IF NOT EXISTS messaging_attachment_projections (
     storage_ref TEXT NOT NULL,
     filename TEXT NOT NULL,
     mime_type TEXT NOT NULL,
+    content_kind INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
     plaintext_size INTEGER NOT NULL,
     plaintext_sha256 BLOB NOT NULL CHECK(length(plaintext_sha256) = 32),
     object_key BLOB NOT NULL CHECK(length(object_key) = 32),
     base_nonce BLOB NOT NULL CHECK(length(base_nonce) = 12),
     descriptor_bytes BLOB NOT NULL,
-    voice_note_bytes BLOB NOT NULL DEFAULT X'',
     availability_state TEXT NOT NULL,
     local_cache_path TEXT,
     PRIMARY KEY(message_id, attachment_id)
@@ -379,6 +407,9 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messaging_message_search_fts USING fts5(
     plaintext,
     attachment_filenames,
     tokenize = 'unicode61'
+);
+CREATE TABLE IF NOT EXISTS messaging_schema_migrations (
+    migration_id TEXT PRIMARY KEY
 );
 CREATE TABLE IF NOT EXISTS chat_storage_policy (
     id INTEGER PRIMARY KEY CHECK (id = 1),

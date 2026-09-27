@@ -174,6 +174,7 @@ class NonAdvertisementFoundationAdapter:
                     "selector": selector,
                     "locale": runtime_tuple.locale,
                     "textHash": _hash({"text": receiver.get("text", "")}),
+                    "expectedVisible": False,
                     "visible": False,
                 },
                 "station-readback": {

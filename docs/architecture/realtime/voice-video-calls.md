@@ -39,7 +39,7 @@ formalizes it rather than building from scratch.
 | Wire model | `model/domain/realtime/event.proto` | `CallSignal` is stable: `OFFER / ANSWER / CANDIDATE / HANGUP / CALL_REQUEST / CALL_ACCEPT / CALL_REJECT / CALL_END`. The post-merge `event.proto` additions are `MomentEvent`, unrelated to calls. |
 | Station ingress | `apps/station/app/subserver/events/handler.go` | `POST /realtime/signal` decodes `{recipient_actor_id, session_ulid, kind, payload_b64}`, treats payload as opaque (64 KiB cap), fans out to recipient, and echoes to sender for multi-device. No per-feature SSE endpoint. |
 | Desktop media manager | `apps/desktop/src/modules/p2p/callP2p.ts` | Owns `RTCPeerConnection`, sealed signaling (`signalingEnvelopeSeal/Open`), candidate buffering, `CallSnapshot` state machine (`idle/outgoing/incoming/active/ended`), `startCall/acceptCall/rejectCall/endCall/toggleMic/toggleCamera`, and `direct`/`relay` transport probing via `getStats()`. |
-| Desktop surface | `apps/desktop/src/components/chat/CallSurface.tsx` | Renders ringing modal and in-call HUD, subscribes to the call snapshot; consumed by chat page / message area. |
+| Desktop surface | `apps/desktop/src/components/chat/CallSurface.tsx` | Renders the compact global call tray and scalable video surface, subscribes to the call snapshot, and is consumed by the Chat page boundary. |
 | TURN subserver | `apps/station/frame/core/plugin/native/subserver/turn/` | Pion TURN with RFC-5766 short-term credentials (24h TTL); historical password==username bug already fixed. |
 | ICE discovery | `apps/station/.../turn/ice_handler.go` | `/api/v1/turn/ice-servers` returns TURN UDP+TCP URLs from config plus ephemeral credentials. |
 | Desktop ICE bridge | `apps/desktop/src-tauri/src/interface/tauri_commands/ice.rs` | Reduced to a single `ice_get_servers` command; header contract forbids restoring the deleted ICE session polling surface. |
@@ -366,7 +366,7 @@ Target ownership:
 | `socialRealtime` / call runtime | Subscribe to `EVENT.REALTIME_CALL_SIGNAL`, route to call manager, own active call snapshot. |
 | `friendChatP2p` or successor call manager | Own `RTCPeerConnection`, media streams, signal sealing/opening, call state machine. |
 | `socialChat` store or dedicated call store | Expose current call projection to UI. |
-| `CallSurface` | Render global incoming / active / ended state and dispatch user actions. |
+| `CallSurface` | Render global incoming / active / ended state, own compact / Chat-fill / full-screen presentation state, and dispatch user actions. |
 | Chat header / message area | Trigger start-call intents only. |
 
 Long-lived call state must survive navigation between conversations. A user can
@@ -417,6 +417,13 @@ Architecture-level UX invariants:
 - call entry points live in the current chat header;
 - incoming calls are global and not tied to the currently selected chat;
 - active calls remain visible while the user continues messaging;
+- voice, outgoing, and incoming surfaces reuse the compact Agent background
+  operation tray geometry: `240–320px`, `right/bottom: 20px`, and a quiet
+  raised surface without a blocking backdrop;
+- video starts from the same compact anchor with a taller media stage;
+- video can expand to the complete Chat page boundary while leaving the global
+  Desktop navigation visible, and only explicit full-screen mode may cover the
+  entire viewport;
 - video calls show remote video plus local picture-in-picture;
 - every failure state must be user-explainable and localized;
 - no UI surface may expose raw SDP, ICE candidates, TURN usernames, or device ids.

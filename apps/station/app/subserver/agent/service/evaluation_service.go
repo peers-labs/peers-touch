@@ -89,6 +89,7 @@ type EvaluationService struct {
 	repository      *persistence.EvaluationRepository
 	admission       *RuntimeAdmissionResolver
 	turns           EvaluationTurnKernel
+	acceptance      *CapabilityAcceptanceScenarioService
 	now             func() time.Time
 	wake            chan struct{}
 	targetResolver  func(context.Context, *persistence.EvaluationRepository, string, *model.CreateEvaluationRunRequest, bool) (*model.RuntimeSnapshot, frozenEvaluationAgentConfig, error)
@@ -112,6 +113,83 @@ func NewEvaluationService(
 	evaluationService.targetResolver = evaluationService.resolveEvaluationTarget
 	evaluationService.targetValidator = evaluationService.validateFrozenEvaluationTarget
 	return evaluationService
+}
+
+func (s *EvaluationService) SetAcceptanceScenarioService(
+	scenarios *CapabilityAcceptanceScenarioService,
+) {
+	if s != nil {
+		s.acceptance = scenarios
+	}
+}
+
+func (s *EvaluationService) nowForRun(ptid string, runID string) time.Time {
+	now := s.now()
+	if s.acceptance == nil {
+		return now
+	}
+	return s.acceptance.EvaluationNow(ptid, runID, now)
+}
+
+func (s *EvaluationService) reachAcceptanceBarrier(
+	ctx context.Context,
+	ptid string,
+	runID string,
+	barrier string,
+) error {
+	if s.acceptance == nil {
+		return nil
+	}
+	interrupted, err := s.acceptance.ReachEvaluationBarrier(
+		ctx,
+		ptid,
+		runID,
+		barrier,
+	)
+	if err != nil {
+		return err
+	}
+	if interrupted {
+		return errCapabilityAcceptanceWorkerInterrupted
+	}
+	return nil
+}
+
+func (s *EvaluationService) acceptanceCancelDeadline(
+	ctx context.Context,
+	ptid string,
+	runIDs []string,
+) (time.Time, bool, error) {
+	var deadline time.Time
+	found := false
+	for _, runID := range runIDs {
+		run, err := s.repository.GetRun(
+			ctx,
+			strings.TrimSpace(ptid),
+			strings.TrimSpace(runID),
+			false,
+			false,
+		)
+		if err != nil {
+			return time.Time{}, false, evaluationRecordError(
+				"run",
+				runID,
+				err,
+			)
+		}
+		if run.CancelAckDeadline == nil {
+			continue
+		}
+		if found {
+			return time.Time{}, false, evaluationInternal(
+				"resolve acceptance cancellation deadline",
+				errors.New("multiple evaluation cancellation deadlines are committed"),
+			)
+		}
+		deadline = run.CancelAckDeadline.UTC()
+		found = true
+	}
+	return deadline, found, nil
 }
 
 func (s *EvaluationService) CreateBenchmark(
@@ -1069,6 +1147,13 @@ func (s *EvaluationService) replayMutation(
 		return false, nil
 	}
 	if command.PayloadHash != payloadHash {
+		if commandKind == evaluationCommandRetryCases {
+			return true, evaluationRetryConflict(
+				strings.TrimPrefix(command.MutationScope, "parent-run:"),
+				command.ResourceID,
+				"idempotency_key_reused_with_different_case_set",
+			)
+		}
 		return true, evaluationFailure(
 			model.EvaluationErrorCode_EVALUATION_ERROR_CODE_IDEMPOTENCY_CONFLICT,
 			http.StatusConflict,

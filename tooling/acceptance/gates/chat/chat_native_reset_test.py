@@ -7,7 +7,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from tooling.acceptance.fixtures.chat_native_reset import (
     CHAT_TABLES,
@@ -21,7 +21,6 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     fixture_federation_id,
     prepare_local_friend_request_lifecycle,
     read_fixture_actor,
-    refresh_fixture_actor_locator,
     reset_local_client_storage,
     restart_acceptance_station,
     reset_station_chat_state,
@@ -31,10 +30,10 @@ from tooling.acceptance.fixtures.chat_native_reset import (
 
 
 DISPOSABLE_ENVIRONMENT = {
-    "PT_DEPLOY_HOST": "10.0.0.40",
+    "PT_DEPLOY_HOST": "10.37.94.156",
     "PT_DEPLOY_USER": "acceptance",
     "PT_ACCEPTANCE_DISPOSABLE": "1",
-    "PT_ACCEPTANCE_STATION_URL": "http://10.0.0.40:18132",
+    "PT_ACCEPTANCE_STATION_URL": "http://10.37.94.156:18132",
     "PT_ACCEPTANCE_COMPOSE_PROJECT": "pt-chat-native-acceptance",
     "PT_ACCEPTANCE_STATION_CONTAINER": "pt-chat-native-acceptance-station-1",
     "PT_ACCEPTANCE_POSTGRES_CONTAINER": "pt-chat-native-acceptance-postgres-1",
@@ -79,63 +78,6 @@ class FixtureFederationIdentityTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "requires a Home Station"):
             fixture_federation_id((actor,))
 
-    @patch(
-        "tooling.acceptance.fixtures.chat_native_reset.urllib.request.urlopen"
-    )
-    @patch(
-        "tooling.acceptance.fixtures.chat_native_reset._remote_psql"
-    )
-    @patch(
-        "tooling.acceptance.fixtures.chat_native_reset."
-        "verify_disposable_station_runtime"
-    )
-    @patch(
-        "tooling.acceptance.fixtures.chat_native_reset."
-        "acceptance_station_environment",
-        return_value=DISPOSABLE_ENVIRONMENT,
-    )
-    def test_locator_refresh_catches_up_before_republish(
-        self,
-        _environment,
-        _runtime,
-        remote_psql,
-        urlopen,
-    ) -> None:
-        response = MagicMock()
-        response.__enter__.return_value.read.side_effect = [
-            json.dumps(
-                {
-                    "code": "200",
-                    "data": {"seq": 220},
-                }
-            ).encode("utf-8"),
-            json.dumps(
-                {
-                    "code": "200",
-                    "data": {"actor_ptid": "ptid:alice"},
-                }
-            ).encode("utf-8"),
-        ]
-        urlopen.return_value = response
-        actor = self.actor("ptid:alice", "station-four")
-
-        refreshed = refresh_fixture_actor_locator(
-            "http://10.0.0.41:18132",
-            "chat-native-four",
-            actor,
-        )
-
-        self.assertEqual(refreshed.locator_seq, 221)
-        self.assertIn(
-            "SET locator_seq = GREATEST(locator_seq, 220)",
-            remote_psql.call_args.args[1],
-        )
-        publish_request = urlopen.call_args_list[1].args[0]
-        self.assertEqual(
-            publish_request.full_url,
-            "http://10.0.0.41:18132/sub-bootstrap/locator/publish",
-        )
-
 
 class DisposableAcceptanceTargetTest(unittest.TestCase):
     @patch(
@@ -148,7 +90,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             {
                 "PT_DEV_PROFILE": "chat-native-disposable",
                 "PT_STATION_MODE": "remote",
-                "PT_STATION_URL": "http://10.0.0.40:18132",
+                "PT_STATION_URL": "http://10.37.94.156:18132",
             },
         ),
     )
@@ -210,7 +152,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             "Local source Chat Acceptance target mismatch",
         ):
             acceptance_station_environment(
-                "http://10.0.0.42:18080",
+                "http://10.36.3.187:18080",
                 "local",
             )
 
@@ -220,10 +162,10 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
     )
     def test_accepts_exact_disposable_station_url(self, _environment) -> None:
         resolved = acceptance_station_environment(
-            "http://10.0.0.40:18132/",
+            "http://10.37.94.156:18132/",
             "chat-native-acceptance",
         )
-        self.assertEqual(resolved["PT_DEPLOY_HOST"], "10.0.0.40")
+        self.assertEqual(resolved["PT_DEPLOY_HOST"], "10.37.94.156")
 
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
@@ -231,9 +173,9 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
     )
     def test_rejects_non_disposable_targets(self, _environment) -> None:
         for station_url in (
-            "http://10.0.0.40:8080",
-            "http://10.0.0.40:18132/other",
-            "http://10.0.0.40:18132/?target=other",
+            "http://10.37.94.156:8080",
+            "http://10.37.94.156:18132/other",
+            "http://10.37.94.156:18132/?target=other",
         ):
             with self.subTest(station_url=station_url):
                 with self.assertRaisesRegex(
@@ -251,7 +193,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             environment = {
                 **DISPOSABLE_ENVIRONMENT,
                 "PT_ACCEPTANCE_STATION_URL": (
-                    f"http://10.0.0.40:{port}"
+                    f"http://10.37.94.156:{port}"
                 ),
             }
             with self.subTest(port=port):
@@ -265,13 +207,13 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                         f"protected cleanup target port: {port}",
                     ):
                         acceptance_station_environment(
-                            f"http://10.0.0.40:{port}",
+                            f"http://10.37.94.156:{port}",
                             "chat-native-acceptance",
                         )
 
     def test_accepts_exact_profile_authorized_protected_station(self) -> None:
         deployment = {
-            "PT_DEPLOY_HOST": "10.0.0.41",
+            "PT_DEPLOY_HOST": "10.37.245.247",
             "PT_DEPLOY_USER": "acceptance",
             "PT_DEPLOY_RESTART_CMD": (
                 "docker compose -p pt-station -f compose.yml "
@@ -281,7 +223,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         profile = {
             "PT_DEV_PROFILE": "four",
             "PT_STATION_DEPLOY_ENV": "station-four",
-            "PT_STATION_URL": "http://10.0.0.41:18080",
+            "PT_STATION_URL": "http://10.37.245.247:18080",
         }
         with patch.dict(
             os.environ,
@@ -302,7 +244,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
 
         self.assertEqual(
             resolved["PT_ACCEPTANCE_STATION_URL"],
-            "http://10.0.0.41:18080",
+            "http://10.37.245.247:18080",
         )
         self.assertEqual(
             resolved["PT_ACCEPTANCE_STATION_CONTAINER"],
@@ -319,7 +261,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
 
     def test_rejects_profile_authorization_for_another_target(self) -> None:
         deployment = {
-            "PT_DEPLOY_HOST": "10.0.0.41",
+            "PT_DEPLOY_HOST": "10.37.245.247",
             "PT_DEPLOY_USER": "acceptance",
             "PT_DEPLOY_RESTART_CMD": (
                 "docker compose -p pt-station -f compose.yml "
@@ -329,7 +271,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         profile = {
             "PT_DEV_PROFILE": "four",
             "PT_STATION_DEPLOY_ENV": "station-four",
-            "PT_STATION_URL": "http://10.0.0.41:18080",
+            "PT_STATION_URL": "http://10.37.245.247:18080",
         }
         with patch.dict(
             os.environ,
@@ -348,17 +290,17 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                 "Profile-authorized Chat Acceptance reset target mismatch",
             ):
                 acceptance_station_environment(
-                    "http://10.0.0.41:18080",
+                    "http://10.37.245.247:18080",
                     "station-four",
                 )
 
     def test_accepts_exact_environment_authorized_protected_stations(self) -> None:
         deployments = {
             "station-four": {
-                "PT_DEPLOY_HOST": "10.0.0.41",
+                "PT_DEPLOY_HOST": "10.37.245.247",
                 "PT_DEPLOY_USER": "acceptance",
                 "PT_DEPLOY_HEALTH_URL": (
-                    "http://10.0.0.41:18080/sub-oss/healthz"
+                    "http://10.37.245.247:18080/sub-oss/healthz"
                 ),
                 "PT_DEPLOY_RESTART_CMD": (
                     "docker compose -p pt-station -f compose.yml "
@@ -391,7 +333,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             side_effect=lambda name: deployments[name],
         ):
             four = acceptance_station_environment(
-                "http://10.0.0.41:18080",
+                "http://10.37.245.247:18080",
                 "station-four",
             )
             five = acceptance_station_environment(
@@ -405,7 +347,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
 
         self.assertEqual(
             four["PT_ACCEPTANCE_STATION_URL"],
-            "http://10.0.0.41:18080",
+            "http://10.37.245.247:18080",
         )
         self.assertEqual(
             five["PT_ACCEPTANCE_STATION_URL"],
@@ -466,7 +408,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
                 "exactly one authorization mode",
             ):
                 acceptance_station_environment(
-                    "http://10.0.0.41:18080",
+                    "http://10.37.245.247:18080",
                     "station-four",
                 )
 
@@ -474,7 +416,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
         "tooling.acceptance.fixtures.chat_native_reset.deploy_environment",
         return_value={
             **DISPOSABLE_ENVIRONMENT,
-            "PT_ACCEPTANCE_STATION_URL": "http://10.0.0.40:18133",
+            "PT_ACCEPTANCE_STATION_URL": "http://10.37.94.156:18133",
         },
     )
     def test_rejects_unapproved_disposable_station_port(
@@ -486,7 +428,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             "Disposable Chat Acceptance target mismatch",
         ):
             acceptance_station_environment(
-                "http://10.0.0.40:18133",
+                "http://10.37.94.156:18133",
                 "chat-native-acceptance",
             )
 
@@ -503,7 +445,7 @@ class DisposableAcceptanceTargetTest(unittest.TestCase):
             "Disposable Chat Acceptance target mismatch",
         ):
             acceptance_station_environment(
-                "http://10.0.0.40:18132",
+                "http://10.37.94.156:18132",
                 "station-three",
             )
 
@@ -798,7 +740,7 @@ INSERT INTO device_queue_lanes VALUES (
                 "tooling.acceptance.fixtures.chat_native_reset."
                 "acceptance_station_environment",
                 return_value=environment,
-            ), patch(
+            ) as resolve_environment, patch(
                 "tooling.acceptance.fixtures.chat_native_reset."
                 "verify_disposable_station_runtime",
             ):
@@ -807,8 +749,13 @@ INSERT INTO device_queue_lanes VALUES (
                     "source-item",
                     "ptid:bob",
                     "bob-device",
+                    deployment_environment="chat-native-five",
                 )
 
+            resolve_environment.assert_called_once_with(
+                "http://127.0.0.1:18080",
+                "chat-native-five",
+            )
             with closing(sqlite3.connect(database)) as connection:
                 duplicate = connection.execute(
                     """
@@ -847,6 +794,42 @@ WHERE recipient_ptid = 'ptid:bob'
             self.assertEqual(evidence["sourceItemId"], "source-item")
             self.assertEqual(evidence["laneSequence"], 8)
             self.assertEqual(evidence["payloadSha256"], "0304")
+
+    @patch.dict(os.environ, {"CHAT_ACCEPTANCE_RESET": "1"})
+    def test_remote_queue_replay_preserves_event_sequence(self) -> None:
+        with patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "acceptance_station_environment",
+            return_value={"PT_ACCEPTANCE_RUNTIME_KIND": "remote"},
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset."
+            "verify_disposable_station_runtime",
+        ), patch(
+            "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
+            return_value=(
+                '{"sourceItemId":"source-item","duplicateItemId":"duplicate-item",'
+                '"eventId":"event-1","laneSequence":8,'
+                '"payloadSha256":"0304","state":1}'
+            ),
+        ) as remote_psql:
+            duplicate_acceptance_queue_delivery(
+                "http://10.37.221.38:18132",
+                "source-item",
+                "ptid:bob",
+                "bob-device",
+                deployment_environment="chat-native-five",
+            )
+
+        sql = remote_psql.call_args.args[1]
+        self.assertIn(
+            "idempotency_key, event_id, event_sequence, conversation_id",
+            sql,
+        )
+        self.assertIn(
+            "source_row.event_id, source_row.event_sequence,",
+            sql,
+        )
+        self.assertNotIn("acceptance_duplicate_delivery", sql)
 
     def test_reads_fixture_actor_from_owned_local_database(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1033,7 +1016,7 @@ ORDER BY owner_ptid
             summary="",
             icon="",
             image="",
-            url="http://10.0.0.40:18132/actors/alice",
+            url="http://10.37.94.156:18132/actors/alice",
             federated_handle="@alice@station.example",
             home_station_peer_id="peer-station",
             home_station_domain="station.example",
@@ -1047,7 +1030,7 @@ ORDER BY owner_ptid
             summary="",
             icon="",
             image="",
-            url="http://10.0.0.40:18132/actors/bob",
+            url="http://10.37.94.156:18132/actors/bob",
             federated_handle="@bob@station.example",
             home_station_peer_id="peer-station",
             home_station_domain="station.example",
@@ -1073,7 +1056,7 @@ ORDER BY owner_ptid
             "tooling.acceptance.fixtures.chat_native_reset._remote_psql",
         ) as remote_psql:
             seed_bound_contact(
-                "http://10.0.0.40:18132",
+                "http://10.37.94.156:18132",
                 "chat-native-disposable-station",
                 actor,
                 peer,
@@ -1190,7 +1173,7 @@ ORDER BY owner_ptid
         )
 
         seed_bound_contact(
-            "http://10.0.0.40:18132",
+            "http://10.37.94.156:18132",
             "chat-native-acceptance",
             actor,
             peer,
@@ -1201,8 +1184,6 @@ ORDER BY owner_ptid
         self.assertIn("INSERT INTO follows", sql)
         self.assertIn("INSERT INTO federation", sql)
         self.assertIn("INSERT INTO federation_station_membership", sql)
-        self.assertIn("DELETE FROM auth_peer_keys", sql)
-        self.assertIn("AND pinned = FALSE", sql)
         self.assertIn("INSERT INTO social_friend_requests", sql)
         self.assertIn("INSERT INTO social_relationship_projections", sql)
         self.assertNotIn("INSERT INTO friend_chat_friend_requests", sql)
@@ -1282,7 +1263,7 @@ ORDER BY owner_ptid
         )
 
         seed_bound_contact(
-            "http://10.0.0.40:18132",
+            "http://10.37.94.156:18132",
             "chat-native-acceptance",
             actor,
             peer,
@@ -1309,7 +1290,7 @@ ORDER BY owner_ptid
         return_value={
             "PT_DEV_PROFILE": "chat-native-acceptance",
             "PT_STATION_MODE": "remote",
-            "PT_STATION_URL": "http://10.0.0.40:18132",
+            "PT_STATION_URL": "http://10.37.94.156:18132",
             "PT_STATION_DEPLOY_ENV": "chat-native-acceptance",
         },
     )

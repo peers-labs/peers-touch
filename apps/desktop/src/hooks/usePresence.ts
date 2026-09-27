@@ -14,10 +14,9 @@
  *
  *  - `app_launch`        — fired once after `dataReady && authenticated`
  *  - `app_foreground`    — `visibilitychange` (visible) + `focus`
- *  - `app_background`    — `visibilitychange` (hidden) + `blur`
  *  - `network_online`    — `window.online`
  *  - `network_offline`   — `window.offline`
- *  - `heartbeat`         — every `HEARTBEAT_INTERVAL` while visible
+ *  - `heartbeat`         — every `HEARTBEAT_INTERVAL` while authenticated
  *
  * Identity-driven triggers (`identity_restored`, `identity_switched`,
  * `identity_logged_out`) are emitted by the auth flow directly, not by
@@ -32,11 +31,10 @@ import { useSessionStore } from '../store/session';
 import { log } from '../utils/logger';
 
 /**
- * 5 minutes — the safety net pulse. Tight enough to recover from a
- * missed network/visibility event within human-conversation latency,
- * loose enough to be a true backstop rather than a poller.
+ * The Station lease lasts 90 seconds. Renew at one third of that window
+ * so timer throttling or one missed pulse cannot expire an active runtime.
  */
-const HEARTBEAT_INTERVAL = 5 * 60 * 1000;
+export const PRESENCE_HEARTBEAT_INTERVAL_MS = 30 * 1000;
 const SESSION_VALIDATION_INTERVAL = 5 * 1000;
 
 /**
@@ -111,13 +109,11 @@ export function usePresence(): void {
       if (document.visibilityState === 'visible') {
         fire('app_foreground');
         validateActiveSession();
-      } else {
-        fire('app_background');
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
-    // ---- Focus / blur ---------------------------------------------------
+    // ---- Focus ----------------------------------------------------------
     // `focus` doesn't always trigger `visibilitychange` (e.g. clicking
     // outside the window then back), so we add it as a separate hint.
     // The Rust cooldown collapses the duplicate.
@@ -125,9 +121,7 @@ export function usePresence(): void {
       fire('app_foreground');
       validateActiveSession();
     };
-    const onBlur = (): void => fire('app_background');
     window.addEventListener('focus', onFocus);
-    window.addEventListener('blur', onBlur);
 
     // ---- Network --------------------------------------------------------
     const onOnline = (): void => fire('network_online');
@@ -137,10 +131,8 @@ export function usePresence(): void {
 
     // ---- Heartbeat ------------------------------------------------------
     const heartbeat = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fire('heartbeat');
-      }
-    }, HEARTBEAT_INTERVAL);
+      fire('heartbeat');
+    }, PRESENCE_HEARTBEAT_INTERVAL_MS);
 
     const sessionValidation = window.setInterval(
       validateActiveSession,
@@ -153,7 +145,6 @@ export function usePresence(): void {
       unsubSession();
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('focus', onFocus);
-      window.removeEventListener('blur', onBlur);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       window.clearInterval(heartbeat);

@@ -3,6 +3,7 @@ syntax = "proto3";
 package peers_touch.model.agent.v1;
 
 import "domain/agent/agent.proto";
+import "domain/agent/turn_stream.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/agent/model;model";
@@ -136,6 +137,25 @@ enum KnowledgeResourceAvailability {
   KNOWLEDGE_RESOURCE_AVAILABILITY_INDEXING = 2;
   KNOWLEDGE_RESOURCE_AVAILABILITY_UNAVAILABLE = 3;
   KNOWLEDGE_RESOURCE_AVAILABILITY_TOMBSTONED = 4;
+}
+
+enum CapabilityAcceptanceScenarioFamily {
+  CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_UNSPECIFIED = 0;
+  CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_BINDING_J02 = 1;
+  CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_GOVERNED_TOOL_J03 = 2;
+  CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_MCP_J04 = 3;
+  CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_CONNECTOR_J05 = 4;
+  CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_EVALUATION_J06 = 5;
+}
+
+enum CapabilityAcceptanceRuntimeProfile {
+  CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_UNSPECIFIED = 0;
+  CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CONTROL_PLANE = 1;
+  CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_CLIENT_CAPABILITY_TURN = 2;
+  CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CAPABILITY_TURN = 3;
+  CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_UNAVAILABLE_RUNTIME = 4;
+  CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_CONTRACT_ONLY = 5;
+  CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_TURN = 6;
 }
 
 message CapabilityDisplayMetadata {
@@ -485,8 +505,18 @@ message ListCapabilityManifestsRequest {
   repeated CapabilitySourceKind source_kinds = 1;
 }
 
+message CapabilityCatalogIssue {
+  string capability_id = 1;
+  string capability_version = 2;
+  CapabilityCatalogErrorCode code = 3;
+  ErrorPayload error = 4;
+  uint64 revision = 5;
+  google.protobuf.Timestamp observed_at = 6;
+}
+
 message ListCapabilityManifestsResponse {
   repeated CapabilityManifest manifests = 1;
+  repeated CapabilityCatalogIssue issues = 2;
 }
 
 message RetireCapabilityManifestRequest {
@@ -537,6 +567,98 @@ message GetCapabilityReadinessRequest {
 
 message GetCapabilityReadinessResponse {
   CapabilityReadinessSnapshot snapshot = 1;
+}
+
+message PrepareCapabilityAcceptanceScenarioRequest {
+  string run_id = 1;
+  string scenario_execution_id = 2;
+  string cell = 3;
+  string platform = 4;
+  string locale = 5;
+  string ordering = 6;
+  string sample_id = 7;
+  CapabilityAcceptanceScenarioFamily family = 8;
+  CapabilityAcceptanceRuntimeProfile runtime_attestation_profile = 9;
+}
+
+message PrepareCapabilityAcceptanceScenarioResponse {
+  string scenario_handle = 1;
+  repeated string opaque_resource_ids = 2;
+  string source_inventory_hash = 3;
+  string executor_hook_ticket = 4;
+}
+
+message ArmCapabilityAcceptanceExecutorHookRequest {
+  string scenario_handle = 1;
+  string executor_hook_ticket = 2;
+}
+
+message ArmCapabilityAcceptanceExecutorHookResponse {
+  string scenario_handle = 1;
+  string barrier = 2;
+  CapabilityAcceptanceScenarioFamily family = 3;
+}
+
+message ReachCapabilityAcceptanceExecutorBarrierRequest {
+  string scenario_handle = 1;
+  string barrier = 2;
+}
+
+message ReachCapabilityAcceptanceExecutorBarrierResponse {
+  string scenario_handle = 1;
+  string barrier = 2;
+  bool interrupted = 3;
+}
+
+message WaitCapabilityAcceptanceBarrierRequest {
+  string scenario_handle = 1;
+  string barrier = 2;
+}
+
+message WaitCapabilityAcceptanceBarrierResponse {
+  string scenario_handle = 1;
+  string barrier = 2;
+  bool reached = 3;
+}
+
+message ReleaseCapabilityAcceptanceBarrierRequest {
+  string scenario_handle = 1;
+  string barrier = 2;
+}
+
+message ReleaseCapabilityAcceptanceBarrierResponse {
+  string scenario_handle = 1;
+  string barrier = 2;
+}
+
+message AdvanceCapabilityAcceptanceScenarioClockRequest {
+  string scenario_handle = 1;
+  string milestone = 2;
+}
+
+message AdvanceCapabilityAcceptanceScenarioClockResponse {
+  string scenario_handle = 1;
+  string milestone = 2;
+}
+
+message InterruptCapabilityAcceptanceWorkerRequest {
+  string scenario_handle = 1;
+  string barrier = 2;
+}
+
+message InterruptCapabilityAcceptanceWorkerResponse {
+  string scenario_handle = 1;
+  string barrier = 2;
+  bool interrupted = 3;
+}
+
+message CleanupCapabilityAcceptanceScenarioRequest {
+  string scenario_handle = 1;
+}
+
+message CleanupCapabilityAcceptanceScenarioResponse {
+  string scenario_handle = 1;
+  repeated string cleaned_opaque_resource_ids = 2;
 }
 
 message GetEffectiveRuntimeProfileRequest {

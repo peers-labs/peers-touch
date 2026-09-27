@@ -468,4 +468,3 @@ export enum DeviceInboxRejectCode {
  */
 export const DeviceInboxRejectCodeSchema: GenEnum<DeviceInboxRejectCode> = /*@__PURE__*/
   enumDesc(file_domain_chat_queue, 2);
-

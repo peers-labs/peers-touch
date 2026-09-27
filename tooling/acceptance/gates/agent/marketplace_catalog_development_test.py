@@ -204,6 +204,25 @@ class MarketplaceCatalogDevelopmentTest(unittest.TestCase):
         self.assertNotIn("useSkillStore", source)
         self.assertNotIn("useMCPStore", source)
 
+    def test_runner_reuses_station_accepted_actor_identity(self) -> None:
+        source = (
+            ROOT
+            / "tooling/acceptance/gates/agent/marketplace_catalog_development.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('ACTOR_ROLE = "alice"', source)
+        self.assertIn("ACCOUNT = ACTOR_ACCOUNTS[ACTOR_ROLE]", source)
+        self.assertIn(
+            "IDENTITY_FIXTURE = ACTOR_IDENTITY_FIXTURES[ACTOR_ROLE]",
+            source,
+        )
+        self.assertEqual(source.count("fixture=IDENTITY_FIXTURE"), 2)
+        self.assertIn('str(login["stationPeerId"])', source)
+        self.assertIn(
+            'station_accepted=login.get("stationAccepted") is True',
+            source,
+        )
+        self.assertNotIn('ACCOUNT = "alice@p.t"', source)
+
     def test_builtin_sync_uses_authenticated_station_transport(self) -> None:
         source = (
             ROOT

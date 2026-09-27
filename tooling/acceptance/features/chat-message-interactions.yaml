@@ -38,7 +38,8 @@
     "messaging-platform-contract",
     "desktop-check",
     "chat-native-visible-static",
-    "chat-native-interactions-e2e"
+    "chat-native-interactions-e2e",
+    "chat-lifecycle-interactions-group-e2e"
   ],
   "acceptance": {
     "service": [

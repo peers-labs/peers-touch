@@ -21,8 +21,8 @@ use ulid::Ulid;
 use crate::model::{actor, secure_content as wire};
 
 use super::adapter::{
-    publication_command_id, NativeErrorDisposition, SecureContentTransport, SocialObjectCodec,
-    StationObjectTransferTransport,
+    canonical_publication_bytes, publication_command_id, NativeErrorDisposition,
+    SecureContentTransport, SocialObjectCodec, StationObjectTransferTransport,
 };
 use super::store::{PublicationState, StoredPublication};
 use super::{SecureContentLease, SecureContentSupervisor};
@@ -251,6 +251,7 @@ fn create_publication(
             pair.public().to_owned().as_bytes().to_owned(),
         ));
     }
+    sort_prekeys_by_key_id(&mut prekeys);
     let mut request = wire::PublishContentPreKeysRequest {
         publisher: Some(publisher),
         publisher_signing_key_id: lease.session.signing_key_id.clone(),
@@ -260,8 +261,8 @@ fn create_publication(
         command_id: String::new(),
         proof: None,
     };
-    request.command_id = publication_command_id(&request);
-    let request_bytes = request.encode_to_vec();
+    request.command_id = publication_command_id(&request)?;
+    let request_bytes = canonical_publication_bytes(&request)?;
     let request_sha256 = Sha256::digest(&request_bytes).into();
     let command = StoredPublication {
         command_id: request.command_id.clone(),
@@ -283,6 +284,10 @@ fn create_publication(
     Ok(command.command_id)
 }
 
+fn sort_prekeys_by_key_id(prekeys: &mut [wire::ContentOneTimePreKey]) {
+    prekeys.sort_by(|left, right| left.key_id.cmp(&right.key_id));
+}
+
 fn publish_command(
     supervisor: &SecureContentSupervisor,
     lease: &SecureContentLease,
@@ -293,7 +298,38 @@ fn publish_command(
         .store
         .acquire_publication(command_id, lease.session.key.session_generation)?;
     let command = acquired.command;
-    match transport.publish_proof_free(&command.request_bytes) {
+
+    #[cfg(feature = "acceptance-webdriver")]
+    if let Some(ctrl) = supervisor.barrier_controller() {
+        use super::barrier::BarrierName;
+        let token = ctrl.arm(
+            BarrierName::PersistedBeforeSend,
+            command_id,
+            lease.session.key.session_generation,
+            &command.request_bytes,
+        )?;
+        ctrl.wait(&token)?;
+    }
+
+    let transport_result = transport.publish_proof_free(&command.request_bytes);
+
+    #[cfg(feature = "acceptance-webdriver")]
+    if let Some(ctrl) = supervisor.barrier_controller() {
+        use super::barrier::BarrierName;
+        let state = match &transport_result {
+            Ok(_) => b"ok" as &[u8],
+            Err(e) => e.message.as_bytes(),
+        };
+        let token = ctrl.arm(
+            BarrierName::SentBeforeResponse,
+            command_id,
+            lease.session.key.session_generation,
+            state,
+        )?;
+        ctrl.wait(&token)?;
+    }
+
+    match transport_result {
         Ok(_) => {
             if !supervisor.is_current(&lease.session.key) {
                 lease.store.mark_publication_unknown(
@@ -305,6 +341,19 @@ fn publish_command(
                     "secure content publication response crossed a session fence".to_string(),
                 );
             }
+
+            #[cfg(feature = "acceptance-webdriver")]
+            if let Some(ctrl) = supervisor.barrier_controller() {
+                use super::barrier::BarrierName;
+                let token = ctrl.arm(
+                    BarrierName::ResponseBeforeLocalCommit,
+                    command_id,
+                    lease.session.key.session_generation,
+                    command_id.as_bytes(),
+                )?;
+                ctrl.wait(&token)?;
+            }
+
             if !lease.store.mark_publication_published(
                 command_id,
                 command.lease_generation,
@@ -789,6 +838,25 @@ mod tests {
             secure_media_cache_path("ptid:alice", 2, "object-1", "image/webp").unwrap(),
         );
         assert!(secure_cache_path("ptid:alice", 0, "object-1.webp").is_err());
+    }
+
+    #[test]
+    fn publication_prekeys_are_sorted_by_canonical_key_id() {
+        let mut prekeys = vec![
+            wire::ContentOneTimePreKey {
+                key_id: "content-endpoint-b".to_string(),
+                ..Default::default()
+            },
+            wire::ContentOneTimePreKey {
+                key_id: "content-endpoint-a".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        sort_prekeys_by_key_id(&mut prekeys);
+
+        assert_eq!(prekeys[0].key_id, "content-endpoint-a");
+        assert_eq!(prekeys[1].key_id, "content-endpoint-b");
     }
 
     #[test]

@@ -2,8 +2,6 @@ package session
 
 import (
 	"context"
-	"errors"
-	"strings"
 	"sync"
 	"time"
 )
@@ -222,22 +220,4 @@ func (m *Manager) ResolveSessionDeviceID(ctx context.Context, sessionID string) 
 		return resolver.ResolveSessionDeviceID(ctx, sessionID)
 	}
 	return ""
-}
-
-// BindSessionDeviceID atomically binds an authenticated session to its
-// cryptographically enrolled actor device. Existing bindings are immutable.
-func (m *Manager) BindSessionDeviceID(ctx context.Context, sessionID, deviceID string) error {
-	sessionID = strings.TrimSpace(sessionID)
-	deviceID = strings.TrimSpace(deviceID)
-	if sessionID == "" || deviceID == "" {
-		return errors.New("session and device ID are required")
-	}
-	type deviceIDBinder interface {
-		BindSessionDeviceID(ctx context.Context, sessionID, deviceID string) error
-	}
-	binder, ok := m.store.(deviceIDBinder)
-	if !ok {
-		return errors.New("session device binding is unsupported")
-	}
-	return binder.BindSessionDeviceID(ctx, sessionID, deviceID)
 }

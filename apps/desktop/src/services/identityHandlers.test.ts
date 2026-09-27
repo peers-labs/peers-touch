@@ -184,7 +184,7 @@ describe('identity handler actor-scoped projection cleanup', () => {
     expect(mocks.restoreSession).not.toHaveBeenCalled();
   });
 
-  it('restores an unauthenticated unlock session', async () => {
+  it('does not restore a PIN-unlocked session twice', async () => {
     mocks.authenticated = false;
     mocks.currentActorPtid = null;
     const handler = mocks.handlers.get('refresh-current-session');
@@ -196,6 +196,6 @@ describe('identity handler actor-scoped projection cleanup', () => {
       loginMethod: 'password',
     });
 
-    expect(mocks.restoreSession).toHaveBeenCalledOnce();
+    expect(mocks.restoreSession).not.toHaveBeenCalled();
   });
 });

@@ -152,13 +152,9 @@ func (s *ReactionService) Aggregate(ctx context.Context, postID uint64, postAuth
 	return out, nil
 }
 
-// resolvePostMeta looks up the post's storage class without applying
-// the per-viewer visibility filter — class identification is an
-// internal storage concern, NOT an authorisation decision (the
-// authorisation gate is the handler's responsibility before calling
-// React/Unreact). We therefore query the underlying tables directly
-// rather than going through `PrivatePosts.GetByID` whose viewer-bound
-// filter would strip SELF posts when called with `viewerID == 0`.
+// resolvePostMeta looks up the post's storage class. After the W11
+// hard-cut, only public posts are reachable through this path; new
+// private content uses the Secure Content pipeline.
 func (s *ReactionService) resolvePostMeta(ctx context.Context, postIDStr, viewerPTID string) (uint64, string, domain.PostClass, error) {
 	postID := domain.ParseID(postIDStr)
 	if postID == 0 {
@@ -171,13 +167,6 @@ func (s *ReactionService) resolvePostMeta(ctx context.Context, postIDStr, viewer
 	}
 	if pub != nil {
 		return postID, pub.AuthorPTID, domain.PostClassPublic, nil
-	}
-	priv, err := s.repos.PrivatePosts.GetByID(ctx, postID, viewerPTID)
-	if err != nil {
-		return 0, "", "", err
-	}
-	if priv != nil {
-		return postID, priv.AuthorPTID, domain.PostClassPrivate, nil
 	}
 	return 0, "", "", nil
 }
@@ -198,10 +187,8 @@ func (s *ReactionService) refreshSnapshot(ctx context.Context, postID uint64, cl
 	switch class {
 	case domain.PostClassPublic:
 		return s.repos.PublicPosts.UpdateReactionsCount(ctx, postID, string(b))
-	case domain.PostClassPrivate:
-		return s.repos.PrivatePosts.UpdateReactionsCount(ctx, postID, string(b))
 	default:
-		return fmt.Errorf("unknown post class %q", class)
+		return fmt.Errorf("unknown or unreachable post class %q", class)
 	}
 }
 

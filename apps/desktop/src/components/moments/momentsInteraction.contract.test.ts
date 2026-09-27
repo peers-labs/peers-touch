@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { resolvePrivateCommentComposerAction } from './privateCommentComposerState';
 
 function source(relativePath: string): string {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8');
 }
 
 const composerSource = source('./MomentComposer.tsx');
+const commentListSource = source('./CommentList.tsx');
 const detailSource = source('../../pages/moments/MomentDetailPage.tsx');
 const appSource = source('../../pages/moments/MomentsApp.tsx');
 const threadSource = source('./surfaces/SocialThreadSurface.tsx');
@@ -31,6 +33,24 @@ describe('Desktop Moments interaction contract', () => {
     expect(detailSource).toContain('hidden={!commentsOpen}');
     expect(detailSource).toContain('<CommentList');
     expect(appSource).toContain('key={view.postId}');
+  });
+
+  it('keeps a committed private Comment actionable without plaintext', () => {
+    expect(resolvePrivateCommentComposerAction({
+      state: 'COMMENT_FAILED',
+      publicationState: 'COMMITTED_PENDING_READBACK',
+      retryDeadlinePending: false,
+      text: '',
+      draftText: '',
+    })).toBe('reconcile');
+    expect(detailSource).toContain('composerPublicationState');
+    expect(commentListSource).toContain("t('moments.comment.confirmResult')");
+    expect(commentListSource).toContain('committedPendingReadback ? !onRetry : !text.trim()');
+    expect(commentListSource).toContain('setNowUnixMs(Date.now())');
+    expect(commentListSource).toContain('now >= composerRetryNotBeforeUnixMs');
+    expect(detailSource).toContain(
+      "privateThread.state === 'COMMENT_PARENT_UNAVAILABLE'",
+    );
   });
 
   it('navigates from a search result only through its avatar', () => {

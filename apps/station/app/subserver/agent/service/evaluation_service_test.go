@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -493,6 +494,143 @@ func TestEvaluationServiceCancelRun(t *testing.T) {
 	}
 }
 
+func TestEvaluationRunRevisionConflictUsesGenericVersionConflict(t *testing.T) {
+	run := &persistence.EvaluationRun{
+		RunID:    "run-version-conflict",
+		Revision: 7,
+	}
+
+	err := evaluationRunRevisionConflict(run, 6)
+	var conflict *errcode.BizError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("run revision conflict type = %T, want *errcode.BizError", err)
+	}
+	if conflict.Code != errcode.AgentVersionConflict ||
+		conflict.Payload.GetErrorType() != string(errcode.AgentVersionConflict) ||
+		conflict.Payload.GetLocaleKey() != errcode.AgentLifecycleStaleVersionLocaleKey ||
+		conflict.Payload.GetDetails()["resource_kind"] != "evaluation_run" ||
+		conflict.Payload.GetDetails()["resource_id"] != run.RunID ||
+		conflict.Payload.GetDetails()["expected_revision"] != "6" ||
+		conflict.Payload.GetDetails()["actual_revision"] != "7" {
+		t.Fatalf("unexpected run revision conflict: %+v", conflict)
+	}
+}
+
+func TestEvaluationAcceptancePreconditionsUseCanonicalErrors(t *testing.T) {
+	authority := newCapabilityAuthorityTestService(
+		t,
+		"evaluation-acceptance-preconditions",
+	)
+	if err := persistence.MigrateEvaluationAggregate(authority.db); err != nil {
+		t.Fatalf("migrate Evaluation aggregate: %v", err)
+	}
+	kernel := &recordingEvaluationTurnKernel{
+		readbacks: make(map[string]*EvaluationTurnReadback),
+	}
+	evaluation := NewEvaluationService(authority.db, nil, kernel)
+	scenarios := NewCapabilityAcceptanceScenarioService(authority, "run-1")
+	scenarios.SetEvaluationService(evaluation)
+	evaluation.SetAcceptanceScenarioService(scenarios)
+
+	prepare := func(cell string) *model.PrepareCapabilityAcceptanceScenarioResponse {
+		t.Helper()
+		request := capabilityAcceptanceRequest(
+			"run-1",
+			cell,
+			"execution-"+strings.ToLower(cell),
+		)
+		request.Family =
+			model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_EVALUATION_J06
+		request.RuntimeAttestationProfile =
+			model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_CONTROL_PLANE
+		response, err := scenarios.Prepare(
+			context.Background(),
+			capabilityAcceptanceTestActor,
+			request,
+		)
+		if err != nil {
+			t.Fatalf("prepare %s: %v", cell, err)
+		}
+		return response
+	}
+	cleanup := func(response *model.PrepareCapabilityAcceptanceScenarioResponse) {
+		t.Helper()
+		if _, err := scenarios.Cleanup(
+			context.Background(),
+			capabilityAcceptanceTestActor,
+			&model.CleanupCapabilityAcceptanceScenarioRequest{
+				ScenarioHandle: response.GetScenarioHandle(),
+			},
+		); err != nil {
+			t.Fatalf("cleanup Evaluation scenario: %v", err)
+		}
+	}
+
+	targetResponse := prepare("ERR-E02")
+	now := time.Date(2026, 9, 21, 5, 45, 0, 0, time.UTC)
+	targetRun := seedEvaluationRun(
+		t,
+		authority.db,
+		"run-target-invalid",
+		1,
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_PENDING,
+		now,
+	)
+	targetRun.PTID = capabilityAcceptanceTestActor
+	if err := authority.db.Model(targetRun).Update("ptid", targetRun.PTID).Error; err != nil {
+		t.Fatalf("bind target run actor: %v", err)
+	}
+	if err := scenarios.BindEvaluationRun(
+		targetRun.PTID,
+		targetRun.RunID,
+	); err != nil {
+		t.Fatalf("bind target-invalid run: %v", err)
+	}
+	err := evaluation.validateFrozenEvaluationTarget(
+		context.Background(),
+		evaluation.repository,
+		targetRun,
+	)
+	var targetFailure *EvaluationFailure
+	if !errors.As(err, &targetFailure) ||
+		targetFailure.Detail.GetCode() !=
+			model.EvaluationErrorCode_EVALUATION_ERROR_CODE_TARGET_SNAPSHOT_INVALID {
+		t.Fatalf("target-invalid error = %v", err)
+	}
+	if kernel.admitCount != 0 {
+		t.Fatalf("target-invalid path admitted %d Turns", kernel.admitCount)
+	}
+	cleanup(targetResponse)
+
+	evaluatorResponse := prepare("ERR-E05")
+	evaluatorRun := &persistence.EvaluationRun{
+		RunID: "run-evaluator-unavailable",
+		PTID:  capabilityAcceptanceTestActor,
+	}
+	if err := scenarios.BindEvaluationRun(
+		evaluatorRun.PTID,
+		evaluatorRun.RunID,
+	); err != nil {
+		t.Fatalf("bind evaluator-unavailable run: %v", err)
+	}
+	err = evaluation.scheduleEvaluationAttempt(
+		context.Background(),
+		evaluatorRun,
+		&persistence.EvaluationRunCase{CaseID: "case-evaluator-unavailable"},
+		&persistence.EvaluationCaseAttempt{AttemptID: "attempt-evaluator-unavailable"},
+	)
+	var evaluatorFailure *EvaluationFailure
+	if !errors.As(err, &evaluatorFailure) ||
+		evaluatorFailure.Detail.GetCode() !=
+			model.EvaluationErrorCode_EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE {
+		t.Fatalf("evaluator-unavailable error = %v", err)
+	}
+	if kernel.admitCount != 0 {
+		t.Fatalf("evaluator-unavailable path admitted %d Turns", kernel.admitCount)
+	}
+	cleanup(evaluatorResponse)
+}
+
 func TestEvaluationCancellationDeadlineDoesNotSettleBeforeTurnFence(t *testing.T) {
 	db := openEvaluationServiceTestDB(t, "evaluation-cancel-fence-failure")
 	now := time.Date(2026, 9, 17, 9, 21, 0, 0, time.UTC)
@@ -585,6 +723,170 @@ func TestEvaluationCancellationDeadlineDoesNotSettleBeforeTurnFence(t *testing.T
 	}
 }
 
+func TestEvaluationAcceptanceMissingAckUsesScenarioDeadline(t *testing.T) {
+	authority := newCapabilityAuthorityTestService(
+		t,
+		"evaluation-acceptance-cancel-timeout",
+	)
+	if err := persistence.MigrateEvaluationAggregate(authority.db); err != nil {
+		t.Fatalf("migrate Evaluation aggregate: %v", err)
+	}
+	now := time.Date(2026, 9, 21, 6, 15, 0, 0, time.UTC)
+	kernel := &recordingEvaluationTurnKernel{
+		interruptErr: errors.New("Turn already terminal"),
+		readbacks: map[string]*EvaluationTurnReadback{
+			"turn-acceptance-timeout": {
+				TurnID:    "turn-acceptance-timeout",
+				Status:    domain.TurnStatusCompleted,
+				Output:    "J06_OK",
+				TraceID:   "trace-acceptance-timeout",
+				StartedAt: now.Add(-time.Second),
+				EndedAt:   &now,
+			},
+		},
+	}
+	evaluation := NewEvaluationService(authority.db, nil, kernel)
+	evaluation.now = func() time.Time { return now }
+	scenarios := NewCapabilityAcceptanceScenarioService(authority, "run-1")
+	scenarios.SetEvaluationService(evaluation)
+	evaluation.SetAcceptanceScenarioService(scenarios)
+	request := capabilityAcceptanceRequest(
+		"run-1",
+		"R-09",
+		"execution-r09-timeout",
+	)
+	request.Family =
+		model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_EVALUATION_J06
+	request.Ordering = "A"
+	request.RuntimeAttestationProfile =
+		model.CapabilityAcceptanceRuntimeProfile_CAPABILITY_ACCEPTANCE_RUNTIME_PROFILE_STATION_TURN
+	prepared, err := scenarios.Prepare(
+		context.Background(),
+		capabilityAcceptanceTestActor,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("prepare R-09/A: %v", err)
+	}
+	run := seedEvaluationRun(
+		t,
+		authority.db,
+		"run-acceptance-timeout",
+		1,
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCELLING,
+		now,
+	)
+	deadline := now.Add(evaluationCancelTimeout)
+	run.PTID = capabilityAcceptanceTestActor
+	run.CancelIntentFence = "cancel-acceptance-timeout"
+	run.CancelAckDeadline = &deadline
+	if err := authority.db.Model(run).Updates(map[string]interface{}{
+		"ptid":                run.PTID,
+		"cancel_intent_fence": run.CancelIntentFence,
+		"cancel_ack_deadline": deadline,
+	}).Error; err != nil {
+		t.Fatalf("seed cancellation intent: %v", err)
+	}
+	runCase := &persistence.EvaluationRunCase{
+		RunID:          run.RunID,
+		CaseID:         "case-acceptance-timeout",
+		PTID:           run.PTID,
+		Ordinal:        1,
+		SourceRevision: 1,
+		Input:          "question",
+		Expected:       "answer",
+		Rubric:         evaluationRubricExactMatch,
+		RubricVersion:  evaluationRubricExactMatchVersion,
+		TagsJSON:       []byte(`[]`),
+	}
+	if err := authority.db.Create(runCase).Error; err != nil {
+		t.Fatalf("seed cancellation case: %v", err)
+	}
+	attempt := &persistence.EvaluationCaseAttempt{
+		AttemptID:      "attempt-acceptance-timeout",
+		RunID:          run.RunID,
+		CaseID:         runCase.CaseID,
+		Attempt:        1,
+		PTID:           run.PTID,
+		IdempotencyKey: "attempt-acceptance-timeout-key",
+		TurnID:         stringPointer("turn-acceptance-timeout"),
+		Status:         int32(model.EvaluationAttemptStatus_EVALUATION_ATTEMPT_STATUS_RUNNING),
+		StartedAt:      &now,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	if err := authority.db.Create(attempt).Error; err != nil {
+		t.Fatalf("seed cancellation attempt: %v", err)
+	}
+	if err := scenarios.BindEvaluationRun(run.PTID, run.RunID); err != nil {
+		t.Fatalf("bind Evaluation run: %v", err)
+	}
+	barrierResult := make(chan error, 1)
+	go func() {
+		_, barrierErr := scenarios.ReachEvaluationBarrier(
+			context.Background(),
+			run.PTID,
+			run.RunID,
+			capabilityBarrierEvaluationCompletion,
+		)
+		barrierResult <- barrierErr
+	}()
+	waitContext, cancelWait := context.WithTimeout(
+		context.Background(),
+		time.Second,
+	)
+	defer cancelWait()
+	if _, err := scenarios.WaitBarrier(
+		waitContext,
+		run.PTID,
+		&model.WaitCapabilityAcceptanceBarrierRequest{
+			ScenarioHandle: prepared.GetScenarioHandle(),
+			Barrier:        capabilityBarrierEvaluationCompletion,
+		},
+	); err != nil {
+		t.Fatalf("wait for Evaluation barrier: %v", err)
+	}
+	if _, err := scenarios.ReleaseBarrier(
+		context.Background(),
+		run.PTID,
+		&model.ReleaseCapabilityAcceptanceBarrierRequest{
+			ScenarioHandle: prepared.GetScenarioHandle(),
+			Barrier:        capabilityBarrierEvaluationCompletion,
+		},
+	); err != nil {
+		t.Fatalf("release Evaluation barrier: %v", err)
+	}
+	if err := <-barrierResult; err != nil {
+		t.Fatalf("Evaluation barrier returned error: %v", err)
+	}
+	if _, err := scenarios.AdvanceClock(
+		context.Background(),
+		run.PTID,
+		&model.AdvanceCapabilityAcceptanceScenarioClockRequest{
+			ScenarioHandle: prepared.GetScenarioHandle(),
+			Milestone:      capabilityEvaluationCancelDeadline,
+		},
+	); err != nil {
+		t.Fatalf("advance scenario clock: %v", err)
+	}
+	if err := evaluation.ReconcileEvaluationRuns(context.Background()); err != nil {
+		t.Fatalf("reconcile missing cancellation acknowledgement: %v", err)
+	}
+	readback, err := evaluation.GetRun(
+		context.Background(),
+		run.PTID,
+		run.RunID,
+	)
+	if err != nil {
+		t.Fatalf("read timed-out run: %v", err)
+	}
+	if readback.GetRun().GetError().GetCode() !=
+		model.EvaluationErrorCode_EVALUATION_ERROR_CODE_CANCEL_ACK_TIMEOUT ||
+		readback.GetAttempts()[0].GetCancellationAckAt() != nil {
+		t.Fatalf("missing-ACK timeout was not preserved: %+v", readback)
+	}
+}
+
 func TestEvaluationServiceStartRun(t *testing.T) {
 	db := openEvaluationServiceTestDB(t, "evaluation-start-run")
 	service := NewEvaluationService(db, nil, nil)
@@ -626,11 +928,31 @@ func TestEvaluationServiceStartRun(t *testing.T) {
 }
 
 func TestEvaluationServiceRetryCases(t *testing.T) {
-	db := openEvaluationServiceTestDB(t, "evaluation-retry-lineage")
+	testEvaluationServiceRetryCases(
+		t,
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_FAILED,
+	)
+}
+
+func TestEvaluationServiceRetryCasesFromCancelledParent(t *testing.T) {
+	testEvaluationServiceRetryCases(
+		t,
+		model.EvaluationRunStatus_EVALUATION_RUN_STATUS_CANCELLED,
+	)
+}
+
+func testEvaluationServiceRetryCases(
+	t *testing.T,
+	parentStatus model.EvaluationRunStatus,
+) {
+	db := openEvaluationServiceTestDB(
+		t,
+		"evaluation-retry-lineage-"+parentStatus.String(),
+	)
 	service := NewEvaluationService(db, nil, nil)
 	now := time.Date(2026, 9, 17, 9, 25, 0, 0, time.UTC)
 	service.now = func() time.Time { return now }
-	parent := seedEvaluationRun(t, db, "run-parent", 1, model.EvaluationRunStatus_EVALUATION_RUN_STATUS_FAILED, now)
+	parent := seedEvaluationRun(t, db, "run-parent", 1, parentStatus, now)
 	if err := db.Create(&persistence.EvaluationRunCase{
 		RunID:          parent.RunID,
 		CaseID:         "case-retry",
@@ -710,9 +1032,48 @@ func TestEvaluationServiceRetryCases(t *testing.T) {
 		t.Fatalf("reload parent run: %v", err)
 	}
 	if unchanged.Revision != parent.Revision ||
-		model.EvaluationRunStatus(unchanged.Status) !=
-			model.EvaluationRunStatus_EVALUATION_RUN_STATUS_FAILED {
+		model.EvaluationRunStatus(unchanged.Status) != parentStatus {
 		t.Fatalf("retry mutated terminal parent: %+v", unchanged)
+	}
+}
+
+func TestEvaluationRetryIdempotencyPayloadConflictUsesRetryError(t *testing.T) {
+	db := openEvaluationServiceTestDB(t, "evaluation-retry-idempotency-conflict")
+	service := NewEvaluationService(db, nil, nil)
+	if err := service.repository.CreateCommand(
+		context.Background(),
+		&persistence.EvaluationCommand{
+			CommandID:       "command-retry-conflict",
+			PTID:            "ptid:actor-1",
+			CommandKind:     evaluationCommandRetryCases,
+			IdempotencyKey:  "retry-conflict-key",
+			PayloadHash:     "original-payload",
+			MutationScope:   "parent-run:run-parent",
+			ResourceID:      "run-child",
+			ResponsePayload: []byte{},
+			CreatedAt:       time.Date(2026, 9, 21, 6, 0, 0, 0, time.UTC),
+		},
+	); err != nil {
+		t.Fatalf("seed retry command: %v", err)
+	}
+
+	replayed, err := service.replayMutation(
+		context.Background(),
+		service.repository,
+		"ptid:actor-1",
+		evaluationCommandRetryCases,
+		"retry-conflict-key",
+		"different-payload",
+		&model.RetryEvaluationCasesResponse{},
+	)
+	var failure *EvaluationFailure
+	if !replayed ||
+		!errors.As(err, &failure) ||
+		failure.Detail.GetCode() !=
+			model.EvaluationErrorCode_EVALUATION_ERROR_CODE_CASE_RETRY_CONFLICT ||
+		failure.Detail.GetDetails()["parent_run_id"] != "run-parent" ||
+		failure.Detail.GetDetails()["existing_child_run_id"] != "run-child" {
+		t.Fatalf("unexpected retry idempotency conflict: replayed=%v err=%v", replayed, err)
 	}
 }
 

@@ -4,7 +4,6 @@ import { Button, Dropdown, Typography, theme, message } from 'antd';
 import { MoreHorizontal } from 'lucide-react';
 import {
   Audience_Kind,
-  PostVisibility,
   RelationshipReason_Kind,
   PostType,
   ReactionKind,
@@ -213,7 +212,7 @@ export function MomentCard({
 }: MomentCardProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
-  const selfStationDomain = useActiveMomentsFederationSlice((s) => s.self?.home_station_domain);
+  const selfStationDomain = useActiveMomentsFederationSlice((s) => s.self?.homeStationDomain);
   const {
     privateProjection,
     privatePlatform,
@@ -232,17 +231,13 @@ export function MomentCard({
 
   const author = post.author;
   const audience = post.audience;
-  const privateByLegacyVisibility = post.visibility === PostVisibility.PRIVATE;
   const audienceKind =
     explanation?.audienceExplanation?.kind
     ?? audience?.kind
-    ?? (privateByLegacyVisibility ? Audience_Kind.FRIENDS : Audience_Kind.PUBLIC);
-  const isPrivate = (
-    audience?.kind !== undefined
-    && audience.kind !== Audience_Kind.KIND_UNSPECIFIED
-  )
-    ? audience.kind === Audience_Kind.FRIENDS
-    : privateByLegacyVisibility;
+    ?? Audience_Kind.PUBLIC;
+  const isPrivate =
+    audienceKind !== Audience_Kind.PUBLIC
+    && audienceKind !== Audience_Kind.KIND_UNSPECIFIED;
   const privateState = privateProjection?.state ?? (
     privatePlatform === 'native'
       ? 'LOADING_AUTHORIZED_RESOURCE'

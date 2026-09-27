@@ -744,6 +744,29 @@ class AgentHarnessStaticTest(unittest.TestCase):
             completion_start,
         )
         completion = self.source[completion_start:completion_end]
+        conversation_readback = completion.index(
+            "const stationSnapshot = await foundationConversationReadback(",
+        )
+        station_assistant = completion.index(
+            "const stationAssistant = [...stationSnapshot.messages]",
+            conversation_readback,
+        )
+        message_reconciliation = completion.index(
+            "await useChatStore.getState().syncMessages();",
+            station_assistant,
+        )
+        canonical_projection = completion.index(
+            "'Foundation AS-F06 canonical terminal projection'",
+            message_reconciliation,
+        )
+        terminal_evidence = completion.index(
+            "const terminalEvidence = await foundationTurnEvidence(",
+            canonical_projection,
+        )
+        self.assertLess(conversation_readback, station_assistant)
+        self.assertLess(station_assistant, message_reconciliation)
+        self.assertLess(message_reconciliation, canonical_projection)
+        self.assertLess(canonical_projection, terminal_evidence)
         evidence_sync = completion.index("await foundationF06ReplayRecording")
         latest_handoff = completion.index(
             "const latestHandoff = readFoundationF06Handoff",
@@ -878,6 +901,26 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("localAttemptDelta", scenario)
         self.assertIn("sideEffectDelta", scenario)
         self.assertIn("crossDeviceSession.session_id", scenario)
+        fresh_session_read = scenario.index(
+            "await api.listAgentCapabilitySessions()"
+        )
+        cross_device_selection = scenario.index(
+            "const crossDeviceCandidates = stationSessionsBeforeControls.sessions"
+        )
+        self.assertLess(fresh_session_read, cross_device_selection)
+        self.assertIn(".sort((left, right) => {", scenario)
+        self.assertIn(
+            "Date.parse(timestampIso(right.expires_at))",
+            scenario,
+        )
+        self.assertIn(
+            "right.session_id.localeCompare(left.session_id)",
+            scenario,
+        )
+        self.assertNotIn(
+            "input.capabilitySessions.station.sessions.find(",
+            scenario,
+        )
 
     def test_foundation_readiness_turn_disables_tool_bindings(self) -> None:
         direct_probe = self.source.index("async foundationDirectProbe")
@@ -925,6 +968,23 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertLess(
             scenario.index("'Foundation AS-F02 queue projection'"),
             scenario.index("return foundationDomSnapshot();"),
+        )
+        recovery_snapshot = scenario.index(
+            "const recoveryVisibleBeforeAction ="
+        )
+        queue_focus_snapshot = scenario.index(
+            "const queueFocusedAfterAction ="
+        )
+        cancellation = scenario.index(
+            "await cancelFoundationQueuedTurns(conversation.conversation_id)"
+        )
+        self.assertLess(recovery_snapshot, cancellation)
+        self.assertLess(queue_focus_snapshot, cancellation)
+        self.assertIn("visible: recoveryVisibleBeforeAction", scenario)
+        self.assertIn("queueFocused: queueFocusedAfterAction", scenario)
+        self.assertNotIn(
+            "visible: queueFullRecovery.getClientRects().length > 0",
+            scenario,
         )
 
     def test_queue_development_slice_stops_after_recovery_and_cleans_up(self) -> None:
@@ -975,7 +1035,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_model_unavailable_development_journey_uses_real_provider(self) -> None:
         start = self.source.index("async runDevelopmentProviderModelUnavailable")
-        end = self.source.index("async sendMessage", start)
+        end = self.source.index("async runDevelopmentProviderTimeout", start)
         scenario = self.source[start:end]
 
         self.assertIn("await api.addModel(sourceAgent.provider", scenario)
@@ -1008,7 +1068,26 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertIn("await waitForCapabilitySessionEvidence()", scenario)
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        readback_index = scenario.index(
+            "const [readbackBefore, tracesBefore, queueBefore]"
+        )
+        selection_index = scenario.index(
+            "await useChatStore.getState().selectSession(conversationId)",
+            readback_index,
+        )
+        message_baseline_index = scenario.index(
+            "const messageCountBefore",
+            selection_index,
+        )
+        self.assertLess(readback_index, selection_index)
+        self.assertLess(selection_index, message_baseline_index)
         self.assertIn("=== 'PROVIDER_MODEL_UNAVAILABLE'", scenario)
+        self.assertIn("EVENT.AGENT_TURN_STREAM_EVENT", scenario)
+        self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
+        self.assertIn(
+            "normalizeProjectedStationPayload(sourceDelivery.rawPayload.data)",
+            scenario,
+        )
         self.assertIn(
             '[data-pt-agent-message-error-recovery="choose-compatible-model"]',
             scenario,
@@ -1018,8 +1097,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "            'providerCalls',\n            'provider_calls',",
             scenario,
         )
-        self.assertIn("latestProviderCalls.length === 1", scenario)
-        self.assertIn("zeroSuccessfulCompletion:", scenario)
+        self.assertIn("providerCallCount: latestProviderCalls.length", scenario)
+        self.assertIn("completedAssistantCount:", scenario)
+        self.assertIn("buildDirectRuntimeAttestation(", scenario)
+        self.assertIn("evaluateBaseProviderModelUnavailableFacts(", scenario)
+        self.assertIn("scenarioFacts.cleanup = cleanup", scenario)
+        for role in (
+            "'receiver-dom':",
+            "'station-readback':",
+            "'runtime-events':",
+            "'measurement-report':",
+            "'side-effect-count':",
+            "replay: scenarioFacts.replay",
+        ):
+            self.assertIn(role, scenario)
         self.assertIn(
             "const deletionErrorCode = await deleteFoundationConversation(",
             scenario,
@@ -1035,6 +1126,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("disposableAgentDeleted,", scenario)
         self.assertIn("modelAdded,", scenario)
         self.assertIn("modelRemoved,", scenario)
+        self.assertIn(
+            "resourceKind: 'provider-model-unavailable-fixture'",
+            scenario,
+        )
+        self.assertIn(
+            "resourceIdHash: await sha256Hex(stableJson({",
+            scenario,
+        )
 
     def test_provider_timeout_development_journey_uses_real_provider(self) -> None:
         start = self.source.index("async runDevelopmentProviderTimeout")
@@ -1104,6 +1203,8 @@ class AgentHarnessStaticTest(unittest.TestCase):
         scenario = self.source[start:end]
 
         self.assertIn("runFoundationToolLoopBudget({", scenario)
+        self.assertIn("platform = 'desktop_app'", scenario)
+        self.assertIn("foundationToolFixture(agentId, platform)", scenario)
         self.assertIn("selectConversation: true", scenario)
         selection = scenario.index(
             "await useChatStore.getState().selectSession(conversationId);",
@@ -1123,6 +1224,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "providerCallsAfterAction === providerCallsBeforeAction",
             scenario,
         )
+        self.assertIn("scenarioFacts,", scenario)
+        self.assertIn("runtimeAttestation,", scenario)
+        self.assertIn("'station-readback':", scenario)
+        self.assertIn("'runtime-events':", scenario)
+        self.assertIn("'measurement-report':", scenario)
+        self.assertIn("'side-effect-count':", scenario)
+        self.assertIn("replay: scenarioFacts.replay", scenario)
+        self.assertIn("resourceKind: 'loop-budget-fixture'", scenario)
         self.assertIn(
             "await cleanupFoundationToolConversation(conversationId, turnId)",
             scenario,
@@ -1353,6 +1462,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         ]
         self.assertLess(
             branch_action.index("await branchStoreBefore.selectSession("),
+            branch_action.index("await useChatStore.getState().branchFromMessage("),
+        )
+        self.assertLess(
+            branch_action.index("await branchStoreBefore.loadSessions();"),
             branch_action.index("await useChatStore.getState().branchFromMessage("),
         )
 
@@ -1645,9 +1758,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
         gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
         auth_service = DESKTOP_AUTH_SERVICE.read_text(encoding="utf-8")
 
-        self.assertNotIn('"auth_' + 'login" =>', gateway)
+        self.assertIn(
+            "bind_gateway_auth_result(state, app_auth::auth_login(input, state))",
+            gateway,
+        )
         self.assertIn(
             "bind_gateway_auth_result(state, app_auth::access_submit_login(input, state))",
+            gateway,
+        )
+        self.assertIn(
+            '"station_binding_complete" =>',
+            gateway,
+        )
+        self.assertIn(
+            "station_binding_complete_authenticated(",
             gateway,
         )
         self.assertIn(
@@ -1662,6 +1786,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             auth_service,
         )
         self.assertNotIn('"device_type": "desktop"', auth_service)
+
+    def test_browser_model_delete_uses_station_provider_owner(self) -> None:
+        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+        start = gateway.index('"model_delete" =>')
+        end = gateway.index('"model_fetch_remote" =>', start)
+        model_delete = gateway[start:end]
+
+        self.assertIn("token_from_state(state)", model_delete)
+        self.assertIn("app_provider::model_delete(", model_delete)
+        self.assertNotIn("models module removed", model_delete)
 
     def test_harness_exposes_r6_production_actions_and_readback(self) -> None:
         for method in (
@@ -1844,6 +1978,19 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "(error as { code?: unknown }).code === 'NOT_FOUND'",
             self.source,
         )
+        replay = scenario.index(
+            "const replayed = await runFoundationForbiddenActorAttempt"
+        )
+        receiver_restore = scenario.index(
+            "await useChatStore.getState().selectSession(resourceId);",
+            replay,
+        )
+        receiver_wait = scenario.index(
+            "'forbidden actor receiver'",
+            receiver_restore,
+        )
+        self.assertLess(replay, receiver_restore)
+        self.assertLess(receiver_restore, receiver_wait)
         self.assertNotIn("mock", scenario.lower())
 
         direct_probe_start = self.source.index("async foundationDirectProbe")
@@ -1883,21 +2030,17 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario_start,
         )
         scenario = self.source[scenario_start:scenario_end]
-        setup = scenario[:scenario.index("let providerSetupAttempted")]
-
-        self.assertIn("input.agent.provider !== 'ark'", scenario)
-        self.assertIn("const fixtureProviderId = 'anthropic'", scenario)
-        self.assertIn("if (catalogCandidate.version > 0)", setup)
-        self.assertIn("await api.deleteProvider(fixtureProviderId)", setup)
         self.assertIn(
-            "catalogCandidate = await api.getProvider(fixtureProviderId)",
-            setup,
+            "createFoundationDisposableRuntimeFixture(",
+            scenario,
         )
-        self.assertEqual(
-            scenario.count("await api.deleteProvider(fixtureProviderId)"),
-            2,
+        self.assertIn("const fixtureProviderId = runtimeFixture.providerId", scenario)
+        self.assertIn("const fixtureModelId = runtimeFixture.modelId", scenario)
+        self.assertIn(
+            "deleteFoundationDisposableRuntimeFixture(runtimeFixture)",
+            scenario,
         )
-        self.assertIn("sourceProvider.api_key", scenario)
+        self.assertNotIn("sourceProvider.api_key", scenario)
         self.assertIn("foundationToolFixture(disposableAgentId, 'browser')", scenario)
         self.assertIn("'native-tools'", scenario)
         self.assertIn("CAPABILITY_READINESS_STATE_UNAVAILABLE", scenario)
@@ -1927,7 +2070,6 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "`[data-pt-agent-profile-model=\"${disposableAgentId}\"]`",
             scenario,
         )
-        self.assertIn("api.deleteProvider(fixtureProviderId)", scenario)
         self.assertIn("api.deleteAgent(disposableAgentId)", scenario)
         self.assertIn(
             "conversation.status === 'deleted'",
@@ -2155,6 +2297,51 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("successfulAssistantCount", scenario)
         self.assertIn("successfulAssistantPeakCount", scenario)
         self.assertIn("successfulAssistantOptimistic", scenario)
+        self.assertIn(
+            "'invalid reference canonical assistant receiver'",
+            scenario,
+        )
+        station_convergence = scenario.index(
+            "await waitForFoundationCanonicalAssistantReadback({"
+        )
+        projection_sync = scenario.index(
+            "await useChatStore.getState().syncMessages();",
+            station_convergence,
+        )
+        canonical_projection = scenario.index(
+            "'invalid reference canonical assistant response'",
+            projection_sync,
+        )
+        self.assertLess(station_convergence, projection_sync)
+        self.assertLess(projection_sync, canonical_projection)
+        readback_start = self.source.index(
+            "async function waitForFoundationCanonicalAssistantReadback"
+        )
+        readback_end = self.source.index(
+            "async function foundationTurnEvidence",
+            readback_start,
+        )
+        readback = self.source[readback_start:readback_end]
+        self.assertIn("matching.length === 1", readback)
+        self.assertIn(
+            "String(message.status).toLowerCase() === 'completed'",
+            readback,
+        )
+        self.assertIn(
+            "message.content.trim() === input.expectedContent",
+            readback,
+        )
+        self.assertIn(
+            "'Return only the exact ASCII token below.'",
+            scenario,
+        )
+        self.assertIn(
+            "'Do not translate it or add quotes, punctuation, Markdown, or "
+            "other text.'",
+            scenario,
+        )
+        self.assertIn("{ thinkingMode: 'disabled' }", scenario)
+        self.assertIn("await restoreThinkingMode()", scenario)
         self.assertIn("foundationExecutionSnapshot(", scenario)
         self.assertIn("foundationConversationReadback(", scenario)
         self.assertIn("successfulProviderExecutionDelta", scenario)
@@ -2177,6 +2364,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("toolName: 'local_file_read'", scenario)
         self.assertIn("fixture.manifest.capabilityId !== 'filesystem.read'", scenario)
         self.assertIn("path: `missing-${input.sampleId", scenario)
+        chat_surface = scenario.index(
+            "setAgentSurface(agent.name, 'chat')",
+        )
+        turn_start = scenario.index("await startFoundationToolTurn({")
+        self.assertLess(chat_surface, turn_start)
+        self.assertIn("'invalid-resource Agent chat surface'", scenario)
         self.assertIn(
             '[data-pt-agent-tool-decision="approve"]',
             scenario,
@@ -2185,6 +2378,24 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("approve.click()", scenario)
         self.assertIn("CLIENT_INVALID_RESOURCE_REFERENCE", scenario)
         self.assertIn("agent.errors.invalidResourceReference", scenario)
+        self.assertIn(
+            "findVisibleInvalidResourceErrorSurface",
+            scenario,
+        )
+        canonical_readback = scenario.index(
+            "const readback = await foundationConversationReadback(",
+        )
+        receiver_reconciliation = scenario.index(
+            "await useChatStore.getState().syncMessages();",
+            canonical_readback,
+        )
+        current_surface = scenario.index(
+            "let errorSurface = findVisibleInvalidResourceErrorSurface();",
+            receiver_reconciliation,
+        )
+        self.assertLess(canonical_readback, receiver_reconciliation)
+        self.assertLess(receiver_reconciliation, current_surface)
+        self.assertIn("'invalid-resource current error surface'", scenario)
         self.assertIn(
             '[data-pt-agent-message-error-recovery="choose-resource-again"]',
             scenario,
@@ -2363,6 +2574,19 @@ class AgentHarnessStaticTest(unittest.TestCase):
             encoding="utf-8"
         )
 
+        direct_probe_start = self.source.index("async foundationDirectProbe")
+        direct_probe = self.source[direct_probe_start:]
+        chat_surface = direct_probe.index(
+            "agentState.setAgentSurface(agent.name, 'chat')",
+        )
+        duplicate_scenario = direct_probe.index(
+            "runFoundationDuplicateConflictScenario({",
+        )
+        self.assertLess(chat_surface, duplicate_scenario)
+        self.assertIn(
+            "'Foundation direct-probe Agent chat surface'",
+            direct_probe,
+        )
         self.assertIn("clientIdempotencyKey: idempotencyKey", scenario)
         self.assertIn("ADMISSION_DUPLICATE_CONFLICT", scenario)
         self.assertIn("sourceDelivery.transport !== 'station-sse'", scenario)
@@ -2755,6 +2979,24 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn('"oss_resolve_url"', gateway)
         self.assertIn('"oss_delete_file"', gateway)
 
+    def test_attachment_rejection_precedes_generic_rust_error_code(self) -> None:
+        error_code_start = self.source.index(
+            "function observedErrorCode(error: unknown): string",
+        )
+        error_code_end = self.source.index(
+            "function isFoundationResourceNotFound",
+            error_code_start,
+        )
+        error_code = self.source[error_code_start:error_code_end]
+
+        attachment_rejection = error_code.index(
+            "message.includes('agent.errors.attachmentRejected')",
+        )
+        generic_structured_code = error_code.index(
+            "const structuredCode = (error as { code?: string }).code",
+        )
+        self.assertLess(attachment_rejection, generic_structured_code)
+
     def test_agent_file_picker_uses_the_portable_attachment_mime_contract(self) -> None:
         chat_input = DESKTOP_CHAT_INPUT.read_text(encoding="utf-8")
         self.assertIn("AGENT_ATTACHMENT_ACCEPT", chat_input)
@@ -2899,8 +3141,8 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
     def test_browser_supervisor_has_no_desktop_execution_capabilities(self) -> None:
         source = CAPABILITY_SUPERVISOR.read_text(encoding="utf-8")
         self.assertIn("ClientSurface::Browser", source)
-        self.assertIn("return Vec::new()", source)
-        self.assertIn("if self.surface == ClientSurface::Browser", source)
+        self.assertIn("if surface == ClientSurface::Desktop", source)
+        self.assertIn("assert!(contracts.is_empty())", source)
         self.assertIn("(None, None, None)", source)
 
     def test_browser_session_is_opened_by_web_runtime_not_process_boot(self) -> None:
@@ -3049,7 +3291,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "async function resolveFoundationToolTurnSession"
         )
         resolver_end = source.index(
-            "function withoutDiagnosticGenerationTime",
+            "async function refreshGovernedToolCapabilitySession",
             resolver_start,
         )
         resolver = source[resolver_start:resolver_end]
@@ -3320,17 +3562,18 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertNotIn("setTimeout(resolve, 50)", scenario)
         self.assertNotIn("disconnectTransport()", scenario)
 
-    def test_as_f06_waits_for_an_acknowledged_text_prefix(self) -> None:
+    def test_as_f06_requires_text_only_for_the_text_prefix_boundary(self) -> None:
         source = HARNESS.read_text(encoding="utf-8")
         start = source.index("const textEvents = durableEvents.filter")
         end = source.index("const chatBefore =", start)
         prefix_boundary = source[start:end]
 
         self.assertIn("Number(candidate.data.seq ?? 0) <= acknowledgedCursor", prefix_boundary)
-        self.assertIn("if (textEvents.length === 0)", prefix_boundary)
+        self.assertIn("textEvents.length === 0", prefix_boundary)
+        self.assertIn("faultBoundaryMode === 'text-prefix'", prefix_boundary)
         self.assertIn("'prefix-not-acknowledged'", prefix_boundary)
         self.assertLess(
-            prefix_boundary.index("if (textEvents.length === 0)"),
+            prefix_boundary.index("textEvents.length === 0"),
             prefix_boundary.index("if (!prefix)"),
         )
 
@@ -3397,8 +3640,11 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
         self.assertIn("approval_required", source)
         self.assertIn("chat.message.toolCall.approve", source)
         self.assertIn("toolRuntime.getSnapshot", source)
-        self.assertIn("useState(actionableToolState)", source)
-        self.assertIn("if (actionableToolState) setExpanded(true)", source)
+        self.assertIn("const [expanded, setExpanded] = useState(false)", source)
+        self.assertIn(
+            "expanded || actionableToolState || pendingCount > 0",
+            source,
+        )
         approve_decision = source.index("submitAgentToolDecision(tool.id, true)")
         recovery_selector = source.index(
             'data-pt-agent-tool-recovery="continue-without-tool"'
@@ -3441,6 +3687,39 @@ class AgentSelectorsBoundInProductSource(unittest.TestCase):
         ):
             with self.subTest(literal=literal):
                 self.assertNotIn(literal, detail)
+
+    def test_approval_denied_requeries_tool_call_after_reconciliation(
+        self,
+    ) -> None:
+        source = HARNESS.read_text(encoding="utf-8")
+        scenario_start = source.index(
+            "async function runFoundationApprovalDeniedScenario"
+        )
+        scenario_end = source.index(
+            "async function runFoundationApprovalExpiredScenario",
+            scenario_start,
+        )
+        scenario = source[scenario_start:scenario_end]
+        error_wait_start = scenario.index(
+            "'approval-denied error surface'"
+        )
+        post_decision = scenario[
+            scenario.rfind("await waitFor(", 0, error_wait_start):
+        ]
+
+        self.assertIn("const findToolCallElement = () => Array.from(", scenario)
+        self.assertIn(
+            "() => Boolean(findToolCallElement()?.querySelector(",
+            post_decision,
+        )
+        self.assertIn(
+            "const errorElement = findToolCallElement()?.querySelector",
+            post_decision,
+        )
+        self.assertNotIn(
+            "() => Boolean(toolCallElement.querySelector(",
+            post_decision,
+        )
 
 if __name__ == "__main__":
     unittest.main()

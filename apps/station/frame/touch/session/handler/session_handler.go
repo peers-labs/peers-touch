@@ -35,10 +35,9 @@ func HandleVerifySession(ctx context.Context, req *pb.VerifySessionRequest) (*pb
 	}
 
 	logger.Debug(ctx, "session verified successfully")
-	// TODO: pass a public base URL into session verify so acct can be user@host when not using edge headers.
 	return &pb.VerifySessionResponse{
 		Valid:      true,
 		Attributes: subject.Attributes,
-		ActorRef:   touchactor.ProtoActorRef(record, ""),
+		ActorRef:   touchactor.ProtoActorRef(record),
 	}, nil
 }

@@ -16,6 +16,8 @@
 ```json
 {
   "closures": {
+    "V2-foundation-diagnostic-cleanup": [],
+    "V2-foundation-restart-remediation": [],
     "V2-J01-functional": [],
     "V2-J02-functional": [],
     "V2-J03-functional": [],
@@ -23,10 +25,17 @@
     "V2-J05-functional": [],
     "V2-J06-functional": [],
     "X3-functional": [],
+    "V2-A01-contract": [],
+    "V2-J01-formal-candidate": [],
+    "V2-J02-formal-candidate": [],
+    "V2-J03-formal-candidate": [],
+    "V2-J04-formal-candidate": [],
+    "V2-J05-formal-candidate": [],
+    "V2-J06-formal-candidate": [],
     "V2-acceptance": [
       "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "desktop-dev-runtime-isolation-static", "chat-desktop-gateway-e2e", "chat-native-visible-static", "chat-native-interactions-e2e", "chat-native-group-mls-e2e", "messaging-platform-contract", "station-messaging-unit",
       "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
-      "agent-v2-kernel-foundation-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
+      "agent-v2-kernel-foundation-e2e", "agent-event-stream-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
       "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-native-portal-navigation-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-translation-e2e", "agent-follow-up-e2e", "agent-ecosystem-e2e", "agent-topic-comments-e2e",
       "agent-v2-home-command-center-e2e",
       "agent-v2-capability-binding-e2e",
@@ -35,13 +44,49 @@
       "agent-native-connector-lifecycle-e2e",
       "agent-v2-connector-invocation-e2e",
       "agent-v2-evaluation-lab-e2e",
-      "agent-marketplace-catalog-e2e"
+      "agent-marketplace-catalog-e2e",
+      "chat-contact-message-resilience-e2e",
+      "chat-friend-request-gateway-e2e",
+      "chat-lifecycle-direct-e2e", "chat-lifecycle-group-live-e2e",
+      "chat-lifecycle-interactions-group-e2e",
+      "chat-lifecycle-live-voice-e2e",
+      "chat-lifecycle-onboarding-e2e",
+      "chat-lifecycle-rich-voice-e2e",
+      "chat-presence-layout-e2e",
+      "chat-native-current-profile-two-client-e2e",
+      "chat-native-multi-device-e2e",
+      "chat-native-recovery-e2e",
+      "chat-native-submitted-command-recovery-e2e",
+      "chat-native-two-client-e2e",
+      "chat-native-typing-e2e",
+      "federation-desktop-gateway-smoke",
+      "federation-surface-smoke",
+      "federation-three-node-e2e",
+      "mobile-contract-static",
+      "mobile-identity-contract",
+      "mobile-native-access-e2e",
+      "mobile-native-chat-contacts-e2e",
+      "mobile-native-lifecycle-e2e",
+      "mobile-native-moments-e2e",
+      "mobile-native-recovery-ui-e2e",
+      "mobile-native-recovery-e2e",
+      "mobile-native-settings-e2e",
+      "mobile-native-social-convergence-e2e",
+      "mobile-simulator-access-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-platform-e2e", "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-settings-e2e",
+      "mobile-simulator-chat-contacts-e2e",
+      "mobile-simulator-runtime-lifecycle-e2e",
+      "mobile-simulator-social-convergence-e2e",
+      "mobile-simulator-station-lifecycle-e2e",
+      "development-workflow-control-plane", "station-api-ownership",
+      "station-dashboard-unit",
+      "station-dashboard-web-check",
+      "station-federation-unit"
     ]
   },
   "completion": [
     "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "desktop-dev-runtime-isolation-static", "chat-desktop-gateway-e2e", "chat-native-visible-static", "chat-native-interactions-e2e", "chat-native-group-mls-e2e", "messaging-platform-contract", "station-messaging-unit",
     "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
-    "agent-v2-kernel-foundation-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
+    "agent-v2-kernel-foundation-e2e", "agent-event-stream-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
     "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-native-portal-navigation-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-quick-completion-e2e", "agent-translation-e2e", "agent-follow-up-e2e", "agent-ecosystem-e2e", "agent-topic-comments-e2e",
     "agent-v2-home-command-center-e2e",
     "agent-v2-capability-binding-e2e",
@@ -50,12 +95,48 @@
     "agent-native-connector-lifecycle-e2e",
     "agent-v2-connector-invocation-e2e",
     "agent-v2-evaluation-lab-e2e",
-    "agent-marketplace-catalog-e2e"
+    "agent-marketplace-catalog-e2e",
+    "chat-contact-message-resilience-e2e",
+    "chat-friend-request-gateway-e2e",
+    "chat-lifecycle-direct-e2e", "chat-lifecycle-group-live-e2e",
+    "chat-lifecycle-interactions-group-e2e",
+    "chat-lifecycle-live-voice-e2e",
+    "chat-lifecycle-onboarding-e2e",
+    "chat-lifecycle-rich-voice-e2e",
+    "chat-presence-layout-e2e",
+    "chat-native-current-profile-two-client-e2e",
+    "chat-native-multi-device-e2e",
+    "chat-native-recovery-e2e",
+    "chat-native-submitted-command-recovery-e2e",
+    "chat-native-two-client-e2e",
+    "chat-native-typing-e2e",
+    "federation-desktop-gateway-smoke",
+    "federation-surface-smoke",
+    "federation-three-node-e2e",
+    "mobile-contract-static",
+    "mobile-identity-contract",
+    "mobile-native-access-e2e",
+    "mobile-native-chat-contacts-e2e",
+    "mobile-native-lifecycle-e2e",
+    "mobile-native-moments-e2e",
+    "mobile-native-recovery-ui-e2e",
+    "mobile-native-recovery-e2e",
+    "mobile-native-settings-e2e",
+    "mobile-native-social-convergence-e2e",
+    "mobile-simulator-access-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-platform-e2e", "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-settings-e2e",
+    "mobile-simulator-chat-contacts-e2e",
+    "mobile-simulator-runtime-lifecycle-e2e",
+    "mobile-simulator-social-convergence-e2e",
+    "mobile-simulator-station-lifecycle-e2e",
+    "development-workflow-control-plane", "station-api-ownership",
+    "station-dashboard-unit",
+    "station-dashboard-web-check",
+    "station-federation-unit"
   ],
   "full": [
     "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "desktop-dev-runtime-isolation-static", "chat-desktop-gateway-e2e", "chat-native-visible-static", "chat-native-interactions-e2e", "chat-native-group-mls-e2e", "messaging-platform-contract", "station-messaging-unit",
     "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
-    "agent-v2-kernel-foundation-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
+    "agent-v2-kernel-foundation-e2e", "agent-event-stream-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
     "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-native-portal-navigation-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-quick-completion-e2e", "agent-translation-e2e", "agent-follow-up-e2e", "agent-ecosystem-e2e", "agent-topic-comments-e2e",
     "agent-v2-home-command-center-e2e",
     "agent-v2-capability-binding-e2e",
@@ -64,29 +145,73 @@
     "agent-native-connector-lifecycle-e2e",
     "agent-v2-connector-invocation-e2e",
     "agent-v2-evaluation-lab-e2e",
-    "agent-marketplace-catalog-e2e"
+    "agent-marketplace-catalog-e2e",
+    "chat-contact-message-resilience-e2e",
+    "chat-friend-request-gateway-e2e",
+    "chat-lifecycle-direct-e2e", "chat-lifecycle-group-live-e2e",
+    "chat-lifecycle-interactions-group-e2e",
+    "chat-lifecycle-live-voice-e2e",
+    "chat-lifecycle-onboarding-e2e",
+    "chat-lifecycle-rich-voice-e2e",
+    "chat-presence-layout-e2e",
+    "chat-native-current-profile-two-client-e2e",
+    "chat-native-multi-device-e2e",
+    "chat-native-recovery-e2e",
+    "chat-native-submitted-command-recovery-e2e",
+    "chat-native-two-client-e2e",
+    "chat-native-typing-e2e",
+    "federation-desktop-gateway-smoke",
+    "federation-surface-smoke",
+    "federation-three-node-e2e",
+    "mobile-contract-static",
+    "mobile-identity-contract",
+    "mobile-native-access-e2e",
+    "mobile-native-chat-contacts-e2e",
+    "mobile-native-lifecycle-e2e",
+    "mobile-native-moments-e2e",
+    "mobile-native-recovery-ui-e2e",
+    "mobile-native-recovery-e2e",
+    "mobile-native-settings-e2e",
+    "mobile-native-social-convergence-e2e",
+    "mobile-simulator-access-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-platform-e2e", "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-settings-e2e",
+    "mobile-simulator-chat-contacts-e2e",
+    "mobile-simulator-runtime-lifecycle-e2e",
+    "mobile-simulator-social-convergence-e2e",
+    "mobile-simulator-station-lifecycle-e2e",
+    "development-workflow-control-plane", "station-api-ownership",
+    "station-dashboard-unit",
+    "station-dashboard-web-check",
+    "station-federation-unit"
   ]
 }
 ```
 
 ## Goal
 
-Close every accepted Modern Chat Agent V2 Journey and the remaining X3
-package-discovery gap against the LobeHub benchmark without copying LobeHub's
-hosted commercial product or violating Station authority.
+Close every accepted Modern Chat Agent V2 Journey and the X3 package-discovery
+gap.
 
 ## Vertical Closures
 
 | Task | Observable closure | Main authority |
 |---|---|---|
-| MCA-J01 | Home starts or resumes Chat/Task work and survives restart | Station Home projection and canonical Chat/Task services |
-| MCA-J02 | One capability inventory and binding/readiness plane | Station capability manifest, binding, and readiness authority |
-| MCA-J03 | One governed ToolCall lineage from proposal through continuation | Station Turn, decision, dispatch, receipt, and trace authority |
-| MCA-J04 | MCP install/test/bind/invoke/cancel/recover lifecycle | Station operation lineage plus Desktop local capability manager |
-| MCA-J05 | OAuth resource becomes a governed Connector tool result | OAuth owner, Connector manifest adapter, Station ToolCall lineage |
-| MCA-J06 | Evaluation datasets, runs, attempts, results, and metrics survive restart | Station Evaluation aggregate using the canonical Turn kernel |
-| MCA-X3 | Trusted catalog is useful on first run and installs with authoritative readback | Curated source contract plus Desktop package installer authorities |
-| MCA-A01 | Required Gates prove the final exact source and update the parity ledger | Acceptance Core and the mind-map source |
+| MCA-J01 | Home Chat/Task restart closure | Station Home/Chat/Task |
+| MCA-J02 | Capability inventory and binding closure | Station capability authority |
+| MCA-J03 | Governed ToolCall closure | Station ToolCall authority |
+| MCA-J04 | MCP lifecycle closure | Station operations + Desktop MCP |
+| MCA-J05 | Governed Connector closure | OAuth + Station ToolCall |
+| MCA-J06 | Restart-safe Evaluation closure | Station Evaluation/Turn |
+| MCA-X3 | Trusted catalog install/readback | Catalog + Desktop installer |
+| MCA-A01 | Runtime-truthful evidence contract | Acceptance Core |
+| MCA-A02 | 33-tuple Home candidate | Home Journey |
+| MCA-A03 | 69-tuple capability candidate | Capability authority |
+| MCA-A04 | 86-tuple ToolCall candidate | ToolCall lineage |
+| MCA-A05 | 41-tuple MCP candidate | MCP lifecycle |
+| MCA-A06 | 37-tuple Connector candidate | Connector lineage |
+| MCA-A07 | 57-tuple Evaluation candidate | Evaluation/Turn |
+| MCA-R01 | Close Foundation first-failure regressions, including typed client permission denial | Chat recovery + capability permission authority |
+| MCA-R02 | Remove diagnostics and reprove | Acceptance Harness |
+| MCA-A08 | Seven-Gate proof and ledger closure | Acceptance Core |
 
 ## Dependency And Cutover Rules
 
@@ -112,7 +237,7 @@ hosted commercial product or violating Station authority.
 
 - A functional Task can reach `FUNCTIONAL_PASS` only from an exact-source real
   Journey and cleanup.
-- Only MCA-A01 may promote the seven formal Gates to `PROVEN`.
+- Only MCA-A08 may promote the seven formal Gates to `PROVEN`.
 - The mind-map X3/P3/E1 rows change only after their required source and proof
   evidence exists.
 - Existing unrelated dirty files remain outside completion claims and must not

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContactsPage } from './ContactsPage';
 import { normalizeFriendRequest } from '../features/social/socialNormalizers';
 import { useSocialStore } from '../features/social/socialStore';
+import { useGroupStore } from '../features/group/groupStore';
 import { clearAllScrollPositions, saveListAnchor } from '../app/navigation/scrollRestoration';
 
 vi.mock('../app/mobileI18n', () => ({
@@ -17,6 +18,17 @@ vi.mock('../features/social/socialStore', async (original) => {
       (select: (state: ReturnType<typeof module.useSocialStore.getState>) => unknown) =>
         select(module.useSocialStore.getState()),
       module.useSocialStore,
+    ),
+  };
+});
+vi.mock('../features/group/groupStore', async (original) => {
+  const module = await original<typeof import('../features/group/groupStore')>();
+  return {
+    ...module,
+    useGroupStore: Object.assign(
+      (select: (state: ReturnType<typeof module.useGroupStore.getState>) => unknown) =>
+        select(module.useGroupStore.getState()),
+      module.useGroupStore,
     ),
   };
 });
@@ -34,6 +46,7 @@ describe('Contacts bounded surface', () => {
   beforeEach(() => {
     clearAllScrollPositions();
     useSocialStore.setState(useSocialStore.getInitialState(), true);
+    useGroupStore.setState(useGroupStore.getInitialState(), true);
     useSocialStore.setState({
       currentUserPtid: 'ptid:alice',
       friendRequests: Array.from({ length: 240 }, (_, index) => normalizeFriendRequest({

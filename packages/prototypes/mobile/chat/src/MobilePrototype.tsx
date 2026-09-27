@@ -27,7 +27,6 @@ import {
 import { SocialEvidenceControls } from './components/SocialEvidenceControls';
 import { SearchEvidenceControls } from './components/SearchEvidenceControls';
 import { emptySearchDemo, searchDemoReducer } from './searchDemo';
-import { MultiDeviceDemo } from './components/MultiDeviceDemo';
 import './mobilePrototype.css';
 
 const { Text } = Typography;
@@ -38,8 +37,6 @@ type EvidenceScenario =
   | 'session-revoked'
   | 'long-lists'
   | 'search-controlled'
-  | 'multi-device-companion'
-  | 'multi-device-read-cursor'
   | BlockingEvidenceScenario
   | ShellEvidenceScenario
   | SocialEvidenceScenario;
@@ -60,8 +57,6 @@ const evidenceScenarioOptions: Array<{ label: string; value: EvidenceScenario }>
   { label: 'Friend request / unknown outcome', value: 'request-unknown' },
   { label: 'Long lists / sample data only', value: 'long-lists' },
   { label: 'Search / controlled outcomes', value: 'search-controlled' },
-  { label: 'Multi-device: sender companion', value: 'multi-device-companion' },
-  { label: 'Multi-device: read cursor convergence', value: 'multi-device-read-cursor' },
 ];
 
 const blockingScenarios: BlockingEvidenceScenario[] = [
@@ -172,10 +167,6 @@ export function MobilePrototype() {
   }
 
   function renderSurface() {
-    if (evidenceScenario === 'multi-device-companion' || evidenceScenario === 'multi-device-read-cursor') {
-      return <MultiDeviceDemo scenario={evidenceScenario} />;
-    }
-
     if (evidenceScenario === 'session-revoked' && activeStation) {
       return (
         <AuthGateScreen

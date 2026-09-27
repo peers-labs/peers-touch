@@ -23,15 +23,13 @@ export type StationTransportOperation =
       manually_approves_followers?: boolean;
       message_permission?: string;
       auto_expire_days?: number;
-      discoverability?: string;
       observed_revision: string;
     };
   }
   | { operationId: 'actor_profile_get_peer'; ptid: string }
   | { operationId: 'actor_search'; query: string }
-  | { operationId: 'federation_contexts_list' }
-  | { operationId: 'federation_resolve'; federation_id: string; handle: string }
-  | { operationId: 'federation_catalog_search'; federation_id: string; prefix: string; page_size: number }
+  | { operationId: 'federation_list' }
+  | { operationId: 'federation_resolve'; handle: string }
   | { operationId: 'notification_list'; limit: number; cursor?: string }
   | { operationId: 'notification_unread_counts' }
   | { operationId: 'notification_mark_read'; notification_ids: string[] }
@@ -242,8 +240,6 @@ function requireCurrentSession(
   if (
     active.stationPeerId !== session.stationPeerId
     || active.actorPtid !== session.actorRef.ptid
-    || active.deviceId !== session.deviceId
-    || active.lifecycleGeneration !== session.lifecycleGeneration
   ) {
     throw new Error('mobile.stationTransport.sessionScopeMismatch');
   }
@@ -286,9 +282,8 @@ function operationAdmission(
     case 'actor_profile_get':
     case 'actor_profile_get_peer':
     case 'actor_search':
-    case 'federation_contexts_list':
+    case 'federation_list':
     case 'federation_resolve':
-    case 'federation_catalog_search':
     case 'notification_list':
     case 'notification_unread_counts':
     case 'notification_preferences_get':

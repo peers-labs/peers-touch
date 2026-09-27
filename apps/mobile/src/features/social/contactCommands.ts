@@ -1,4 +1,12 @@
+/**
+ * contactCommands.ts — Typed command dispatchers for the Contacts page.
+ *
+ * Friend Request writes use the native reliability owner. Conversation creation
+ * delegates to the Device Messaging Engine, without a second command ledger.
+ */
+
 import { useSocialStore } from '../social/socialStore';
+import { useGroupStore } from '../group/groupStore';
 
 const FRIEND_REQUEST_STATUS_ACCEPTED = 2;
 
@@ -39,7 +47,7 @@ export async function dispatchCreateGroup(input: {
   name: string;
   description: string;
   initialMemberPtids: string[];
-}) {
+}): Promise<string | null> {
   const social = useSocialStore.getState();
   const federationIds = new Set(input.initialMemberPtids.map((memberPtid) => {
     const relationship = social.friendRequests.find((request) =>
@@ -50,17 +58,17 @@ export async function dispatchCreateGroup(input: {
         || (request.receiverPtid === social.currentUserPtid && request.senderPtid === memberPtid)
       )
     );
-    if (!relationship) throw new Error('mobile.group.federationScopeRequired');
+    if (!relationship) {
+      throw new Error('mobile.group.federationScopeRequired');
+    }
     return relationship.federationId;
   }));
   if (federationIds.size !== 1) {
     throw new Error('mobile.group.federationScopeRequired');
   }
-  return social.createGroup({
-    conversationId: globalThis.crypto.randomUUID(),
-    name: input.name,
-    description: input.description,
-    memberPtids: input.initialMemberPtids,
-    federationId: [...federationIds][0],
+  const federationId = [...federationIds][0];
+  return useGroupStore.getState().createGroup({
+    ...input,
+    federationId,
   });
 }

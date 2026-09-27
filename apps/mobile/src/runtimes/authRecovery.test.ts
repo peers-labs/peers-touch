@@ -27,12 +27,16 @@ function runtime(expiresAt = '2026-09-17T01:00:00.000Z') {
         stationPeerId: 'station-a',
         sessionId: 'session-a',
         actorPtid: 'ptid:alice',
+        deviceId: 'device-a',
+        lifecycleGeneration: 1,
         expiresAt,
       }),
       refresh: async () => ({
         stationPeerId: 'station-a',
         sessionId: 'session-b',
         actorPtid: 'ptid:alice',
+        deviceId: 'device-a',
+        lifecycleGeneration: 2,
         expiresAt,
       }),
       revoke: async () => ({

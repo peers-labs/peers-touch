@@ -40,12 +40,17 @@ type SocialPrivateContentPlan struct {
 	Generation       uint64 `gorm:"column:generation;not null;uniqueIndex:uidx_social_private_plan_resource,priority:2"`
 
 	ResourceKind                string     `gorm:"column:resource_kind;size:16;not null"`
+	AudienceKind                string     `gorm:"column:audience_kind;size:32;not null;default:'FRIENDS'"`
 	AuthorDeviceID              string     `gorm:"column:author_device_id;size:128;not null"`
 	AuthorHomeStationPeerID     string     `gorm:"column:author_home_station_peer_id;size:255;not null"`
 	AudienceSnapshotID          string     `gorm:"column:audience_snapshot_id;size:128;not null"`
 	AuthorizationSnapshotSHA256 []byte     `gorm:"column:authorization_snapshot_sha256;not null"`
 	CanonicalPrepareBytes       []byte     `gorm:"column:canonical_prepare_bytes;not null"`
 	CanonicalPrepareSHA256      []byte     `gorm:"column:canonical_prepare_sha256;not null"`
+	AudienceBytes                 []byte   `gorm:"column:audience_bytes"`
+	AudienceSHA256                []byte   `gorm:"column:audience_sha256"`
+	SubtypePrepareAuthorityBytes  []byte   `gorm:"column:subtype_prepare_authority_bytes"`
+	SubtypePrepareAuthoritySHA256 []byte   `gorm:"column:subtype_prepare_authority_sha256"`
 	ClaimRequestBytes           []byte     `gorm:"column:claim_request_bytes;not null"`
 	ClaimRequestSHA256          []byte     `gorm:"column:claim_request_sha256;not null"`
 	ClaimResponseBytes          []byte     `gorm:"column:claim_response_bytes"`
@@ -113,8 +118,8 @@ func (SocialPrivateCommandReceipt) TableName() string {
 }
 
 // SocialPrivateContentPost is the encrypted private Post fact. Its distinct Go
-// name avoids coupling the hard-cut persistence substrate to the legacy
-// plaintext SocialPrivatePost model while retaining the accepted table name.
+// name keeps the hard-cut persistence substrate independent from the retired
+// plaintext model while retaining the accepted table name.
 type SocialPrivateContentPost struct {
 	PostID    string `gorm:"column:post_id;primaryKey;size:128;uniqueIndex:uidx_social_private_post_id"`
 	ContentID string `gorm:"column:content_id;size:128;not null;uniqueIndex:uidx_social_private_post_content"`

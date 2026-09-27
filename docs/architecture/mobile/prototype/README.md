@@ -1,8 +1,8 @@
 # Mobile Prototype
 
 > **Status**: confirmed
-> **Version**: v1.1
-> **Created**: 2026-07-08 | **Updated**: 2026-09-22
+> **Version**: v1.0
+> **Created**: 2026-07-08 | **Updated**: 2026-09-13
 > **Owner**: Mobile Product Team
 > **Module**: `packages/prototypes/mobile/chat/`
 
@@ -17,7 +17,6 @@ The prototype covers:
   Google OAuth progress.
 - Chat list projection for Friend and Group conversations.
 - Chat thread mode where the bottom tabbar is hidden and the composer owns the bottom safe area.
-- Recorded voice capture with explicit recording duration, stop/cancel, local preview, and explicit send.
 - Contacts toolbar actions: create group and find people, matching `ContactsPage`.
 - Group creation with initial members and friend request search/send affordances.
 - Moments feed/composer/reaction/comment surfaces.
@@ -31,9 +30,8 @@ The prototype covers:
 |---|---|
 | Shell tabs and tabbar badge behavior | `apps/mobile/src/components/MobileShell.tsx` |
 | Chat list, thread, action surface boundaries | `apps/mobile/src/pages/ChatPage.tsx` |
-| Recorded voice composer and playback | `apps/mobile/src/pages/ChatPage.tsx`, `apps/mobile/src/features/chat/useMobileChatVoiceRecorder.ts` |
 | Friend conversation projection | `apps/mobile/src/features/social/socialProjection.ts` |
-| Group conversation projection | `apps/mobile/src/runtimes/messagingRuntime.ts` |
+| Group conversation projection | `apps/mobile/src/features/group/groupProjection.ts` |
 | Find people and create group | `apps/mobile/src/pages/ContactsPage.tsx` |
 | Access gate launch state | `apps/mobile/src/App.tsx`, `apps/mobile/src/features/auth/AccessGateHost.tsx` |
 | OAuth progress and recovery | MS-C03 / MS-J01 / MS-PA03 / MS-PA25 |
@@ -41,18 +39,6 @@ The prototype covers:
 | Me and settings details | MS-C09 / MS-J06 / MS-PA12 / MS-PA21 |
 | Runtime recovery sheets | MS-C10 / MS-J07 / MS-PA08 / MS-PA23 / MS-PA26 |
 | Deferred/local-only affordances | MS-C11..MS-C14 / MS-PA22 / MS-PA27 |
-
-### 2026-09-23 Recorded Voice Confirmation
-
-The confirmed Chat thread now covers explicit recording duration, stop/cancel,
-local preview, explicit send, and a stable voice playback row. The 390px
-Playwright interaction completed record -> preview -> send without horizontal
-overflow.
-
-| Layer | State | Evidence |
-|---|---|---|
-| L2/L3 | recording with stop/cancel boundary | `docs/architecture/mobile/prototype/evidence/ccu-20260923/voice-recording.png` |
-| L2/L3 | local preview before explicit send | `docs/architecture/mobile/prototype/evidence/ccu-20260923/voice-preview.png` |
 
 ## Run
 
@@ -89,37 +75,6 @@ Each state is also directly reproducible from the standalone prototype with
 `?scenario=<scenario-id>`.
 The default journey also includes Station removal confirmation, disabled
 WeChat/call affordances, and device-only message flag copy.
-
-### 2026-09-22 CCU Multi-Device Confirmation
-
-The 2026-09-22 CCU execution confirmation reconfirms two Mobile Chat evidence
-scenarios:
-
-- `multi-device-companion`: one sibling device receives the same
-  `event_id/message_id` through projection upsert without duplicate bubbles or
-  page refresh.
-- `multi-device-read-cursor`: a read cursor advanced on one device converges
-  monotonically on the sibling device without manual interaction.
-
-Current-source package build passes. Playwright L2/L3 interaction opened and
-inspected both states:
-
-| Layer | Scenario | Evidence |
-|---|---|---|
-| L2/L3 | sender companion projection | `docs/architecture/mobile/prototype/evidence/ccu-20260922/sender-companion.png` |
-| L2/L3 | read cursor convergence | `docs/architecture/mobile/prototype/evidence/ccu-20260922/read-cursor.png` |
-
-The controls advanced projection delivery and read-cursor convergence
-deterministically. This confirms the product interaction target only; native
-Desktop/Mobile interoperability remains `UNPROVEN`.
-
-可重复检查与 Desktop Call 使用同一入口：
-
-```bash
-make -w run-prototype
-cd apps/desktop
-PROTOTYPE_URL=http://localhost:3200 node scripts/ccu-prototype-check.mjs
-```
 
 ### 2026-09-19 Message Action Semantics
 

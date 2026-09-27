@@ -13,8 +13,11 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 import yaml
 
 
-SCHEMA_VERSION = 1
 IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$", re.IGNORECASE)
+REPO_PATH_PART = re.compile(
+    r"^(?:[a-z0-9][a-z0-9._-]*|\.[a-z0-9][a-z0-9._-]*)$",
+    re.IGNORECASE,
+)
 WORKSTREAM_ID = re.compile(r"^W(?:0R|0|[1-9][0-9]*)(?:[A-Z](?:-[A-Z]+)?)?$")
 WORK_CLASSES = {"product-behavior", "infrastructure", "refactor", "documentation"}
 SOURCE_MODES = {"shared-read", "exclusive-write"}
@@ -31,12 +34,12 @@ RUNTIME_KINDS = {
 AUTHORIZATION_VALUES = {"allowed", "denied"}
 LIVE_MUTATION_STATES = {"DECLARED", "ACTIVE"}
 
-TOP_LEVEL_KEYS = {"schemaVersion", "planRef", "items"}
+TOP_LEVEL_KEYS = {"planRef", "items"}
 ITEM_KEYS = {
-    "schemaVersion",
     "id",
     "workClass",
     "planRef",
+    "taskId",
     "workstreamId",
     "productRefs",
     "architectureRefs",
@@ -104,6 +107,7 @@ class WorkItemProjection:
     journey_id: Optional[str]
     work_class: str
     plan_ref: str
+    task_id: str
     source_claim_arguments: tuple[str, ...]
     runtime_claim_arguments: tuple[str, ...]
     authorization: Mapping[str, Any]
@@ -168,7 +172,7 @@ def _canonical_repo_path(value: Any, field: str) -> str:
         raise ManifestError(f"{field} must be repository-relative")
     normalized = path.as_posix().rstrip("/")
     if normalized in {"", "."} or any(
-        not IDENTIFIER.fullmatch(part) for part in path.parts
+        not REPO_PATH_PART.fullmatch(part) for part in path.parts
     ):
         raise ManifestError(f"{field} must name a repository path")
     return normalized
@@ -229,8 +233,6 @@ def _validate_item(
     enforce_execution_authorization: bool,
 ) -> WorkItemProjection:
     item = _require_exact_mapping(raw, field="item", keys=ITEM_KEYS)
-    if item["schemaVersion"] != SCHEMA_VERSION:
-        raise ManifestError("item.schemaVersion must equal 1")
 
     work_item_id = _require_identifier(item["id"], "item.id")
     if work_item_id != work_item_id.lower():
@@ -238,6 +240,7 @@ def _validate_item(
     workstream_id = _require_text(item["workstreamId"], "item.workstreamId", max_length=16)
     if not WORKSTREAM_ID.fullmatch(workstream_id):
         raise ManifestError("item.workstreamId is invalid")
+    task_id = _require_identifier(item["taskId"], "item.taskId")
     work_class = _require_text(item["workClass"], "item.workClass", max_length=32)
     if work_class not in WORK_CLASSES:
         raise ManifestError(f"unsupported work class: {work_class}")
@@ -335,6 +338,7 @@ def _validate_item(
         journey_id=None,
         work_class=work_class,
         plan_ref=plan_ref,
+        task_id=task_id,
         source_claim_arguments=tuple(
             f"{mode}:{path}"
             for path, mode in sorted(source_by_path.items())
@@ -359,8 +363,6 @@ def load_projection(
     except (OSError, yaml.YAMLError) as error:
         raise ManifestError(f"cannot read work-item manifest: {error}") from error
     manifest = _require_exact_mapping(raw, field="manifest", keys=TOP_LEVEL_KEYS)
-    if manifest["schemaVersion"] != SCHEMA_VERSION:
-        raise ManifestError("manifest.schemaVersion must equal 1")
     plan_ref = _canonical_repo_path(manifest["planRef"], "manifest.planRef")
     if not (repo_root / plan_ref).is_file():
         raise ManifestError(f"manifest.planRef does not exist: {plan_ref}")
@@ -407,6 +409,7 @@ def load_projection(
         journey_id=journey,
         work_class=projection.work_class,
         plan_ref=projection.plan_ref,
+        task_id=projection.task_id,
         source_claim_arguments=projection.source_claim_arguments,
         runtime_claim_arguments=projection.runtime_claim_arguments,
         authorization=projection.authorization,
@@ -505,6 +508,8 @@ def _validate_readback(
     expected = {
         "workItemId": projection.work_item_id,
         "journeyId": projection.journey_id,
+        "planPath": projection.plan_ref,
+        "taskId": projection.task_id,
         "purpose": projection.purpose,
     }
     for field, value in expected.items():
@@ -577,6 +582,10 @@ def execute_projection(
         action,
         "--work-item",
         projection.work_item_id,
+        "--plan",
+        projection.plan_ref,
+        "--task",
+        projection.task_id,
         "--purpose",
         projection.purpose,
         "--source-claims",

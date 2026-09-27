@@ -31,6 +31,9 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_forbidden_actor,
     evaluate_base_invalid_resource_reference,
     evaluate_base_lease_expired,
+    evaluate_base_loop_budget_exhausted,
+    evaluate_base_model_unavailable,
+    evaluate_base_permission_denied,
     evaluate_as_f04,
     evaluate_as_f06,
     evaluate_as_f12,
@@ -41,6 +44,9 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_forbidden_actor_capture,
     valid_invalid_resource_reference_capture,
     valid_lease_expired_capture,
+    valid_loop_budget_exhausted_capture,
+    valid_model_unavailable_capture,
+    valid_permission_denied_capture,
     valid_as_f04_capture,
     valid_as_f06_capture,
     valid_as_f12_capture,
@@ -1572,6 +1578,16 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             "machine profile identity does not match",
         ):
             self.load_profile("two", machine_profile="one")
+
+    def test_rejects_a_different_machine_profile_file_identity(self) -> None:
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            "machine profile file identity does not match",
+        ):
+            self.load_profile(
+                "two",
+                machine_values={"PT_DEV_PROFILE": "one"},
+            )
 
     def test_builds_client_manifest_from_typed_station_service(self) -> None:
         clients = [{"runtime": "native-tauri"}, {"runtime": "browser"}]

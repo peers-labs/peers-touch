@@ -407,7 +407,6 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertEqual(
             selected,
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-chat-contacts-e2e",
             },
@@ -415,7 +414,6 @@ class BehaviorRuleTests(unittest.TestCase):
 
     def test_mobile_shared_projection_owners_select_all_social_gates(self) -> None:
         expected = {
-            "chat-lifecycle-tree-zero-reference-e2e",
             "mobile-simulator-social-convergence-e2e",
             "mobile-simulator-chat-contacts-e2e",
             "mobile-simulator-moments-e2e",
@@ -438,7 +436,6 @@ class BehaviorRuleTests(unittest.TestCase):
     ) -> None:
         self.assertEqual(
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-moments-e2e",
             },
@@ -448,7 +445,6 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertEqual(
             {
-                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-settings-e2e",
             },
@@ -456,20 +452,6 @@ class BehaviorRuleTests(unittest.TestCase):
                 "apps/mobile/src/runtimes/profileProjectionDescriptor.ts"
             ),
         )
-
-    def test_ccu_owned_paths_select_zero_reference_gate(self) -> None:
-        for path in (
-            "apps/desktop/src/store/socialChat.ts",
-            "apps/mobile/src/features/chat/chatCommands.ts",
-            "apps/station/app/subserver/conversation/subserver.go",
-            "model/domain/chat/conversation.proto",
-            "packages/messaging-core/src/store/schema.rs",
-        ):
-            with self.subTest(path=path):
-                self.assertIn(
-                    "chat-lifecycle-tree-zero-reference-e2e",
-                    self.selected_ids(path),
-                )
 
     def test_mobile_command_callers_select_recovery_and_product_gates(
         self,

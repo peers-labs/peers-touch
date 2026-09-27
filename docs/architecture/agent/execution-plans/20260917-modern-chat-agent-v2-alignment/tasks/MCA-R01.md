@@ -45,6 +45,22 @@
     "apps/desktop/src/kernel/identityRuntime.ts",
     "apps/desktop/src/kernel/identityRuntime.test.ts",
     "apps/desktop/src/acceptance/agent/harness.ts",
+    "apps/mobile/src/acceptance/actions.ts",
+    "apps/mobile/src/features/auth/authSession.ts",
+    "apps/mobile/src/features/call",
+    "apps/mobile/src/features/chat",
+    "apps/mobile/src/features/group",
+    "apps/mobile/src/features/social",
+    "apps/mobile/src/pages",
+    "apps/mobile/src/runtimes",
+    "apps/mobile/src/services/mobileCommands.ts",
+    "apps/mobile/src/services/gateways",
+    "apps/mobile/src-tauri/src/commands/oauth.rs",
+    "apps/mobile/src-tauri/src/messaging",
+    "apps/mobile/src-tauri/src/runtime/oauth",
+    "apps/mobile/src-tauri/src/runtime/station_transport",
+    "packages/messaging-core/src/crypto",
+    "packages/messaging-core/src/identity",
     "packages/locales/en/agent.json",
     "packages/locales/zh-CN/agent.json",
     "tooling/acceptance/gates/agent/foundation_direct_adapter.py",
@@ -75,6 +91,11 @@
     {
       "id": "foundation-restart-recovery",
       "command": "cd apps/station && go test ./app/subserver/agent/service -run '^(TestRecoverRunningChatTasks|Test.*ClientPermissionDenied|Test.*Ollama)' -count=1 && cd ../.. && rustfmt --edition 2021 --check apps/desktop/src-tauri/src/application/desktop_executor_worker/supervisor.rs apps/desktop/src-tauri/src/application/runtime_evidence.rs apps/desktop/src-tauri/src/interface/http_gateway/mod.rs && cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml && python3 -m unittest tooling.acceptance.gates.agent.foundation_direct_adapter_test tooling.acceptance.gates.agent.foundation_scenario_runner_test tooling.acceptance.gates.agent.agent_native_static_test && pnpm --dir apps/desktop check",
+      "verificationClass": "SOURCE_CHECK"
+    },
+    {
+      "id": "foundation-mobile-reconciliation",
+      "command": "pnpm --dir apps/mobile check && cargo check --manifest-path apps/mobile/src-tauri/Cargo.toml",
       "verificationClass": "SOURCE_CHECK"
     },
     {

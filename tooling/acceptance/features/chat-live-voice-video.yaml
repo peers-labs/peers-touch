@@ -1,0 +1,48 @@
+{
+  "id": "chat-live-voice-video",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/desktop/src/modules/p2p/callP2p.ts",
+    "apps/desktop/src/components/chat/CallSurface.tsx",
+    "apps/desktop/src/acceptance/chat/harness.ts",
+    "tooling/acceptance/gates/chat/lifecycle_live_voice.py",
+    "tooling/acceptance/gates/chat/lifecycle_live_voice_e2e.py"
+  ],
+  "truth_sources": [
+    "authenticated Direct conversation participants",
+    "sealed CallSignal events on the shared Realtime stream",
+    "WebRTC peer connection and media tracks",
+    "authenticated ICE server discovery"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-native", "selector": "[data-chat-call-surface]"},
+    {"type": "desktop-native", "selector": "[data-chat-call-local-video]"},
+    {"type": "desktop-native", "selector": "[data-chat-call-remote-video]"},
+    {"type": "desktop-native", "selector": "[data-chat-call-remote-audio]"}
+  ],
+  "required_gates": [
+    "desktop-check",
+    "chat-native-visible-static",
+    "chat-lifecycle-live-voice-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "call setup uses sealed signaling on the existing authenticated Realtime stream",
+      "WebRTC media uses authenticated ICE server discovery and can recover through ICE restart",
+      "text remains on the canonical Chat path while media is active"
+    ],
+    "visible": [
+      "both native peers complete audio and video calls with live receiver media",
+      "ring, accept, reject, no-answer, mute, camera toggle, camera-device replacement, reconnect, and hangup have observable states",
+      "video renders local preview and receiver video while audio reaches both peers",
+      "both peers release media tracks and return to the same Direct conversation after hangup"
+    ]
+  },
+  "negative": [
+    "call signaling must not restore ICE polling or introduce a second signaling channel",
+    "a session identifier must not be parsed to recover PTIDs",
+    "compile, API-only, sender-only, or screenshot-only evidence cannot prove CHAT-J05",
+    "raw SDP, ICE candidates, TURN credentials, and media device IDs must not enter persisted evidence"
+  ]
+}

@@ -130,6 +130,8 @@ describe('Contacts relationship and Direct journey', () => {
     expect(messagingCreateDirect).toHaveBeenCalledWith({
       stationPeerId: 'station-a',
       actorPtid: 'ptid:alice',
+      deviceId: 'device-a',
+      lifecycleGeneration: 1,
       peerPtid: 'ptid:bob',
       federationId: 'fed-a',
     });

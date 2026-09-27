@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
+import { create } from '@bufbuild/protobuf';
 import { describe, expect, it } from 'vitest';
+import { GroupSchema } from '../../gen/proto/domain/chat/group_chat_pb';
 import {
   conversationPreferenceState,
   conversationTitle,
@@ -44,21 +46,15 @@ describe('Chat typing snapshots', () => {
       kind: 'group',
       key: 'group:group-1',
       conversation: {
-        projection: {
-          conversationId: 'group-1',
-          authorityStationId: 'station-a',
-          federationId: 'federation-a',
-          kind: 2,
+        group: create(GroupSchema, {
+          ulid: 'group-1',
           name: 'Design',
           description: '',
           ownerPtid: 'ptid:alice',
-          memberPtids: ['ptid:alice', 'ptid:bob'],
-          members: [],
-          membershipEpoch: 2,
-          mlsEpoch: 3,
-          active: true,
-          updatedAtUnixMs: 42,
-        },
+          memberCount: 2,
+          membershipEpoch: 2n,
+          updatedAt: { seconds: 0n, nanos: 42_000_000 },
+        }),
         unread: 4,
       },
     };

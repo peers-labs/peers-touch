@@ -29,7 +29,8 @@
       "features": ["federation-governance"],
       "required_gates": ["station-federation-unit", "federation-three-node-e2e"],
       "synthetic_paths": [
-        "apps/station/app/subserver/federation/handler.go"
+        "apps/station/app/subserver/federation/handler.go",
+        "apps/desktop/src/pages/FederationGovernancePage.tsx"
       ],
       "evidence": {
         "truth_sources": ["federation_ledger_proposals", "federation_ledger_events"],
@@ -104,23 +105,21 @@
       "required_gates": ["desktop-check", "federation-desktop-gateway-smoke"],
       "synthetic_paths": [
         "apps/desktop/src/components/common/StationPicker.tsx",
-        "apps/desktop/src/components/settings/FederationTab.tsx",
         "apps/desktop/src/components/chat/FindPeopleModal.tsx",
         "apps/desktop/src-tauri/src/application/federation/mod.rs"
       ],
       "evidence": {
         "truth_sources": ["StationRegistry", "Federation Plaza projection", "Federation catalog projection"],
-        "surfaces": ["desktop station picker", "desktop federation context settings", "find people modal"],
+        "surfaces": ["desktop station picker", "desktop federation page", "find people modal"],
         "proven_by": ["desktop-check", "federation-desktop-gateway-smoke"],
         "proven_scope": [
           "Desktop gateway active Station is bound to expected fedp5 station",
           "station probe returns online peer identity",
-          "Federation Catalog transport is statically constrained to direct typed protobuf decoding",
-          "ordinary Desktop surfaces contain no Federation governance or Relay topology controls"
+          "Federation Catalog transport is statically constrained to direct typed protobuf decoding"
         ],
         "unproven_scope": [
           "Desktop DOM-level StationPicker assertion",
-          "Desktop DOM-level Federation context settings assertion",
+          "Desktop DOM-level Federation page assertion",
           "Desktop DOM-level Find People assertion",
           "Authenticated Native Federation Catalog response and result rendering"
         ]

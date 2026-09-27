@@ -15,7 +15,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/http1/resp"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
-	"github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
+	federationruntime "github.com/peers-labs/peers-touch/station/frame/core/federation"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	realtime "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime"
@@ -48,6 +48,21 @@ var signalKindMap = map[string]realtime.CallSignal_Kind{
 // Heartbeat cadence; see contract §2.4.
 const heartbeatInterval = 15 * time.Second
 
+const remoteSignalTimeout = 5 * time.Second
+
+type signalHomeStationResolver interface {
+	ResolveActorHomeStationPeerID(context.Context, string) (string, error)
+}
+
+type signalFederationCaller interface {
+	CallPeer(context.Context, federationruntime.PeerCall) error
+	LocalStationPeerID() string
+}
+
+type signalFederationRuntimeProvider interface {
+	FederationDeliveryRuntime() *federationruntime.Runtime
+}
+
 func newSSEWriter(response *protocol.Response, writer network.Writer) network.ExtWriter {
 	return resp.NewChunkedBodyWriter(response, writer)
 }
@@ -65,9 +80,9 @@ func (s *eventsSubServer) Handlers() []server.Handler {
 		// Signaling ingress (contract §2.7.1). WebRTC offer / answer /
 		// ICE candidate / hangup arrive here as opaque ciphertext
 		// (contract §2.7.2 — encrypted with the chat session ratchet)
-		// and the sender Home Station routes the typed opaque signal to the
-		// recipient Home Station before both sides fan out over their local
-		// SSE streams. Station never inspects the sealed payload.
+		// and Station fan-outs them onto the recipient's SSE stream
+		// plus the sender's stream for multi-device echo. Station
+		// never inspects the payload.
 		server.NewHertzHandler("realtime-signal", "/realtime/signal", server.POST, s.handlePostSignal, hertzJWTWrapper),
 		server.NewHertzHandler("realtime-call-resolution", "/realtime/call-resolution", server.GET, s.handleGetCallResolution, hertzJWTWrapper),
 	}
@@ -259,12 +274,6 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 		return
 	}
 
-	// Authorization gate: only friends (sharing a friend chat session,
-	// neither having blocked the other) may signal each other. A
-	// self-signal (multi-device fan-out to one's own actor) is always
-	// allowed. The authorizer is owned by friend_chat and registered
-	// during its boot; a missing authorizer is fail-closed because
-	// signaling has no other security layer behind it.
 	if senderPTID != req.RecipientPTID {
 		authorizer := getSignalAuthorizer()
 		if authorizer == nil {
@@ -283,32 +292,7 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 			return
 		}
 	}
-	if s.actorHomes == nil || s.federatedCallSignals == nil ||
-		s.localStationPeerID == "" {
-		c.JSON(503, map[string]string{
-			"error": "Federation call-signal routing unavailable",
-		})
-		return
-	}
-	senderHome, err := s.actorHomes.ResolveActorHomeStationPeerID(
-		ctx,
-		senderPTID,
-	)
-	if err != nil {
-		c.JSON(503, map[string]string{
-			"error": "sender Home Station resolution unavailable",
-		})
-		return
-	}
-	if senderHome != s.localStationPeerID {
-		c.JSON(403, map[string]string{
-			"error": "signal must be submitted to the sender Home Station",
-		})
-		return
-	}
 
-	// Decode payload purely to length-check it. We never inspect the
-	// plaintext — that is the chat session's per-message ciphertext.
 	payload, err := base64.StdEncoding.DecodeString(req.PayloadB64)
 	if err != nil {
 		c.JSON(400, map[string]string{"error": "payload_b64 is not valid base64"})
@@ -339,11 +323,6 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 		}
 	}
 
-	if s.bus == nil {
-		c.JSON(503, map[string]string{"error": "event bus not initialized"})
-		return
-	}
-
 	signal := &realtime.CallSignal{
 		SessionUlid:   req.SessionULID,
 		FromActorPtid: senderPTID,
@@ -352,8 +331,6 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 		CallId:        req.CallID,
 	}
 
-	// The callee is the sender for terminal actions; the caller is the
-	// recipient. The durable record was created before CALL_REQUEST fan-out.
 	if kind == realtime.CallSignal_CALL_ACCEPT || kind == realtime.CallSignal_CALL_REJECT {
 		if s.callResolution == nil {
 			c.JSON(503, map[string]string{"error": "call resolution unavailable"})
@@ -382,63 +359,32 @@ func (s *eventsSubServer) handlePostSignal(ctx context.Context, c *app.RequestCo
 		signal.WinningDeviceId = result.record.WinningDeviceID
 	}
 
-	result, err := s.dispatchFederatedSignal(
-		ctx,
-		req.RecipientPTID,
-		signal,
-	)
+	_, err = s.routeSignal(ctx, senderPTID, req.RecipientPTID, req.SessionULID, signal)
 	if err != nil {
-		logger.DefaultHelper.Warnf(
-			"events: Federation signal delivery failed recipient_ptid=%s: %v",
-			req.RecipientPTID,
-			err,
-		)
-		c.JSON(502, map[string]string{
-			"error": "Federation signal delivery failed",
-		})
-		return
-	}
-	if result.Disposition != delivery.DispositionAccepted &&
-		result.Disposition != delivery.DispositionDuplicate {
-		if isTerminalCallResolutionRejection(result, kind) {
-			c.JSON(409, map[string]string{
-				"error": "CALL_ALREADY_HANDLED",
-			})
+		if errors.Is(err, errCallResolutionConflict) ||
+			errors.Is(err, errCallResolutionExpired) ||
+			errors.Is(err, errCallResolutionNotFound) {
+			writeCallResolutionError(c, err, callResolutionModel{})
 			return
 		}
-		c.JSON(502, map[string]string{
-			"error": "Federation signal delivery rejected",
-		})
+		logger.DefaultHelper.Warnf("events: signal route failed sender_ptid=%s recipient_ptid=%s: %v", senderPTID, req.RecipientPTID, err)
+		c.JSON(502, map[string]string{"error": "signal delivery failed"})
 		return
 	}
 
-	// Multi-device sender echo: a caller running two clients of the
-	// same actor needs the second client to learn the call was
-	// initiated. When sender == recipient (self-call, which is
-	// nonsense for voice/video but legal for protocol completeness),
-	// we skip the echo to avoid a duplicate frame.
 	if senderPTID != req.RecipientPTID {
-		if _, err := s.bus.Publish(
-			senderPTID,
-			streamEventForSignal(signal),
-		); err != nil {
-			// Sender echo is best-effort — the caller's primary
-			// device already knows it sent the signal because it
-			// got a 204 from us. Don't fail the request.
-			logger.DefaultHelper.Warnf("events: signal echo to sender failed actor_ptid=%s: %v", senderPTID, err)
+		bus := GetBus()
+		if bus != nil {
+			ev := &realtime.StreamEvent{
+				Kind: &realtime.StreamEvent_Signaling{Signaling: signal},
+			}
+			if _, echoErr := bus.Publish(senderPTID, ev); echoErr != nil {
+				logger.DefaultHelper.Warnf("events: signal echo to sender failed actor_ptid=%s: %v", senderPTID, echoErr)
+			}
 		}
 	}
 
 	c.SetStatusCode(204)
-}
-
-func isTerminalCallResolutionRejection(
-	result delivery.Result,
-	kind realtime.CallSignal_Kind,
-) bool {
-	return result.Disposition == delivery.DispositionTerminal &&
-		result.ErrorCode == delivery.FrameErrorDomainRejected &&
-		isCallLifecycleSignal(kind)
 }
 
 func (s *eventsSubServer) handleGetCallResolution(ctx context.Context, c *app.RequestContext) {
@@ -453,12 +399,7 @@ func (s *eventsSubServer) handleGetCallResolution(ctx context.Context, c *app.Re
 	}
 	callID := string(c.Query("call_id"))
 	peerActorPTID := string(c.Query("peer_actor_ptid"))
-	record, err := s.readCallResolution(
-		ctx,
-		subject.ID,
-		peerActorPTID,
-		callID,
-	)
+	record, err := s.readCallResolution(ctx, subject.ID, peerActorPTID, callID)
 	if err != nil {
 		writeCallResolutionError(c, err, record)
 		return
@@ -508,6 +449,19 @@ func writeSignalError(c *app.RequestContext, err error) {
 	c.JSON(status, map[string]string{"error": err.Error()})
 }
 
+func callResolutionHandlerError(err error) error {
+	switch {
+	case errors.Is(err, errCallResolutionConflict):
+		return server.NewHandlerError(409, "CALL_ALREADY_HANDLED")
+	case errors.Is(err, errCallResolutionExpired):
+		return server.NewHandlerError(409, "CALL_NO_ANSWER")
+	case errors.Is(err, errCallResolutionNotFound):
+		return server.NewHandlerError(409, "CALL_REQUEST_NOT_FOUND")
+	default:
+		return server.NewHandlerError(503, "call resolution unavailable")
+	}
+}
+
 func writeCallResolutionError(
 	c *app.RequestContext,
 	err error,
@@ -548,4 +502,265 @@ func callResolutionResponseFromModel(record callResolutionModel) callResolutionR
 		ResolvedAtMs:    resolvedAt,
 		ExpiresAtMs:     record.ExpiresAt.UnixMilli(),
 	}
+}
+
+func streamEventForSignal(signal *realtime.CallSignal) *realtime.StreamEvent {
+	return &realtime.StreamEvent{
+		Kind: &realtime.StreamEvent_Signaling{
+			Signaling: proto.Clone(signal).(*realtime.CallSignal),
+		},
+	}
+}
+
+func (s *eventsSubServer) routeSignal(
+	ctx context.Context,
+	senderPTID, recipientPTID, sessionULID string,
+	signal *realtime.CallSignal,
+) (local bool, err error) {
+	instances := server.GetOptions().SubserverInstances
+	actors, actorsOK := instances["actor_identity"].(signalHomeStationResolver)
+	fedProvider, fedOK := instances["federation"].(signalFederationRuntimeProvider)
+	var federation signalFederationCaller
+	if fedOK && fedProvider != nil && fedProvider.FederationDeliveryRuntime() != nil {
+		federation = fedProvider.FederationDeliveryRuntime()
+	}
+
+	isRemote := false
+	if actorsOK && actors != nil && federation != nil {
+		localPeerID := strings.TrimSpace(federation.LocalStationPeerID())
+		if localPeerID != "" {
+			homePeerID, resolveErr := actors.ResolveActorHomeStationPeerID(ctx, recipientPTID)
+			if resolveErr == nil {
+				homePeerID = strings.TrimSpace(homePeerID)
+				if homePeerID != "" && homePeerID != localPeerID {
+					isRemote = true
+					callCtx, cancel := context.WithTimeout(ctx, remoteSignalTimeout)
+					defer cancel()
+					err = federation.CallPeer(callCtx, federationruntime.PeerCall{
+						TargetStationPeerID: homePeerID,
+						Route:               federationruntime.PeerRouteRealtimeSignal,
+						Subject:             senderPTID,
+						Claims: map[string]string{
+							federationruntime.ClaimSenderPTID:          senderPTID,
+							federationruntime.ClaimRecipientPTID:       recipientPTID,
+							federationruntime.ClaimSessionULID:         sessionULID,
+							federationruntime.ClaimSourceStationPeerID: localPeerID,
+							federationruntime.ClaimTargetStationPeerID: homePeerID,
+						},
+						Request:  signal,
+						Response: &realtime.CallSignal{},
+					})
+					if err != nil {
+						return false, fmt.Errorf("federation signal forward: %w", err)
+					}
+					return false, nil
+				}
+			}
+		}
+	}
+
+	if !isRemote {
+		if signal.GetKind() == realtime.CallSignal_CALL_REQUEST {
+			if s.callResolution == nil {
+				return true, fmt.Errorf("call resolution unavailable")
+			}
+			if _, openErr := s.callResolution.open(
+				ctx,
+				senderPTID,
+				recipientPTID,
+				sessionULID,
+				signal.GetCallId(),
+				callRequestDigest(
+					senderPTID,
+					recipientPTID,
+					sessionULID,
+					signal.GetCallId(),
+					signal.GetPayload(),
+				),
+			); openErr != nil {
+				return true, openErr
+			}
+		}
+		bus := GetBus()
+		if bus == nil {
+			return true, fmt.Errorf("event bus not initialized")
+		}
+		ev := &realtime.StreamEvent{
+			Kind: &realtime.StreamEvent_Signaling{Signaling: signal},
+		}
+		if _, pubErr := bus.Publish(recipientPTID, ev); pubErr != nil {
+			return true, fmt.Errorf("local publish: %w", pubErr)
+		}
+	}
+
+	return true, nil
+}
+
+func (s *eventsSubServer) readCallResolution(
+	ctx context.Context,
+	requestingActorPTID string,
+	peerActorPTID string,
+	callID string,
+) (callResolutionModel, error) {
+	result, err := s.callResolution.getForActor(ctx, requestingActorPTID, callID)
+	if err == nil {
+		if !callResolutionParticipantsMatch(
+			result.record,
+			requestingActorPTID,
+			peerActorPTID,
+		) {
+			return callResolutionModel{}, errCallResolutionNotFound
+		}
+		if result.becameNoAnswer {
+			s.fanOutNoAnswer(ctx, result.record)
+		}
+		return result.record, nil
+	}
+	if !errors.Is(err, errCallResolutionNotFound) || strings.TrimSpace(peerActorPTID) == "" {
+		return callResolutionModel{}, err
+	}
+
+	instances := server.GetOptions().SubserverInstances
+	actors, actorsOK := instances["actor_identity"].(signalHomeStationResolver)
+	federationProvider, federationOK := instances["federation"].(signalFederationRuntimeProvider)
+	if !actorsOK || actors == nil || !federationOK || federationProvider == nil {
+		return callResolutionModel{}, err
+	}
+	federation := federationProvider.FederationDeliveryRuntime()
+	if federation == nil {
+		return callResolutionModel{}, err
+	}
+	localStationPeerID := strings.TrimSpace(federation.LocalStationPeerID())
+	targetStationPeerID, resolveErr := actors.ResolveActorHomeStationPeerID(ctx, peerActorPTID)
+	if resolveErr != nil {
+		return callResolutionModel{}, fmt.Errorf(
+			"events: resolve call owner Home Station: %w",
+			resolveErr,
+		)
+	}
+	if targetStationPeerID == "" || targetStationPeerID == localStationPeerID {
+		return callResolutionModel{}, errCallResolutionNotFound
+	}
+	request := &realtime.GetFederatedCallResolutionRequest{
+		RequestingActorPtid: requestingActorPTID,
+		CallId:              callID,
+		PeerActorPtid:       peerActorPTID,
+	}
+	response := &realtime.GetFederatedCallResolutionResponse{}
+	if callErr := federation.CallPeer(
+		ctx,
+		federationruntime.PeerCall{
+			TargetStationPeerID: targetStationPeerID,
+			Route:               federationruntime.PeerRouteRealtimeCallResolution,
+			Subject:             requestingActorPTID,
+			Claims: map[string]string{
+				federationruntime.ClaimActorPTID:           requestingActorPTID,
+				federationruntime.ClaimCallID:              callID,
+				federationruntime.ClaimSourceStationPeerID: localStationPeerID,
+				federationruntime.ClaimTargetStationPeerID: targetStationPeerID,
+			},
+			Request:  request,
+			Response: response,
+		},
+	); callErr != nil {
+		return callResolutionModel{}, callErr
+	}
+	return callResolutionModelFromProto(response), nil
+}
+
+// ResolveFederatedCallResolution handles a signed caller readback at the
+// callee Home Station.
+func (s *eventsSubServer) ResolveFederatedCallResolution(
+	ctx context.Context,
+	sourceStationPeerID string,
+	request *realtime.GetFederatedCallResolutionRequest,
+) (*realtime.GetFederatedCallResolutionResponse, error) {
+	if request == nil || s.callResolution == nil {
+		return nil, errors.New(
+			"events: Federation call-resolution dependencies are unavailable",
+		)
+	}
+	instances := server.GetOptions().SubserverInstances
+	actors, ok := instances["actor_identity"].(signalHomeStationResolver)
+	if !ok || actors == nil {
+		return nil, errors.New(
+			"events: Federation call-resolution dependencies are unavailable",
+		)
+	}
+	requestingActorPTID := strings.TrimSpace(request.GetRequestingActorPtid())
+	callID := strings.TrimSpace(request.GetCallId())
+	peerActorPTID := strings.TrimSpace(request.GetPeerActorPtid())
+	if requestingActorPTID == "" || peerActorPTID == "" || callID == "" {
+		return nil, errors.New(
+			"events: Federation call-resolution request is incomplete",
+		)
+	}
+	requesterHome, err := actors.ResolveActorHomeStationPeerID(ctx, requestingActorPTID)
+	if err != nil {
+		return nil, err
+	}
+	if requesterHome != sourceStationPeerID {
+		return nil, errors.New(
+			"events: requesting actor does not belong to source Station",
+		)
+	}
+	result, err := s.callResolution.getForActor(ctx, requestingActorPTID, callID)
+	if err != nil {
+		return nil, err
+	}
+	record := result.record
+	if !callResolutionParticipantsMatch(record, requestingActorPTID, peerActorPTID) {
+		return nil, errCallResolutionNotFound
+	}
+	if result.becameNoAnswer {
+		s.fanOutNoAnswer(ctx, record)
+	}
+	return callResolutionProtoFromModel(record), nil
+}
+
+func callResolutionParticipantsMatch(
+	record callResolutionModel,
+	firstActorPTID string,
+	secondActorPTID string,
+) bool {
+	return (record.CallerActorPTID == firstActorPTID &&
+		record.CalleeActorPTID == secondActorPTID) ||
+		(record.CallerActorPTID == secondActorPTID &&
+			record.CalleeActorPTID == firstActorPTID)
+}
+
+func callResolutionProtoFromModel(
+	record callResolutionModel,
+) *realtime.GetFederatedCallResolutionResponse {
+	var resolvedAt int64
+	if record.ResolvedAt != nil {
+		resolvedAt = record.ResolvedAt.UnixMilli()
+	}
+	return &realtime.GetFederatedCallResolutionResponse{
+		CallId:             record.CallID,
+		State:              record.State,
+		WinningDeviceId:    record.WinningDeviceID,
+		TerminalAction:     record.TerminalAction,
+		RingDeadlineUnixMs: record.RingDeadline.UnixMilli(),
+		ResolvedAtUnixMs:   resolvedAt,
+		ExpiresAtUnixMs:    record.ExpiresAt.UnixMilli(),
+	}
+}
+
+func callResolutionModelFromProto(
+	response *realtime.GetFederatedCallResolutionResponse,
+) callResolutionModel {
+	record := callResolutionModel{
+		CallID:          response.GetCallId(),
+		State:           response.GetState(),
+		WinningDeviceID: response.GetWinningDeviceId(),
+		TerminalAction:  response.GetTerminalAction(),
+		RingDeadline:    time.UnixMilli(response.GetRingDeadlineUnixMs()).UTC(),
+		ExpiresAt:       time.UnixMilli(response.GetExpiresAtUnixMs()).UTC(),
+	}
+	if response.GetResolvedAtUnixMs() > 0 {
+		resolvedAt := time.UnixMilli(response.GetResolvedAtUnixMs()).UTC()
+		record.ResolvedAt = &resolvedAt
+	}
+	return record
 }

@@ -5,7 +5,7 @@ import {
   type ChatMediaTransferStatus,
 } from '@peers-touch/client-chat-core';
 
-import { messagingCommands } from '../../../messaging/runtime';
+import { imServiceV1 } from '../../../services/im-service';
 import type { MessagingLocalAttachmentIntent } from '../../../services/im-service-contract';
 import { log } from '../../../utils/logger';
 
@@ -18,6 +18,7 @@ export interface ChatDraftAttachment {
   filePath?: string;
   name: string;
   mimeType: string;
+  contentKind: 'file' | 'voice_note';
   size: number;
   durationSeconds?: number;
   previewUrl: string | null;
@@ -81,6 +82,7 @@ function createDraftAttachment(
     file,
     name: file.name || fallbackName,
     mimeType,
+    contentKind: 'file',
     size: file.size,
     durationSeconds: options?.durationSeconds,
     ...createChatAttachmentPreview(mimeType, file.name, file),
@@ -102,14 +104,13 @@ export function createPickedDraftAttachment(
     filePath: attachment.filePath,
     name,
     mimeType,
+    contentKind: attachment.contentKind,
     size: attachment.size ?? 0,
+    durationSeconds: attachment.durationMs > 0 ? attachment.durationMs / 1000 : undefined,
     ...createChatAttachmentPreview(mimeType, name, attachment.filePath),
     status: valid ? 'ready' : 'failed',
     managedSource: valid,
     attachment: valid ? attachment : undefined,
-    durationSeconds: attachment.voiceNote?.durationMs
-      ? attachment.voiceNote.durationMs / 1000
-      : undefined,
   };
 }
 
@@ -129,7 +130,7 @@ export function useChatAttachmentDrafts({
 
   const discardManagedSource = useCallback((item: ChatDraftAttachment) => {
     if (!item.managedSource || !item.attachment?.filePath) return;
-    messagingCommands.discardAttachmentSource(item.attachment.filePath).catch((error) => {
+    imServiceV1.messaging.discardAttachmentSource(item.attachment.filePath).catch((error) => {
       log.warn('chat', 'discard staged attachment source failed', error);
     });
   }, []);
@@ -156,7 +157,7 @@ export function useChatAttachmentDrafts({
       return;
     }
     try {
-      const filePath = item.filePath ?? await messagingCommands.stageAttachmentSource(
+      const filePath = item.filePath ?? await imServiceV1.messaging.stageAttachmentSource(
         item.name,
         new Uint8Array(await item.file!.arrayBuffer()),
       );
@@ -166,13 +167,8 @@ export function useChatAttachmentDrafts({
           filePath,
           filename: item.name,
           mimeType: item.mimeType,
-          voiceNote: item.durationSeconds
-            ? {
-              durationMs: Math.max(1, Math.round(item.durationSeconds * 1000)),
-              codec: item.mimeType,
-              waveform: [],
-            }
-            : undefined,
+          contentKind: item.contentKind,
+          durationMs: Math.max(0, Math.round((item.durationSeconds ?? 0) * 1000)),
         },
         managedSource: !item.filePath,
       });
@@ -202,7 +198,9 @@ export function useChatAttachmentDrafts({
         attempt: 0,
         name: attachment.filename || fallbackName,
         mimeType: attachment.mimeType || 'application/octet-stream',
+        contentKind: attachment.contentKind,
         size: attachment.size ?? 0,
+        durationSeconds: attachment.durationMs > 0 ? attachment.durationMs / 1000 : undefined,
         ...createChatAttachmentPreview(
           attachment.mimeType,
           attachment.filename,
@@ -260,16 +258,12 @@ export function useChatAttachmentDrafts({
     .map((item) => item.attachment)
     .filter((item): item is MessagingLocalAttachmentIntent => Boolean(item));
   const uploading = drafts.some((item) => item.status === 'uploading');
-  const voiceUploading = drafts.some(
-    (item) => item.status === 'uploading' && item.mimeType.startsWith('audio/'),
-  );
   const failed = drafts.some((item) => item.status === 'failed');
 
   return {
     drafts,
     readyAttachments,
     uploading,
-    voiceUploading,
     failed,
     addFiles,
     appendPickedAttachment,

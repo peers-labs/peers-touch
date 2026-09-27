@@ -735,30 +735,18 @@ class MessagingPlatformContractTest(unittest.TestCase):
         social_store = (
             ROOT / "apps/desktop/src/store/socialChat.ts"
         ).read_text(encoding="utf-8")
-        self.assertIn("messagingCommands.listConversations()", social_store)
-        self.assertNotIn(
-            "imServiceV1.messaging.listConversations()",
-            social_store,
-        )
+        self.assertIn("imServiceV1.messaging.listConversations()", social_store)
         self.assertNotIn("primeDirectSessions(", social_store)
         group_modal = (
             ROOT / "apps/desktop/src/components/chat/CreateGroupModal.tsx"
         ).read_text(encoding="utf-8")
-        self.assertIn("messagingCommands.createGroup(", group_modal)
-        self.assertNotIn("imServiceV1.messaging.createGroup(", group_modal)
+        self.assertIn("imServiceV1.messaging.createGroup(", group_modal)
         self.assertNotIn("keyPackage.fetch(", group_modal)
         self.assertNotIn("createAuthorizedGroup(", group_modal)
         group_detail = (
             ROOT / "apps/desktop/src/components/chat/ChatDetailPanel.tsx"
         ).read_text(encoding="utf-8")
-        self.assertIn(
-            "messagingCommands.submitMembershipIntent(",
-            group_detail,
-        )
-        self.assertNotIn(
-            "imServiceV1.messaging.submitMembershipIntent(",
-            group_detail,
-        )
+        self.assertIn("imServiceV1.messaging.submitMembershipIntent(", group_detail)
         self.assertNotIn("imServiceV1.keyPackage.fetch(", group_detail)
         self.assertNotIn("imServiceV1.mlsGroup.addAuthorizedMember(", group_detail)
         self.assertNotIn("imServiceV1.mlsGroup.removeAuthorizedMember(", group_detail)

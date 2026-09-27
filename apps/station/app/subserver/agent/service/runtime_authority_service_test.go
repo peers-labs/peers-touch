@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
@@ -1126,6 +1127,91 @@ func TestProviderAdapterRejectsStaleExpectedAuthorityBeforeNetwork(t *testing.T)
 				t.Fatalf("expected version conflict before network, got %T: %v", err, err)
 			}
 		})
+	}
+}
+
+func TestProviderAdapterContinuationUsesPinnedCapabilitiesAfterContraction(t *testing.T) {
+	service, config, db := setupPinnedProviderExecution(
+		t,
+		"runtime_authority_provider_continuation_contraction",
+	)
+	if err := service.validatePinnedRuntimeAuthority(
+		context.Background(),
+		config,
+	); err != nil {
+		t.Fatalf("validate initial pinned runtime authority: %v", err)
+	}
+	var attempt persistence.TurnAttempt
+	if err := db.First(&attempt, "id = ?", config.AttemptID).Error; err != nil {
+		t.Fatalf("load pinned continuation attempt: %v", err)
+	}
+	pinned, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		t.Fatalf("decode pinned continuation runtime: %v", err)
+	}
+	var provider persistence.AgentProvider
+	if err := db.Where(
+		"actor_ptid = ? AND name = ?",
+		config.ActorID,
+		config.Provider,
+	).First(&provider).Error; err != nil {
+		t.Fatalf("load continuation provider authority: %v", err)
+	}
+
+	providers := append([]catalog.CatalogProvider(nil), catalog.List()...)
+	for providerIndex := range providers {
+		providers[providerIndex].Models = append(
+			[]catalog.CatalogModel(nil),
+			providers[providerIndex].Models...,
+		)
+		for modelIndex := range providers[providerIndex].Models {
+			providers[providerIndex].Models[modelIndex].Capabilities = append(
+				[]string(nil),
+				providers[providerIndex].Models[modelIndex].Capabilities...,
+			)
+			if providers[providerIndex].ID == config.Provider &&
+				providers[providerIndex].Models[modelIndex].ID == config.Model {
+				providers[providerIndex].Models[modelIndex].Capabilities =
+					[]string{"text-input", "text-output", "streaming"}
+			}
+		}
+	}
+	catalog.SetForTesting(providers)
+
+	strictRequest := &ProviderCallRequest{
+		UserID:                          config.ActorID,
+		ProviderType:                    config.Provider,
+		Model:                           config.Model,
+		ExpectedProviderConfigVersion:   config.ProviderConfigVersion,
+		ExpectedCapabilitySourceVersion: config.CapabilitySourceVersion,
+	}
+	if _, err := validateExpectedProviderAuthority(
+		context.Background(),
+		strictRequest,
+		&provider,
+	); err == nil {
+		t.Fatal("current provider authority accepted contracted capability source")
+	}
+
+	continuationRequest := &ProviderCallRequest{
+		UserID:                          config.ActorID,
+		ProviderType:                    config.Provider,
+		Model:                           config.Model,
+		ExpectedProviderConfigVersion:   config.ProviderConfigVersion,
+		ExpectedCapabilitySourceVersion: config.CapabilitySourceVersion,
+		RuntimeAuthorityMode:            providerRuntimeAuthorityCommittedToolContinuation,
+		PinnedRuntimeCapabilities:       pinned.GetCapabilities(),
+	}
+	capabilities, err := validateExpectedProviderAuthority(
+		context.Background(),
+		continuationRequest,
+		&provider,
+	)
+	if err != nil {
+		t.Fatalf("validate committed ToolCall continuation authority: %v", err)
+	}
+	if !capabilities.GetAgentic().GetNativeTools() {
+		t.Fatal("continuation did not preserve pinned provider capabilities")
 	}
 }
 

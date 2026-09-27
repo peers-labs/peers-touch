@@ -13,7 +13,6 @@ import (
 	"time"
 
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
-	"github.com/peers-labs/peers-touch/station/frame/core/util/id"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -22,6 +21,8 @@ import (
 const (
 	PrivateContentResourcePost    = "POST"
 	PrivateContentResourceComment = "COMMENT"
+
+	privateContentLifecycleActive = "ACTIVE"
 
 	PrivateContentKeyKindEndpoint      = "ENDPOINT"
 	PrivateContentKeyKindActorRecovery = "ACTOR_RECOVERY"
@@ -87,7 +88,19 @@ func WithPrivateContentFailpoint(
 
 type PreparingPlanResult struct {
 	Plan        dbmodel.SocialPrivateContentPlan
+	Binding     PrivatePrepareBinding
 	ExactReplay bool
+}
+
+// PrivatePrepareBinding persists the Social-owned audience and subtype facts
+// that cannot be reconstructed from their hashes in the canonical prepare
+// input. The columns live on the canonical plan row and are committed in the
+// same PREPARING transaction.
+type PrivatePrepareBinding struct {
+	AudienceBytes                 []byte
+	AudienceSHA256                []byte
+	SubtypePrepareAuthorityBytes  []byte
+	SubtypePrepareAuthoritySHA256 []byte
 }
 
 type PreparedPlan struct {
@@ -134,12 +147,36 @@ type PrivateObjectAttachment struct {
 	AttachedAt       time.Time
 }
 
+type PrivateCommentListQuery struct {
+	PostID          string
+	ViewerPTID      string
+	ViewerDeviceID  string
+	CursorCreatedAt time.Time
+	CursorCommentID string
+	Limit           int
+}
+
+type PrivateCommentPage struct {
+	Comments []*PrivateCommentReadModel
+	HasMore  bool
+}
+
 // PrivateContentTransaction exposes repositories bound to exactly one Social
 // transaction. Implementations never create or commit nested transactions.
 type PrivateContentTransaction interface {
 	ContentPreKeyValidationTransaction() federationdelivery.Transaction
+	LoadPrepareBinding(context.Context, string) (PrivatePrepareBinding, error)
 	RejectStale(context.Context) error
 	Expire(context.Context) error
+	PrivateCommentRetryAfter(
+		context.Context,
+		string,
+		string,
+		time.Time,
+		time.Duration,
+		int64,
+		int64,
+	) (time.Duration, error)
 	CreatePost(context.Context, dbmodel.SocialPrivateContentPost) error
 	CreateComment(context.Context, dbmodel.SocialPrivateContentComment) error
 	CreateAudienceSnapshot(
@@ -210,9 +247,14 @@ type PrivateContentStore interface {
 		string,
 		string,
 	) (*PrivateCommentReadModel, error)
+	ListPrivateComments(
+		context.Context,
+		PrivateCommentListQuery,
+	) (PrivateCommentPage, error)
 	ClaimPreparing(
 		context.Context,
 		dbmodel.SocialPrivateContentPlan,
+		PrivatePrepareBinding,
 	) (PreparingPlanResult, error)
 	MarkPrepared(context.Context, PreparedPlan) (PreparedPlanResult, error)
 }
@@ -311,6 +353,16 @@ func (privateContentValidationTransaction) Outbox() federationdelivery.OutboxWri
 
 func (tx *gormPrivateContentTransaction) ContentPreKeyValidationTransaction() federationdelivery.Transaction {
 	return privateContentValidationTransaction{db: tx.db}
+}
+
+func (tx *gormPrivateContentTransaction) LoadPrepareBinding(
+	ctx context.Context,
+	planID string,
+) (PrivatePrepareBinding, error) {
+	if err := tx.requireSubmit("", "", 0, ""); err != nil {
+		return PrivatePrepareBinding{}, err
+	}
+	return loadPrivatePrepareBinding(tx.db.WithContext(ctx), planID)
 }
 
 func NewGORMPrivateContentStore(
@@ -480,47 +532,25 @@ func (s *GORMPrivateContentStore) GetPrivatePost(
 			return err
 		}
 		if viewerPTID != post.AuthorPTID {
-			var currentRelationshipCount int64
-			if err := tx.Model(
-				&federatedRelationshipProjectionModel{},
-			).Where(
-				"owner_ptid = ? AND peer_ptid = ?",
-				post.AuthorPTID,
-				viewerPTID,
-			).Count(&currentRelationshipCount).Error; err != nil {
-				return err
-			}
-			if currentRelationshipCount != 1 {
-				return ErrPrivateContentNotFound
-			}
-			var blockCount int64
-			if err := tx.Model(&socialDirectionalRelationshipModel{}).
-				Where(
-					"blocked = ? AND ((actor_ptid = ? AND target_actor_ptid = ?) OR (actor_ptid = ? AND target_actor_ptid = ?))",
-					true,
-					post.AuthorPTID,
-					viewerPTID,
-					viewerPTID,
-					post.AuthorPTID,
-				).
-				Count(&blockCount).Error; err != nil {
-				return err
-			}
-			if blockCount != 0 {
-				return ErrPrivateContentNotFound
-			}
-			var grantCount int64
-			if err := tx.Model(
-				&dbmodel.SocialPrivateRecipientGrant{},
-			).Where(
-				"snapshot_id = ? AND recipient_ptid = ? AND revoked_at IS NULL",
+			if err := requirePrivateSnapshotGrant(
+				tx,
 				post.AudienceSnapshotID,
 				viewerPTID,
-			).Count(&grantCount).Error; err != nil {
+			); err != nil {
 				return err
 			}
-			if grantCount != 1 {
-				return ErrPrivateContentNotFound
+			audience, err := loadPrivatePostAudience(tx, post, snapshot)
+			if err != nil {
+				return err
+			}
+			if err := authorizePrivateCurrentAudience(
+				tx,
+				snapshot,
+				audience,
+				post.AuthorPTID,
+				viewerPTID,
+			); err != nil {
+				return err
 			}
 		}
 		var envelope *dbmodel.SocialPrivateContentEnvelope
@@ -600,147 +630,15 @@ func (s *GORMPrivateContentStore) GetPrivateComment(
 	}
 	var result *PrivateCommentReadModel
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var comment dbmodel.SocialPrivateContentComment
-		if err := tx.Where(
-			"comment_id = ? AND post_id = ? AND deleted_at IS NULL",
+		var err error
+		result, err = loadPrivateCommentReadModel(
+			tx,
+			postID,
 			commentID,
-			postID,
-		).First(&comment).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrPrivateContentNotFound
-			}
-			return err
-		}
-		var parent dbmodel.SocialPrivateContentPost
-		if err := tx.Where(
-			"post_id = ? AND deleted_at IS NULL",
-			postID,
-		).First(&parent).Error; err != nil {
-			return ErrPrivateContentNotFound
-		}
-		if viewerPTID != parent.AuthorPTID {
-			var parentGrantCount int64
-			if err := tx.Model(
-				&dbmodel.SocialPrivateRecipientGrant{},
-			).Where(
-				"snapshot_id = ? AND recipient_ptid = ? AND revoked_at IS NULL",
-				parent.AudienceSnapshotID,
-				viewerPTID,
-			).Count(&parentGrantCount).Error; err != nil {
-				return err
-			}
-			if parentGrantCount != 1 {
-				return ErrPrivateContentNotFound
-			}
-		}
-		if viewerPTID != comment.AuthorPTID {
-			var commentGrantCount int64
-			if err := tx.Model(
-				&dbmodel.SocialPrivateRecipientGrant{},
-			).Where(
-				"snapshot_id = ? AND recipient_ptid = ? AND revoked_at IS NULL",
-				comment.InteractionSnapshotID,
-				viewerPTID,
-			).Count(&commentGrantCount).Error; err != nil {
-				return err
-			}
-			if commentGrantCount != 1 {
-				return ErrPrivateContentNotFound
-			}
-		}
-		for _, ownerPTID := range []string{
-			parent.AuthorPTID,
-			comment.AuthorPTID,
-		} {
-			if viewerPTID == ownerPTID {
-				continue
-			}
-			var relationshipCount int64
-			if err := tx.Model(
-				&federatedRelationshipProjectionModel{},
-			).Where(
-				"owner_ptid = ? AND peer_ptid = ?",
-				ownerPTID,
-				viewerPTID,
-			).Count(&relationshipCount).Error; err != nil {
-				return err
-			}
-			if relationshipCount != 1 {
-				return ErrPrivateContentNotFound
-			}
-			var blockCount int64
-			if err := tx.Model(&socialDirectionalRelationshipModel{}).
-				Where(
-					"blocked = ? AND ((actor_ptid = ? AND target_actor_ptid = ?) OR (actor_ptid = ? AND target_actor_ptid = ?))",
-					true,
-					ownerPTID,
-					viewerPTID,
-					viewerPTID,
-					ownerPTID,
-				).
-				Count(&blockCount).Error; err != nil {
-				return err
-			}
-			if blockCount != 0 {
-				return ErrPrivateContentNotFound
-			}
-		}
-		var snapshot dbmodel.SocialPrivateAudienceSnapshot
-		if err := tx.Where(
-			"snapshot_id = ?",
-			comment.InteractionSnapshotID,
-		).First(&snapshot).Error; err != nil {
-			return err
-		}
-		var envelope *dbmodel.SocialPrivateContentEnvelope
-		var endpointEnvelope dbmodel.SocialPrivateContentEnvelope
-		if err := tx.Where(
-			"content_id = ? AND key_kind = ? AND recipient_ptid = ? AND recipient_device_id = ?",
-			comment.ContentID,
-			PrivateContentKeyKindEndpoint,
 			viewerPTID,
 			viewerDeviceID,
-		).First(&endpointEnvelope).Error; err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-		} else {
-			envelope = &endpointEnvelope
-		}
-		var objects []dbmodel.SocialPrivateObjectAttachment
-		if err := tx.Where(
-			"content_id = ? AND state = ? AND domain_commit_id <> ''",
-			comment.ContentID,
-			dbmodel.SocialPrivateObjectAttached,
-		).Order("object_id ASC").Find(&objects).Error; err != nil {
-			return err
-		}
-		var proof dbmodel.SocialPrivateCommitProof
-		if err := tx.Where(
-			"content_id = ? AND generation = ?",
-			comment.ContentID,
-			comment.Generation,
-		).First(&proof).Error; err != nil {
-			return err
-		}
-		var plan dbmodel.SocialPrivateContentPlan
-		if err := tx.Where(
-			"content_id = ? AND generation = ?",
-			comment.ContentID,
-			comment.Generation,
-		).First(&plan).Error; err != nil {
-			return err
-		}
-		result = &PrivateCommentReadModel{
-			Comment:             comment,
-			Snapshot:            snapshot,
-			Envelope:            envelope,
-			Objects:             objects,
-			CommitProof:         proof,
-			AuthorDeviceID:      plan.AuthorDeviceID,
-			CanonicalPlanSHA256: cloneBytes(plan.CanonicalPlanSHA256),
-		}
-		return nil
+		)
+		return err
 	})
 	if errors.Is(err, ErrPrivateContentNotFound) ||
 		errors.Is(err, gorm.ErrRecordNotFound) {
@@ -750,6 +648,229 @@ func (s *GORMPrivateContentStore) GetPrivateComment(
 		return nil, fmt.Errorf("social private content read Comment: %w", err)
 	}
 	return result, nil
+}
+
+func (s *GORMPrivateContentStore) ListPrivateComments(
+	ctx context.Context,
+	query PrivateCommentListQuery,
+) (PrivateCommentPage, error) {
+	if strings.TrimSpace(query.PostID) == "" ||
+		strings.TrimSpace(query.ViewerPTID) == "" ||
+		strings.TrimSpace(query.ViewerDeviceID) == "" ||
+		query.Limit < 1 ||
+		query.Limit > 100 ||
+		(query.CursorCreatedAt.IsZero() != (query.CursorCommentID == "")) {
+		return PrivateCommentPage{}, fmt.Errorf(
+			"%w: private Comment list query is invalid",
+			ErrPrivateContentInvalid,
+		)
+	}
+
+	var page PrivateCommentPage
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var parent dbmodel.SocialPrivateContentPost
+		if err := tx.Where(
+			"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
+			query.PostID,
+			privateContentLifecycleActive,
+		).First(&parent).Error; err != nil {
+			return ErrPrivateContentNotFound
+		}
+		if err := authorizePrivatePostViewer(tx, parent, query.ViewerPTID); err != nil {
+			return err
+		}
+
+		rowsQuery := privateCommentVisibilityScope(
+			tx,
+			parent,
+			query.ViewerPTID,
+		).Where("post_id = ?", query.PostID)
+		if !query.CursorCreatedAt.IsZero() {
+			rowsQuery = rowsQuery.Where(
+				"(created_at < ?) OR (created_at = ? AND comment_id < ?)",
+				query.CursorCreatedAt.UTC(),
+				query.CursorCreatedAt.UTC(),
+				query.CursorCommentID,
+			)
+		}
+		var rows []dbmodel.SocialPrivateContentComment
+		if err := rowsQuery.
+			Order("created_at DESC, comment_id DESC").
+			Limit(query.Limit + 1).
+			Find(&rows).Error; err != nil {
+			return err
+		}
+		page.HasMore = len(rows) > query.Limit
+		if page.HasMore {
+			rows = rows[:query.Limit]
+		}
+		page.Comments = make([]*PrivateCommentReadModel, 0, len(rows))
+		for _, row := range rows {
+			read, err := loadPrivateCommentReadModel(
+				tx,
+				query.PostID,
+				row.CommentID,
+				query.ViewerPTID,
+				query.ViewerDeviceID,
+			)
+			if err != nil {
+				return err
+			}
+			page.Comments = append(page.Comments, read)
+		}
+		return nil
+	})
+	if errors.Is(err, ErrPrivateContentNotFound) ||
+		errors.Is(err, gorm.ErrRecordNotFound) {
+		return PrivateCommentPage{}, ErrPrivateContentNotFound
+	}
+	if err != nil {
+		return PrivateCommentPage{}, fmt.Errorf(
+			"social private content list Comments: %w",
+			err,
+		)
+	}
+	return page, nil
+}
+
+func loadPrivateCommentReadModel(
+	tx *gorm.DB,
+	postID string,
+	commentID string,
+	viewerPTID string,
+	viewerDeviceID string,
+) (*PrivateCommentReadModel, error) {
+	var parent dbmodel.SocialPrivateContentPost
+	if err := tx.Where(
+		"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
+		postID,
+		privateContentLifecycleActive,
+	).First(&parent).Error; err != nil {
+		return nil, ErrPrivateContentNotFound
+	}
+	if err := authorizePrivatePostViewer(tx, parent, viewerPTID); err != nil {
+		return nil, err
+	}
+	var comment dbmodel.SocialPrivateContentComment
+	if err := privateCommentVisibilityScope(
+		tx,
+		parent,
+		viewerPTID,
+	).Where(
+		"comment_id = ? AND post_id = ?",
+		commentID,
+		postID,
+	).First(&comment).Error; err != nil {
+		return nil, ErrPrivateContentNotFound
+	}
+	var snapshot dbmodel.SocialPrivateAudienceSnapshot
+	if err := tx.Where(
+		"snapshot_id = ?",
+		comment.InteractionSnapshotID,
+	).First(&snapshot).Error; err != nil {
+		return nil, err
+	}
+	var envelope *dbmodel.SocialPrivateContentEnvelope
+	var endpointEnvelope dbmodel.SocialPrivateContentEnvelope
+	if err := tx.Where(
+		"content_id = ? AND key_kind = ? AND recipient_ptid = ? AND recipient_device_id = ?",
+		comment.ContentID,
+		PrivateContentKeyKindEndpoint,
+		viewerPTID,
+		viewerDeviceID,
+	).First(&endpointEnvelope).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	} else {
+		envelope = &endpointEnvelope
+	}
+	var objects []dbmodel.SocialPrivateObjectAttachment
+	if err := tx.Where(
+		"content_id = ? AND state = ? AND domain_commit_id <> ''",
+		comment.ContentID,
+		dbmodel.SocialPrivateObjectAttached,
+	).Order("object_id ASC").Find(&objects).Error; err != nil {
+		return nil, err
+	}
+	var proof dbmodel.SocialPrivateCommitProof
+	if err := tx.Where(
+		"content_id = ? AND generation = ?",
+		comment.ContentID,
+		comment.Generation,
+	).First(&proof).Error; err != nil {
+		return nil, err
+	}
+	var plan dbmodel.SocialPrivateContentPlan
+	if err := tx.Where(
+		"content_id = ? AND generation = ?",
+		comment.ContentID,
+		comment.Generation,
+	).First(&plan).Error; err != nil {
+		return nil, err
+	}
+	return &PrivateCommentReadModel{
+		Comment:             comment,
+		Snapshot:            snapshot,
+		Envelope:            envelope,
+		Objects:             objects,
+		CommitProof:         proof,
+		AuthorDeviceID:      plan.AuthorDeviceID,
+		CanonicalPlanSHA256: cloneBytes(plan.CanonicalPlanSHA256),
+	}, nil
+}
+
+func privateCommentVisibilityScope(
+	tx *gorm.DB,
+	parent dbmodel.SocialPrivateContentPost,
+	viewerPTID string,
+) *gorm.DB {
+	query := tx.Model(&dbmodel.SocialPrivateContentComment{}).Where(
+		"lifecycle_state = ? AND deleted_at IS NULL",
+		privateContentLifecycleActive,
+	)
+	return query.Where(
+		`(
+			author_ptid = ?
+			OR (
+				NOT EXISTS (
+					SELECT 1
+					FROM friend_chat_friendships AS block_row
+					WHERE block_row.status = ?
+					  AND (
+						(block_row.actor_ptid = social_private_comments.author_ptid AND block_row.peer_ptid = ?)
+						OR (block_row.actor_ptid = ? AND block_row.peer_ptid = social_private_comments.author_ptid)
+					  )
+				)
+				AND (
+					? = ?
+					OR (
+						EXISTS (
+							SELECT 1
+							FROM social_private_recipient_grants AS grant_row
+							WHERE grant_row.snapshot_id = social_private_comments.interaction_snapshot_id
+							  AND grant_row.recipient_ptid = ?
+							  AND grant_row.revoked_at IS NULL
+						)
+						AND EXISTS (
+							SELECT 1
+							FROM social_relationship_projections AS relationship_row
+							WHERE relationship_row.owner_ptid = social_private_comments.author_ptid
+							  AND relationship_row.peer_ptid = ?
+						)
+					)
+				)
+			)
+		)`,
+		viewerPTID,
+		friendshipStatusBlocked,
+		viewerPTID,
+		viewerPTID,
+		viewerPTID,
+		parent.AuthorPTID,
+		viewerPTID,
+		viewerPTID,
+	)
 }
 
 func (s *GORMPrivateContentStore) FindPrepare(
@@ -795,8 +916,13 @@ func (s *GORMPrivateContentStore) FindPrepare(
 	if err := validatePersistedPreparingPlan(plan); err != nil {
 		return PreparingPlanResult{}, false, err
 	}
+	binding, err := loadPrivatePrepareBinding(s.db.WithContext(ctx), plan.PlanID)
+	if err != nil {
+		return PreparingPlanResult{}, false, err
+	}
 	return PreparingPlanResult{
 		Plan:        clonePlan(plan),
+		Binding:     clonePrepareBinding(binding),
 		ExactReplay: true,
 	}, true, nil
 }
@@ -807,10 +933,22 @@ func (s *GORMPrivateContentStore) FindPrepare(
 func (s *GORMPrivateContentStore) ClaimPreparing(
 	ctx context.Context,
 	candidate dbmodel.SocialPrivateContentPlan,
+	binding PrivatePrepareBinding,
 ) (PreparingPlanResult, error) {
 	if err := validatePreparingPlan(candidate); err != nil {
 		return PreparingPlanResult{}, err
 	}
+	if err := validatePrepareBinding(binding); err != nil {
+		return PreparingPlanResult{}, err
+	}
+	candidate.AudienceBytes = cloneBytes(binding.AudienceBytes)
+	candidate.AudienceSHA256 = cloneBytes(binding.AudienceSHA256)
+	candidate.SubtypePrepareAuthorityBytes = cloneBytes(
+		binding.SubtypePrepareAuthorityBytes,
+	)
+	candidate.SubtypePrepareAuthoritySHA256 = cloneBytes(
+		binding.SubtypePrepareAuthoritySHA256,
+	)
 	candidate.State = dbmodel.SocialPrivatePlanStatePreparing
 	candidate.ClaimResponseBytes = nil
 	candidate.ClaimResponseSHA256 = nil
@@ -857,8 +995,22 @@ func (s *GORMPrivateContentStore) ClaimPreparing(
 				if err := validatePersistedPreparingPlan(matches[0]); err != nil {
 					return err
 				}
+				persistedBinding, err := loadPrivatePrepareBinding(
+					tx,
+					matches[0].PlanID,
+				)
+				if err != nil {
+					return err
+				}
+				if !samePrepareBinding(persistedBinding, binding) {
+					return fmt.Errorf(
+						"%w: prepare audience or subtype binding differs",
+						ErrPrivateContentConflict,
+					)
+				}
 				result = PreparingPlanResult{
 					Plan:        clonePlan(matches[0]),
+					Binding:     clonePrepareBinding(persistedBinding),
 					ExactReplay: true,
 				}
 				return nil
@@ -870,7 +1022,10 @@ func (s *GORMPrivateContentStore) ClaimPreparing(
 			if err := s.afterWrite(ctx, PrivateContentBoundaryPlanPreparing); err != nil {
 				return err
 			}
-			result = PreparingPlanResult{Plan: clonePlan(candidate)}
+			result = PreparingPlanResult{
+				Plan:    clonePlan(candidate),
+				Binding: clonePrepareBinding(binding),
+			}
 			return nil
 		},
 	)
@@ -1078,7 +1233,23 @@ func (s *GORMPrivateContentStore) ExecuteSubmit(
 				return nil
 			}
 
-			if plan.State != dbmodel.SocialPrivatePlanStatePrepared {
+			switch plan.State {
+			case dbmodel.SocialPrivatePlanStatePrepared:
+			case dbmodel.SocialPrivatePlanStateRejectedStale:
+				return fmt.Errorf(
+					"%w: plan %s is %s",
+					ErrPrivateContentStalePlan,
+					plan.PlanID,
+					plan.State,
+				)
+			case dbmodel.SocialPrivatePlanStateExpired:
+				return fmt.Errorf(
+					"%w: plan %s is %s",
+					ErrPrivateContentExpiredPlan,
+					plan.PlanID,
+					plan.State,
+				)
+			default:
 				return fmt.Errorf(
 					"%w: plan %s is %s",
 					ErrPrivateContentInvalidState,
@@ -1232,6 +1403,119 @@ func (tx *gormPrivateContentTransaction) Expire(
 	return nil
 }
 
+func (tx *gormPrivateContentTransaction) PrivateCommentRetryAfter(
+	ctx context.Context,
+	postID string,
+	authorPTID string,
+	admittedAt time.Time,
+	window time.Duration,
+	actorLimit int64,
+	postLimit int64,
+) (time.Duration, error) {
+	if err := tx.requireSubmit(
+		PrivateContentResourceComment,
+		tx.plan.ContentID,
+		tx.plan.Generation,
+		authorPTID,
+	); err != nil {
+		return 0, err
+	}
+	if strings.TrimSpace(postID) == "" ||
+		admittedAt.IsZero() ||
+		window <= 0 ||
+		actorLimit < 1 ||
+		postLimit < actorLimit {
+		return 0, fmt.Errorf(
+			"%w: private Comment admission policy is invalid",
+			ErrPrivateContentInvalid,
+		)
+	}
+	var parent dbmodel.SocialPrivateContentPost
+	if err := tx.db.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where(
+			"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
+			postID,
+			privateContentLifecycleActive,
+		).
+		First(&parent).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, ErrPrivateContentNotFound
+		}
+		return 0, fmt.Errorf(
+			"lock private Comment parent Post: %w",
+			err,
+		)
+	}
+	windowStart := admittedAt.UTC().Add(-window)
+	type commentWindow struct {
+		Count    int64
+		OldestAt *time.Time
+	}
+	loadWindow := func(author string) (commentWindow, error) {
+		var result commentWindow
+		query := func() *gorm.DB {
+			current := tx.db.WithContext(ctx).
+				Model(&dbmodel.SocialPrivateContentComment{}).
+				Where(
+					"post_id = ? AND created_at > ?",
+					postID,
+					windowStart,
+				)
+			if author != "" {
+				current = current.Where("author_ptid = ?", author)
+			}
+			return current
+		}
+		if err := query().Count(&result.Count).Error; err != nil {
+			return commentWindow{}, err
+		}
+		if result.Count == 0 {
+			return result, nil
+		}
+		var oldest dbmodel.SocialPrivateContentComment
+		if err := query().
+			Select("created_at").
+			Order("created_at ASC, comment_id ASC").
+			First(&oldest).Error; err != nil {
+			return commentWindow{}, err
+		}
+		result.OldestAt = &oldest.CreatedAt
+		return result, nil
+	}
+	actorWindow, err := loadWindow(authorPTID)
+	if err != nil {
+		return 0, fmt.Errorf("count private Comments by actor: %w", err)
+	}
+	postWindow, err := loadWindow("")
+	if err != nil {
+		return 0, fmt.Errorf("count private Comments by Post: %w", err)
+	}
+	var retryAfter time.Duration
+	for _, bounded := range []struct {
+		window commentWindow
+		limit  int64
+	}{
+		{window: actorWindow, limit: actorLimit},
+		{window: postWindow, limit: postLimit},
+	} {
+		if bounded.window.Count < bounded.limit ||
+			bounded.window.OldestAt == nil {
+			continue
+		}
+		candidate := bounded.window.OldestAt.UTC().
+			Add(window).
+			Sub(admittedAt.UTC())
+		if candidate < time.Second {
+			candidate = time.Second
+		}
+		if candidate > retryAfter {
+			retryAfter = candidate
+		}
+	}
+	return retryAfter, nil
+}
+
 func (tx *gormPrivateContentTransaction) CreatePost(
 	ctx context.Context,
 	post dbmodel.SocialPrivateContentPost,
@@ -1271,62 +1555,10 @@ func (tx *gormPrivateContentTransaction) CreatePost(
 			return err
 		}
 	}
-	if err := tx.createPrivateContentPost(ctx, post); err != nil {
+	if err := tx.db.WithContext(ctx).Create(&post).Error; err != nil {
 		return fmt.Errorf("social private content create Post fact: %w", err)
 	}
 	return tx.afterWrite(ctx, PrivateContentBoundaryPostFact)
-}
-
-func (tx *gormPrivateContentTransaction) createPrivateContentPost(
-	ctx context.Context,
-	post dbmodel.SocialPrivateContentPost,
-) error {
-	if !tx.db.Migrator().HasColumn(
-		&dbmodel.SocialPrivateContentPost{},
-		"author_id",
-	) {
-		return tx.db.WithContext(ctx).Create(&post).Error
-	}
-
-	authorID, err := NewActorIdentity(tx.db).RequireID(ctx, post.AuthorPTID)
-	if err != nil {
-		return fmt.Errorf("resolve encrypted Post author: %w", err)
-	}
-	values := map[string]any{
-		"id":                           id.NextID(),
-		"author_id":                    authorID,
-		"type":                         post.Kind,
-		"audience_kind":                "FRIENDS",
-		"audience_target_id":           0,
-		"audience_base_kind":           "",
-		"audience_key_envelopes_json":  "",
-		"text_body":                    "",
-		"attachments_json":             "",
-		"mentions_json":                "",
-		"link_preview_json":            "",
-		"reactions_count_json":         "",
-		"repost_of_ref":                "",
-		"comments_count":               post.CommentsCount,
-		"views_count":                  0,
-		"created_at":                   post.CreatedAt,
-		"updated_at":                   post.UpdatedAt,
-		"post_id":                      post.PostID,
-		"content_id":                   post.ContentID,
-		"author_ptid":                  post.AuthorPTID,
-		"generation":                   post.Generation,
-		"audience_snapshot_id":         post.AudienceSnapshotID,
-		"kind":                         post.Kind,
-		"encrypted_payload_bytes":      cloneBytes(post.EncryptedPayloadBytes),
-		"encrypted_payload_sha256":     cloneBytes(post.EncryptedPayloadSHA256),
-		"object_descriptor_set_sha256": cloneBytes(post.ObjectDescriptorSetSHA256),
-		"mention_routing_sha256":       cloneBytes(post.MentionRoutingSHA256),
-		"subtype_authority_sha256":     cloneBytes(post.SubtypeAuthoritySHA256),
-		"lifecycle_state":              post.LifecycleState,
-		"reactions_count":              post.ReactionsCount,
-	}
-	return tx.db.WithContext(ctx).
-		Table(post.TableName()).
-		Create(values).Error
 }
 
 func (tx *gormPrivateContentTransaction) CreateComment(
@@ -1372,6 +1604,23 @@ func (tx *gormPrivateContentTransaction) CreateComment(
 	}
 	if err := tx.db.WithContext(ctx).Create(&comment).Error; err != nil {
 		return fmt.Errorf("social private content create Comment fact: %w", err)
+	}
+	increment := tx.db.WithContext(ctx).
+		Model(&dbmodel.SocialPrivateContentPost{}).
+		Where(
+			"post_id = ? AND lifecycle_state = ? AND deleted_at IS NULL",
+			comment.PostID,
+			privateContentLifecycleActive,
+		).
+		UpdateColumn("comments_count", gorm.Expr("comments_count + 1"))
+	if increment.Error != nil {
+		return fmt.Errorf(
+			"social private content increment parent Comment count: %w",
+			increment.Error,
+		)
+	}
+	if increment.RowsAffected != 1 {
+		return ErrPrivateContentNotFound
 	}
 	return tx.afterWrite(ctx, PrivateContentBoundaryCommentFact)
 }
@@ -2003,6 +2252,35 @@ func validatePreparingPlan(plan dbmodel.SocialPrivateContentPlan) error {
 	)
 }
 
+func validatePrepareBinding(binding PrivatePrepareBinding) error {
+	if err := validateExactDigest(
+		"prepare audience",
+		binding.AudienceBytes,
+		binding.AudienceSHA256,
+	); err != nil {
+		return err
+	}
+	if len(binding.SubtypePrepareAuthorityBytes) == 0 {
+		empty := sha256.Sum256(nil)
+		if !bytes.Equal(
+			binding.SubtypePrepareAuthoritySHA256,
+			empty[:],
+		) {
+			return fmt.Errorf(
+				"%w: empty prepare subtype authority hash differs",
+				ErrPrivateContentInvalid,
+			)
+		}
+	} else if err := validateExactDigest(
+		"prepare subtype authority",
+		binding.SubtypePrepareAuthorityBytes,
+		binding.SubtypePrepareAuthoritySHA256,
+	); err != nil {
+		return err
+	}
+	return nil
+}
+
 func validatePersistedPreparingPlan(
 	plan dbmodel.SocialPrivateContentPlan,
 ) error {
@@ -2143,6 +2421,65 @@ func samePreparingPlan(
 		bytes.Equal(persisted.CanonicalPrepareSHA256, candidate.CanonicalPrepareSHA256)
 }
 
+func samePrepareBinding(left, right PrivatePrepareBinding) bool {
+	return bytes.Equal(left.AudienceBytes, right.AudienceBytes) &&
+		bytes.Equal(left.AudienceSHA256, right.AudienceSHA256) &&
+		bytes.Equal(
+			left.SubtypePrepareAuthorityBytes,
+			right.SubtypePrepareAuthorityBytes,
+		) &&
+		bytes.Equal(
+			left.SubtypePrepareAuthoritySHA256,
+			right.SubtypePrepareAuthoritySHA256,
+		)
+}
+
+func loadPrivatePrepareBinding(
+	database *gorm.DB,
+	planID string,
+) (PrivatePrepareBinding, error) {
+	if strings.TrimSpace(planID) == "" {
+		return PrivatePrepareBinding{}, fmt.Errorf(
+			"%w: prepare binding plan ID is required",
+			ErrPrivateContentInvalid,
+		)
+	}
+	var model dbmodel.SocialPrivateContentPlan
+	if err := database.
+		Select(
+			"plan_id",
+			"audience_bytes",
+			"audience_sha256",
+			"subtype_prepare_authority_bytes",
+			"subtype_prepare_authority_sha256",
+		).
+		Where("plan_id = ?", planID).
+		First(&model).Error; err != nil {
+		return PrivatePrepareBinding{}, fmt.Errorf(
+			"social private content load prepare binding: %w",
+			err,
+		)
+	}
+	binding := PrivatePrepareBinding{
+		AudienceBytes:  cloneBytes(model.AudienceBytes),
+		AudienceSHA256: cloneBytes(model.AudienceSHA256),
+		SubtypePrepareAuthorityBytes: cloneBytes(
+			model.SubtypePrepareAuthorityBytes,
+		),
+		SubtypePrepareAuthoritySHA256: cloneBytes(
+			model.SubtypePrepareAuthoritySHA256,
+		),
+	}
+	if err := validatePrepareBinding(binding); err != nil {
+		return PrivatePrepareBinding{}, fmt.Errorf(
+			"%w: persisted prepare binding is invalid: %v",
+			ErrPrivateContentConflict,
+			err,
+		)
+	}
+	return binding, nil
+}
+
 func sameSubmitReceipt(
 	receipt dbmodel.SocialPrivateCommandReceipt,
 	plan dbmodel.SocialPrivateContentPlan,
@@ -2238,6 +2575,14 @@ func clonePlan(plan dbmodel.SocialPrivateContentPlan) dbmodel.SocialPrivateConte
 		plan.AuthorizationSnapshotSHA256,
 	)
 	plan.CanonicalPrepareSHA256 = cloneBytes(plan.CanonicalPrepareSHA256)
+	plan.AudienceBytes = cloneBytes(plan.AudienceBytes)
+	plan.AudienceSHA256 = cloneBytes(plan.AudienceSHA256)
+	plan.SubtypePrepareAuthorityBytes = cloneBytes(
+		plan.SubtypePrepareAuthorityBytes,
+	)
+	plan.SubtypePrepareAuthoritySHA256 = cloneBytes(
+		plan.SubtypePrepareAuthoritySHA256,
+	)
 	plan.ClaimRequestBytes = cloneBytes(plan.ClaimRequestBytes)
 	plan.ClaimRequestSHA256 = cloneBytes(plan.ClaimRequestSHA256)
 	plan.ClaimResponseBytes = cloneBytes(plan.ClaimResponseBytes)
@@ -2246,6 +2591,18 @@ func clonePlan(plan dbmodel.SocialPrivateContentPlan) dbmodel.SocialPrivateConte
 	plan.SignedPlanSHA256 = cloneBytes(plan.SignedPlanSHA256)
 	plan.CanonicalPlanSHA256 = cloneBytes(plan.CanonicalPlanSHA256)
 	return plan
+}
+
+func clonePrepareBinding(binding PrivatePrepareBinding) PrivatePrepareBinding {
+	binding.AudienceBytes = cloneBytes(binding.AudienceBytes)
+	binding.AudienceSHA256 = cloneBytes(binding.AudienceSHA256)
+	binding.SubtypePrepareAuthorityBytes = cloneBytes(
+		binding.SubtypePrepareAuthorityBytes,
+	)
+	binding.SubtypePrepareAuthoritySHA256 = cloneBytes(
+		binding.SubtypePrepareAuthoritySHA256,
+	)
+	return binding
 }
 
 func cloneReceipt(

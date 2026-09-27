@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { Badge, Empty, Input, List, Spin, Typography } from 'antd';
-import { BellOff, Pencil, Pin, Search } from 'lucide-react';
+import { BellOff, Pencil, Pin, Search, Users } from 'lucide-react';
 
 import { useMobileI18n } from '../../app/mobileI18n';
 import { BoundedList } from '../../components/BoundedList';
@@ -144,7 +144,7 @@ export function ChatConversationListPageContent({
                         }}
                         data-conversation-id={conversation.kind === 'friend'
                           ? conversation.conversation.session.ulid
-                          : conversation.conversation.projection.conversationId}
+                          : conversation.conversation.group.ulid}
                         data-conversation-kind={conversation.kind}
                         onClick={() => onOpenConversation(conversation)}
                       >
@@ -163,6 +163,7 @@ export function ChatConversationListPageContent({
                             <span className="conversation-title-row">
                               {preferenceState?.sticky ? <Pin size={12} className="conversation-state-icon" /> : null}
                               <Text strong>{conversationTitle(conversation)}</Text>
+                              {conversation.kind === 'group' ? <Users size={12} className="conversation-state-icon" /> : null}
                               {preferenceState?.muted ? <BellOff size={12} className="conversation-state-icon" /> : null}
                             </span>
                           )}

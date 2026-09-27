@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -21,10 +22,12 @@ import {
   digestActiveWork,
   readActiveWorkRecord,
   readAllActiveWorkRecords,
+  repairActiveWorkRecord,
   updateActiveWorkRecord,
 } from './active-work-store.mjs';
 import {
   deriveActiveWorkInput,
+  repairActiveWork,
   syncActiveWork,
 } from './active-work.mjs';
 import { processStartIdentity } from './dev-work-ledger.mjs';
@@ -436,6 +439,74 @@ test('detects digest tampering', () => {
       readActiveWorkRecord({
         home: scope.home,
         workspaceId: WORKSPACE_A,
+      }),
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('repairs a digest-invalid record only from current owner state', async () => {
+  const scope = fixture();
+  try {
+    updateActiveWorkRecord(input(), {
+      home: scope.home,
+      now: new Date(NOW),
+    });
+    const paths = activeWorkStorePaths({
+      home: scope.home,
+      workspaceId: WORKSPACE_A,
+    });
+    const record = JSON.parse(readFileSync(paths.record, 'utf8'));
+    record.currentTaskId = 'DWF-STALE';
+    const raw = `${JSON.stringify(record)}\n`;
+    writeFileSync(paths.record, raw);
+
+    const repaired = await repairActiveWork(
+      {
+        home: scope.home,
+        workItemId: 'DWF-ACTIVE-WORK',
+        expectedRevision: 1,
+        expectedRecordSha256: createHash('sha256').update(raw).digest('hex'),
+        now: new Date('2026-09-19T08:01:00.000Z'),
+      },
+      ownerDependencies(),
+    );
+
+    assert.equal(repaired.revision, 2);
+    assert.equal(repaired.currentTaskId, 'DWF-T1');
+    assert.equal(repaired.recordDigest, digestActiveWork(repaired));
+  } finally {
+    scope.close();
+  }
+});
+
+test('rejects active-work repair without an exact raw record fence', () => {
+  const scope = fixture();
+  try {
+    const record = updateActiveWorkRecord(input(), {
+      home: scope.home,
+      now: new Date(NOW),
+    });
+    expectCode('ACTIVE_WORK_REPAIR_CONFLICT', () =>
+      repairActiveWorkRecord(input(), {
+        home: scope.home,
+        expectedRevision: record.revision,
+        expectedRecordSha256: 'f'.repeat(64),
+      }),
+    );
+    expectCode('ACTIVE_WORK_REPAIR_NOT_REQUIRED', () =>
+      repairActiveWorkRecord(input(), {
+        home: scope.home,
+        expectedRevision: record.revision,
+        expectedRecordSha256: createHash('sha256')
+          .update(readFileSync(
+            activeWorkStorePaths({
+              home: scope.home,
+              workspaceId: WORKSPACE_A,
+            }).record,
+          ))
+          .digest('hex'),
       }),
     );
   } finally {

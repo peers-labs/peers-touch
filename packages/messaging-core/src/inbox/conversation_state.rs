@@ -99,6 +99,8 @@ impl<R: MessagingRepository> ConversationStateProcessor<R> {
             federation_id: post_state.federation_id.clone(),
             kind: created.kind,
             name: created.name.clone(),
+            description: post_state.description.clone(),
+            avatar_object_id: post_state.avatar_object_id.clone(),
             owner_ptid: created.owner_ptid.clone(),
             members,
             membership_epoch: event.membership_epoch,

@@ -87,10 +87,10 @@ and readiness authorities.
   readiness projection, and rejection of every enabled non-ready binding
   before execution are implemented in the current source.
 - The J02 functional check uses one exact-source Native Development Journey;
-  the 69-tuple formal Gate remains isolated to MCA-A01.
+  the 69-tuple candidate is owned by MCA-A03.
 - Exact-source V2-J02 functional evidence passes at checkpoint
   `0cd4a977040cac9a36fb73cd91aed95fba3a7c2d`; aggregate formal proof remains
-  owned by MCA-A01.
+  owned by MCA-A08.
 
 ## Concurrency Decision
 

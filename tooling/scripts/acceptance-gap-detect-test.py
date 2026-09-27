@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,30 @@ def proven_result(gate_id: str) -> dict[str, Any]:
 
 
 class AcceptanceGapDetectorTests(unittest.TestCase):
+    def test_main_rejects_before_loading_evidence_without_a_session(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            ["acceptance-gap-detect.py"],
+        ), patch.object(
+            MODULE,
+            "require_acceptance_admission",
+            side_effect=MODULE.AcceptanceAdmissionError(
+                "ACCEPTANCE_SESSION_REQUIRED"
+            ),
+        ) as admission, patch.object(
+            sys,
+            "stderr",
+        ):
+            exit_code = MODULE.main()
+
+        self.assertEqual(exit_code, 2)
+        admission.assert_called_once_with(
+            MODULE.REPO_ROOT,
+            None,
+            "gap",
+        )
+
     def test_explicit_changed_paths_define_exact_scope(self) -> None:
         with patch.object(
             MODULE,
@@ -366,38 +391,13 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
         self.assertEqual(report["proofState"], "PROVEN")
         self.assertEqual(report["gaps"], [])
 
-    def test_formal_completion_may_defer_declared_receiver_proof_gate(
-        self,
-    ) -> None:
+    def test_rich_voice_gate_satisfies_receiver_proof_requirement(self) -> None:
+        gate_id = "chat-lifecycle-rich-voice-e2e"
         report = MODULE.detect(
-            claim="Formal completion schedule is proven",
-            paths=["apps/desktop/src/store/socialChat.ts"],
-            plan={
-                "changed_paths": ["apps/desktop/src/store/socialChat.ts"],
-                "candidate_gates": [
-                    "chat-native-two-client-e2e",
-                    "completion-gate",
-                ],
-                "execution": {
-                    "formalPlan": "docs/architecture/example/plan.md",
-                    "mode": "completion",
-                },
-                "selected_gates": [
-                    {
-                        "id": "completion-gate",
-                        "environment": "local",
-                        "tier": "ci-cheap",
-                    }
-                ],
-            },
-            canonical_plan={
-                "changed_paths": ["apps/desktop/src/store/socialChat.ts"],
-                "selected_gates": [
-                    "chat-native-two-client-e2e",
-                    "completion-gate",
-                ],
-            },
-            run={"results": [proven_result("completion-gate")]},
+            claim="Recorded voice receiver behavior is covered",
+            paths=["apps/desktop/src/store/socialProjection.ts"],
+            plan={"selected_gates": [gate_id]},
+            run={"results": [proven_result(gate_id)]},
             required_gates=[],
         )
 

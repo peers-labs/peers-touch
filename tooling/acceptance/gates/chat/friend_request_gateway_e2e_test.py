@@ -29,11 +29,11 @@ class FriendRequestGatewayContractTests(unittest.TestCase):
         )
         with patch.object(
             gate,
-            "gateway_access_login",
+            "gateway_command",
             return_value={
                 "actor_ptid": "ptid:alice",
             },
-        ) as access_login, patch.object(
+        ) as gateway_command, patch.object(
             gate,
             "gateway_status",
             return_value={
@@ -44,11 +44,10 @@ class FriendRequestGatewayContractTests(unittest.TestCase):
         ) as gateway_status:
             gate.gateway_login("http://127.0.0.1:3140", actor)
 
-        access_login.assert_called_once_with(
-            gate.gateway_command,
+        gateway_command.assert_called_once_with(
             "http://127.0.0.1:3140",
-            "alice@p.t",
-            "1",
+            "auth_login",
+            {"account": "alice@p.t", "password": "1"},
         )
         gateway_status.assert_called_once_with(
             "http://127.0.0.1:3140",

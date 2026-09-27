@@ -1,43 +1,29 @@
 package actor
 
 import (
-	"fmt"
-	"net"
-	"net/url"
 	"strings"
 
+	"github.com/peers-labs/peers-touch/station/frame/core/plugin/native/federation/locator"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 )
 
-// ProtoActorRef builds the canonical actor reference for API responses. baseURL may be
-// empty (e.g. session verify) in which case acct is left empty; callers with an HTTP
-// request should pass baseURLFrom.
-func ProtoActorRef(a *db.Actor, baseURL string) *model.ActorRef {
+// ProtoActorRef builds the canonical actor reference for API responses.
+// The federated account projection comes only from the persisted Actor row;
+// request transport addresses are not actor identity.
+func ProtoActorRef(a *db.Actor) *model.ActorRef {
 	if a == nil {
 		return nil
 	}
+	acct := ""
+	if strings.TrimSpace(a.FederatedHandle) != "" {
+		if canonical, err := locator.CanonicalHandle(a.FederatedHandle); err == nil {
+			acct = canonical
+		}
+	}
 	return &model.ActorRef{
 		Ptid: a.PTID,
-		Acct: acctFromBaseURL(a.PreferredUsername, baseURL),
+		Acct: acct,
 		Kind: db.ActorKindFromShorthand(a.Kind),
 	}
-}
-
-func acctFromBaseURL(preferredUsername, baseURL string) string {
-	if strings.TrimSpace(preferredUsername) == "" || baseURL == "" {
-		return ""
-	}
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return ""
-	}
-	host := u.Host
-	if host == "" {
-		return ""
-	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	return fmt.Sprintf("%s@%s", preferredUsername, host)
 }

@@ -8,39 +8,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tooling.acceptance.gates.agent.agent_v2_gate import _validate_candidate
 from tooling.acceptance.gates.agent.evaluation_development import (
     ACTOR_ACCOUNTS,
     AGENT_V2_EVALUATION_GATE,
     EvaluationDevelopmentError,
     ROOT,
-    TUPLE_FIELDS,
     _stable_identity_key_path,
     begin_attestation_run,
     evaluate_evaluation_journey,
     persist_actor_identity,
-    write_candidate,
 )
 
 
-def formal_tuples() -> list[dict[str, str]]:
-    return [
-        {
-            "gate": AGENT_V2_EVALUATION_GATE,
-            "row": "evaluation-desktop-direct",
-            "platform": "desktop_app",
-            "runtime": "direct_model",
-            "cell": f"cell-{index:02d}",
-            "locale": "en",
-            "ordering": "single",
-            "sample_id": "sample-001",
-        }
-        for index in range(57)
-    ]
-
-
 def valid_capture() -> dict[str, object]:
-    tuples = formal_tuples()
     return {
         "prepare": {
             "assertions": {
@@ -139,14 +119,7 @@ def valid_capture() -> dict[str, object]:
             "retentionConflictObserved": True,
             "resourceDeletionComplete": True,
         },
-        "cell-results": [
-            {
-                **runtime_tuple,
-                "observed": True,
-                "passed": True,
-            }
-            for runtime_tuple in tuples
-        ],
+        "cell-results": [],
     }
 
 
@@ -352,10 +325,7 @@ class EvaluationDevelopmentTest(unittest.TestCase):
 
     def test_accepts_complete_j06_capture(self) -> None:
         capture = valid_capture()
-        assertions = evaluate_evaluation_journey(
-            capture,
-            expected_tuples=formal_tuples(),
-        )
+        assertions = evaluate_evaluation_journey(capture)
 
         self.assertTrue(all(assertions.values()))
 
@@ -369,10 +339,7 @@ class EvaluationDevelopmentTest(unittest.TestCase):
             EvaluationDevelopmentError,
             "cancellationAcknowledged",
         ):
-            evaluate_evaluation_journey(
-                capture,
-                expected_tuples=formal_tuples(),
-            )
+            evaluate_evaluation_journey(capture)
 
     def test_rejects_incomplete_retry_lineage(self) -> None:
         capture = copy.deepcopy(valid_capture())
@@ -384,10 +351,7 @@ class EvaluationDevelopmentTest(unittest.TestCase):
             EvaluationDevelopmentError,
             "retryLineageUnique",
         ):
-            evaluate_evaluation_journey(
-                capture,
-                expected_tuples=formal_tuples(),
-            )
+            evaluate_evaluation_journey(capture)
 
     def test_rejects_duplicate_scheduler_or_attempt_identity(self) -> None:
         capture = copy.deepcopy(valid_capture())
@@ -397,10 +361,7 @@ class EvaluationDevelopmentTest(unittest.TestCase):
             EvaluationDevelopmentError,
             "schedulerAndAttemptUnique",
         ):
-            evaluate_evaluation_journey(
-                capture,
-                expected_tuples=formal_tuples(),
-            )
+            evaluate_evaluation_journey(capture)
 
     def test_rejects_actor_isolation_or_cleanup_gap(self) -> None:
         capture = copy.deepcopy(valid_capture())
@@ -411,60 +372,7 @@ class EvaluationDevelopmentTest(unittest.TestCase):
             EvaluationDevelopmentError,
             "actorIsolationAssertionsPass.*retentionAndCleanupComplete",
         ):
-            evaluate_evaluation_journey(
-                capture,
-                expected_tuples=formal_tuples(),
-            )
-
-    def test_rejects_missing_formal_runtime_tuple(self) -> None:
-        capture = copy.deepcopy(valid_capture())
-        capture["cell-results"].pop()
-
-        with self.assertRaisesRegex(
-            EvaluationDevelopmentError,
-            "exactFormalTupleCoverage",
-        ):
-            evaluate_evaluation_journey(
-                capture,
-                expected_tuples=formal_tuples(),
-            )
-
-    def test_development_journey_can_pass_while_formal_coverage_is_unproven(
-        self,
-    ) -> None:
-        capture = copy.deepcopy(valid_capture())
-        capture["cell-results"] = []
-
-        assertions = evaluate_evaluation_journey(
-            capture,
-            expected_tuples=formal_tuples(),
-            require_formal_coverage=False,
-        )
-
-        self.assertTrue(all(assertions.values()))
-        self.assertNotIn("exactFormalTupleCoverage", assertions)
-
-    def test_candidate_writer_emits_complete_external_formal_role_set(
-        self,
-    ) -> None:
-        capture = valid_capture()
-        with tempfile.TemporaryDirectory() as directory:
-            candidate_path = write_candidate(
-                Path(directory),
-                capture,
-                runtime_manifest={"state": "FIXTURE_READY"},
-                duration_ms=1234,
-                provider_requests=[{"marker": "pass"}],
-            )
-            candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
-            issues = _validate_candidate(
-                AGENT_V2_EVALUATION_GATE,
-                candidate_path,
-            )
-
-        self.assertEqual(issues, [])
-        self.assertEqual(candidate["proofStatus"], "UNPROVEN")
-        self.assertEqual(len(candidate["artifacts"]), 11)
+            evaluate_evaluation_journey(capture)
 
     def test_runner_targets_production_harness_and_keeps_candidate_unproven(
         self,
@@ -480,11 +388,14 @@ class EvaluationDevelopmentTest(unittest.TestCase):
         self.assertIn('"phase": "isolate"', source)
         self.assertIn('"phase": "recover"', source)
         self.assertIn('"phase": "cleanup"', source)
+        self.assertIn('"providerApiKey": provider_fixture.api_key', source)
+        self.assertNotIn("mca-j03-fixture-key", source)
         self.assertIn('"proofStatus": "UNPROVEN"', source)
         self.assertIn("--formal-candidate", source)
+        self.assertIn("evaluation_candidate import", source)
+        self.assertNotIn("def write_candidate(", source)
         self.assertIn("source_identity(ROOT)", source)
         self.assertNotIn("useEvaluationStore", source)
-        self.assertEqual(len(TUPLE_FIELDS), 8)
 
 
 if __name__ == "__main__":

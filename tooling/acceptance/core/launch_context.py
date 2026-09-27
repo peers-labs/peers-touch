@@ -11,7 +11,6 @@ import signal
 import socket
 import struct
 import subprocess
-import sys
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -796,7 +795,9 @@ class EphemeralGateLaunchContext:
                     endpoint,
                     self._max_frame_bytes,
                     stop=self._stop,
-                    frame_timeout_seconds=self._request_timeout_seconds,
+                    deadline_monotonic=(
+                        time.monotonic() + self._request_timeout_seconds
+                    ),
                 )
                 if request.get("type") == "close":
                     if set(request) != {"type", *identity} or any(
@@ -1445,8 +1446,7 @@ def _isolated_python_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
             "context-enabled Gate must use a Python module, script, or -c argv",
             operation="gate_process",
         )
-    executable = sys.executable if argv[0] in {"python", "python3"} else argv[0]
-    return (executable, "-I", "-S", bootstrap, *target)
+    return (argv[0], "-I", "-S", bootstrap, *target)
 
 
 def _project_handler_response(
@@ -1657,31 +1657,13 @@ def _recv_frame(
     *,
     stop: Optional[threading.Event] = None,
     deadline_monotonic: Optional[float] = None,
-    frame_timeout_seconds: Optional[float] = None,
 ) -> Mapping[str, Any]:
-    if deadline_monotonic is not None and frame_timeout_seconds is not None:
-        raise ValueError("frame deadline and timeout are mutually exclusive")
-    if frame_timeout_seconds is None:
-        prefix = _recv_exact(
-            endpoint,
-            _LENGTH_PREFIX.size,
-            stop=stop,
-            deadline_monotonic=deadline_monotonic,
-        )
-    else:
-        first_byte = _recv_exact(
-            endpoint,
-            1,
-            stop=stop,
-            deadline_monotonic=None,
-        )
-        deadline_monotonic = time.monotonic() + frame_timeout_seconds
-        prefix = first_byte + _recv_exact(
-            endpoint,
-            _LENGTH_PREFIX.size - 1,
-            stop=stop,
-            deadline_monotonic=deadline_monotonic,
-        )
+    prefix = _recv_exact(
+        endpoint,
+        _LENGTH_PREFIX.size,
+        stop=stop,
+        deadline_monotonic=deadline_monotonic,
+    )
     (length,) = _LENGTH_PREFIX.unpack(prefix)
     if length < 1 or length > max_frame_bytes:
         raise EphemeralLaunchProtocolError(

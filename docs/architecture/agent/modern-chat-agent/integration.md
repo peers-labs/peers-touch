@@ -1,8 +1,8 @@
 # Modern Chat Agent — Integration
 
 > **Status**: accepted
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-07-30 | **Updated**: 2026-09-19
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -599,3 +599,101 @@ For each MCA-C01 through MCA-C15:
 
 If any row cannot be mapped without inventing architecture, planning returns
 `DESIGN_AMENDMENT_REQUIRED`.
+
+## 15. MCA-D21 Formal Evidence Integration
+
+The reviewed runtime matrix is the only source for tuple scope, attestation
+profile, and role applicability. Journey adapters execute one tuple and return
+typed observations; they do not expand the matrix or promote proof.
+
+The cutover replaces the legacy J01-J06 fallback in one source transition:
+
+```text
+implicit legacy direct-runtime profile
+  -> explicit profile on every matrix row
+
+all roles apply to every tuple
+  -> reviewed disjoint role policy per row
+
+composite Journey capture
+  -> one unique scenarioExecutionId per expanded tuple
+
+registration-only candidate checks
+  -> shared semantic assembler + full validator tests
+```
+
+Required integration boundaries:
+
+1. Acceptance Core owns schemas, matrix expansion, exact coverage, immutable
+   evidence assembly, and the separate validator process.
+2. Agent business Acceptance owns J01-J06 tuple adapters and production
+   Journey observations.
+3. J01 gains a repository-owned Home Journey and Home provisioner allocation;
+   historical manual JSON is not imported.
+4. J02-J06 reuse production Journey logic but execute tuple-specific adapters;
+   a composite development result cannot be relabelled across tuples.
+5. Mobile contract rows emit contract evidence only. Browser unavailable MCP
+   rows emit unavailable-state and zero-execution evidence. Station-owned
+   executors never masquerade as client leases.
+6. MCA-A01 replaces the old matrix identity, schema pins, implicit legacy
+   profile fallback, and registration-only proof assumptions. MCA-A07 replaces
+   and deletes the shallow J06 candidate writer with its tuple-aware adapter.
+7. Final proof runs every required Gate again after the last source checkpoint;
+   an earlier Journey candidate cannot prove a later commit.
+
+Completion requires tree-wide absence of implicit legacy profile fallback for
+J01-J06 and full semantic validation of every produced candidate.
+
+## 16. MCA-D22-D25 Agent Scenario Control Integration
+
+The J02-J06 adapters may use one Acceptance-only Station scenario controller
+to prepare deterministic inputs and barriers. The controller is not an
+evidence source and must not bypass these production paths:
+
+```text
+reviewed tuple -> one run/actor-scoped scenario handle
+  -> canonical Capability / ToolDispatch / MCP / Connector / Evaluation owner
+  -> real Desktop Rust or Station executor when applicable
+  -> Desktop/Browser receiver or Mobile contract adapter
+  -> runtime-truthful role observations
+  -> candidate producer
+```
+
+Integration requirements:
+
+1. Model defines one typed scenario-family setup/wait/release/clock/cleanup
+   contract and activates the existing typed error enums.
+2. Station registers scenario-control routes only in an explicitly enabled
+   Acceptance environment and scopes every handle to run plus actor.
+3. Scenario setup calls canonical services; it cannot directly write product
+   tables, receipts, results, metrics, terminal states, or evidence.
+4. Desktop Rust registers executor/MCP scenario hooks only in an
+   Acceptance-capable build bound to the active run; release builds omit them.
+5. Provider fixtures accept only server-selected reviewed response classes and
+   never accept or return credentials.
+6. Desktop and Browser adapters execute one named cell, observe real DOM/API
+   state, read canonical runtime facts, and perform idempotent cleanup.
+7. Station-executor rows never create a Browser client lease. Browser/Mobile
+   unavailable-MCP rows create no process, operation claim, or ToolCall.
+8. J03-J05 barriers cover the accepted decision/outbox/receipt/effect,
+   business/cleanup lease, timeout/reconnect, OAuth disconnect/provider revoke,
+   and manifest/binding deletion boundaries.
+9. J06 barriers cover scheduler duplication, cancel/completion CAS,
+   retry/metrics ordering, cancellation-ack deadline, evaluator availability,
+   and actual Station restart.
+10. The J02 provisioner supplies one primary actor, one secondary actor, and
+   distinct Native/Browser device sessions.
+11. Mobile runs one marker-bound generated-protobuf test process per tuple.
+12. The Custom Plugin retirement adapter runs scoped inventory, storage purge,
+   Station migration, and redaction checks without claiming a runtime turn.
+13. Production builds and deployments reject or omit scenario-control
+    commands.
+14. J03 tuples that terminate before executor receipt creation use
+    `station_turn`, require zero-execution evidence, and mark
+    `executor-receipts` not applicable; executed J03 tuples retain their
+    client- or Station-capability profile.
+15. J03 `ERR-O06` expires the ToolCall receipt-recovery credential. J04
+    `ERR-O06` remains the CapabilityOperation cleanup-lease case.
+
+MCA-A03 already incorporated the J02 boundary. MCA-A04 through MCA-A07 must
+incorporate the J03-J06 extensions before emitting their reviewed candidates.

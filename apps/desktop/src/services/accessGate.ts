@@ -20,8 +20,8 @@ export interface AccessGateField {
 
 export interface AccessGate {
   gateId: string;
-  gateType: string;
-  state: string;
+  gateType: number | string;
+  state: number | string;
   title: string;
   description: string;
   blockingReason: string;
@@ -35,14 +35,14 @@ export interface AccessGate {
 
 export interface AccessGateAction {
   actionId: string;
-  actionType: string;
+  actionType: number | string;
   submitAction: string;
   schemaRevision: number;
   schemaDigest: string;
 }
 
 export interface AccessDecision {
-  state: string;
+  state: number | string;
   attemptId: string;
   currentGateId: string;
   gates: AccessGate[];
@@ -73,6 +73,16 @@ export class StationAccessOutcomeError extends Error {
 
 const pendingSubmissionIds = new Map<string, string>();
 const KNOWN_GATE_TYPES = new Set([
+  1,
+  ACCESS_GATE_TYPE_AUTH_LOGIN,
+  3,
+  4,
+  ACCESS_GATE_TYPE_INVITE_CODE,
+  6,
+  7,
+  8,
+  9,
+  100,
   'ACCESS_GATE_TYPE_STATION_CAPABILITY',
   'ACCESS_GATE_TYPE_AUTH_LOGIN',
   'ACCESS_GATE_TYPE_AUTH_SESSION_RESTORE',
@@ -84,6 +94,96 @@ const KNOWN_GATE_TYPES = new Set([
   'ACCESS_GATE_TYPE_AUTH_OAUTH',
   'ACCESS_GATE_TYPE_CUSTOM',
 ]);
+
+interface RawAccessGateAction {
+  action_id?: string;
+  actionId?: string;
+  action_type?: number | string;
+  actionType?: number | string;
+  type?: number | string;
+  submit_action?: string;
+  submitAction?: string;
+  schema_revision?: number;
+  schemaRevision?: number;
+  schema_digest?: string;
+  schemaDigest?: string;
+}
+
+interface RawAccessGate {
+  gate_id?: string;
+  gateId?: string;
+  gate_type?: number | string;
+  gateType?: number | string;
+  type?: number | string;
+  state?: number | string;
+  title?: string;
+  description?: string;
+  blocking_reason?: string;
+  blockingReason?: string;
+  submit_action?: string;
+  submitAction?: string;
+  input_schema_json?: string;
+  inputSchemaJson?: string;
+  alternative_actions?: RawAccessGateAction[];
+  alternativeActions?: RawAccessGateAction[];
+  action_id?: string;
+  actionId?: string;
+  schema_revision?: number;
+  schemaRevision?: number;
+  schema_digest?: string;
+  schemaDigest?: string;
+}
+
+interface RawAccessDecision {
+  state?: number | string;
+  attempt_id?: string;
+  attemptId?: string;
+  current_gate_id?: string;
+  currentGateId?: string;
+  gates?: RawAccessGate[];
+  actor_ptid?: string;
+  actorPtid?: string;
+  access_grant_id?: string;
+  accessGrantId?: string;
+  expires_at_unix_ms?: number;
+  expiresAtUnixMs?: number;
+  message?: string;
+}
+
+export function normalizeDecision(raw: unknown): AccessDecision {
+  const decision = (raw ?? {}) as RawAccessDecision;
+  return {
+    state: decision.state ?? 0,
+    attemptId: decision.attempt_id ?? decision.attemptId ?? '',
+    currentGateId: decision.current_gate_id ?? decision.currentGateId ?? '',
+    gates: (decision.gates ?? []).map((gate) => ({
+      gateId: gate.gate_id ?? gate.gateId ?? '',
+      gateType: gate.gate_type ?? gate.gateType ?? gate.type ?? 0,
+      state: gate.state ?? 0,
+      title: gate.title ?? '',
+      description: gate.description ?? '',
+      blockingReason: gate.blocking_reason ?? gate.blockingReason ?? '',
+      submitAction: gate.submit_action ?? gate.submitAction ?? '',
+      inputSchemaJson: gate.input_schema_json ?? gate.inputSchemaJson ?? '',
+      alternativeActions: (gate.alternative_actions ?? gate.alternativeActions ?? []).map(
+        (action) => ({
+          actionId: action.action_id ?? action.actionId ?? '',
+          actionType: action.action_type ?? action.actionType ?? action.type ?? 0,
+          submitAction: action.submit_action ?? action.submitAction ?? '',
+          schemaRevision: action.schema_revision ?? action.schemaRevision ?? 0,
+          schemaDigest: action.schema_digest ?? action.schemaDigest ?? '',
+        }),
+      ),
+      actionId: gate.action_id ?? gate.actionId ?? '',
+      schemaRevision: gate.schema_revision ?? gate.schemaRevision ?? 0,
+      schemaDigest: gate.schema_digest ?? gate.schemaDigest ?? '',
+    })),
+    actorPtid: decision.actor_ptid ?? decision.actorPtid,
+    accessGrantId: decision.access_grant_id ?? decision.accessGrantId ?? '',
+    expiresAtUnixMs: decision.expires_at_unix_ms ?? decision.expiresAtUnixMs,
+    message: decision.message ?? '',
+  };
+}
 
 /** Parse a gate's input_schema_json into a field list. Unparseable schemas
  *  yield an empty list so the host can fall back to its default rendering. */
@@ -113,7 +213,7 @@ export function stationAccessFailureOutcome(
     ) {
       return STATION_ACCESS_ATTEMPT_EXPIRED;
     }
-    if (value.state === 'ACCESS_DECISION_STATE_ACTION_REQUIRED') {
+    if (isAccessActionRequired(value)) {
       const gate = currentGate(value);
       if (!gate || !KNOWN_GATE_TYPES.has(gate.gateType)) {
         return STATION_ACCESS_UNKNOWN_GATE;
@@ -152,24 +252,29 @@ export function stationAccessError(error: unknown): Error {
 
 /** True when the gate type denotes self-service invite-code redemption. */
 export function isInviteCodeGate(gate: AccessGate | undefined): boolean {
-  return gate?.gateType === 'ACCESS_GATE_TYPE_INVITE_CODE';
+  return gate?.gateType === ACCESS_GATE_TYPE_INVITE_CODE
+    || gate?.gateType === 'ACCESS_GATE_TYPE_INVITE_CODE';
 }
 
 /** True when the gate type denotes the login credential gate. */
 export function isLoginGate(gate: AccessGate | undefined): boolean {
-  return gate?.gateType === 'ACCESS_GATE_TYPE_AUTH_LOGIN';
+  return gate?.gateType === ACCESS_GATE_TYPE_AUTH_LOGIN
+    || gate?.gateType === 'ACCESS_GATE_TYPE_AUTH_LOGIN';
 }
 
 export function isAccessGranted(decision: AccessDecision | null): boolean {
-  return decision?.state === 'ACCESS_DECISION_STATE_GRANTED';
+  return decision?.state === ACCESS_DECISION_GRANTED
+    || decision?.state === 'ACCESS_DECISION_STATE_GRANTED';
 }
 
 export function isAccessActionRequired(decision: AccessDecision | null): boolean {
-  return decision?.state === 'ACCESS_DECISION_STATE_ACTION_REQUIRED';
+  return decision?.state === ACCESS_DECISION_ACTION_REQUIRED
+    || decision?.state === 'ACCESS_DECISION_STATE_ACTION_REQUIRED';
 }
 
 export function isAccessBlocked(decision: AccessDecision | null): boolean {
-  return decision?.state === 'ACCESS_DECISION_STATE_BLOCKED';
+  return decision?.state === ACCESS_DECISION_BLOCKED
+    || decision?.state === 'ACCESS_DECISION_STATE_BLOCKED';
 }
 
 export function accessDecisionMessage(decision: AccessDecision | null): string {
@@ -179,6 +284,7 @@ export function accessDecisionMessage(decision: AccessDecision | null): string {
 }
 
 export function accessGateTypeNumber(gate: AccessGate): number {
+  if (typeof gate.gateType === 'number') return gate.gateType;
   if (gate.gateType === 'ACCESS_GATE_TYPE_AUTH_LOGIN') return ACCESS_GATE_TYPE_AUTH_LOGIN;
   if (gate.gateType === 'ACCESS_GATE_TYPE_INVITE_CODE') return ACCESS_GATE_TYPE_INVITE_CODE;
   throw new Error('auth.gate.unsupported');
@@ -213,7 +319,10 @@ function isAccessDecision(value: unknown): value is AccessDecision {
   return Boolean(
     value
     && typeof value === 'object'
-    && typeof (value as Partial<AccessDecision>).state === 'string'
+    && (
+      typeof (value as Partial<AccessDecision>).state === 'string'
+      || typeof (value as Partial<AccessDecision>).state === 'number'
+    )
     && Array.isArray((value as Partial<AccessDecision>).gates),
   );
 }

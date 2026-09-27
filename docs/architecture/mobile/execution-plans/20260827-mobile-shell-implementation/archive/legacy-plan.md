@@ -983,7 +983,7 @@ replace W9-D's iOS/Android two-Station cell, or waive its hard-cut prerequisite.
 #### 2026-09-12 Git-Server Workflow Sync
 
 - **Authorization and binding**: the Owner requested synchronization from
-  `<windows-user>@10.0.0.42:D:/git/peers-touch.git`, skill refresh, and continued
+  `Administrator@10.36.3.187:D:/workspace/peers-touch.git`, skill refresh, and continued
   Mobile work without overwriting additions or resurrecting deletions.
   The server's default branch is `fix/windows-native-chat-closure` at
   `5a8217ad6f507b667effbeb626ecc6764cf5e9ff`. Merge
@@ -3776,7 +3776,7 @@ source identity and resume those items in dependency order.
   `pt-mobile-shell-primary`, separate PostgreSQL and identity volumes, libp2p
   port `4012`, and clean Station commit
   `770e4ec8ae6d0e6fe2ed3d66a76ea89ffff27f55`. The existing secondary runtime
-  at `10.0.0.40:18132` runs clean Station commit
+  at `10.37.94.156:18132` runs clean Station commit
   `82073af5dc367ed1fb5184d40c29e50cdd5c4956`. Both expose distinct PeerIDs,
   report federation ready with one connected seed, and pass
   `verify_reset_target`.

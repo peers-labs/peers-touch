@@ -1657,11 +1657,7 @@ ephemeralCapabilities:
   均被validator拒绝。
 - v1 POSIX backend只接受由隔离Python bootstrap执行的module、script或`-c`
   argv；bootstrap必须在加载Gate代码前恢复channel descriptor的
-  close-on-exec属性。Portable `python3`由runner解析为当前Acceptance runner的
-  exact executable，禁止child再次经`PATH`选解释器；显式路径保持原值。若解析结果
-  为virtual-environment解释器，bootstrap只可直接追加经venv根目录containment校验
-  且匹配当前Python版本的`site-packages`，不得启用`site`、`.pth`、user site、
-  `sitecustomize`或`usercustomize`。其它可执行形式返回typed unsupported错误。
+  close-on-exec属性。其它可执行形式返回typed unsupported错误。
 - capability ID只是business injection的稳定名称，不授予authority；Provisioner必须
   为当前run注册完全相同的handler集合，缺失或多余均在spawn前fail closed。
 - argv不得包含descriptor、secret、raw handle或动态shell表达式。
@@ -1740,8 +1736,6 @@ QUIESCED
 Framing与调用规则：
 
 - 每个frame使用固定宽度length prefix加UTF-8结构化payload，并受固定byte budget约束。
-  已完成handshake的broker可在两个frame之间stop-aware等待；首个frame byte到达后，
-  length prefix与payload必须在同一个固定deadline内完整接收。
 - 首个frame必须完成`workspaceId + gateId + evidenceRunId +
   provisioningRunId`握手；Evidence Store与Runtime Manifest的run identity必须分别
   取自各自owner，不匹配时关闭channel。

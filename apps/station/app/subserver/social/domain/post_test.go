@@ -141,12 +141,3 @@ func TestPostClass_Constants(t *testing.T) {
 		t.Fatalf("PostClassPrivate = %q, want private", PostClassPrivate)
 	}
 }
-
-func TestGrantRole_Constants(t *testing.T) {
-	if GrantRoleAllow != "allow" {
-		t.Fatalf("GrantRoleAllow = %q, want allow", GrantRoleAllow)
-	}
-	if GrantRoleDeny != "deny" {
-		t.Fatalf("GrantRoleDeny = %q, want deny", GrantRoleDeny)
-	}
-}

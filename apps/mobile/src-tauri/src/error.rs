@@ -51,6 +51,20 @@ impl MobileError {
         }
     }
 
+    pub fn social(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_PRIVATE_SOCIAL",
+            message: message.into(),
+        }
+    }
+
+    pub fn social_retryable(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_PRIVATE_SOCIAL_RETRYABLE",
+            message: message.into(),
+        }
+    }
+
     pub fn station_identity(message: impl Into<String>) -> Self {
         Self {
             code: "MOBILE_STATION_IDENTITY",

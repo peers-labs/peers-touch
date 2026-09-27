@@ -3965,6 +3965,7 @@ type SubmitPrivateCommentRequest struct {
 	Objects        []*securecontent.EncryptedObjectDescriptor  `protobuf:"bytes,4,rep,name=objects,proto3" json:"objects,omitempty"`
 	MentionRouting *SignedMentionRouting                       `protobuf:"bytes,5,opt,name=mention_routing,json=mentionRouting,proto3" json:"mention_routing,omitempty"`
 	CommandId      string                                      `protobuf:"bytes,6,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	PostId         string                                      `protobuf:"bytes,7,opt,name=post_id,json=postId,proto3" json:"post_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -4037,6 +4038,13 @@ func (x *SubmitPrivateCommentRequest) GetMentionRouting() *SignedMentionRouting 
 func (x *SubmitPrivateCommentRequest) GetCommandId() string {
 	if x != nil {
 		return x.CommandId
+	}
+	return ""
+}
+
+func (x *SubmitPrivateCommentRequest) GetPostId() string {
+	if x != nil {
+		return x.PostId
 	}
 	return ""
 }
@@ -5170,7 +5178,7 @@ const file_domain_social_private_content_proto_rawDesc = "" +
 	"command_id\x18\b \x01(\tR\tcommandId\"\x7f\n" +
 	"\x1bSubmitPrivateMomentResponse\x12=\n" +
 	"\x04post\x18\x01 \x01(\v2).peers_touch.model.social.v1.PostResourceR\x04post\x12!\n" +
-	"\fexact_replay\x18\x02 \x01(\bR\vexactReplay\"\xf2\x03\n" +
+	"\fexact_replay\x18\x02 \x01(\bR\vexactReplay\"\x8b\x04\n" +
 	"\x1bSubmitPrivateCommentRequest\x12N\n" +
 	"\x04plan\x18\x01 \x01(\v2:.peers_touch.model.secure_content.v1.ContentEncryptionPlanR\x04plan\x12O\n" +
 	"\apayload\x18\x02 \x01(\v25.peers_touch.model.secure_content.v1.EncryptedPayloadR\apayload\x12]\n" +
@@ -5178,7 +5186,8 @@ const file_domain_social_private_content_proto_rawDesc = "" +
 	"\aobjects\x18\x04 \x03(\v2>.peers_touch.model.secure_content.v1.EncryptedObjectDescriptorR\aobjects\x12Z\n" +
 	"\x0fmention_routing\x18\x05 \x01(\v21.peers_touch.model.social.v1.SignedMentionRoutingR\x0ementionRouting\x12\x1d\n" +
 	"\n" +
-	"command_id\x18\x06 \x01(\tR\tcommandId\"\x89\x01\n" +
+	"command_id\x18\x06 \x01(\tR\tcommandId\x12\x17\n" +
+	"\apost_id\x18\a \x01(\tR\x06postId\"\x89\x01\n" +
 	"\x1cSubmitPrivateCommentResponse\x12F\n" +
 	"\acomment\x18\x01 \x01(\v2,.peers_touch.model.social.v1.CommentResourceR\acomment\x12!\n" +
 	"\fexact_replay\x18\x02 \x01(\bR\vexactReplay\"3\n" +

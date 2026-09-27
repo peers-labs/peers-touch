@@ -2,16 +2,7 @@ import { createDesktopStore } from './createDesktopStore';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
-import {
-  accessSubmissionDescriptor,
-  completeAccessSubmission,
-  currentGate,
-  isLoginGate,
-  requireSupportedAccessDecision,
-  stationAccessError,
-  type AccessDecision,
-  type AccessGate,
-} from '../services/accessGate';
+import { normalizeDecision, type AccessDecision } from '../services/accessGate';
 
 // ── Types ──
 
@@ -50,10 +41,9 @@ interface SessionStore {
   /** Open an interactive access attempt and return the Station's first decision. */
   accessStart: () => Promise<AccessDecision>;
   /** Redeem an invite code against a live attempt; returns the re-evaluated decision. */
-  accessSubmitInviteCode: (attemptId: string, gate: AccessGate, code: string) => Promise<AccessDecision>;
+  accessSubmitInviteCode: (attemptId: string, code: string) => Promise<AccessDecision>;
   /** Submit the login gate for a live attempt; on grant lands the session. */
-  accessSubmitLogin: (attemptId: string, gate: AccessGate, account: string, password: string) => Promise<void>;
-  accessCancel: (attemptId: string) => Promise<void>;
+  accessSubmitLogin: (attemptId: string, account: string, password: string) => Promise<void>;
   restoreSession: () => Promise<void>;
   logout: () => Promise<void>;
   activateAuthenticatedSession: (response: AuthSessionResponse) => void;
@@ -65,23 +55,6 @@ interface SessionStore {
 }
 
 // ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──
-
-async function completeStationBindingOrRollback(): Promise<void> {
-  try {
-    await api.stationBindingComplete();
-  } catch (error) {
-    const bindingError = stationAccessError(error);
-    try {
-      await api.authLogout();
-    } catch (rollbackError) {
-      const rollbackMessage = rollbackError instanceof Error
-        ? rollbackError.message
-        : String(rollbackError);
-      throw new Error(`${bindingError.message}; session rollback failed: ${rollbackMessage}`);
-    }
-    throw bindingError;
-  }
-}
 
 function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'password' | 'oauth', provider?: string): CurrentUser | null {
   if (!resp.actor_ptid?.startsWith('ptid:')) return null;
@@ -110,52 +83,8 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   },
 
   loginWithPassword: async (account, password) => {
-    const decision = await get().accessStart();
-    const gate = currentGate(decision);
-    if (!gate || !isLoginGate(gate)) throw new Error('auth.gate.unsupported');
-    await get().accessSubmitLogin(decision.attemptId, gate, account, password);
-  },
-
-  accessStart: async () => {
-    try {
-      const resp = await api.accessStart();
-      return requireSupportedAccessDecision(resp.decision);
-    } catch (error) {
-      throw stationAccessError(error);
-    }
-  },
-
-  accessSubmitInviteCode: async (attemptId, gate, code) => {
-    const { key, ...descriptor } = accessSubmissionDescriptor(attemptId, gate);
-    try {
-      const resp = await api.accessSubmitInviteCode({
-        attempt_id: attemptId,
-        ...descriptor,
-        invite_code: code,
-      });
-      completeAccessSubmission(key);
-      return requireSupportedAccessDecision(resp.decision);
-    } catch (error) {
-      throw stationAccessError(error);
-    }
-  },
-
-  accessSubmitLogin: async (attemptId, gate, account, password) => {
     markLocalIdentityAction();
-    const { key, ...descriptor } = accessSubmissionDescriptor(attemptId, gate);
-    let resp;
-    try {
-      resp = await api.accessSubmitLogin({
-        attempt_id: attemptId,
-        ...descriptor,
-        account,
-        password,
-      });
-    } catch (error) {
-      throw stationAccessError(error);
-    }
-    await completeStationBindingOrRollback();
-    completeAccessSubmission(key);
+    const resp = await api.authLogin({ account, password });
     get().activateAuthenticatedSession(resp);
     await runIdentityPipeline({
       reason: 'login',
@@ -164,12 +93,25 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     });
   },
 
-  accessCancel: async (attemptId) => {
-    try {
-      await api.accessCancel(attemptId);
-    } catch (error) {
-      throw stationAccessError(error);
-    }
+  accessStart: async () => {
+    const resp = await api.accessStart();
+    return normalizeDecision(resp.decision);
+  },
+
+  accessSubmitInviteCode: async (attemptId, code) => {
+    const resp = await api.accessSubmitInviteCode({ attempt_id: attemptId, invite_code: code });
+    return normalizeDecision(resp.decision);
+  },
+
+  accessSubmitLogin: async (attemptId, account, password) => {
+    markLocalIdentityAction();
+    const resp = await api.accessSubmitLogin({ attempt_id: attemptId, account, password });
+    get().activateAuthenticatedSession(resp);
+    await runIdentityPipeline({
+      reason: 'login',
+      actorPtid: resp.actor_ptid ?? null,
+      loginMethod: 'password',
+    });
   },
 
   loginWithOAuth: async (_providerId: string) => {
@@ -188,7 +130,6 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     set({ restoring: true });
     try {
       const resp = await api.authRestoreSession();
-      await completeStationBindingOrRollback();
       const method = resp.login_method || 'password';
       const isOAuth = method !== 'password';
       const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);

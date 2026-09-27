@@ -111,6 +111,9 @@ describe('agent connector capability bindings', () => {
     vi.clearAllMocks();
     capabilityState.manifests = [connectorManifest];
     capabilityState.bindingsByAgentId = {};
+    capabilityState.loadCatalog.mockImplementation(
+      async () => capabilityState.manifests,
+    );
     capabilityState.upsertBinding.mockResolvedValue(connectorBinding);
     capabilityState.deleteBinding.mockResolvedValue(connectorBinding);
     oauthState.providers = [];
@@ -148,6 +151,28 @@ describe('agent connector capability bindings', () => {
     expect(connectorApi.listConnectorResourceManifests).toHaveBeenCalledOnce();
   });
 
+  it('runs a trailing refresh for a request made during an active load', async () => {
+    let finishFirstSync: (() => void) | undefined;
+    connectorApi.syncOAuthConnectorManifests
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => {
+          finishFirstSync = resolve;
+        }),
+      )
+      .mockResolvedValueOnce([]);
+
+    const first = useAgentConnectorStore.getState().loadConnectors();
+    await vi.waitFor(() => {
+      expect(connectorApi.syncOAuthConnectorManifests).toHaveBeenCalledOnce();
+    });
+    const second = useAgentConnectorStore.getState().loadConnectors();
+    finishFirstSync?.();
+    await Promise.all([first, second]);
+
+    expect(connectorApi.syncOAuthConnectorManifests).toHaveBeenCalledTimes(2);
+    expect(connectorApi.listConnectorResourceManifests).toHaveBeenCalledTimes(2);
+  });
+
   it('allows a Connector projection load to retry after failure', async () => {
     connectorApi.syncOAuthConnectorManifests
       .mockRejectedValueOnce(new Error('revision conflict'))
@@ -180,6 +205,22 @@ describe('agent connector capability bindings', () => {
         approvalPolicy: CapabilityApprovalPolicy.MANUAL,
         expectedAgentVersion: 8,
         expectedBindingRevision: 0n,
+      }),
+    );
+  });
+
+  it('binds against the fetched catalog snapshot when the store projection is stale', async () => {
+    capabilityState.manifests = [];
+    capabilityState.loadCatalog.mockResolvedValueOnce([connectorManifest]);
+
+    await useAgentConnectorStore
+      .getState()
+      .bindConnector('agent-1', 'search-provider');
+
+    expect(capabilityState.upsertBinding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capabilityId: connectorManifest.capabilityId,
+        capabilityVersion: connectorManifest.version,
       }),
     );
   });

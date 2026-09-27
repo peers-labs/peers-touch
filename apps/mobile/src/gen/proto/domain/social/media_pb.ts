@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file domain/social/media.proto.
  */
 export const file_domain_social_media: GenFile = /*@__PURE__*/
-  fileDesc("Chlkb21haW4vc29jaWFsL21lZGlhLnByb3RvEhtwZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEiygIKElVwbG9hZE1lZGlhUmVxdWVzdBIMCgRkYXRhGAEgASgMEhAKCGZpbGVuYW1lGAIgASgJEhEKCW1pbWVfdHlwZRgDIAEoCRI6CgR0eXBlGAQgASgOMiwucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLk1lZGlhVXBsb2FkVHlwZRIVCghhbHRfdGV4dBgFIAEoCUgAiAEBEk8KEG1lZGlhX2VuY3J5cHRpb24YBiABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jb21tb24udjEuRW5jcnlwdGVkTWVkaWFEZXNjcmlwdG9yElAKFmF1ZGllbmNlX2tleV9lbnZlbG9wZXMYByADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuQXVkaWVuY2VLZXlFbnZlbG9wZUILCglfYWx0X3RleHQi/wIKE1VwbG9hZE1lZGlhUmVzcG9uc2USEAoIbWVkaWFfaWQYASABKAkSCwoDdXJsGAIgASgJEhUKDXRodW1ibmFpbF91cmwYAyABKAkSEgoKc2l6ZV9ieXRlcxgEIAEoAxINCgV3aWR0aBgFIAEoBRIOCgZoZWlnaHQYBiABKAUSGAoQZHVyYXRpb25fc2Vjb25kcxgHIAEoBRJCCgZzdGF0dXMYCCABKA4yMi5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuTWVkaWFQcm9jZXNzaW5nU3RhdHVzEk8KEG1lZGlhX2VuY3J5cHRpb24YCSABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jb21tb24udjEuRW5jcnlwdGVkTWVkaWFEZXNjcmlwdG9yElAKFmF1ZGllbmNlX2tleV9lbnZlbG9wZXMYCiADKAsyMC5wZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEuQXVkaWVuY2VLZXlFbnZlbG9wZSJ2ChNBdWRpZW5jZUtleUVudmVsb3BlEhYKDnJlY2lwaWVudF9wdGlkGAEgASgJEhEKCWRldmljZV9pZBgCIAEoCRIOCgZrZXlfaWQYAyABKAkSFQoNZW5jcnlwdGVkX2tleRgEIAEoDBINCgVzdWl0ZRgFIAEoCSIjCg9HZXRNZWRpYVJlcXVlc3QSEAoIbWVkaWFfaWQYASABKAkiwAIKEEdldE1lZGlhUmVzcG9uc2USEAoIbWVkaWFfaWQYASABKAkSCwoDdXJsGAIgASgJEhUKDXRodW1ibmFpbF91cmwYAyABKAkSEgoKc2l6ZV9ieXRlcxgEIAEoAxINCgV3aWR0aBgFIAEoBRIOCgZoZWlnaHQYBiABKAUSQgoGc3RhdHVzGAcgASgOMjIucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLk1lZGlhUHJvY2Vzc2luZ1N0YXR1cxIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBJPChBtZWRpYV9lbmNyeXB0aW9uGAkgASgLMjUucGVlcnNfdG91Y2gubW9kZWwuY29tbW9uLnYxLkVuY3J5cHRlZE1lZGlhRGVzY3JpcHRvciImChJEZWxldGVNZWRpYVJlcXVlc3QSEAoIbWVkaWFfaWQYASABKAkiJgoTRGVsZXRlTWVkaWFSZXNwb25zZRIPCgdzdWNjZXNzGAEgASgIKkQKD01lZGlhVXBsb2FkVHlwZRIPCgtNRURJQV9JTUFHRRAAEg8KC01FRElBX1ZJREVPEAESDwoLTUVESUFfQVVESU8QAipLChVNZWRpYVByb2Nlc3NpbmdTdGF0dXMSCwoHUEVORElORxAAEg4KClBST0NFU1NJTkcQARIJCgVSRUFEWRACEgoKBkZBSUxFRBADQkNaQWdpdGh1Yi5jb20vcGVlcnMtbGFicy9wZWVycy10b3VjaC9zdGF0aW9uL2ZyYW1lL3RvdWNoL21vZGVsO21vZGVsYgZwcm90bzM", [file_google_protobuf_timestamp, file_domain_common_common]);
+  fileDesc("Chlkb21haW4vc29jaWFsL21lZGlhLnByb3RvEhtwZWVyc190b3VjaC5tb2RlbC5zb2NpYWwudjEilgIKElVwbG9hZE1lZGlhUmVxdWVzdBIMCgRkYXRhGAEgASgMEhAKCGZpbGVuYW1lGAIgASgJEhEKCW1pbWVfdHlwZRgDIAEoCRI6CgR0eXBlGAQgASgOMiwucGVlcnNfdG91Y2gubW9kZWwuc29jaWFsLnYxLk1lZGlhVXBsb2FkVHlwZRIVCghhbHRfdGV4dBgFIAEoCUgAiAEBEk8KEG1lZGlhX2VuY3J5cHRpb24YBiABKAsyNS5wZWVyc190b3VjaC5tb2RlbC5jb21tb24udjEuRW5jcnlwdGVkTWVkaWFEZXNjcmlwdG9yQgsKCV9hbHRfdGV4dEoECAcQCFIWYXVkaWVuY2Vfa2V5X2VudmVsb3BlcyLLAgoTVXBsb2FkTWVkaWFSZXNwb25zZRIQCghtZWRpYV9pZBgBIAEoCRILCgN1cmwYAiABKAkSFQoNdGh1bWJuYWlsX3VybBgDIAEoCRISCgpzaXplX2J5dGVzGAQgASgDEg0KBXdpZHRoGAUgASgFEg4KBmhlaWdodBgGIAEoBRIYChBkdXJhdGlvbl9zZWNvbmRzGAcgASgFEkIKBnN0YXR1cxgIIAEoDjIyLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5NZWRpYVByb2Nlc3NpbmdTdGF0dXMSTwoQbWVkaWFfZW5jcnlwdGlvbhgJIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNvbW1vbi52MS5FbmNyeXB0ZWRNZWRpYURlc2NyaXB0b3JKBAgKEAtSFmF1ZGllbmNlX2tleV9lbnZlbG9wZXMiIwoPR2V0TWVkaWFSZXF1ZXN0EhAKCG1lZGlhX2lkGAEgASgJIsACChBHZXRNZWRpYVJlc3BvbnNlEhAKCG1lZGlhX2lkGAEgASgJEgsKA3VybBgCIAEoCRIVCg10aHVtYm5haWxfdXJsGAMgASgJEhIKCnNpemVfYnl0ZXMYBCABKAMSDQoFd2lkdGgYBSABKAUSDgoGaGVpZ2h0GAYgASgFEkIKBnN0YXR1cxgHIAEoDjIyLnBlZXJzX3RvdWNoLm1vZGVsLnNvY2lhbC52MS5NZWRpYVByb2Nlc3NpbmdTdGF0dXMSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASTwoQbWVkaWFfZW5jcnlwdGlvbhgJIAEoCzI1LnBlZXJzX3RvdWNoLm1vZGVsLmNvbW1vbi52MS5FbmNyeXB0ZWRNZWRpYURlc2NyaXB0b3IiJgoSRGVsZXRlTWVkaWFSZXF1ZXN0EhAKCG1lZGlhX2lkGAEgASgJIiYKE0RlbGV0ZU1lZGlhUmVzcG9uc2USDwoHc3VjY2VzcxgBIAEoCCpECg9NZWRpYVVwbG9hZFR5cGUSDwoLTUVESUFfSU1BR0UQABIPCgtNRURJQV9WSURFTxABEg8KC01FRElBX0FVRElPEAIqSwoVTWVkaWFQcm9jZXNzaW5nU3RhdHVzEgsKB1BFTkRJTkcQABIOCgpQUk9DRVNTSU5HEAESCQoFUkVBRFkQAhIKCgZGQUlMRUQQA0JDWkFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp, file_domain_common_common]);
 
 /**
  * @generated from message peers_touch.model.social.v1.UploadMediaRequest
@@ -49,11 +49,6 @@ export type UploadMediaRequest = Message<"peers_touch.model.social.v1.UploadMedi
    * @generated from field: peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 6;
    */
   mediaEncryption?: EncryptedMediaDescriptor | undefined;
-
-  /**
-   * @generated from field: repeated peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 7;
-   */
-  audienceKeyEnvelopes: AudienceKeyEnvelope[];
 };
 
 /**
@@ -111,11 +106,6 @@ export type UploadMediaResponse = Message<"peers_touch.model.social.v1.UploadMed
    * @generated from field: peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 9;
    */
   mediaEncryption?: EncryptedMediaDescriptor | undefined;
-
-  /**
-   * @generated from field: repeated peers_touch.model.social.v1.AudienceKeyEnvelope audience_key_envelopes = 10;
-   */
-  audienceKeyEnvelopes: AudienceKeyEnvelope[];
 };
 
 /**
@@ -124,43 +114,6 @@ export type UploadMediaResponse = Message<"peers_touch.model.social.v1.UploadMed
  */
 export const UploadMediaResponseSchema: GenMessage<UploadMediaResponse> = /*@__PURE__*/
   messageDesc(file_domain_social_media, 1);
-
-/**
- * @generated from message peers_touch.model.social.v1.AudienceKeyEnvelope
- */
-export type AudienceKeyEnvelope = Message<"peers_touch.model.social.v1.AudienceKeyEnvelope"> & {
-  /**
-   * @generated from field: string recipient_ptid = 1;
-   */
-  recipientPtid: string;
-
-  /**
-   * @generated from field: string device_id = 2;
-   */
-  deviceId: string;
-
-  /**
-   * @generated from field: string key_id = 3;
-   */
-  keyId: string;
-
-  /**
-   * @generated from field: bytes encrypted_key = 4;
-   */
-  encryptedKey: Uint8Array;
-
-  /**
-   * @generated from field: string suite = 5;
-   */
-  suite: string;
-};
-
-/**
- * Describes the message peers_touch.model.social.v1.AudienceKeyEnvelope.
- * Use `create(AudienceKeyEnvelopeSchema)` to create a new message.
- */
-export const AudienceKeyEnvelopeSchema: GenMessage<AudienceKeyEnvelope> = /*@__PURE__*/
-  messageDesc(file_domain_social_media, 2);
 
 /**
  * @generated from message peers_touch.model.social.v1.GetMediaRequest
@@ -177,7 +130,7 @@ export type GetMediaRequest = Message<"peers_touch.model.social.v1.GetMediaReque
  * Use `create(GetMediaRequestSchema)` to create a new message.
  */
 export const GetMediaRequestSchema: GenMessage<GetMediaRequest> = /*@__PURE__*/
-  messageDesc(file_domain_social_media, 3);
+  messageDesc(file_domain_social_media, 2);
 
 /**
  * @generated from message peers_touch.model.social.v1.GetMediaResponse
@@ -234,7 +187,7 @@ export type GetMediaResponse = Message<"peers_touch.model.social.v1.GetMediaResp
  * Use `create(GetMediaResponseSchema)` to create a new message.
  */
 export const GetMediaResponseSchema: GenMessage<GetMediaResponse> = /*@__PURE__*/
-  messageDesc(file_domain_social_media, 4);
+  messageDesc(file_domain_social_media, 3);
 
 /**
  * @generated from message peers_touch.model.social.v1.DeleteMediaRequest
@@ -251,7 +204,7 @@ export type DeleteMediaRequest = Message<"peers_touch.model.social.v1.DeleteMedi
  * Use `create(DeleteMediaRequestSchema)` to create a new message.
  */
 export const DeleteMediaRequestSchema: GenMessage<DeleteMediaRequest> = /*@__PURE__*/
-  messageDesc(file_domain_social_media, 5);
+  messageDesc(file_domain_social_media, 4);
 
 /**
  * @generated from message peers_touch.model.social.v1.DeleteMediaResponse
@@ -268,7 +221,7 @@ export type DeleteMediaResponse = Message<"peers_touch.model.social.v1.DeleteMed
  * Use `create(DeleteMediaResponseSchema)` to create a new message.
  */
 export const DeleteMediaResponseSchema: GenMessage<DeleteMediaResponse> = /*@__PURE__*/
-  messageDesc(file_domain_social_media, 6);
+  messageDesc(file_domain_social_media, 5);
 
 /**
  * @generated from enum peers_touch.model.social.v1.MediaUploadType

@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd -P)"
 LOCAL_DEV_DIR="$PROJECT_ROOT/.local/dev"
-ENV_REPO="$(cd "$PROJECT_ROOT/.." && pwd)/env"
+ENV_REPO="${PT_ENV_REPO:-$(cd "$PROJECT_ROOT/.." && pwd)/env}"
 export PT_ENV_REPO="$ENV_REPO"
 MACHINE_DEV_SCRIPT="$SCRIPT_DIR/machine-dev.mjs"
 

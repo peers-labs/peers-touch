@@ -16,7 +16,7 @@ import (
 )
 
 const presetActorNamespace = "peers"
-const legacyGeneratedPresetAvatarPrefix = "https://avatar.example.invalid/api/ide/v1/text_to_image?"
+const legacyGeneratedPresetAvatarPrefix = "https://internal.example.invalid/api/ide/v1/text_to_image?"
 
 type PresetActorConfig struct {
 	Username      string

@@ -24,11 +24,7 @@ Applies to changes under:
 
 Runtime-backed state must be owned by the runtime/store, not by incidental page lifecycle:
 
-- `socialRealtime` (wrapped by `runtimes/socialRuntime.ts`) owns friendship,
-  contact, profile, presence, and Social notification freshness.
-- `apps/desktop/src/messaging/runtime.ts` owns session-scoped Chat command
-  admission, projection invalidation, reconciliation, and actor/Station/device
-  scope reset; `runtimes/messagingRuntime.ts` is only its Kernel adapter.
+- `socialRealtime` (wrapped by `runtimes/socialRuntime.ts`) owns chat/contact/social projection freshness.
 - `runtimes/searchRuntime.ts` owns the search source list (app-scope).
 - `runtimes/settingsRuntime.ts` owns the active-account snapshot and agents list.
 - `notification` store owns notification list and counters.
@@ -50,12 +46,6 @@ When adding new long-lived projection state:
 - Register it in `services/appRuntime.ts → registerKernelRuntimes`.
 - Both `install/teardown` MUST be idempotent. `bootstrap` MUST short-circuit on actor re-bootstrap.
 - Add a periodic `reconcile` if the projection can drift (missed SSE events, hidden window, process pause).
-- Session-scoped runtimes MUST reject stale asynchronous completions and clear
-  the prior identity projection before activating a new actor, Station, or
-  device scope.
-- Cross-process invalidation payloads MUST decode from the canonical Proto
-  contract. Duplicate/stale cursors are no-ops; gaps and unknown kinds require
-  full reconciliation rather than inferred local truth.
 
 ## New page checklist
 

@@ -5,7 +5,7 @@ use prost::Message;
 use reqwest::blocking::Client;
 use reqwest::blocking::RequestBuilder;
 use reqwest::header::HeaderMap;
-use reqwest::{Method, StatusCode};
+use reqwest::Method;
 use serde::Serialize;
 use serde_json::Value;
 use std::fmt;
@@ -15,12 +15,21 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const INTERACTIVE_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TURN_EXECUTION_WALL_TIME: Duration = Duration::from_secs(300);
 const TURN_EXECUTION_RESPONSE_MARGIN: Duration = Duration::from_secs(5);
-const SAFE_ERROR_DETAIL_FIELDS: [&str; 11] = [
+const SAFE_ERROR_DETAIL_FIELDS: [&str; 20] = [
     "resource_kind",
     "resource_id",
     "terminal_status",
     "expected_revision",
     "actual_revision",
+    "capability_id",
+    "capability_version",
+    "expected_version",
+    "actual_version",
+    "schema_field",
+    "binding_id",
+    "target_device_id",
+    "policy_kind",
+    "reason_code",
     "session_id",
     "lease_id",
     "expired_at",
@@ -387,6 +396,59 @@ pub(crate) fn post_json_with_auth(
     Ok(result)
 }
 
+// JSON POST without auth — used for login where no token exists yet.
+pub(crate) fn post_json_no_auth(path: &str, body: Value) -> Result<Value, StationClientError> {
+    let url = format!("{}{}", station_base_url(), path);
+    tracing::debug!(path = %path, "→ station (json, no-auth)");
+
+    let start = std::time::Instant::now();
+    let client = build_client()?;
+
+    let resp = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
+        .json(&body)
+        .send()
+        .map_err(|e| {
+            let elapsed = start.elapsed().as_millis();
+            tracing::error!(path = %path, elapsed_ms = elapsed, error = %e, "← station NETWORK_ERROR");
+            StationClientError::new(StationClientErrorKind::Network, format!("request failed: {}", e), None)
+        })?;
+
+    let status = resp.status();
+    let elapsed = start.elapsed().as_millis();
+
+    let body_text = resp.text().unwrap_or_default();
+
+    if !status.is_success() {
+        tracing::warn!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, body = %body_text, "← station FAIL");
+        let parsed: Value = serde_json::from_str(&body_text).unwrap_or(Value::Null);
+        let msg = parsed
+            .get("message")
+            .or_else(|| parsed.get("msg"))
+            .and_then(|v| v.as_str())
+            .unwrap_or(&body_text);
+        return Err(StationClientError::new(
+            StationClientErrorKind::HttpStatus(status.as_u16()),
+            format!("station returned {}: {}", status.as_u16(), msg),
+            Some(serde_json::json!({ "status": status.as_u16(), "body": parsed })),
+        ));
+    }
+
+    let result: Value = serde_json::from_str(&body_text).map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("decode json response failed: {}", e),
+            None,
+        )
+    })?;
+
+    tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no-auth)");
+    Ok(result)
+}
+
 /// Decode Touch `SuccessResponse` protobuf (`PeersResponse` with `google.protobuf.Any` data).
 fn decode_peers_envelope<Payload: Message + Default>(
     raw: &[u8],
@@ -532,13 +594,19 @@ pub(crate) fn request_peers_proto_no_payload<Req: Message>(
     })?;
 
     let status = resp.status();
+    let headers = headers_to_json(resp.headers());
     let elapsed = start.elapsed().as_millis();
 
     if !status.is_success() {
         let code = status.as_u16();
         let text = resp.text().unwrap_or_default();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
-        return Err(build_error_for_status(code, path, &text));
+        return Err(build_error_for_status_with_headers(
+            code,
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     let bytes = resp.bytes().map_err(|e| {
@@ -620,13 +688,19 @@ where
     })?;
 
     let status = resp.status();
+    let headers = headers_to_json(resp.headers());
     let elapsed = start.elapsed().as_millis();
 
     if !status.is_success() {
         let code = status.as_u16();
         let text = resp.text().unwrap_or_default();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
-        return Err(build_error_for_status(code, path, &text));
+        return Err(build_error_for_status_with_headers(
+            code,
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     let bytes = resp.bytes().map_err(|e| {
@@ -960,7 +1034,7 @@ where
     decode_peers_envelope(bytes.as_ref())
 }
 
-// JSON-based request for chat APIs (social, messaging, etc.).
+// JSON-based request for chat APIs (group_chat, social, etc.).
 // Sends/receives JSON with Content-Type: application/json.
 pub(crate) fn request_json(
     method: Method,
@@ -1059,12 +1133,22 @@ fn request_json_with_policy_base_url(
             Some(&headers),
         ));
     }
-    if status == StatusCode::NO_CONTENT {
-        tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, no content)");
+
+    let bytes = resp.bytes().map_err(|e| {
+        tracing::error!(path = %path, error = %e, "← station READ_ERROR (json)");
+        StationClientError::new(
+            StationClientErrorKind::Decode,
+            format!("read body failed: {}", e),
+            None,
+        )
+    })?;
+
+    if bytes.is_empty() {
+        tracing::debug!(path = %path, status = status.as_u16(), elapsed_ms = elapsed, "← station OK (json, empty)");
         return Ok(Value::Null);
     }
 
-    let result: Value = resp.json().map_err(|e| {
+    let result: Value = serde_json::from_slice(&bytes).map_err(|e| {
         tracing::error!(path = %path, error = %e, "← station JSON_ERROR");
         StationClientError::new(
             StationClientErrorKind::Decode,
@@ -1176,17 +1260,40 @@ where
     Req: Message,
     Resp: Message + Default,
 {
+    request_proto_with_policy(
+        method,
+        path,
+        token,
+        query,
+        body,
+        StationTransportPolicy::Interactive,
+    )
+}
+
+pub(crate) fn request_proto_with_policy<Req, Resp>(
+    method: Method,
+    path: &str,
+    token: &str,
+    query: Option<&[(&str, String)]>,
+    body: Option<&Req>,
+    policy: StationTransportPolicy,
+) -> Result<Resp, StationClientError>
+where
+    Req: Message,
+    Resp: Message + Default,
+{
     let url = format!("{}{}", station_base_url(), path);
     let body_len = body.map(|b| b.encoded_len()).unwrap_or(0);
     tracing::debug!(
         method = %method,
         path = %path,
+        policy = policy.label(),
         body_bytes = body_len,
         "→ station"
     );
 
     let start = std::time::Instant::now();
-    let client = build_client()?;
+    let client = build_client_with_policy(policy)?;
 
     let mut req = with_device_id(client.request(method.clone(), &url).bearer_auth(token));
 
@@ -1214,13 +1321,19 @@ where
     })?;
 
     let status = resp.status();
+    let headers = headers_to_json(resp.headers());
     let elapsed = start.elapsed().as_millis();
 
     if !status.is_success() {
         let code = status.as_u16();
         let text = resp.text().unwrap_or_default();
         tracing::warn!(path = %path, status = code, elapsed_ms = elapsed, body = %text, "← station FAIL");
-        return Err(build_error_for_status(code, path, &text));
+        return Err(build_error_for_status_with_headers(
+            code,
+            path,
+            &text,
+            Some(&headers),
+        ));
     }
 
     let bytes = resp.bytes().map_err(|e| {
@@ -1647,41 +1760,6 @@ mod tests {
     }
 
     #[test]
-    fn json_request_accepts_successful_no_content_response() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind no-content fixture");
-        let address = listener
-            .local_addr()
-            .expect("read no-content fixture address");
-        let server = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept no-content request");
-            let mut request = [0_u8; 4096];
-            stream.read(&mut request).expect("read no-content request");
-            stream
-                .write_all(
-                    b"HTTP/1.1 204 No Content\r\n\
-                      Content-Length: 0\r\n\
-                      Connection: close\r\n\
-                      \r\n",
-                )
-                .expect("write no-content response");
-        });
-
-        let response = request_json_with_policy_base_url(
-            &format!("http://{address}"),
-            Method::POST,
-            "/realtime/signal",
-            "fixture-token",
-            None,
-            Some(json!({"kind": "CALL_REQUEST"})),
-            StationTransportPolicy::Interactive,
-        )
-        .expect("204 response must succeed");
-        server.join().expect("join no-content fixture");
-
-        assert!(response.is_null());
-    }
-
-    #[test]
     fn specialized_station_error_code_survives_json_transport() {
         let headers = json!({
             "x-peers-error-code": "AGENT_CANVAS_SINGLE_AGENT_NOT_READY",
@@ -1769,6 +1847,56 @@ mod tests {
         assert_eq!(details["reason"], "is not an active Federation Station");
         assert!(details.get("ignored_string").is_none());
         assert!(details.get("ignored_number").is_none());
+    }
+
+    #[test]
+    fn capability_error_details_survive_json_transport() {
+        let headers = json!({
+            "x-peers-error-code": "CAPABILITY_BINDING_VERSION_CONFLICT",
+            "x-peers-error-locale-key": "agent.errors.capabilityBindingVersionConflict",
+            "x-peers-error-retryable": "true",
+            "x-peers-error-terminal": "true",
+            "x-peers-error-details": r#"{
+                "capability_id":"capability-1",
+                "capability_version":"1",
+                "expected_version":"1",
+                "actual_version":"2",
+                "schema_field":"source_kind",
+                "binding_id":"binding-1",
+                "target_device_id":"device-1",
+                "policy_kind":"MANUAL",
+                "reason_code":"stale_revision",
+                "credential":"must-not-cross"
+            }"#,
+        });
+        let error = build_error_for_status_with_headers(
+            409,
+            "/sub-agent/agent/capability/binding/upsert",
+            "",
+            Some(&headers),
+        );
+        let result = error.into_app_result::<serde_json::Value>(
+            "agent.capabilityBindingUpsertFailed",
+        );
+        let details = result
+            .error
+            .expect("AppResult error")
+            .details
+            .expect("typed error details");
+        for field in [
+            "capability_id",
+            "capability_version",
+            "expected_version",
+            "actual_version",
+            "schema_field",
+            "binding_id",
+            "target_device_id",
+            "policy_kind",
+            "reason_code",
+        ] {
+            assert!(details.get(field).is_some(), "missing {field}");
+        }
+        assert!(details.get("credential").is_none());
     }
 
     #[test]
@@ -1860,6 +1988,36 @@ mod tests {
         assert_eq!(details["expected_revision"], "7");
         assert_eq!(details["actual_revision"], "8");
         assert!(details.get("private").is_none());
+    }
+
+    #[test]
+    fn json_request_path_accepts_no_content_success() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind no-content fixture");
+        let address = listener
+            .local_addr()
+            .expect("read no-content fixture address");
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept no-content request");
+            let mut request = [0_u8; 4096];
+            stream.read(&mut request).expect("read no-content request");
+            stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                .expect("write no-content response");
+        });
+
+        let result = request_json_with_policy_base_url(
+            &format!("http://{address}"),
+            Method::POST,
+            "/realtime/signal",
+            "fixture-token",
+            None,
+            Some(json!({"kind": "OFFER"})),
+            StationTransportPolicy::Interactive,
+        )
+        .expect("204 response must be accepted");
+        server.join().expect("join no-content fixture");
+
+        assert_eq!(result, serde_json::Value::Null);
     }
 
     #[test]

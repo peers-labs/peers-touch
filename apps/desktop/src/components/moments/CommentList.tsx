@@ -1,10 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { Input, Space, Spin, Typography, message, theme } from 'antd';
 import { Trash2 } from 'lucide-react';
-import type { Comment } from '../../gen/proto/domain/social/comment_pb';
+import type {
+  PrivateCommentPublicationState,
+  PrivateCommentState,
+} from '../../services/privateCommentsNative';
+import { useIsPageActive } from '../../kernel/PageActivityContext';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
+import { resolvePrivateCommentComposerAction } from './privateCommentComposerState';
 
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -24,58 +29,157 @@ const { TextArea } = Input;
 // Pagination: cursor + has_more come from the store; the component
 // just renders the "Load more" button when applicable.
 
+export interface MomentCommentItem {
+  id: string;
+  postId: string;
+  authorPtid: string;
+  content: string;
+  replyToCommentId: string;
+  author?: {
+    username: string;
+    displayName: string;
+    avatarUrl: string;
+  };
+}
+
 interface CommentListProps {
   postId: string;
-  comments: Comment[];
+  comments: MomentCommentItem[];
   loading?: boolean;
   hasMore?: boolean;
+  composerState?: PrivateCommentState;
+  composerErrorCode?: string;
+  composerRetryAfterSeconds?: number;
+  composerRetryNotBeforeUnixMs?: number;
+  composerPublicationState?: PrivateCommentPublicationState;
+  composerDraftText?: string;
   /** id of the viewer used to gate the delete button. */
   viewerActorPtid?: string;
   onLoadMore: () => void;
   onSubmit: (content: string, replyToCommentId?: string) => Promise<void>;
+  onRetry?: () => Promise<void>;
   onDelete?: (commentId: string) => Promise<void>;
 }
 
 export function CommentList({
-  postId: _postId,
+  postId,
   comments,
   loading,
   hasMore,
+  composerState,
+  composerErrorCode,
+  composerRetryAfterSeconds,
+  composerRetryNotBeforeUnixMs,
+  composerPublicationState,
+  composerDraftText,
   viewerActorPtid,
   onLoadMore,
   onSubmit,
+  onRetry,
   onDelete,
 }: CommentListProps) {
   const { t } = useTranslation('moments');
   const { token } = theme.useToken();
-  const [text, setText] = useState('');
+  const pageActive = useIsPageActive();
+  const [text, setText] = useState(composerDraftText ?? '');
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
-  const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
+  const [replyTarget, setReplyTarget] = useState<MomentCommentItem | null>(null);
+  const [nowUnixMs, setNowUnixMs] = useState(() => Date.now());
+  const submitInFlightRef = useRef(false);
+  const retryDeadlineTracked = composerState === 'COMMENT_RATE_LIMITED'
+    || composerPublicationState === 'COMMITTED_PENDING_READBACK';
 
-  // Reset the composer if the active post changes underfoot.
   useEffect(() => {
-    setText('');
-    setReplyTarget(null);
-  }, [_postId]);
+    if (composerPublicationState === 'COMMITTED_PENDING_READBACK') {
+      setText('');
+      setReplyTarget(null);
+    }
+  }, [composerPublicationState]);
+
+  useEffect(() => {
+    if (
+      !pageActive
+      || !retryDeadlineTracked
+    ) {
+      return;
+    }
+    setNowUnixMs(Date.now());
+    if (
+      !composerRetryNotBeforeUnixMs
+      || composerRetryNotBeforeUnixMs <= Date.now()
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setNowUnixMs(now);
+      if (now >= composerRetryNotBeforeUnixMs) {
+        window.clearInterval(timer);
+      }
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [composerRetryNotBeforeUnixMs, pageActive, retryDeadlineTracked]);
+
+  const retrySecondsRemaining = composerRetryNotBeforeUnixMs
+    ? Math.max(0, Math.ceil((composerRetryNotBeforeUnixMs - nowUnixMs) / 1_000))
+    : undefined;
+  const retryDeadlinePending = composerState === 'COMMENT_RATE_LIMITED'
+    ? !composerRetryNotBeforeUnixMs || (retrySecondsRemaining ?? 0) > 0
+    : composerPublicationState === 'COMMITTED_PENDING_READBACK'
+      && !!composerRetryNotBeforeUnixMs
+      && (retrySecondsRemaining ?? 0) > 0;
+  const composerAction = resolvePrivateCommentComposerAction({
+    state: composerState,
+    publicationState: composerPublicationState,
+    retryDeadlinePending,
+    text,
+    draftText: composerDraftText,
+  });
+  const committedPendingReadback = composerAction === 'reconcile';
+  const recoveryAction = composerAction !== 'submit' && !!onRetry;
+  const parentUnavailable = composerState === 'COMMENT_PARENT_UNAVAILABLE';
+  const nativePending = composerState === 'COMMENT_ENCRYPTING'
+    || composerState === 'COMMENT_SUBMITTING';
 
   const handleSubmit = async () => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (
+      submitInFlightRef.current
+      || submitting
+      || nativePending
+      || (!trimmed && !committedPendingReadback)
+      || parentUnavailable
+      || retryDeadlinePending
+      || (committedPendingReadback && !onRetry)
+    ) {
+      return;
+    }
+    submitInFlightRef.current = true;
     setSubmitting(true);
+    setSubmitError(null);
     try {
-      await onSubmit(trimmed, replyTarget?.id);
+      if (recoveryAction && onRetry) {
+        await onRetry();
+      } else {
+        await onSubmit(trimmed, replyTarget?.id);
+      }
       setText('');
       setReplyTarget(null);
     } catch (err) {
-      message.error(String(err));
+      setSubmitError(String(err));
     } finally {
+      submitInFlightRef.current = false;
       setSubmitting(false);
     }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div
+      data-moments-comment-thread={postId}
+      style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+    >
       {comments.length === 0 && !loading && (
         <div style={{ padding: '8px 0' }}>
           <Text type="secondary" style={{ fontSize: 13 }}>
@@ -163,6 +267,11 @@ export function CommentList({
       )}
 
       <div
+        data-moments-comment-composer-state={composerState}
+        data-moments-comment-error-code={composerErrorCode}
+        data-moments-comment-retry-after-seconds={composerRetryAfterSeconds}
+        data-moments-comment-retry-not-before-unix-ms={composerRetryNotBeforeUnixMs}
+        data-moments-comment-publication-state={composerPublicationState}
         style={{
           borderTop: `1px solid ${token.colorBorderSecondary}`,
           paddingTop: 10,
@@ -191,10 +300,38 @@ export function CommentList({
             </Button>
           </Space>
         )}
+        {(submitError || composerErrorCode)
+          && composerState !== 'COMMENT_POSTED'
+          && !committedPendingReadback && (
+          <Text type="danger" style={{ fontSize: 12 }}>
+            {parentUnavailable
+              ? t('moments.private.state.NOT_FOUND_OR_NOT_AUTHORIZED.description')
+              : t('moments.private.state.PUBLISH_FAILED.description')}
+          </Text>
+        )}
+        {committedPendingReadback && (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {t('moments.comment.readbackPending')}
+          </Text>
+        )}
+        {retryDeadlineTracked && composerRetryNotBeforeUnixMs && (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {t('moments.comment.retryIn', { count: retrySecondsRemaining ?? 0 })}
+          </Text>
+        )}
+        {composerState === 'COMMENT_RATE_LIMITED' && !composerRetryNotBeforeUnixMs && (
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {t('moments.comment.rateLimited')}
+          </Text>
+        )}
         <TextArea
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            setSubmitError(null);
+          }}
           placeholder={t('moments.comment.placeholder')}
+          disabled={parentUnavailable || committedPendingReadback}
           autoSize={{ minRows: 1, maxRows: 4 }}
           style={{ borderRadius: token.borderRadius }}
           onPressEnter={(e) => {
@@ -209,10 +346,20 @@ export function CommentList({
             type="primary"
             size="small"
             onClick={handleSubmit}
-            loading={submitting}
-            disabled={!text.trim()}
+            loading={submitting || nativePending}
+            disabled={
+              submitting
+              || nativePending
+              || parentUnavailable
+              || retryDeadlinePending
+              || (committedPendingReadback ? !onRetry : !text.trim())
+            }
           >
-            {t('moments.comment.publish')}
+            {composerAction === 'reconcile'
+              ? t('moments.comment.confirmResult')
+              : composerAction === 'retry'
+                ? t('moments.private.action.retry')
+                : t('moments.comment.publish')}
           </Button>
         </div>
       </div>

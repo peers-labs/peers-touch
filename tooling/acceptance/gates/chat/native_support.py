@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from selenium.webdriver.common.by import By
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import (
@@ -602,23 +602,40 @@ def logout_native_client(
 
 def enter_chat_page(client: TauriSession) -> None:
     def chat_surface_ready(driver: Any) -> bool:
-        return (
-            driver.current_url.endswith("#/chat")
-            and bool(driver.find_elements(By.CSS_SELECTOR, "[data-social-chat-layout]"))
-        )
+        try:
+            return bool(
+                driver.execute_script(
+                    """
+                    return location.href.endsWith('#/chat')
+                      && Boolean(document.querySelector('[data-social-chat-layout]'));
+                    """
+                )
+            )
+        except WebDriverException:
+            return False
+
+    def click_chat_navigation(driver: Any) -> bool:
+        try:
+            return bool(
+                driver.execute_script(
+                    """
+                    const target = document.querySelector(
+                      '[data-pt-primary-nav="chat"] button, '
+                      + '[data-pt-primary-nav="chat"] [role="button"]'
+                    );
+                    if (!target) return false;
+                    target.click();
+                    return true;
+                    """
+                )
+            )
+        except WebDriverException:
+            return False
 
     if chat_surface_ready(client.driver):
         return
-    WebDriverWait(client.driver, 20).until(
-        lambda driver: driver.find_element(
-            By.CSS_SELECTOR,
-            '[data-pt-primary-nav="chat"] button, '
-            '[data-pt-primary-nav="chat"] [role="button"]',
-        )
-    ).click()
-    WebDriverWait(client.driver, 20).until(
-        chat_surface_ready
-    )
+    WebDriverWait(client.driver, 20).until(click_chat_navigation)
+    WebDriverWait(client.driver, 20).until(chat_surface_ready)
 
 
 def stop_client(client: TauriSession) -> None:
@@ -784,10 +801,14 @@ def station_readback(
     message_id: str,
     *,
     station_url: str = "",
+    deployment_environment: str = "",
 ) -> dict[str, Any]:
     if not station_url:
         raise GateError("Station readback requires an explicit bound service URL")
-    environment = acceptance_station_environment(station_url)
+    environment = acceptance_station_environment(
+        station_url,
+        deployment_environment or None,
+    )
     if environment.get("PT_ACCEPTANCE_RUNTIME_KIND") == LOCAL_SOURCE_RUNTIME:
         database = environment.get("PT_ACCEPTANCE_LOCAL_DATABASE", "").strip()
         if not database:

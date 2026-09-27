@@ -30,19 +30,10 @@ import (
 // onto a small, stable surface so callers can branch on them without
 // string-matching wrapped errors.
 var (
-	ErrLocalIdentityMissing      = errors.New("resolver: local station identity not registered")
-	ErrRelayUnavailable          = errors.New("resolver: relay-client not registered")
-	ErrEmptyResponse             = errors.New("resolver: empty profile response")
-	ErrTombstoned                = errors.New("resolver: actor withdrawn (tombstone)")
-	ErrFederationContextRequired = errors.New(
-		"resolver: federation context is required",
-	)
-	ErrMembershipReaderMissing = errors.New(
-		"resolver: federation membership reader is required",
-	)
-	ErrStationOutsideFederation = errors.New(
-		"resolver: station is outside the federation context",
-	)
+	ErrLocalIdentityMissing = errors.New("resolver: local station identity not registered")
+	ErrRelayUnavailable     = errors.New("resolver: relay-client not registered")
+	ErrEmptyResponse        = errors.New("resolver: empty profile response")
+	ErrTombstoned           = errors.New("resolver: actor withdrawn (tombstone)")
 	// ErrFederationNotReady fires before any DHT GetValue when the
 	// kad-DHT routing table has fewer peers than the configured
 	// readiness threshold (federation.min-dht-peers). The handler
@@ -67,14 +58,6 @@ type Resolved struct {
 	// federation cache without contacting the DHT or the home station.
 	// Diagnostic value only; the envelope contents are identical.
 	FromCache bool
-}
-
-type ActiveMembershipReader interface {
-	IsActiveMember(
-		ctx context.Context,
-		federationID string,
-		stationPeerID string,
-	) (bool, error)
 }
 
 // Resolver carries cross-call state. The struct is goroutine-safe; one
@@ -152,46 +135,6 @@ func (r *Resolver) ResolveByHandle(
 	fetcher fedprofile.LocalProfileFetcher,
 	keys *authfed.KeyCache,
 ) (*Resolved, error) {
-	return r.resolveByHandle(ctx, "", handle, nil, fetcher, keys)
-}
-
-// ResolveByHandleInFederation resolves one actor only after both the local
-// Station and the actor's Home Station are active members of the selected
-// Federation. Membership is checked before a cached result is returned and
-// before remote trust or transport state is mutated.
-func (r *Resolver) ResolveByHandleInFederation(
-	ctx context.Context,
-	federationID string,
-	handle string,
-	memberships ActiveMembershipReader,
-	fetcher fedprofile.LocalProfileFetcher,
-	keys *authfed.KeyCache,
-) (*Resolved, error) {
-	federationID = strings.TrimSpace(federationID)
-	if federationID == "" {
-		return nil, ErrFederationContextRequired
-	}
-	if memberships == nil {
-		return nil, ErrMembershipReaderMissing
-	}
-	return r.resolveByHandle(
-		ctx,
-		federationID,
-		handle,
-		memberships,
-		fetcher,
-		keys,
-	)
-}
-
-func (r *Resolver) resolveByHandle(
-	ctx context.Context,
-	federationID string,
-	handle string,
-	memberships ActiveMembershipReader,
-	fetcher fedprofile.LocalProfileFetcher,
-	keys *authfed.KeyCache,
-) (*Resolved, error) {
 	canon, err := locator.CanonicalHandle(handle)
 	if err != nil {
 		return nil, err
@@ -200,17 +143,6 @@ func (r *Resolver) resolveByHandle(
 	id := fednode.LocalIdentitySnapshot()
 	if id.StationPeerID == "" || strings.TrimSpace(id.StationDomain) == "" {
 		return nil, ErrLocalIdentityMissing
-	}
-	localStationPeerID := id.StationPeerID.String()
-	if memberships != nil {
-		if err := requireActiveMembership(
-			ctx,
-			memberships,
-			federationID,
-			localStationPeerID,
-		); err != nil {
-			return nil, err
-		}
 	}
 
 	// Cache fast-path: serve a fresh remote_cached row without touching
@@ -221,17 +153,6 @@ func (r *Resolver) resolveByHandle(
 		if cached, err := fedcache.Lookup(ctx, canon); err == nil && cached != nil {
 			env, locrec := cachedToProtos(cached, canon)
 			if env != nil && locrec != nil {
-				if memberships != nil &&
-					locrec.GetHomeStationPeerId() != localStationPeerID {
-					if err := requireActiveMembership(
-						ctx,
-						memberships,
-						federationID,
-						locrec.GetHomeStationPeerId(),
-					); err != nil {
-						return nil, err
-					}
-				}
 				return &Resolved{Envelope: env, Locator: locrec, IsLocal: false, FromCache: true}, nil
 			}
 		}
@@ -240,17 +161,6 @@ func (r *Resolver) resolveByHandle(
 	rec, err := r.lookupLocator(ctx, canon)
 	if err != nil {
 		return nil, err
-	}
-	if memberships != nil &&
-		rec.GetHomeStationPeerId() != localStationPeerID {
-		if err := requireActiveMembership(
-			ctx,
-			memberships,
-			federationID,
-			rec.GetHomeStationPeerId(),
-		); err != nil {
-			return nil, err
-		}
 	}
 	isLocal := rec.GetHomeStationPeerId() == id.StationPeerID.String()
 	if !isLocal {
@@ -289,31 +199,6 @@ func (r *Resolver) resolveByHandle(
 		logger.Warnf(ctx, "[resolver] cache upsert failed handle=%s err=%v", canon, cerr)
 	}
 	return res, nil
-}
-
-func requireActiveMembership(
-	ctx context.Context,
-	memberships ActiveMembershipReader,
-	federationID string,
-	stationPeerID string,
-) error {
-	active, err := memberships.IsActiveMember(
-		ctx,
-		federationID,
-		strings.TrimSpace(stationPeerID),
-	)
-	if err != nil {
-		return fmt.Errorf("resolver: read federation membership: %w", err)
-	}
-	if !active {
-		return fmt.Errorf(
-			"%w: federation=%s station=%s",
-			ErrStationOutsideFederation,
-			federationID,
-			stationPeerID,
-		)
-	}
-	return nil
 }
 
 func (r *Resolver) rememberRemoteStationKey(

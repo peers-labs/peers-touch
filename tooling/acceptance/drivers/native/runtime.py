@@ -9,6 +9,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -206,7 +207,7 @@ class NativeDesktopRuntimeBinding(ABC):
             client_id,
             "station",
         )
-        station_url = str(station_service.get("endpoint") or "")
+        station_url = str(station_service.get("endpoint") or "").rstrip("/")
         if not station_url:
             raise DriverError(
                 f"bound service {station_service_id!r} has no endpoint"
@@ -215,6 +216,8 @@ class NativeDesktopRuntimeBinding(ABC):
         environment = {
             "PT_ACCEPTANCE_WINDOW_SLOT": str(options.window_slot),
             "PT_ACCEPTANCE_WINDOW_COUNT": str(options.window_count),
+            "PT_STATION_URL": station_url,
+            "PT_STATION_HEALTH_URL": f"{station_url}/sub-oss/healthz",
         }
 
         session = self._create_session(
@@ -1099,6 +1102,7 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             else Path(find_app_binary()).resolve()
         )
         self._native_adapter = MacOSNativeDesktopAdapter()
+        self._native_file_staging: tempfile.TemporaryDirectory[str] | None = None
 
     @property
     def cell_id(self) -> str:
@@ -1151,13 +1155,34 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
         actor: str,
         source: Path,
     ) -> Path:
-        del actor
         resolved = source.expanduser().resolve()
         if not resolved.is_file():
             raise DriverError(
                 f"Native file selection source is missing: {resolved}"
             )
-        return resolved
+        actor_directory = "".join(
+            character
+            if character.isalnum() or character in {"-", "_"}
+            else "_"
+            for character in actor
+        )
+        if not actor_directory:
+            raise DriverError("Native file staging actor is invalid")
+        if self._native_file_staging is None:
+            self._native_file_staging = tempfile.TemporaryDirectory(
+                prefix="PeersTouchAcceptance-",
+                dir=Path.home(),
+            )
+        staging_root = Path(self._native_file_staging.name).resolve()
+        actor_root = staging_root / actor_directory
+        actor_root.mkdir(mode=0o700, exist_ok=True)
+        target = actor_root / resolved.name
+        if target.is_symlink():
+            raise DriverError(
+                f"Native file staging target must not be a symlink: {target}"
+            )
+        shutil.copy2(resolved, target)
+        return target.resolve()
 
     def native_file_sha256(
         self,
@@ -1239,13 +1264,12 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             ),
             None,
         )
-        if source is None:
-            return False
-        _invoke_tauri_activation_command(
-            source,
-            "acceptance_yield_activation",
-            {"targetPid": target.process_id},
-        )
+        if source is not None:
+            _invoke_tauri_activation_command(
+                source,
+                "acceptance_yield_activation",
+                {"targetPid": target.process_id},
+            )
         _invoke_tauri_activation_command(
             target,
             "acceptance_request_activation",
@@ -1399,6 +1423,24 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                         ),
                     }
                 )
+        staging_roots = (
+            [Path(self._native_file_staging.name)]
+            if self._native_file_staging is not None
+            else []
+        )
+        staging_errors: list[dict[str, str]] = []
+        if self._native_file_staging is not None:
+            try:
+                self._native_file_staging.cleanup()
+            except OSError as error:
+                staging_errors.append(
+                    {
+                        "path": self._native_file_staging.name,
+                        "error": str(error),
+                    }
+                )
+            finally:
+                self._native_file_staging = None
         log_errors = _remove_paths(log_paths)
         return {
             "ports": ports,
@@ -1410,8 +1452,15 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
             "persistentStorageRoots": [
                 str(path) for path in retained_storage_roots
             ],
+            "nativeFileStagingRoots": [
+                str(path) for path in staging_roots
+            ],
             "storageErrors": storage_errors,
-            "cleanupErrors": [*storage_errors, *log_errors],
+            "cleanupErrors": [
+                *storage_errors,
+                *staging_errors,
+                *log_errors,
+            ],
             "logs": [str(path) for path in log_paths],
             "portsReleased": _wait_for(
                 lambda: all(_port_is_free(port) for port in ports),
@@ -1425,6 +1474,8 @@ class LocalMacOSRuntimeBinding(NativeDesktopRuntimeBinding):
                 not storage_errors
                 and all(not path.exists() for path in released_storage_roots)
                 and all(path.is_dir() for path in retained_storage_roots)
+                and not staging_errors
+                and all(not path.exists() for path in staging_roots)
             ),
             "persistentStorageRetained": all(
                 path.is_dir() and not path.is_symlink()

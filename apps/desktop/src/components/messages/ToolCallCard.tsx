@@ -173,8 +173,11 @@ export function ToolCallItem({
     tool.decisionRevision !== undefined &&
     !submittingDecision;
   const canApprove = canSubmitDecision && !executorUnavailable;
-  const denied =
+  const approvalDenied =
     tool.status === 'denied'
+    && tool.error === 'agent.errors.toolApprovalDenied';
+  const denied =
+    approvalDenied
     || tool.status === 'error'
     || tool.status === 'expired';
   const approvalExpired =
@@ -182,7 +185,11 @@ export function ToolCallItem({
     && tool.error === 'agent.errors.toolApprovalExpired';
   const unknownSideEffect = tool.status === 'unknown_side_effect';
   const visibleExpanded =
-    expanded || approvalRequired || approvalExpired || unknownSideEffect;
+    expanded
+    || approvalRequired
+    || approvalDenied
+    || approvalExpired
+    || unknownSideEffect;
   const manifest = useAgentCapabilityStore((state) => {
     if (!tool.manifestId || !tool.manifestVersion) return undefined;
     return state.manifests.find(
@@ -565,6 +572,9 @@ function hasActionableToolState(
     return (
       status === 'approval_required'
       && Boolean(toolCall.approvalId)
+    ) || (
+      status === 'denied'
+      && error === 'agent.errors.toolApprovalDenied'
     ) || (
       status === 'expired'
       && error === 'agent.errors.toolApprovalExpired'

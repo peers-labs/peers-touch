@@ -51,9 +51,9 @@ var (
 // SignInput is everything Sign needs to mint a fresh envelope. Inputs
 // are validated; the resulting envelope carries a verifiable signature.
 type SignInput struct {
-	// Handle is the federated handle this envelope describes. Canonicalised
-	// via locator.CanonicalHandle so receivers and senders agree on
-	// byte-stable casing.
+	// Handle is the federated handle this envelope describes. The profile wire
+	// form is canonical "@user@host"; locator storage keeps its internal
+	// "user@host" form.
 	Handle string
 
 	// HomeStationPeerID is the libp2p PeerID of the authoritative station.
@@ -86,7 +86,7 @@ type SignInput struct {
 // for transport. Stateless — callers cache the resulting bytes if they
 // want to avoid re-signing.
 func Sign(in SignInput) (*pb.ActorProfileEnvelope, []byte, error) {
-	canonHandle, err := locator.CanonicalHandle(in.Handle)
+	canonHandle, err := canonicalProfileHandle(in.Handle)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -194,7 +194,7 @@ func Verify(env *pb.ActorProfileEnvelope, opt VerifyOptions) error {
 	}
 
 	if opt.ExpectedHandle != "" {
-		canon, err := locator.CanonicalHandle(opt.ExpectedHandle)
+		canon, err := canonicalProfileHandle(opt.ExpectedHandle)
 		if err != nil {
 			return fmt.Errorf("profile: bad expected handle: %w", err)
 		}
@@ -218,6 +218,14 @@ func Verify(env *pb.ActorProfileEnvelope, opt VerifyOptions) error {
 	}
 
 	return nil
+}
+
+func canonicalProfileHandle(handle string) (string, error) {
+	canon, err := locator.CanonicalHandle(handle)
+	if err != nil {
+		return "", err
+	}
+	return "@" + canon, nil
 }
 
 // canonicalDigest serialises an envelope EXCLUDING its Signature field

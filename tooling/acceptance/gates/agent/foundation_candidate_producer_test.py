@@ -241,6 +241,10 @@ def _role_observations(runtime_tuple: FoundationTuple) -> dict[str, dict[str, ob
             "selector": "[data-agent-message]",
             "locale": runtime_tuple.locale,
             "textHash": HASH,
+            "expectedVisible": (
+                runtime_tuple.runtime_attestation_profile
+                != "non_advertised"
+            ),
             "visible": (
                 runtime_tuple.runtime_attestation_profile
                 != "non_advertised"

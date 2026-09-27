@@ -22,7 +22,7 @@ describe('inlineAvatarSource', () => {
 describe('downloadableAvatarSource', () => {
   it('rejects the retired demo image generator', () => {
     expect(downloadableAvatarSource(
-      'https://avatar.example.invalid/api/ide/v1/text_to_image?prompt=Alice',
+      'https://internal.example.invalid/api/ide/v1/text_to_image?prompt=Alice',
     )).toBeNull();
   });
 

@@ -126,19 +126,18 @@ message CallSignal {
   Kind   kind          = 3;
   bytes  payload       = 4;
 
-  // Plaintext call identifier visible to Station for multi-device
-  // arbitration (CCU-D06). Populated on every signal belonging to an
-  // active call. A pre-call transport handshake may leave it empty.
-  // Station uses this for atomic first-terminal-action-wins without
-  // decrypting the payload.
-  string call_id       = 5;
+  // Group ULID for group call routing. Empty for 1-to-1 calls.
+  string group_ulid    = 5;
 
-  // Populated by Station in the fan-out frame after a terminal action
-  // (CALL_ACCEPT or CALL_REJECT) wins the first-terminal-action-wins
-  // arbitration for this call_id. Allows sibling devices to
-  // distinguish "I won" from "handled elsewhere" without relying on
-  // heuristic echo detection.
-  string winning_device_id = 6;
+  // LiveKit room name assigned by Station for this call session.
+  string room_name     = 6;
+
+  // Plaintext direct-call identifier used only for multi-device
+  // first-terminal-action-wins arbitration.
+  string call_id       = 7;
+
+  // Station-authored winner for a terminal direct-call action.
+  string winning_device_id = 8;
 
   enum Kind {
     KIND_UNSPECIFIED = 0;
@@ -157,22 +156,18 @@ message CallSignal {
     CALL_ACCEPT      = 6;
     CALL_REJECT      = 7;
     CALL_END         = 8;
-    // Station-authored terminal control event emitted when the shared
-    // ring deadline wins before any endpoint accepts or rejects.
-    CALL_NO_ANSWER   = 9;
+
+    // SSE notifications for group call room lifecycle.
+    ROOM_ACTIVE      = 9;
+    ROOM_ENDED       = 10;
+
+    // Station-authored terminal event for an unanswered direct call.
+    CALL_NO_ANSWER   = 11;
   }
 }
 
-// FederatedCallSignal is the typed, Station-signed cross-Station envelope for
-// one opaque CallSignal. Federation authenticates Station identity while
-// Realtime retains actor authorization and call-resolution ownership.
-message FederatedCallSignal {
-  string recipient_actor_ptid = 1;
-  CallSignal signal = 2;
-}
-
-// GetFederatedCallResolutionRequest proxies a caller-side readback to the
-// callee Home Station, which is the only call-resolution authority.
+// Cross-Station readback for direct-call arbitration. The callee Home Station
+// is the sole authority for this short-lived control-plane state.
 message GetFederatedCallResolutionRequest {
   string requesting_actor_ptid = 1;
   string call_id = 2;

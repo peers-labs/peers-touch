@@ -142,14 +142,6 @@ describe('Rust-owned Station transport bridge', () => {
       { ...session, actorRef: { ptid: 'ptid:bob' } },
       { operationId: 'actor_profile_get' },
     )).rejects.toThrow('mobile.stationTransport.sessionScopeMismatch');
-    await expect(executeStationOperation(
-      { ...session, deviceId: 'device-b' },
-      { operationId: 'actor_profile_get' },
-    )).rejects.toThrow('mobile.stationTransport.sessionScopeMismatch');
-    await expect(executeStationOperation(
-      { ...session, lifecycleGeneration: 2 },
-      { operationId: 'actor_profile_get' },
-    )).rejects.toThrow('mobile.stationTransport.sessionScopeMismatch');
     expect(ports.invoke).not.toHaveBeenCalled();
   });
 

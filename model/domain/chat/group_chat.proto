@@ -1,0 +1,734 @@
+syntax = "proto3";
+
+package peers_touch.model.chat.v1;
+
+import "google/protobuf/timestamp.proto";
+import "domain/common/common.proto";
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/chat;chat";
+
+// ==================== 群组核心模型 ====================
+
+// 群组
+message Group {
+  string ulid = 1;                          // 群组唯一ID
+  string name = 2;                          // 群组名称
+  string description = 3;                   // 群组描述
+  string avatar_cid = 4;                    // 群组头像（IPFS CID）
+  string owner_ptid = 5;                     // 群主 PTID
+  GroupType type = 6;                       // 群组类型
+  GroupVisibility visibility = 7;           // 可见性
+  int32 member_count = 8;                   // 成员数量
+  int32 max_members = 9;                    // 最大成员数（默认500）
+  bool muted = 10;                          // 是否全员禁言
+  map<string, string> settings = 11;        // 扩展设置
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  GroupStatus status = 14;                  // 生命周期状态
+  google.protobuf.Timestamp dissolved_at = 15;
+  int64 membership_epoch = 16;              // 成员集版本；绑定 Sender Key 轮转与发送校验
+}
+
+// 群组类型
+enum GroupType {
+  GROUP_TYPE_UNSPECIFIED = 0;
+  GROUP_TYPE_NORMAL = 1;       // 普通群
+  GROUP_TYPE_ANNOUNCEMENT = 2; // 公告群（只有管理员可发言）
+  GROUP_TYPE_DISCUSSION = 3;   // 讨论群
+}
+
+// 群组可见性
+enum GroupVisibility {
+  GROUP_VISIBILITY_UNSPECIFIED = 0;
+  GROUP_VISIBILITY_PUBLIC = 1;     // 公开（可搜索加入）
+  GROUP_VISIBILITY_PRIVATE = 2;    // 私密（需邀请）
+}
+
+enum GroupStatus {
+  GROUP_STATUS_UNSPECIFIED = 0;
+  GROUP_STATUS_ACTIVE = 1;
+  GROUP_STATUS_DISSOLVED = 2;
+}
+
+// ==================== 成员管理 ====================
+
+// 群成员
+message GroupMember {
+  string group_ulid = 1;
+  string ptid = 2;
+  GroupRole role = 3;                        // 角色
+  string nickname = 4;                       // 群内昵称
+  bool muted = 5;                            // 是否被禁言
+  google.protobuf.Timestamp muted_until = 6; // 禁言截止时间
+  google.protobuf.Timestamp joined_at = 7;
+  string invited_by = 8;                     // 邀请人 PTID
+  string actor_home_station_peer_id = 9;      // Actor Home Station peer id for federation routing
+  string actor_home_station_domain = 10;      // Actor Home Station display/domain hint
+}
+
+// 群角色
+enum GroupRole {
+  GROUP_ROLE_UNSPECIFIED = 0;
+  GROUP_ROLE_MEMBER = 1;     // 普通成员
+  GROUP_ROLE_ADMIN = 2;      // 管理员
+  GROUP_ROLE_OWNER = 3;      // 群主
+}
+
+// ==================== 群消息 ====================
+
+// 群消息
+//
+// Group chat is end-to-end encrypted under the Sender Keys protocol
+// (see peers-touch/docs/architecture/encryption/README.md).
+// `encrypted_payload` carries the wire-encoded `GroupCiphertext`
+// (defined below) and is the ONLY source of message body for new
+// messages. Station treats it as opaque bytes -- it does not, and
+// cannot, decode it.
+//
+// `content` is preserved on the wire ONLY so historical recall /
+// edit / delete code paths and existing local indexes do not panic
+// on the field's disappearance. It MUST be empty for any message
+// produced by a Sender-Keys-capable client. Station rejects send
+// requests that populate it (see `SendGroupMessageRequest`).
+message GroupMessage {
+  string ulid = 1;
+  string group_ulid = 2;
+  string sender_ptid = 3;
+  GroupMessageType type = 4;
+  // DEPRECATED: always empty for new messages. Plaintext bodies were
+  // dropped when group chat moved to Sender Keys. Kept around so old
+  // rows in already-shipped local SQLCipher caches still parse; new
+  // senders MUST encode the body inside `encrypted_payload` as a
+  // `GroupCiphertext`. Will be promoted from "deprecated and empty"
+  // to "removed (reserved field number)" in a future proto rev.
+  string content = 5 [deprecated = true];
+  repeated GroupMessageAttachment attachments = 6;
+  string reply_to_ulid = 7;                  // 回复的消息ID
+  // Root message of the thread this message belongs to. Empty means
+  // the message is not part of a thread. This is distinct from
+  // reply_to_ulid so clients can reply to a reply while preserving
+  // the thread root.
+  string thread_root_ulid = 16;
+  repeated string mentioned_ptids = 8;        // @的成员
+  bool mention_all = 9;                      // @全体成员
+  google.protobuf.Timestamp sent_at = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  // recalled flips when the original sender recalls the message.
+  // The row is preserved (so threading & search snippets stay
+  // coherent) but encrypted_payload is cleared and the client
+  // renders a tombstone in place of the bubble. Field number 13
+  // was previously named `deleted`; renamed for parity with friend
+  // chat and the realtime MessageMutation contract. Wire compat is
+  // preserved (same field number / type / GORM column mapping).
+  bool recalled = 13;
+  // Wire form is `GroupCiphertext` (see below) encoded as proto
+  // bytes. Required for Sender-Keys-capable senders.
+  bytes encrypted_payload = 14;
+  // edited_at is set when the message body has been replaced via
+  // an edit. Display-only — clients MUST NOT use it for ordering.
+  // Mirrors FriendChatMessage.edited_at semantics. Edits also
+  // produce a fresh GroupCiphertext at the sender's current chain
+  // counter (the original chain key is already gone).
+  google.protobuf.Timestamp edited_at = 15;
+}
+
+// ==================== Sender-Keys wire format ====================
+
+// GroupCiphertext is the wire form of a single Sender-Keys-encrypted
+// group message body. It is encoded into bytes and stored as the
+// content of `GroupMessage.encrypted_payload`. Station NEVER decodes
+// this -- it is passed through opaquely and the AAD bind below
+// guarantees ciphertext from one (group, sender, key_id) cannot be
+// replayed under another.
+//
+// AAD layout (bound via AES-GCM associated data):
+//   group_ulid || 0x1F || sender_ptid || 0x1F
+//     || sender_key_id (4B big-endian) || 0x1F
+//     || counter      (4B big-endian)
+//
+// `signature` covers the SHA-256 of the same bytes that go into
+// AAD, concatenated with the ciphertext, and is verified against
+// `sender_sig_pub` carried in the SenderKeyDistributionMessage that
+// originally introduced this `(sender_ptid, sender_key_id)` to the
+// receiver. Verification failure MUST surface a "possibly forged"
+// warning and MUST NOT silently fall back to plaintext.
+message GroupCiphertext {
+  // Wire-format version. Currently always 1. A non-1 value MUST be
+  // surfaced as a fatal "unknown ciphertext format" error -- there
+  // is no graceful fallback. Bumped if the AAD layout, the chain
+  // KDF labels, or the signature cover-bytes ever change.
+  uint32 version = 1;
+  // Owner of the sender chain that produced this message. Always
+  // equal to `GroupMessage.sender_ptid`; stored here too because
+  // `GroupCiphertext` decodes in isolation inside crypto code paths
+  // that do not have the surrounding GroupMessage on hand.
+  string sender_ptid = 2;
+  // Sender-key id. Bumps on every forced rotation (member add /
+  // remove / user-triggered "Reset group encryption"). Pair
+  // (sender_ptid, sender_key_id) uniquely identifies a chain.
+  uint32 sender_key_id = 3;
+  // Strictly increasing within (sender_ptid, sender_key_id). Used
+  // by receivers to fast-forward the chain and by the AAD bind to
+  // prevent replay across counters.
+  uint32 counter = 4;
+  bytes ciphertext = 5;
+  // Ed25519(sender_sig_priv, sha256(AAD || ciphertext)). 64 bytes.
+  bytes signature = 6;
+}
+
+// SenderKeyDistributionMessage seeds a receiver's view of the
+// sender's chain. Delivered as the body of a friend-chat message
+// with type FRIEND_MESSAGE_TYPE_SENDER_KEY_DISTRIBUTION (see
+// friend_chat.proto), which gives it the friend-session's E2EE
+// envelope + identity authentication for free. Station never sees
+// the chain key.
+message SenderKeyDistributionMessage {
+  string group_ulid = 1;
+  string sender_ptid = 2;
+  uint32 sender_key_id = 3;
+  // 32-byte chain key, the seed of the receiving hash chain.
+  bytes chain_key = 4;
+  // Counter at which the sender's chain currently sits. Usually 0
+  // for a fresh chain; non-zero when an existing member redistributes
+  // a partially-advanced chain to a newcomer (rare; ratchet-resume
+  // semantics).
+  uint32 counter = 5;
+  // Ed25519 public key (32 B). Recipients use this to verify every
+  // GroupCiphertext.signature attributed to this (sender_ptid,
+  // sender_key_id) pair. The matching private key never leaves the
+  // sender's device.
+  bytes sender_sig_pub = 6;
+}
+
+// GroupSkdmEnvelope is the Station-visible routing wrapper for a sealed
+// SenderKeyDistributionMessage. `encrypted_payload` MUST already be protected
+// by the recipient's pairwise E2EE channel; Station stores and routes it
+// opaquely and MUST NOT contain raw SenderKeyDistributionMessage bytes.
+message GroupSkdmEnvelope {
+  string group_ulid = 1;
+  int64 membership_epoch = 2;
+  string sender_ptid = 3;
+  uint32 sender_key_id = 4;
+  string recipient_ptid = 5;
+  string recipient_device_id = 6;
+  string recipient_home_station_peer_id = 7;
+  bytes encrypted_payload = 8;
+  string idempotency_key = 9;
+  google.protobuf.Timestamp created_at = 10;
+  string sender_home_station_peer_id = 11;
+}
+
+message SubmitGroupSkdmEnvelopeRequest {
+  GroupSkdmEnvelope envelope = 1;
+}
+
+message SubmitGroupSkdmEnvelopeResponse {
+  string outbox_ulid = 1;
+  string status = 2;
+  bool idempotent_replay = 3;
+}
+
+// ChatEncryptedMessagePayload is the plaintext that goes into the
+// Sender-Keys cipher before it becomes GroupCiphertext.ciphertext.
+// It is a protobuf message by design: clients may decode it after
+// E2EE decrypt, while Station only stores the outer opaque
+// encrypted_payload bytes and must never parse this structure.
+message ChatEncryptedMessagePayload {
+  uint32 version = 1;
+  string text = 2;
+  repeated GroupMessageAttachment attachments = 3;
+  GroupMessageType message_type = 4;
+}
+
+enum GroupMessageType {
+  GROUP_MESSAGE_TYPE_UNSPECIFIED = 0;
+  GROUP_MESSAGE_TYPE_TEXT = 1;
+  GROUP_MESSAGE_TYPE_IMAGE = 2;
+  GROUP_MESSAGE_TYPE_FILE = 3;
+  GROUP_MESSAGE_TYPE_AUDIO = 4;
+  GROUP_MESSAGE_TYPE_VIDEO = 5;
+  GROUP_MESSAGE_TYPE_SYSTEM = 10;            // 系统消息（入群、退群等）
+}
+
+message GroupMessageAttachment {
+  string cid = 1;
+  string filename = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  string thumbnail_cid = 5;
+  // visibility echoes the OSS subserver's `oss_files.visibility`
+  // for this attachment ("public" / "chat" / "private"). The
+  // sender is authoritative — the receiver UI surfaces it as a
+  // badge so the user can tell at a glance whether the file
+  // they are looking at is reach-restricted to this group or
+  // has been published to a wider audience. Empty string is
+  // treated as "unknown" by older clients and rendered without
+  // a badge; new servers SHOULD always populate it.
+  string visibility = 6;
+  peers_touch.model.common.v1.EncryptedMediaDescriptor media_encryption = 14;
+  // Deprecated compatibility mirrors for older generated clients. New
+  // clients must populate/read `media_encryption` inside the encrypted
+  // chat payload so Station never sees attachment key material.
+  string encryption_suite = 7;
+  string encryption_key_b64 = 8;
+  string encryption_nonce_b64 = 9;
+  string plaintext_sha256_b64 = 10;
+  string ciphertext_sha256_b64 = 11;
+  int64 plaintext_size = 12;
+  int64 ciphertext_size = 13;
+}
+
+// ==================== 邀请/申请 ====================
+
+// 群邀请
+message GroupInvitation {
+  string ulid = 1;
+  string group_ulid = 2;
+  string inviter_ptid = 3;
+  string invitee_ptid = 4;
+  GroupInvitationStatus status = 5;
+  google.protobuf.Timestamp expire_at = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+enum GroupInvitationStatus {
+  GROUP_INVITATION_STATUS_UNSPECIFIED = 0;
+  GROUP_INVITATION_STATUS_PENDING = 1;
+  GROUP_INVITATION_STATUS_ACCEPTED = 2;
+  GROUP_INVITATION_STATUS_REJECTED = 3;
+  GROUP_INVITATION_STATUS_EXPIRED = 4;
+}
+
+// ==================== 联邦群权威事件 ====================
+
+message FederatedActorRef {
+  string ptid = 1;
+  string home_station_peer_id = 2;
+  string home_station_domain = 3;
+  string federated_handle = 4;
+  bytes actor_identity_public_key = 5;
+  int64 profile_version = 6;
+  string federation_id = 7;
+}
+
+message GroupMemberJoinCommandPayload {
+  FederatedActorRef member = 1;
+  GroupRole role = 2;
+  string nickname = 3;
+  string invited_by_ptid = 4;
+}
+
+message GroupMemberRemoveCommandPayload {
+  FederatedActorRef member = 1;
+}
+
+message GroupOwnerTransferCommandPayload {
+  FederatedActorRef next_owner = 1;
+}
+
+message GroupEvent {
+  string event_ulid = 1;
+  string group_ulid = 2;
+  int64 seq = 3;
+  string prev_hash = 4;
+  string event_hash = 5;
+  string event_type = 6;
+  FederatedActorRef actor = 7;
+  string message_ulid = 8;
+  int64 membership_epoch = 9;
+  string authority_station_peer_id = 10;
+  int64 authority_epoch = 11;
+  string proposal_ulid = 12;
+  string idempotency_key = 13;
+  bytes event_payload = 14;                  // Opaque committed metadata; no plaintext/Sender Key material.
+  google.protobuf.Timestamp created_at = 15;
+}
+
+// ==================== API 请求/响应 ====================
+
+// 创建群组
+message CreateGroupRequest {
+  string name = 1;
+  string description = 2;
+  GroupType type = 3;
+  GroupVisibility visibility = 4;
+  repeated string initial_member_ptids = 5;   // 初始成员
+  repeated FederatedActorRef initial_federated_members = 6; // Initial cross-Station members with routing metadata.
+}
+
+message CreateGroupResponse {
+  Group group = 1;
+}
+
+// 获取群组列表
+message ListGroupsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListGroupsResponse {
+  repeated Group groups = 1;
+  int32 total = 2;
+}
+
+// 获取群组信息
+message GetGroupRequest {
+  string group_ulid = 1;
+}
+
+message GetGroupResponse {
+  Group group = 1;
+  GroupMember my_membership = 2;             // 当前用户的成员信息
+}
+
+// 更新群组信息
+message UpdateGroupRequest {
+  string group_ulid = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional string avatar_cid = 4;
+  optional GroupType type = 5;
+  optional GroupVisibility visibility = 6;
+  optional bool muted = 7;
+}
+
+message UpdateGroupResponse {
+  Group group = 1;
+}
+
+// 邀请加入群组
+message InviteToGroupRequest {
+  string group_ulid = 1;
+  repeated string invitee_ptids = 2;
+}
+
+message InviteToGroupResponse {
+  repeated GroupInvitation invitations = 1;
+}
+
+// 加入群组
+message JoinGroupRequest {
+  string group_ulid = 1;
+  string invitation_ulid = 2;                // 私有群必填；公开群开放加入需单独产品策略
+}
+
+message JoinGroupResponse {
+  GroupMember membership = 1;
+}
+
+// 离开群组
+message LeaveGroupRequest {
+  string group_ulid = 1;
+}
+
+message LeaveGroupResponse {
+  bool success = 1;
+}
+
+// 转让群主
+message TransferGroupOwnershipRequest {
+  string group_ulid = 1;
+  string next_owner_ptid = 2;
+}
+
+message TransferGroupOwnershipResponse {
+  Group group = 1;
+}
+
+// 解散群组
+message DissolveGroupRequest {
+  string group_ulid = 1;
+}
+
+message DissolveGroupResponse {
+  bool success = 1;
+}
+
+// 获取群成员列表
+message GetGroupMembersRequest {
+  string group_ulid = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message GetGroupMembersResponse {
+  repeated GroupMember members = 1;
+  int32 total = 2;
+}
+
+// 更新成员信息（管理员操作）
+message UpdateMemberRequest {
+  string group_ulid = 1;
+  string ptid = 2;
+  optional GroupRole role = 3;
+  optional bool muted = 4;
+  optional google.protobuf.Timestamp muted_until = 5;
+}
+
+message UpdateMemberResponse {
+  GroupMember member = 1;
+}
+
+// 移除成员
+message RemoveMemberRequest {
+  string group_ulid = 1;
+  string ptid = 2;
+}
+
+message RemoveMemberResponse {
+  bool success = 1;
+}
+
+// 发送群消息
+//
+// `encrypted_payload` carries the wire-encoded `GroupCiphertext`
+// (see GroupMessage doc). Required: Station rejects requests whose
+// encrypted_payload is empty, AND requests that populate `content`
+// (the latter would silently leak the body to Station). New E2EE
+// clients MUST encode user-visible attachment metadata inside
+// ChatEncryptedMessagePayload before encryption; the top-level
+// attachments field exists only for legacy/non-E2EE transports.
+message SendGroupMessageRequest {
+  string group_ulid = 1;
+  GroupMessageType type = 2;
+  // DEPRECATED: must be empty for new sends. See GroupMessage.content.
+  string content = 3 [deprecated = true];
+  repeated GroupMessageAttachment attachments = 4;
+  string reply_to_ulid = 5;
+  repeated string mentioned_ptids = 6;
+  bool mention_all = 7;
+  bytes encrypted_payload = 8;
+  // Optional explicit thread root. If omitted and reply_to_ulid is
+  // present, Station resolves it from the replied message.
+  string thread_root_ulid = 9;
+  // Client-observed Group.membership_epoch. Station rejects stale sends
+  // so messages cannot be accepted under an outdated member/Sender Key set.
+  int64 observed_membership_epoch = 10;
+}
+
+message SendGroupMessageResponse {
+  GroupMessage message = 1;
+}
+
+// Follower Station applies committed authority events and advances its cursor.
+message ApplyGroupEventRequest {
+  GroupEvent event = 1;
+}
+
+message ApplyGroupEventResponse {
+  int64 last_accepted_seq = 1;
+  string last_event_hash = 2;
+  string status = 3;
+  string protection_reason = 4;
+}
+
+// Follower Station asks the authority Station for committed events after its
+// current cursor. Applying returned events still goes through ApplyGroupEvent.
+message SyncGroupEventsRequest {
+  string group_ulid = 1;
+  int64 after_seq = 2;
+  int32 limit = 3;
+}
+
+message SyncGroupEventsResponse {
+  repeated GroupEvent events = 1;
+  int64 last_seq = 2;
+  string last_event_hash = 3;
+}
+
+// Follower Station asks the authority Station for the read projection that is
+// safe to materialize locally after event cursor advancement. This contract is
+// separate from GroupEvent: events remain metadata/hash only; message bodies
+// are returned here only as opaque Sender-Keys encrypted_payload bytes.
+message SyncGroupProjectionRequest {
+  string group_ulid = 1;
+  int64 applied_seq = 2;
+  string applied_event_hash = 3;
+  string before_message_ulid = 4;
+  int32 member_limit = 5;
+  int32 member_offset = 6;
+  int32 message_limit = 7;
+}
+
+message SyncGroupProjectionResponse {
+  Group group = 1;
+  repeated GroupMember members = 2;
+  int32 member_total = 3;
+  repeated GroupMessage messages = 4;
+  bool has_more_messages = 5;
+  string next_message_cursor = 6;
+  int64 authority_epoch = 7;
+  int64 last_event_seq = 8;
+  string last_event_hash = 9;
+}
+
+// 获取群消息
+message GetGroupMessagesRequest {
+  string group_ulid = 1;
+  string before_ulid = 2;
+  int32 limit = 3;
+}
+
+message GetGroupMessagesResponse {
+  repeated GroupMessage messages = 1;
+  bool has_more = 2;
+  string next_cursor = 3;
+}
+
+// 撤回消息
+message RecallGroupMessageRequest {
+  string group_ulid = 1;
+  string message_ulid = 2;
+}
+
+message RecallGroupMessageResponse {
+  bool success = 1;
+}
+
+// 离线消息
+message GroupOfflineMessage {
+  string ulid = 1;
+  string group_ulid = 2;
+  string receiver_ptid = 3;
+  string message_ulid = 4;
+  GroupOfflineMessageStatus status = 5;
+  google.protobuf.Timestamp expire_at = 6;
+  google.protobuf.Timestamp delivered_at = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+enum GroupOfflineMessageStatus {
+  GROUP_OFFLINE_MESSAGE_STATUS_UNSPECIFIED = 0;
+  GROUP_OFFLINE_MESSAGE_STATUS_PENDING = 1;
+  GROUP_OFFLINE_MESSAGE_STATUS_DELIVERED = 2;
+  GROUP_OFFLINE_MESSAGE_STATUS_EXPIRED = 3;
+}
+
+// ==================== 扩展 API ====================
+
+// 更新我的群昵称
+message UpdateMyNicknameRequest {
+  string group_ulid = 1;
+  string nickname = 2;
+}
+
+message UpdateMyNicknameResponse {
+  GroupMember member = 1;
+}
+
+// 搜索群消息
+message SearchGroupMessagesRequest {
+  string group_ulid = 1;
+  string query = 2;                           // 搜索关键词
+  int32 limit = 3;
+  string before_ulid = 4;                     // 分页游标
+}
+
+message SearchGroupMessagesResponse {
+  repeated GroupMessage messages = 1;
+  bool has_more = 2;
+}
+
+// 获取群设置（用户个人设置）
+message GetGroupSettingsRequest {
+  string group_ulid = 1;
+}
+
+message GetGroupSettingsResponse {
+  bool is_muted = 1;                          // 是否静音
+  bool is_pinned = 2;                         // 是否置顶
+  string my_nickname = 3;                     // 我的群昵称
+  bool show_member_nickname = 4;              // 是否显示成员昵称
+  bool alert_enabled = 5;                     // 是否参与提醒/角标
+  string background = 6;                      // 聊天背景标识
+  int64 cleared_at_unix_ms = 7;               // 本人清空可见历史的游标
+}
+
+// 更新群设置（用户个人设置）
+message UpdateGroupSettingsRequest {
+  string group_ulid = 1;
+  optional bool is_muted = 2;
+  optional bool is_pinned = 3;
+  optional bool show_member_nickname = 4;
+  optional bool alert_enabled = 5;
+  optional string background = 6;
+  optional int64 cleared_at_unix_ms = 7;
+}
+
+message UpdateGroupSettingsResponse {
+  bool success = 1;
+}
+
+// 删除消息
+message DeleteGroupMessageRequest {
+  string group_ulid = 1;
+  string message_ulid = 2;
+}
+
+message DeleteGroupMessageResponse {
+  bool success = 1;
+}
+
+// 编辑消息 — Mirrors EditFriendMessageRequest. At least one of
+// new_content / new_encrypted_payload must be non-empty; both
+// may be set when an E2EE chat also keeps a plaintext index.
+message EditGroupMessageRequest {
+  string group_ulid = 1;
+  string message_ulid = 2;
+  string new_content = 3;
+  bytes new_encrypted_payload = 4;
+}
+
+message EditGroupMessageResponse {
+  bool success = 1;
+}
+
+// 获取离线消息
+message GetOfflineMessagesRequest {
+  int32 limit = 1;
+}
+
+message GetOfflineMessagesResponse {
+  repeated GroupOfflineMessage messages = 1;
+}
+
+// 确认离线消息
+message AckOfflineMessagesRequest {
+  repeated string ulids = 1;
+}
+
+message AckOfflineMessagesResponse {
+  bool success = 1;
+}
+
+// 获取未读数
+message GetUnreadCountRequest {
+  string group_ulid = 1;
+}
+
+message GetUnreadCountResponse {
+  int64 unread_count = 1;
+}
+
+// 标记群消息已读
+message MarkGroupReadRequest {
+  string group_ulid = 1;
+  string up_to_ulid = 2;  // 标记到这条消息为止
+}
+
+message MarkGroupReadResponse {
+  bool success = 1;
+}
+
+// 统计信息
+message GetGroupStatsRequest {
+  // Empty request
+}
+
+message GetGroupStatsResponse {
+  int64 total_groups = 1;
+  int64 total_members = 2;
+  int64 total_messages = 3;
+  int64 active_groups = 4;
+}

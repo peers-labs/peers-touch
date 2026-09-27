@@ -20,8 +20,10 @@
     "model/domain/realtime",
     "apps/station/app/subserver/events",
     "apps/station/frame/core/federation",
+    "docs/architecture/api-ownership/station-api-capabilities.yaml",
     "apps/desktop",
     "tooling/acceptance",
+    "tooling/docker",
     "packages/locales"
   ],
   "readSet": [
@@ -77,7 +79,17 @@ without turning Chat into a scheduled webinar or enterprise meeting product.
 
 - Product scope and receiver-visible Journey are accepted as `CHAT-C12` and
   `CHAT-J09`.
+- SFU/room architecture reviewed and accepted: `docs/architecture/realtime/group-call-architecture.md`.
+  Uses LiveKit Server as external SFU infrastructure with adapter pattern for
+  future portability.
 - One-to-one signaling, WebRTC/TURN, Group membership, and MLS foundations are
   reusable only after their ownership boundaries are mapped explicitly.
-- Activation is prohibited until a reviewed SFU/room architecture defines
-  authorization, encryption, capacity, cross-Station routing, and cleanup.
+- Implementation complete:
+  - Proto: CallSignal extended with `group_ulid`(5), `room_name`(6), `ROOM_ACTIVE`(9), `ROOM_ENDED`(10).
+  - Station: `groupcall` subserver with RoomProvider interface, LiveKit adapter,
+    membership bridge, join handler, webhook handler. Registered in main.go.
+  - Desktop: `groupCall` module with GroupCallProvider interface, LiveKit adapter,
+    state manager, SSE integration. `livekit-client` dependency added.
+  - Infra: LiveKit service and env-injected server config added to compose.yml.
+  - Locales: 19 group call keys added to both zh-CN and en.
+  - Go build passes (GOWORK=off). TypeScript check passes. gofmt clean.

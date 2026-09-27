@@ -1,5 +1,6 @@
 use super::operation_executor::{
     FencedOperationExecutor, LocalOperationExecutor, OperationEventReporter,
+    ACCEPTANCE_WORKER_INTERRUPTED,
 };
 use super::operation_ledger::OperationLedger;
 use crate::model::agent::{
@@ -50,6 +51,14 @@ impl<'a> CapabilityOperationWorker<'a> {
     }
 
     pub fn tick_at(&self, now_ms: i64) -> Result<u64, String> {
+        self.tick_at_with_scenario_hook(now_ms, &mut |_, _| Ok(false))
+    }
+
+    pub fn tick_at_with_scenario_hook(
+        &self,
+        now_ms: i64,
+        hook: &mut dyn FnMut(&str, &CapabilityOperation) -> Result<bool, String>,
+    ) -> Result<u64, String> {
         let mut cursor = self.ledger.cursor(self.station_url, self.session_id)?;
         let response = self
             .transport
@@ -84,10 +93,13 @@ impl<'a> CapabilityOperationWorker<'a> {
                 || current.status
                     != crate::model::agent::CapabilityOperationStatus::Dispatched as i32
             {
-                kernel.reconcile_at(current, now_ms)?
+                kernel.reconcile_at_with_scenario_hook(current, now_ms, hook)?
             } else {
-                match kernel.consume_at(current.clone(), now_ms) {
+                match kernel.consume_at_with_scenario_hook(current.clone(), now_ms, hook) {
                     Ok(terminal) => terminal,
+                    Err(execution_error) if execution_error == ACCEPTANCE_WORKER_INTERRUPTED => {
+                        return Err(execution_error);
+                    }
                     Err(execution_error) => {
                         let reconciled = self.transport.reconcile_operation(
                             &current.operation_id,
@@ -99,7 +111,7 @@ impl<'a> CapabilityOperationWorker<'a> {
                         if authoritative.revision <= current.revision {
                             return Err(execution_error);
                         }
-                        kernel.reconcile_at(authoritative, now_ms)?
+                        kernel.reconcile_at_with_scenario_hook(authoritative, now_ms, hook)?
                     }
                 }
             };
@@ -281,6 +293,41 @@ mod tests {
             transport.operation.borrow().status,
             CapabilityOperationStatus::Cancelled as i32,
         );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn capability_operation_worker_interrupt_stops_the_current_generation() {
+        let path = std::env::temp_dir().join(format!(
+            "peers-operation-worker-interrupt-{}.sqlite3",
+            ulid::Ulid::new()
+        ));
+        let ledger = OperationLedger::open_test(&path).expect("open ledger");
+        let executor = Executor {
+            calls: RefCell::new(0),
+        };
+        let transport = Transport {
+            operation: RefCell::new(operation()),
+        };
+        let worker = CapabilityOperationWorker::new(
+            "http://station",
+            "device-1",
+            "session-1",
+            &ledger,
+            &executor,
+            &transport,
+        );
+
+        let error = worker
+            .tick_at_with_scenario_hook(1_000, &mut |barrier, _| {
+                Ok(barrier
+                    == super::super::operation_executor::ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT)
+            })
+            .expect_err("acceptance interrupt must stop this worker generation");
+
+        assert_eq!(error, ACCEPTANCE_WORKER_INTERRUPTED);
+        assert_eq!(*executor.calls.borrow(), 0);
+        assert_eq!(ledger.cursor("http://station", "session-1").unwrap(), 0);
         let _ = std::fs::remove_file(path);
     }
 

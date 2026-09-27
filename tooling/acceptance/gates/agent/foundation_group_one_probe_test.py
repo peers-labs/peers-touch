@@ -30,6 +30,9 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_invalid_reference,
     evaluate_base_invalid_resource_reference,
     evaluate_base_lease_expired,
+    evaluate_base_loop_budget_exhausted,
+    evaluate_base_model_unavailable,
+    evaluate_base_permission_denied,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -55,6 +58,9 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_invalid_reference_capture,
     valid_invalid_resource_reference_capture,
     valid_lease_expired_capture,
+    valid_loop_budget_exhausted_capture,
+    valid_model_unavailable_capture,
+    valid_permission_denied_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -202,6 +208,15 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
             facts["runtimeEvent"]["sourcePtidHash"]
         )
         return result
+    if probe.cell == "BASE-PERMISSION_DENIED":
+        facts = valid_permission_denied_capture(probe.platform)
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_permission_denied(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
     if probe.cell == "BASE-APPROVAL_EXPIRED":
         facts = valid_approval_expired_capture()
         result["scenarioFacts"] = facts
@@ -211,6 +226,20 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
         facts = valid_executor_unavailable_capture()
         result["scenarioFacts"] = facts
         result["assertions"] = evaluate_base_executor_unavailable(facts)
+        return result
+    if probe.cell == "BASE-LOOP_BUDGET_EXHAUSTED":
+        facts = valid_loop_budget_exhausted_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_loop_budget_exhausted(facts)
+        return result
+    if probe.cell == "BASE-MODEL_UNAVAILABLE":
+        facts = valid_model_unavailable_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_model_unavailable(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
         return result
     if probe.cell == "AS-F03":
         facts = {
@@ -644,6 +673,83 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-EXECUTOR_UNAVAILABLE assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_permission_denied_routes_to_independent_oracle(self) -> None:
+        facts = valid_permission_denied_capture("browser")
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_permission_denied(facts),
+            "runtime-events": typed_runtime_role(facts),
+            "runtimeAttestation": {
+                "actorIdentityHash": facts["runtimeEvent"][
+                    "sourcePtidHash"
+                ],
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-PERMISSION_DENIED",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "zeroLocalExecution": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-PERMISSION_DENIED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_loop_budget_routes_to_independent_oracle(self) -> None:
+        facts = valid_loop_budget_exhausted_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_loop_budget_exhausted(facts),
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="desktop_app",
+            locale="en",
+            cell="BASE-LOOP_BUDGET_EXHAUSTED",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "terminalAtExactLimit": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-LOOP_BUDGET_EXHAUSTED assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_model_unavailable_routes_to_independent_oracle(self) -> None:
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-MODEL_UNAVAILABLE",
+            sample_id="sample-001",
+        )
+        capture_value = scenario_capture(RecordingHarnessClient(), probe)
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "oneTerminalProviderAttempt": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-MODEL_UNAVAILABLE assertions do not match",
         ):
             assert_group_one_capture(probe, capture_value)
 

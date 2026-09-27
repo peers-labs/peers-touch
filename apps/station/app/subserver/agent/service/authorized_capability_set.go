@@ -38,6 +38,23 @@ func LoadAuthorizedCapabilitySet(
 	db *gorm.DB,
 	config *TurnConfig,
 ) (*AuthorizedCapabilitySet, error) {
+	return loadAuthorizedCapabilitySet(ctx, db, config, false)
+}
+
+func LoadAuthorizedCapabilitySetForContinuation(
+	ctx context.Context,
+	db *gorm.DB,
+	config *TurnConfig,
+) (*AuthorizedCapabilitySet, error) {
+	return loadAuthorizedCapabilitySet(ctx, db, config, true)
+}
+
+func loadAuthorizedCapabilitySet(
+	ctx context.Context,
+	db *gorm.DB,
+	config *TurnConfig,
+	allowAuthorityContraction bool,
+) (*AuthorizedCapabilitySet, error) {
 	if db == nil || config == nil ||
 		strings.TrimSpace(config.AttemptID) == "" ||
 		strings.TrimSpace(config.TurnID) == "" ||
@@ -126,9 +143,18 @@ func LoadAuthorizedCapabilitySet(
 			model.CapabilityReadinessState_CAPABILITY_READINESS_STATE_READY {
 			continue
 		}
-		capability, err := loadAuthorizedCapability(ctx, db, config, ready)
+		capability, active, err := loadAuthorizedCapability(
+			ctx,
+			db,
+			config,
+			ready,
+			allowAuthorityContraction,
+		)
 		if err != nil {
 			return nil, err
+		}
+		if !active {
+			continue
 		}
 		key := authorizedCapabilityKey(
 			capability.Manifest.GetCapabilityId(),
@@ -155,47 +181,57 @@ func loadAuthorizedCapability(
 	db *gorm.DB,
 	config *TurnConfig,
 	ready *model.CapabilityReadiness,
-) (AuthorizedCapability, error) {
+	allowAuthorityContraction bool,
+) (AuthorizedCapability, bool, error) {
 	if ready == nil ||
 		strings.TrimSpace(ready.GetBindingId()) == "" ||
 		strings.TrimSpace(ready.GetCapabilityId()) == "" ||
 		strings.TrimSpace(ready.GetCapabilityVersion()) == "" ||
 		ready.GetBindingRevision() == 0 {
-		return AuthorizedCapability{}, capabilityStateError(
+		return AuthorizedCapability{}, false, capabilityStateError(
 			"READY capability has incomplete binding lineage",
 			nil,
 		)
 	}
 	var binding persistence.AgentCapabilityBinding
 	if err := db.WithContext(ctx).Where(
-		"binding_id = ? AND ptid = ? AND agent_id = ? AND revision = ? AND capability_id = ? AND capability_version = ? AND enabled = ? AND tombstoned_at IS NULL",
+		"binding_id = ? AND ptid = ? AND agent_id = ?",
 		ready.GetBindingId(),
 		config.ActorID,
 		config.AgentID,
-		ready.GetBindingRevision(),
-		ready.GetCapabilityId(),
-		ready.GetCapabilityVersion(),
-		true,
 	).First(&binding).Error; err != nil {
-		return AuthorizedCapability{}, capabilityStateError(
+		return AuthorizedCapability{}, false, capabilityStateError(
 			"READY capability binding is stale or unavailable",
 			err,
+		)
+	}
+	bindingMatchesSnapshot := binding.Revision == ready.GetBindingRevision() &&
+		binding.CapabilityID == ready.GetCapabilityId() &&
+		binding.CapabilityVersion == ready.GetCapabilityVersion()
+	bindingIsActive := binding.Enabled && binding.TombstonedAt == nil
+	if !bindingMatchesSnapshot || !bindingIsActive {
+		if allowAuthorityContraction && binding.Revision >= ready.GetBindingRevision() {
+			return AuthorizedCapability{}, false, nil
+		}
+		return AuthorizedCapability{}, false, capabilityStateError(
+			"READY capability binding is stale or unavailable",
+			nil,
 		)
 	}
 
 	var manifest persistence.CapabilityManifest
 	if err := db.WithContext(ctx).Where(
-		"capability_id = ? AND version = ? AND retired_at IS NULL",
+		"capability_id = ? AND version = ?",
 		ready.GetCapabilityId(),
 		ready.GetCapabilityVersion(),
 	).First(&manifest).Error; err != nil {
-		return AuthorizedCapability{}, capabilityStateError(
+		return AuthorizedCapability{}, false, capabilityStateError(
 			"READY capability manifest is stale or unavailable",
 			err,
 		)
 	}
 	if manifest.OwnerPtid != "" && manifest.OwnerPtid != config.ActorID {
-		return AuthorizedCapability{}, capabilityStateError(
+		return AuthorizedCapability{}, false, capabilityStateError(
 			"READY capability manifest is not owned by the actor",
 			nil,
 		)
@@ -203,14 +239,19 @@ func loadAuthorizedCapability(
 	if model.CapabilitySourceKind(manifest.SourceKind) ==
 		model.CapabilitySourceKind_CAPABILITY_SOURCE_KIND_KNOWLEDGE &&
 		manifest.OwnerPtid != config.ActorID {
-		return AuthorizedCapability{}, capabilityStateError(
+		return AuthorizedCapability{}, false, capabilityStateError(
 			"READY Knowledge manifest must be owned by the actor",
 			nil,
 		)
 	}
-	if model.CapabilityAvailability(manifest.Availability) !=
-		model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE {
-		return AuthorizedCapability{}, capabilityStateError(
+	manifestIsActive := manifest.RetiredAt == nil &&
+		model.CapabilityAvailability(manifest.Availability) ==
+			model.CapabilityAvailability_CAPABILITY_AVAILABILITY_AVAILABLE
+	if !manifestIsActive {
+		if allowAuthorityContraction {
+			return AuthorizedCapability{}, false, nil
+		}
+		return AuthorizedCapability{}, false, capabilityStateError(
 			"READY capability manifest is not active",
 			nil,
 		)
@@ -219,7 +260,7 @@ func loadAuthorizedCapability(
 		Manifest:  capabilityManifestModel(&manifest),
 		Binding:   capabilityBindingModel(&binding),
 		Readiness: proto.Clone(ready).(*model.CapabilityReadiness),
-	}, nil
+	}, true, nil
 }
 
 func (s *AuthorizedCapabilitySet) Capability(

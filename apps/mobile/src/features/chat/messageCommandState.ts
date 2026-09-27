@@ -1,9 +1,10 @@
+import type { GroupMessage } from '../../gen/proto/domain/chat/group_chat_pb';
 import type {
   MessagingCommandStatusProjection,
   MessagingPendingCommandResult,
 } from '../../services/mobileCommands';
-import type { SocialMessage } from '../social/socialTypes';
-import { messageProjectionMetadata } from './messageProjection';
+import type { FriendChatMessage } from '../social/socialTypes';
+import { messageProjectionMetadata } from './messagingProjectionAdapters';
 
 export type ChatMessageCommandKind =
   | 'edit'
@@ -67,7 +68,7 @@ export function trackChatMessageCommand(
 
 export async function refreshChatMessageCommandOutcomes(
   outcomes: ChatMessageCommandOutcomes,
-  messages: ReadonlyArray<SocialMessage>,
+  messages: ReadonlyArray<FriendChatMessage | GroupMessage>,
   actorPtid: string,
   readStatus: (
     commandId: string,
@@ -104,7 +105,7 @@ export async function refreshChatMessageCommandOutcomes(
 
 export function isChatMessageCommandProjected(
   outcome: ChatMessageCommandOutcome,
-  message: SocialMessage | undefined,
+  message: FriendChatMessage | GroupMessage | undefined,
   actorPtid: string,
 ): boolean {
   if (outcome.kind === 'hideForActor') return !message;

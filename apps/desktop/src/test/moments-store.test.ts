@@ -33,21 +33,25 @@ import {
   DeleteStationModerationPolicyResponseSchema,
   PostType,
   PostSchema,
-  PostVisibility,
   ReactionKind,
   RelationshipReason_Kind,
   type Audience,
 } from '../gen/proto/domain/social/post_pb';
 import {
-  GetCommentsResponseSchema,
   CreateCommentResponseSchema,
 } from '../gen/proto/domain/social/comment_pb';
+import { ListMomentCommentsResponseSchema } from '../gen/proto/domain/social/private_content_pb';
 import {
   FollowResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
 import { ListMyCirclesResponseSchema } from '../gen/proto/domain/social/circle_pb';
 import { selectMomentComments, useMomentsStore } from '../store/moments';
 import { usePrivateMomentsStore } from '../store/privateMoments';
+import {
+  selectPrivateCommentDraft,
+  selectPrivateCommentThread,
+  usePrivateCommentsStore,
+} from '../store/privateComments';
 import { normalizePrivateMomentProjection } from '../services/privateMomentsNative';
 import { useRelationshipsStore } from '../store/relationships';
 import { useSessionStore } from '../store/session';
@@ -139,6 +143,7 @@ beforeEach(() => {
   invokeMock.mockReset();
   pending = [];
   useMomentsStore.getState().reset();
+  usePrivateCommentsStore.getState().reset();
   usePrivateMomentsStore.getState().reset();
   useRelationshipsStore.getState().reset();
   useSessionStore.getState().reset();
@@ -155,6 +160,7 @@ beforeEach(() => {
 
 afterEach(() => {
   momentsRuntime.teardown();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -416,6 +422,61 @@ describe('moments store: createPost / deletePost', () => {
     );
   });
 
+  it('preserves the exact CIRCLE audience in the Native publish intent', async () => {
+    const authorPtid = 'ptid:author';
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorPtid: authorPtid,
+        name: 'author',
+        email: '',
+        loginMethod: 'password',
+      },
+    });
+    usePrivateMomentsStore.getState().reset();
+    usePrivateMomentsStore.getState().activateActor(authorPtid, 2);
+
+    let nativeInput: Record<string, unknown> | undefined;
+    enqueueMatch((cmd, args) => {
+      if (cmd !== 'social_private_moment_publish') return false;
+      nativeInput = (args as { input?: Record<string, unknown> }).input;
+      return true;
+    }, statusOk({
+      state: 'PUBLISHED',
+      draft_id: 'draft-circle',
+      post_id: 'circle-post',
+      projection: {
+        post_id: 'circle-post',
+        content_id: 'circle-post',
+        generation: '1',
+        author_ptid: authorPtid,
+        audience_kind: 'CIRCLE',
+        state: 'CONTENT_READY',
+        content: { kind: 'TEXT', text: 'circle only' },
+      },
+    }));
+
+    await useMomentsStore.getState().createPost({
+      kind: 'text',
+      text: 'circle only',
+      audience: create(AudienceSchema, {
+        kind: Audience_Kind.CIRCLE,
+        targetId: 77n,
+      }),
+      draftId: 'draft-circle',
+      draftRevision: 1,
+    });
+
+    expect(nativeInput).toMatchObject({
+      audience_kind: 'CIRCLE',
+      audience_target_id: '77',
+      audience_actor_ptids: [],
+      moment_kind: 'TEXT',
+    });
+  });
+
   it('rejects private Browser publish before invoking any backend command', async () => {
     installEventWindowStub();
     Object.assign(window, { __PT_GATEWAY_BASE__: '/api' });
@@ -442,13 +503,9 @@ describe('moments store: createPost / deletePost', () => {
     );
   });
 
-  it('routes only FRIENDS Moments through the Secure Content runtime', () => {
-    expect(isPrivateMomentPost(create(PostSchema, {
-      id: 'friends',
-      audience: create(AudienceSchema, { kind: Audience_Kind.FRIENDS }),
-    }))).toBe(true);
+  it('routes every non-public Moment through the Secure Content runtime', () => {
     for (const kind of [
-      Audience_Kind.PUBLIC,
+      Audience_Kind.FRIENDS,
       Audience_Kind.FOLLOWERS,
       Audience_Kind.CIRCLE,
       Audience_Kind.GROUP,
@@ -459,15 +516,18 @@ describe('moments store: createPost / deletePost', () => {
       expect(isPrivateMomentPost(create(PostSchema, {
         id: `post-${kind}`,
         audience: create(AudienceSchema, { kind }),
-      }))).toBe(false);
+      }))).toBe(true);
     }
     expect(isPrivateMomentPost(create(PostSchema, {
-      id: 'legacy-private',
-      visibility: PostVisibility.PRIVATE,
+      id: 'public',
+      audience: create(AudienceSchema, { kind: Audience_Kind.PUBLIC }),
+    }))).toBe(false);
+    expect(isPrivateMomentPost(create(PostSchema, {
+      id: 'unspecified',
       audience: create(AudienceSchema, {
         kind: Audience_Kind.KIND_UNSPECIFIED,
       }),
-    }))).toBe(true);
+    }))).toBe(false);
   });
 
   it('purges Native private material before removing the renderer projection', async () => {
@@ -590,6 +650,8 @@ describe('private Moments Native projection', () => {
           object_id: 'object-1',
           state: 'MEDIA_READY',
           render_url: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          plaintext_sha256: 'a'.repeat(64),
+          plaintext_size: 13,
           mime_type: 'image/jpeg',
         }],
       },
@@ -600,6 +662,29 @@ describe('private Moments Native projection', () => {
     expect(projection.content.media[0]?.renderUrl).toBe(
       'private-media://localhost/01ARZ3NDEKTSV4RRFFQ69G5FAV',
     );
+    expect(projection.content.media[0]?.plaintextSha256).toBe('a'.repeat(64));
+    expect(projection.content.media[0]?.plaintextSize).toBe(13);
+  });
+
+  it('rejects ready private media without Native-verified plaintext evidence', () => {
+    expect(() => normalizePrivateMomentProjection({
+      post_id: 'post-private-media',
+      content_id: 'content-private-media',
+      generation: '1',
+      author_ptid: 'ptid:author',
+      audience_kind: 'FRIENDS',
+      state: 'CONTENT_READY',
+      content: {
+        kind: 'IMAGE',
+        text: 'private image',
+        media: [{
+          object_id: 'object-1',
+          state: 'MEDIA_READY',
+          render_url: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          mime_type: 'image/jpeg',
+        }],
+      },
+    })).toThrow('ready private media projection is incomplete');
   });
 
   it('rejects a private media projection that exposes its local path', () => {
@@ -672,11 +757,12 @@ describe('private Moments Native projection', () => {
     expect(projection?.content).toBeUndefined();
   });
 
-  it('falls through an empty legacy projection to Native private direct-link read', async () => {
+  it('refreshes Native private content and comments for a direct-link detail', async () => {
     installEventWindowStub();
     Object.assign(window, { __TAURI_INTERNALS__: {} });
     usePrivateMomentsStore.getState().reset();
     usePrivateMomentsStore.getState().activateActor('ptid:viewer', 6);
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 6);
     enqueue(
       'social_get_moment',
       bytesOk(GetPostResponseSchema, {}),
@@ -696,6 +782,23 @@ describe('private Moments Native projection', () => {
         },
       },
     });
+    enqueue('social_private_comments_list', statusOk({
+      post_id: 'post-private-direct',
+      comments: [{
+        comment_id: 'comment-private-direct',
+        content_id: 'comment-private-direct',
+        generation: '1',
+        post_id: 'post-private-direct',
+        reply_to_comment_id: '',
+        author_ptid: 'ptid:author',
+        state: 'COMMENT_POSTED',
+        text: 'verified private reply',
+        reactions_count: 0,
+        replies_count: 0,
+      }],
+      next_cursor: '',
+      has_more: false,
+    }));
 
     await ensureMomentDetailProjection('post-private-direct');
 
@@ -708,9 +811,20 @@ describe('private Moments Native projection', () => {
         text: 'direct private content',
       },
     });
-    expect(invokeMock).not.toHaveBeenCalledWith(
-      'social_get_comments',
-      expect.anything(),
+    expect(
+      selectPrivateCommentThread(
+        usePrivateCommentsStore.getState(),
+        'post-private-direct',
+      ).comments[0]?.text,
+    ).toBe('verified private reply');
+    expect(invokeMock).toHaveBeenCalledWith(
+      'social_private_comments_list',
+      expect.objectContaining({
+        input: expect.objectContaining({
+          post_id: 'post-private-direct',
+          limit: 20,
+        }),
+      }),
     );
   });
 
@@ -778,20 +892,186 @@ describe('moments store: comments', () => {
     expect(selectMomentComments(state, 'missing')).toBe(selectMomentComments(state, 'other-missing'));
   });
 
+  it('restores only the newest revision for a reused private Comment draft ID', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 12);
+    enqueue('social_private_comments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '9',
+      drafts: [
+        {
+          draft_id: 'draft-reused',
+          draft_revision: 2,
+          post_id: 'private-post',
+          reply_to_comment_id: '',
+          text: 'newest text',
+          state: 'COMMENT_RATE_LIMITED',
+          retry_after_seconds: 15,
+        },
+        {
+          draft_id: 'draft-reused',
+          draft_revision: 1,
+          post_id: 'private-post',
+          reply_to_comment_id: '',
+          text: 'stale text',
+          state: 'COMMENT_FAILED',
+        },
+      ],
+      comments: [],
+    }));
+
+    await usePrivateCommentsStore.getState().bootstrap(12);
+
+    expect(selectPrivateCommentDraft(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    )).toMatchObject({
+      draftId: 'draft-reused',
+      draftRevision: 2,
+      text: 'newest text',
+      state: 'COMMENT_RATE_LIMITED',
+      retryAfterSeconds: 15,
+    });
+  });
+
+  it('does not let a late bootstrap overwrite a newer local private Comment state', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const draftId = '00000000-0000-4000-8000-000000000005';
+    vi.stubGlobal('crypto', { randomUUID: () => draftId });
+    let resolveBootstrap: ((value: ReturnType<typeof statusOk>) => void) | undefined;
+    const bootstrapResponse = new Promise<ReturnType<typeof statusOk>>((resolve) => {
+      resolveBootstrap = resolve;
+    });
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 16);
+    enqueue('social_private_comments_bootstrap', bootstrapResponse);
+    const pendingBootstrap = usePrivateCommentsStore.getState().bootstrap(16);
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'social_private_comments_bootstrap',
+        expect.anything(),
+      );
+    });
+    enqueue('social_private_comment_stage', statusOk({
+      draft_id: draftId,
+      draft_revision: 1,
+      post_id: 'private-post',
+      reply_to_comment_id: '',
+      text: 'newer local text',
+      state: 'COMMENT_EDITING',
+    }));
+    enqueue('social_private_comment_prepare', statusOk({
+      draft_id: draftId,
+      draft_revision: 1,
+      post_id: 'private-post',
+      reply_to_comment_id: '',
+      text: 'newer local text',
+      state: 'COMMENT_SUBMITTING',
+      publication_state: 'PENDING_PUBLICATION',
+    }));
+    enqueue('social_private_comment_submit', statusOk({
+      draft: {
+        draft_id: draftId,
+        draft_revision: 1,
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        text: '',
+        state: 'COMMENT_POSTED',
+        comment_id: 'private-comment',
+        publication_state: 'PUBLISHED',
+      },
+      comment: {
+        comment_id: 'private-comment',
+        content_id: 'private-comment',
+        generation: '1',
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        author_ptid: 'ptid:viewer',
+        state: 'COMMENT_POSTED',
+        text: 'newer local text',
+        reactions_count: 0,
+        replies_count: 0,
+      },
+    }));
+
+    await usePrivateCommentsStore.getState().submitComment(
+      'private-post',
+      'newer local text',
+    );
+    resolveBootstrap?.(statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '10',
+      drafts: [{
+        draft_id: 'stale-bootstrap-draft',
+        draft_revision: 4,
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        text: 'stale bootstrap plaintext',
+        state: 'COMMENT_EDITING',
+      }],
+      comments: [],
+    }));
+    await pendingBootstrap;
+
+    expect(selectPrivateCommentDraft(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    )).toBeUndefined();
+    expect(usePrivateCommentsStore.getState().draftsById[draftId]).toMatchObject({
+      state: 'COMMENT_POSTED',
+      text: '',
+      publicationState: 'PUBLISHED',
+    });
+    expect(
+      usePrivateCommentsStore.getState().activeDraftByPost['private-post'],
+    ).toBeUndefined();
+  });
+
   it('paginates via per-post cursor', async () => {
-    enqueue('social_get_comments',
-      bytesOk(GetCommentsResponseSchema, {
-        comments: [{ id: 'c1', postId: 'p1', content: 'a' }],
+    enqueueMatch(
+      (cmd, args) => cmd === 'social_get_comments'
+        && (args as { input?: { limit?: number } })?.input?.limit === 20,
+      bytesOk(ListMomentCommentsResponseSchema, {
+        comments: [{
+          metadata: {
+            commentId: 'c1',
+            contentId: 'c1',
+            postId: 'p1',
+            author: { ptid: 'ptid:a', acct: 'a@example.com' },
+          },
+          body: { case: 'publicContent', value: { text: 'a' } },
+        }],
         nextCursor: 'cc1',
         hasMore: true,
       }),
     );
-    enqueue('social_get_comments',
-      bytesOk(GetCommentsResponseSchema, {
+    enqueueMatch(
+      (cmd, args) => cmd === 'social_get_comments'
+        && (args as { input?: { cursor?: string; limit?: number } })?.input?.cursor === 'cc1'
+        && (args as { input?: { cursor?: string; limit?: number } })?.input?.limit === 20,
+      bytesOk(ListMomentCommentsResponseSchema, {
         comments: [
-          // c1 returned again — must dedupe.
-          { id: 'c1', postId: 'p1', content: 'a' },
-          { id: 'c2', postId: 'p1', content: 'b' },
+          {
+            metadata: {
+              commentId: 'c1',
+              contentId: 'c1',
+              postId: 'p1',
+              author: { ptid: 'ptid:a', acct: 'a@example.com' },
+            },
+            body: { case: 'publicContent', value: { text: 'a' } },
+          },
+          {
+            metadata: {
+              commentId: 'c2',
+              contentId: 'c2',
+              postId: 'p1',
+              author: { ptid: 'ptid:b', acct: 'b@example.com' },
+            },
+            body: { case: 'publicContent', value: { text: 'b' } },
+          },
         ],
         nextCursor: '',
         hasMore: false,
@@ -806,6 +1086,514 @@ describe('moments store: comments', () => {
       'c2',
     ]);
     expect(useMomentsStore.getState().commentsHasMore['p1']).toBe(false);
+  });
+
+  it('decrypts private Comment pages through Native and keeps projections separate', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 12);
+    enqueue('social_private_comments_list', statusOk({
+      post_id: 'private-post',
+      comments: [{
+        comment_id: 'private-comment',
+        content_id: 'private-comment',
+        generation: '3',
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        author_ptid: 'ptid:author',
+        author_acct: 'author@example.com',
+        state: 'COMMENT_POSTED',
+        text: 'verified plaintext',
+        reactions_count: 2,
+        replies_count: 0,
+      }],
+      next_cursor: 'private-cursor',
+      has_more: true,
+    }));
+
+    await usePrivateCommentsStore.getState().loadComments('private-post', true);
+
+    const thread = selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    );
+    expect(thread.comments).toEqual([
+      expect.objectContaining({
+        commentId: 'private-comment',
+        text: 'verified plaintext',
+        state: 'COMMENT_POSTED',
+      }),
+    ]);
+    expect(thread.nextCursor).toBe('private-cursor');
+    expect(thread.hasMore).toBe(true);
+  });
+
+  it('retains a rate-limited private draft and retries the same Native identity', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const draftId = '00000000-0000-4000-8000-000000000001';
+    vi.stubGlobal('crypto', { randomUUID: () => draftId });
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 13);
+    enqueue('social_private_comment_stage', statusOk({
+      draft_id: draftId,
+      draft_revision: 1,
+      post_id: 'private-post',
+      reply_to_comment_id: '',
+      text: 'keep this text',
+      state: 'COMMENT_EDITING',
+    }));
+    enqueue('social_private_comment_prepare', statusOk({
+      draft_id: draftId,
+      draft_revision: 1,
+      post_id: 'private-post',
+      reply_to_comment_id: '',
+      text: 'keep this text',
+      state: 'COMMENT_SUBMITTING',
+    }));
+    enqueue('social_private_comment_submit', {
+      ok: false,
+      error: {
+        code: 'INVALID_ARGUMENT',
+        message: 'rate limited',
+        details: {
+          state: 'COMMENT_RATE_LIMITED',
+          native_error_code: 'COMMENT_RATE_LIMITED',
+          retry_after_seconds: 9,
+          retry_not_before_unix_ms: 20_000,
+        },
+      },
+    });
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+
+    await expect(
+      usePrivateCommentsStore.getState().submitComment(
+        'private-post',
+        'keep this text',
+      ),
+    ).rejects.toThrow('rate limited');
+
+    const retained = selectPrivateCommentDraft(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    );
+    expect(retained).toMatchObject({
+      draftId,
+      draftRevision: 1,
+      text: 'keep this text',
+      state: 'COMMENT_RATE_LIMITED',
+      retryAfterSeconds: 9,
+      retryNotBeforeUnixMs: 20_000,
+    });
+
+    const callsBeforeEarlyRetry = invokeMock.mock.calls.length;
+    await expect(
+      usePrivateCommentsStore.getState().retryComment('private-post'),
+    ).rejects.toThrow('COMMENT_RATE_LIMITED');
+    expect(invokeMock.mock.calls).toHaveLength(callsBeforeEarlyRetry);
+    vi.mocked(Date.now).mockReturnValue(20_000);
+    enqueueMatch(
+      (cmd, args) => {
+        const input = (args as {
+          input?: { draft_id?: string; draft_revision?: number };
+        })?.input;
+        return cmd === 'social_private_comment_prepare'
+          && input?.draft_id === draftId
+          && input?.draft_revision === 1;
+      },
+      statusOk({
+        draft_id: draftId,
+        draft_revision: 1,
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        text: 'keep this text',
+        state: 'COMMENT_RATE_LIMITED',
+        error_code: 'COMMENT_RATE_LIMITED',
+        retry_after_seconds: 9,
+        retry_not_before_unix_ms: 20_000,
+      }),
+    );
+    enqueueMatch(
+      (cmd, args) => {
+        const input = (args as {
+          input?: { draft_id?: string; draft_revision?: number };
+        })?.input;
+        return cmd === 'social_private_comment_submit'
+          && input?.draft_id === draftId
+          && input?.draft_revision === 1;
+      },
+      statusOk({
+        draft: {
+          draft_id: draftId,
+          draft_revision: 1,
+          post_id: 'private-post',
+          reply_to_comment_id: '',
+          text: '',
+          state: 'COMMENT_POSTED',
+          comment_id: 'private-comment',
+        },
+        comment: {
+          comment_id: 'private-comment',
+          content_id: 'private-comment',
+          generation: '1',
+          post_id: 'private-post',
+          reply_to_comment_id: '',
+          author_ptid: 'ptid:viewer',
+          state: 'COMMENT_POSTED',
+          text: 'keep this text',
+          reactions_count: 0,
+          replies_count: 0,
+        },
+      }),
+    );
+
+    await usePrivateCommentsStore.getState().retryComment('private-post');
+
+    expect(selectPrivateCommentDraft(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    )).toBeUndefined();
+    expect(
+      selectPrivateCommentThread(
+        usePrivateCommentsStore.getState(),
+        'private-post',
+      ).comments[0]?.text,
+    ).toBe('keep this text');
+  });
+
+  it('reconciles a committed private Comment without plaintext or republication', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const draftId = '00000000-0000-4000-8000-000000000003';
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 14);
+    enqueue('social_private_comments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '10',
+      drafts: [{
+        draft_id: draftId,
+        draft_revision: 4,
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        text: '',
+        state: 'COMMENT_FAILED',
+        comment_id: 'private-comment',
+        error_code: 'COMMENT_READBACK_PENDING',
+        retry_after_seconds: 10,
+        retry_not_before_unix_ms: 20_000,
+        publication_state: 'COMMITTED_PENDING_READBACK',
+      }],
+      comments: [],
+    }));
+    vi.spyOn(Date, 'now').mockReturnValue(10_000);
+    await usePrivateCommentsStore.getState().bootstrap(14);
+
+    expect(selectPrivateCommentDraft(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    )).toMatchObject({
+      draftId,
+      draftRevision: 4,
+      text: '',
+      state: 'COMMENT_FAILED',
+      retryNotBeforeUnixMs: 20_000,
+      publicationState: 'COMMITTED_PENDING_READBACK',
+    });
+
+    const callsBeforeEarlyReadback = invokeMock.mock.calls.length;
+    await expect(
+      usePrivateCommentsStore.getState().retryComment('private-post'),
+    ).rejects.toThrow('COMMENT_RATE_LIMITED');
+    expect(invokeMock.mock.calls).toHaveLength(callsBeforeEarlyReadback);
+    vi.mocked(Date.now).mockReturnValue(20_000);
+    enqueueMatch(
+      (cmd, args) => {
+        const input = (args as {
+          input?: { draft_id?: string; draft_revision?: number };
+        })?.input;
+        return cmd === 'social_private_comment_submit'
+          && input?.draft_id === draftId
+          && input?.draft_revision === 4;
+      },
+      statusOk({
+        draft: {
+          draft_id: draftId,
+          draft_revision: 4,
+          post_id: 'private-post',
+          reply_to_comment_id: '',
+          text: '',
+          state: 'COMMENT_POSTED',
+          comment_id: 'private-comment',
+          publication_state: 'PUBLISHED',
+        },
+        comment: {
+          comment_id: 'private-comment',
+          content_id: 'private-comment',
+          generation: '1',
+          post_id: 'private-post',
+          reply_to_comment_id: '',
+          author_ptid: 'ptid:viewer',
+          state: 'COMMENT_POSTED',
+          text: 'already committed',
+          reactions_count: 0,
+          replies_count: 0,
+        },
+      }),
+    );
+
+    await usePrivateCommentsStore.getState().retryComment('private-post');
+
+    const publicationCommands = invokeMock.mock.calls
+      .map(([command]) => command)
+      .filter((command) => [
+        'social_private_comment_stage',
+        'social_private_comment_prepare',
+        'social_private_comment_submit',
+      ].includes(command));
+    expect(publicationCommands).toEqual(['social_private_comment_submit']);
+    expect(selectPrivateCommentDraft(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    )).toBeUndefined();
+    expect(
+      selectPrivateCommentThread(
+        usePrivateCommentsStore.getState(),
+        'private-post',
+      ).comments[0]?.text,
+    ).toBe('already committed');
+  });
+
+  it('blocks private Comment retry after the parent becomes unavailable', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const draftId = '00000000-0000-4000-8000-000000000006';
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 17);
+    enqueue('social_private_comments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '11',
+      drafts: [{
+        draft_id: draftId,
+        draft_revision: 1,
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        text: 'retained text',
+        state: 'COMMENT_FAILED',
+        error_code: 'COMMENT_SUBMIT_FAILED',
+        publication_state: 'PENDING_PUBLICATION',
+      }],
+      comments: [],
+    }));
+    await usePrivateCommentsStore.getState().bootstrap(17);
+    let resolveList: ((value: ReturnType<typeof statusOk>) => void) | undefined;
+    const listResponse = new Promise<ReturnType<typeof statusOk>>((resolve) => {
+      resolveList = resolve;
+    });
+    enqueue('social_private_comments_list', listResponse);
+    const pendingList = usePrivateCommentsStore.getState().loadComments(
+      'private-post',
+      true,
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'social_private_comments_list',
+        expect.anything(),
+      );
+    });
+    usePrivateCommentsStore.getState().markParentUnavailable(
+      'private-post',
+      'COMMENT_PARENT_UNAVAILABLE',
+    );
+    resolveList?.(statusOk({
+      post_id: 'private-post',
+      comments: [{
+        comment_id: 'stale-comment',
+        content_id: 'stale-comment',
+        generation: '1',
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        author_ptid: 'ptid:viewer',
+        state: 'COMMENT_POSTED',
+        text: 'stale list result',
+        reactions_count: 0,
+        replies_count: 0,
+      }],
+      next_cursor: '',
+      has_more: false,
+    }));
+    await pendingList;
+
+    const callsBeforeRetry = invokeMock.mock.calls.length;
+    await expect(
+      usePrivateCommentsStore.getState().retryComment('private-post'),
+    ).rejects.toThrow('COMMENT_PARENT_UNAVAILABLE');
+    expect(invokeMock.mock.calls).toHaveLength(callsBeforeRetry);
+    expect(selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    )).toMatchObject({
+      comments: [],
+      state: 'COMMENT_PARENT_UNAVAILABLE',
+      errorCode: 'COMMENT_PARENT_UNAVAILABLE',
+    });
+  });
+
+  it('preserves parent-unavailable after a late private Comment list failure', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 18);
+    let rejectList: ((reason: Error) => void) | undefined;
+    const listResponse = new Promise<never>((_resolve, reject) => {
+      rejectList = reject;
+    });
+    enqueue('social_private_comments_list', listResponse);
+    const pendingList = usePrivateCommentsStore.getState().loadComments(
+      'private-post',
+      true,
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'social_private_comments_list',
+        expect.anything(),
+      );
+    });
+    usePrivateCommentsStore.getState().markParentUnavailable(
+      'private-post',
+      'COMMENT_PARENT_UNAVAILABLE',
+    );
+    rejectList?.(new Error('late list failure'));
+
+    await expect(pendingList).rejects.toThrow('late list failure');
+    expect(selectPrivateCommentThread(
+      usePrivateCommentsStore.getState(),
+      'private-post',
+    )).toMatchObject({
+      comments: [],
+      loading: false,
+      state: 'COMMENT_PARENT_UNAVAILABLE',
+      errorCode: 'COMMENT_PARENT_UNAVAILABLE',
+    });
+  });
+
+  it('rejects a concurrent private Comment revision before another Native call', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const draftId = '00000000-0000-4000-8000-000000000004';
+    vi.stubGlobal('crypto', { randomUUID: () => draftId });
+    let resolveStage: ((value: ReturnType<typeof statusOk>) => void) | undefined;
+    const stageResponse = new Promise<ReturnType<typeof statusOk>>((resolve) => {
+      resolveStage = resolve;
+    });
+    usePrivateCommentsStore.getState().activateActor('ptid:viewer', 15);
+    enqueue('social_private_comment_stage', stageResponse);
+    enqueue('social_private_comment_prepare', statusOk({
+      draft_id: draftId,
+      draft_revision: 1,
+      post_id: 'private-post',
+      reply_to_comment_id: '',
+      text: 'one submission',
+      state: 'COMMENT_SUBMITTING',
+    }));
+    enqueue('social_private_comment_submit', statusOk({
+      draft: {
+        draft_id: draftId,
+        draft_revision: 1,
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        text: '',
+        state: 'COMMENT_POSTED',
+        comment_id: 'private-comment',
+      },
+      comment: {
+        comment_id: 'private-comment',
+        content_id: 'private-comment',
+        generation: '1',
+        post_id: 'private-post',
+        reply_to_comment_id: '',
+        author_ptid: 'ptid:viewer',
+        state: 'COMMENT_POSTED',
+        text: 'one submission',
+        reactions_count: 0,
+        replies_count: 0,
+      },
+    }));
+
+    const pendingSubmit = usePrivateCommentsStore.getState().submitComment(
+      'private-post',
+      'one submission',
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'social_private_comment_stage',
+        expect.anything(),
+      );
+    });
+    const callsBeforeConcurrentSubmit = invokeMock.mock.calls.length;
+    await expect(
+      usePrivateCommentsStore.getState().submitComment(
+        'private-post',
+        'one submission',
+      ),
+    ).rejects.toThrow('COMMENT_BUSY');
+    expect(invokeMock.mock.calls).toHaveLength(callsBeforeConcurrentSubmit);
+
+    resolveStage?.(statusOk({
+      draft_id: draftId,
+      draft_revision: 1,
+      post_id: 'private-post',
+      reply_to_comment_id: '',
+      text: 'one submission',
+      state: 'COMMENT_EDITING',
+    }));
+    await pendingSubmit;
+  });
+
+  it('drops a stale private Comment prepare before submit after actor switch', async () => {
+    installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    const draftId = '00000000-0000-4000-8000-000000000002';
+    vi.stubGlobal('crypto', { randomUUID: () => draftId });
+    let resolvePrepare: ((value: ReturnType<typeof statusOk>) => void) | undefined;
+    const prepareResponse = new Promise<ReturnType<typeof statusOk>>((resolve) => {
+      resolvePrepare = resolve;
+    });
+    usePrivateCommentsStore.getState().activateActor('ptid:alice', 21);
+    enqueue('social_private_comment_stage', statusOk({
+      draft_id: draftId,
+      draft_revision: 1,
+      post_id: 'private-post',
+      reply_to_comment_id: '',
+      text: 'alice plaintext',
+      state: 'COMMENT_EDITING',
+    }));
+    enqueue('social_private_comment_prepare', prepareResponse);
+
+    const pendingSubmit = usePrivateCommentsStore.getState().submitComment(
+      'private-post',
+      'alice plaintext',
+    );
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'social_private_comment_prepare',
+        expect.anything(),
+      );
+    });
+    usePrivateCommentsStore.getState().activateActor('ptid:bob', 22);
+    resolvePrepare?.(statusOk({
+      draft_id: draftId,
+      draft_revision: 1,
+      post_id: 'private-post',
+      reply_to_comment_id: '',
+      text: 'alice plaintext',
+      state: 'COMMENT_SUBMITTING',
+    }));
+    await pendingSubmit;
+
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      'social_private_comment_submit',
+      expect.anything(),
+    );
+    expect(usePrivateCommentsStore.getState().scope.actorPtid).toBe('ptid:bob');
+    expect(usePrivateCommentsStore.getState().draftsById).toEqual({});
   });
 
   it('createComment optimistically bumps stats.commentsCount', async () => {

@@ -12,6 +12,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/peers-labs/peers-touch/station/frame/touch/model"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	oauthpb "github.com/peers-labs/peers-touch/station/frame/touch/model/oauth"
 	"golang.org/x/crypto/hkdf"
@@ -142,14 +143,15 @@ func credentialEnvelopeAssociatedData(
 func envelopeProto(
 	envelope *dbmodel.OAuthCredentialEnvelope,
 	candidate *dbmodel.OAuthSessionCandidate,
+	actorRef *model.ActorRef,
 ) *oauthpb.OAuthCredentialEnvelope {
-	if envelope == nil || candidate == nil {
+	if envelope == nil || candidate == nil || actorRef == nil {
 		return nil
 	}
 	return &oauthpb.OAuthCredentialEnvelope{
 		CandidateId:              candidate.ID,
 		SessionId:                envelope.SessionID,
-		ActorRef:                 candidateProto(candidate).GetActorRef(),
+		ActorRef:                 proto.Clone(actorRef).(*model.ActorRef),
 		StationPeerId:            envelope.StationPeerID,
 		DeviceId:                 envelope.DeviceID,
 		LifecycleGeneration:      envelope.LifecycleGeneration,

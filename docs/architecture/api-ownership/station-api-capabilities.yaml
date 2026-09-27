@@ -1264,15 +1264,15 @@ capabilities:
     forbidden_aliases: []
     superseded_symbols: []
 
-  - id: federation.realtime.call_resolution.get
+  - id: federation.realtime.group_call.authority_join
     domain_owner: station.federation
-    truth_owner: realtime.call_resolution
+    truth_owner: conversation.authority
     exposure: peer
-    canonical_route: { method: POST, path: /federation/realtime/call-resolution }
-    request_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionRequest
-    response_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionResponse
-    truth_stores: [realtime_call_resolutions]
-    allowed_dependencies: [federation.auth.verify, actor.home_station.read, realtime.call_resolution.read]
+    canonical_route: { method: POST, path: /federation/realtime/group-call/join }
+    request_proto: peers_touch.model.realtime.v1.GroupCallAuthorityJoinRequest
+    response_proto: peers_touch.model.realtime.v1.GroupCallAuthorityJoinResponse
+    truth_stores: [conversations, conversation_members]
+    allowed_dependencies: [federation.auth.verify, conversation.membership.read, livekit.token.issue]
     forbidden_aliases: []
     superseded_symbols: []
 

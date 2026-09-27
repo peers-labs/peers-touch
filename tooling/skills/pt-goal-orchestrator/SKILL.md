@@ -8,6 +8,8 @@ produces: ["Goal Slice schedule", "Ready/Parked projection", "concurrency decisi
 
 # Goal Orchestrator
 
+Human operating standard: `docs/global/workflow.md`.
+
 This Skill is the host-neutral scheduler for Development Runs. It answers:
 
 ```text

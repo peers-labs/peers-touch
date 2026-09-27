@@ -51,7 +51,7 @@ class NativeTauriEmbeddedWebDriverProvisioner(HomeStationProvisioner):
         super().__init__(contract)
         self._station_profiles = dict(
             _SERVICE_PROFILES
-            if station_profiles is None
+            if not station_profiles
             else station_profiles
         )
 

@@ -89,6 +89,7 @@ type TurnConfig struct {
 	Model                     string
 	ProviderConfigVersion     string
 	CapabilitySourceVersion   string
+	ProviderAuthorityMode     providerRuntimeAuthorityMode
 	Effort                    string // reasoning effort: "low" | "medium" | "high"
 	ThinkingMode              domain.ThinkingMode
 	FallbackModel             string // Alternate model for billing/model_not_found fallback recovery.
@@ -2560,7 +2561,7 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	config *TurnConfig,
 	request *ProviderCallRequest,
 ) (*ProviderCallResponse, error) {
-	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+	if err := s.validateProviderCallRuntimeAuthority(ctx, config); err != nil {
 		return nil, err
 	}
 	if request == nil {
@@ -2598,6 +2599,14 @@ func (s *TurnService) callProviderWithRuntimeAuthority(
 	request.UserID = config.ActorID
 	request.ExpectedProviderConfigVersion = config.ProviderConfigVersion
 	request.ExpectedCapabilitySourceVersion = config.CapabilitySourceVersion
+	request.RuntimeAuthorityMode = config.ProviderAuthorityMode
+	request.PinnedRuntimeCapabilities = nil
+	if config.ProviderAuthorityMode ==
+		providerRuntimeAuthorityCommittedToolContinuation {
+		request.PinnedRuntimeCapabilities = proto.Clone(
+			config.RuntimeCapabilities,
+		).(*model.RuntimeCapabilitySnapshot)
+	}
 	request.BeforeDispatch = func(dispatchCtx context.Context) error {
 		return s.reserveProviderAttempt(dispatchCtx, config)
 	}
@@ -2767,7 +2776,7 @@ func (s *TurnService) providerCallWithRetry(
 			return "", nil, providerCalls, false, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 				"provider is required in turn config", nil)
 		}
-		if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+		if err := s.validateProviderCallRuntimeAuthority(ctx, config); err != nil {
 			return "", nil, providerCalls, false, err
 		}
 
@@ -4035,7 +4044,9 @@ func (s *TurnService) RunToolContinuationWorker(ctx context.Context) {
 
 	for {
 		now := time.Now()
-		if !now.Before(nextTakeoverReconciliation) {
+		if _, err := s.toolDispatch.ReconcileApprovedClientDispatches(ctx); err != nil {
+			logger.Errorf(ctx, "approved client tool dispatch recovery failed: %v", err)
+		} else if !now.Before(nextTakeoverReconciliation) {
 			if _, err := s.toolDispatch.ReconcilePreparedCapabilityTakeovers(ctx); err != nil {
 				logger.Errorf(ctx, "prepared capability takeover failed: %v", err)
 			}
@@ -4047,6 +4058,8 @@ func (s *TurnService) RunToolContinuationWorker(ctx context.Context) {
 			logger.Errorf(ctx, "expired tool settlement failed: %v", err)
 		} else if err := s.settleBlockedToolBatches(ctx); err != nil {
 			logger.Errorf(ctx, "blocked tool batch settlement failed: %v", err)
+		} else if _, err := s.toolDispatch.ReconcileReadyContinuations(ctx); err != nil {
+			logger.Errorf(ctx, "ready tool continuation recovery failed: %v", err)
 		} else if err := s.toolDispatch.ReconcileExpiredContinuations(ctx); err != nil {
 			logger.Errorf(ctx, "tool continuation reconciliation failed: %v", err)
 		} else if err := s.settleReconciliationRequiredTurns(ctx); err != nil {
@@ -4083,6 +4096,85 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 		if claim == nil {
 			return nil
 		}
+		if claim.StationReceiptStatus != "" {
+			handled, err := s.toolDispatch.rejectAcceptanceStationReceiptIfNeeded(
+				ctx,
+				claim,
+			)
+			if err != nil {
+				return err
+			}
+			if handled {
+				continue
+			}
+			interrupted, err := s.toolDispatch.reachAcceptanceBarrier(
+				ctx,
+				claim.ActorID,
+				capabilityBarrierAppliedBeforeResult,
+			)
+			if err != nil {
+				return err
+			}
+			if interrupted {
+				return errCapabilityAcceptanceWorkerInterrupted
+			}
+			if _, err := s.toolDispatch.CompleteStationToolExecution(
+				ctx,
+				claim,
+				"",
+				nil,
+			); err != nil {
+				return err
+			}
+			continue
+		}
+		if claim.StationEffectStartedAt != nil &&
+			claim.ReplayPolicy !=
+				int32(model.ClientExecutionReplayPolicy_CLIENT_EXECUTION_REPLAY_POLICY_WITH_EXTERNAL_IDEMPOTENCY) {
+			if _, err := s.toolDispatch.RecordStationToolUnknownReceipt(
+				ctx,
+				claim,
+			); err != nil {
+				return err
+			}
+			if _, err := s.toolDispatch.CompleteStationToolExecution(
+				ctx,
+				claim,
+				"",
+				nil,
+			); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, barrier := range []string{
+			capabilityBarrierClaimBeforeDelivery,
+			capabilityBarrierPreparedBeforeEffect,
+		} {
+			interrupted, err := s.toolDispatch.reachAcceptanceBarrier(
+				ctx,
+				claim.ActorID,
+				barrier,
+			)
+			if err != nil {
+				return err
+			}
+			if interrupted {
+				return errCapabilityAcceptanceWorkerInterrupted
+			}
+		}
+		interrupted, err := s.toolDispatch.reachAcceptanceTupleBarrier(
+			ctx,
+			claim.ActorID,
+			"R-05",
+			"B",
+		)
+		if err != nil {
+			return err
+		}
+		if interrupted {
+			return errCapabilityAcceptanceWorkerInterrupted
+		}
 
 		db, err := s.getDB(ctx)
 		if err != nil {
@@ -4098,6 +4190,7 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 			ctx,
 			db,
 			&batch,
+			false,
 		)
 		if err != nil {
 			if _, completeErr := s.toolDispatch.CompleteStationToolExecution(
@@ -4140,6 +4233,20 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 			}
 			return err
 		}
+		interrupted, err = s.toolDispatch.reachAcceptanceTupleBarrier(
+			ctx,
+			claim.ActorID,
+			"R-07",
+			"B",
+		)
+		if err != nil {
+			cancelRuntimeBudget()
+			return err
+		}
+		if interrupted {
+			cancelRuntimeBudget()
+			return errCapabilityAcceptanceWorkerInterrupted
+		}
 		if err := validateAuthorizedRuntimeCapabilities(
 			config.AvailableTools,
 			config.RuntimeCapabilities,
@@ -4158,6 +4265,9 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 		call := toolCallEntry{
 			ToolName:  claim.ToolName,
 			Arguments: string(claim.BoundedArguments),
+		}
+		if err := s.toolDispatch.BeginStationToolEffect(ctx, claim); err != nil {
+			return err
 		}
 		var output string
 		executionErr := validateStationToolBudgetBeforeExecution(config, call)
@@ -4195,6 +4305,56 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 			}
 		}
 		cancelRuntimeBudget()
+		interrupted, err = s.toolDispatch.reachAcceptanceBarrier(
+			ctx,
+			claim.ActorID,
+			capabilityBarrierEffectBeforeApplied,
+		)
+		if err != nil {
+			return err
+		}
+		if interrupted {
+			return errCapabilityAcceptanceWorkerInterrupted
+		}
+		if _, err := s.toolDispatch.RecordStationToolExecutionReceipt(
+			ctx,
+			claim,
+			output,
+			executionErr,
+		); err != nil {
+			return err
+		}
+		for _, barrier := range []string{
+			capabilityBarrierAppliedBeforeResult,
+			capabilityBarrierCancelResultRace,
+			capabilityBarrierCancelBeforeCleanup,
+			capabilityBarrierBusinessLeaseTerminal,
+			capabilityBarrierDeadlineBeforeTerminal,
+			capabilityBarrierReceiptRecoveryTerminal,
+			capabilityBarrierStaleFenceBeforeEvent,
+		} {
+			interrupted, err = s.toolDispatch.reachAcceptanceBarrier(
+				ctx,
+				claim.ActorID,
+				barrier,
+			)
+			if err != nil {
+				return err
+			}
+			if interrupted {
+				return errCapabilityAcceptanceWorkerInterrupted
+			}
+		}
+		handled, err := s.toolDispatch.rejectAcceptanceStationReceiptIfNeeded(
+			ctx,
+			claim,
+		)
+		if err != nil {
+			return err
+		}
+		if handled {
+			continue
+		}
 		if _, err := s.toolDispatch.CompleteStationToolExecution(
 			ctx,
 			claim,
@@ -4210,6 +4370,7 @@ func (s *TurnService) loadToolBatchRuntimeConfig(
 	ctx context.Context,
 	db *gorm.DB,
 	batch *persistence.ToolBatch,
+	allowAuthorityContraction bool,
 ) (*TurnConfig, time.Time, error) {
 	if db == nil || batch == nil {
 		return nil, time.Time{}, errcode.New(
@@ -4259,15 +4420,19 @@ func (s *TurnService) loadToolBatchRuntimeConfig(
 		)
 	}
 	config := &TurnConfig{
-		TurnID:                    batch.TurnID,
-		AttemptID:                 batch.AttemptID,
-		ActorID:                   batch.ActorID,
-		AgentID:                   batch.AgentID,
-		ConversationID:            batch.ConversationID,
-		TaskID:                    batch.TaskID,
-		StepID:                    batch.StepID,
-		Provider:                  pinned.GetProviderId(),
-		Model:                     pinned.GetModelId(),
+		TurnID:                batch.TurnID,
+		AttemptID:             batch.AttemptID,
+		ActorID:               batch.ActorID,
+		AgentID:               batch.AgentID,
+		ConversationID:        batch.ConversationID,
+		TaskID:                batch.TaskID,
+		StepID:                batch.StepID,
+		Provider:              pinned.GetProviderId(),
+		Model:                 pinned.GetModelId(),
+		ProviderConfigVersion: pinned.GetProviderConfigVersion(),
+		CapabilitySourceVersion: pinned.GetCapabilities().
+			GetProvenance().
+			GetSourceVersion(),
 		ThinkingMode:              domain.ThinkingMode(pinned.GetThinkingMode()),
 		Effort:                    batch.Effort,
 		MaxRetries:                int(batch.MaxRetries),
@@ -4275,6 +4440,10 @@ func (s *TurnService) loadToolBatchRuntimeConfig(
 		ClientCapabilitySessionID: batch.CapabilitySessionID,
 		RuntimeBudget:             cloneRuntimeBudget(pinned.GetBudget()),
 		Depth:                     int(batch.DelegationDepth),
+	}
+	if allowAuthorityContraction {
+		config.ProviderAuthorityMode =
+			providerRuntimeAuthorityCommittedToolContinuation
 	}
 	if len(batch.RestrictedToolsJSON) > 0 {
 		if err := json.Unmarshal(
@@ -4294,7 +4463,13 @@ func (s *TurnService) loadToolBatchRuntimeConfig(
 			pinned.GetCapabilities(),
 		).(*model.RuntimeCapabilitySnapshot)
 	}
-	config.AuthorizedCapabilities, err = LoadAuthorizedCapabilitySet(ctx, db, config)
+	if allowAuthorityContraction {
+		config.AuthorizedCapabilities, err =
+			LoadAuthorizedCapabilitySetForContinuation(ctx, db, config)
+	} else {
+		config.AuthorizedCapabilities, err =
+			LoadAuthorizedCapabilitySet(ctx, db, config)
+	}
 	if err != nil {
 		return nil, time.Time{}, err
 	}
@@ -4753,7 +4928,13 @@ func fenceTurnToolExecutionTx(
 	now time.Time,
 ) error {
 	var calls []persistence.ToolCall
-	if err := tx.Select("id", "tool_call_id", "status").
+	if err := tx.Select(
+		"id",
+		"tool_call_id",
+		"status",
+		"execution_owner",
+		"station_receipt_status",
+	).
 		Where("turn_id = ? AND actor_id = ?", turnID, actorPTID).
 		Find(&calls).Error; err != nil {
 		return err
@@ -4789,12 +4970,50 @@ func fenceTurnToolExecutionTx(
 		}
 		if err := tx.Model(&persistence.ToolCall{}).
 			Where(
+				"id IN ? AND status = ? AND execution_owner = ? AND station_receipt_status = ?",
+				callIDs,
+				persistence.ToolCallStatusPrepared,
+				persistence.ToolOwnerStation,
+				persistence.ToolReceiptStatusApplied,
+			).
+			Updates(map[string]interface{}{
+				"status":     persistence.ToolCallStatusCancelled,
+				"error_code": cancelledErrorCode,
+				"ended_at":   now,
+				"updated_at": now,
+			}).Error; err != nil {
+			return err
+		}
+		if recoveryPolicy == preservePreparedRecovery {
+			if err := tx.Model(&persistence.ToolCall{}).
+				Where(
+					"id IN ? AND status = ?",
+					callIDs,
+					persistence.ToolCallStatusPrepared,
+				).
+				Updates(map[string]interface{}{
+					"status":     persistence.ToolCallStatusCancelled,
+					"error_code": cancelledErrorCode,
+					"ended_at":   now,
+					"updated_at": now,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		ambiguousStatuses := []string{
+			persistence.ToolCallStatusDispatchCommitted,
+		}
+		if recoveryPolicy != preservePreparedRecovery {
+			ambiguousStatuses = append(
+				ambiguousStatuses,
+				persistence.ToolCallStatusPrepared,
+			)
+		}
+		if err := tx.Model(&persistence.ToolCall{}).
+			Where(
 				"id IN ? AND status IN ?",
 				callIDs,
-				[]string{
-					persistence.ToolCallStatusDispatchCommitted,
-					persistence.ToolCallStatusPrepared,
-				},
+				ambiguousStatuses,
 			).
 			Updates(map[string]interface{}{
 				"status":     persistence.ToolCallStatusUnknownSideEffect,
@@ -4886,6 +5105,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		ctx,
 		db,
 		&batch,
+		true,
 	)
 	if err != nil {
 		return true, err
@@ -4999,7 +5219,7 @@ func (s *TurnService) ResumeReadyToolContinuation(
 		}
 		return true, exhaustion
 	}
-	if err := s.validatePinnedRuntimeAuthority(ctx, config); err != nil {
+	if err := s.validatePinnedContinuationRuntimeAuthority(ctx, config); err != nil {
 		return true, err
 	}
 

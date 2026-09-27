@@ -44,25 +44,49 @@ import {
   ToolApprovalDecisionErrorCode,
 } from '../gen/proto/domain/agent/agent_config_pb';
 import {
+  AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+  AdvanceCapabilityAcceptanceScenarioClockResponseSchema,
+  AgentCapabilityBindingSchema,
+  CapabilityAcceptanceRuntimeProfile,
+  CapabilityAcceptanceScenarioFamily,
+  CapabilityApprovalPolicy,
+  CapabilityCatalogErrorCode,
+  CapabilityCatalogIssueSchema,
+  CapabilityBindingErrorCode,
   CapabilityOperationErrorCode,
   CapabilityOperationErrorSchema,
   CapabilityOperationStatus,
+  CapabilityReadinessSchema,
   CapabilityReadinessSnapshotSchema,
   CapabilityReadinessState,
+  ConnectorResourceManifestSchema,
+  ConnectorResourceStatus,
+  CleanupCapabilityAcceptanceScenarioRequestSchema,
+  CleanupCapabilityAcceptanceScenarioResponseSchema,
   GetCapabilityReadinessRequestSchema,
+  PrepareCapabilityAcceptanceScenarioRequestSchema,
+  PrepareCapabilityAcceptanceScenarioResponseSchema,
+  ReleaseCapabilityAcceptanceBarrierRequestSchema,
+  ReleaseCapabilityAcceptanceBarrierResponseSchema,
 } from '../gen/proto/domain/agent/capability_pb';
 import {
   EvaluationAttemptStatus,
   EvaluationCaseAttemptSchema,
+  EvaluationErrorCode,
   EvaluationMetricsSchema,
   EvaluationResultSchema,
   EvaluationRunSchema,
   EvaluationRunStatus,
 } from '../gen/proto/domain/agent/evaluation_pb';
 import {
+  GetHomeWorkProjectionRequestSchema,
+  HomeErrorCode,
   HomeProjectionFreshness,
+  HomeWorkKind,
   HomeWorkProjectionSchema,
+  SubmitHomeChatCommandRequestSchema,
   SubmitHomeChatCommandResponseSchema,
+  SubmitHomeTaskCommandRequestSchema,
   SubmitHomeTaskCommandResponseSchema,
 } from '../gen/proto/domain/agent/home_pb';
 import {
@@ -82,6 +106,500 @@ const roundTrip = <Desc extends DescMessage>(
 ): MessageShape<Desc> => fromBinary(schema, toBinary(schema, value));
 
 describe('Modern Chat Agent V2 Mobile Foundation contracts', () => {
+  it('[evaluation-mobile-cell:AS-15-V2-E01] round-trips Evaluation lineage and scenario clock control', () => {
+    const metrics = roundTrip(
+      EvaluationMetricsSchema,
+      create(EvaluationMetricsSchema, {
+        totalCases: 1,
+        terminalCases: 1,
+        passedCases: 1,
+        averageScore: 1,
+        metricsVersion: 'evaluation-metrics-v1',
+        comparable: true,
+      }),
+    );
+    const run = roundTrip(
+      EvaluationRunSchema,
+      create(EvaluationRunSchema, {
+        runId: 'evaluation-run-mobile-contract',
+        ptid: 'ptid:person:mobile-contract',
+        revision: 4n,
+        datasetId: 'evaluation-dataset-mobile-contract',
+        datasetRevision: 2n,
+        readinessSnapshotId: 'readiness-mobile-contract',
+        status: EvaluationRunStatus.COMPLETED,
+        completedCases: 1,
+        totalCases: 1,
+        metrics,
+        targetAgentId: 'agent-mobile-contract',
+        targetAgentRevision: 3n,
+        targetAgentSnapshot: create(RuntimeSnapshotSchema, {
+          runtimeKind: RuntimeKind.DIRECT_MODEL,
+          providerId: 'provider-mobile-contract',
+          modelId: 'model-mobile-contract',
+          runtimeProfileId: 'direct',
+          providerConfigVersion: 'provider-revision-1',
+          agentConfigVersion: '3',
+          thinkingMode: 'disabled',
+        }),
+      }),
+    );
+    const attempt = roundTrip(
+      EvaluationCaseAttemptSchema,
+      create(EvaluationCaseAttemptSchema, {
+        attemptId: 'evaluation-attempt-mobile-contract',
+        runId: run.runId,
+        caseId: 'evaluation-case-mobile-contract',
+        attempt: 1,
+        idempotencyKey: 'evaluation-attempt-key-mobile-contract',
+        turnId: 'evaluation-turn-mobile-contract',
+        status: EvaluationAttemptStatus.COMPLETED,
+        schedulerClaim: 'evaluation-claim-mobile-contract',
+      }),
+    );
+    const result = roundTrip(
+      EvaluationResultSchema,
+      create(EvaluationResultSchema, {
+        resultId: 'evaluation-result-mobile-contract',
+        runId: run.runId,
+        caseId: attempt.caseId,
+        attemptId: attempt.attemptId,
+        outputRef: `turn:${attempt.turnId}`,
+        score: 1,
+        rubricVersion: 'exact-match-v1',
+        terminalStatus: EvaluationAttemptStatus.COMPLETED,
+        output: 'J06_OK',
+        latencyMs: 42n,
+        turnTraceId: 'evaluation-trace-mobile-contract',
+      }),
+    );
+    const clockRequest = roundTrip(
+      AdvanceCapabilityAcceptanceScenarioClockRequestSchema,
+      create(AdvanceCapabilityAcceptanceScenarioClockRequestSchema, {
+        scenarioHandle: 'evaluation-scenario-mobile-contract',
+        milestone: 'evaluation-cancel-ack-deadline',
+      }),
+    );
+    const clockResponse = roundTrip(
+      AdvanceCapabilityAcceptanceScenarioClockResponseSchema,
+      create(AdvanceCapabilityAcceptanceScenarioClockResponseSchema, {
+        scenarioHandle: clockRequest.scenarioHandle,
+        milestone: clockRequest.milestone,
+      }),
+    );
+
+    expect(run.metrics).toEqual(metrics);
+    expect(attempt.turnId).toBe('evaluation-turn-mobile-contract');
+    expect(result.turnTraceId).toBe('evaluation-trace-mobile-contract');
+    expect(clockResponse.scenarioHandle).toBe(clockRequest.scenarioHandle);
+    expect(clockResponse.milestone).toBe(clockRequest.milestone);
+    expect(EvaluationErrorCode.CANCEL_ACK_TIMEOUT).toBeGreaterThan(0);
+  });
+
+  it('[connector-mobile-cell:AS-15-V2-C01] round-trips Connector lineage without credential ownership', () => {
+    const resource = roundTrip(
+      ConnectorResourceManifestSchema,
+      create(ConnectorResourceManifestSchema, {
+        ptid: 'ptid:person:mobile-contract',
+        connectorId: 'github',
+        oauthConnectionId: 'oauth-connection-mobile-contract',
+        connectionRevision: 7n,
+        resourceId: 'connection.status',
+        resourceVersion: 'connection-status',
+        scopes: ['read:user'],
+        toolManifests: [{
+          capabilityId: `connector.resource.${'a'.repeat(64)}`,
+          capabilityVersion: 'connector-version-7',
+        }],
+        status: ConnectorResourceStatus.READY,
+      }),
+    );
+    const binding = roundTrip(
+      AgentCapabilityBindingSchema,
+      create(AgentCapabilityBindingSchema, {
+        bindingId: 'connector-binding-mobile-contract',
+        ptid: resource.ptid,
+        agentId: 'agent-mobile-contract',
+        capabilityId: resource.toolManifests[0].capabilityId,
+        capabilityVersion: resource.toolManifests[0].capabilityVersion,
+        enabled: true,
+        approvalPolicy: CapabilityApprovalPolicy.MANUAL,
+        expectedAgentVersion: 4n,
+        revision: 3n,
+      }),
+    );
+    const toolCall = roundTrip(
+      ToolCallSchema,
+      create(ToolCallSchema, {
+        toolCallId: 'connector-tool-call-mobile-contract',
+        toolName: `connector_resource_${'a'.repeat(24)}`,
+        status: ToolCallStatus.SUCCEEDED,
+      }),
+    );
+    const failure = roundTrip(
+      ErrorPayloadSchema,
+      create(ErrorPayloadSchema, {
+        error: 'agent.errors.connectorOAuthExpired',
+        errorType: 'CONNECTOR_OAUTH_EXPIRED',
+        localeKey: 'agent.errors.connectorOAuthExpired',
+        retryable: true,
+        terminal: true,
+        details: {
+          connector_id: resource.connectorId,
+          connection_revision: resource.connectionRevision.toString(),
+        },
+      }),
+    );
+    const evidence = JSON.stringify(
+      { resource, binding, toolCall, failure },
+      (_key, value) => typeof value === 'bigint' ? value.toString() : value,
+    );
+
+    expect(binding.capabilityId).toBe(resource.toolManifests[0].capabilityId);
+    expect(toolCall.toolName).toMatch(/^connector_resource_[0-9a-f]{24}$/);
+    expect(failure.errorType).toBe('CONNECTOR_OAUTH_EXPIRED');
+    expect(evidence).not.toMatch(
+      /access_token|refresh_token|client_secret|authorization|bearer/i,
+    );
+  });
+
+  it('[tool-mobile-cell:AS-15-V2-T04] round-trips governed ToolCall lineage', () => {
+    const toolCall = roundTrip(
+      ToolCallSchema,
+      create(ToolCallSchema, {
+        toolCallId: 'tool-call-mobile-contract',
+        toolName: 'local_clipboard_read',
+        status: ToolCallStatus.SUCCEEDED,
+      }),
+    );
+    const receipt = roundTrip(
+      ClientCapabilityReceiptSchema,
+      create(ClientCapabilityReceiptSchema, {
+        requestId: 'request-mobile-contract',
+        turnId: 'turn-mobile-contract',
+        toolCallId: toolCall.toolCallId,
+        capabilitySessionId: 'session-mobile-contract',
+        targetDeviceId: 'device-mobile-contract',
+        decisionId: 'decision-mobile-contract',
+        decisionRevision: 1n,
+        executionClaimId: 'claim-mobile-contract',
+        executorLeaseId: 'lease-mobile-contract',
+        fencingToken: 1n,
+        sideEffectReceiptId: 'receipt-mobile-contract',
+        status: ClientCapabilityReceiptStatus.APPLIED,
+        resultId: 'result-mobile-contract',
+        dispatchSequence: 1n,
+        payloadHash: 'a'.repeat(64),
+      }),
+    );
+
+    expect(receipt).toMatchObject({
+      toolCallId: toolCall.toolCallId,
+      status: ClientCapabilityReceiptStatus.APPLIED,
+      fencingToken: 1n,
+    });
+  });
+
+  it('[tool-mobile-cell:AS-15-V2-O01] preserves operation fencing and typed failure state', () => {
+    const operation = roundTrip(
+      CapabilityOperationErrorSchema,
+      create(CapabilityOperationErrorSchema, {
+        code: CapabilityOperationErrorCode.EXECUTOR_UNAVAILABLE,
+        retryable: true,
+        recoveryAction: 'reconnect',
+      }),
+    );
+
+    expect(operation).toMatchObject({
+      code: CapabilityOperationErrorCode.EXECUTOR_UNAVAILABLE,
+      retryable: true,
+      recoveryAction: 'reconnect',
+    });
+  });
+
+  it('[binding-mobile-cell:AS-10] preserves actor-scoped binding identity without a device-local authority', () => {
+    const binding = roundTrip(
+      AgentCapabilityBindingSchema,
+      create(AgentCapabilityBindingSchema, {
+        bindingId: 'binding-primary',
+        ptid: 'ptid:person:primary',
+        agentId: 'agent-primary',
+        capabilityId: 'capability-primary',
+        capabilityVersion: '1',
+        enabled: true,
+        approvalPolicy: CapabilityApprovalPolicy.MANUAL,
+        expectedAgentVersion: 3n,
+        revision: 7n,
+      }),
+    );
+
+    expect(binding).toMatchObject({
+      bindingId: 'binding-primary',
+      ptid: 'ptid:person:primary',
+      agentId: 'agent-primary',
+      revision: 7n,
+    });
+    expect(binding.ptid).not.toBe('ptid:person:secondary');
+  });
+
+  it('[binding-mobile-cell:AS-15-V2-T01-T03] round-trips setup-only scenario control without verdict fields', () => {
+    const prepare = roundTrip(
+      PrepareCapabilityAcceptanceScenarioRequestSchema,
+      create(PrepareCapabilityAcceptanceScenarioRequestSchema, {
+        runId: 'run-1',
+        scenarioExecutionId: 'execution-1',
+        cell: 'AS-15-V2-T01-T03',
+        platform: 'mobile_contract',
+        locale: 'contract',
+        ordering: 'single',
+        sampleId: 'sample-001',
+        family: CapabilityAcceptanceScenarioFamily.BINDING_J02,
+        runtimeAttestationProfile:
+          CapabilityAcceptanceRuntimeProfile.CONTRACT_ONLY,
+      }),
+    );
+    const prepared = roundTrip(
+      PrepareCapabilityAcceptanceScenarioResponseSchema,
+      create(PrepareCapabilityAcceptanceScenarioResponseSchema, {
+        scenarioHandle: 'scenario-1',
+        opaqueResourceIds: ['capability_id:opaque-1'],
+        sourceInventoryHash: 'a'.repeat(64),
+      }),
+    );
+    const release = roundTrip(
+      ReleaseCapabilityAcceptanceBarrierRequestSchema,
+      create(ReleaseCapabilityAcceptanceBarrierRequestSchema, {
+        scenarioHandle: prepared.scenarioHandle,
+        barrier: 'binding-ack',
+      }),
+    );
+    const released = roundTrip(
+      ReleaseCapabilityAcceptanceBarrierResponseSchema,
+      create(ReleaseCapabilityAcceptanceBarrierResponseSchema, {
+        scenarioHandle: prepared.scenarioHandle,
+        barrier: release.barrier,
+      }),
+    );
+    const cleanup = roundTrip(
+      CleanupCapabilityAcceptanceScenarioRequestSchema,
+      create(CleanupCapabilityAcceptanceScenarioRequestSchema, {
+        scenarioHandle: prepared.scenarioHandle,
+      }),
+    );
+    const cleaned = roundTrip(
+      CleanupCapabilityAcceptanceScenarioResponseSchema,
+      create(CleanupCapabilityAcceptanceScenarioResponseSchema, {
+        scenarioHandle: cleanup.scenarioHandle,
+        cleanedOpaqueResourceIds: prepared.opaqueResourceIds,
+      }),
+    );
+
+    expect(prepare).toMatchObject({
+      runId: 'run-1',
+      scenarioExecutionId: 'execution-1',
+      platform: 'mobile_contract',
+    });
+    expect(released.barrier).toBe('binding-ack');
+    expect(cleaned.cleanedOpaqueResourceIds).toEqual(
+      prepared.opaqueResourceIds,
+    );
+    expect(Object.keys(prepared)).not.toContain('passed');
+    expect(Object.keys(prepared)).not.toContain('verdict');
+    expect(Object.keys(prepared)).not.toContain('evidenceRole');
+  });
+
+  const bindingTaxonomyCases = [
+    {
+      marker: 'TAX-01',
+      state: CapabilityReadinessState.READY,
+      reasonCode: 'capability_ready',
+    },
+    {
+      marker: 'TAX-03',
+      state: CapabilityReadinessState.DEGRADED,
+      reasonCode: 'manifest_degraded',
+    },
+    {
+      marker: 'TAX-04',
+      state: CapabilityReadinessState.UNAVAILABLE,
+      reasonCode: 'manifest_unavailable',
+    },
+    {
+      marker: 'TAX-05',
+      state: CapabilityReadinessState.UNKNOWN,
+      reasonCode: 'manifest_missing',
+    },
+    {
+      marker: 'TAX-06',
+      state: CapabilityReadinessState.BLOCKED,
+      reasonCode: 'manifest_blocked',
+    },
+  ] as const;
+
+  for (const { marker, state, reasonCode } of bindingTaxonomyCases) {
+    it(`[binding-mobile-cell:${marker}] round-trips the Station readiness taxonomy`, () => {
+      const readiness = roundTrip(
+        CapabilityReadinessSchema,
+        create(CapabilityReadinessSchema, {
+          capabilityId: `capability-${marker}`,
+          capabilityVersion: '1',
+          bindingId: `binding-${marker}`,
+          bindingRevision: 1n,
+          state,
+          authority: 'station-capability-authority',
+          reasonCode,
+        }),
+      );
+
+      expect(readiness).toMatchObject({
+        state,
+        authority: 'station-capability-authority',
+        reasonCode,
+      });
+    });
+  }
+
+  it('[binding-mobile-cell:TAX-02] keeps pending as client command state rather than Station readiness state', () => {
+    const readinessStates = Object.values(CapabilityReadinessState)
+      .filter((value): value is string => typeof value === 'string');
+    const commandState = 'pending';
+
+    expect(commandState).toBe('pending');
+    expect(readinessStates).not.toContain('PENDING');
+    expect(readinessStates).toContain('READY');
+  });
+
+  it('[binding-contract:ERR-CAT03] preserves typed catalog issue semantics', () => {
+    const issue = roundTrip(
+      CapabilityCatalogIssueSchema,
+      create(CapabilityCatalogIssueSchema, {
+        capabilityId: 'capability-invalid',
+        capabilityVersion: '1',
+        code: CapabilityCatalogErrorCode.SCHEMA_INVALID,
+        error: create(ErrorPayloadSchema, {
+          error: 'agent.errors.capabilityManifestSchemaInvalid',
+          errorType: 'CAPABILITY_MANIFEST_SCHEMA_INVALID',
+          localeKey: 'agent.errors.capabilityManifestSchemaInvalid',
+          retryable: false,
+          terminal: true,
+          details: {
+            capability_id: 'capability-invalid',
+            schema_field: 'source_kind',
+            reason_code: 'unspecified',
+          },
+        }),
+        revision: 1n,
+      }),
+    );
+
+    expect(issue.code).toBe(CapabilityCatalogErrorCode.SCHEMA_INVALID);
+    expect(issue.error?.errorType).toBe('CAPABILITY_MANIFEST_SCHEMA_INVALID');
+    expect(issue.error?.details).toEqual({
+      capability_id: 'capability-invalid',
+      schema_field: 'source_kind',
+      reason_code: 'unspecified',
+    });
+    expect(CapabilityBindingErrorCode.POLICY_INVALID).not.toBe(
+      CapabilityBindingErrorCode.UNSPECIFIED,
+    );
+  });
+
+  it('[home-mobile-cell:AS-15-V2-H01] round-trips Station-owned Home projection and command contracts', () => {
+    const projectionRequest = create(GetHomeWorkProjectionRequestSchema, {
+      afterRevision: 40n,
+    });
+    const projection = create(HomeWorkProjectionSchema, {
+      ptid: 'ptid:person:fixture',
+      revision: 41n,
+      freshness: HomeProjectionFreshness.FRESH,
+      pinnedAgents: [{
+        agentId: 'agent-1',
+        agentName: 'researcher',
+        displayName: 'Researcher',
+        readinessSnapshotId: 'readiness-1',
+        agentVersion: 7n,
+      }],
+      recentWork: [{
+        workId: 'conversation-1',
+        kind: HomeWorkKind.CHAT,
+        agentId: 'agent-1',
+        title: 'Station-owned conversation',
+      }],
+      sliceErrors: [{
+        sliceId: 'projection',
+        code: HomeErrorCode.PROJECTION_STALE,
+        retryable: true,
+        recoveryAction: 'retry',
+      }],
+    });
+    const chatRequest = create(SubmitHomeChatCommandRequestSchema, {
+      agentId: 'agent-1',
+      input: 'Continue the analysis',
+      runtimeProfileId: 'modern-chat-agent-v1',
+      clientIdempotencyKey: 'home-chat-mobile-1',
+      expectedAgentVersion: 7n,
+      readinessSnapshotId: 'readiness-1',
+    });
+    const chatResponse = create(SubmitHomeChatCommandResponseSchema, {
+      conversationId: 'conversation-1',
+      turnId: 'turn-1',
+      projectionRevision: 42n,
+    });
+    const taskRequest = create(SubmitHomeTaskCommandRequestSchema, {
+      agentId: 'agent-1',
+      input: 'Prepare the brief',
+      runtimeProfileId: 'modern-chat-agent-v1',
+      clientIdempotencyKey: 'home-task-mobile-1',
+      expectedAgentVersion: 7n,
+      readinessSnapshotId: 'readiness-1',
+    });
+    const taskResponse = create(SubmitHomeTaskCommandResponseSchema, {
+      taskId: 'task-1',
+      projectionRevision: 43n,
+    });
+
+    expect(roundTrip(
+      GetHomeWorkProjectionRequestSchema,
+      projectionRequest,
+    ).afterRevision).toBe(40n);
+    expect(roundTrip(HomeWorkProjectionSchema, projection)).toMatchObject({
+      ptid: 'ptid:person:fixture',
+      revision: 41n,
+      pinnedAgents: [{
+        agentId: 'agent-1',
+        readinessSnapshotId: 'readiness-1',
+        agentVersion: 7n,
+      }],
+      recentWork: [{
+        workId: 'conversation-1',
+        kind: HomeWorkKind.CHAT,
+      }],
+    });
+    expect(roundTrip(
+      SubmitHomeChatCommandRequestSchema,
+      chatRequest,
+    ).clientIdempotencyKey).toBe('home-chat-mobile-1');
+    expect(roundTrip(
+      SubmitHomeChatCommandResponseSchema,
+      chatResponse,
+    )).toMatchObject({
+      conversationId: 'conversation-1',
+      turnId: 'turn-1',
+      projectionRevision: 42n,
+    });
+    expect(roundTrip(
+      SubmitHomeTaskCommandRequestSchema,
+      taskRequest,
+    ).clientIdempotencyKey).toBe('home-task-mobile-1');
+    expect(roundTrip(
+      SubmitHomeTaskCommandResponseSchema,
+      taskResponse,
+    )).toMatchObject({
+      taskId: 'task-1',
+      projectionRevision: 43n,
+    });
+  });
+
   it('[foundation-mobile-cell:AS-15-P01] round-trips config and readiness and blocks send while unavailable', () => {
     const agentConfig = create(AgentDefinitionSchema, {
       agentId: 'agent-1',

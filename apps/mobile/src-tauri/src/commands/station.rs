@@ -16,7 +16,7 @@ use station_identity_proto::StationIdentityStatement;
 
 const STATION_IDENTITY_CHALLENGE_SIZE: usize = 32;
 const STATION_IDENTITY_MAX_LIFETIME_MS: i64 = 60_000;
-const STATION_IDENTITY_CLOCK_SKEW_MS: i64 = 30_000;
+const STATION_IDENTITY_CLOCK_SKEW_MS: i64 = 60_000;
 const STATION_IDENTITY_DOMAIN: &[u8] = b"peers-touch/station-identity/v1\0";
 
 #[derive(Debug, Serialize)]

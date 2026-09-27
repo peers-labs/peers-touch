@@ -15,6 +15,7 @@ import {
   socialCreateMoment,
   socialDeleteMoment,
   socialGetComments,
+  publicCommentFromResource,
   socialGetMomentResponse,
   socialGetTimeline,
   socialSyncMomentsProjection,
@@ -87,6 +88,33 @@ const emptyFeed = (): MomentFeedState => ({
   hasMore: false,
   loading: false,
 });
+
+function privateAudienceKind(kind: Audience_Kind) {
+  switch (kind) {
+    case Audience_Kind.FRIENDS:
+      return 'FRIENDS' as const;
+    case Audience_Kind.FOLLOWERS:
+      return 'FOLLOWERS' as const;
+    case Audience_Kind.CIRCLE:
+      return 'CIRCLE' as const;
+    case Audience_Kind.GROUP:
+      return 'GROUP' as const;
+    case Audience_Kind.SELF:
+      return 'SELF' as const;
+    case Audience_Kind.CUSTOM_ALLOW:
+      return 'CUSTOM_ALLOW' as const;
+    case Audience_Kind.CUSTOM_DENY:
+      return 'CUSTOM_DENY' as const;
+    default:
+      throw new Error('PRIVATE_AUDIENCE_INVALID');
+  }
+}
+
+function privateAudienceBaseKind(kind: Audience_Kind) {
+  if (kind === Audience_Kind.PUBLIC) return 'PUBLIC' as const;
+  if (kind === Audience_Kind.FOLLOWERS) return 'FOLLOWERS' as const;
+  return undefined;
+}
 
 export function selectMomentComments(
   state: { comments: Record<string, Comment[]> },
@@ -454,7 +482,10 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
 
   createPost: async (draft) => {
     const generation = storeGeneration;
-    if (draft.audience.kind === Audience_Kind.FRIENDS) {
+    if (
+      draft.audience.kind !== Audience_Kind.PUBLIC
+      && draft.audience.kind !== Audience_Kind.KIND_UNSPECIFIED
+    ) {
       if (draft.kind !== 'text' && draft.kind !== 'image') {
         throw new Error('PRIVATE_UNSUPPORTED');
       }
@@ -464,7 +495,13 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       const result = await usePrivateMomentsStore.getState().publishMoment({
         draftId: draft.draftId,
         draftRevision: draft.draftRevision,
-        audienceKind: 'FRIENDS',
+        audienceKind: privateAudienceKind(draft.audience.kind),
+        audienceTargetId: draft.audience.targetId > 0n
+          ? draft.audience.targetId.toString()
+          : undefined,
+        audienceBaseKind: privateAudienceBaseKind(draft.audience.baseKind),
+        audienceActorPtids: draft.audience.actorPtids,
+        momentKind: draft.kind === 'image' ? 'IMAGE' : 'TEXT',
         text: draft.text,
         files: draft.kind === 'image' ? draft.localFiles ?? [] : [],
       });
@@ -563,10 +600,11 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
     try {
       const resp = await socialGetComments(postId, cursor || undefined);
       if (generation !== storeGeneration) return;
+      const page = resp.comments.map(publicCommentFromResource);
       set((s) => {
         const prev = refresh ? [] : (s.comments[postId] ?? []);
         const seen = new Set(prev.map((c) => c.id));
-        const merged = [...prev, ...resp.comments.filter((c) => !seen.has(c.id))];
+        const merged = [...prev, ...page.filter((c) => !seen.has(c.id))];
         return {
           comments: { ...s.comments, [postId]: merged },
           commentsCursor: { ...s.commentsCursor, [postId]: resp.nextCursor },

@@ -265,31 +265,6 @@ func (r *Runtime) DeliverConversationTyping(
 	return r.ephemeralTransport.Deliver(ctx, frame)
 }
 
-// DeliverRealtimeCallSignal sends only the registered ephemeral Realtime call
-// payload. Call-resolution state is durable at the callee Home Station; the
-// sealed SDP/ICE/control signal itself remains on the bounded realtime plane.
-func (r *Runtime) DeliverRealtimeCallSignal(
-	ctx context.Context,
-	frame *delivery.Frame,
-) (delivery.Result, error) {
-	if r == nil || r.ephemeralTransport == nil || frame == nil {
-		return delivery.Result{}, delivery.NewError(
-			delivery.FailureInvalidArgument,
-			"deliver Realtime call signal",
-			errors.New("runtime, transport, and frame are required"),
-		)
-	}
-	if frame.GetPayloadKind() != delivery.PayloadKindRealtimeCallSignal {
-		return delivery.Result{}, delivery.NewError(
-			delivery.FailureInvalidFrame,
-			"deliver Realtime call signal",
-			errors.New("only Realtime call signals may use this path"),
-		)
-	}
-
-	return r.ephemeralTransport.Deliver(ctx, frame)
-}
-
 // OpenPeerStream executes one authenticated raw or streaming request through
 // the shared Federation route and transport owner.
 func (r *Runtime) OpenPeerStream(

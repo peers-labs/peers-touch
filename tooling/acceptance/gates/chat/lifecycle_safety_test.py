@@ -48,7 +48,7 @@ const collector = "http://10.0.0.1:7784/event"
                 },
             )
 
-    def test_detects_missing_explicit_federation_context(self) -> None:
+    def test_detects_request_identity_echo(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             action_path = root / "apps" / "mobile" / "src" / "acceptance" / "actions.ts"
@@ -56,8 +56,9 @@ const collector = "http://10.0.0.1:7784/event"
             action_path.write_text(
                 """
 export const actions = {
-  'social.people.search': async () => {
-    return [{}];
+  'social.people.search': async (input) => {
+    const federationId = input?.federationId;
+    return [{ federationId }];
   },
   'social.request.send': async () => undefined,
 };
@@ -69,6 +70,7 @@ export const actions = {
                 """
 export interface SocialPeopleSearchActionInput {
   query: string;
+  federationId: string;
 }
 """.lstrip(),
                 encoding="utf-8",
@@ -79,9 +81,9 @@ export interface SocialPeopleSearchActionInput {
             self.assertEqual(
                 codes,
                 {
-                    "explicit-federation-context-missing",
-                    "federation-context-contract-missing",
-                    "scoped-federation-projection-missing",
+                    "observed-identity-missing",
+                    "request-echoed-as-evidence",
+                    "request-identity-contract",
                 },
             )
 
@@ -127,11 +129,10 @@ export const harness = {
         action_path.write_text(
             """
 export const actions = {
-  'social.people.search': async (input) => {
-    const contextId = requireString(input.federationId);
-    const results = searchSocialPeople(input.query, contextId);
+  'social.people.search': async () => {
+    const results = [{ federationId: 'observed' }];
     return results.map((result) => ({
-      federationId: contextId,
+      federationId: result.federationId,
     }));
   },
   'social.request.send': async () => undefined,
@@ -143,7 +144,6 @@ export const actions = {
             """
 export interface SocialPeopleSearchActionInput {
   query: string;
-  federationId: string;
 }
 """.lstrip(),
             encoding="utf-8",

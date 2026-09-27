@@ -56,7 +56,7 @@ import {
   dispatchBlockUser,
   dispatchUnblockUser,
   dispatchGroupUpdate,
-  dispatchGroupInviteMember,
+  dispatchGroupInviteMembers,
   dispatchGroupLeave,
   dispatchGroupRemoveMember,
   dispatchGroupUpdateMember,
@@ -66,6 +66,7 @@ import {
   dispatchMessageReaction,
   dispatchLoadConversationHistory,
   friendPatchFromActionPatch,
+  groupPatchFromActionPatch,
   type ChatMessageSendContext,
 } from '../features/chat/chatCommands';
 import {
@@ -81,7 +82,7 @@ import {
 import {
   messageProjectionMetadata,
   type MessageDeliveryDisplayState,
-} from '../features/chat/messageProjection';
+} from '../features/chat/messagingProjectionAdapters';
 import {
   IDLE_SENDER_TYPING_FEEDBACK,
   beginSenderTypingFeedback,
@@ -92,6 +93,7 @@ import { useMessageFlagState } from '../features/chat/messageFlagState';
 import { useChatHistorySearch } from '../features/chat/useChatHistorySearch';
 import { useMobileChatVoiceRecorder } from '../features/chat/useMobileChatVoiceRecorder';
 import { mobileCallManager } from '../features/call/callState';
+import { useGroupStore } from '../features/group/groupStore';
 import {
   useConversationListProjection,
   conversationAvatar,
@@ -113,7 +115,11 @@ import {
 } from '../features/social/socialRuntime';
 import { formatSocialError, useSocialStore } from '../features/social/socialStore';
 import { SocialApiError, readableErrorMessage, type SocialMessage, type SocialMessageAttachment } from '../features/social/socialTypes';
-import { MemberRole } from '../gen/proto/domain/chat/conversation_pb';
+import type {
+  GroupMember,
+  GroupMessage,
+} from '../gen/proto/domain/chat/group_chat_pb';
+import { GroupRole } from '../gen/proto/domain/chat/group_chat_pb';
 import { ChatStorageOperationState } from '../gen/proto/domain/chat/storage_pb';
 import { MobileDraftSurfaceKind } from '../gen/proto/domain/mobile/reliability_pb';
 import { getDraftRestorationPort } from '../runtimes/commandRuntime';
@@ -123,7 +129,6 @@ import {
   messagingStageAttachment,
   type MessagingAccountInput,
   type MessagingAttachmentStageProjection,
-  type MessagingMemberAuthorityMemberProjection,
   type MessagingSubmitCommandResult,
 } from '../services/mobileCommands';
 import {
@@ -172,6 +177,8 @@ const { Text } = Typography;
 const TYPING_TRUE_INTERVAL_MS = 3000;
 const TYPING_FALSE_DELAY_MS = 4000;
 const EMPTY_MESSAGES: SocialMessage[] = [];
+const EMPTY_GROUP_MESSAGES: GroupMessage[] = [];
+type ChatMessage = SocialMessage | GroupMessage;
 const MOBILE_THREAD_COMPOSER_CAPABILITIES = CHAT_COMPOSER_CAPABILITIES_MOBILE_THREAD;
 const MOBILE_THREAD_VISUAL_VARS = chatVisualCssVars(chatVisualLayoutForSurface('mobile-thread')) as CSSProperties;
 const MOBILE_COMPOSER_EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '🎉', '🔥', '❤️', '✨', '😭', '🤔'] as const;
@@ -305,8 +312,6 @@ function ChatPageInner({
     friendshipStatus,
     friendRequests,
     friendConversationSettings,
-    messagingConversations,
-    lastReconcileAt,
     selectedConversationId,
     selectSession,
     sendTypingState,
@@ -323,8 +328,6 @@ function ChatPageInner({
     friendshipStatus: s.friendshipStatus,
     friendRequests: s.friendRequests,
     friendConversationSettings: s.conversationSettings,
-    messagingConversations: s.messagingConversations,
-    lastReconcileAt: s.lastReconcileAt,
     selectedConversationId: s.activeSessionUlid,
     selectSession: s.selectSession,
     sendTypingState: s.sendTypingState,
@@ -333,6 +336,31 @@ function ChatPageInner({
     loadFriendThreadMessages: s.loadThreadMessages,
     friendMessageCommandOutcomes: s.messageCommandOutcomes,
     refreshFriendMessageCommandOutcomes: s.refreshMessageCommandOutcomes,
+  })));
+  const {
+    groupMembersById,
+    groupMessagesById,
+    groupThreadMessagesById,
+    groupSettings,
+    groupMessageCommandOutcomes,
+    groupLastReconcileAt,
+    selectedGroupUlid,
+    selectGroup,
+    loadGroupThreadMessages,
+    updateGroupSettings,
+    refreshGroupMessageCommandOutcomes,
+  } = useGroupStore(useShallow((state) => ({
+    groupMembersById: state.members,
+    groupMessagesById: state.messages,
+    groupThreadMessagesById: state.threadMessages,
+    groupSettings: state.settings,
+    groupMessageCommandOutcomes: state.messageCommandOutcomes,
+    groupLastReconcileAt: state.lastReconcileAt,
+    selectedGroupUlid: state.activeGroupUlid,
+    selectGroup: state.selectGroup,
+    loadGroupThreadMessages: state.loadThreadMessages,
+    updateGroupSettings: state.updateMySettings,
+    refreshGroupMessageCommandOutcomes: state.refreshMessageCommandOutcomes,
   })));
   const activeConversationId = activeGroupUlid || activeSessionUlid || '';
   const authSession = useAuthStore((s) => s.session);
@@ -350,12 +378,24 @@ function ChatPageInner({
     messageFlagKind,
     activeConversationId,
   );
-  const messages = useSocialStore((s) => (activeConversationId ? s.messages[activeConversationId] ?? EMPTY_MESSAGES : EMPTY_MESSAGES));
-  const projectedThreadMessages = useSocialStore((s) => (
+  const friendMessages = useSocialStore((s) => (
+    activeSessionUlid ? s.messages[activeSessionUlid] ?? EMPTY_MESSAGES : EMPTY_MESSAGES
+  ));
+  const groupMessages = activeGroupUlid
+    ? groupMessagesById[activeGroupUlid] ?? EMPTY_GROUP_MESSAGES
+    : EMPTY_GROUP_MESSAGES;
+  const messages: ChatMessage[] = activeGroupUlid ? groupMessages : friendMessages;
+  const friendThreadMessages = useSocialStore((s) => (
     threadRootMessageUlid
       ? s.threadMessages[threadRootMessageUlid] ?? EMPTY_MESSAGES
       : EMPTY_MESSAGES
   ));
+  const groupThreadMessages = threadRootMessageUlid
+    ? groupThreadMessagesById[threadRootMessageUlid] ?? EMPTY_GROUP_MESSAGES
+    : EMPTY_GROUP_MESSAGES;
+  const projectedThreadMessages: ChatMessage[] = activeGroupUlid
+    ? groupThreadMessages
+    : friendThreadMessages;
   const peerProfiles = useSocialStore((s) => s.peerProfiles);
   const typingPeers = useSocialStore((s) => {
     const id = activeGroupUlid || activeSessionUlid || '';
@@ -384,7 +424,7 @@ function ChatPageInner({
       key: conversation.key,
       conversationId: conversation.kind === 'friend'
         ? conversation.conversation.session.ulid
-        : conversation.conversation.projection.conversationId,
+        : conversation.conversation.group.ulid,
       kind: conversation.kind,
       title: conversationTitle(conversation),
       subtitle: t(conversation.kind === 'friend'
@@ -397,7 +437,7 @@ function ChatPageInner({
 
   const activeConversation = conversations.find((c) => c.session.ulid === activeSessionUlid);
   const activeGroupConversation = groupConversations.find(
-    (conversation) => conversation.projection.conversationId === activeGroupUlid,
+    (conversation) => conversation.group.ulid === activeGroupUlid,
   );
   const activeConversationKey = activeGroupUlid
     ? `group:${activeGroupUlid}`
@@ -405,7 +445,11 @@ function ChatPageInner({
       ? `friend:${activeSessionUlid}`
       : '';
   const actionState = friendSettingsToActionState(
-    activeConversationId ? friendConversationSettings[activeConversationId] : undefined,
+    activeConversationId
+      ? activeGroupUlid
+        ? groupSettings[activeConversationId]
+        : friendConversationSettings[activeConversationId]
+      : undefined,
     chatActionStates[activeConversationKey],
   );
   const history = useChatHistoryProjection(
@@ -458,18 +502,9 @@ function ChatPageInner({
   const peerTyping = activeConversation
     ? Boolean(typingPeers[activeConversation.peerPtid]?.typing)
     : Object.entries(typingPeers).some(([ptid, entry]) => ptid !== currentUserPtid && entry.typing);
-  const groupMembers = useMemo<MessagingMemberAuthorityMemberProjection[]>(
-    () => activeGroupConversation?.projection.members
-      ?? activeGroupConversation?.projection.memberPtids.map((ptid) => ({
-        ptid,
-        role: ptid === activeGroupConversation.projection.ownerPtid
-          ? MemberRole.OWNER
-          : MemberRole.MEMBER,
-        homeStationPeerId: '',
-        muted: false,
-      }))
-      ?? [],
-    [activeGroupConversation],
+  const groupMembers = useMemo<GroupMember[]>(
+    () => activeGroupUlid ? groupMembersById[activeGroupUlid] ?? [] : [],
+    [activeGroupUlid, groupMembersById],
   );
   const groupMemberPtids = useMemo(
     () => new Set(groupMembers.map((member) => member.ptid)),
@@ -486,7 +521,6 @@ function ChatPageInner({
       }
       return friendRequests.some((request) => (
         request.status === 2
-        && request.federationId === activeGroupConversation?.projection.federationId
         && (
           (request.senderPtid === currentUserPtid
             && request.receiverPtid === conversation.peerPtid)
@@ -496,7 +530,6 @@ function ChatPageInner({
       ));
     }),
     [
-      activeGroupConversation?.projection.federationId,
       conversations,
       currentUserPtid,
       friendRequests,
@@ -504,11 +537,11 @@ function ChatPageInner({
       groupMemberPtids,
     ],
   );
-  const myGroupRole = activeGroupConversation?.projection.ownerPtid === currentUserPtid
-    ? MemberRole.OWNER
+  const myGroupRole = activeGroupConversation?.group.ownerPtid === currentUserPtid
+    ? GroupRole.OWNER
     : groupMembers.find((member) => member.ptid === currentUserPtid)?.role
-      ?? MemberRole.UNSPECIFIED;
-  const canManageGroupMembers = myGroupRole >= MemberRole.ADMIN;
+      ?? GroupRole.UNSPECIFIED;
+  const canManageGroupMembers = myGroupRole >= GroupRole.ADMIN;
 
   // --- Refs ---
   const composingRef = useRef(false);
@@ -553,22 +586,35 @@ function ChatPageInner({
   }, [authSession, draftPort, t]);
 
   useEffect(() => {
-    if (selectedConversationId !== (activeConversationId || null)) {
-      void selectSession(activeConversationId || null);
+    if (activeGroupUlid) {
+      if (selectedConversationId !== null) void selectSession(null);
+      if (selectedGroupUlid !== activeGroupUlid) void selectGroup(activeGroupUlid);
+      return;
     }
-  }, [activeConversationId, selectSession, selectedConversationId]);
+    if (selectedGroupUlid !== null) void selectGroup(null);
+    if (selectedConversationId !== (activeSessionUlid || null)) {
+      void selectSession(activeSessionUlid || null);
+    }
+  }, [
+    activeGroupUlid,
+    activeSessionUlid,
+    selectGroup,
+    selectSession,
+    selectedConversationId,
+    selectedGroupUlid,
+  ]);
 
   useEffect(() => {
     if (
       activeGroupUlid
-      && lastReconcileAt !== null
-      && !messagingConversations.some(
-        (conversation) => conversation.conversationId === activeGroupUlid,
+      && groupLastReconcileAt !== null
+      && !groupConversations.some(
+        (conversation) => conversation.group.ulid === activeGroupUlid,
       )
     ) {
       onBack();
     }
-  }, [activeGroupUlid, lastReconcileAt, messagingConversations, onBack]);
+  }, [activeGroupUlid, groupConversations, groupLastReconcileAt, onBack]);
 
   // --- Side effects: persist the old target, then restore the new target ---
   useEffect(() => {
@@ -740,8 +786,8 @@ function ChatPageInner({
 
   useEffect(() => {
     if (!activeGroupConversation) return;
-    setGroupNameDraft(activeGroupConversation.projection.name);
-    setGroupDescriptionDraft(activeGroupConversation.projection.description ?? '');
+    setGroupNameDraft(activeGroupConversation.group.name);
+    setGroupDescriptionDraft(activeGroupConversation.group.description);
   }, [activeGroupConversation]);
 
   // --- Sender typing feedback ---
@@ -1140,12 +1186,12 @@ function ChatPageInner({
 
   const openConversation = (conversation: MobileConversation) => {
     if (conversation.kind === 'group') {
-      const groupUlid = conversation.conversation.projection.conversationId;
+      const groupUlid = conversation.conversation.group.ulid;
       onOpenConversation({
         routeId: 'detail:group-conversation',
         groupUlid,
       });
-      void selectSession(groupUlid);
+      void selectGroup(groupUlid);
       return;
     }
     const sessionUlid = conversation.conversation.session.ulid;
@@ -1173,22 +1219,32 @@ function ChatPageInner({
       if (!authSession) throw new Error('mobile.auth.missingIdentityScope');
       let confirmedActionState: ChatActionState | undefined;
       const readProjectedActionState = () => {
-        const projected = useSocialStore.getState().conversationSettings[conversationId];
+        const projected = activeGroupUlid
+          ? useGroupStore.getState().settings[conversationId]
+          : useSocialStore.getState().conversationSettings[conversationId];
         return projected
           ? friendSettingsToActionState(projected, undefined)
           : undefined;
       };
 
       if (mode === 'retry') {
-        await useSocialStore.getState().loadConversationSettings(conversationId);
+        if (activeGroupUlid) {
+          await useGroupStore.getState().loadSettings(conversationId);
+        } else {
+          await useSocialStore.getState().loadConversationSettings(conversationId);
+        }
         confirmedActionState = readProjectedActionState();
       }
 
       if (!chatActionStateMatchesPatch(confirmedActionState, patch)) {
-        await updateFriendConversationSettings(
-          conversationId,
-          friendPatchFromActionPatch(patch),
-        );
+        if (activeGroupUlid) {
+          await updateGroupSettings(conversationId, groupPatchFromActionPatch(patch));
+        } else {
+          await updateFriendConversationSettings(
+            conversationId,
+            friendPatchFromActionPatch(patch),
+          );
+        }
         confirmedActionState = readProjectedActionState();
       }
 
@@ -1245,7 +1301,8 @@ function ChatPageInner({
         throw new Error(result?.error?.message || 'chat conversation cleanup did not complete');
       }
       const releasedBytes = chatStorageReleasedBytes(result) ?? 0n;
-      await selectSession(activeConversationId);
+      if (activeGroupUlid) await selectGroup(activeConversationId);
+      else await selectSession(activeConversationId);
       Modal.success({
         title: t('mobile.chat.clearHistorySuccessTitle'),
         content: (
@@ -1291,20 +1348,22 @@ function ChatPageInner({
     setHighlightedMessageUlid(messageUlid);
   };
 
-  const openMessageThread = (message: SocialMessage) => {
+  const openMessageThread = (message: ChatMessage) => {
     const rootMessageUlid = message.threadRootUlid || message.ulid;
     setThreadRootMessageUlid(rootMessageUlid);
     setThreadSearchOpen(false);
     setThreadSearchQuery('');
     setMessageActionUlid('');
     void runChatOperation(
-      () => loadFriendThreadMessages(activeConversationId, rootMessageUlid),
+      () => activeGroupUlid
+        ? loadGroupThreadMessages(activeConversationId, rootMessageUlid)
+        : loadFriendThreadMessages(activeConversationId, rootMessageUlid),
       'mobile.chat.operationThreadFailed',
     );
   };
 
   const toggleMessageReaction = async (
-    message: SocialMessage,
+    message: ChatMessage,
     reaction: string,
   ) => {
     const remove = messageProjectionMetadata(message).reactions.some(
@@ -1321,7 +1380,7 @@ function ChatPageInner({
     setMessageActionUlid('');
   };
 
-  const toggleMessagePin = async (message: SocialMessage) => {
+  const toggleMessagePin = async (message: ChatMessage) => {
     await dispatchMessagePin(
       activeGroupUlid ? 'group' : 'friend',
       activeConversationId,
@@ -1332,7 +1391,7 @@ function ChatPageInner({
     setMessageActionUlid('');
   };
 
-  const retryFailedMessage = async (message: SocialMessage) => {
+  const retryFailedMessage = async (message: ChatMessage) => {
     if (chatMessageAttachments(message).length > 0 || !message.content.trim()) {
       throw new Error(t('mobile.chat.retryAttachmentUnavailable'));
     }
@@ -1370,7 +1429,7 @@ function ChatPageInner({
   // -----------------------------------------------------------------------
   if (activeConversation || activeGroupConversation) {
     const isGroupThread = Boolean(activeGroupConversation);
-    const title = activeGroupConversation?.projection.name
+    const title = activeGroupConversation?.group.name
       || activeConversation?.peerName
       || '';
     const activeKey = activeConversationKey;
@@ -1388,12 +1447,14 @@ function ChatPageInner({
       ? t('mobile.chat.typing')
       : activeGroupConversation
         ? t('mobile.group.memberCount', {
-            count: activeGroupConversation.projection.memberPtids.length,
+            count: activeGroupConversation.group.memberCount,
           })
         : t('mobile.chat.peerAtStation', { station: stationName });
 
     const visibleMessages = history.visible;
-    const messageCommandOutcomes = friendMessageCommandOutcomes;
+    const messageCommandOutcomes = activeGroupUlid
+      ? groupMessageCommandOutcomes
+      : friendMessageCommandOutcomes;
     const threadMessages = visibleMessages;
     const selectedActionMessage = history.byId.get(messageActionUlid);
     const selectedActionModerated = selectedActionMessage
@@ -1679,7 +1740,7 @@ function ChatPageInner({
             <GroupManagementModal
               open={groupManageOpen}
               onClose={() => setGroupManageOpen(false)}
-              conversation={activeGroupConversation.projection}
+              conversation={activeGroupConversation.group}
               members={groupMembers}
               myRole={myGroupRole}
               canManage={canManageGroupMembers}
@@ -1687,7 +1748,7 @@ function ChatPageInner({
               setGroupNameDraft={setGroupNameDraft}
               groupDescriptionDraft={groupDescriptionDraft}
               setGroupDescriptionDraft={setGroupDescriptionDraft}
-              conversationSettings={friendConversationSettings[activeConversationId]}
+              conversationSettings={groupSettings[activeConversationId]}
               inviteCandidates={groupInviteCandidates}
               peerProfiles={peerProfiles}
               currentUserPtid={currentUserPtid}
@@ -1695,14 +1756,14 @@ function ChatPageInner({
                 activeConversationId,
                 { name, description },
               )}
-              onUpdateMySettings={(patch) => updateFriendConversationSettings(
+              onUpdateMySettings={(patch) => updateGroupSettings(
                 activeConversationId,
                 patch,
               )}
               onUpdateMemberRole={(memberPtid, role) => dispatchGroupUpdateMember(
                 activeConversationId,
                 memberPtid,
-                { role },
+                { role: role === 'admin' ? GroupRole.ADMIN : GroupRole.MEMBER },
               )}
               onTransferOwnership={(memberPtid) => dispatchGroupTransferOwnership(
                 activeConversationId,
@@ -1717,9 +1778,9 @@ function ChatPageInner({
                 activeConversationId,
                 memberPtid,
               )}
-              onInviteMember={(memberPtid) => dispatchGroupInviteMember(
+              onInviteMember={(memberPtid) => dispatchGroupInviteMembers(
                 activeConversationId,
-                memberPtid,
+                [memberPtid],
               )}
               onDissolveGroup={async () => {
                 await dispatchGroupDissolve(activeConversationId);
@@ -1744,7 +1805,7 @@ function ChatPageInner({
                 <Button icon={<RotateCcw size={14} />} onClick={historySearch.retry}>{t('common.action.retry')}</Button>
               </MobileNotice>
             ) : threadSearchResults.length > 0 ? (
-              <BoundedList surfaceKey={`search:${activeConversationKey}:${threadSearchQuery}:${historySearch.index}`} items={threadSearchResults as SocialMessage[]} itemKey={messageKey}>
+              <BoundedList surfaceKey={`search:${activeConversationKey}:${threadSearchQuery}:${historySearch.index}`} items={threadSearchResults as ChatMessage[]} itemKey={messageKey}>
               {(rows) => rows.map((msg) => (
                 <button className="message-search-result" data-scroll-anchor-id={msg.ulid} type="button" key={msg.ulid} onClick={() => {
                   setThreadSearchOpen(false);
@@ -1752,7 +1813,7 @@ function ChatPageInner({
                   historySearch.clear();
                   void scrollToMessage(msg.ulid);
                 }}>
-                  <Text ellipsis>{messageContentForSearch(msg, t)}</Text>
+                  <Text ellipsis>{messageContentForSearch(msg, isGroupThread, t)}</Text>
                   <Text type="secondary">{formatRelativeTime(messageTimestampMillis(msg), t)}</Text>
                 </button>
               ))}</BoundedList>
@@ -1771,12 +1832,14 @@ function ChatPageInner({
           background={actionState.background}
           messages={threadMessages}
           historyById={history.byId}
+          isGroupThread={isGroupThread}
           currentUserPtid={currentUserPtid}
           highlightedMessageUlid={highlightedMessageUlid}
           ownAvatar={ownAvatar}
           ownName={ownName}
           peerProfiles={peerProfiles}
           peerMessageAvatar={peerMessageAvatar}
+          groupMemberByPtid={new Map(groupMembers.map((member) => [member.ptid, member]))}
           peerName={activeConversation?.peerName || ''}
           title={title}
           flaggedMessageIds={messageFlags.flaggedMessageIds}
@@ -1813,7 +1876,9 @@ function ChatPageInner({
               }}
               onOpenActions={() => {
                 setMessageActionUlid(message.ulid);
-                void refreshFriendMessageCommandOutcomes();
+                void (activeGroupUlid
+                  ? refreshGroupMessageCommandOutcomes()
+                  : refreshFriendMessageCommandOutcomes());
               }}
             />
           )}
@@ -1923,7 +1988,7 @@ function ChatPageInner({
                   <Text type="secondary" ellipsis>
                     {t('mobile.chat.replyingTo', {
                       message: replyTargetMessage
-                        ? messageContentForSearch(replyTargetMessage, t)
+                        ? messageContentForSearch(replyTargetMessage, isGroupThread, t)
                         : t('mobile.chat.noPreview'),
                     })}
                   </Text>
@@ -2141,7 +2206,7 @@ function validateSendOutcome(
 }
 
 function isAuthoritativeMessageProjection(
-  message: SocialMessage,
+  message: ChatMessage,
   expectedAttachmentIds: string[],
 ): boolean {
   const state = (message as { messagingState?: string }).messagingState;

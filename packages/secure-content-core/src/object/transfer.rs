@@ -470,10 +470,41 @@ impl ObjectTransferWorker {
         cache_ref: &str,
         now_unix_ms: i64,
     ) -> Result<ObjectTransferProgress, ObjectTransferFailure> {
+        match self.preflight(transfer_id, now_unix_ms)? {
+            Some(ObjectTransferProgress::Complete) | None => {}
+            Some(progress) => return Ok(progress),
+        }
+        let _permit = match self.control.try_admit(transfer_id) {
+            Ok(permit) => permit,
+            Err(AdmissionError::AlreadyActive) => {
+                return Ok(ObjectTransferProgress::Deferred {
+                    next_attempt_at_unix_ms: now_unix_ms,
+                })
+            }
+            Err(AdmissionError::Failure(failure)) => {
+                match self.preflight(transfer_id, now_unix_ms)? {
+                    Some(ObjectTransferProgress::Complete) => {
+                        return Ok(ObjectTransferProgress::Deferred {
+                            next_attempt_at_unix_ms: now_unix_ms,
+                        })
+                    }
+                    Some(progress) => return Ok(progress),
+                    None => {}
+                }
+                let existing = self.required_transfer(transfer_id)?;
+                let failure = self.cleanup_download_failure(
+                    failure,
+                    cache_ref,
+                    &plaintext_staging_ref(cache_ref),
+                    &existing.partial_local_ref,
+                );
+                return self.persist_failure(transfer_id, now_unix_ms, failure);
+            }
+        };
         let existing = self.required_transfer(transfer_id)?;
         if existing.state == ObjectTransferState::Complete {
             let plaintext_staging_ref = plaintext_staging_ref(cache_ref);
-            let validation = (|| -> Result<(), ObjectTransferFailure> {
+            let validation = (|| -> Result<bool, ObjectTransferFailure> {
                 if existing.partial_local_ref == cache_ref
                     || existing.partial_local_ref == plaintext_staging_ref
                 {
@@ -489,46 +520,50 @@ impl ObjectTransferWorker {
                         "secure content completed object descriptor commitment changed",
                     ));
                 }
+                let cache_exists = self.blobs.exists(cache_ref)?;
+                let plaintext_staging_exists = self.blobs.exists(&plaintext_staging_ref)?;
+                if !cache_exists && !plaintext_staging_exists {
+                    self.blobs.remove(&existing.partial_local_ref)?;
+                    self.store.update_transfer_progress(
+                        transfer_id,
+                        ObjectTransferState::Queued,
+                        &existing.upload_id,
+                        existing.generation,
+                        &vec![0; descriptor.commitment.chunk_count.div_ceil(8) as usize],
+                        0,
+                        now_unix_ms,
+                        None,
+                        now_unix_ms,
+                    )?;
+                    return Ok(false);
+                }
                 self.finalize_completed_download_artifacts(
                     cache_ref,
                     &plaintext_staging_ref,
                     &existing.partial_local_ref,
                     expected_plaintext_sha256,
-                )
+                )?;
+                Ok(true)
             })();
-            if let Err(failure) = validation {
-                if failure.retryable {
-                    return Err(failure);
+            match validation {
+                Ok(true) => return Ok(ObjectTransferProgress::Complete),
+                Ok(false) => {}
+                Err(failure) => {
+                    if failure.retryable {
+                        return Err(failure);
+                    }
+                    return Err(self.cleanup_download_failure(
+                        failure,
+                        cache_ref,
+                        &plaintext_staging_ref,
+                        &existing.partial_local_ref,
+                    ));
                 }
-                return Err(self.cleanup_download_failure(
-                    failure,
-                    cache_ref,
-                    &plaintext_staging_ref,
-                    &existing.partial_local_ref,
-                ));
             }
-            return Ok(ObjectTransferProgress::Complete);
         }
         if let Some(progress) = self.preflight(transfer_id, now_unix_ms)? {
             return Ok(progress);
         }
-        let _permit = match self.control.try_admit(transfer_id) {
-            Ok(permit) => permit,
-            Err(AdmissionError::AlreadyActive) => {
-                return Ok(ObjectTransferProgress::Deferred {
-                    next_attempt_at_unix_ms: now_unix_ms,
-                })
-            }
-            Err(AdmissionError::Failure(failure)) => {
-                let failure = self.cleanup_download_failure(
-                    failure,
-                    cache_ref,
-                    &plaintext_staging_ref(cache_ref),
-                    &existing.partial_local_ref,
-                );
-                return self.persist_failure(transfer_id, now_unix_ms, failure);
-            }
-        };
         match self.download_once(
             transfer_id,
             descriptor,
@@ -2101,6 +2136,91 @@ mod tests {
     }
 
     #[test]
+    fn completed_download_finalization_defers_while_same_transfer_is_active() {
+        let source = test_ref("concurrent-finalization-source");
+        let partial = test_ref("concurrent-finalization-partial");
+        let cache = test_ref("concurrent-finalization-cache");
+        let plaintext = b"concurrent finalization private media".to_vec();
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        blobs.put(&partial, b"stale ciphertext".to_vec());
+        blobs.put(&plaintext_staging_ref(&cache), plaintext.clone());
+        let descriptor_record = record(
+            "concurrent-finalization-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        let (_, _, descriptor) = prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        let mut download_record = record(
+            "concurrent-finalization-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        download_record.state = ObjectTransferState::Complete;
+        download_record.descriptor_sha256 = TestCodec
+            .descriptor_commitment(&descriptor)
+            .unwrap()
+            .to_vec();
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let control = Arc::new(ObjectTransferControl::new());
+        let worker = ObjectTransferWorker::with_control(
+            store,
+            Arc::new(MemoryTransport::new()),
+            blobs.clone(),
+            Arc::new(TestCodec),
+            control.clone(),
+            ObjectRetryPolicy::default(),
+        )
+        .unwrap();
+        let permit = control
+            .try_admit("concurrent-finalization-transfer")
+            .unwrap();
+        let plaintext_hash = Sha256::digest(&plaintext).into();
+
+        assert_eq!(
+            worker
+                .run_download_once(
+                    "concurrent-finalization-transfer",
+                    &descriptor,
+                    &plaintext_hash,
+                    &cache,
+                    10,
+                )
+                .unwrap(),
+            ObjectTransferProgress::Deferred {
+                next_attempt_at_unix_ms: 10
+            }
+        );
+        assert!(!blobs.exists(&cache).unwrap());
+        assert!(blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+
+        drop(permit);
+
+        assert_eq!(
+            worker
+                .run_download_once(
+                    "concurrent-finalization-transfer",
+                    &descriptor,
+                    &plaintext_hash,
+                    &cache,
+                    11,
+                )
+                .unwrap(),
+            ObjectTransferProgress::Complete
+        );
+        assert_eq!(blobs.bytes(&cache).unwrap(), plaintext);
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        assert!(!blobs.exists(&partial).unwrap());
+    }
+
+    #[test]
     fn download_resumes_after_interruption_at_every_chunk() {
         let source = test_ref("download-every-chunk-source");
         let plaintext = vec![53_u8; 2 * 1024 * 1024 + 41];
@@ -2609,6 +2729,66 @@ mod tests {
             )
             .is_err());
         assert!(!blobs.exists(&cache).unwrap());
+        assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
+        assert!(!blobs.exists(&partial).unwrap());
+    }
+
+    #[test]
+    fn completed_download_redownloads_when_plaintext_cache_is_evicted() {
+        let source = test_ref("evicted-download-source");
+        let partial = test_ref("evicted-download-partial");
+        let cache = test_ref("evicted-download-cache");
+        let plaintext = b"redownloadable private media".to_vec();
+        let blobs = Arc::new(MemoryBlob::default());
+        blobs.put(&source, plaintext.clone());
+        let descriptor_record = record(
+            "evicted-download-descriptor",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        let (material, _, descriptor) =
+            prepared_object(blobs.as_ref(), &source, &descriptor_record);
+        let transport = Arc::new(MemoryTransport::new());
+        seed_encrypted_chunks(transport.as_ref(), blobs.as_ref(), &source, &material);
+        let mut download_record = record(
+            "evicted-download-transfer",
+            &source,
+            &partial,
+            plaintext.len() as u64,
+            OBJECT_CHUNK_SIZE,
+        );
+        download_record.direction = ObjectTransferDirection::Download;
+        download_record.source_local_ref.clear();
+        download_record.state = ObjectTransferState::Complete;
+        download_record.completed_chunk_bitmap = vec![1];
+        download_record.descriptor_sha256 = TestCodec
+            .descriptor_commitment(&descriptor)
+            .unwrap()
+            .to_vec();
+        let store = Arc::new(TestStore::default());
+        store.insert(download_record);
+        let worker =
+            ObjectTransferWorker::new(store.clone(), transport, blobs.clone(), Arc::new(TestCodec));
+
+        assert_eq!(
+            worker
+                .run_download_once(
+                    "evicted-download-transfer",
+                    &descriptor,
+                    &Sha256::digest(&plaintext).into(),
+                    &cache,
+                    10,
+                )
+                .unwrap(),
+            ObjectTransferProgress::Complete
+        );
+        assert_eq!(
+            store.record("evicted-download-transfer").state,
+            ObjectTransferState::Complete
+        );
+        assert_eq!(blobs.bytes(&cache).unwrap(), plaintext);
         assert!(!blobs.exists(&plaintext_staging_ref(&cache)).unwrap());
         assert!(!blobs.exists(&partial).unwrap());
     }

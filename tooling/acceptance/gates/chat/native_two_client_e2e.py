@@ -80,6 +80,8 @@ def validate_report(
     gate_id: str = GATE_ID,
     required_steps: set[str] = REQUIRED_STEPS,
     required_assertions: set[str] = REQUIRED_ASSERTIONS,
+    expected_journey: str | None = None,
+    expected_actor_roles: frozenset[str] = frozenset(("alice", "bob")),
 ) -> None:
     require(
         report.get("gate") == gate_id,
@@ -107,7 +109,8 @@ def validate_report(
         "runtime cell must match PT_ACCEPTANCE_RUNTIME_CELL",
     )
     require(
-        runtime.get("journey") == expected_journey_for_gate(gate_id),
+        runtime.get("journey")
+        == (expected_journey or expected_journey_for_gate(gate_id)),
         "unexpected native two-client journey",
     )
     source_identity = runtime.get("sourceIdentity")
@@ -230,17 +233,20 @@ def validate_report(
 
     actors = report.get("actors")
     require(
-        isinstance(actors, dict) and set(actors) == {"alice", "bob"},
-        "exactly Alice and Bob actor evidence is required",
+        isinstance(actors, dict) and set(actors) == expected_actor_roles,
+        "actor evidence does not match the expected roles",
     )
     for field in ("port", "gateway_port", "storage_root", "pid"):
         values = {str(actor.get(field) or "") for actor in actors.values()}
-        require("" not in values and len(values) == 2, f"actors require distinct {field}")
+        require(
+            "" not in values and len(values) == len(expected_actor_roles),
+            f"actors require distinct {field}",
+        )
     profiles = {str(actor.get("profile") or "") for actor in actors.values()}
     require("" not in profiles, "actors require a non-empty profile")
     if requires_distinct_client_profiles(gate_id):
         require(
-            len(profiles) == 2,
+            len(profiles) == len(expected_actor_roles),
             "actors require distinct profile",
         )
     require(
@@ -248,7 +254,7 @@ def validate_report(
             actor.get("runtime") == runtime_cell
             for actor in actors.values()
         ),
-        "both actors must use the selected Native Desktop cell",
+        "all actors must use the selected Native Desktop cell",
     )
 
     assertions = report.get("assertions")
@@ -288,7 +294,7 @@ def validate_report(
 
     evidence = report.get("evidence")
     require(isinstance(evidence, dict), "evidence map is required")
-    for actor in ("alice", "bob"):
+    for actor in sorted(expected_actor_roles):
         for suffix in ("screenshot", "dom", "app-log"):
             key = f"{actor}-{suffix}"
             entry = evidence.get(key)

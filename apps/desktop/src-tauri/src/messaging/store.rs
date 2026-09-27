@@ -11,7 +11,6 @@ use crate::infrastructure::storage::{open_database, resolve_database_path};
 use crate::model::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
     ConversationKind, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
-    VoiceNoteMetadata,
 };
 pub use messaging_core::attachment::AttachmentTransferRecord;
 use messaging_core::attachment::{
@@ -100,6 +99,18 @@ pub struct SubmittedCommand {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupersededInteractionIntent {
+    pub intent_id: String,
+    pub command_id: String,
+    pub conversation_id: String,
+    pub target_message_id: String,
+    pub interaction_kind: String,
+    pub edited_text: Option<String>,
+    pub command_bytes: Vec<u8>,
+    pub created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandReconciliationDisposition {
     HomePending,
     Accepted,
@@ -182,7 +193,8 @@ pub struct PendingAttachmentUpload {
     pub filename: String,
     pub mime_type: String,
     pub plaintext_sha256: Vec<u8>,
-    pub voice_note: Option<VoiceNoteMetadata>,
+    pub content_kind: i32,
+    pub duration_ms: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -212,10 +224,13 @@ pub struct ThreadCountProjection {
     pub unread_count: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConversationMemberProjection {
     pub ptid: String,
     pub role: i32,
+    pub home_station_peer_id: String,
+    pub muted: bool,
+    pub muted_until_unix_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -225,6 +240,8 @@ pub struct ConversationProjection {
     pub federation_id: String,
     pub kind: i32,
     pub name: String,
+    pub description: String,
+    pub avatar_object_id: String,
     pub owner_ptid: String,
     pub members: Vec<ConversationMemberProjection>,
     pub membership_epoch: i64,
@@ -295,6 +312,8 @@ pub struct MlsSendCommit<'a> {
 }
 
 pub struct InteractionCommandCommit<'a> {
+    pub logical_intent_id: &'a str,
+    pub replaces_command_id: Option<&'a str>,
     pub command_id: &'a str,
     pub conversation_id: &'a str,
     pub target_message_id: &'a str,
@@ -303,6 +322,50 @@ pub struct InteractionCommandCommit<'a> {
     pub command_bytes: &'a [u8],
     pub delivery_plan_sha256: &'a [u8],
     pub created_at_unix_ms: i64,
+}
+
+pub struct ConversationCommandCommit<'a> {
+    pub command: &'a ChatCommand,
+    pub expected_authority_sequence: i64,
+    pub expected_authority_hash: &'a [u8],
+    pub created_at_unix_ms: i64,
+}
+
+pub enum ConversationMutation<'a> {
+    Update {
+        name: Option<&'a str>,
+        description: Option<&'a str>,
+        avatar_object_id: Option<&'a str>,
+    },
+    Dissolve,
+}
+
+pub struct ConversationMutationReceiveCommit<'a> {
+    pub item_id: &'a str,
+    pub event_id: &'a str,
+    pub conversation_id: &'a str,
+    pub command_id: &'a str,
+    pub event_sequence: i64,
+    pub lane_sequence: i64,
+    pub consumer_epoch: u64,
+    pub payload_sha256: &'a [u8],
+    pub event_hash: &'a [u8],
+    pub previous_event_hash: &'a [u8],
+    pub membership_epoch: i64,
+    pub mls_epoch: i64,
+    pub mutation: ConversationMutation<'a>,
+    pub receipt_id: &'a str,
+    pub receipt_bytes: &'a [u8],
+    pub consumed_at_unix_ms: i64,
+}
+
+pub struct MemberAuthorityReceiveCommit<'a> {
+    pub state: ConversationStateReceiveCommit<'a>,
+    pub command_id: &'a str,
+    pub operator_ptid: &'a str,
+    pub operator_device_id: &'a str,
+    pub action: i32,
+    pub target_ptid: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1296,6 +1359,125 @@ impl MessagingStore {
         transaction.commit().map_err(|error| error.to_string())
     }
 
+    pub fn persist_conversation_command(
+        &self,
+        input: &ConversationCommandCommit<'_>,
+    ) -> Result<(), String> {
+        let intent_kind = match input.command.payload.as_ref() {
+            Some(chat_command::Payload::UpdateConversation(update))
+                if (update.name.is_some()
+                    || update.description.is_some()
+                    || update.avatar_object_id.is_some()) =>
+            {
+                "update"
+            }
+            Some(chat_command::Payload::DissolveConversation(_)) => "dissolve",
+            _ => return Err("messaging Conversation command intent is unsupported".to_string()),
+        };
+        if input.command.command_id.trim().is_empty()
+            || input.command.conversation_id.trim().is_empty()
+            || input.command.sender.as_ref().is_none_or(|sender| {
+                sender.ptid.trim().is_empty() || sender.device_id.trim().is_empty()
+            })
+            || input.command.authority_station_peer_id.trim().is_empty()
+            || input.command.delivery_plan_sha256.len() != 32
+            || input.created_at_unix_ms <= 0
+        {
+            return Err("messaging Conversation command is incomplete".to_string());
+        }
+        let command_bytes = input.command.encode_to_vec();
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        validate_expected_authority_head(
+            &transaction,
+            &input.command.conversation_id,
+            input.expected_authority_sequence,
+            input.expected_authority_hash,
+        )?;
+        persist_non_message_command(
+            &transaction,
+            &input.command.command_id,
+            &input.command.conversation_id,
+            &command_bytes,
+            &input.command.delivery_plan_sha256,
+            input.created_at_unix_ms,
+        )?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_conversation_command_intents(
+                    command_id, conversation_id, intent_kind, state, created_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, 'prepared', ?4)",
+                params![
+                    input.command.command_id,
+                    input.command.conversation_id,
+                    intent_kind,
+                    input.created_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub fn persist_member_authority_command(
+        &self,
+        command: &crate::model::chat::ConversationMemberAuthorityCommand,
+    ) -> Result<(), String> {
+        let action =
+            crate::model::chat::ConversationMemberAuthorityAction::try_from(command.action)
+                .map_err(|_| "messaging member-authority action is invalid".to_string())?;
+        let created_at_unix_ms = timestamp_millis(command.client_timestamp.as_ref())?;
+        if command.command_id.trim().is_empty()
+            || command.conversation_id.trim().is_empty()
+            || command.operator.as_ref().is_none_or(|operator| {
+                operator.ptid.trim().is_empty() || operator.device_id.trim().is_empty()
+            })
+            || command.target_ptid.trim().is_empty()
+            || action == crate::model::chat::ConversationMemberAuthorityAction::Unspecified
+            || command.authority_station_peer_id.trim().is_empty()
+            || command.authority_sequence <= 0
+            || command.authority_hash.len() != 32
+        {
+            return Err("messaging member-authority command is incomplete".to_string());
+        }
+        let command_bytes = command.encode_to_vec();
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        validate_expected_authority_head(
+            &transaction,
+            &command.conversation_id,
+            command.authority_sequence,
+            &command.authority_hash,
+        )?;
+        persist_non_message_command(
+            &transaction,
+            &command.command_id,
+            &command.conversation_id,
+            &command_bytes,
+            &command.authority_hash,
+            created_at_unix_ms,
+        )?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_member_authority_intents(
+                    command_id, conversation_id, action, target_ptid,
+                    state, created_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, 'prepared', ?5)",
+                params![
+                    command.command_id,
+                    command.conversation_id,
+                    command.action,
+                    command.target_ptid,
+                    created_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
     pub fn persist_direct_interaction_command(
         &self,
         input: &InteractionCommandCommit<'_>,
@@ -1524,6 +1706,40 @@ impl MessagingStore {
             })
             .map_err(|error| error.to_string())?;
         rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn next_superseded_interaction_intent(
+        &self,
+    ) -> Result<Option<SupersededInteractionIntent>, String> {
+        self.connection()?
+            .query_row(
+                "SELECT intent.intent_id, intent.command_id, intent.conversation_id,
+                        intent.target_message_id, intent.interaction_kind,
+                        intent.edited_text, command.command_bytes,
+                        intent.created_at_unix_ms
+                 FROM messaging_interaction_intents intent
+                 JOIN messaging_local_commands command
+                   ON command.command_id = intent.command_id
+                 WHERE intent.state = 'superseded'
+                   AND command.state = 'superseded'
+                 ORDER BY intent.created_at_unix_ms ASC, intent.command_id ASC
+                 LIMIT 1",
+                [],
+                |row| {
+                    Ok(SupersededInteractionIntent {
+                        intent_id: row.get(0)?,
+                        command_id: row.get(1)?,
+                        conversation_id: row.get(2)?,
+                        target_message_id: row.get(3)?,
+                        interaction_kind: row.get(4)?,
+                        edited_text: row.get(5)?,
+                        command_bytes: row.get(6)?,
+                        created_at_unix_ms: row.get(7)?,
+                    })
+                },
+            )
+            .optional()
             .map_err(|error| error.to_string())
     }
 
@@ -2394,7 +2610,8 @@ impl MessagingStore {
 
         let persisted_projection = transaction
             .query_row(
-                "SELECT authority_station_id, federation_id, kind, name, owner_ptid,
+                "SELECT authority_station_id, federation_id, kind, name,
+                        description, avatar_object_id, owner_ptid,
                         membership_epoch, mls_epoch, active
                  FROM messaging_conversations
                  WHERE conversation_id = ?1",
@@ -2406,9 +2623,11 @@ impl MessagingStore {
                         row.get::<_, i32>(2)?,
                         row.get::<_, String>(3)?,
                         row.get::<_, String>(4)?,
-                        row.get::<_, i64>(5)?,
-                        row.get::<_, i64>(6)?,
-                        row.get::<_, bool>(7)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                        row.get::<_, bool>(9)?,
                     ))
                 },
             )
@@ -2423,6 +2642,8 @@ impl MessagingStore {
                 projection.federation_id.clone(),
                 projection.kind,
                 projection.name.clone(),
+                projection.description.clone(),
+                projection.avatar_object_id.clone(),
                 projection.owner_ptid.clone(),
                 projection.membership_epoch,
                 projection.mls_epoch,
@@ -2435,7 +2656,8 @@ impl MessagingStore {
         let persisted_members = {
             let mut statement = transaction
                 .prepare(
-                    "SELECT ptid, role
+                    "SELECT ptid, role, home_station_peer_id, muted,
+                            muted_until_unix_ms
                      FROM messaging_conversation_members
                      WHERE conversation_id = ?1 AND active = 1
                      ORDER BY ptid ASC",
@@ -2446,6 +2668,9 @@ impl MessagingStore {
                     Ok(ConversationMemberProjection {
                         ptid: row.get(0)?,
                         role: row.get(1)?,
+                        home_station_peer_id: row.get(2)?,
+                        muted: row.get(3)?,
+                        muted_until_unix_ms: row.get(4)?,
                     })
                 })
                 .map_err(|error| error.to_string())?
@@ -2551,8 +2776,8 @@ impl MessagingStore {
         let mut statement = connection
             .prepare(
                 "SELECT attachment_id, filename, mime_type, plaintext_size,
-                        plaintext_sha256, object_key, base_nonce, descriptor_bytes,
-                        voice_note_bytes
+                        plaintext_sha256, object_key, base_nonce, content_kind,
+                        duration_ms, descriptor_bytes
                  FROM messaging_attachment_projections
                  WHERE message_id = ?1
                  ORDER BY attachment_id",
@@ -2560,7 +2785,7 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         projection.attachments = statement
             .query_map(params![message_id], |row| {
-                let descriptor_bytes = row.get::<_, Vec<u8>>(7)?;
+                let descriptor_bytes = row.get::<_, Vec<u8>>(9)?;
                 let object = crate::model::chat::EncryptedObjectDescriptor::decode(
                     descriptor_bytes.as_slice(),
                 )
@@ -2586,7 +2811,14 @@ impl MessagingStore {
                     object_key: row.get(5)?,
                     base_nonce: row.get(6)?,
                     object: Some(object),
-                    voice_note: decode_voice_note_column(row.get(8)?, 8)?,
+                    content_kind: row.get(7)?,
+                    duration_ms: row.get::<_, i64>(8)?.try_into().map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Integer,
+                            Box::new(error),
+                        )
+                    })?,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -3648,10 +3880,9 @@ impl MessagingStore {
         let mut statement = connection
             .prepare(
                 "SELECT conversation_id, authority_station_id, federation_id,
-                        kind, name, owner_ptid,
+                        kind, name, description, avatar_object_id, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations
-                 WHERE active = 1
                  ORDER BY conversation_id",
             )
             .map_err(|error| error.to_string())?;
@@ -3664,10 +3895,12 @@ impl MessagingStore {
                     row.get::<_, i32>(3)?,
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
-                    row.get::<_, i64>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, bool>(8)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, i64>(8)?,
                     row.get::<_, i64>(9)?,
+                    row.get::<_, bool>(10)?,
+                    row.get::<_, i64>(11)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -3681,6 +3914,8 @@ impl MessagingStore {
                     federation_id,
                     kind,
                     name,
+                    description,
+                    avatar_object_id,
                     owner_ptid,
                     membership_epoch,
                     mls_epoch,
@@ -3689,7 +3924,9 @@ impl MessagingStore {
                 )| {
                     let mut members_statement = connection
                         .prepare(
-                            "SELECT ptid, role FROM messaging_conversation_members
+                            "SELECT ptid, role, home_station_peer_id, muted,
+                                    muted_until_unix_ms
+                             FROM messaging_conversation_members
                              WHERE conversation_id = ?1 AND active = 1
                              ORDER BY ptid",
                         )
@@ -3699,6 +3936,9 @@ impl MessagingStore {
                             Ok(ConversationMemberProjection {
                                 ptid: row.get::<_, String>(0)?,
                                 role: row.get::<_, i32>(1)?,
+                                home_station_peer_id: row.get(2)?,
+                                muted: row.get(3)?,
+                                muted_until_unix_ms: row.get(4)?,
                             })
                         })
                         .map_err(|error| error.to_string())?
@@ -3710,6 +3950,8 @@ impl MessagingStore {
                         federation_id,
                         kind,
                         name,
+                        description,
+                        avatar_object_id,
                         owner_ptid,
                         members,
                         membership_epoch,
@@ -3760,9 +4002,9 @@ impl MessagingStore {
             .execute(
                 "INSERT INTO messaging_conversations(
                     conversation_id, authority_station_id, federation_id,
-                    kind, name, owner_ptid,
+                    kind, name, description, avatar_object_id, owner_ptid,
                     membership_epoch, mls_epoch, active, updated_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1, ?11)
                  ON CONFLICT(conversation_id) DO UPDATE SET
                     federation_id=excluded.federation_id
                  WHERE messaging_conversations.federation_id = ''",
@@ -3772,6 +4014,8 @@ impl MessagingStore {
                     projection.federation_id,
                     projection.kind,
                     projection.name,
+                    projection.description,
+                    projection.avatar_object_id,
                     projection.owner_ptid,
                     projection.membership_epoch,
                     projection.mls_epoch,
@@ -3794,12 +4038,23 @@ impl MessagingStore {
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversation_members(
-                            conversation_id, ptid, role, active
-                         ) VALUES (?1, ?2, ?3, 1)
+                            conversation_id, ptid, role, home_station_peer_id,
+                            muted, muted_until_unix_ms, active
+                         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)
                          ON CONFLICT(conversation_id, ptid) DO UPDATE SET
                             role=excluded.role,
+                            home_station_peer_id=excluded.home_station_peer_id,
+                            muted=excluded.muted,
+                            muted_until_unix_ms=excluded.muted_until_unix_ms,
                             active=1",
-                        params![projection.conversation_id, member.ptid, member.role],
+                        params![
+                            projection.conversation_id,
+                            member.ptid,
+                            member.role,
+                            member.home_station_peer_id,
+                            member.muted,
+                            member.muted_until_unix_ms,
+                        ],
                     )
                     .map_err(|error| error.to_string())?;
             }
@@ -3980,9 +4235,9 @@ impl MessagingStore {
                 .execute(
                     "INSERT INTO messaging_attachment_drafts(
                         attachment_id, conversation_id, message_id, filename,
-                        mime_type, plaintext_sha256, descriptor_bytes,
-                        voice_note_bytes, created_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8)",
+                        mime_type, plaintext_sha256, content_kind, duration_ms,
+                        descriptor_bytes, created_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9)",
                     params![
                         transfer.attachment_id,
                         transfer.conversation_id,
@@ -3990,7 +4245,8 @@ impl MessagingStore {
                         upload.filename,
                         upload.mime_type,
                         upload.plaintext_sha256,
-                        encode_voice_note_column(upload.voice_note.as_ref()),
+                        upload.content_kind,
+                        upload.duration_ms,
                         draft.created_at_unix_ms,
                     ],
                 )
@@ -4260,7 +4516,8 @@ impl MessagingStore {
                         attachment.filename, attachment.mime_type,
                         attachment.plaintext_size, attachment.plaintext_sha256,
                         attachment.object_key, attachment.base_nonce,
-                        attachment.descriptor_bytes, attachment.voice_note_bytes,
+                        attachment.content_kind, attachment.duration_ms,
+                        attachment.descriptor_bytes,
                         attachment.local_cache_path
                  FROM messaging_attachment_projections attachment
                  JOIN messaging_message_projections message
@@ -4270,7 +4527,7 @@ impl MessagingStore {
                  WHERE attachment.attachment_id = ?1",
                 params![attachment_id],
                 |row| {
-                    let descriptor_bytes = row.get::<_, Vec<u8>>(9)?;
+                    let descriptor_bytes = row.get::<_, Vec<u8>>(11)?;
                     let object = EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice())
                         .map_err(|error| {
                             rusqlite::Error::FromSqlConversionFailure(
@@ -4298,9 +4555,16 @@ impl MessagingStore {
                             object_key: row.get(7)?,
                             base_nonce: row.get(8)?,
                             object: Some(object),
-                            voice_note: decode_voice_note_column(row.get(10)?, 10)?,
+                            content_kind: row.get(9)?,
+                            duration_ms: row.get::<_, i64>(10)?.try_into().map_err(|error| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    10,
+                                    rusqlite::types::Type::Integer,
+                                    Box::new(error),
+                                )
+                            })?,
                         },
-                        local_cache_path: row.get(11)?,
+                        local_cache_path: row.get(12)?,
                     })
                 },
             )
@@ -5410,7 +5674,7 @@ impl MessagingStore {
             .prepare(
                 "SELECT message_id, attachment_id, filename, mime_type,
                         plaintext_size, plaintext_sha256, object_key, base_nonce,
-                        descriptor_bytes, voice_note_bytes
+                        content_kind, duration_ms, descriptor_bytes
                  FROM messaging_attachment_projections
                  WHERE message_id IN (
                      SELECT message_id FROM messaging_message_projections
@@ -5424,7 +5688,7 @@ impl MessagingStore {
             .map_err(|error| error.to_string())?;
         let attachments = attachment_statement
             .query_map([], |row| {
-                let descriptor_bytes = row.get::<_, Vec<u8>>(8)?;
+                let descriptor_bytes = row.get::<_, Vec<u8>>(10)?;
                 let object = crate::model::chat::EncryptedObjectDescriptor::decode(
                     descriptor_bytes.as_slice(),
                 )
@@ -5451,7 +5715,14 @@ impl MessagingStore {
                     object_key: row.get(6)?,
                     base_nonce: row.get(7)?,
                     object: Some(object),
-                    voice_note: decode_voice_note_column(row.get(9)?, 9)?,
+                    content_kind: row.get(8)?,
+                    duration_ms: row.get::<_, i64>(9)?.try_into().map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            9,
+                            rusqlite::types::Type::Integer,
+                            Box::new(error),
+                        )
+                    })?,
                 };
                 Ok(RecoveryAttachmentMetadata {
                     message_id: row.get(0)?,
@@ -5693,11 +5964,11 @@ impl MessagingStore {
                 .execute(
                     "INSERT INTO messaging_attachment_projections(
                         message_id, attachment_id, object_id, storage_ref,
-                        filename, mime_type, plaintext_size, plaintext_sha256,
-                        object_key, base_nonce, descriptor_bytes, voice_note_bytes,
+                        filename, mime_type, content_kind, duration_ms,
+                        plaintext_size, plaintext_sha256, object_key, base_nonce, descriptor_bytes,
                         availability_state, local_cache_path
                      ) VALUES (
-                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
                         'remote', NULL
                      )",
                     params![
@@ -5707,13 +5978,14 @@ impl MessagingStore {
                         object.storage_ref,
                         metadata.filename,
                         metadata.mime_type,
+                        metadata.content_kind,
+                        metadata.duration_ms,
                         i64::try_from(metadata.plaintext_size)
                             .map_err(|_| "attachment plaintext size exceeds i64")?,
                         metadata.plaintext_sha256,
                         metadata.object_key,
                         metadata.base_nonce,
                         object.encode_to_vec(),
-                        encode_voice_note_column(metadata.voice_note.as_ref()),
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -8582,11 +8854,11 @@ impl MessagingStore {
                     .execute(
                         "INSERT INTO messaging_attachment_projections(
                             message_id, attachment_id, object_id, storage_ref,
-                            filename, mime_type, plaintext_size, plaintext_sha256,
-                            object_key, base_nonce, descriptor_bytes, voice_note_bytes,
+                            filename, mime_type, content_kind, duration_ms,
+                            plaintext_size, plaintext_sha256, object_key, base_nonce, descriptor_bytes,
                             availability_state, local_cache_path
                          ) VALUES (
-                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
                             'remote', NULL
                          )",
                         params![
@@ -8596,13 +8868,14 @@ impl MessagingStore {
                             object.storage_ref,
                             attachment.filename,
                             attachment.mime_type,
+                            attachment.content_kind,
+                            attachment.duration_ms,
                             i64::try_from(attachment.plaintext_size)
                                 .map_err(|_| "attachment plaintext size exceeds i64")?,
                             attachment.plaintext_sha256,
                             attachment.object_key,
                             attachment.base_nonce,
                             object.encode_to_vec(),
-                            encode_voice_note_column(attachment.voice_note.as_ref()),
                         ],
                     )
                     .map_err(|error| error.to_string())?;
@@ -9695,6 +9968,8 @@ impl MetadataInteractionRepository for MessagingStore {
         persist_interaction_command(
             &transaction,
             &InteractionCommandCommit {
+                logical_intent_id: commit.logical_intent_id,
+                replaces_command_id: commit.replaces_command_id,
                 command_id: commit.command_id,
                 conversation_id: commit.conversation_id,
                 target_message_id: commit.target_message_id,
@@ -9814,6 +10089,8 @@ impl DirectOutboundRepository for MessagingStore {
             return Err("messaging Direct edit requires sessions".to_string());
         }
         let interaction = InteractionCommandCommit {
+            logical_intent_id: commit.logical_intent_id,
+            replaces_command_id: commit.replaces_command_id,
             command_id: commit.command_id,
             conversation_id: commit.conversation_id,
             target_message_id: commit.target_message_id,
@@ -9954,6 +10231,8 @@ impl MlsOutboundRepository for MessagingStore {
         MessagingStore::persist_mls_interaction_command(
             self,
             &InteractionCommandCommit {
+                logical_intent_id: commit.logical_intent_id,
+                replaces_command_id: commit.replaces_command_id,
                 command_id: commit.command_id,
                 conversation_id: commit.conversation_id,
                 target_message_id: commit.target_message_id,
@@ -10254,6 +10533,8 @@ fn desktop_conversation_projection(
         federation_id: projection.federation_id.clone(),
         kind: projection.kind,
         name: projection.name.clone(),
+        description: projection.description.clone(),
+        avatar_object_id: projection.avatar_object_id.clone(),
         owner_ptid: projection.owner_ptid.clone(),
         members: projection
             .members
@@ -10261,6 +10542,9 @@ fn desktop_conversation_projection(
             .map(|member| ConversationMemberProjection {
                 ptid: member.ptid.clone(),
                 role: member.role,
+                home_station_peer_id: member.home_station_peer_id.clone(),
+                muted: member.muted,
+                muted_until_unix_ms: member.muted_until_unix_ms,
             })
             .collect(),
         membership_epoch: projection.membership_epoch,
@@ -11042,28 +11326,6 @@ fn apply_terminal_command_result(
     Ok(())
 }
 
-fn encode_voice_note_column(voice_note: Option<&VoiceNoteMetadata>) -> Vec<u8> {
-    voice_note.map(Message::encode_to_vec).unwrap_or_default()
-}
-
-fn decode_voice_note_column(
-    bytes: Vec<u8>,
-    column_index: usize,
-) -> rusqlite::Result<Option<VoiceNoteMetadata>> {
-    if bytes.is_empty() {
-        return Ok(None);
-    }
-    VoiceNoteMetadata::decode(bytes.as_slice())
-        .map(Some)
-        .map_err(|error| {
-            rusqlite::Error::FromSqlConversionFailure(
-                column_index,
-                rusqlite::types::Type::Blob,
-                Box::new(error),
-            )
-        })
-}
-
 fn persist_sender_content(
     transaction: &Transaction<'_>,
     conversation_id: &str,
@@ -11085,11 +11347,11 @@ fn persist_sender_content(
             .execute(
                 "INSERT INTO messaging_attachment_projections(
                     message_id, attachment_id, object_id, storage_ref,
-                    filename, mime_type, plaintext_size, plaintext_sha256,
-                    object_key, base_nonce, descriptor_bytes, voice_note_bytes,
+                    filename, mime_type, content_kind, duration_ms,
+                    plaintext_size, plaintext_sha256, object_key, base_nonce, descriptor_bytes,
                     availability_state, local_cache_path
                  ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
                     'local', NULL
                  )
                  ON CONFLICT(message_id, attachment_id) DO UPDATE SET
@@ -11098,12 +11360,13 @@ fn persist_sender_content(
                    AND messaging_attachment_projections.storage_ref = excluded.storage_ref
                    AND messaging_attachment_projections.filename = excluded.filename
                    AND messaging_attachment_projections.mime_type = excluded.mime_type
+                   AND messaging_attachment_projections.content_kind = excluded.content_kind
+                   AND messaging_attachment_projections.duration_ms = excluded.duration_ms
                    AND messaging_attachment_projections.plaintext_size = excluded.plaintext_size
                    AND messaging_attachment_projections.plaintext_sha256 = excluded.plaintext_sha256
                    AND messaging_attachment_projections.object_key = excluded.object_key
                    AND messaging_attachment_projections.base_nonce = excluded.base_nonce
-                   AND messaging_attachment_projections.descriptor_bytes = excluded.descriptor_bytes
-                   AND messaging_attachment_projections.voice_note_bytes = excluded.voice_note_bytes",
+                   AND messaging_attachment_projections.descriptor_bytes = excluded.descriptor_bytes",
                 params![
                     message_id,
                     attachment.attachment_id,
@@ -11111,13 +11374,14 @@ fn persist_sender_content(
                     object.storage_ref,
                     attachment.filename,
                     attachment.mime_type,
+                    attachment.content_kind,
+                    attachment.duration_ms,
                     i64::try_from(attachment.plaintext_size)
                         .map_err(|_| "attachment plaintext size exceeds i64")?,
                     attachment.plaintext_sha256,
                     attachment.object_key,
                     attachment.base_nonce,
                     object.encode_to_vec(),
-                    encode_voice_note_column(attachment.voice_note.as_ref()),
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -11171,8 +11435,8 @@ fn load_attachment_metadata(
     let mut statement = connection
         .prepare(
             "SELECT attachment_id, filename, mime_type, plaintext_size,
-                    plaintext_sha256, object_key, base_nonce, descriptor_bytes,
-                    voice_note_bytes
+                    plaintext_sha256, object_key, base_nonce, content_kind,
+                    duration_ms, descriptor_bytes
              FROM messaging_attachment_projections
              WHERE message_id = ?1
              ORDER BY attachment_id",
@@ -11180,7 +11444,7 @@ fn load_attachment_metadata(
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map(params![message_id], |row| {
-            let descriptor_bytes = row.get::<_, Vec<u8>>(7)?;
+            let descriptor_bytes = row.get::<_, Vec<u8>>(9)?;
             let object = EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice()).map_err(
                 |error| {
                     rusqlite::Error::FromSqlConversionFailure(
@@ -11205,7 +11469,14 @@ fn load_attachment_metadata(
                 object_key: row.get(5)?,
                 base_nonce: row.get(6)?,
                 object: Some(object),
-                voice_note: decode_voice_note_column(row.get(8)?, 8)?,
+                content_kind: row.get(7)?,
+                duration_ms: row.get::<_, i64>(8)?.try_into().map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        8,
+                        rusqlite::types::Type::Integer,
+                        Box::new(error),
+                    )
+                })?,
             })
         })
         .map_err(|error| error.to_string())?
@@ -11235,8 +11506,8 @@ fn load_staged_attachment_metadata(
         .prepare(
             "SELECT draft.attachment_id, draft.filename, draft.mime_type,
                     transfer.plaintext_size, draft.plaintext_sha256,
-                    transfer.object_key, transfer.base_nonce, draft.descriptor_bytes,
-                    draft.voice_note_bytes
+                    transfer.object_key, transfer.base_nonce, draft.content_kind,
+                    draft.duration_ms, draft.descriptor_bytes
              FROM messaging_attachment_drafts draft
              JOIN messaging_attachment_transfers transfer
                ON transfer.attachment_id = draft.attachment_id
@@ -11250,7 +11521,7 @@ fn load_staged_attachment_metadata(
         .query_map(
             params![message_id, AttachmentTransferState::Complete as i32],
             |row| {
-                let descriptor_bytes = row.get::<_, Vec<u8>>(7)?;
+                let descriptor_bytes = row.get::<_, Vec<u8>>(9)?;
                 let object = EncryptedObjectDescriptor::decode(descriptor_bytes.as_slice())
                     .map_err(|error| {
                         rusqlite::Error::FromSqlConversionFailure(
@@ -11274,7 +11545,14 @@ fn load_staged_attachment_metadata(
                     object_key: row.get(5)?,
                     base_nonce: row.get(6)?,
                     object: Some(object),
-                    voice_note: decode_voice_note_column(row.get(8)?, 8)?,
+                    content_kind: row.get(7)?,
+                    duration_ms: row.get::<_, i64>(8)?.try_into().map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Integer,
+                            Box::new(error),
+                        )
+                    })?,
                 })
             },
         )
@@ -11451,7 +11729,13 @@ fn persist_interaction_command(
     transaction: &Transaction<'_>,
     input: &InteractionCommandCommit<'_>,
 ) -> Result<(), String> {
-    if input.command_id.trim().is_empty()
+    let lineage_is_valid = match input.replaces_command_id {
+        Some(command_id) => !command_id.trim().is_empty() && command_id != input.command_id,
+        None => input.logical_intent_id == input.command_id,
+    };
+    if input.logical_intent_id.trim().is_empty()
+        || !lineage_is_valid
+        || input.command_id.trim().is_empty()
         || input.conversation_id.trim().is_empty()
         || input.target_message_id.trim().is_empty()
         || input.interaction_kind.trim().is_empty()
@@ -11465,6 +11749,68 @@ fn persist_interaction_command(
         || (input.interaction_kind != "edit" && input.edited_text.is_some())
     {
         return Err("messaging interaction command is incomplete".to_string());
+    }
+    let command_identity = decode_interaction_command_identity(
+        input.command_bytes,
+        input.command_id,
+        input.conversation_id,
+        input.target_message_id,
+        input.interaction_kind,
+    )?;
+    if let Some(replaced_command_id) = input.replaces_command_id {
+        let replaced = transaction
+            .query_row(
+                "SELECT intent.intent_id, intent.conversation_id,
+                        intent.target_message_id, intent.interaction_kind,
+                        intent.edited_text, intent.state, command.command_bytes
+                 FROM messaging_interaction_intents intent
+                 JOIN messaging_local_commands command
+                   ON command.command_id = intent.command_id
+                 WHERE intent.command_id = ?1",
+                params![replaced_command_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, Vec<u8>>(6)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging replaced interaction intent is unavailable".to_string())?;
+        let replaced_identity = decode_interaction_command_identity(
+            &replaced.6,
+            replaced_command_id,
+            &replaced.1,
+            &replaced.2,
+            &replaced.3,
+        )?;
+        if replaced.0 != input.logical_intent_id
+            || replaced.1 != input.conversation_id
+            || replaced.2 != input.target_message_id
+            || replaced.3 != input.interaction_kind
+            || replaced.4.as_deref() != input.edited_text
+            || replaced.5 != "superseded"
+            || replaced_identity != command_identity
+        {
+            return Err("messaging interaction replacement does not match intent".to_string());
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE messaging_interaction_intents
+                 SET state = 'replaced'
+                 WHERE command_id = ?1 AND state = 'superseded'",
+                params![replaced_command_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("messaging interaction replacement was not fenced".to_string());
+        }
     }
     transaction
         .execute(
@@ -11512,11 +11858,14 @@ fn persist_interaction_command(
     transaction
         .execute(
             "INSERT INTO messaging_interaction_intents(
-                command_id, conversation_id, target_message_id,
+                command_id, intent_id, replaces_command_id,
+                conversation_id, target_message_id,
                 interaction_kind, edited_text, state, created_at_unix_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, 'prepared', ?6)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'prepared', ?8)",
             params![
                 input.command_id,
+                input.logical_intent_id,
+                input.replaces_command_id.unwrap_or_default(),
                 input.conversation_id,
                 input.target_message_id,
                 input.interaction_kind,
@@ -11526,6 +11875,165 @@ fn persist_interaction_command(
         )
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum InteractionCommandIdentity {
+    Edit(String),
+    Retract(String),
+    Reaction {
+        message_id: String,
+        reaction: String,
+        remove: bool,
+    },
+    Pin {
+        message_id: String,
+        remove: bool,
+    },
+}
+
+fn decode_interaction_command_identity(
+    command_bytes: &[u8],
+    expected_command_id: &str,
+    expected_conversation_id: &str,
+    expected_target_message_id: &str,
+    expected_interaction_kind: &str,
+) -> Result<(String, String, InteractionCommandIdentity), String> {
+    let command = ChatCommand::decode(command_bytes)
+        .map_err(|error| format!("decode messaging interaction command: {error}"))?;
+    if command.encode_to_vec() != command_bytes {
+        return Err("messaging interaction command bytes are not canonical".to_string());
+    }
+    let sender = command
+        .sender
+        .as_ref()
+        .ok_or_else(|| "messaging interaction command sender is missing".to_string())?;
+    let identity = match command.payload.as_ref() {
+        Some(chat_command::Payload::EditMessage(edit)) => {
+            InteractionCommandIdentity::Edit(edit.message_id.clone())
+        }
+        Some(chat_command::Payload::RetractMessage(retract)) => {
+            InteractionCommandIdentity::Retract(retract.message_id.clone())
+        }
+        Some(chat_command::Payload::Reaction(reaction)) => InteractionCommandIdentity::Reaction {
+            message_id: reaction.message_id.clone(),
+            reaction: reaction.reaction.clone(),
+            remove: reaction.remove,
+        },
+        Some(chat_command::Payload::PinMessage(pin)) => InteractionCommandIdentity::Pin {
+            message_id: pin.message_id.clone(),
+            remove: pin.remove,
+        },
+        _ => {
+            return Err("messaging interaction command payload is unsupported".to_string());
+        }
+    };
+    let (interaction_kind, target_message_id) = match &identity {
+        InteractionCommandIdentity::Edit(message_id) => ("edit", message_id.as_str()),
+        InteractionCommandIdentity::Retract(message_id) => ("retract", message_id.as_str()),
+        InteractionCommandIdentity::Reaction {
+            message_id, remove, ..
+        } => (
+            if *remove {
+                "reaction-remove"
+            } else {
+                "reaction-add"
+            },
+            message_id.as_str(),
+        ),
+        InteractionCommandIdentity::Pin { message_id, remove } => {
+            (if *remove { "unpin" } else { "pin" }, message_id.as_str())
+        }
+    };
+    if command.command_id != expected_command_id
+        || command.conversation_id != expected_conversation_id
+        || sender.ptid.trim().is_empty()
+        || sender.device_id.trim().is_empty()
+        || interaction_kind != expected_interaction_kind
+        || target_message_id != expected_target_message_id
+    {
+        return Err("messaging interaction command identity mismatch".to_string());
+    }
+    Ok((sender.ptid.clone(), sender.device_id.clone(), identity))
+}
+
+fn persist_non_message_command(
+    transaction: &Transaction<'_>,
+    command_id: &str,
+    conversation_id: &str,
+    command_bytes: &[u8],
+    authority_binding_sha256: &[u8],
+    created_at_unix_ms: i64,
+) -> Result<(), String> {
+    if command_id.trim().is_empty()
+        || conversation_id.trim().is_empty()
+        || command_bytes.is_empty()
+        || authority_binding_sha256.len() != 32
+        || created_at_unix_ms <= 0
+    {
+        return Err("messaging non-message command is incomplete".to_string());
+    }
+    transaction
+        .execute(
+            "INSERT INTO messaging_local_commands(
+                command_id, conversation_id, command_bytes, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, 'prepared', ?4)",
+            params![
+                command_id,
+                conversation_id,
+                command_bytes,
+                created_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_command_outbox(
+                command_id, conversation_id, command_bytes, state,
+                attempt_count, next_attempt_at_unix_ms,
+                last_error_code, created_at_unix_ms
+             ) VALUES (?1, ?2, ?3, 'pending', 0, ?4, '', ?4)",
+            params![
+                command_id,
+                conversation_id,
+                command_bytes,
+                created_at_unix_ms
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO messaging_command_attempts(
+                command_id, conversation_id, message_id,
+                delivery_plan_sha256, state, created_at_unix_ms
+             ) VALUES (?1, ?2, ?2, ?3, 'prepared', ?4)",
+            params![
+                command_id,
+                conversation_id,
+                authority_binding_sha256,
+                created_at_unix_ms,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn timestamp_millis(timestamp: Option<&prost_types::Timestamp>) -> Result<i64, String> {
+    let timestamp =
+        timestamp.ok_or_else(|| "messaging command timestamp is missing".to_string())?;
+    if timestamp.seconds < 0
+        || timestamp.nanos < 0
+        || timestamp.nanos >= 1_000_000_000
+        || timestamp.nanos % 1_000_000 != 0
+    {
+        return Err("messaging command timestamp is invalid".to_string());
+    }
+    timestamp
+        .seconds
+        .checked_mul(1_000)
+        .and_then(|value| value.checked_add(i64::from(timestamp.nanos) / 1_000_000))
+        .filter(|value| *value > 0)
+        .ok_or_else(|| "messaging command timestamp is invalid".to_string())
 }
 
 fn desktop_pending_projection<'a>(
@@ -13696,8 +14204,33 @@ mod tests {
     use crate::domain::crypto::IdentityKeyPair;
     use crate::messaging::attachment_transfer;
     use crate::messaging::private_content::test_attachment_metadata;
-    use crate::model::chat::AttachmentTransferErrorCode;
+    use crate::model::chat::{AttachmentTransferErrorCode, ReactionIntent};
     use messaging_core::identity::generate_fresh_device_identity;
+
+    fn reaction_command(command_id: &str, reaction: &str) -> Vec<u8> {
+        ChatCommand {
+            command_id: command_id.to_string(),
+            conversation_id: "conversation-1".to_string(),
+            sender: Some(crate::model::chat::CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            }),
+            observed_membership_epoch: 1,
+            observed_mls_epoch: 0,
+            client_timestamp: Some(prost_types::Timestamp {
+                seconds: 1,
+                nanos: 0,
+            }),
+            delivery_plan_sha256: vec![7; 32],
+            authority_station_peer_id: "station-local".to_string(),
+            payload: Some(chat_command::Payload::Reaction(ReactionIntent {
+                message_id: "message-1".to_string(),
+                reaction: reaction.to_string(),
+                remove: false,
+            })),
+        }
+        .encode_to_vec()
+    }
 
     fn direct_conversation_projection() -> ConversationProjection {
         ConversationProjection {
@@ -13706,15 +14239,19 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Direct as i32,
             name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 ConversationMemberProjection {
                     ptid: "ptid:alice".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:bob".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
             ],
             membership_epoch: 1,
@@ -14216,15 +14753,19 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: 2,
             name: "Role group".to_string(),
+            description: "Role-aware group".to_string(),
+            avatar_object_id: "oss://chat/role-group-avatar".to_string(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 ConversationMemberProjection {
                     ptid: "ptid:alice".to_string(),
                     role: MemberRole::Owner as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:bob".to_string(),
                     role: MemberRole::Admin as i32,
+                    ..Default::default()
                 },
             ],
             membership_epoch: 1,
@@ -14238,6 +14779,8 @@ mod tests {
             .unwrap());
         let persisted = &store.conversation_projections().unwrap()[0];
         assert_eq!(persisted.federation_id, projection.federation_id);
+        assert_eq!(persisted.description, projection.description);
+        assert_eq!(persisted.avatar_object_id, projection.avatar_object_id);
         assert_eq!(persisted.members, projection.members);
     }
 
@@ -14250,15 +14793,19 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Direct as i32,
             name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 ConversationMemberProjection {
                     ptid: "ptid:alice".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:bob".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
             ],
             membership_epoch: 1,
@@ -14299,15 +14846,19 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Direct as i32,
             name: String::new(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 ConversationMemberProjection {
                     ptid: "ptid:alice".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:bob".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
             ],
             membership_epoch: 1,
@@ -14552,15 +15103,19 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Group as i32,
             name: "Genesis group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 ConversationMemberProjection {
                     ptid: "ptid:alice".to_string(),
                     role: MemberRole::Owner as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:bob".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
             ],
             membership_epoch: 1,
@@ -14622,19 +15177,24 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Group as i32,
             name: "Membership group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 ConversationMemberProjection {
                     ptid: "ptid:alice".to_string(),
                     role: MemberRole::Owner as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:bob".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:charlie".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
             ],
             membership_epoch: 1,
@@ -14723,19 +15283,24 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Group as i32,
             name: "Recipient membership group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 ConversationMemberProjection {
                     ptid: "ptid:alice".to_string(),
                     role: MemberRole::Owner as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:bob".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
                 ConversationMemberProjection {
                     ptid: "ptid:charlie".to_string(),
                     role: MemberRole::Member as i32,
+                    ..Default::default()
                 },
             ],
             membership_epoch: 1,
@@ -15835,13 +16400,13 @@ mod tests {
                 .execute(
                     "INSERT INTO messaging_attachment_projections(
                         message_id, attachment_id, object_id, storage_ref,
-                        filename, mime_type, plaintext_size, plaintext_sha256,
-                        object_key, base_nonce, descriptor_bytes, voice_note_bytes,
+                        filename, mime_type, content_kind, duration_ms,
+                        plaintext_size, plaintext_sha256, object_key, base_nonce, descriptor_bytes,
                         availability_state, local_cache_path
                      ) VALUES (
                         'message-1', 'attachment-redacted', 'object-1', 'storage-1',
-                        'secret.bin', 'application/octet-stream', 19, zeroblob(32),
-                        zeroblob(32), zeroblob(12), X'01', X'', 'local', ?1
+                        'secret.bin', 'application/octet-stream', 1, 0, 19, zeroblob(32),
+                        zeroblob(32), zeroblob(12), X'01', 'local', ?1
                      )",
                     params![path.to_string_lossy()],
                 )
@@ -16158,24 +16723,27 @@ mod tests {
     #[test]
     fn interaction_command_uses_the_shared_durable_outbox_owner() {
         let store = MessagingStore::in_memory().unwrap();
+        let command_bytes = reaction_command("interaction-1", "thumbs-up");
         store
             .persist_interaction_command(&InteractionCommandCommit {
+                logical_intent_id: "interaction-1",
+                replaces_command_id: None,
                 command_id: "interaction-1",
                 conversation_id: "conversation-1",
                 target_message_id: "message-1",
                 interaction_kind: "reaction-add",
                 edited_text: None,
-                command_bytes: b"exact interaction bytes",
+                command_bytes: &command_bytes,
                 delivery_plan_sha256: &[7; 32],
                 created_at_unix_ms: 10,
             })
             .unwrap();
         let next = store.next_command(10).unwrap().unwrap();
         assert_eq!(next.command_id, "interaction-1");
-        assert_eq!(next.command_bytes, b"exact interaction bytes");
+        assert_eq!(next.command_bytes, command_bytes);
 
         store
-            .mark_command_submitted("interaction-1", b"exact interaction bytes", 0)
+            .mark_command_submitted("interaction-1", &command_bytes, 0)
             .unwrap();
         let connection = store.connection().unwrap();
         for table in [
@@ -16322,7 +16890,8 @@ mod tests {
                     filename: metadata.filename.clone(),
                     mime_type: metadata.mime_type.clone(),
                     plaintext_sha256: metadata.plaintext_sha256.clone(),
-                    voice_note: metadata.voice_note.clone(),
+                    content_kind: metadata.content_kind,
+                    duration_ms: metadata.duration_ms,
                 }],
             )
             .unwrap();

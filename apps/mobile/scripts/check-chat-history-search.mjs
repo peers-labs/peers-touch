@@ -22,9 +22,10 @@ const sourcePaths = [
   'apps/mobile/scripts/check-chat-history-search.mjs',
   'apps/mobile/src/features/chat/useChatHistorySearch.ts',
   'apps/mobile/src/features/chat/chatCommands.ts',
-  'apps/mobile/src/features/chat/messageProjection.ts',
+  'apps/mobile/src/features/chat/messagingProjectionAdapters.ts',
   'apps/mobile/src/services/mobileCommands.ts',
   'apps/mobile/src/features/social/socialStore.ts',
+  'apps/mobile/src/features/group/groupStore.ts',
 ];
 async function sourceHashes() {
   return Object.fromEntries(await Promise.all(sourcePaths.map(async (path) => [
@@ -392,7 +393,7 @@ try {
         assert(result.requests.every((call) => call.status !== 'pending' && call.flushed), 'All IPC must settle');
         assert.deepEqual(await json(page, 'Unexpected IPC'), []);
         assert.deepEqual(await json(page, 'Projection keys'), {
-          socialMessages: [], socialThreads: [],
+          socialMessages: [], socialThreads: [], groupMessages: [], groupThreads: [],
         }, 'Indexed search must not hydrate runtime message projections');
         assert.deepEqual(result.blockedNetwork, [], 'API or external network was attempted');
         assert.deepEqual(result.errors, [], 'Browser errors must not be ignored');
@@ -412,9 +413,7 @@ try {
       } finally {
         try { await context.close(); } catch (error) { harnessErrors.push(`Context cleanup: ${String(error)}`); }
         results.push(result);
-        process.stdout.write(
-          `${result.status} ${result.name}${result.failure ? `: ${result.failure}` : ''}\n`,
-        );
+        process.stdout.write(`${result.status} ${result.name}\n`);
       }
     }
   }

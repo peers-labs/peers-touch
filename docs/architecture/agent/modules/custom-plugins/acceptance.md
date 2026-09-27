@@ -1,42 +1,22 @@
-# P3-M3 Custom Plugins — Acceptance
+# Rejected Custom HTTP Plugin - Retirement
 
-> **Module**: Custom Plugins | **Batch**: P3 | **Status**: ✅ S5 交付
+> **Status**: superseded
+> **Version**: v2.0
+> **Created**: 2026-08-14 | **Updated**: 2026-09-18
+> **Owner**: Peers-Touch Agent Team
 
-## D — Deterministic Gates
+The independent Custom HTTP Plugin product is rejected and removed. It has no
+accepted successor mapping and must not be imported into Tool, MCP, or
+Connector authority.
 
-| # | Check | Pass |
-|---|-------|------|
-| D1 | TS compiles | ✅ |
-| D2 | No debug statements | ✅ |
-| D3 | All UI strings via i18n | ✅ |
-| D4 | Locale keys (`agent.plugins.*`) in en + zh-CN | ✅ |
-| D5 | Store uses `createDesktopStore` | ✅ |
-| D6 | No secrets in source (authValue in localStorage only) | ✅ |
-| D7 | Page descriptor + registry | ✅ |
+Current retirement and proof sources:
 
-## F — Functional Checks
+- `docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-A03.md`
+- `docs/architecture/agent/modern-chat-agent/product-state-model.md`
+- `tooling/acceptance/matrices/agent-v2-runtime-matrix.yaml`
 
-| # | Scenario | Expected | Pass |
-|---|----------|----------|------|
-| F1 | Create plugin | Form modal → plugin card appears | ✅ |
-| F2 | Edit plugin | Update all fields | ✅ |
-| F3 | Delete plugin with confirmation | Removed | ✅ |
-| F4 | Toggle enabled/disabled | Badge reflects state | ✅ |
-| F5 | Test plugin | Sends HTTP request, shows response | ✅ |
-| F6 | Auth types (none/bearer/api-key) | Correct header sent on test | ✅ |
-| F7 | JSON Schema input | TextArea accepts valid JSON | ✅ |
-| F8 | Persistence | localStorage across refresh | ✅ |
-
-## I — Integration Checks
-
-| # | Scenario | Pass |
-|---|----------|------|
-| I1 | Test uses `fetch()` to configured endpoint | ✅ |
-| I2 | Auth credentials never logged or committed | ✅ |
-| I3 | Ready to register as MCP tool source (future) | ✅ |
-
-## Files
-
-- `src/store/customPlugins.ts`
-- `src/pages/CustomPluginsPage.tsx`, descriptor, container
-- Locale: 25 keys
+`AS-16-CUSTOM-PLUGIN-RETIREMENT` requires the page, command, navigation entry,
+credential-bearing local storage, direct network execution, proto/generated
+contracts, Station CRUD routes, persistence owner, rows, and table to be
+absent. Only non-secret migration tombstones and test fixtures may retain the
+retired storage identifiers.

@@ -1224,15 +1224,31 @@ func (p *productionDeliveryReceiptPort) ApplyDeliveryReceipt(
 	if err != nil {
 		return false, err
 	}
-	route, err := boundQuery.ResolveRoute(
+	view, err := boundQuery.Get(
 		ctx,
 		receipt.ConversationID,
+		receipt.Consumer.Actor,
 	)
 	if err != nil ||
-		route.Source != query.SourceAuthority ||
-		route.AuthorityStation != p.composition.localStation {
+		view.Source != query.SourceAuthority ||
+		view.Conversation.AuthorityStation != p.composition.localStation {
 		return false, fmt.Errorf(
 			"%w: receipt does not target the local Conversation authority",
+			conversationfederation.ErrDeliveryReceiptRejected,
+		)
+	}
+	active, err := (productionFederationMembershipProjection{}).IsActiveStation(
+		ctx,
+		transaction,
+		string(view.Conversation.FederationID),
+		sourceHomeStationPeerID,
+	)
+	if err != nil {
+		return false, err
+	}
+	if !active {
+		return false, fmt.Errorf(
+			"%w: receipt source Station is not active in the Conversation federation",
 			conversationfederation.ErrDeliveryReceiptRejected,
 		)
 	}
@@ -2131,8 +2147,8 @@ func productionFactFromWire(
 		message := payload.MessageForwarded
 		command.Payload = &chatmodel.ChatCommand_ForwardMessage{
 			ForwardMessage: &chatmodel.ForwardMessageIntent{
-				DestinationMessageId:   message.GetDestinationMessageId(),
-				ContentKind:            message.GetContentKind(),
+				DestinationMessageId:  message.GetDestinationMessageId(),
+				ContentKind:           message.GetContentKind(),
 				DestinationAttachments: message.GetDestinationAttachments(),
 			},
 		}

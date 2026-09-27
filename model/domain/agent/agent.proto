@@ -668,6 +668,16 @@ enum CapabilityPermissionState {
   CAPABILITY_PERMISSION_STATE_UNAVAILABLE = 4;
 }
 
+enum CapabilityPermissionKind {
+  CAPABILITY_PERMISSION_KIND_UNSPECIFIED = 0;
+  CAPABILITY_PERMISSION_KIND_CLIPBOARD = 1;
+  CAPABILITY_PERMISSION_KIND_FILESYSTEM = 2;
+  CAPABILITY_PERMISSION_KIND_CAMERA = 3;
+  CAPABILITY_PERMISSION_KIND_MICROPHONE = 4;
+  CAPABILITY_PERMISSION_KIND_NOTIFICATIONS = 5;
+  CAPABILITY_PERMISSION_KIND_SCREEN_CAPTURE = 6;
+}
+
 message AgentDefinition {
   string agent_id = 1;
   string ptid = 2;
@@ -892,6 +902,7 @@ message ClientCapability {
   string schema_version = 2;
   CapabilityPermissionState permission = 3;
   CapabilityConstraints constraints = 4;
+  CapabilityPermissionKind permission_kind = 5;
 }
 
 message ClientCapabilityLease {
@@ -1307,6 +1318,10 @@ message TurnDiagnosticToolFact {
   string continuation_id = 31;
   google.protobuf.Timestamp dispatch_committed_at = 32;
   bool approved = 33;
+  google.protobuf.Timestamp station_effect_started_at = 34;
+  string station_receipt_status = 35;
+  google.protobuf.Timestamp station_receipt_committed_at = 36;
+  string terminal_receipt_payload_hash = 37;
 }
 
 message TurnDiagnosticReplay {

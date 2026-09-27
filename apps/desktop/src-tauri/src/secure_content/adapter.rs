@@ -16,6 +16,7 @@ use secure_content_core::object::{
     PreparedObjectUpload,
 };
 use secure_content_core::ports::{ObjectCommitmentCodec, ObjectTransferTransport};
+use secure_content_core::prekey::canonicalize_publish_content_prekeys_request;
 use sha2::{Digest, Sha256};
 
 use crate::model::{actor, error as error_model, federation, secure_content as wire, social};
@@ -24,6 +25,8 @@ use super::store::SecureContentStore;
 use super::{SecureContentRequestGuard, SecureContentSession};
 
 const MAX_PROTO_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const DEFAULT_RETRY_AFTER_MAX_SECONDS: u64 = 300;
+const PRIVATE_CONTENT_CODE_DETAIL: &str = "private_content_code";
 const CLIENT_SIGNING_DOMAIN: &[u8] = b"peers-touch:secure-content:client-command:v1\0";
 const PUBLISH_CAPABILITY: &str = "key_exchange.content_prekey.publish";
 const INVENTORY_CAPABILITY: &str = "key_exchange.content_prekey.inventory";
@@ -40,6 +43,21 @@ pub enum NativeErrorDisposition {
 enum RequestCommitSemantics {
     ReadOnly,
     MayCommit,
+}
+
+#[derive(Clone, Copy)]
+enum RetryAfterSemantics {
+    Bounded,
+    Exact,
+}
+
+impl RetryAfterSemantics {
+    fn apply(self, seconds: u64) -> u64 {
+        match self {
+            Self::Bounded => seconds.min(DEFAULT_RETRY_AFTER_MAX_SECONDS),
+            Self::Exact => seconds,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -114,17 +132,32 @@ impl SecureContentTransport {
         &self,
         proof_free_bytes: &[u8],
     ) -> Result<wire::PublishContentPreKeysResponse, NativeTransportError> {
-        let mut request = wire::PublishContentPreKeysRequest::decode(proof_free_bytes)
-            .map_err(|_| invalid_local_request("stored publication request is invalid"))?;
+        let canonical_proof_free = canonicalize_publish_content_prekeys_request(proof_free_bytes)
+            .map_err(|_| {
+            invalid_local_request("stored publication request is not canonical")
+        })?;
+        if canonical_proof_free != proof_free_bytes {
+            return Err(invalid_local_request(
+                "stored publication request is not canonical",
+            ));
+        }
+        let mut request =
+            wire::PublishContentPreKeysRequest::decode(canonical_proof_free.as_slice())
+                .map_err(|_| invalid_local_request("stored publication request is invalid"))?;
         if request.proof.is_some() || request.command_id.trim().is_empty() {
             return Err(invalid_local_request(
                 "stored publication request is not proof-free",
             ));
         }
-        let request_hash: [u8; 32] = Sha256::digest(proof_free_bytes).into();
+        let request_hash: [u8; 32] = Sha256::digest(&canonical_proof_free).into();
         request.proof =
             Some(self.client_proof(PUBLISH_CAPABILITY, &request.command_id, request_hash)?);
-        self.post_proto("/key-exchange/content-prekeys/publish", &request)
+        let request_bytes = canonical_publication_bytes(&request).map_err(invalid_local_request)?;
+        self.post_proto_bytes_with_retry_after(
+            "/key-exchange/content-prekeys/publish",
+            &request_bytes,
+            RetryAfterSemantics::Bounded,
+        )
     }
 
     pub fn prepare_private_moment(
@@ -141,6 +174,60 @@ impl SecureContentTransport {
         self.post_proto("/api/v1/social/moments/submit-private", request)
     }
 
+    pub fn prepare_private_comment(
+        &self,
+        post_id: &str,
+        request: &social::PreparePrivateCommentRequest,
+    ) -> Result<social::PreparePrivateCommentResponse, NativeTransportError> {
+        self.post_comment_proto(
+            &format!("/api/v1/social/moments/{post_id}/comments/prepare-private"),
+            request,
+        )
+    }
+
+    pub fn submit_private_comment(
+        &self,
+        post_id: &str,
+        request_bytes: &[u8],
+    ) -> Result<social::SubmitPrivateCommentResponse, NativeTransportError> {
+        if request_bytes.is_empty() {
+            return Err(invalid_local_request(
+                "private Comment submission bytes are unavailable",
+            ));
+        }
+        social::SubmitPrivateCommentRequest::decode(request_bytes)
+            .map_err(|_| invalid_local_request("private Comment submission bytes are malformed"))?;
+        self.post_proto_bytes_with_retry_after(
+            &format!("/api/v1/social/moments/{post_id}/comments/submit-private"),
+            request_bytes,
+            RetryAfterSemantics::Exact,
+        )
+    }
+
+    pub fn get_private_comment(
+        &self,
+        post_id: &str,
+        comment_id: &str,
+    ) -> Result<social::GetMomentCommentResourceResponse, NativeTransportError> {
+        self.get_comment_proto(
+            &format!("/api/v1/social/moments/{post_id}/comments/{comment_id}"),
+            None,
+        )
+    }
+
+    pub fn list_moment_comments(
+        &self,
+        post_id: &str,
+        cursor: &str,
+        limit: u32,
+    ) -> Result<social::ListMomentCommentsResponse, NativeTransportError> {
+        let query = [("cursor", cursor.to_string()), ("limit", limit.to_string())];
+        self.get_comment_proto(
+            &format!("/api/v1/social/moments/{post_id}/comments"),
+            Some(&query),
+        )
+    }
+
     pub fn get_private_moment(
         &self,
         post_id: &str,
@@ -152,88 +239,11 @@ impl SecureContentTransport {
         &self,
         sender: &actor::ActorRef,
     ) -> Result<federation::ActorProfileEnvelope, NativeTransportError> {
-        if sender.ptid.trim().is_empty() || sender.ptid.trim() != sender.ptid {
-            return Err(invalid_local_request(
-                "Actor Federation profile PTID is invalid",
-            ));
-        }
-        let handle = if sender.acct.contains('@') {
-            sender.acct.clone()
-        } else {
-            let guard = self.session.begin_request().map_err(cancelled_error)?;
-            let profile: actor::ActorProfile =
-                crate::infrastructure::station_client::request_peers_proto_no_body_for_device_at(
-                    &self.session.station_url,
-                    reqwest::Method::GET,
-                    &format!(
-                        "/actor/actors/{}/profile",
-                        urlencoding::encode(&sender.ptid)
-                    ),
-                    guard.token(),
-                    None,
-                    &self.session.key.device_id,
-                )
-                .map_err(|_| {
-                    invalid_local_request("Actor Federation profile lookup is unavailable")
-                })?;
-            let profile_ptid = profile
-                .r#ref
-                .as_ref()
-                .map(|actor| actor.ptid.as_str())
-                .filter(|value| !value.is_empty())
-                .or_else(|| {
-                    profile
-                        .peers_touch
-                        .as_ref()
-                        .map(|identity| identity.network_id.as_str())
-                        .filter(|value| !value.is_empty())
-                })
-                .unwrap_or_default();
-            if profile_ptid != sender.ptid {
-                return Err(invalid_local_request(
-                    "Actor profile PTID does not match the requested sender",
-                ));
-            }
-            profile
-                .r#ref
-                .as_ref()
-                .map(|actor| actor.acct.trim())
-                .filter(|value| value.contains('@'))
-                .or_else(|| {
-                    let value = profile.acct.trim();
-                    value.contains('@').then_some(value)
-                })
-                .ok_or_else(|| {
-                    invalid_local_request("Actor profile has no canonical Federation handle")
-                })?
-                .to_string()
-        };
-        if handle.trim().is_empty() || handle.trim() != handle {
-            return Err(invalid_local_request(
-                "Actor Federation profile handle is invalid",
-            ));
-        }
-        let canonical_handle = handle
-            .strip_prefix('@')
-            .unwrap_or(&handle)
-            .to_ascii_lowercase();
-        let mut parts = canonical_handle.split('@');
-        if parts.next().is_none_or(str::is_empty)
-            || parts.next().is_none_or(str::is_empty)
-            || parts.next().is_some()
-        {
-            return Err(invalid_local_request(
-                "Actor Federation profile handle is invalid",
-            ));
-        }
+        let canonical_handle = canonical_actor_federated_handle(sender)?;
         let query = [("handle", canonical_handle.clone())];
         let envelope: federation::ActorProfileEnvelope =
             self.get_proto("/actor/federation/profile", Some(&query))?;
-        if envelope.federated_handle != canonical_handle {
-            return Err(invalid_local_request(
-                "Actor Federation profile response changed the requested handle",
-            ));
-        }
+        validate_actor_federation_profile_handle(&envelope, &canonical_handle)?;
         Ok(envelope)
     }
 
@@ -292,14 +302,58 @@ impl SecureContentTransport {
         Req: Message,
         Resp: Message + Default,
     {
+        self.post_proto_with_retry_after(path, request, RetryAfterSemantics::Bounded)
+    }
+
+    fn post_comment_proto<Req, Resp>(
+        &self,
+        path: &str,
+        request: &Req,
+    ) -> Result<Resp, NativeTransportError>
+    where
+        Req: Message,
+        Resp: Message + Default,
+    {
+        self.post_proto_with_retry_after(path, request, RetryAfterSemantics::Exact)
+    }
+
+    fn post_proto_with_retry_after<Req, Resp>(
+        &self,
+        path: &str,
+        request: &Req,
+        retry_after_semantics: RetryAfterSemantics,
+    ) -> Result<Resp, NativeTransportError>
+    where
+        Req: Message,
+        Resp: Message + Default,
+    {
+        self.post_proto_bytes_with_retry_after(
+            path,
+            &request.encode_to_vec(),
+            retry_after_semantics,
+        )
+    }
+
+    fn post_proto_bytes_with_retry_after<Resp>(
+        &self,
+        path: &str,
+        request_bytes: &[u8],
+        retry_after_semantics: RetryAfterSemantics,
+    ) -> Result<Resp, NativeTransportError>
+    where
+        Resp: Message + Default,
+    {
         let (_guard, builder) = self.request(reqwest::Method::POST, path)?;
-        let response = builder
-            .header(CONTENT_TYPE, "application/protobuf")
-            .header(ACCEPT, "application/protobuf")
-            .body(request.encode_to_vec())
+        let response = with_proto_content_negotiation(builder)
+            .body(request_bytes.to_vec())
             .send()
             .map_err(network_error)?;
-        decode_proto_response(response, RequestCommitSemantics::MayCommit)
+        let result = decode_proto_response_with_retry_after(
+            response,
+            RequestCommitSemantics::MayCommit,
+            retry_after_semantics,
+        );
+        result
     }
 
     fn get_proto<Resp>(
@@ -310,14 +364,38 @@ impl SecureContentTransport {
     where
         Resp: Message + Default,
     {
+        self.get_proto_with_retry_after(path, query, RetryAfterSemantics::Bounded)
+    }
+
+    fn get_comment_proto<Resp>(
+        &self,
+        path: &str,
+        query: Option<&[(&str, String)]>,
+    ) -> Result<Resp, NativeTransportError>
+    where
+        Resp: Message + Default,
+    {
+        self.get_proto_with_retry_after(path, query, RetryAfterSemantics::Exact)
+    }
+
+    fn get_proto_with_retry_after<Resp>(
+        &self,
+        path: &str,
+        query: Option<&[(&str, String)]>,
+        retry_after_semantics: RetryAfterSemantics,
+    ) -> Result<Resp, NativeTransportError>
+    where
+        Resp: Message + Default,
+    {
         let (_guard, mut request) = self.request(reqwest::Method::GET, path)?;
-        request = request.header(ACCEPT, "application/protobuf");
+        request = with_proto_content_negotiation(request);
         if let Some(query) = query {
             request = request.query(query);
         }
-        decode_proto_response(
+        decode_proto_response_with_retry_after(
             request.send().map_err(network_error)?,
             RequestCommitSemantics::ReadOnly,
+            retry_after_semantics,
         )
     }
 
@@ -339,6 +417,12 @@ impl SecureContentTransport {
     }
 }
 
+fn with_proto_content_negotiation(request: RequestBuilder) -> RequestBuilder {
+    request
+        .header(CONTENT_TYPE, "application/protobuf")
+        .header(ACCEPT, "application/protobuf")
+}
+
 pub fn jwt_session_id(token: &str) -> Result<String, String> {
     let payload = token
         .split('.')
@@ -357,14 +441,23 @@ pub fn jwt_session_id(token: &str) -> Result<String, String> {
         .ok_or_else(|| "secure content session token has no validated session ID".to_string())
 }
 
-pub fn publication_command_id(request: &wire::PublishContentPreKeysRequest) -> String {
+pub fn canonical_publication_bytes(
+    request: &wire::PublishContentPreKeysRequest,
+) -> Result<Vec<u8>, String> {
+    canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
+        .map_err(|error| format!("canonicalize Content PreKey publication: {error}"))
+}
+
+pub fn publication_command_id(
+    request: &wire::PublishContentPreKeysRequest,
+) -> Result<String, String> {
     let mut payload = request.clone();
     payload.command_id.clear();
     payload.proof = None;
-    format!(
+    Ok(format!(
         "cpk-pub-v1-{}",
-        hex::encode(Sha256::digest(payload.encode_to_vec()))
-    )
+        hex::encode(Sha256::digest(canonical_publication_bytes(&payload)?))
+    ))
 }
 
 pub fn content_prekey_target(
@@ -393,26 +486,34 @@ fn decode_proto_response<Resp: Message + Default>(
     response: Response,
     semantics: RequestCommitSemantics,
 ) -> Result<Resp, NativeTransportError> {
+    decode_proto_response_with_retry_after(response, semantics, RetryAfterSemantics::Bounded)
+}
+
+fn decode_proto_response_with_retry_after<Resp: Message + Default>(
+    response: Response,
+    semantics: RequestCommitSemantics,
+    retry_after_semantics: RetryAfterSemantics,
+) -> Result<Resp, NativeTransportError> {
     let status = response.status();
     let retry_after_seconds = response
         .headers()
         .get(RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .map(|value| value.min(300));
+        .and_then(|value| value.parse::<u64>().ok());
     let body = bounded_response_body(response).map_err(|error| {
         if status.is_success() && matches!(semantics, RequestCommitSemantics::MayCommit) {
-            unknown_commit_error(error.message)
+            committed_response_error(status.as_u16(), error.message)
         } else {
             error
         }
     })?;
     if !status.is_success() {
-        return Err(decode_typed_error(
+        return Err(decode_typed_error_with_retry_after(
             status.as_u16(),
             &body,
             retry_after_seconds,
             semantics,
+            retry_after_semantics,
         ));
     }
     Resp::decode(body.as_slice()).map_err(|_| NativeTransportError {
@@ -455,11 +556,37 @@ fn decode_typed_error(
     retry_after_seconds: Option<u64>,
     semantics: RequestCommitSemantics,
 ) -> NativeTransportError {
+    decode_typed_error_with_retry_after(
+        status,
+        body,
+        retry_after_seconds,
+        semantics,
+        RetryAfterSemantics::Bounded,
+    )
+}
+
+fn decode_typed_error_with_retry_after(
+    status: u16,
+    body: &[u8],
+    retry_after_seconds: Option<u64>,
+    semantics: RequestCommitSemantics,
+    retry_after_semantics: RetryAfterSemantics,
+) -> NativeTransportError {
     let typed = error_model::ErrorResponse::decode(body).ok();
     let stable_code = typed
         .as_ref()
         .map(|error| error.code)
         .unwrap_or(error_model::ErrorCode::Undefined as i32);
+    let message = typed
+        .as_ref()
+        .and_then(|error| error.details.get(PRIVATE_CONTENT_CODE_DETAIL))
+        .filter(|code| !code.trim().is_empty())
+        .cloned()
+        .unwrap_or_else(|| {
+            error_model::ErrorCode::try_from(stable_code)
+                .map(|code| code.as_str_name().to_string())
+                .unwrap_or_else(|_| "ERROR_CODE_UNDEFINED".to_string())
+        });
     let disposition = match (typed.is_some(), stable_code) {
         (false, _) if matches!(semantics, RequestCommitSemantics::MayCommit) => {
             NativeErrorDisposition::UnknownCommit
@@ -473,11 +600,10 @@ fn decode_typed_error(
     NativeTransportError {
         http_status: Some(status),
         stable_code,
-        retry_after_seconds: retry_after_seconds.map(|seconds| seconds.min(300)),
+        retry_after_seconds: retry_after_seconds
+            .map(|seconds| retry_after_semantics.apply(seconds)),
         disposition,
-        message: error_model::ErrorCode::try_from(stable_code)
-            .map(|code| code.as_str_name().to_string())
-            .unwrap_or_else(|_| "ERROR_CODE_UNDEFINED".to_string()),
+        message,
     }
 }
 
@@ -499,6 +625,59 @@ fn unknown_commit_error(message: impl Into<String>) -> NativeTransportError {
         disposition: NativeErrorDisposition::UnknownCommit,
         message: message.into(),
     }
+}
+
+fn committed_response_error(status: u16, message: impl Into<String>) -> NativeTransportError {
+    NativeTransportError {
+        http_status: Some(status),
+        stable_code: error_model::ErrorCode::InvalidProtobuf as i32,
+        retry_after_seconds: None,
+        disposition: NativeErrorDisposition::UnknownCommit,
+        message: message.into(),
+    }
+}
+
+fn canonical_actor_federated_handle(
+    sender: &actor::ActorRef,
+) -> Result<String, NativeTransportError> {
+    if sender.ptid.trim().is_empty() || sender.ptid.trim() != sender.ptid {
+        return Err(invalid_local_request(
+            "Actor Federation profile PTID is invalid",
+        ));
+    }
+    canonical_federated_handle(&sender.acct).ok_or_else(|| {
+        invalid_local_request("Actor Federation profile persisted handle is unavailable")
+    })
+}
+
+fn canonical_federated_handle(value: &str) -> Option<String> {
+    if value.trim().is_empty() || value.trim() != value || value.as_bytes().contains(&0) {
+        return None;
+    }
+    let bare = value
+        .strip_prefix('@')
+        .unwrap_or(value)
+        .to_ascii_lowercase();
+    let mut parts = bare.split('@');
+    if parts.next().is_none_or(str::is_empty)
+        || parts.next().is_none_or(str::is_empty)
+        || parts.next().is_some()
+    {
+        return None;
+    }
+    Some(format!("@{bare}"))
+}
+
+fn validate_actor_federation_profile_handle(
+    envelope: &federation::ActorProfileEnvelope,
+    expected_handle: &str,
+) -> Result<(), NativeTransportError> {
+    if envelope.federated_handle != expected_handle {
+        return Err(invalid_local_request(
+            "Actor Federation profile response changed the requested handle",
+        ));
+    }
+    Ok(())
 }
 
 fn cancelled_error(error: impl std::fmt::Display) -> NativeTransportError {
@@ -989,6 +1168,116 @@ mod tests {
     use super::*;
 
     #[test]
+    fn actor_federation_profile_requires_persisted_canonical_handle() {
+        let sender = actor::ActorRef {
+            ptid: "ptid:alice".to_string(),
+            acct: "Alice@Station.Test".to_string(),
+            kind: actor::ActorKind::Person as i32,
+        };
+        assert_eq!(
+            canonical_actor_federated_handle(&sender).unwrap(),
+            "@alice@station.test"
+        );
+
+        let missing = actor::ActorRef {
+            acct: String::new(),
+            ..sender.clone()
+        };
+        assert!(canonical_actor_federated_handle(&missing).is_err());
+
+        let canonical = "@alice@station.test";
+        let matching = federation::ActorProfileEnvelope {
+            federated_handle: canonical.to_string(),
+            ..Default::default()
+        };
+        assert!(validate_actor_federation_profile_handle(&matching, canonical).is_ok());
+
+        let legacy_bare = federation::ActorProfileEnvelope {
+            federated_handle: "alice@station.test".to_string(),
+            ..Default::default()
+        };
+        assert!(validate_actor_federation_profile_handle(&legacy_bare, canonical).is_err());
+    }
+
+    #[test]
+    fn secure_content_proto_requests_declare_request_and_response_media_types() {
+        let request =
+            with_proto_content_negotiation(Client::new().get("http://127.0.0.1/secure-content"))
+                .build()
+                .unwrap();
+
+        assert_eq!(
+            request.headers().get(CONTENT_TYPE).unwrap(),
+            "application/protobuf"
+        );
+        assert_eq!(
+            request.headers().get(ACCEPT).unwrap(),
+            "application/protobuf"
+        );
+    }
+
+    #[test]
+    fn content_prekey_publication_matches_the_shared_canonical_vector() {
+        let publisher = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:test".to_string(),
+                ..Default::default()
+            }),
+            device_id: "device-test".to_string(),
+        };
+        let request = wire::PublishContentPreKeysRequest {
+            publisher: Some(publisher.clone()),
+            publisher_signing_key_id: "signing-test".to_string(),
+            publisher_profile_version: 1,
+            expected_pool_epoch: 0,
+            prekeys: vec![wire::ContentOneTimePreKey {
+                kind: wire::ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+                key_id: "key-test".to_string(),
+                x25519_public_key: vec![1; 32],
+                principal: Some(wire::content_one_time_pre_key::Principal::Endpoint(
+                    publisher.clone(),
+                )),
+                profile_or_recovery_epoch: 1,
+                issuer_signature: vec![2; 64],
+            }],
+            command_id: "command-test".to_string(),
+            proof: Some(wire::ContentPreKeyClientProof {
+                input: Some(wire::ContentPreKeyClientSigningInput {
+                    format_version: 1,
+                    capability_id: PUBLISH_CAPABILITY.to_string(),
+                    station_peer_id: "station-test".to_string(),
+                    session_id: "session-test".to_string(),
+                    publisher: Some(publisher),
+                    publisher_signing_key_id: "signing-test".to_string(),
+                    publisher_profile_version: 1,
+                    request_id: "command-test".to_string(),
+                    request_sha256: vec![3; 32],
+                    nonce: vec![4; 32],
+                    issued_at: Some(prost_types::Timestamp {
+                        seconds: 1,
+                        nanos: 0,
+                    }),
+                }),
+                signature: vec![5; 64],
+            }),
+        };
+        let canonical = canonical_publication_bytes(&request).unwrap();
+        assert_ne!(request.encode_to_vec(), canonical);
+        assert_eq!(
+            hex::encode(canonical),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../model/domain/secure_content/testdata/content_prekey_publication.hex"
+            ))
+            .trim()
+        );
+        assert_eq!(
+            publication_command_id(&request).unwrap(),
+            "cpk-pub-v1-5ca0fee4658c8956feeca6d8a9272e70ce8c6127e41cd81a2961dbf1a4dd0d8c"
+        );
+    }
+
+    #[test]
     fn secure_content_jwt_session_id_requires_the_canonical_claim() {
         let claims = URL_SAFE_NO_PAD.encode(r#"{"session_id":"session-1"}"#);
         assert_eq!(
@@ -1011,6 +1300,35 @@ mod tests {
         assert_eq!(error.stable_code, 30208);
         assert_eq!(error.retry_after_seconds, Some(300));
         assert_eq!(error.disposition, NativeErrorDisposition::Retryable);
+
+        let comment_error = decode_typed_error_with_retry_after(
+            429,
+            &body,
+            Some(3_599),
+            RequestCommitSemantics::MayCommit,
+            RetryAfterSemantics::Exact,
+        );
+        assert_eq!(comment_error.retry_after_seconds, Some(3_599));
+        assert_eq!(comment_error.disposition, NativeErrorDisposition::Retryable);
+
+        let conflict_body = error_model::ErrorResponse {
+            code: error_model::ErrorCode::InvalidRequest as i32,
+            message: "conflict".to_string(),
+            details: [(
+                PRIVATE_CONTENT_CODE_DETAIL.to_string(),
+                "SOCIAL_PRIVATE_STALE_PLAN".to_string(),
+            )]
+            .into(),
+        }
+        .encode_to_vec();
+        let conflict =
+            decode_typed_error(409, &conflict_body, None, RequestCommitSemantics::MayCommit);
+        assert_eq!(conflict.message, "SOCIAL_PRIVATE_STALE_PLAN");
+        assert_eq!(conflict.disposition, NativeErrorDisposition::Terminal);
+
+        let committed = committed_response_error(200, "response body was truncated");
+        assert_eq!(committed.http_status, Some(200));
+        assert_eq!(committed.disposition, NativeErrorDisposition::UnknownCommit);
 
         let malformed = decode_typed_error(
             500,
@@ -1096,10 +1414,10 @@ mod tests {
             command_id: String::new(),
             proof: None,
         };
-        let expected = publication_command_id(&request);
+        let expected = publication_command_id(&request).unwrap();
         request.command_id = "ignored".to_string();
         request.proof = Some(wire::ContentPreKeyClientProof::default());
-        assert_eq!(publication_command_id(&request), expected);
+        assert_eq!(publication_command_id(&request).unwrap(), expected);
         assert!(expected.starts_with("cpk-pub-v1-"));
     }
 

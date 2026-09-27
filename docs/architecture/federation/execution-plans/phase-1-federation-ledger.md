@@ -19,7 +19,7 @@
 | Signature verification | wire-protocol.md §3 | D-04 | Invalid signature → event rejected |
 | Fork detection | design.md §3.4; wire-protocol.md §6.5 | D-07 | Injected fork → fork_detected state |
 | Ledger sync (pull + notify) | wire-protocol.md §6 | D-04 | 3-node sync: all nodes reach same head |
-| Projection API boundaries | wire-protocol.md §5.5 | D-05 superseded by SAL-D04 | Settings reads context/status; Dashboard/CLI list and govern federations |
+| Projection API for clients | wire-protocol.md §5.5 | D-05 (superseded) | Settings/Dashboard can list federations and capabilities |
 | Catalog scoped by federation_id | design.md §6; wire-protocol.md §8.2 | D-08 | Catalog search requires federation_id |
 | Governance in app layer, not frame | integration.md §1; design.md §2.1 | D-10 | `go vet` shows no frame→app imports |
 | Testnet seed | data-model.md §11 | D-04 | 3-node seed produces verified genesis |
@@ -36,7 +36,7 @@
 | libp2p federation plugin | `frame/core/plugin/native/federation/` | Production-ready, 17 files |
 | Touch layer: resolver, cache, profile, invalidation, republisher | `frame/touch/federation/` | Production-ready, 16 files |
 | HTTP handlers: /me, /health, /resolve, /visibility, /profile | `frame/touch/` | Production-ready |
-| Proto: federation_health, federation_resolve, locator, profile, invalidation | `model/domain/federation/` | Existing infrastructure contracts |
+| Proto: federation_self, federation_health, federation_resolve, locator, profile, invalidation | `model/domain/federation/` | 6 existing .proto files |
 | Desktop: store, runtime, FederationTab, Rust commands | `apps/desktop/` | Working |
 | Acceptance gates | `tooling/acceptance/gates/federation/` | Smoke + mutual validation |
 | Locales | `packages/locales/{en,zh-CN}/settings.json` | Working |
@@ -50,9 +50,9 @@
 | Database migrations (ledger, membership, roles, sync) | `apps/station/app/subserver/federation/migration/` |
 | Ledger sync protocol implementation | Within federation subserver |
 | Projection API handlers | Within federation subserver |
-| Actor Profile Federation context | Extend the canonical Actor Profile owner |
+| FederationSelfView extension | Extend existing proto + handler |
 | Catalog federation_id scoping | Extend existing Catalog proto |
-| Desktop Settings: Federation context and connection status | Extend FederationTab.tsx |
+| Desktop Settings: joined federations list | Extend FederationTab.tsx |
 | Dashboard: federation management panel | Within dashboard subserver |
 | Testnet seed configuration | `apps/station/app/conf/` + seed scripts |
 
@@ -72,7 +72,7 @@
   - `federation_projection_service.proto` — ListFederations, ListMemberStations, CreateFederation, JoinFederation, LeaveFederation
   - `federation_sync.proto` — SyncCursor, FetchEvents pagination types
   - `federation_policy.proto` — PolicyType enum, policy params per type (v1: SingleAdminParams)
-  - Extend canonical Actor Profile with Federation context and actor signing identity
+  - Extend `federation_self.proto` — add JoinedFederationRef + `actor_signing_public_key` field
   - Extend `federation_health.proto` — add governance_sync_status
   - Extend `realtime/event.proto` — add `LedgerEventDelivered` arm to StreamEvent oneof
   - Extend `actor/actor.proto` — add `signing_public_key` field (Actor 独立签名密钥)
@@ -161,13 +161,13 @@
   - Projection API handlers (ListFederations, ListMemberStations, GetDetail)
   - CreateFederation handler (Dashboard only, requires station_owner/federation_admin role)
   - JoinFederation + LeaveFederation handlers
-  - Keep ordinary-client identity and visibility in the canonical Actor Profile
-  - Desktop store extension: add explicit Federation context and connection status
-  - Desktop FederationTab: show context and connection status without membership controls
+  - Extend existing `/actor/federation/me` to include joined_federations
+  - Desktop store extension: add joined federations list
+  - Desktop FederationTab: show joined federations (read-only v1)
   - Dashboard: wire federation CRUD to real Station API (replaces mock data)
 - **Dependencies**: WS-2 (domain), WS-4 (sync status for health display).
-- **Architecture IDs**: D-05 superseded by SAL-D04; wire-protocol.md §5.5; integration.md §2.2.
-- **Gate**: Desktop Settings shows one explicit Station-provided context; Dashboard can create federations and list members; capability projection matches actual permissions.
+- **Architecture IDs**: D-05 (superseded); wire-protocol.md §5.5; integration.md §2.2.
+- **Gate**: Desktop Settings shows real federation list; Dashboard can create federation + list members; capability projection matches actual permissions.
 
 ### WS-7: Catalog Federation Scope
 
@@ -213,7 +213,7 @@ WS-1 (Proto)
 | Concern | New Source of Truth | Consumer Inventory | Cutover Condition | Old Path to Delete |
 |---|---|---|---|---|
 | Federation governance state | `app/subserver/federation/` ledger + replay | Desktop projection, Dashboard, Catalog | All projection APIs return real ledger data | None (new capability) |
-| Ordinary-client Federation context | Canonical Actor Profile plus Station context projection | Desktop/Mobile settings and scoped discovery | One explicit Station-provided context is rendered without governance controls | Duplicate Federation self-profile surface |
+| `FederationSelfView` joined list | Extended proto + handler reading federation subserver | Desktop FederationTab, store | `/actor/federation/me` returns real joined_federations | Mock/empty field |
 | Catalog federation_id | CatalogSearchRequest.federation_id | Desktop search, public actor browser | Default search path requires federation_id | Implicit global catalog (becomes legacy) |
 
 No compatibility shims or dual paths. Each workstream is internally complete when merged.
@@ -229,7 +229,7 @@ No compatibility shims or dual paths. Each workstream is internally complete whe
 | WS-3 | Sequencer enforcement | Integration test: reject non-sequencer append | Test log |
 | WS-4 | 3-node sync | `make seed-testnet && make verify-sync` | 3 nodes same head |
 | WS-5 | Testnet seed | Seed script produces verified genesis | Replay check log |
-| WS-6 | Projection boundary | Desktop shows explicit context; Dashboard retains governance | Screenshot / E2E |
+| WS-6 | Client projection | Desktop shows real federation list via API | Screenshot / E2E |
 | WS-7 | Catalog scoped | Search without federation_id → 400 or warning | HTTP test |
 
 ---
@@ -243,7 +243,7 @@ Phase 1 is COMPLETE only when ALL conditions are met:
 3. Non-sequencer direct append is rejected (error 40002).
 4. Proposal path works: submit → sequencer accepts → event appended → synced to members.
 5. Fork injection produces `fork_detected` state (does not advance head).
-6. Desktop Settings shows one explicit Station-provided Federation context without membership controls.
+6. Desktop Settings shows real joined federations from Station API.
 7. Dashboard can create a new Federation (writes real genesis event).
 8. Catalog search requires `federation_id` on default path.
 9. All proto files compile on all platforms (Go, Rust, TS).

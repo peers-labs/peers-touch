@@ -252,6 +252,51 @@ func TestHomeProjectionRejectsMissingActor(t *testing.T) {
 	}
 }
 
+func TestHomeProjectionMarksOlderAuthoritativeRevisionStale(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	authoritativeRevision := uint64(now.UnixNano())
+	svc := NewHomeProjectionService(
+		homeAgentListerStub{agents: []domain.Agent{{
+			AgentID:   "agent-1",
+			Name:      "researcher",
+			UpdatedAt: now,
+		}}},
+		homeConversationListerStub{},
+		nil,
+		nil,
+	)
+	svc.now = func() time.Time { return now }
+
+	projection, err := svc.Get(
+		context.Background(),
+		"ptid:actor-1",
+		authoritativeRevision+1,
+	)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if projection.GetRevision() != authoritativeRevision {
+		t.Fatalf(
+			"revision = %d, want authoritative revision %d",
+			projection.GetRevision(),
+			authoritativeRevision,
+		)
+	}
+	if projection.GetFreshness() != model.HomeProjectionFreshness_HOME_PROJECTION_FRESHNESS_STALE {
+		t.Fatalf("freshness = %s, want stale", projection.GetFreshness())
+	}
+	if len(projection.GetSliceErrors()) != 1 {
+		t.Fatalf("slice errors = %+v, want one", projection.GetSliceErrors())
+	}
+	staleError := projection.GetSliceErrors()[0]
+	if staleError.GetSliceId() != "projection" ||
+		staleError.GetCode() != model.HomeErrorCode_HOME_ERROR_CODE_PROJECTION_STALE ||
+		!staleError.GetRetryable() ||
+		staleError.GetRecoveryAction() != "retry" {
+		t.Fatalf("stale error = %+v", staleError)
+	}
+}
+
 func TestHomeProjectionIncludesReadinessAndTaskSlices(t *testing.T) {
 	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	svc := NewHomeProjectionService(

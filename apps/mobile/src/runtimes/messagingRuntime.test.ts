@@ -13,26 +13,32 @@ const ports = vi.hoisted(() => {
   const social = {
     authSession: session,
     sessions: [{ ulid: 'direct-a' }, { ulid: 'direct-b' }],
-    messagingConversations: [
-      { conversationId: 'direct-a', kind: 1 },
-      { conversationId: 'direct-b', kind: 1 },
-      { conversationId: 'group-a', kind: 2 },
-    ],
     messages: {} as Record<string, never[]>,
     activeSessionUlid: null as string | null,
     refreshSessions: vi.fn(async () => undefined),
     loadMessages: vi.fn(async (_id: string) => undefined),
   };
+  const group = {
+    authSession: session,
+    groups: [{ ulid: 'group-a' }, { ulid: 'group-b' }],
+    messages: {} as Record<string, never[]>,
+    activeGroupUlid: null as string | null,
+    refreshGroups: vi.fn(async () => undefined),
+    refreshUnreadCounts: vi.fn(async () => undefined),
+    loadMessages: vi.fn(async (_id: string) => undefined),
+  };
   const readinessReady = vi.fn();
   const readinessFail = vi.fn();
   return {
-    session, social,
+    session, social, group,
     events: new Map<string, (event: { payload: unknown }) => void>(),
     unlisten: vi.fn(),
     unsubscribe: vi.fn(),
     list: vi.fn(async () => [
       { conversationId: 'direct-a', kind: 1 },
       { conversationId: 'direct-b', kind: 1 },
+      { conversationId: 'group-a', kind: 2 },
+      { conversationId: 'group-b', kind: 2 },
     ]),
     reconcile: vi.fn(async () => ({})),
     deactivate: vi.fn(async () => undefined),
@@ -64,9 +70,15 @@ vi.mock('../features/auth/authStore', () => ({
 vi.mock('../features/social/socialStore', () => ({
   useSocialStore: { getState: () => ports.social },
 }));
+vi.mock('../features/group/groupStore', () => ({
+  useGroupStore: { getState: () => ports.group },
+}));
 vi.mock('../services/mobileCommands', () => ({
   messagingActivate: vi.fn(async () => ({
-    profileId: 'profile-a', activationGeneration: 1, laneSequence: 0,
+    profileId: 'profile-a',
+    deviceId: 'device-a',
+    activationGeneration: 1,
+    laneSequence: 0,
   })),
   messagingDeactivate: ports.deactivate,
   messagingListConversations: ports.list,
@@ -114,13 +126,11 @@ describe('Messaging projection hydration', () => {
     ports.events.clear();
     ports.session.sessionId = 'session-a';
     ports.social.authSession = ports.session;
-    ports.social.messagingConversations = [
-      { conversationId: 'direct-a', kind: 1 },
-      { conversationId: 'direct-b', kind: 1 },
-      { conversationId: 'group-a', kind: 2 },
-    ];
+    ports.group.authSession = ports.session;
     ports.social.messages = {};
+    ports.group.messages = {};
     ports.social.activeSessionUlid = null;
+    ports.group.activeGroupUlid = null;
     vi.stubGlobal('window', new EventTarget());
   });
 
@@ -134,15 +144,20 @@ describe('Messaging projection hydration', () => {
   it('refreshes summaries without materializing unopened histories', async () => {
     await start();
     expect(ports.social.refreshSessions).toHaveBeenCalledOnce();
+    expect(ports.group.refreshUnreadCounts).toHaveBeenCalledOnce();
     expect(ports.social.loadMessages).not.toHaveBeenCalled();
+    expect(ports.group.loadMessages).not.toHaveBeenCalled();
   });
 
   it('refreshes active and previously materialized histories only', async () => {
     ports.social.messages = { 'direct-a': [] };
+    ports.group.activeGroupUlid = 'group-b';
     await start();
     expect(ports.social.loadMessages.mock.calls).toEqual([['direct-a']]);
+    expect(ports.group.loadMessages.mock.calls).toEqual([['group-b']]);
     await reconcileActiveMessagingSession();
     expect(ports.social.loadMessages).toHaveBeenCalledTimes(2);
+    expect(ports.group.loadMessages).toHaveBeenCalledTimes(2);
   });
 
   it('routes inactive Direct events to summaries without marking history read', async () => {
@@ -152,6 +167,13 @@ describe('Messaging projection hydration', () => {
     expect(ports.social.loadMessages).not.toHaveBeenCalled();
   });
 
+  it('routes inactive Group events to summaries without hydrating history', async () => {
+    await start();
+    deliver('group-a');
+    await vi.waitFor(() => expect(ports.group.refreshUnreadCounts).toHaveBeenCalledTimes(2));
+    expect(ports.group.loadMessages).not.toHaveBeenCalled();
+  });
+
   it('updates a materialized target and deduplicates its lane sequence', async () => {
     await start();
     ports.social.messages = { 'direct-a': [] };
@@ -159,15 +181,6 @@ describe('Messaging projection hydration', () => {
     deliver('direct-a');
     await vi.waitFor(() => expect(ports.social.refreshSessions).toHaveBeenCalledTimes(2));
     expect(ports.social.loadMessages.mock.calls).toEqual([['direct-a']]);
-  });
-
-  it('hydrates a materialized Group conversation through the same store owner', async () => {
-    await start();
-    ports.social.messages = { 'group-a': [] };
-    ports.list.mockResolvedValueOnce([{ conversationId: 'group-a', kind: 2 }]);
-    deliver('group-a');
-    await vi.waitFor(() => expect(ports.social.refreshSessions).toHaveBeenCalledTimes(2));
-    expect(ports.social.loadMessages.mock.calls).toEqual([['group-a']]);
   });
 
   it('ignores events from a previous native activation', async () => {
@@ -183,15 +196,16 @@ describe('Messaging projection hydration', () => {
     await start();
     let resolve!: (rows: Awaited<ReturnType<typeof ports.list>>) => void;
     ports.list.mockImplementationOnce(() => new Promise((accept) => { resolve = accept; }));
-    deliver('direct-a');
+    deliver('group-a');
     await vi.waitFor(() => expect(ports.list).toHaveBeenCalledOnce());
-    ports.social.authSession = {
+    ports.group.authSession = {
       ...ports.session, actorRef: { ptid: 'ptid:bob' },
     };
-    resolve([{ conversationId: 'direct-a', kind: 1 }]);
+    resolve([{ conversationId: 'group-a', kind: 2 }]);
     await Promise.resolve();
     await Promise.resolve();
-    expect(ports.social.loadMessages).not.toHaveBeenCalled();
+    expect(ports.group.refreshUnreadCounts).toHaveBeenCalledOnce();
+    expect(ports.group.loadMessages).not.toHaveBeenCalled();
   });
 
   it('publishes a failed worker cycle to lifecycle readiness and clears it after recovery', async () => {
@@ -205,7 +219,7 @@ describe('Messaging projection hydration', () => {
       'private worker failure',
     );
     expect(ports.readinessFail).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ message: 'private worker failure' }),
+      expect.objectContaining({ message: 'mobile.lifecycle.runtimeFailed' }),
     );
     expect(ports.readinessReady).not.toHaveBeenCalled();
 

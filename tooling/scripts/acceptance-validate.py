@@ -50,10 +50,18 @@ TUPLE_FIELDS = (
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
     "direct_runtime_no_local_capability",
+    "station_command",
+    "station_control_plane",
+    "station_turn",
+    "client_capability_turn",
+    "station_capability_turn",
     "contract_only",
+    "unavailable_runtime",
     "orchestration_guard",
     "non_advertised",
 }
+FOUNDATION_GATE_ID = "agent-v2-kernel-foundation-e2e"
+CONNECTOR_GATE_ID = "agent-v2-connector-invocation-e2e"
 GENERATED_ATTESTATION_ROLES = {
     "source-identity",
     "role-schema-report",
@@ -241,14 +249,14 @@ def validate_evidence_observation_success(
         require(
             observation["authority"] == "station"
             and observation["state"]
-            in {"ready", "degraded", "unavailable", "blocked"},
+            in {"ready", "degraded", "unavailable", "blocked", "unknown"},
             f"{label}: readiness is not a Station-owned resolved state",
         )
     elif role == "receiver-dom":
-        expected_visibility = attestation_profile != "non_advertised"
         require(
-            observation["visible"] is expected_visibility,
-            f"{label}: receiver DOM visibility does not match the runtime profile",
+            type(observation["expectedVisible"]) is bool
+            and observation["visible"] is observation["expectedVisible"],
+            f"{label}: receiver DOM visibility does not match its oracle",
         )
     elif role == "replay":
         require(
@@ -402,13 +410,21 @@ def validate_gate_evidence_semantics(
         for field, value in observation.items():
             if field.lower().endswith("hash"):
                 require_sha256(value, f"{role} observation {index}.{field}")
-        for field in (
-            "runtimeTupleKey",
-            "scenarioId",
-            "sampleId",
-            "actorIdentityHash",
-            "oracleAssertionId",
-        ):
+        common_fields = schema.get("x-common-observation-fields")
+        require(
+            isinstance(common_fields, list) and common_fields,
+            "evidence common observation fields are missing",
+        )
+        runtime_truthful_fields = (
+            schema.get("x-runtime-truthful-observation-fields")
+            if artifact.get("gateId") != FOUNDATION_GATE_ID
+            else []
+        )
+        require(
+            isinstance(runtime_truthful_fields, list),
+            "runtime-truthful observation fields are invalid",
+        )
+        for field in (*common_fields, *runtime_truthful_fields):
             require_semantic_value(
                 observation.get(field),
                 f"{role} observation {index}.{field}",
@@ -429,6 +445,11 @@ def validate_gate_evidence_semantics(
             and observation["scenarioId"] == attestation["cell"]
             and observation["actorIdentityHash"] == artifact_actor
             and (
+                artifact.get("gateId") == FOUNDATION_GATE_ID
+                or observation["scenarioExecutionId"]
+                == attestation["scenarioExecutionId"]
+            )
+            and (
                 attested_actor is None
                 or observation["actorIdentityHash"] == attested_actor
             ),
@@ -439,7 +460,11 @@ def validate_gate_evidence_semantics(
                 observation["cellId"] == attestation["cell"],
                 f"{role}: observation {index} cell ID mismatch",
             )
-        tool_binding = attestation.get("toolCallBinding", {})
+        tool_binding = (
+            attestation.get("toolCallBinding")
+            or attestation.get("stationToolCallBinding")
+            or {}
+        )
         if "toolCallId" in observation:
             require(
                 observation["toolCallId"] == tool_binding["toolCallId"],
@@ -457,17 +482,26 @@ def validate_gate_evidence_semantics(
                 f"{role}: observation {index} Turn mismatch",
             )
         if "snapshotId" in observation:
-            require(
-                observation["snapshotId"]
-                == attestation.get("turnAttempt", {}).get(
+            attested_snapshot_id = (
+                attestation.get("turnAttempt", {}).get(
                     "capabilityReadinessSnapshotId"
-                ),
+                )
+                or attestation.get("controlPlaneAttestation", {}).get(
+                    "readinessSnapshotId"
+                )
+            )
+            require(
+                observation["snapshotId"] == attested_snapshot_id,
                 f"{role}: observation {index} readiness mismatch",
             )
         if "providerId" in observation:
+            attested_provider_id = (
+                attestation.get("oauthProviderId")
+                if role == "provider-revoke"
+                else attestation.get("runtimeSnapshot", {}).get("providerId")
+            )
             require(
-                observation["providerId"]
-                == attestation.get("runtimeSnapshot", {}).get("providerId"),
+                observation["providerId"] == attested_provider_id,
                 f"{role}: observation {index} provider mismatch",
             )
         require(
@@ -520,20 +554,14 @@ def validate_runtime_attestation(
     expected_profile: str | None,
 ) -> None:
     profile = item.get("attestationProfile")
-    if expected_profile is not None:
-        require(
-            expected_profile in RUNTIME_ATTESTATION_PROFILES,
-            f"{label} runtime attestation profile is unsupported",
-        )
-        require(
-            profile == expected_profile,
-            f"{label} runtime attestation profile mismatch",
-        )
-    else:
-        require(
-            profile is None,
-            f"{label} legacy row must not declare a runtime attestation profile",
-        )
+    require(
+        expected_profile in RUNTIME_ATTESTATION_PROFILES,
+        f"{label} runtime attestation profile is unsupported",
+    )
+    require(
+        profile == expected_profile,
+        f"{label} runtime attestation profile mismatch",
+    )
 
     profile_fields = {
         "contract_only": {"contractAttestation"},
@@ -553,23 +581,32 @@ def validate_runtime_attestation(
             }
             | profile_fields[expected_profile]
         )
+        if item.get("gate") != FOUNDATION_GATE_ID:
+            expected_fields.add("scenarioExecutionId")
         require(
             set(item) == expected_fields,
             f"{label} {expected_profile} payload fields mismatch",
         )
+        if item.get("gate") != FOUNDATION_GATE_ID:
+            require_semantic_value(
+                item.get("scenarioExecutionId"),
+                f"{label} scenario execution ID",
+            )
         require_semantic_value(item.get("observedAt"), f"{label} observedAt")
         if expected_profile == "contract_only":
             contract_attestation = item["contractAttestation"]
+            contract_fields = {
+                "contractId",
+                "contractHash",
+                "platform",
+                "toolchain",
+                "roundTripStatus",
+            }
+            if item.get("gate") != FOUNDATION_GATE_ID:
+                contract_fields.add("contractRunId")
             require(
                 isinstance(contract_attestation, dict)
-                and set(contract_attestation)
-                == {
-                    "contractId",
-                    "contractHash",
-                    "platform",
-                    "toolchain",
-                    "roundTripStatus",
-                },
+                and set(contract_attestation) == contract_fields,
                 f"{label} contract attestation fields mismatch",
             )
             require_semantic_value(
@@ -586,6 +623,11 @@ def validate_runtime_attestation(
                 and contract_attestation.get("roundTripStatus") == "passed",
                 f"{label} contract attestation did not pass",
             )
+            if item.get("gate") != FOUNDATION_GATE_ID:
+                require_semantic_value(
+                    contract_attestation.get("contractRunId"),
+                    f"{label} contract run ID",
+                )
         elif expected_profile == "orchestration_guard":
             guard_attestation = item["guardAttestation"]
             require(
@@ -638,31 +680,209 @@ def validate_runtime_attestation(
             )
         return
 
-    expected_fields = set(TUPLE_FIELDS) | {
-        "actorIdentityHash",
-        "conversationRuntimeBinding",
-        "runtimeSnapshot",
-        "turnAttempt",
-        "clientSession",
+    common_fields = set(TUPLE_FIELDS) | {
+        "attestationProfile",
         "stationProfile",
-        "desktopMode",
         "networkPath",
         "machine",
         "coldWarmState",
         "observedAt",
     }
-    if expected_profile in {
+    if item.get("gate") != FOUNDATION_GATE_ID:
+        common_fields.add("scenarioExecutionId")
+    for field in ("stationProfile", "networkPath", "machine", "observedAt"):
+        require_semantic_value(item.get(field), f"{label} {field}")
+    if item.get("gate") != FOUNDATION_GATE_ID:
+        require_semantic_value(
+            item.get("scenarioExecutionId"),
+            f"{label} scenarioExecutionId",
+        )
+    require(
+        item.get("coldWarmState") in {"cold", "warm", "neutral", "contract"},
+        f"{label} cold/warm state is invalid",
+    )
+
+    if expected_profile == "station_command":
+        expected_fields = common_fields | {
+            "actorIdentityHash",
+            "commandAttestation",
+            "desktopMode",
+        }
+        require(
+            set(item) == expected_fields,
+            f"{label} station command payload fields mismatch",
+        )
+        require_sha256(item.get("actorIdentityHash"), f"{label} actor identity")
+        require_semantic_value(item.get("desktopMode"), f"{label} desktopMode")
+        command = item.get("commandAttestation")
+        require(
+            isinstance(command, dict)
+            and set(command)
+            == {
+                "commandId",
+                "commandKind",
+                "idempotencyKeyHash",
+                "objectIds",
+                "projectionRevision",
+            },
+            f"{label} command attestation fields mismatch",
+        )
+        for field in ("commandId", "commandKind"):
+            require_semantic_value(command[field], f"{label} command {field}")
+        require_sha256(
+            command["idempotencyKeyHash"],
+            f"{label} command idempotency key",
+        )
+        require_unique_nonempty_strings(
+            command["objectIds"],
+            f"{label} command object IDs",
+        )
+        require_positive_integer(
+            command["projectionRevision"],
+            f"{label} command projection revision",
+        )
+        return
+
+    if expected_profile == "station_control_plane":
+        expected_fields = common_fields | {
+            "actorIdentityHash",
+            "controlPlaneAttestation",
+            "desktopMode",
+        }
+        require(
+            set(item) == expected_fields,
+            f"{label} station control-plane payload fields mismatch",
+        )
+        require_sha256(item.get("actorIdentityHash"), f"{label} actor identity")
+        require_semantic_value(item.get("desktopMode"), f"{label} desktopMode")
+        control = item.get("controlPlaneAttestation")
+        require(
+            isinstance(control, dict)
+            and set(control)
+            == {
+                "authority",
+                "entityIdHash",
+                "readinessSnapshotId",
+                "revision",
+                "stateHash",
+                "zeroExecutionCount",
+            },
+            f"{label} control-plane attestation fields mismatch",
+        )
+        require_semantic_value(control["authority"], f"{label} control authority")
+        require_semantic_value(
+            control["readinessSnapshotId"],
+            f"{label} control readiness snapshot",
+        )
+        require_sha256(control["entityIdHash"], f"{label} control entity")
+        require_sha256(control["stateHash"], f"{label} control state")
+        require_positive_integer(control["revision"], f"{label} control revision")
+        require(
+            require_nonnegative_integer(
+                control["zeroExecutionCount"],
+                f"{label} control zero-execution count",
+            )
+            == 0,
+            f"{label} control-plane path executed a runtime side effect",
+        )
+        return
+
+    if expected_profile == "unavailable_runtime":
+        expected_fields = common_fields | {
+            "actorIdentityHash",
+            "unavailableAttestation",
+            "desktopMode",
+        }
+        require(
+            set(item) == expected_fields,
+            f"{label} unavailable runtime payload fields mismatch",
+        )
+        require_sha256(item.get("actorIdentityHash"), f"{label} actor identity")
+        require_semantic_value(item.get("desktopMode"), f"{label} desktopMode")
+        unavailable = item.get("unavailableAttestation")
+        require(
+            isinstance(unavailable, dict)
+            and set(unavailable)
+            == {
+                "readinessSnapshotId",
+                "state",
+                "reasonCode",
+                "activityBeforeHash",
+                "activityAfterHash",
+                "zeroExecutionCount",
+            },
+            f"{label} unavailable runtime attestation fields mismatch",
+        )
+        for field in ("readinessSnapshotId", "reasonCode"):
+            require_semantic_value(
+                unavailable[field],
+                f"{label} unavailable {field}",
+            )
+        require(
+            unavailable["state"]
+            in {"degraded", "unavailable", "blocked", "not_advertised"},
+            f"{label} unavailable runtime state is invalid",
+        )
+        require_sha256(
+            unavailable["activityBeforeHash"],
+            f"{label} unavailable activity before",
+        )
+        require_sha256(
+            unavailable["activityAfterHash"],
+            f"{label} unavailable activity after",
+        )
+        require(
+            unavailable["activityBeforeHash"] == unavailable["activityAfterHash"]
+            and require_nonnegative_integer(
+                unavailable["zeroExecutionCount"],
+                f"{label} unavailable zero-execution count",
+            )
+            == 0,
+            f"{label} unavailable runtime did not prove zero execution",
+        )
+        return
+
+    turn_profiles = {
         "direct_runtime",
         "direct_runtime_no_local_capability",
+        "station_turn",
+        "client_capability_turn",
+        "station_capability_turn",
+    }
+    require(
+        expected_profile in turn_profiles,
+        f"{label} unsupported runtime attestation profile",
+    )
+    expected_fields = common_fields | {
+        "actorIdentityHash",
+        "conversationRuntimeBinding",
+        "runtimeSnapshot",
+        "turnAttempt",
+        "desktopMode",
+    }
+    if item.get("gate") == CONNECTOR_GATE_ID:
+        expected_fields.add("oauthProviderId")
+        require_semantic_value(
+            item.get("oauthProviderId"),
+            f"{label} OAuth provider ID",
+        )
+    if expected_profile in {
+        "direct_runtime",
+        "client_capability_turn",
     }:
-        expected_fields.add("attestationProfile")
-    if expected_profile != "direct_runtime_no_local_capability":
-        expected_fields.add("toolCallBinding")
+        expected_fields.update({"clientSession", "toolCallBinding"})
+    elif expected_profile == "direct_runtime_no_local_capability":
+        expected_fields.add("clientSession")
+    elif expected_profile == "station_capability_turn":
+        expected_fields.update(
+            {"stationToolCallBinding", "stationExecutorAttestation"}
+        )
     require(
         set(item) == expected_fields,
-        f"{label} direct runtime payload fields mismatch",
+        f"{label} {expected_profile} payload fields mismatch",
     )
     require_sha256(item.get("actorIdentityHash"), f"{label} actor identity")
+    require_semantic_value(item.get("desktopMode"), f"{label} desktopMode")
 
     binding_fields = {
         "runtimeKind",
@@ -769,6 +989,81 @@ def validate_runtime_attestation(
         f"{label} config snapshot hash mismatch",
     )
 
+    turn_attempt = item.get("turnAttempt")
+    require(
+        isinstance(turn_attempt, dict)
+        and set(turn_attempt)
+        == {
+            "attemptId",
+            "turnId",
+            "index",
+            "contextLedgerId",
+            "capabilityReadinessSnapshotId",
+            "status",
+            "runtimeSnapshotHash",
+        }
+        and all(value is not None and value != "" for value in turn_attempt.values()),
+        f"{label} TurnAttempt fields mismatch",
+    )
+    require_sha256(
+        turn_attempt["runtimeSnapshotHash"],
+        f"{label} TurnAttempt runtime snapshot",
+    )
+    runtime_snapshot_hash = hashlib.sha256(
+        json.dumps(
+            snapshot,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    require(
+        turn_attempt["runtimeSnapshotHash"] == runtime_snapshot_hash,
+        f"{label} TurnAttempt runtime snapshot hash mismatch",
+    )
+    if expected_profile == "station_turn":
+        return
+
+    if expected_profile == "station_capability_turn":
+        tool_binding = item.get("stationToolCallBinding")
+        require(
+            isinstance(tool_binding, dict)
+            and set(tool_binding)
+            == {
+                "toolCallId",
+                "turnId",
+                "attemptId",
+                "capabilityId",
+                "capabilityVersion",
+                "bindingId",
+                "bindingRevision",
+                "readinessSnapshotId",
+                "sideEffectReceiptId",
+            }
+            and all(value is not None and value != "" for value in tool_binding.values()),
+            f"{label} Station ToolCall binding fields mismatch",
+        )
+        require(
+            tool_binding["turnId"] == turn_attempt["turnId"]
+            and tool_binding["attemptId"] == turn_attempt["attemptId"]
+            and tool_binding["readinessSnapshotId"]
+            == turn_attempt["capabilityReadinessSnapshotId"],
+            f"{label} Station ToolCall binding is detached from TurnAttempt",
+        )
+        executor = item.get("stationExecutorAttestation")
+        require(
+            isinstance(executor, dict)
+            and set(executor)
+            == {"executorId", "executorKind", "executorRevision"}
+            and executor.get("executorKind") == "station"
+            and bool(executor.get("executorId")),
+            f"{label} Station executor attestation fields mismatch",
+        )
+        require_positive_integer(
+            executor["executorRevision"],
+            f"{label} Station executor revision",
+        )
+        return
+
     client = item.get("clientSession")
     require(
         isinstance(client, dict)
@@ -828,6 +1123,7 @@ def validate_runtime_attestation(
             f"{label} client capability {index} fields mismatch",
         )
         constraints = capability["constraints"]
+        allowed_resource_kinds = constraints.get("allowedResourceKinds")
         require(
             isinstance(constraints, dict)
             and set(constraints)
@@ -836,57 +1132,17 @@ def validate_runtime_attestation(
                 "maxResultBytes",
                 "allowedResourceKinds",
             }
-            and isinstance(constraints["allowedResourceKinds"], list)
-            and bool(constraints["allowedResourceKinds"]),
+            and isinstance(allowed_resource_kinds, list)
+            and all(
+                isinstance(resource_kind, str) and bool(resource_kind)
+                for resource_kind in allowed_resource_kinds
+            )
+            and len(allowed_resource_kinds) == len(set(allowed_resource_kinds)),
             f"{label} client capability {index} constraints mismatch",
         )
     require(
         client["actorIdHash"] == item["actorIdentityHash"],
         f"{label} client actor does not match attested actor",
-    )
-    for field in (
-        "stationProfile",
-        "desktopMode",
-        "networkPath",
-        "machine",
-        "observedAt",
-    ):
-        require_semantic_value(item.get(field), f"{label} {field}")
-    require(
-        item.get("coldWarmState") in {"cold", "warm", "neutral", "contract"},
-        f"{label} cold/warm state is invalid",
-    )
-
-    turn_attempt = item.get("turnAttempt")
-    require(
-        isinstance(turn_attempt, dict)
-        and set(turn_attempt)
-        == {
-            "attemptId",
-            "turnId",
-            "index",
-            "contextLedgerId",
-            "capabilityReadinessSnapshotId",
-            "status",
-            "runtimeSnapshotHash",
-        }
-        and all(value is not None and value != "" for value in turn_attempt.values()),
-        f"{label} TurnAttempt fields mismatch",
-    )
-    require_sha256(
-        turn_attempt["runtimeSnapshotHash"],
-        f"{label} TurnAttempt runtime snapshot",
-    )
-    runtime_snapshot_hash = hashlib.sha256(
-        json.dumps(
-            snapshot,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-    ).hexdigest()
-    require(
-        turn_attempt["runtimeSnapshotHash"] == runtime_snapshot_hash,
-        f"{label} TurnAttempt runtime snapshot hash mismatch",
     )
     if expected_profile == "direct_runtime_no_local_capability":
         return
@@ -909,7 +1165,7 @@ def validate_runtime_attestation(
             "sideEffectReceiptId",
         }
         and all(value is not None and value != "" for value in tool_binding.values()),
-        f"{label} ToolCall binding fields mismatch",
+        f"{label} client ToolCall binding fields mismatch",
     )
     require(
         tool_binding["turnId"] == turn_attempt["turnId"]
@@ -928,6 +1184,36 @@ def validate_runtime_attestation(
         ),
         f"{label} ToolCall capability is absent from the client lease",
     )
+
+
+def primary_execution_identity(item: dict[str, Any]) -> tuple[str, str]:
+    profile = item["attestationProfile"]
+    if profile == "station_command":
+        return ("command", item["commandAttestation"]["commandId"])
+    if profile == "station_control_plane":
+        return (
+            "control-plane",
+            item["controlPlaneAttestation"]["readinessSnapshotId"],
+        )
+    if profile == "station_turn":
+        return ("turn", item["turnAttempt"]["turnId"])
+    if profile in {"direct_runtime", "client_capability_turn"}:
+        return ("client-tool-call", item["toolCallBinding"]["toolCallId"])
+    if profile == "direct_runtime_no_local_capability":
+        return ("turn", item["turnAttempt"]["turnId"])
+    if profile == "station_capability_turn":
+        return (
+            "station-tool-call",
+            item["stationToolCallBinding"]["toolCallId"],
+        )
+    if profile == "contract_only":
+        return ("contract-run", item["contractAttestation"]["contractRunId"])
+    if profile == "unavailable_runtime":
+        return (
+            "unavailable-readiness",
+            item["unavailableAttestation"]["readinessSnapshotId"],
+        )
+    return ("scenario", item["scenarioExecutionId"])
 
 
 def matrix_identity(contract: dict[str, Any]) -> dict[str, Any]:
@@ -967,51 +1253,47 @@ def expanded_matrix_contract(
         require(gate_id in by_gate, f"unknown matrix Gate: {gate_id}")
         evidence_roles = set(by_gate_role[gate_id])
         role_policy = row.get("role_policy")
-        if role_policy is None:
-            applicable_roles = evidence_roles
-        else:
+        require(
+            isinstance(role_policy, dict)
+            and set(role_policy)
+            == {"always", "required", "not_applicable"},
+            f"{row['id']}: role policy fields mismatch",
+        )
+        role_groups: dict[str, set[str]] = {}
+        for policy_name in ("always", "required", "not_applicable"):
+            policy_roles = role_policy[policy_name]
             require(
-                isinstance(role_policy, dict)
-                and set(role_policy)
-                == {"always", "required", "not_applicable"},
-                f"{row['id']}: role policy fields mismatch",
-            )
-            role_groups: dict[str, set[str]] = {}
-            for policy_name in ("always", "required", "not_applicable"):
-                policy_roles = role_policy[policy_name]
-                require(
-                    isinstance(policy_roles, list)
-                    and all(
-                        isinstance(role, str) and role
-                        for role in policy_roles
-                    )
-                    and len(policy_roles) == len(set(policy_roles)),
-                    f"{row['id']}: {policy_name} role policy is invalid",
+                isinstance(policy_roles, list)
+                and all(
+                    isinstance(role, str) and role
+                    for role in policy_roles
                 )
-                role_groups[policy_name] = set(policy_roles)
-            require(
-                all(
-                    role_groups[left].isdisjoint(role_groups[right])
-                    for left, right in (
-                        ("always", "required"),
-                        ("always", "not_applicable"),
-                        ("required", "not_applicable"),
-                    )
-                ),
-                f"{row['id']}: role policy groups overlap",
+                and len(policy_roles) == len(set(policy_roles)),
+                f"{row['id']}: {policy_name} role policy is invalid",
             )
-            declared_roles = set().union(*role_groups.values())
-            require(
-                declared_roles == evidence_roles,
-                f"{row['id']}: role policy does not cover the Gate evidence roles",
-            )
-            applicable_roles = role_groups["always"] | role_groups["required"]
+            role_groups[policy_name] = set(policy_roles)
+        require(
+            all(
+                role_groups[left].isdisjoint(role_groups[right])
+                for left, right in (
+                    ("always", "required"),
+                    ("always", "not_applicable"),
+                    ("required", "not_applicable"),
+                )
+            ),
+            f"{row['id']}: role policy groups overlap",
+        )
+        declared_roles = set().union(*role_groups.values())
+        require(
+            declared_roles == evidence_roles,
+            f"{row['id']}: role policy does not cover the Gate evidence roles",
+        )
+        applicable_roles = role_groups["always"] | role_groups["required"]
         attestation_profile = row.get("runtime_attestation_profile")
-        if attestation_profile is not None:
-            require(
-                attestation_profile in RUNTIME_ATTESTATION_PROFILES,
-                f"{row['id']}: unsupported runtime attestation profile",
-            )
+        require(
+            attestation_profile in RUNTIME_ATTESTATION_PROFILES,
+            f"{row['id']}: unsupported runtime attestation profile",
+        )
         cells: list[str] = []
         for set_name in row.get("cell_sets", []):
             require(
@@ -1039,6 +1321,26 @@ def expanded_matrix_contract(
                 "orderings",
                 row.get("orderings", expansion["defaults"]["orderings"]),
             )
+            if "ordering_filter" in row:
+                ordering_filter = row["ordering_filter"]
+                require(
+                    isinstance(ordering_filter, list)
+                    and bool(ordering_filter)
+                    and all(
+                        isinstance(ordering, str) and ordering
+                        for ordering in ordering_filter
+                    ),
+                    f"{row['id']}: ordering_filter is invalid",
+                )
+                orderings = [
+                    ordering
+                    for ordering in orderings
+                    if ordering in set(ordering_filter)
+                ]
+                require(
+                    bool(orderings),
+                    f"{row['id']} {cell}: ordering_filter removed every ordering",
+                )
             sample_set = cell_rule.get(
                 "sample_set",
                 row.get(
@@ -1322,6 +1624,8 @@ def validate_candidate(
             tuples = artifact.get("tuples")
             require(isinstance(tuples, list), "runtime tuples must be an array")
             actual_tuples: set[str] = set()
+            scenario_execution_ids: set[str] = set()
+            primary_execution_ids: set[tuple[str, str]] = set()
             for index, item in enumerate(tuples):
                 require(isinstance(item, dict), "runtime tuple must be an object")
                 require(
@@ -1343,6 +1647,24 @@ def validate_candidate(
                 )
                 require(key not in actual_tuples, "duplicate runtime tuple")
                 actual_tuples.add(key)
+                if gate_id != FOUNDATION_GATE_ID:
+                    scenario_execution_id = item.get("scenarioExecutionId")
+                    require(
+                        isinstance(scenario_execution_id, str)
+                        and bool(scenario_execution_id),
+                        "runtime tuple scenarioExecutionId is missing",
+                    )
+                    require(
+                        scenario_execution_id not in scenario_execution_ids,
+                        "duplicate scenario execution identity",
+                    )
+                    scenario_execution_ids.add(scenario_execution_id)
+                    primary_execution_id = primary_execution_identity(item)
+                    require(
+                        primary_execution_id not in primary_execution_ids,
+                        "duplicate primary execution identity",
+                    )
+                    primary_execution_ids.add(primary_execution_id)
                 runtime_attestations[key] = item
             require(
                 actual_tuples == expected_tuples,

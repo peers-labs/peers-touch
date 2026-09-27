@@ -60,10 +60,13 @@ func TestProtoSerializer(t *testing.T) {
 	})
 
 	t.Run("Marshal and Unmarshal", func(t *testing.T) {
-		original := &chat.ActorReadCursor{
-			ConversationId:   "01TEST000000000000TEST",
-			ReaderPtid:       "did:reader:123",
-			LastReadSequence: 42,
+		original := &chat.FriendChatMessage{
+			Ulid:         "01TEST000000000000TEST",
+			SessionUlid:  "01SESSION00000000000",
+			SenderPtid:   "did:sender:123",
+			ReceiverPtid: "did:receiver:456",
+			Content:      "Hello World",
+			Type:         chat.FriendMessageType_FRIEND_MESSAGE_TYPE_TEXT,
 		}
 
 		// Marshal
@@ -73,12 +76,12 @@ func TestProtoSerializer(t *testing.T) {
 		}
 
 		// Unmarshal
-		decoded := &chat.ActorReadCursor{}
+		decoded := &chat.FriendChatMessage{}
 		if err := serializer.Unmarshal(data, decoded); err != nil {
 			t.Fatalf("Unmarshal() error = %v", err)
 		}
 
-		if decoded.ConversationId != original.ConversationId || decoded.ReaderPtid != original.ReaderPtid {
+		if decoded.Ulid != original.Ulid || decoded.Content != original.Content {
 			t.Errorf("Marshal/Unmarshal mismatch: got %+v, want %+v", decoded, original)
 		}
 	})
@@ -103,45 +106,45 @@ func TestProtoSerializer(t *testing.T) {
 			protowire.AppendTag(wire, 1, protowire.BytesType),
 			"second",
 		)
-		if err := strict.Unmarshal(wire, &chat.ActorReadCursor{}); err == nil {
+		if err := strict.Unmarshal(wire, &chat.FriendChatMessage{}); err == nil {
 			t.Fatal("strict protobuf accepted a duplicate singular field")
 		}
 	})
 
 	t.Run("strict rejects duplicate nested singular field", func(t *testing.T) {
-		inner := protowire.AppendString(
+		attachment := protowire.AppendString(
 			protowire.AppendTag(nil, 1, protowire.BytesType),
 			"first",
 		)
-		inner = protowire.AppendString(
-			protowire.AppendTag(inner, 1, protowire.BytesType),
+		attachment = protowire.AppendString(
+			protowire.AppendTag(attachment, 1, protowire.BytesType),
 			"second",
 		)
 		wire := protowire.AppendBytes(
-			protowire.AppendTag(nil, 4, protowire.BytesType),
-			inner,
+			protowire.AppendTag(nil, 7, protowire.BytesType),
+			attachment,
 		)
-		if err := strict.Unmarshal(wire, &chat.DeviceConsumptionReceipt{}); err == nil {
+		if err := strict.Unmarshal(wire, &chat.FriendChatMessage{}); err == nil {
 			t.Fatal("strict protobuf accepted a nested duplicate singular field")
 		}
 	})
 
 	t.Run("strict accepts repeated message fields", func(t *testing.T) {
-		wire, err := proto.Marshal(&chat.GetConversationMembersResponse{
-			Members: []*chat.ConversationMember{
-				{ConversationId: "first"},
-				{ConversationId: "second"},
+		wire, err := proto.Marshal(&chat.FriendChatMessage{
+			Attachments: []*chat.FriendMessageAttachment{
+				{Cid: "first"},
+				{Cid: "second"},
 			},
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		decoded := &chat.GetConversationMembersResponse{}
+		decoded := &chat.FriendChatMessage{}
 		if err := strict.Unmarshal(wire, decoded); err != nil {
 			t.Fatal(err)
 		}
-		if len(decoded.GetMembers()) != 2 {
-			t.Fatalf("members = %d, want 2", len(decoded.GetMembers()))
+		if len(decoded.GetAttachments()) != 2 {
+			t.Fatalf("attachments = %d, want 2", len(decoded.GetAttachments()))
 		}
 	})
 
@@ -169,7 +172,7 @@ func TestGetSerializerForType(t *testing.T) {
 	}{
 		{
 			name:      "Proto message type",
-			typ:       reflect.TypeOf(&chat.ActorReadCursor{}),
+			typ:       reflect.TypeOf(&chat.FriendChatMessage{}),
 			wantProto: true,
 		},
 		{

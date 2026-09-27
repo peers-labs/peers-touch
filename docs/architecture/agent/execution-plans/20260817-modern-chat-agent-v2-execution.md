@@ -45,8 +45,8 @@ Reviewed runtime matrix:
 
 - `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml`
 - ID `modern-chat-agent-v2-runtime-matrix`
-- version `2026-08-25.1`
-- SHA-256 `ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89`
+- version `2026-09-21.2`
+- SHA-256 `4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c`
 
 ### 1.1 2026-09-16 Product-First Sequencing Amendment
 
@@ -435,12 +435,12 @@ ID/version/SHA-256. Any scope or hash change returns to PLAN review.
 | Gate | Candidate-manifest mandatory roles before validation |
 |---|---|
 | `agent-v2-kernel-foundation-e2e` | `cell-results`, `receiver-dom`, `station-readback`, `runtime-events`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `contract-evidence`, `guard-report`, `source-identity`, `role-schema-report`, `runner-attestation` |
-| `agent-v2-home-command-center-e2e` | `receiver-dom`, `station-readback`, `command-ids`, `projection-revisions`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `source-identity`, `role-schema-report`, `runner-attestation` |
-| `agent-v2-capability-binding-e2e` | `receiver-dom`, `station-readback`, `readiness-snapshots`, `zero-execution`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `source-identity`, `role-schema-report`, `runner-attestation` |
-| `agent-v2-governed-tool-loop-e2e` | `receiver-dom`, `station-readback`, `executor-receipts`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
-| `agent-v2-mcp-lifecycle-e2e` | `receiver-dom`, `station-readback`, `executor-receipts`, `process-port-secret-canary`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
-| `agent-v2-connector-invocation-e2e` | `receiver-dom`, `station-readback`, `oauth-resource-manifest`, `provider-revoke`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
-| `agent-v2-evaluation-lab-e2e` | `receiver-dom`, `station-readback`, `turn-trace`, `metrics-lineage`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
+| `agent-v2-home-command-center-e2e` | `receiver-dom`, `station-readback`, `command-ids`, `projection-revisions`, `contract-evidence`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `source-identity`, `role-schema-report`, `runner-attestation` |
+| `agent-v2-capability-binding-e2e` | `receiver-dom`, `station-readback`, `readiness-snapshots`, `zero-execution`, `contract-evidence`, `guard-report`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `replay`, `cleanup`, `source-identity`, `role-schema-report`, `runner-attestation` |
+| `agent-v2-governed-tool-loop-e2e` | `receiver-dom`, `station-readback`, `executor-receipts`, `contract-evidence`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
+| `agent-v2-mcp-lifecycle-e2e` | `receiver-dom`, `station-readback`, `executor-receipts`, `process-port-secret-canary`, `contract-evidence`, `zero-execution`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
+| `agent-v2-connector-invocation-e2e` | `receiver-dom`, `station-readback`, `oauth-resource-manifest`, `provider-revoke`, `contract-evidence`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `zero-execution`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
+| `agent-v2-evaluation-lab-e2e` | `cell-results`, `receiver-dom`, `station-readback`, `runtime-events`, `turn-trace`, `metrics-lineage`, `contract-evidence`, `runtime-attestation-set`, `measurement-report`, `side-effect-count`, `cleanup`, `replay`, `source-identity`, `role-schema-report`, `runner-attestation` |
 
 Immutable runtime-matrix summary:
 
@@ -455,7 +455,7 @@ Immutable runtime-matrix summary:
 | Capability binding | Desktop App + Direct/local session; Browser + Direct/remote session; Mobile semantic contract; Desktop/Station rejected-plugin retirement | AS-03/10, AS-15-V2-T01-T03, AS-16-CUSTOM-PLUGIN-RETIREMENT, TAX-01-06, ERR-CAT01-CAT03, ERR-B01-B03 |
 | Governed ToolCall | Desktop App + Direct/local executor; Browser + Direct/Station executor; Mobile semantic contract | AS-05A/05, CR-00/01/02/03/04N/04I/05/06, R-03/R-05/R-07 both orders, ERR-O01-O08, REPLAY-O07I, AS-15-V2-T04/O01 |
 | MCP | Desktop App + local MCP; Browser unavailable/degraded; Mobile unavailable semantic contract | AS-04, AS-04-UNAVAILABLE, AS-15-V2-M01, R-01-R-04 both orders, ERR-O01-O08, process/port/secret cleanup |
-| Connector | Desktop App + Direct; Browser + Direct; Mobile semantic contract | AS-06, R-06/R-07 both orders, ERR-CON01-CON04, AS-15-V2-C01, provider revoke outcomes |
+| Connector | Desktop App + Direct/OAuth-owner client; Browser + Direct/OAuth-owner client; Mobile semantic contract | AS-06, R-06/R-07 both orders, ERR-CON01-CON04 with zero execution, AS-15-V2-C01, provider revoke outcomes |
 | Evaluation | Desktop App + Direct; Browser + Direct; Mobile semantic contract | AS-07/08/14, R-08-R-10 both orders, ERR-E01-E05, AS-15-V2-E01, restart/metrics/lineage |
 
 For every non-quantitative row, the matrix requires one fresh fixture per
@@ -659,7 +659,7 @@ python3 tooling/scripts/expand-agent-v2-runtime-matrix.py \
   --check \
   docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml
 printf '%s  %s\n' \
-  'ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89' \
+  '4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c' \
   'docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml' \
   | shasum -a 256 -c -
 test -x apps/mobile/node_modules/.bin/protoc-gen-es
@@ -2411,7 +2411,7 @@ and zero local-path leakage.
   the unchanged provider-backed AS-F07 sequence.
 - **AS-F07 closure and next typed-error frontier (2026-09-11)**: canonical
   profile injection selects Ark model `ep-20260623145021-n4xdm` through the
-  internal `https://llm-api.example.invalid/api/v3` endpoint. Station
+  internal `https://internal.example.invalid/api/v3` endpoint. Station
   revision commands now preserve the source Turn's immutable
   `thinking_mode`, so exact source
   `48c7065ce97b2442df3c82d17840dd120c44651e` passed C08 run
@@ -6325,7 +6325,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   remain unclaimed.
 - The owner authorized destructive Fixture reset on 2026-09-03. The protected
   `station-two:18080` guard remains intact; execution moved to canonical
-  disposable profile `chat-native-disposable` at `10.0.0.40:18132`.
+  disposable profile `chat-native-disposable` at `10.37.94.156:18132`.
   Disposable database recreation removed an obsolete schema that prevented
   Station startup, and exact source
   `92f7b5090ffc22e4218a18f7a0de5cde09ae3c4d` then reached

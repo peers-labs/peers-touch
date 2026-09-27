@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -449,6 +450,19 @@ func (s *EvaluationService) scheduleEvaluationAttempt(
 	runCase *persistence.EvaluationRunCase,
 	attempt *persistence.EvaluationCaseAttempt,
 ) error {
+	if s.acceptance != nil &&
+		s.acceptance.EvaluationExecutorUnavailable(run.PTID, run.RunID) {
+		return evaluationFailure(
+			model.EvaluationErrorCode_EVALUATION_ERROR_CODE_EVALUATOR_UNAVAILABLE,
+			http.StatusServiceUnavailable,
+			"evaluation evaluator is unavailable",
+			true,
+			true,
+			"retry_case",
+			map[string]string{"run_id": run.RunID},
+			nil,
+		)
+	}
 	now := s.now()
 	claim := evaluationID("evalclaim")
 	claimed, err := s.repository.ClaimAttempt(
@@ -462,6 +476,14 @@ func (s *EvaluationService) scheduleEvaluationAttempt(
 	if err != nil || !claimed {
 		return err
 	}
+	if err := s.reachAcceptanceBarrier(
+		ctx,
+		run.PTID,
+		run.RunID,
+		capabilityBarrierEvaluationSchedulerClaim,
+	); err != nil {
+		return err
+	}
 	spec, err := evaluationTurnSpec(run, runCase, attempt)
 	if err != nil {
 		return err
@@ -471,6 +493,14 @@ func (s *EvaluationService) scheduleEvaluationAttempt(
 		return err
 	}
 	turnID := admission.Admission.GetTurnId()
+	if err := s.reachAcceptanceBarrier(
+		ctx,
+		run.PTID,
+		run.RunID,
+		capabilityBarrierEvaluationTurnCreated,
+	); err != nil {
+		return err
+	}
 	bound, err := s.repository.BindAttemptTurn(
 		ctx,
 		attempt.AttemptID,
@@ -526,6 +556,14 @@ func (s *EvaluationService) settleEvaluationAttempt(
 	attempt *persistence.EvaluationCaseAttempt,
 	readback *EvaluationTurnReadback,
 ) error {
+	if err := s.reachAcceptanceBarrier(
+		ctx,
+		runCase.PTID,
+		attempt.RunID,
+		capabilityBarrierEvaluationCompletion,
+	); err != nil {
+		return err
+	}
 	return s.repository.Transaction(
 		ctx,
 		func(tx *persistence.EvaluationRepository) error {
@@ -751,7 +789,7 @@ func (s *EvaluationService) reconcileCancellingEvaluationRun(
 	for index := range runCases {
 		caseByID[runCases[index].CaseID] = runCases[index]
 	}
-	now := s.now()
+	now := s.nowForRun(run.PTID, run.RunID)
 	for index := range attempts {
 		attempt := attempts[index]
 		runCase, exists := caseByID[attempt.CaseID]
@@ -766,6 +804,10 @@ func (s *EvaluationService) reconcileCancellingEvaluationRun(
 			continue
 		}
 		if attempt.TurnID == nil {
+			if s.acceptance != nil &&
+				s.acceptance.SuppressesEvaluationCancelAck(run.PTID, run.RunID) {
+				continue
+			}
 			if err := s.acknowledgeEvaluationCancellation(
 				ctx,
 				run,
@@ -786,6 +828,10 @@ func (s *EvaluationService) reconcileCancellingEvaluationRun(
 		}
 		readback, err := s.turns.Read(ctx, run.PTID, turnID)
 		if err == nil && evaluationTerminalTurnStatus(readback.Status) {
+			if s.acceptance != nil &&
+				s.acceptance.SuppressesEvaluationCancelAck(run.PTID, run.RunID) {
+				continue
+			}
 			if err := s.acknowledgeEvaluationCancellation(
 				ctx,
 				run,
@@ -802,7 +848,7 @@ func (s *EvaluationService) reconcileCancellingEvaluationRun(
 		return err
 	}
 	if current.CancelAckDeadline != nil &&
-		!s.now().Before(current.CancelAckDeadline.UTC()) {
+		!now.Before(current.CancelAckDeadline.UTC()) {
 		attempts, err = s.repository.ListAttempts(ctx, run.RunID)
 		if err != nil {
 			return err
@@ -819,7 +865,11 @@ func (s *EvaluationService) reconcileCancellingEvaluationRun(
 					attempts[index].AttemptID,
 				)
 			}
-			timedOut := false
+			timedOut := s.acceptance != nil &&
+				s.acceptance.SuppressesEvaluationCancelAck(
+					run.PTID,
+					run.RunID,
+				)
 			if attempts[index].TurnID != nil {
 				turnID := stringValue(attempts[index].TurnID)
 				if err := s.turns.Interrupt(
@@ -828,7 +878,12 @@ func (s *EvaluationService) reconcileCancellingEvaluationRun(
 					turnID,
 					"evaluation_cancel_ack_timeout",
 				); err != nil {
-					return err
+					readback, readErr := s.turns.Read(ctx, run.PTID, turnID)
+					if !timedOut ||
+						readErr != nil ||
+						!evaluationTerminalTurnStatus(readback.Status) {
+						return err
+					}
 				}
 				readback, err := s.turns.Read(ctx, run.PTID, turnID)
 				if err != nil {
@@ -840,7 +895,8 @@ func (s *EvaluationService) reconcileCancellingEvaluationRun(
 						turnID,
 					)
 				}
-				timedOut = readback.Status == domain.TurnStatusInterrupted
+				timedOut = timedOut ||
+					readback.Status == domain.TurnStatusInterrupted
 			}
 			if err := s.acknowledgeEvaluationCancellation(
 				ctx,

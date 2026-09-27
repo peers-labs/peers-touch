@@ -45,6 +45,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
@@ -83,7 +84,7 @@ func reportArkProviderRequestDebug(
 	payload map[string]any,
 	data map[string]any,
 ) {
-	if !strings.Contains(endpoint, "llm-api.example.invalid") {
+	if !strings.Contains(endpoint, "internal.example.invalid") {
 		return
 	}
 	messageRoles := make([]string, 0)
@@ -127,7 +128,7 @@ func reportArkProviderRequestDebug(
 	go func() {
 		request, requestErr := http.NewRequest(
 			http.MethodPost,
-			"http://10.0.0.30:7784/event",
+			"http://192.0.2.11:7784/event",
 			bytes.NewReader(event),
 		)
 		if requestErr != nil {
@@ -164,7 +165,7 @@ func reportFoundationF04DuplicateToolCallsDebug(
 	go func() {
 		request, requestErr := http.NewRequest(
 			http.MethodPost,
-			"http://10.0.0.30:7790/event",
+			"http://192.0.2.11:7790/event",
 			bytes.NewReader(event),
 		)
 		if requestErr != nil {
@@ -200,8 +201,17 @@ type ProviderCallRequest struct {
 	DeltaSink                       ProviderDeltaSink
 	ExpectedProviderConfigVersion   string
 	ExpectedCapabilitySourceVersion string
+	RuntimeAuthorityMode            providerRuntimeAuthorityMode
+	PinnedRuntimeCapabilities       *model.RuntimeCapabilitySnapshot
 	BeforeDispatch                  func(context.Context) error
 }
+
+type providerRuntimeAuthorityMode uint8
+
+const (
+	providerRuntimeAuthorityCurrent providerRuntimeAuthorityMode = iota
+	providerRuntimeAuthorityCommittedToolContinuation
+)
 
 type ProviderDeltaSink func(ctx context.Context, delta ProviderDelta) error
 
@@ -331,6 +341,33 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			nil,
 		)
 	}
+	switch req.RuntimeAuthorityMode {
+	case providerRuntimeAuthorityCurrent:
+		if req.PinnedRuntimeCapabilities != nil {
+			return nil, errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"current provider authority cannot carry pinned runtime capabilities",
+				nil,
+			)
+		}
+	case providerRuntimeAuthorityCommittedToolContinuation:
+		if authorityFieldCount != 3 || req.PinnedRuntimeCapabilities == nil {
+			return nil, errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"committed ToolCall continuation authority is incomplete",
+				nil,
+			)
+		}
+	default:
+		return nil, errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider execution authority mode is unsupported",
+			nil,
+		)
+	}
 	if req.ProviderID == "" {
 		return nil, errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
 			"provider_id is required", nil)
@@ -370,11 +407,11 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	}
 	reasoningSupported := false
 	if req.ExpectedCapabilitySourceVersion != "" {
-		current, authorityErr := validateExpectedProviderAuthority(ctx, req, provider)
+		capabilities, authorityErr := validateExpectedProviderAuthority(ctx, req, provider)
 		if authorityErr != nil {
 			return nil, authorityErr
 		}
-		reasoningSupported = current.Capabilities.GetRuntime().GetReasoning()
+		reasoningSupported = capabilities.GetRuntime().GetReasoning()
 	}
 
 	// Step 4 — Resolve model name: prefer request, then fall back to provider default.
@@ -527,7 +564,7 @@ func validateExpectedProviderAuthority(
 	ctx context.Context,
 	req *ProviderCallRequest,
 	provider *persistence.AgentProvider,
-) (*AdmissionSnapshot, error) {
+) (*model.RuntimeCapabilitySnapshot, error) {
 	if req == nil ||
 		provider == nil ||
 		strings.TrimSpace(req.UserID) == "" ||
@@ -548,6 +585,53 @@ func validateExpectedProviderAuthority(
 			"provider execution authority differs from the pinned runtime",
 			nil,
 		)
+	}
+	if provider.ActorPTID != strings.TrimSpace(req.UserID) {
+		return nil, errcode.New(
+			errcode.AgentSecurityViolation,
+			http.StatusForbidden,
+			"provider execution authority belongs to another actor",
+			nil,
+		)
+	}
+	if req.RuntimeAuthorityMode ==
+		providerRuntimeAuthorityCommittedToolContinuation {
+		pinned := req.PinnedRuntimeCapabilities
+		if pinned == nil ||
+			pinned.GetProvenance().GetSourceVersion() !=
+				req.ExpectedCapabilitySourceVersion {
+			return nil, errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"committed ToolCall continuation authority differs from the pinned runtime",
+				nil,
+			)
+		}
+		if err := validateRuntimeCapabilityProvenance(
+			pinned,
+			time.Now().UTC(),
+		); err != nil {
+			return nil, err
+		}
+		if req.DeltaSink != nil &&
+			!pinned.GetRuntime().GetStreaming() {
+			return nil, errcode.New(
+				errcode.AgentInvalidRequest,
+				http.StatusBadRequest,
+				"selected runtime does not support streaming",
+				nil,
+			)
+		}
+		if len(req.Tools) > 0 &&
+			!pinned.GetAgentic().GetNativeTools() {
+			return nil, errcode.New(
+				errcode.AgentInvalidRequest,
+				http.StatusBadRequest,
+				"selected runtime does not support native tools",
+				nil,
+			)
+		}
+		return pinned, nil
 	}
 	current, resolveErr := NewRuntimeAdmissionResolver(
 		NewProviderConfigService(),
@@ -588,7 +672,7 @@ func validateExpectedProviderAuthority(
 			nil,
 		)
 	}
-	return current, nil
+	return current.Capabilities, nil
 }
 
 func providerThinkingControl(providerID string, modelID string) string {
@@ -1065,7 +1149,7 @@ func (s *ProviderService) callOpenAIStream(
 	// #endregion
 	if tools, ok := payload["tools"].([]openAIToolDefinition); ok &&
 		len(tools) > 0 &&
-		strings.Contains(endpoint, "llm-api.example.invalid") {
+		strings.Contains(endpoint, "internal.example.invalid") {
 		_, parallelToolCallsPresent := payload["parallel_tool_calls"]
 		// #region debug-point A-C-D:foundation-f04-provider-request
 		reportFoundationF04DuplicateToolCallsDebug(
@@ -1258,7 +1342,7 @@ func (s *ProviderService) callOpenAIStream(
 	}
 	if tools, ok := payload["tools"].([]openAIToolDefinition); ok &&
 		len(tools) > 0 &&
-		strings.Contains(endpoint, "llm-api.example.invalid") {
+		strings.Contains(endpoint, "internal.example.invalid") {
 		indices := make([]int, 0, len(toolCallFragmentCounts))
 		fragmentCounts := make([]int, 0, len(toolCallFragmentCounts))
 		for index := range toolCallFragmentCounts {

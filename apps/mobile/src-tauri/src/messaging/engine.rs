@@ -54,15 +54,16 @@ use messaging_core::outbox::{
 };
 use messaging_core::proto::actor::{ActorDevice, ActorKind, ActorRef};
 use messaging_core::proto::chat::{
-    chat_command, conversation_event, ActorReadCursor, AttachmentTransferState, ChatCommand,
-    ChatStorageOperationState, ChatStoragePolicy, ChatStorageResult, ChatStorageScope,
-    ChatStorageSnapshot, Conversation, ConversationCommandKind, ConversationKind,
-    ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand, ConversationStatus,
-    CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType, DissolveConversationIntent,
-    DurableDeviceInboxItem, MemberRole, MessagingMembershipAction, MlsLeaveIntent,
+    chat_command, conversation_event, ActorReadCursor, AttachmentContentKind,
+    AttachmentTransferState, ChatCommand, ChatStorageOperationState, ChatStoragePolicy,
+    ChatStorageResult, ChatStorageScope, ChatStorageSnapshot, Conversation, ConversationCommandKind,
+    ConversationKind, ConversationMemberAuthorityAction, ConversationMemberAuthorityCommand,
+    ConversationStatus, CryptoEndpoint, DeviceConsumptionReceipt, DeviceInboxPayloadType,
+    DissolveConversationIntent, DurableDeviceInboxItem, MemberRole, MessagingMembershipAction,
+    MlsLeaveIntent,
     PrepareConversationCommandRequest, PrepareConversationCommandResponse,
     PreparedEndpointPayloadKind, PublicEventMarker, SubmitConversationReadCursorRequest,
-    SubmitConversationTypingRequest, UpdateConversationIntent, VoiceNoteMetadata,
+    SubmitConversationTypingRequest, UpdateConversationIntent,
 };
 use messaging_core::proto::social::{
     AcceptSocialFriendRequestRequest, BlockSocialActorRequest, FriendRequestAction,
@@ -198,6 +199,14 @@ pub struct MessagingAccountScope {
     pub device_id: String,
 }
 
+pub(crate) struct SecureContentRuntimeIdentity {
+    pub scope: MessagingAccountScope,
+    pub access_token: Zeroizing<String>,
+    pub signing_key_id: String,
+    pub profile_version: u64,
+    pub device_signing_key: DeviceSigningKey,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingSubmitMessageOutcome {
     pub command_id: Option<String>,
@@ -246,7 +255,8 @@ pub struct MessagingAttachmentStage {
     pub filename: String,
     pub mime_type: String,
     pub plaintext_size: u64,
-    pub voice_note: Option<VoiceNoteMetadata>,
+    pub content_kind: i32,
+    pub duration_ms: u32,
     pub completed: bool,
 }
 
@@ -261,7 +271,8 @@ struct StagedAttachment {
     filename: String,
     mime_type: String,
     plaintext_size: u64,
-    voice_note: Option<VoiceNoteMetadata>,
+    content_kind: i32,
+    duration_ms: u32,
     written_size: u64,
     completed: bool,
 }
@@ -318,6 +329,23 @@ fn validate_call_signal_input(
         return Err("mobile signaling context is invalid".to_string());
     }
     Ok(())
+}
+
+fn validate_attachment_content_metadata(
+    mime_type: &str,
+    content_kind: i32,
+    duration_ms: u32,
+) -> Result<(), String> {
+    match AttachmentContentKind::try_from(content_kind) {
+        Ok(AttachmentContentKind::Unspecified | AttachmentContentKind::File)
+            if duration_ms == 0 => Ok(()),
+        Ok(AttachmentContentKind::VoiceNote)
+            if duration_ms > 0 && mime_type.to_ascii_lowercase().starts_with("audio/") =>
+        {
+            Ok(())
+        }
+        _ => Err("mobile messaging attachment content metadata is invalid".to_string()),
+    }
 }
 
 struct MobileMlsItemConsumer {
@@ -384,7 +412,7 @@ pub struct MobileMessagingEngine {
     mls_manager: Arc<MlsGroupManager>,
     consumer: Arc<CoreItemConsumer>,
     consumer_id: String,
-    consumer_epoch: Arc<AtomicU64>,
+    consumer_epoch: AtomicU64,
     drain_lock: Mutex<()>,
     dispatch_lock: Mutex<()>,
     send_intent_lock: Mutex<()>,
@@ -522,7 +550,7 @@ impl MobileMessagingEngine {
             mls_manager,
             consumer,
             consumer_id,
-            consumer_epoch: Arc::new(AtomicU64::new(0)),
+            consumer_epoch: AtomicU64::new(0),
             drain_lock: Mutex::new(()),
             dispatch_lock: Mutex::new(()),
             send_intent_lock: Mutex::new(()),
@@ -1468,9 +1496,11 @@ impl MobileMessagingEngine {
             authority_sequence,
             authority_hash,
         )?;
-        let identity = self.mls_manager.actor_identity();
+        let (enrollment, device_signing_key) = self.store.active_device_signing_identity()?;
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&device_signing_key.seed_bytes());
         submit_core_leave_intent(
-            identity.as_ref(),
+            &enrollment.certificate.signing_key_id,
+            &signing_key,
             &self.proto_endpoint(),
             &input,
             now_unix_ms(),
@@ -1812,7 +1842,8 @@ impl MobileMessagingEngine {
         filename: &str,
         mime_type: &str,
         plaintext_size: u64,
-        voice_note: Option<VoiceNoteMetadata>,
+        content_kind: i32,
+        duration_ms: u32,
     ) -> Result<MessagingAttachmentStage, String> {
         if filename.trim().is_empty()
             || filename.len() > 1024
@@ -1823,10 +1854,7 @@ impl MobileMessagingEngine {
         {
             return Err("mobile messaging attachment stage is invalid".to_string());
         }
-        messaging_core::codec::private_content::validate_voice_note_metadata(
-            mime_type,
-            voice_note.as_ref(),
-        )?;
+        validate_attachment_content_metadata(mime_type, content_kind, duration_ms)?;
         let _guard = self
             .attachment_source_lock
             .lock()
@@ -1854,7 +1882,8 @@ impl MobileMessagingEngine {
             filename: filename.to_string(),
             mime_type: mime_type.to_string(),
             plaintext_size,
-            voice_note,
+            content_kind,
+            duration_ms,
             written_size: 0,
             completed: false,
         };
@@ -1867,7 +1896,8 @@ impl MobileMessagingEngine {
             filename: stage.filename,
             mime_type: stage.mime_type,
             plaintext_size,
-            voice_note: stage.voice_note,
+            content_kind: stage.content_kind,
+            duration_ms: stage.duration_ms,
             completed: false,
         })
     }
@@ -1909,7 +1939,8 @@ impl MobileMessagingEngine {
             filename: stage.filename.clone(),
             mime_type: stage.mime_type.clone(),
             plaintext_size: stage.plaintext_size,
-            voice_note: stage.voice_note.clone(),
+            content_kind: stage.content_kind,
+            duration_ms: stage.duration_ms,
             completed: false,
         })
     }
@@ -1941,7 +1972,8 @@ impl MobileMessagingEngine {
             filename: stage.filename.clone(),
             mime_type: stage.mime_type.clone(),
             plaintext_size: stage.plaintext_size,
-            voice_note: stage.voice_note.clone(),
+            content_kind: stage.content_kind,
+            duration_ms: stage.duration_ms,
             completed: true,
         })
     }
@@ -2245,7 +2277,8 @@ impl MobileMessagingEngine {
                     filename: attachment.filename.clone(),
                     mime_type: attachment.mime_type.clone(),
                     plaintext_size: attachment.plaintext_size,
-                    voice_note: attachment.voice_note.clone(),
+                    content_kind: attachment.content_kind,
+                    duration_ms: attachment.duration_ms,
                     written_size: attachment.plaintext_size,
                     completed: true,
                 };
@@ -2448,6 +2481,8 @@ impl MobileMessagingEngine {
             &token,
             &plan,
             &command_id,
+            None,
+            &command_id,
             message_id,
             plaintext.trim(),
             created_at_unix_ms,
@@ -2480,6 +2515,8 @@ impl MobileMessagingEngine {
         let command_id = Ulid::new().to_string();
         self.prepare_metadata_with_plan(
             &plan,
+            &command_id,
+            None,
             &command_id,
             message_id,
             interaction,
@@ -2568,6 +2605,8 @@ impl MobileMessagingEngine {
                     self.prepare_edit_with_plan(
                         &token,
                         &plan,
+                        &intent.intent_id,
+                        Some(&intent.command_id),
                         &replacement_command_id,
                         &intent.target_message_id,
                         edited_text,
@@ -2580,6 +2619,8 @@ impl MobileMessagingEngine {
                 {
                     self.prepare_metadata_with_plan(
                         &plan,
+                        &intent.intent_id,
+                        Some(&intent.command_id),
                         &replacement_command_id,
                         &intent.target_message_id,
                         MetadataInteraction::Retract,
@@ -2595,6 +2636,8 @@ impl MobileMessagingEngine {
                 {
                     self.prepare_metadata_with_plan(
                         &plan,
+                        &intent.intent_id,
+                        Some(&intent.command_id),
                         &replacement_command_id,
                         &intent.target_message_id,
                         MetadataInteraction::Reaction {
@@ -2611,6 +2654,8 @@ impl MobileMessagingEngine {
                 {
                     self.prepare_metadata_with_plan(
                         &plan,
+                        &intent.intent_id,
+                        Some(&intent.command_id),
                         &replacement_command_id,
                         &intent.target_message_id,
                         MetadataInteraction::Pin { remove: pin.remove },
@@ -2633,6 +2678,8 @@ impl MobileMessagingEngine {
         &self,
         access_token: &str,
         plan: &PrepareConversationCommandResponse,
+        logical_intent_id: &str,
+        replaces_command_id: Option<&str>,
         command_id: &str,
         message_id: &str,
         plaintext: &str,
@@ -2661,6 +2708,8 @@ impl MobileMessagingEngine {
                 DirectOutboundPreparer::new(self.store.clone(), endpoint)?.prepare_edit(
                     plan,
                     &DirectEditIntent {
+                        logical_intent_id,
+                        replaces_command_id,
                         command_id,
                         message_id,
                         conversation_id: &plan.conversation_id,
@@ -2675,6 +2724,8 @@ impl MobileMessagingEngine {
                     .prepare_edit(
                     plan,
                     &GroupEditTextIntent {
+                        logical_intent_id,
+                        replaces_command_id,
                         command_id,
                         message_id,
                         conversation_id: &plan.conversation_id,
@@ -2693,6 +2744,8 @@ impl MobileMessagingEngine {
     fn prepare_metadata_with_plan(
         &self,
         plan: &PrepareConversationCommandResponse,
+        logical_intent_id: &str,
+        replaces_command_id: Option<&str>,
         command_id: &str,
         message_id: &str,
         interaction: MetadataInteraction<'_>,
@@ -2700,6 +2753,8 @@ impl MobileMessagingEngine {
     ) -> Result<(), String> {
         MetadataInteractionPreparer::new(self.store.clone(), self.proto_endpoint())?.prepare(
             plan,
+            logical_intent_id,
+            replaces_command_id,
             command_id,
             message_id,
             interaction,
@@ -2771,6 +2826,34 @@ impl MobileMessagingEngine {
 
     pub(crate) fn store(&self) -> &MobileMessagingStore {
         self.store.as_ref()
+    }
+
+    pub(crate) fn secure_content_runtime_identity(
+        &self,
+    ) -> Result<SecureContentRuntimeIdentity, String> {
+        let (enrollment, device_signing_key) = self.store.active_device_signing_identity()?;
+        let certificate = enrollment.certificate;
+        let device = certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "mobile secure content device identity has no endpoint".to_string())?;
+        if actor_device_ptid(device)? != self.scope.actor_ptid
+            || device.device_id != self.scope.device_id
+            || device_signing_key.device_id() != self.scope.device_id
+            || certificate.signing_key_id.trim().is_empty()
+            || certificate.observed_profile_version == 0
+        {
+            return Err(
+                "mobile secure content signer does not match the active account".to_string(),
+            );
+        }
+        Ok(SecureContentRuntimeIdentity {
+            scope: self.scope.clone(),
+            access_token: Zeroizing::new(self.access_token()?),
+            signing_key_id: certificate.signing_key_id,
+            profile_version: certificate.observed_profile_version,
+            device_signing_key,
+        })
     }
 
     pub fn refresh_access_token(&self, access_token: String) -> Result<(), String> {
@@ -2941,10 +3024,6 @@ impl MobileMessagingEngine {
             self.consumer_id.clone(),
             DRAIN_BATCH_LIMIT,
         )?;
-        let consumer_epoch = self.consumer_epoch.clone();
-        drain = drain.with_consumer_epoch_observer(Arc::new(move |epoch| {
-            consumer_epoch.store(epoch, Ordering::Release);
-        }));
         if let Some(observer) = observer {
             drain = drain.with_acknowledged_item_observer(observer);
         }
@@ -3621,7 +3700,8 @@ fn prepare_local_attachment_upload(
         filename: stage.filename.clone(),
         mime_type: stage.mime_type.clone(),
         plaintext_sha256: blobs.sha256(source_local_ref)?.to_vec(),
-        voice_note: stage.voice_note.clone(),
+        content_kind: stage.content_kind,
+        duration_ms: stage.duration_ms,
     })
 }
 
@@ -4855,6 +4935,8 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Group as i32,
             name: "Group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:bob".to_string(),
             members: vec![
                 messaging_core::contracts::ConversationAuthorityMemberProjection {
@@ -4924,6 +5006,8 @@ mod tests {
             federation_id: "federation-1".to_string(),
             kind: ConversationKind::Group as i32,
             name: "Group".to_string(),
+            description: String::new(),
+            avatar_object_id: String::new(),
             owner_ptid: "ptid:alice".to_string(),
             members: vec![
                 messaging_core::contracts::ConversationAuthorityMemberProjection {
@@ -5045,7 +5129,13 @@ mod tests {
     fn attachment_stage_requires_bounded_contiguous_chunks() {
         let (engine, root) = test_engine("attachment-stage");
         let stage = engine
-            .begin_attachment_stage("sample.txt", "text/plain", 6, None)
+            .begin_attachment_stage(
+                "sample.txt",
+                "text/plain",
+                6,
+                AttachmentContentKind::File as i32,
+                0,
+            )
             .unwrap();
         assert!(engine
             .write_attachment_stage(&stage.stage_id, 1, b"abc")

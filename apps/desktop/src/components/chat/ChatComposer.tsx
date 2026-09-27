@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -46,7 +47,7 @@ import {
 } from '@peers-touch/client-chat-core';
 
 import { log } from '../../utils/logger';
-import { messagingCommands } from '../../messaging/runtime';
+import { imServiceV1 } from '../../services/im-service';
 import { RustCommandException } from '../../services/desktop_api';
 import type { MessagingLocalAttachmentIntent } from '../../services/im-service-contract';
 import {
@@ -105,6 +106,12 @@ interface ChatComposerProps {
   sending: boolean;
 }
 
+interface RecordedVoiceDraft {
+  file: File;
+  durationSeconds: number;
+  previewUrl: string;
+}
+
 function loadRecentEmojis(): string[] {
   try {
     const raw = window.localStorage.getItem(EMOJI_RECENT_STORAGE_KEY);
@@ -157,6 +164,8 @@ export function ChatComposer({
   const [dragging, setDragging] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [inputExpanded, setInputExpanded] = useState(false);
+  const [voiceSending, setVoiceSending] = useState(false);
+  const [recordedVoice, setRecordedVoice] = useState<RecordedVoiceDraft | null>(null);
   const [recentEmojis, setRecentEmojis] = useState<string[]>(() => loadRecentEmojis());
   const screenshotShortcut = useActiveChatSettingsSlice((state) => state.chatScreenshotShortcut);
   const latestSendOutcome = useSocialChatStore(
@@ -190,7 +199,6 @@ export function ChatComposer({
     drafts,
     readyAttachments,
     uploading,
-    voiceUploading,
     failed,
     addFiles,
     appendPickedAttachment,
@@ -205,16 +213,59 @@ export function ChatComposer({
     fallbackName: t('chat.social.composer.attachmentFallbackName'),
     onUploadFailed: () => toast.error(t('chat.social.composer.uploadFailed')),
   });
+  const discardRecordedVoice = useCallback(() => {
+    setRecordedVoice(null);
+  }, []);
+
+  const sendRecordedVoice = async (draft: RecordedVoiceDraft) => {
+    if (disabled || editing || sending || voiceSending) return;
+    setVoiceSending(true);
+    let stagedPath: string | undefined;
+    try {
+      stagedPath = await imServiceV1.messaging.stageAttachmentSource(
+        draft.file.name,
+        new Uint8Array(await draft.file.arrayBuffer()),
+      );
+      const attachment: MessagingLocalAttachmentIntent = {
+        filePath: stagedPath,
+        filename: draft.file.name,
+        mimeType: draft.file.type || 'audio/webm',
+        contentKind: 'voice_note',
+        durationMs: Math.max(1, Math.round(draft.durationSeconds * 1000)),
+      };
+      await onSend({
+        text: '',
+        attachments: [attachment],
+        messageType: chatMessageTypeForAttachments([attachment]),
+      });
+      setRecordedVoice((current) => current?.previewUrl === draft.previewUrl ? null : current);
+    } catch (error) {
+      if (stagedPath) {
+        await imServiceV1.messaging.discardAttachmentSource(stagedPath).catch((discardError) => {
+          log.warn('chat', 'discard failed voice attachment source', discardError);
+        });
+      }
+      log.error('chat', 'voice message send failed', error);
+      toast.error(t('chat.social.composer.voiceSendFailed'));
+    } finally {
+      setVoiceSending(false);
+    }
+  };
+
   const {
     recording,
     recordingSeconds,
     startRecording,
     stopRecording,
   } = useChatVoiceRecorder({
-    disabled: disabled || sending || voiceUploading,
+    disabled: disabled || sending || voiceSending,
     editing,
     onRecorded: (file, durationSeconds) => {
-      addFiles([file], { durationSeconds });
+      setRecordedVoice({
+        file,
+        durationSeconds,
+        previewUrl: URL.createObjectURL(file),
+      });
     },
     onDenied: () => toast.error(t('chat.social.composer.voiceDenied')),
     onUnsupported: () => toast.error(t('chat.social.composer.voiceUnsupported')),
@@ -234,7 +285,8 @@ export function ChatComposer({
 
   const canSend = !disabled
     && !sending
-    && !voiceUploading
+    && !voiceSending
+    && !recordedVoice
     && !uploading
     && !failed
     && canSubmitChatComposerDraft({
@@ -253,12 +305,17 @@ export function ChatComposer({
   useEffect(() => {
     setEmojiOpen(false);
     setInputExpanded(false);
+    setRecordedVoice(null);
   }, [activeConversationId]);
 
+  useEffect(() => () => {
+    if (recordedVoice) URL.revokeObjectURL(recordedVoice.previewUrl);
+  }, [recordedVoice]);
+
   const handlePickAttachment = async () => {
-    if (disabled || editing || recording || voiceUploading) return;
+    if (disabled || editing || recording || voiceSending) return;
     try {
-      appendPickedAttachment(await messagingCommands.pickAttachmentSource());
+      appendPickedAttachment(await imServiceV1.messaging.pickAttachmentSource());
     } catch (error) {
       if (error instanceof RustCommandException && error.code === 'INVALID_ARGUMENT') return;
       log.error('chat', 'native attachment picker failed', error);
@@ -591,13 +648,6 @@ export function ChatComposer({
                     <img src={item.previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : item.previewUrl && item.mimeType.startsWith('video/') ? (
                     <video src={item.previewUrl} muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : item.previewUrl && item.mimeType.startsWith('audio/') ? (
-                    <audio
-                      src={item.previewUrl}
-                      controls
-                      preload="metadata"
-                      style={{ width: '100%', height: 34 }}
-                    />
                   ) : (
                     renderDraftIcon(item)
                   )}
@@ -626,7 +676,14 @@ export function ChatComposer({
         )}
 
         {recording && (
-          <Flexbox horizontal align="center" justify="space-between" style={{ padding: '8px 10px 0' }}>
+          <Flexbox
+            horizontal
+            align="center"
+            justify="space-between"
+            data-chat-voice-recording
+            data-chat-voice-recording-seconds={recordingSeconds}
+            style={{ padding: '8px 10px 0' }}
+          >
             <Flexbox horizontal align="center" gap={8}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: token.colorError }} />
               <Text style={{ color: token.colorError, fontSize: 13 }}>
@@ -634,13 +691,69 @@ export function ChatComposer({
               </Text>
             </Flexbox>
             <Flexbox horizontal gap={6}>
-              <Button size="small" icon={<X size={13} />} onClick={() => stopRecording(true)}>
+              <Button
+                size="small"
+                icon={<X size={13} />}
+                data-chat-voice-cancel
+                onClick={() => stopRecording(true)}
+              >
                 {t('chat.social.composer.cancelRecord')}
               </Button>
-              <Button size="small" type="primary" icon={<Square size={13} />} onClick={() => stopRecording(false)}>
+              <Button
+                size="small"
+                type="primary"
+                icon={<Square size={13} />}
+                data-chat-voice-finish
+                onClick={() => stopRecording(false)}
+              >
                 {t('chat.social.composer.finishRecord')}
               </Button>
             </Flexbox>
+          </Flexbox>
+        )}
+
+        {recordedVoice && !recording && (
+          <Flexbox
+            horizontal
+            align="center"
+            gap={10}
+            data-chat-voice-draft="preview"
+            data-chat-voice-duration-ms={Math.round(recordedVoice.durationSeconds * 1000)}
+            style={{ padding: '8px 10px 0' }}
+          >
+            <audio
+              controls
+              data-chat-voice-preview
+              preload="metadata"
+              src={recordedVoice.previewUrl}
+              style={{ flex: 1, minWidth: 0, height: 34 }}
+            />
+            <Text style={{ flex: '0 0 auto', fontSize: 12, color: token.colorTextSecondary }}>
+              {formatMediaDurationSeconds(recordedVoice.durationSeconds)}
+            </Text>
+            <Tooltip title={t('chat.social.composer.discardVoice')}>
+              <Button
+                type="text"
+                size="small"
+                icon={<Trash2 size={14} />}
+                aria-label={t('chat.social.composer.discardVoice')}
+                data-chat-voice-discard
+                onClick={discardRecordedVoice}
+                disabled={voiceSending}
+              />
+            </Tooltip>
+            <Button
+              size="small"
+              type="primary"
+              icon={voiceSending ? <Loader2 size={14} className="chat-composer-spin" /> : <Send size={14} />}
+              data-chat-voice-send
+              onClick={() => {
+                void sendRecordedVoice(recordedVoice);
+              }}
+              disabled={voiceSending}
+            >
+              {t('chat.social.composer.sendVoice')}
+            </Button>
           </Flexbox>
         )}
 
@@ -648,7 +761,7 @@ export function ChatComposer({
           ref={textareaRef}
           data-pt-text-input="chat-composer"
           value={value}
-          disabled={disabled || sending || recording || voiceUploading}
+          disabled={disabled || sending || recording || voiceSending || Boolean(recordedVoice)}
           rows={3}
           onInput={handleTextInputObserved}
           onChange={(event: ChangeEvent<HTMLTextAreaElement>) => onChange(event.target.value)}
@@ -709,6 +822,7 @@ export function ChatComposer({
                     type="text"
                     icon={<Smile size={20} />}
                     aria-label={t('chat.social.composer.emoji')}
+                  disabled={Boolean(recordedVoice)}
                     style={toolButtonStyle}
                   />
                 </Tooltip>
@@ -724,7 +838,7 @@ export function ChatComposer({
                   onClick={() => {
                     void handlePickAttachment();
                   }}
-                  disabled={disabled || editing || recording || voiceUploading}
+                  disabled={disabled || editing || recording || voiceSending || Boolean(recordedVoice)}
                   style={toolButtonStyle}
                 />
               </Tooltip>
@@ -735,8 +849,9 @@ export function ChatComposer({
                   type="text"
                   icon={capturing ? <Loader2 size={20} className="chat-composer-spin" /> : <Scissors size={20} />}
                   aria-label={t('chat.social.composer.screenshot', { shortcut: formatChatScreenshotShortcut(screenshotShortcut) })}
+                  data-chat-screenshot-capture
                   onClick={captureScreenshot}
-                  disabled={disabled || editing || recording || capturing || voiceUploading}
+                  disabled={disabled || editing || recording || capturing || voiceSending || Boolean(recordedVoice)}
                   style={toolButtonStyle}
                 />
               </Tooltip>
@@ -745,10 +860,11 @@ export function ChatComposer({
               <Tooltip title={recording ? t('chat.social.composer.recordingTooltip') : t('chat.social.composer.voice')}>
                 <Button
                   type="text"
-                  icon={voiceUploading ? <Loader2 size={20} className="chat-composer-spin" /> : <Mic size={20} />}
+                  icon={voiceSending ? <Loader2 size={20} className="chat-composer-spin" /> : <Mic size={20} />}
                   aria-label={t('chat.social.composer.voice')}
+                  data-chat-voice-record
                   onClick={recording ? () => stopRecording(false) : startRecording}
-                  disabled={disabled || editing || voiceUploading}
+                  disabled={disabled || editing || voiceSending || Boolean(recordedVoice)}
                   style={{ ...toolButtonStyle, color: recording ? token.colorError : token.colorTextSecondary }}
                 />
               </Tooltip>
@@ -789,7 +905,7 @@ export function ChatComposer({
                 <Send size={18} />
               </button>
             </Tooltip>
-            {(uploading || voiceUploading) && (
+            {(uploading || voiceSending) && (
               <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>
                 {t('chat.social.composer.uploading')}
               </Text>

@@ -42,6 +42,37 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn("api.messagingReadCursor", source)
         self.assertIn("api.messagingTypingSend", source)
 
+    def test_terminal_group_restart_uses_registered_message_page_action(self) -> None:
+        harness = self.source("apps/desktop/src/acceptance/chat/harness.ts")
+        runner = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        restart_start = runner.index("    def restart_terminal_group_client(")
+        restart_end = runner.index("    def prove_group_lifecycle(", restart_start)
+        restart_source = runner[restart_start:restart_end]
+
+        self.assertIn("async messagePage({", harness)
+        self.assertIn('"messagePage"', restart_source)
+        self.assertNotIn('"listMessagePage"', restart_source)
+
+    def test_thread_projection_uses_the_thread_specific_read_model(self) -> None:
+        harness = self.source("apps/desktop/src/acceptance/chat/harness.ts")
+        runner = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+
+        self.assertIn("socialThreadKey(", harness)
+        self.assertIn("social.loadThreadMessages(", harness)
+        self.assertIn(
+            '"threadRootMessageId": thread_root_message_id',
+            runner,
+        )
+        self.assertIn(
+            "delivery_station = runtime_station_service(self.manifest, actor)",
+            runner,
+        )
+        self.assertIn("deployment_environment=delivery_environment", runner)
+
     def test_native_actor_aliases_use_canonical_dev_accounts(self) -> None:
         support = self.source(
             "tooling/acceptance/gates/chat/native_support.py"
@@ -151,6 +182,19 @@ class NativeInteractionContractsTest(unittest.TestCase):
         self.assertIn("return async_harness(", retry_submission)
         self.assertNotIn("except Exception", retry_submission)
         self.assertIn("contentState={content_state}", source)
+
+    def test_group_sync_waits_for_eventual_member_projection(self) -> None:
+        source = self.source(
+            "tooling/acceptance/gates/chat/native_interactions_runner.py"
+        )
+        sync_start = source.index("    def sync(")
+        sync_end = source.index("    def group_lifecycle_snapshot(", sync_start)
+        sync_source = source[sync_start:sync_end]
+
+        self.assertIn('if kind == "friend":', sync_source)
+        self.assertIn("wait_until(", sync_source)
+        self.assertIn('f"{actor} projected Group {conversation_id}"', sync_source)
+        self.assertIn("STEP_TIMEOUT", sync_source)
 
     def test_interaction_runner_binds_selected_runtime_cell(self) -> None:
         source = self.source(
@@ -415,7 +459,7 @@ class ContactMessageResilienceTest(unittest.TestCase):
 
         intent_pos = page.find("setDirectOpenIntent(intent)")
         create_direct_pos = page.find(
-            "messagingCommands.createDirect({"
+            "imServiceV1.messaging.createDirect({"
         )
         navigation_pos = page.find("setSubPage('chats')", intent_pos)
         self.assertGreater(
@@ -438,7 +482,6 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "federationId: contact.federationId",
             page[create_direct_pos:create_direct_end],
         )
-        self.assertNotIn("imServiceV1.messaging.createDirect", page)
         self.assertIn("mode: 'inline'", page)
         self.assertIn("failDirectConversationOpen", page)
 

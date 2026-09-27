@@ -48,61 +48,6 @@ type PublicPostRepository interface {
 	UpdateReactionsCount(ctx context.Context, id uint64, snapshotJSON string) error
 }
 
-// PrivatePostRepository accesses `social_private_posts` and the
-// `social_private_audience_grants` join table. Every read path REQUIRES
-// `viewerID` so the type system itself prevents an "I forgot the
-// permission filter" bug — the second defense line. The implementation
-// MUST panic if `Create` is called with a PUBLIC post.
-//
-// Audiences other than FOLLOWERS / SELF / CIRCLE / GROUP / CUSTOM_* are
-// physically impossible to land here because the repo enforces
-// `audience_kind != 'PUBLIC'` at insert.
-type PrivatePostRepository interface {
-	Create(ctx context.Context, p *Post) error
-	GetByID(ctx context.Context, id uint64, viewerPTID string) (*Post, error)
-	ProbeRecordState(ctx context.Context, id uint64) (PostRecordState, error)
-	Delete(ctx context.Context, id uint64, authorPTID string) error
-
-	// ListByFollowingForViewer returns private posts authored by any of
-	// `followedAuthorIDs` whose audience is FOLLOWERS (the only private
-	// kind broadcast to followers as a class). Posts targeting CIRCLE /
-	// GROUP / CUSTOM_* are intentionally excluded — those are served by
-	// the dedicated list methods below.
-	ListByFollowingForViewer(ctx context.Context, viewerPTID string, followedAuthorPTIDs []string, c Cursor, limit int) ([]*Post, error)
-
-	// ListSelfByAuthor returns the viewer's own SELF-audience posts.
-	// Distinct from `ListByAuthorVisibleTo` because SELF posts are only
-	// readable by the author and never appear in any other viewer's feed.
-	ListSelfByAuthor(ctx context.Context, authorPTID string, c Cursor, limit int) ([]*Post, error)
-
-	// ListByCircleForViewer returns posts whose audience is
-	// CIRCLE-targeting `circleID`, accessible to the viewer iff the
-	// viewer is a member of the circle. Membership is asserted by the
-	// application layer before calling this method; the repo trusts the
-	// caller (defense in depth: the third line `CanRead` re-checks).
-	ListByCircleForViewer(ctx context.Context, viewerPTID string, circleID uint64, c Cursor, limit int) ([]*Post, error)
-
-	// ListByCirclesForViewer is the multi-circle variant used by the HOME
-	// merge — pass all circles the viewer is a member of.
-	ListByCirclesForViewer(ctx context.Context, viewerPTID string, circleIDs []uint64, c Cursor, limit int) ([]*Post, error)
-
-	// ListByGroupForViewer / ListByGroupsForViewer mirror the Circle
-	// variants; group membership is resolved via `GroupMembershipChecker`.
-	ListByGroupForViewer(ctx context.Context, viewerPTID string, groupID uint64, c Cursor, limit int) ([]*Post, error)
-	ListByGroupsForViewer(ctx context.Context, viewerPTID string, groupIDs []uint64, c Cursor, limit int) ([]*Post, error)
-
-	// ListByAuthorVisibleTo returns posts authored by `authorID` that
-	// `viewerID` is allowed to see — used when rendering "someone else's
-	// profile". Implementations apply a server-side filter equivalent to
-	// `CanRead` for FOLLOWERS / CIRCLE / GROUP audiences; CUSTOM_* are
-	// resolved via the grants table; SELF posts are excluded unless
-	// `viewerID == authorID`.
-	ListByAuthorVisibleTo(ctx context.Context, authorPTID, viewerPTID string, c Cursor, limit int) ([]*Post, error)
-
-	UpdateCommentsCount(ctx context.Context, id uint64, delta int64) (int64, error)
-	UpdateReactionsCount(ctx context.Context, id uint64, snapshotJSON string) error
-}
-
 // PostRecordState is an owner-internal lifecycle projection. It intentionally
 // carries no author, audience, or content fields, so application policy can
 // classify a point read without exposing a hidden row.
@@ -113,41 +58,6 @@ const (
 	PostRecordLive
 	PostRecordDeleted
 )
-
-// AudienceGrant is the domain-level twin of `db.SocialPrivateAudienceGrant`,
-// representing one entry on a CUSTOM_ALLOW or CUSTOM_DENY post's actor
-// list.
-type AudienceGrant struct {
-	PostID    uint64
-	ActorPTID string
-	Role      GrantRole
-}
-
-// GrantRole mirrors the DB column. Stored as the constants below; the
-// application layer never invents new roles, so a string-typed enum is
-// fine.
-type GrantRole string
-
-const (
-	GrantRoleAllow GrantRole = "allow"
-	GrantRoleDeny  GrantRole = "deny"
-)
-
-// AudienceGrantRepository persists CUSTOM_ALLOW / CUSTOM_DENY actor lists.
-// Lifecycle is bound to the parent post: `MomentService.Create` writes the
-// grant rows in the same transaction as the post; `MomentService.Delete`
-// removes them in the same transaction as the post tombstone.
-type AudienceGrantRepository interface {
-	AddGrants(ctx context.Context, postID uint64, grants []AudienceGrant) error
-	ListGrants(ctx context.Context, postID uint64) ([]AudienceGrant, error)
-	DeleteGrants(ctx context.Context, postID uint64) error
-
-	// HasDenyGrant is the SQL-fast-path used by `PrivatePostRepository.
-	// GetByID` to short-circuit "viewer is on a CUSTOM_DENY list" before
-	// returning a row. Returns true iff `(postID, actorPTID, 'deny')` is
-	// present.
-	HasDenyGrant(ctx context.Context, postID uint64, actorPTID string) (bool, error)
-}
 
 type MomentDelivery struct {
 	ID           uint64

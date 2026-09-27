@@ -17,6 +17,8 @@ pub enum MetadataInteraction<'a> {
 }
 
 pub struct MetadataInteractionCommit<'a> {
+    pub logical_intent_id: &'a str,
+    pub replaces_command_id: Option<&'a str>,
     pub command_id: &'a str,
     pub conversation_id: &'a str,
     pub target_message_id: &'a str,
@@ -62,12 +64,20 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
     pub fn prepare(
         &self,
         plan: &PrepareConversationCommandResponse,
+        logical_intent_id: &str,
+        replaces_command_id: Option<&str>,
         command_id: &str,
         message_id: &str,
         interaction: MetadataInteraction<'_>,
         now_unix_ms: i64,
     ) -> Result<ChatCommand, String> {
-        if command_id.trim().is_empty()
+        let lineage_is_valid = match replaces_command_id {
+            Some(replaced) => !replaced.trim().is_empty() && replaced != command_id,
+            None => logical_intent_id == command_id,
+        };
+        if logical_intent_id.trim().is_empty()
+            || !lineage_is_valid
+            || command_id.trim().is_empty()
             || message_id.trim().is_empty()
             || now_unix_ms <= 0
             || plan.conversation_id.trim().is_empty()
@@ -182,6 +192,8 @@ impl<R: MetadataInteractionRepository> MetadataInteractionPreparer<R> {
         };
         self.repository
             .persist_metadata_interaction(&MetadataInteractionCommit {
+                logical_intent_id,
+                replaces_command_id,
                 command_id,
                 conversation_id: &plan.conversation_id,
                 target_message_id: message_id,
@@ -206,6 +218,8 @@ mod tests {
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct PersistedInteraction {
+        logical_intent_id: String,
+        replaces_command_id: Option<String>,
         command_id: String,
         conversation_id: String,
         target_message_id: String,
@@ -241,6 +255,8 @@ mod tests {
             commit: &MetadataInteractionCommit<'_>,
         ) -> Result<(), String> {
             self.persisted.lock().unwrap().push(PersistedInteraction {
+                logical_intent_id: commit.logical_intent_id.to_string(),
+                replaces_command_id: commit.replaces_command_id.map(str::to_string),
                 command_id: commit.command_id.to_string(),
                 conversation_id: commit.conversation_id.to_string(),
                 target_message_id: commit.target_message_id.to_string(),
@@ -302,6 +318,8 @@ mod tests {
             .prepare(
                 &plan(),
                 "command-1",
+                None,
+                "command-1",
                 "message-1",
                 MetadataInteraction::Reaction {
                     reaction: "thumbs-up",
@@ -321,6 +339,8 @@ mod tests {
 
         let persisted = repository.persisted.lock().unwrap();
         assert_eq!(persisted.len(), 1);
+        assert_eq!(persisted[0].logical_intent_id, "command-1");
+        assert_eq!(persisted[0].replaces_command_id, None);
         assert_eq!(persisted[0].interaction_kind, "reaction-add");
         assert_eq!(persisted[0].command_bytes, command.encode_to_vec());
         assert_eq!(persisted[0].delivery_plan_sha256, vec![9; 32]);
@@ -336,6 +356,8 @@ mod tests {
                 .prepare(
                     &plan(),
                     "command-1",
+                    None,
+                    "command-1",
                     "message-1",
                     MetadataInteraction::Retract,
                     1_234,
@@ -350,6 +372,8 @@ mod tests {
             stale_preparer
                 .prepare(
                     &plan(),
+                    "command-2",
+                    None,
                     "command-2",
                     "message-1",
                     MetadataInteraction::Pin { remove: false },

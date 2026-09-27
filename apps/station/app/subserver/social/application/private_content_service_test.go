@@ -43,6 +43,7 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 	}
 	fixture.clock.now = fixture.clock.now.Add(time.Minute)
 	fixture.audiences.snapshot = socialdomain.FriendsSnapshot{
+		Audience:         &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
 		SourceRevision:   2,
 		SourceHeadSHA256: privateDigest("changed-friends"),
 		RecipientPTIDs:   []string{"ptid:bob", "ptid:eve"},
@@ -121,6 +122,13 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 		bobRead.GetResource().GetPrivateContent().GetViewerEnvelope().
 			GetEndpoint().GetActor().GetPtid() != "ptid:bob" {
 		t.Fatalf("Bob private read projection = %+v", bobRead)
+	}
+	if !proto.Equal(
+		bobRead.GetResource().GetMetadata().GetAuthor(),
+		bobRead.GetResource().GetPrivateContent().GetVerification().
+			GetCommitProof().GetAuthor().GetActor(),
+	) {
+		t.Fatal("Bob private read metadata does not preserve the proven author identity")
 	}
 	attestation := bobRead.GetResource().GetPrivateContent().GetVerification().
 		GetStationSigningKeyAttestation()
@@ -385,6 +393,7 @@ func TestPrivateContentServiceRejectsStaleFriendsAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.audiences.snapshot = socialdomain.FriendsSnapshot{
+		Audience:         &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
 		SourceRevision:   2,
 		SourceHeadSHA256: privateDigest("friends-advanced"),
 		RecipientPTIDs:   []string{"ptid:bob"},
@@ -541,6 +550,12 @@ func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	audienceBytes, err := socialdomain.CanonicalProtoBytes(request.GetAudience())
+	if err != nil {
+		t.Fatal(err)
+	}
+	audienceHash := sha256.Sum256(audienceBytes)
+	emptySubtypeHash := sha256.Sum256(nil)
 	if _, err := fixture.store.ClaimPreparing(
 		ctx,
 		dbmodel.SocialPrivateContentPlan{
@@ -565,6 +580,11 @@ func TestPrivateContentServiceExpiredPreparingDoesNotClaimPreKeys(t *testing.T) 
 			ExpiresAt: fixture.clock.now.Add(
 				socialdomain.PrivateContentPlanLifetime,
 			),
+		},
+		infrastructure.PrivatePrepareBinding{
+			AudienceBytes:                 audienceBytes,
+			AudienceSHA256:                audienceHash[:],
+			SubtypePrepareAuthoritySHA256: emptySubtypeHash[:],
 		},
 	); err != nil {
 		t.Fatal(err)
@@ -595,6 +615,24 @@ func TestPrivateContentServicePrepareSubmitComment(t *testing.T) {
 	fixture := newPrivateContentServiceFixture(t)
 	ctx := context.Background()
 	parentID := privateTestContentID("parent-post")
+	if err := fixture.database.Create(
+		&dbmodel.SocialPrivateContentPost{
+			PostID:                    parentID,
+			ContentID:                 parentID,
+			AuthorPTID:                fixture.author.Endpoint.GetActor().GetPtid(),
+			Generation:                1,
+			AudienceSnapshotID:        "parent-snapshot",
+			Kind:                      privateContentPostKindText,
+			EncryptedPayloadBytes:     []byte("parent"),
+			EncryptedPayloadSHA256:    privateDigest("parent"),
+			ObjectDescriptorSetSHA256: privateDigest("parent-objects"),
+			LifecycleState:            privateContentActiveState,
+			CreatedAt:                 fixture.clock.now,
+			UpdatedAt:                 fixture.clock.now,
+		},
+	).Error; err != nil {
+		t.Fatal(err)
+	}
 	prepared, err := fixture.service.PreparePrivateComment(
 		ctx,
 		fixture.author,
@@ -640,6 +678,17 @@ func TestPrivateContentServicePrepareSubmitComment(t *testing.T) {
 		&dbmodel.SocialPrivateContentComment{},
 		1,
 	)
+	var parent dbmodel.SocialPrivateContentPost
+	if err := fixture.database.First(
+		&parent,
+		"post_id = ?",
+		parentID,
+	).Error; err != nil {
+		t.Fatal(err)
+	}
+	if parent.CommentsCount != 1 {
+		t.Fatalf("private parent CommentsCount = %d, want 1", parent.CommentsCount)
+	}
 }
 
 func TestPrivateContentServiceReadRejectsPersistedTampering(t *testing.T) {
@@ -1019,6 +1068,7 @@ INSERT INTO social_relationship_projections (
 		Endpoint: &actormodel.ActorDeviceRef{
 			Actor: &actormodel.ActorRef{
 				Ptid: "ptid:alice",
+				Acct: "alice@station.test",
 				Kind: actormodel.ActorKind_ACTOR_KIND_PERSON,
 			},
 			DeviceId: "alice-device",
@@ -1026,6 +1076,7 @@ INSERT INTO social_relationship_projections (
 		HomeStationPeerID: "station-local",
 	}
 	snapshot := socialdomain.FriendsSnapshot{
+		Audience:         &actormodel.Audience{Kind: actormodel.Audience_FRIENDS},
 		SourceRevision:   1,
 		SourceHeadSHA256: privateDigest("friends-v1"),
 		RecipientPTIDs:   []string{"ptid:bob"},
@@ -1072,6 +1123,56 @@ func (a *privateContentTestAudience) ResolveFriendsPostSnapshot(
 	context.Context,
 	federationdelivery.Transaction,
 	string,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveFollowersPostSnapshot(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveCirclePostSnapshot(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	uint64,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveGroupPostSnapshot(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	uint64,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveCustomAllowPostSnapshot(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	[]string,
+) (socialdomain.FriendsSnapshot, error) {
+	a.postCalls++
+	return a.snapshot, nil
+}
+
+func (a *privateContentTestAudience) ResolveCustomDenyPostSnapshot(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	_ string,
+	_ []string,
+	_ actormodel.Audience_Kind,
 ) (socialdomain.FriendsSnapshot, error) {
 	a.postCalls++
 	return a.snapshot, nil

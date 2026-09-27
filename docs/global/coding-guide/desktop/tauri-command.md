@@ -240,9 +240,34 @@ pub fn my_command(
 
 ### 异步 Command
 
-对于需要网络请求或耗时操作的 Command，使用 `async`。Chat Command 必须委托给
-`apps/desktop/src-tauri/src/messaging/` 中 actor-scoped 的 Messaging Engine；禁止在
-Command 内直接创建第二个 HTTP client 或本地消息 store。
+对于需要网络请求或耗时操作的 Command，使用 `async`：
+
+```rust
+#[tauri::command]
+pub async fn sync_messages(
+    state: tauri::State<'_, AppState>,
+    input: SyncMessagesInput,
+) -> Result<AppResult<SyncMessagesOutput>, ()> {
+    let client = infrastructure::station_client::get_client(&state);
+
+    match client.sync_messages(input.since).await {
+        Ok(messages) => {
+            let store = infrastructure::local_chat_store::get_store(&state);
+            for msg in &messages {
+                store.save_message(msg).ok();
+            }
+            Ok(AppResult::success(SyncMessagesOutput {
+                synced_count: messages.len() as i32,
+            }))
+        }
+        Err(e) => Ok(AppResult::fail(
+            ErrorCode::Unavailable,
+            &format!("同步失败: {}", e),
+            None,
+        )),
+    }
+}
+```
 
 ### 需要认证的 Command
 
@@ -443,9 +468,23 @@ pub fn validate_mark_as_read(
 
 ### 第三步：实现应用层服务
 
-普通领域由应用层服务编排。Chat 的生产实现由 Messaging Engine 统一拥有命令提交、
-SQLCipher projection、Device Inbox 和 reconcile；Tauri handler 只解析输入并调用该
-owner，不得恢复历史 Chat repository。
+```rust
+// application/chat/mod.rs
+
+pub fn mark_as_read(
+    state: &AppState,
+    conversation_id: &str,
+    last_read_message_id: &str,
+) -> Result<MarkAsReadOutput, ServiceError> {
+    domain::chat::validate_mark_as_read(conversation_id, last_read_message_id)?;
+
+    let store = infrastructure::local_chat_store::get_store(state);
+    store.update_last_read(conversation_id, last_read_message_id)?;
+    let unread_count = store.count_unread(conversation_id)?;
+
+    Ok(MarkAsReadOutput { unread_count })
+}
+```
 
 ### 第四步：实现 Command
 

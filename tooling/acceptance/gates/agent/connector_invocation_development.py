@@ -27,9 +27,10 @@ from tooling.acceptance.core.evidence_store import (
     workspace_id,
 )
 from tooling.acceptance.gates.agent.capability_binding_development import (
-    J02_ACTOR_ACCOUNT,
-    J02_IDENTITY_FIXTURE,
+    OPERATION_SCENARIO_ACTOR_ACCOUNT,
+    OPERATION_SCENARIO_IDENTITY_FIXTURE,
     authenticate_native_client,
+    confirm_native_actor_identity_enrollment,
     copy_native_runtime_logs,
     identity_fixture_evidence,
     persist_native_actor_identity,
@@ -331,17 +332,38 @@ def main() -> int:
             profile_env,
         )
         seeded_identity = seed_native_actor_identity(
-            fixture_root=J02_IDENTITY_FIXTURE,
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
             target_root=runtime_client.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
         )
         runtime_client.start()
-        login = authenticate_native_client(runtime_client, profile_env)
+        login = authenticate_native_client(
+            runtime_client,
+            profile_env,
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
+        identity_enrollment = confirm_native_actor_identity_enrollment(
+            runtime_client,
+            actor_id=str(login["actorId"]),
+        )
+        identity_metadata = persist_native_actor_identity(
+            source_root=runtime_client.actor_identity_root,
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=str(login["actorId"]),
+            station_accepted=identity_enrollment["accepted"] is True,
+            profile=PROFILE,
+            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
         journey_value = runtime_client.harness(
             "runConnectorInvocationDevelopment",
             {
                 "sampleId": f"mca-j05-{artifact_run_id}",
                 "providerBaseUrl": provider_base_url,
+                "providerApiKey": provider_fixture.api_key,
                 "connectorId": CONNECTOR_ID,
             },
             timeout=1200,
@@ -358,18 +380,12 @@ def main() -> int:
             provider_requests,
             credential_field_leaked=credential_field_leaked,
         )
-        identity_metadata = persist_native_actor_identity(
-            source_root=runtime_client.actor_identity_root,
-            fixture_root=J02_IDENTITY_FIXTURE,
-            station_url=profile_env["PT_STATION_URL"],
-            actor_id=str(login["actorId"]),
-            station_accepted=True,
-        )
         journey = {
             "identityFixture": identity_fixture_evidence(
                 identity_metadata,
                 reused=seeded_identity is not None,
             ),
+            "identityEnrollment": identity_enrollment,
             **journey,
         }
     except BaseException as error:
@@ -448,7 +464,7 @@ def main() -> int:
             "stationDeploymentEnvironment": deployment_environment,
             "stationBuildCommit": station.live_commit if station else "",
             "clientRuntime": "native-tauri",
-            "actorAccount": J02_ACTOR_ACCOUNT,
+            "actorAccount": OPERATION_SCENARIO_ACTOR_ACCOUNT,
         },
         "assertions": assertions,
         "capture": {
@@ -488,4 +504,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--formal-candidate"]:
+        from tooling.acceptance.gates.agent.connector_invocation_candidate import (
+            main as candidate_main,
+        )
+
+        raise SystemExit(candidate_main())
+    if sys.argv[1:]:
+        raise SystemExit(
+            "usage: connector_invocation_development.py [--formal-candidate]"
+        )
     raise SystemExit(main())

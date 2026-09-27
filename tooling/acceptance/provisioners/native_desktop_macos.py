@@ -29,7 +29,11 @@ from tooling.acceptance.core import (
     RuntimeCellManifest,
     RuntimeCellState,
 )
-from tooling.acceptance.core.errors import BlockedError, ProvisioningError
+from tooling.acceptance.core.errors import (
+    BlockedError,
+    DriverError,
+    ProvisioningError,
+)
 from tooling.acceptance.drivers.native.base import (
     MouseAction,
     NativeControlSnapshot,
@@ -382,11 +386,29 @@ class NativeDesktopMacOSProvisioner:
                     "macOS runtime-cell probe process identity is unavailable"
                 )
             adapter = MacOSNativeDesktopAdapter()
-            control = self._await_focused_process(adapter, process_id)
             bounds = self._json_probe(
                 _WINDOW_BOUNDS_PROBE,
                 "window bounds",
                 str(process_id),
+            )
+            point, pointer, stack, input_probe, attempted_points = (
+                self._probe_owned_point(
+                    adapter,
+                    process_id,
+                    bounds,
+                )
+            )
+            activation_point = (
+                point
+                if input_probe
+                and not stack.error
+                and stack.point_owned_by(process_id)
+                else None
+            )
+            control = self._await_focused_process(
+                adapter,
+                process_id,
+                activation_point=activation_point,
             )
             point, pointer, stack, input_probe, attempted_points = (
                 self._probe_owned_point(
@@ -498,16 +520,11 @@ class NativeDesktopMacOSProvisioner:
         *,
         timeout_seconds: float = 5.0,
         interval_seconds: float = 0.1,
+        activation_point: tuple[float, float] | None = None,
     ) -> NativeControlSnapshot:
         deadline = time.monotonic() + max(0.0, timeout_seconds)
-        last_control = NativeControlSnapshot(
-            error="Native focus probe did not run"
-        )
+        last_control = adapter.focused_control(process_id)
         while True:
-            adapter.activate_process(process_id)
-            if interval_seconds > 0:
-                time.sleep(interval_seconds)
-            last_control = adapter.focused_control(process_id)
             if (
                 not last_control.error
                 and last_control.frontmost
@@ -515,6 +532,29 @@ class NativeDesktopMacOSProvisioner:
                 and last_control.window_count > 0
             ):
                 return last_control
+            if activation_point is not None:
+                adapter.post_mouse(
+                    (MouseAction.LEFT_DOWN, MouseAction.LEFT_UP),
+                    activation_point,
+                )
+                if interval_seconds > 0:
+                    time.sleep(interval_seconds)
+                last_control = adapter.focused_control(process_id)
+                if (
+                    not last_control.error
+                    and last_control.frontmost
+                    and last_control.actual_frontmost_pid == process_id
+                    and last_control.window_count > 0
+                ):
+                    return last_control
+            try:
+                adapter.activate_process(process_id)
+            except DriverError as error:
+                last_control = NativeControlSnapshot(error=str(error))
+            else:
+                if interval_seconds > 0:
+                    time.sleep(interval_seconds)
+                last_control = adapter.focused_control(process_id)
             if time.monotonic() >= deadline:
                 raise BlockedError(
                     reason=(
@@ -524,6 +564,8 @@ class NativeDesktopMacOSProvisioner:
                     ),
                     resource="runtime-cell-native-focus",
                 )
+            if last_control.error and interval_seconds > 0:
+                time.sleep(interval_seconds)
 
     def _git(self, *args: str) -> str:
         completed = subprocess.run(

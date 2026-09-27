@@ -6,6 +6,17 @@ export function loadedThreadReplyCount(messages: ChatMessage[], rootUlid: string
   return countChatThreadReplies(messages, rootUlid);
 }
 
+export function resolvedThreadReplyCount(
+  messages: ChatMessage[],
+  rootUlid: string,
+  projectedReplyCount?: number,
+): number {
+  return Math.max(
+    loadedThreadReplyCount(messages, rootUlid),
+    projectedReplyCount ?? 0,
+  );
+}
+
 export function loadedThreadReplyIds(messages: ChatMessage[], rootUlid: string): string[] {
   return messages
     .filter(message => messageThreadRootUlid(message) === rootUlid)

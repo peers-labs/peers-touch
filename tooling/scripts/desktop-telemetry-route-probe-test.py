@@ -255,7 +255,7 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def test_report_passes_when_anonymous_route_probes_are_available(self) -> None:
+    def test_report_passes_when_station_auth_and_routes_are_available(self) -> None:
         module = load_module()
         probes = [
             {"path": module.INGEST_PATH, "status": 400, "body": "events must not be empty"},
@@ -267,9 +267,13 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
             runtime_closure = self.write_runtime_closure_report(Path(tmp), "pass")
             with mock.patch.object(module, "target_station_runtime_evidence", return_value=self.target_runtime_proven(module)), mock.patch.object(
                 module, "local_source_deployment_evidence", return_value=self.local_deployment_proven(module)
-            ), mock.patch.object(module, "probe_routes", return_value=probes):
+            ), mock.patch.object(module, "station_login_token", return_value="token"), mock.patch.object(
+                module, "probe_routes", return_value=probes
+            ):
                 report = module.build_report(
                     "http://station.local",
+                    "b@p.t",
+                    "1",
                     0.1,
                     runtime_closure_report=runtime_closure,
                 )
@@ -292,10 +296,10 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         self.assertTrue(report["routeProofTrusted"])
         self.assertEqual(report["routeTrustBlockedProofs"], [])
         self.assertEqual(report["routeTrustBlockedProofCount"], 0)
-        self.assertEqual(report["steps"][0]["detail"]["routes"], probes)
+        self.assertEqual(report["steps"][1]["detail"]["routes"], probes)
         self.assertEqual(report["summary"]["station"], "http://station.local")
         self.assertEqual(report["summary"]["status"], "pass")
-        self.assertEqual(report["summary"]["anonymousProbeStatus"], "pass")
+        self.assertEqual(report["summary"]["authStatus"], "pass")
         self.assertEqual(report["summary"]["routeProbeStatus"], "pass")
         self.assertEqual(report["summary"]["requiredRouteCount"], 3)
         self.assertEqual(report["summary"]["probedRouteCount"], 3)
@@ -333,9 +337,13 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
             runtime_closure = self.write_runtime_closure_report(Path(tmp), "diagnostic incomplete")
             with mock.patch.object(module, "target_station_runtime_evidence", return_value=self.target_runtime_proven(module)), mock.patch.object(
                 module, "local_source_deployment_evidence", return_value=self.local_deployment_proven(module)
-            ), mock.patch.object(module, "probe_routes", return_value=probes):
+            ), mock.patch.object(module, "station_login_token", return_value="token"), mock.patch.object(
+                module, "probe_routes", return_value=probes
+            ):
                 report = module.build_report(
                     "http://station.local",
+                    "b@p.t",
+                    "1",
                     0.1,
                     runtime_closure_report=runtime_closure,
                 )
@@ -391,10 +399,12 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             runtime_closure = self.write_runtime_closure_report(Path(tmp), "pass")
             with mock.patch.object(module, "target_station_runtime_evidence", return_value=self.target_runtime_unproven()), mock.patch.object(
-                module, "probe_routes", return_value=probes
-            ):
+                module, "station_login_token", return_value="token"
+            ), mock.patch.object(module, "probe_routes", return_value=probes):
                 report = module.build_report(
                     "http://station.local",
+                    "b@p.t",
+                    "1",
                     0.1,
                     "out.json",
                     runtime_closure_report=runtime_closure,
@@ -428,13 +438,15 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
             root = Path(tmp)
             self.write_local_station_source(root)
             with mock.patch.object(module, "target_station_runtime_evidence", return_value=self.target_runtime_missing_routes(module)), mock.patch.object(
+                module, "station_login_token", return_value="token"
+            ), mock.patch.object(
                 module,
                 "probe_routes",
                 side_effect=module.GateError(
                     "Station telemetry route missing path=/telemetry/frontend/events/batch status=404 body=404 page not found"
                 ),
             ):
-                report = module.build_report("http://station.local", 0.1, "out.json", repo_root=root)
+                report = module.build_report("http://station.local", "b@p.t", "1", 0.1, "out.json", repo_root=root)
 
         self.assertEqual(report["status"], "fail")
         self.assertEqual(report["failedStep"], "station.telemetry_routes")
@@ -468,7 +480,7 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         self.assertEqual(issue["localSourceRouteEvidence"]["registeredRouteContracts"], module.REQUIRED_ROUTE_CONTRACTS)
         self.assertEqual(report["localSourceRouteEvidence"]["proofStatus"], "PROVEN")
         self.assertEqual(report["summary"]["status"], "fail")
-        self.assertEqual(report["summary"]["anonymousProbeStatus"], "fail")
+        self.assertEqual(report["summary"]["authStatus"], "pass")
         self.assertEqual(report["summary"]["routeProbeStatus"], "fail")
         self.assertEqual(report["summary"]["requiredRoutes"], module.REQUIRED_LOCAL_ROUTE_TOKENS)
         self.assertEqual(report["summary"]["probedRouteCount"], 0)
@@ -668,26 +680,26 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         self.assertEqual(evidence["dirtyRelevantPaths"], [])
         self.assertEqual(evidence["deployableSourcePaths"], [path.as_posix() for path in module.LOCAL_STATION_DEPLOYABLE_SOURCE_PATHS])
 
-    def test_route_probe_failure_is_partial_unproven(self) -> None:
+    def test_auth_failure_is_partial_unproven(self) -> None:
         module = load_module()
 
         with mock.patch.object(module, "target_station_runtime_evidence", return_value=self.target_runtime_unproven()), mock.patch.object(
-            module, "probe_routes", side_effect=module.GateError("route unavailable")
+            module, "station_login_token", side_effect=module.GateError("invalid password")
         ):
-            report = module.build_report("http://station.local", 0.1)
+            report = module.build_report("http://station.local", "b@p.t", "bad", 0.1)
 
         self.assertEqual(report["status"], "fail")
-        self.assertEqual(report["failedStep"], "station.telemetry_routes")
-        self.assertEqual(report["issueBreakdown"][0]["category"], "station-telemetry-route-probe")
+        self.assertEqual(report["failedStep"], "station.auth_login")
+        self.assertEqual(report["issueBreakdown"][0]["category"], "station-auth")
         self.assertEqual(report["issueBreakdown"][0]["status"], "fail")
         self.assertEqual(report["issueBreakdown"][0]["completionStatus"], "PARTIAL")
         self.assertEqual(report["issueBreakdown"][0]["proofStatus"], "UNPROVEN")
         self.assertFalse(report["issueBreakdown"][0]["sampleEmissionAllowed"])
         self.assertEqual(report["completionStatus"], "PARTIAL")
         self.assertEqual(report["proofStatus"], "UNPROVEN")
-        self.assertEqual(report["summary"]["anonymousProbeStatus"], "fail")
-        self.assertEqual(report["summary"]["routeProbeStatus"], "fail")
-        self.assertEqual(report["summary"]["failedStep"], "station.telemetry_routes")
+        self.assertEqual(report["summary"]["authStatus"], "fail")
+        self.assertEqual(report["summary"]["routeProbeStatus"], "not-run")
+        self.assertEqual(report["summary"]["failedStep"], "station.auth_login")
         self.assertEqual(report["summary"]["environmentClassification"], "target-station-route-unproven")
         self.assertFalse(report["summary"]["sampleEmissionAllowed"])
 
@@ -806,32 +818,37 @@ class DesktopTelemetryRouteProbeTest(unittest.TestCase):
         self.assertEqual(probe["status"], "timeout")
         self.assertIn("timed out", probe["body"])
 
-    def test_station_route_timeout_writes_partial_unproven_report(self) -> None:
+    def test_station_auth_timeout_writes_partial_unproven_report(self) -> None:
         module = load_module()
 
         with mock.patch.object(module, "target_station_runtime_evidence", return_value=self.target_runtime_unproven()), mock.patch.object(
             module.urllib.request, "urlopen", side_effect=socket.timeout("timed out")
         ):
-            report = module.build_report("http://station.local", 0.1)
+            report = module.build_report("http://station.local", "b@p.t", "1", 0.1)
 
         self.assertEqual(report["status"], "fail")
-        self.assertEqual(report["failedStep"], "station.telemetry_routes")
+        self.assertEqual(report["failedStep"], "station.auth_login")
         self.assertEqual(report["completionStatus"], "PARTIAL")
         self.assertEqual(report["proofStatus"], "UNPROVEN")
         self.assertIn("timed out", report["reason"])
         self.assertEqual(report["issueBreakdown"][0]["sourceArtifactKind"], module.ARTIFACT_KIND)
         self.assertEqual(report["issueBreakdown"][0]["sourcePhase"], module.PHASE)
 
-    def test_probe_routes_accepts_auth_and_validation_statuses_as_route_present(self) -> None:
+    def test_station_login_device_type_obeys_station_length_constraint(self) -> None:
+        module = load_module()
+
+        self.assertLessEqual(len(module.STATION_LOGIN_DEVICE_TYPE), 20)
+
+    def test_probe_routes_accepts_ingest_validation_error_as_route_present(self) -> None:
         module = load_module()
         responses = {
             module.INGEST_PATH: {"path": module.INGEST_PATH, "status": 400, "body": "events must not be empty"},
-            module.QUERY_PATH: {"path": module.QUERY_PATH, "status": 401, "body": "unauthorized"},
-            module.ROLLUP_PATH: {"path": module.ROLLUP_PATH, "status": 403, "body": "forbidden"},
+            module.QUERY_PATH: {"path": module.QUERY_PATH, "status": 200, "body": '{"events":[]}'},
+            module.ROLLUP_PATH: {"path": module.ROLLUP_PATH, "status": 200, "body": '{"rollups":[]}'},
         }
 
-        with mock.patch.object(module, "station_post_probe", side_effect=lambda station, path, payload, timeout: responses[path]):
-            probes = module.probe_routes("http://station.local", 0.1)
+        with mock.patch.object(module, "station_post_probe", side_effect=lambda station, path, token, payload, timeout: responses[path]):
+            probes = module.probe_routes("http://station.local", "token", 0.1)
 
         self.assertEqual([probe["path"] for probe in probes], [module.INGEST_PATH, module.QUERY_PATH, module.ROLLUP_PATH])
 

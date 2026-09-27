@@ -319,6 +319,41 @@ func (s *TurnService) validatePinnedRuntimeAuthority(
 	ctx context.Context,
 	config *TurnConfig,
 ) error {
+	return s.validatePinnedRuntimeAuthorityWithMode(
+		ctx,
+		config,
+		providerRuntimeAuthorityCurrent,
+	)
+}
+
+func (s *TurnService) validatePinnedContinuationRuntimeAuthority(
+	ctx context.Context,
+	config *TurnConfig,
+) error {
+	return s.validatePinnedRuntimeAuthorityWithMode(
+		ctx,
+		config,
+		providerRuntimeAuthorityCommittedToolContinuation,
+	)
+}
+
+func (s *TurnService) validateProviderCallRuntimeAuthority(
+	ctx context.Context,
+	config *TurnConfig,
+) error {
+	if config != nil &&
+		config.ProviderAuthorityMode ==
+			providerRuntimeAuthorityCommittedToolContinuation {
+		return s.validatePinnedContinuationRuntimeAuthority(ctx, config)
+	}
+	return s.validatePinnedRuntimeAuthority(ctx, config)
+}
+
+func (s *TurnService) validatePinnedRuntimeAuthorityWithMode(
+	ctx context.Context,
+	config *TurnConfig,
+	mode providerRuntimeAuthorityMode,
+) error {
 	if config == nil ||
 		strings.TrimSpace(config.AttemptID) == "" ||
 		strings.TrimSpace(config.ActorID) == "" ||
@@ -328,6 +363,15 @@ func (s *TurnService) validatePinnedRuntimeAuthority(
 			errcode.AgentInvalidSourceState,
 			http.StatusConflict,
 			"provider execution requires a pinned runtime authority",
+			nil,
+		)
+	}
+	if mode != providerRuntimeAuthorityCurrent &&
+		mode != providerRuntimeAuthorityCommittedToolContinuation {
+		return errcode.New(
+			errcode.AgentInvalidSourceState,
+			http.StatusConflict,
+			"provider execution authority mode is unsupported",
 			nil,
 		)
 	}
@@ -409,6 +453,37 @@ func (s *TurnService) validatePinnedRuntimeAuthority(
 			"provider execution budget differs from the pinned snapshot",
 			nil,
 		)
+	}
+	if mode == providerRuntimeAuthorityCommittedToolContinuation {
+		var provider persistence.AgentProvider
+		if err := db.WithContext(ctx).
+			Where(
+				"actor_ptid = ? AND name = ?",
+				config.ActorID,
+				config.Provider,
+			).
+			First(&provider).Error; err != nil {
+			return errcode.New(
+				errcode.AgentInvalidSourceState,
+				http.StatusConflict,
+				"pinned continuation provider authority is unavailable",
+				err,
+			)
+		}
+		if !provider.Enabled ||
+			fmt.Sprintf("%d", provider.Version) !=
+				pinned.GetProviderConfigVersion() {
+			return errcode.New(
+				errcode.AgentVersionConflict,
+				http.StatusConflict,
+				"pinned continuation provider authority is stale",
+				nil,
+			)
+		}
+		config.ProviderConfigVersion = pinned.GetProviderConfigVersion()
+		config.CapabilitySourceVersion =
+			pinned.GetCapabilities().GetProvenance().GetSourceVersion()
+		return nil
 	}
 
 	current, err := s.admissionResolver.Resolve(

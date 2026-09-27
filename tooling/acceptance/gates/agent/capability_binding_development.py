@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -54,6 +55,18 @@ J02_IDENTITY_FIXTURE = (
     / PROFILE
     / "fixtures"
     / "agent-v2-capability-binding"
+)
+OPERATION_SCENARIO_ACTOR_ACCOUNT = "carol@p.t"
+OPERATION_SCENARIO_IDENTITY_FIXTURE = (
+    Path.home()
+    / ".peers-touch"
+    / "dev"
+    / "workspaces"
+    / WORKSPACE_ID
+    / "runtime"
+    / PROFILE
+    / "fixtures"
+    / "agent-v2-operation-scenarios"
 )
 
 
@@ -155,6 +168,9 @@ def _validate_actor_identity_root(root: Path) -> None:
 def _load_actor_identity_fixture(
     fixture_root: Path,
     station_url: str,
+    *,
+    profile: str,
+    account: str,
 ) -> dict[str, Any]:
     try:
         metadata = json.loads(
@@ -162,16 +178,16 @@ def _load_actor_identity_fixture(
         )
     except (OSError, json.JSONDecodeError) as error:
         raise CapabilityBindingDevelopmentError(
-            "retained J02 actor identity metadata is unavailable"
+            "retained actor identity metadata is unavailable"
         ) from error
     require(
         metadata.get("schemaVersion") == 1
-        and metadata.get("profile") == PROFILE
-        and metadata.get("account") == J02_ACTOR_ACCOUNT
+        and metadata.get("profile") == profile
+        and metadata.get("account") == account
         and str(metadata.get("stationUrl") or "").rstrip("/")
         == station_url.rstrip("/")
         and bool(metadata.get("actorId")),
-        "retained J02 actor identity does not match Profile two",
+        f"retained actor identity does not match {profile}/{account}",
     )
     _validate_actor_identity_root(fixture_root / "actor-identity")
     return dict(metadata)
@@ -182,14 +198,21 @@ def seed_native_actor_identity(
     fixture_root: Path,
     target_root: Path,
     station_url: str,
+    profile: str = PROFILE,
+    account: str = J02_ACTOR_ACCOUNT,
 ) -> dict[str, Any] | None:
     if not fixture_root.exists():
         return None
-    metadata = _load_actor_identity_fixture(fixture_root, station_url)
+    metadata = _load_actor_identity_fixture(
+        fixture_root,
+        station_url,
+        profile=profile,
+        account=account,
+    )
     identity_root = fixture_root / "actor-identity"
     require(
         not target_root.exists(),
-        "J02 temporary actor identity root already exists",
+        "temporary actor identity root already exists",
     )
     target_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     shutil.copytree(identity_root, target_root, symlinks=False)
@@ -203,6 +226,8 @@ def persist_native_actor_identity(
     station_url: str,
     actor_id: str,
     station_accepted: bool,
+    profile: str = PROFILE,
+    account: str = J02_ACTOR_ACCOUNT,
 ) -> dict[str, Any]:
     require(
         station_accepted,
@@ -211,16 +236,21 @@ def persist_native_actor_identity(
     _validate_actor_identity_root(source_root)
     metadata = {
         "schemaVersion": 1,
-        "profile": PROFILE,
-        "account": J02_ACTOR_ACCOUNT,
+        "profile": profile,
+        "account": account,
         "actorId": actor_id,
         "stationUrl": station_url.rstrip("/"),
     }
     if fixture_root.exists():
-        seeded = _load_actor_identity_fixture(fixture_root, station_url)
+        seeded = _load_actor_identity_fixture(
+            fixture_root,
+            station_url,
+            profile=profile,
+            account=account,
+        )
         require(
             seeded.get("actorId") == actor_id,
-            "retained J02 actor identity belongs to another actor",
+            "retained actor identity belongs to another actor",
         )
         return dict(seeded)
 
@@ -323,12 +353,19 @@ def evaluate_capability_binding(
 def authenticate_native_client(
     client: FoundationRuntimeClient,
     profile_env: Mapping[str, str],
+    *,
+    profile: str = PROFILE,
+    account: str = J02_ACTOR_ACCOUNT,
 ) -> dict[str, Any]:
+    require(
+        profile_env.get("PT_DEV_PROFILE") == profile,
+        f"Native actor profile mismatch: expected {profile}",
+    )
     client.configure_station(timeout=60)
     login = client.harness(
         "loginWithPassword",
         {
-            "account": J02_ACTOR_ACCOUNT,
+            "account": account,
             "password": profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
         },
         timeout=120,
@@ -355,6 +392,34 @@ def authenticate_native_client(
         "Native Agent Harness is unavailable",
     )
     return dict(login)
+
+
+def confirm_native_actor_identity_enrollment(
+    client: FoundationRuntimeClient,
+    *,
+    actor_id: str,
+) -> dict[str, Any]:
+    sessions = client.harness(
+        "getFoundationCapabilitySessions",
+        {},
+        timeout=240,
+    )
+    require(
+        isinstance(sessions, Mapping),
+        "Native capability session evidence is unavailable",
+    )
+    station_session = sessions.get("selectedStationSession")
+    require(
+        isinstance(station_session, Mapping)
+        and station_session.get("ptid") == actor_id
+        and bool(station_session.get("session_id")),
+        "Station did not accept the Native actor identity",
+    )
+    return {
+        "accepted": True,
+        "actorId": actor_id,
+        "capabilitySessionId": station_session["session_id"],
+    }
 
 
 def cleanup_clients(runtime_pair: FoundationRuntimePair) -> dict[str, Any]:
@@ -643,5 +708,22 @@ def main() -> int:
     return 0 if result_name == "PASS" else 1
 
 
+def cli_main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--formal-candidate",
+        action="store_true",
+        help="execute all reviewed J02 tuples and emit a CANDIDATE",
+    )
+    args = parser.parse_args()
+    if args.formal_candidate:
+        from tooling.acceptance.gates.agent.capability_binding_candidate import (
+            main as candidate_main,
+        )
+
+        return candidate_main()
+    return main()
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(cli_main())

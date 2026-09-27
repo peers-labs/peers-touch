@@ -5,6 +5,7 @@ import {
   api,
   type AvailableModel,
   type Agent,
+  type AgentCapabilityPermissionKind,
   type AgentCreate,
   type AppletInfo,
 } from '../services/desktop_api';
@@ -13,6 +14,11 @@ import { beginMutation, endMutation, toStoreError, type RevalidationState } from
 
 type AgentSurface = 'chat' | 'profile';
 export type AgentSaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'failed' | 'conflict';
+export interface AgentCapabilityFocus {
+  capabilityId: string;
+  permissionKind: AgentCapabilityPermissionKind;
+  requestId: string;
+}
 
 interface AgentState extends RevalidationState {
   selectedModel: string;
@@ -25,12 +31,18 @@ interface AgentState extends RevalidationState {
   applets: AppletInfo[];
   enabledAppletIds: string[];
   agentSurfaces: Record<string, AgentSurface>;
+  capabilityFocusByAgent: Record<string, AgentCapabilityFocus>;
   agentRosterOpen: boolean;
   saveStateByAgentId: Record<string, AgentSaveState>;
 
   setSelectedModel: (model: string, providerId?: string) => void;
   setSelectedAgent: (agent: string) => void;
   setAgentSurface: (agent: string, surface: AgentSurface) => void;
+  focusAgentCapability: (
+    agent: string,
+    capabilityId: string,
+    permissionKind: AgentCapabilityPermissionKind,
+  ) => void;
   getAgentSurface: (agent: string) => AgentSurface;
   setAgentRosterOpen: (open: boolean) => void;
   setDefaultAgent: (agentId: string) => Promise<void>;
@@ -75,6 +87,7 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
   applets: [],
   enabledAppletIds: [],
   agentSurfaces: {},
+  capabilityFocusByAgent: {},
   agentRosterOpen: true,
   saveStateByAgentId: {},
   loading: false,
@@ -115,6 +128,20 @@ export const useAgentStore = createDesktopStore<AgentState>('agent', (set, get) 
       agentSurfaces: {
         ...state.agentSurfaces,
         [agent]: surface,
+      },
+    }));
+  },
+
+  focusAgentCapability: (agent, capabilityId, permissionKind) => {
+    if (!agent || !capabilityId) return;
+    set((state) => ({
+      capabilityFocusByAgent: {
+        ...state.capabilityFocusByAgent,
+        [agent]: {
+          capabilityId,
+          permissionKind,
+          requestId: crypto.randomUUID(),
+        },
       },
     }));
   },

@@ -64,7 +64,7 @@
     {
       "verificationClass": "FUNCTIONAL_CHECK",
       "result": "PASS",
-      "ref": "git:2294b920e4bbbce6de75a7b503a2d338b1f57db1;profile:two;station:station-two;runtime:native-tauri;artifact:<runtime-home>/dev/workspaces/a534541b87e49abf/workflow/MCA-V2-ALIGNMENT-J04/artifacts/20260917T212729015496Z/result.json"
+      "ref": "git:2294b920e4bbbce6de75a7b503a2d338b1f57db1;profile:two;station:station-two;runtime:native-tauri;artifact:/Users/developer/.peers-touch/dev/workspaces/a534541b87e49abf/workflow/MCA-V2-ALIGNMENT-J04/artifacts/20260917T212729015496Z/result.json"
     }
   ]
 }

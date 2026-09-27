@@ -4,6 +4,21 @@ use crate::model::agent::{
 };
 use prost_types::Timestamp;
 
+pub(crate) const ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT: &str =
+    "operation-prepared-before-effect";
+pub(crate) const ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT: &str =
+    "operation-cleanup-before-settlement";
+pub(crate) const ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE: &str = "cancel-result-race";
+pub(crate) const ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED: &str = "executor-effect-before-applied";
+pub(crate) const ACCEPTANCE_BARRIER_BUSINESS_LEASE_BEFORE_TERMINAL: &str =
+    "business-lease-before-terminal";
+pub(crate) const ACCEPTANCE_BARRIER_DEADLINE_BEFORE_TERMINAL: &str =
+    "execution-deadline-before-terminal";
+pub(crate) const ACCEPTANCE_BARRIER_CLEANUP_LEASE_BEFORE_DEADLINE: &str =
+    "cleanup-lease-before-deadline";
+pub(crate) const ACCEPTANCE_BARRIER_STALE_FENCE_BEFORE_EVENT: &str = "stale-fence-before-event";
+pub(crate) const ACCEPTANCE_WORKER_INTERRUPTED: &str = "CAPABILITY_ACCEPTANCE_WORKER_INTERRUPTED";
+
 pub trait LocalOperationExecutor {
     fn execute(
         &self,
@@ -48,6 +63,15 @@ impl<'a> FencedOperationExecutor<'a> {
         operation: CapabilityOperation,
         now_ms: i64,
     ) -> Result<CapabilityOperation, String> {
+        self.consume_at_with_scenario_hook(operation, now_ms, &mut |_, _| Ok(false))
+    }
+
+    pub fn consume_at_with_scenario_hook(
+        &self,
+        operation: CapabilityOperation,
+        now_ms: i64,
+        hook: &mut dyn FnMut(&str, &CapabilityOperation) -> Result<bool, String>,
+    ) -> Result<CapabilityOperation, String> {
         validate_operation_envelope(&operation, self.device_id, self.session_id, now_ms)?;
         let running = self.reporter.report(self.business_event(
             &operation,
@@ -56,6 +80,11 @@ impl<'a> FencedOperationExecutor<'a> {
             "",
             None,
         ))?;
+        interrupt_operation_at(
+            hook,
+            ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT,
+            &running,
+        )?;
         let idempotency_key = (!operation.external_idempotency_key.is_empty())
             .then_some(operation.external_idempotency_key.as_str());
         let (terminal_status, result_ref, error) =
@@ -67,6 +96,15 @@ impl<'a> FencedOperationExecutor<'a> {
                     Some(error),
                 ),
             };
+        for barrier in [
+            ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED,
+            ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE,
+            ACCEPTANCE_BARRIER_BUSINESS_LEASE_BEFORE_TERMINAL,
+            ACCEPTANCE_BARRIER_DEADLINE_BEFORE_TERMINAL,
+            ACCEPTANCE_BARRIER_STALE_FENCE_BEFORE_EVENT,
+        ] {
+            interrupt_operation_at(hook, barrier, &running)?;
+        }
         let settling = self.reporter.report(self.business_event(
             &running,
             terminal_status,
@@ -74,20 +112,25 @@ impl<'a> FencedOperationExecutor<'a> {
             &result_ref,
             error,
         ))?;
-        self.settle_cleanup_at(settling, now_ms)
+        self.settle_cleanup_at_with_scenario_hook(settling, now_ms, hook)
     }
 
-    pub fn reconcile_at(
+    pub fn reconcile_at_with_scenario_hook(
         &self,
         operation: CapabilityOperation,
         now_ms: i64,
+        hook: &mut dyn FnMut(&str, &CapabilityOperation) -> Result<bool, String>,
     ) -> Result<CapabilityOperation, String> {
         validate_operation_scope(&operation, self.device_id, self.session_id)?;
         match CapabilityOperationStatus::try_from(operation.status)
             .unwrap_or(CapabilityOperationStatus::Unspecified)
         {
-            CapabilityOperationStatus::Dispatched => self.consume_at(operation, now_ms),
-            CapabilityOperationStatus::SettlingCleanup => self.settle_cleanup_at(operation, now_ms),
+            CapabilityOperationStatus::Dispatched => {
+                self.consume_at_with_scenario_hook(operation, now_ms, hook)
+            }
+            CapabilityOperationStatus::SettlingCleanup => {
+                self.settle_cleanup_at_with_scenario_hook(operation, now_ms, hook)
+            }
             CapabilityOperationStatus::Running
             | CapabilityOperationStatus::Disconnected
             | CapabilityOperationStatus::Reconnecting => {
@@ -103,7 +146,7 @@ impl<'a> FencedOperationExecutor<'a> {
                         recovery_action: "cleanup_only".to_string(),
                     }),
                 ))?;
-                self.settle_cleanup_at(settling, now_ms)
+                self.settle_cleanup_at_with_scenario_hook(settling, now_ms, hook)
             }
             CapabilityOperationStatus::Succeeded
             | CapabilityOperationStatus::Cancelled
@@ -115,10 +158,11 @@ impl<'a> FencedOperationExecutor<'a> {
         }
     }
 
-    fn settle_cleanup_at(
+    fn settle_cleanup_at_with_scenario_hook(
         &self,
         settling: CapabilityOperation,
         now_ms: i64,
+        hook: &mut dyn FnMut(&str, &CapabilityOperation) -> Result<bool, String>,
     ) -> Result<CapabilityOperation, String> {
         if settling.status != CapabilityOperationStatus::SettlingCleanup as i32
             || settling.cleanup_lease_id.is_empty()
@@ -126,6 +170,12 @@ impl<'a> FencedOperationExecutor<'a> {
             || settling.cleanup_fencing_token == 0
         {
             return Err("CAPABILITY_OPERATION_CLEANUP_AUTHORITY_MISSING".to_string());
+        }
+        for barrier in [
+            ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT,
+            ACCEPTANCE_BARRIER_CLEANUP_LEASE_BEFORE_DEADLINE,
+        ] {
+            interrupt_operation_at(hook, barrier, &settling)?;
         }
         let cleanup_result = self.executor.cleanup(&settling);
         let final_status = if cleanup_result.is_ok() {
@@ -193,6 +243,17 @@ impl<'a> FencedOperationExecutor<'a> {
     }
 }
 
+fn interrupt_operation_at(
+    hook: &mut dyn FnMut(&str, &CapabilityOperation) -> Result<bool, String>,
+    barrier: &str,
+    operation: &CapabilityOperation,
+) -> Result<(), String> {
+    if hook(barrier, operation)? {
+        return Err(ACCEPTANCE_WORKER_INTERRUPTED.to_string());
+    }
+    Ok(())
+}
+
 fn validate_operation_envelope(
     operation: &CapabilityOperation,
     device_id: &str,
@@ -256,6 +317,8 @@ mod tests {
 
     struct Executor {
         cleanup_fails: bool,
+        execute_calls: RefCell<u32>,
+        cleanup_calls: RefCell<u32>,
     }
 
     impl LocalOperationExecutor for Executor {
@@ -264,10 +327,12 @@ mod tests {
             _operation: &CapabilityOperation,
             _external_idempotency_key: Option<&str>,
         ) -> Result<String, CapabilityOperationError> {
+            *self.execute_calls.borrow_mut() += 1;
             Ok("result-ref".to_string())
         }
 
         fn cleanup(&self, _operation: &CapabilityOperation) -> Result<(), String> {
+            *self.cleanup_calls.borrow_mut() += 1;
             if self.cleanup_fails {
                 Err("cleanup failed".to_string())
             } else {
@@ -311,6 +376,8 @@ mod tests {
         };
         let executor = Executor {
             cleanup_fails: false,
+            execute_calls: RefCell::new(0),
+            cleanup_calls: RefCell::new(0),
         };
         let terminal = FencedOperationExecutor::new("device-1", "session-1", &executor, &reporter)
             .consume_at(fixture_operation(), 1_000)
@@ -333,6 +400,8 @@ mod tests {
         };
         let executor = Executor {
             cleanup_fails: false,
+            execute_calls: RefCell::new(0),
+            cleanup_calls: RefCell::new(0),
         };
         let error = FencedOperationExecutor::new("device-2", "session-1", &executor, &reporter)
             .consume_at(fixture_operation(), 1_000)
@@ -340,6 +409,72 @@ mod tests {
 
         assert_eq!(error, "CAPABILITY_OPERATION_AUTHORITY_MISMATCH");
         assert!(reporter.requests.borrow().is_empty());
+    }
+
+    #[test]
+    fn capability_operation_executor_interrupts_at_prepared_boundary_before_effect() {
+        let reporter = Reporter {
+            requests: RefCell::new(Vec::new()),
+        };
+        let executor = Executor {
+            cleanup_fails: false,
+            execute_calls: RefCell::new(0),
+            cleanup_calls: RefCell::new(0),
+        };
+        let error = FencedOperationExecutor::new("device-1", "session-1", &executor, &reporter)
+            .consume_at_with_scenario_hook(fixture_operation(), 1_000, &mut |barrier, _| {
+                Ok(barrier == ACCEPTANCE_BARRIER_OPERATION_PREPARED_BEFORE_EFFECT)
+            })
+            .expect_err("prepared barrier must interrupt the worker generation");
+
+        assert_eq!(error, ACCEPTANCE_WORKER_INTERRUPTED);
+        assert_eq!(*executor.execute_calls.borrow(), 0);
+        assert_eq!(*executor.cleanup_calls.borrow(), 0);
+        assert_eq!(reporter.requests.borrow().len(), 1);
+    }
+
+    #[test]
+    fn capability_operation_executor_interrupts_after_effect_before_terminal_event() {
+        let reporter = Reporter {
+            requests: RefCell::new(Vec::new()),
+        };
+        let executor = Executor {
+            cleanup_fails: false,
+            execute_calls: RefCell::new(0),
+            cleanup_calls: RefCell::new(0),
+        };
+        let error = FencedOperationExecutor::new("device-1", "session-1", &executor, &reporter)
+            .consume_at_with_scenario_hook(fixture_operation(), 1_000, &mut |barrier, _| {
+                Ok(barrier == ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED)
+            })
+            .expect_err("effect barrier must interrupt the worker generation");
+
+        assert_eq!(error, ACCEPTANCE_WORKER_INTERRUPTED);
+        assert_eq!(*executor.execute_calls.borrow(), 1);
+        assert_eq!(*executor.cleanup_calls.borrow(), 0);
+        assert_eq!(reporter.requests.borrow().len(), 1);
+    }
+
+    #[test]
+    fn capability_operation_executor_interrupts_before_cleanup_settlement() {
+        let reporter = Reporter {
+            requests: RefCell::new(Vec::new()),
+        };
+        let executor = Executor {
+            cleanup_fails: false,
+            execute_calls: RefCell::new(0),
+            cleanup_calls: RefCell::new(0),
+        };
+        let error = FencedOperationExecutor::new("device-1", "session-1", &executor, &reporter)
+            .consume_at_with_scenario_hook(fixture_operation(), 1_000, &mut |barrier, _| {
+                Ok(barrier == ACCEPTANCE_BARRIER_OPERATION_CLEANUP_BEFORE_SETTLEMENT)
+            })
+            .expect_err("cleanup barrier must interrupt the worker generation");
+
+        assert_eq!(error, ACCEPTANCE_WORKER_INTERRUPTED);
+        assert_eq!(*executor.execute_calls.borrow(), 1);
+        assert_eq!(*executor.cleanup_calls.borrow(), 0);
+        assert_eq!(reporter.requests.borrow().len(), 2);
     }
 
     fn fixture_operation() -> CapabilityOperation {

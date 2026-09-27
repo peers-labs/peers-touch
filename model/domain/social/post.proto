@@ -5,7 +5,6 @@ package peers_touch.model.social.v1;
 import "google/protobuf/timestamp.proto";
 import "domain/activity/activity.proto";
 import "domain/common/common.proto";
-import "domain/social/media.proto";
 
 option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model;model";
 
@@ -15,15 +14,12 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model
 
 message Post {
   reserved "author_id";
+  reserved 4;
+  reserved "visibility";
 
   string id = 1;
   string author_ptid = 2;
   PostType type = 3;
-  // Deprecated: kept for backward compatibility with existing service /
-  // DB code. New publishing flow should populate `audience` (field 50)
-  // and let P1+ application layer translate into `visibility` for
-  // legacy storage. Do not remove until P1 migration completes.
-  PostVisibility visibility = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
   bool is_deleted = 7;
@@ -44,9 +40,7 @@ message Post {
 
   string reply_to_post_id = 40;
 
-  // ==== Moments extensions (P0) ====
-  // Coexist with legacy `visibility` until P1 service migration. When
-  // both are present, `audience` is the source of truth.
+  // ==== Moments extensions ====
   Audience audience = 50;
   // Aggregated typed reactions for this post; supersedes
   // `interaction.is_liked` semantics. The viewer's own reactions are
@@ -68,12 +62,6 @@ enum PostType {
   POLL = 4;
   REPOST = 5;
   LOCATION = 6;
-}
-
-enum PostVisibility {
-  PUBLIC = 0;
-  FOLLOWERS_ONLY = 1;
-  PRIVATE = 2;
 }
 
 message PostStats {
@@ -234,16 +222,12 @@ message Location {
 // ============================================================================
 
 message CreatePostRequest {
+  reserved 2;
+  reserved "visibility";
+
   PostType type = 1;
-  // Deprecated: replaced by `audience` (field 4). Server uses `audience`
-  // when present and falls back to `visibility` only for legacy clients.
-  // Will be removed in P4 once the desktop scaffold is fully on Audience.
-  PostVisibility visibility = 2;
   string reply_to_post_id = 3;
-  // Audience selector (Moments). REQUIRED for posts created via the new
-  // `/api/v1/social/moments` route. Mutually exclusive with `visibility`
-  // — when both are set the server uses `audience` and ignores
-  // `visibility` per the deprecation note above.
+  // Audience selector. REQUIRED for posts created via the Moments route.
   Audience audience = 4;
 
   oneof content {
@@ -304,9 +288,11 @@ message CreatePostResponse {
 }
 
 message UpdatePostRequest {
+  reserved 3;
+  reserved "visibility";
+
   string post_id = 1;
   optional string content = 2;
-  optional PostVisibility visibility = 3;
 }
 
 message UpdatePostResponse {
@@ -354,9 +340,10 @@ message ListPostsResponse {
 
 message PostFilter {
   reserved "author_id";
+  reserved 2;
+  reserved "visibility";
 
   string author_ptid = 1;
-  repeated PostVisibility visibility = 2;
   bool exclude_replies = 3;
   bool exclude_reposts = 4;
 }
@@ -629,6 +616,9 @@ message RepostResponse {
 //   CUSTOM_DENY    — visible per `base_kind` MINUS `actor_ptids`. base_kind
 //                    MUST be PUBLIC or FOLLOWERS, actor_ptids MUST be non-empty.
 message Audience {
+  reserved 5;
+  reserved "key_envelopes";
+
   enum Kind {
     KIND_UNSPECIFIED = 0;
     PUBLIC = 1;
@@ -649,10 +639,6 @@ message Audience {
   // is subtracted from. MUST be PUBLIC or FOLLOWERS. For all other Kinds
   // this field is silently ignored.
   Kind base_kind = 4;
-  // Key envelopes are audience-specific and intentionally separate from
-  // media ciphertext. Chat reuses Sender Keys; Moments stores per-audience
-  // sealed keys so Station can authorize fanout without reading media keys.
-  repeated peers_touch.model.social.v1.AudienceKeyEnvelope key_envelopes = 5;
 }
 
 // ============================================================================

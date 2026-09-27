@@ -45,6 +45,7 @@ const (
 	PrivateContentConflict        PrivateContentErrorCode = "SOCIAL_PRIVATE_CONFLICT"
 	PrivateContentStalePlan       PrivateContentErrorCode = "SOCIAL_PRIVATE_STALE_PLAN"
 	PrivateContentExpiredPlan     PrivateContentErrorCode = "SOCIAL_PRIVATE_EXPIRED_PLAN"
+	PrivateContentRateLimited     PrivateContentErrorCode = "SOCIAL_PRIVATE_RATE_LIMITED"
 	PrivateContentIntegrityFailed PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRITY_FAILED"
 	PrivateContentDependency      PrivateContentErrorCode = "SOCIAL_PRIVATE_DEPENDENCY_FAILURE"
 	PrivateContentIntegrationGap  PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRATION_GAP"
@@ -54,11 +55,12 @@ const (
 // PrivateContentError is the transport-independent error returned by the W6
 // private-content domain and application service.
 type PrivateContentError struct {
-	Code      PrivateContentErrorCode
-	Operation string
-	Field     string
-	Message   string
-	Cause     error
+	Code       PrivateContentErrorCode
+	Operation  string
+	Field      string
+	Message    string
+	Cause      error
+	RetryAfter time.Duration
 }
 
 func (e *PrivateContentError) Error() string {
@@ -111,6 +113,22 @@ func WrapPrivateContentError(
 	}
 }
 
+func NewPrivateContentRateLimitError(
+	operation string,
+	retryAfter time.Duration,
+) error {
+	if retryAfter < time.Second {
+		retryAfter = time.Second
+	}
+	return &PrivateContentError{
+		Code:       PrivateContentRateLimited,
+		Operation:  operation,
+		Field:      "comment_rate",
+		Message:    "private Comment rate limit exceeded",
+		RetryAfter: retryAfter,
+	}
+}
+
 func PrivateContentCodeOf(err error) PrivateContentErrorCode {
 	var domainError *PrivateContentError
 	if errors.As(err, &domainError) {
@@ -121,6 +139,14 @@ func PrivateContentCodeOf(err error) PrivateContentErrorCode {
 
 func IsPrivateContentCode(err error, code PrivateContentErrorCode) bool {
 	return PrivateContentCodeOf(err) == code
+}
+
+func PrivateContentRetryAfter(err error) time.Duration {
+	var domainError *PrivateContentError
+	if errors.As(err, &domainError) {
+		return domainError.RetryAfter
+	}
+	return 0
 }
 
 // PrivateContentAuthor is the authenticated device and its authoritative home
@@ -145,10 +171,12 @@ func (a PrivateContentAuthor) Validate(operation string) error {
 	return nil
 }
 
-// FriendsSnapshot is the Social-owned accepted-relationship projection used by
-// one prepare. RecipientPTIDs excludes the author and is canonicalized before
-// use.
+// FriendsSnapshot is the Social-owned frozen audience projection used by one
+// prepare. RecipientPTIDs excludes the author and is canonicalized before use.
+// The name is retained inside the W6 service surface, but Audience is the exact
+// Social authority descriptor and must never be inferred from the recipients.
 type FriendsSnapshot struct {
+	Audience         *actormodel.Audience
 	SourceRevision   uint64
 	SourceHeadSHA256 []byte
 	RecipientPTIDs   []string
@@ -167,6 +195,21 @@ func NormalizeFriendsSnapshot(
 	); err != nil {
 		return FriendsSnapshot{}, [sha256.Size]byte{}, err
 	}
+	if err := ValidateAudience(snapshot.Audience); err != nil {
+		return FriendsSnapshot{}, [sha256.Size]byte{}, WrapPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			err,
+		)
+	}
+	if snapshot.Audience.GetKind() == actormodel.Audience_PUBLIC {
+		return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
+			PrivateContentInvalidArgument,
+			operation,
+			"audience",
+			"private content cannot use PUBLIC audience",
+		)
+	}
 	if snapshot.SourceRevision == 0 {
 		return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
 			PrivateContentInvalidArgument,
@@ -183,20 +226,43 @@ func NormalizeFriendsSnapshot(
 			"must contain one SHA-256 digest",
 		)
 	}
-	if len(snapshot.RecipientPTIDs) == 0 ||
-		len(snapshot.RecipientPTIDs) > MaximumPrivateRecipientActors {
+	if len(snapshot.RecipientPTIDs) > MaximumPrivateRecipientActors ||
+		(len(snapshot.RecipientPTIDs) == 0 &&
+			snapshot.Audience.GetKind() != actormodel.Audience_SELF) {
 		return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
 			PrivateContentInvalidArgument,
 			operation,
 			"recipient_ptids",
-			"must contain between 1 and 256 FRIENDS recipients",
+			"must contain between 1 and 256 recipients unless audience is SELF",
 		)
 	}
 
 	normalized := FriendsSnapshot{
+		Audience:         proto.Clone(snapshot.Audience).(*actormodel.Audience),
 		SourceRevision:   snapshot.SourceRevision,
 		SourceHeadSHA256: cloneBytes(snapshot.SourceHeadSHA256),
 		RecipientPTIDs:   append([]string(nil), snapshot.RecipientPTIDs...),
+	}
+	sort.Strings(normalized.Audience.ActorPtids)
+	previousActor := ""
+	for _, actorPTID := range normalized.Audience.ActorPtids {
+		if err := validateIdentifier(
+			actorPTID,
+			255,
+			"audience.actor_ptids",
+			operation,
+		); err != nil {
+			return FriendsSnapshot{}, [sha256.Size]byte{}, err
+		}
+		if actorPTID == previousActor {
+			return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
+				PrivateContentConflict,
+				operation,
+				"audience.actor_ptids",
+				"must be unique",
+			)
+		}
+		previousActor = actorPTID
 	}
 	sort.Strings(normalized.RecipientPTIDs)
 	previous := ""
@@ -220,17 +286,17 @@ func NormalizeFriendsSnapshot(
 		previous = recipientPTID
 	}
 
+	audienceBytes, err := CanonicalProtoBytes(normalized.Audience)
+	if err != nil {
+		return FriendsSnapshot{}, [sha256.Size]byte{}, err
+	}
 	canonical := appendVarintField(
 		nil,
 		1,
 		uint64(PrivateContentFormatVersion),
 	)
 	canonical = appendStringField(canonical, 2, authorPTID)
-	canonical = appendVarintField(
-		canonical,
-		3,
-		uint64(actormodel.Audience_FRIENDS),
-	)
+	canonical = appendBytesField(canonical, 3, audienceBytes)
 	canonical = appendVarintField(
 		canonical,
 		4,
@@ -254,6 +320,8 @@ type PrivatePrepareMaterial struct {
 	ReplyToCommentID  string
 	CommandID         string
 	MomentKind        privatecontentpb.PrivateMomentKind
+	AudienceKind      actormodel.Audience_Kind
+	Audience          *actormodel.Audience
 	ObjectCount       uint32
 	CanonicalBytes    []byte
 	CanonicalSHA256   [sha256.Size]byte
@@ -291,41 +359,49 @@ func CanonicalizePrivateMomentPrepare(
 			err,
 		)
 	}
-	if request.GetAudience().GetKind() != actormodel.Audience_FRIENDS ||
-		len(request.GetAudience().GetKeyEnvelopes()) != 0 {
-		return PrivatePrepareMaterial{}, NewPrivateContentError(
-			PrivateContentUnsupported,
+	audience := proto.Clone(request.GetAudience()).(*actormodel.Audience)
+	sort.Strings(audience.ActorPtids)
+	for index, actorPTID := range audience.ActorPtids {
+		if err := validateIdentifier(
+			actorPTID,
+			255,
+			"audience.actor_ptids",
 			operation,
-			"audience",
-			"W6 accepts only FRIENDS without legacy key envelopes",
-		)
-	}
-	if request.GetPollAuthority() != nil || request.GetRepostAuthority() != nil {
-		return PrivatePrepareMaterial{}, NewPrivateContentError(
-			PrivateContentUnsupported,
-			operation,
-			"subtype_authority",
-			"W6 does not accept poll or repost authority",
-		)
+		); err != nil {
+			return PrivatePrepareMaterial{}, err
+		}
+		if index > 0 && actorPTID == audience.ActorPtids[index-1] {
+			return PrivatePrepareMaterial{}, NewPrivateContentError(
+				PrivateContentConflict,
+				operation,
+				"audience.actor_ptids",
+				"must be unique",
+			)
+		}
 	}
 	switch request.GetKind() {
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT:
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LINK,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LOCATION:
 		if request.GetObjectCount() != 0 {
 			return PrivatePrepareMaterial{}, NewPrivateContentError(
 				PrivateContentInvalidArgument,
 				operation,
 				"object_count",
-				"TEXT requires zero objects",
+				"TEXT-like kind requires zero objects",
 			)
 		}
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE:
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO:
 		if request.GetObjectCount() == 0 ||
 			request.GetObjectCount() > MaximumPrivateObjects {
 			return PrivatePrepareMaterial{}, NewPrivateContentError(
 				PrivateContentInvalidArgument,
 				operation,
 				"object_count",
-				"IMAGE requires between 1 and 10 objects",
+				"IMAGE/VIDEO requires between 1 and 10 objects",
 			)
 		}
 	default:
@@ -333,11 +409,11 @@ func CanonicalizePrivateMomentPrepare(
 			PrivateContentUnsupported,
 			operation,
 			"kind",
-			"W6 accepts only TEXT and IMAGE",
+			"unsupported PrivateMomentKind",
 		)
 	}
 
-	audienceBytes, err := CanonicalProtoBytes(request.GetAudience())
+	audienceBytes, err := CanonicalProtoBytes(audience)
 	if err != nil {
 		return PrivatePrepareMaterial{}, WrapPrivateContentError(
 			PrivateContentInvalidArgument,
@@ -372,6 +448,8 @@ func CanonicalizePrivateMomentPrepare(
 		ContentID:         request.GetContentId(),
 		CommandID:         request.GetCommandId(),
 		MomentKind:        request.GetKind(),
+		AudienceKind:      request.GetAudience().GetKind(),
+		Audience:          audience,
 		ObjectCount:       request.GetObjectCount(),
 		CanonicalBytes:    canonical,
 		CanonicalSHA256:   sha256.Sum256(canonical),
@@ -506,22 +584,27 @@ func CanonicalizePrivateMomentSubmit(
 		)
 	}
 	switch kind {
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT:
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_TEXT,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LINK,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_POLL,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_REPOST,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_LOCATION:
 		if len(request.GetObjects()) != 0 {
 			return PrivateSubmitMaterial{}, NewPrivateContentError(
 				PrivateContentInvalidArgument,
 				operation,
 				"objects",
-				"TEXT requires zero objects",
+				"TEXT-like kind requires zero objects",
 			)
 		}
-	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE:
+	case privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_IMAGE,
+		privatecontentpb.PrivateMomentKind_PRIVATE_MOMENT_KIND_VIDEO:
 		if len(request.GetObjects()) == 0 {
 			return PrivateSubmitMaterial{}, NewPrivateContentError(
 				PrivateContentInvalidArgument,
 				operation,
 				"objects",
-				"IMAGE requires at least one object",
+				"IMAGE/VIDEO requires at least one object",
 			)
 		}
 	default:
@@ -529,7 +612,7 @@ func CanonicalizePrivateMomentSubmit(
 			PrivateContentUnsupported,
 			operation,
 			"kind",
-			"W6 accepts only TEXT and IMAGE",
+			"unsupported PrivateMomentKind",
 		)
 	}
 	return canonicalizePrivateSubmit(

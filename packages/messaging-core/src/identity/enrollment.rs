@@ -418,26 +418,6 @@ mod tests {
     }
 
     #[test]
-    fn fresh_enrollment_uses_authenticated_session_device_id() {
-        let state = generate_fresh_device_identity_for_device_from_seed(
-            "alice@p.t",
-            "mobile-session-device",
-            &[42u8; 32],
-            1,
-        )
-        .unwrap();
-        assert_eq!(
-            state
-                .enrollment
-                .certificate
-                .device
-                .as_ref()
-                .map(|device| device.device_id.as_str()),
-            Some("mobile-session-device"),
-        );
-    }
-
-    #[test]
     fn enrollment_rejects_wrong_ptid() {
         let seed = [42u8; 32];
         let state = generate_fresh_device_identity("alice@p.t", seed, 1).unwrap();
@@ -447,12 +427,5 @@ mod tests {
     #[test]
     fn enrollment_rejects_empty_ptid() {
         assert!(generate_fresh_device_identity("", [1u8; 32], 1).is_err());
-        assert!(generate_fresh_device_identity_for_device_from_seed(
-            "alice@p.t",
-            " device ",
-            &[1u8; 32],
-            1,
-        )
-        .is_err());
     }
 }

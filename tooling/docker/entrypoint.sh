@@ -49,9 +49,13 @@ set -e
 # Each subdirectory hosts a single concern so the volume layout is greppable:
 #   /app/data/oss                   — OSS local-backend store
 #   /app/data/messaging-attachments — Messaging encrypted attachment blobs
+#   /app/data/social-private-objects — Social encrypted private object blobs
 #   /app/data/libp2pIdentity.key     — transport identity (paths.docker.yml)
 #   /app/data/bootstrap.key          — bootstrap subserver identity (paths.docker.yml)
-mkdir -p /app/data/oss /app/data/messaging-attachments
+mkdir -p \
+  /app/data/oss \
+  /app/data/messaging-attachments \
+  /app/data/social-private-objects
 
 # ── Node label pattern injection ──────────────────────────────────────────────
 # Expand ${PEERS_NODE_LABEL} in actor.yml using envsubst.

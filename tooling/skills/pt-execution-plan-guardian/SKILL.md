@@ -8,6 +8,8 @@ produces: ["ACTION_ALLOWED", "typed denial or amendment escalation"]
 
 # Execution Plan Guardian
 
+Human operating standard: `docs/global/workflow.md`.
+
 This Skill is the policy boundary for EXECUTE. It answers:
 
 ```text

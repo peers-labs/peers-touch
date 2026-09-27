@@ -1387,42 +1387,31 @@ class RunHandle:
                 raw_result,
                 self._redaction_values,
             )
-            artifacts: dict[str, dict[str, Any]] = {}
-            for role, reference in sorted(self._artifacts.items()):
-                reference_payload = reference.to_dict()
-                if (
-                    redact_text_with_values(role, self._redaction_values) != role
-                    or redact_value_with_values(
-                        reference_payload,
-                        self._redaction_values,
-                    )
-                    != reference_payload
-                ):
-                    raise EvidenceManifestInvalid(
-                        "Acceptance artifact reference contains a resolved credential"
-                    )
-                artifacts[role] = reference_payload
-            manifest = redact_value_with_values(
-                {
-                    "artifactKind": "acceptance-run-manifest",
-                    "schemaVersion": 1,
-                    "workspaceId": self.store.workspace_id,
-                    "gateId": self.gate_id,
-                    "runId": self.run_id,
-                    "state": "DURABLE",
-                    "createdAt": self.created_at,
-                    "completedAt": completed_at,
-                    "source": self.source,
-                    "runtime": redact_value_with_values(
-                        dict(runtime or {}),
-                        self._redaction_values,
-                    ),
-                    "result": redacted_result,
-                    "redaction": {"status": redaction_status},
+            manifest = {
+                "artifactKind": "acceptance-run-manifest",
+                "schemaVersion": 1,
+                "workspaceId": self.store.workspace_id,
+                "gateId": self.gate_id,
+                "runId": self.run_id,
+                "state": "DURABLE",
+                "createdAt": self.created_at,
+                "completedAt": completed_at,
+                "source": self.source,
+                "runtime": redact_value_with_values(
+                    dict(runtime or {}),
+                    self._redaction_values,
+                ),
+                "result": redacted_result,
+                "artifacts": {
+                    role: reference.to_dict()
+                    for role, reference in sorted(self._artifacts.items())
                 },
+                "redaction": {"status": redaction_status},
+            }
+            manifest = redact_value_with_values(
+                manifest,
                 self._redaction_values,
             )
-            manifest["artifacts"] = artifacts
             if redacted_secret_scan is not None:
                 manifest["result"]["secretScan"] = redacted_secret_scan
             encoded = (

@@ -27,14 +27,19 @@ KEY_FIELDS = (
 DIMENSION_FIELDS = ("locales", "orderings", "sample_set")
 ROLE_POLICY_FIELDS = ("always", "required", "not_applicable")
 ALWAYS_REQUIRED_ROLES = {
-    "cell-results",
     "runtime-attestation-set",
     "cleanup",
 }
 RUNTIME_ATTESTATION_PROFILES = {
     "direct_runtime",
     "direct_runtime_no_local_capability",
+    "station_command",
+    "station_control_plane",
+    "station_turn",
+    "client_capability_turn",
+    "station_capability_turn",
     "contract_only",
+    "unavailable_runtime",
     "orchestration_guard",
     "non_advertised",
 }
@@ -148,9 +153,9 @@ def _row_cells(
 def _validated_role_policy(
     row: Mapping[str, Any],
     row_id: str,
-) -> dict[str, tuple[str, ...]] | None:
+) -> dict[str, tuple[str, ...]]:
     if "role_policy" not in row:
-        return None
+        raise MatrixError(f"row {row_id} requires role_policy")
     policy = _mapping(row["role_policy"], f"row {row_id} role_policy")
     unexpected = sorted(set(policy) - set(ROLE_POLICY_FIELDS))
     if unexpected:
@@ -199,7 +204,7 @@ def role_policy_by_row(
         row_id = _string(row.get("id"), f"rows[{index}].id")
         gate = _string(row.get("gate"), f"row {row_id} gate")
         policy = _validated_role_policy(row, row_id)
-        if gate == gate_id and policy is not None:
+        if gate == gate_id:
             policies[row_id] = policy
     return policies
 
@@ -215,7 +220,9 @@ def runtime_attestation_profile_by_row(
         gate = _string(row.get("gate"), f"row {row_id} gate")
         raw_profile = row.get("runtime_attestation_profile")
         if raw_profile is None:
-            continue
+            raise MatrixError(
+                f"row {row_id} requires runtime_attestation_profile"
+            )
         profile = _string(
             raw_profile,
             f"row {row_id} runtime_attestation_profile",
@@ -283,6 +290,20 @@ def _dimension_values(
 
     locales = _string_list(resolved["locales"], f"row {row_id} cell {cell} locales")
     orderings = _string_list(resolved["orderings"], f"row {row_id} cell {cell} orderings")
+    if "ordering_filter" in row:
+        ordering_filter = set(
+            _string_list(
+                row["ordering_filter"],
+                f"row {row_id} ordering_filter",
+            )
+        )
+        orderings = [
+            ordering for ordering in orderings if ordering in ordering_filter
+        ]
+        if not orderings:
+            raise MatrixError(
+                f"row {row_id} cell {cell} ordering_filter removed every ordering"
+            )
     sample_set = _string(resolved["sample_set"], f"row {row_id} cell {cell} sample_set")
     if sample_set not in sample_sets:
         raise MatrixError(
@@ -363,11 +384,6 @@ def expand_matrix(matrix: Mapping[str, Any]) -> tuple[list[tuple[str, ...]], dic
         platform = _string(row.get("platform"), f"row {row_id} platform")
         runtime = _string(row.get("runtime"), f"row {row_id} runtime")
         _validated_role_policy(row, row_id)
-        if "role_policy" in row and "runtime_attestation_profile" not in row:
-            raise MatrixError(
-                f"row {row_id} with role_policy requires "
-                "runtime_attestation_profile"
-            )
         runtime_attestation_profile_by_row(matrix, gate)
         for cell in _row_cells(row, row_id, cell_sets):
             locales, orderings, sample_ids = _dimension_values(

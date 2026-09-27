@@ -67,6 +67,17 @@ impl FieldRule {
         }
     }
 
+    pub const fn repeated_message(number: u32, nested: &'static [FieldRule]) -> Self {
+        Self {
+            number,
+            wire_type: WireType::LengthDelimited,
+            cardinality: Cardinality::Repeated,
+            oneof_group: None,
+            reject_default: false,
+            nested: Some(nested),
+        }
+    }
+
     pub const fn oneof(number: u32, wire_type: WireType, group: u16) -> Self {
         Self {
             number,
@@ -141,7 +152,35 @@ pub fn canonicalize_message(
     input: &[u8],
     rules: &[FieldRule],
 ) -> Result<Vec<u8>, CanonicalProtobufError> {
-    let rules = validate_rules(rules)?;
+    canonicalize_message_with_order(input, rules, FieldOrdering::Number)
+}
+
+/// Canonicalizes against a contract whose deterministic encoder uses the
+/// schema's declared field order rather than numeric field order.
+pub fn canonicalize_message_in_rule_order(
+    input: &[u8],
+    rules: &[FieldRule],
+) -> Result<Vec<u8>, CanonicalProtobufError> {
+    canonicalize_message_with_order(input, rules, FieldOrdering::Rule)
+}
+
+#[derive(Clone, Copy)]
+enum FieldOrdering {
+    Number,
+    Rule,
+}
+
+fn canonicalize_message_with_order(
+    input: &[u8],
+    rules: &[FieldRule],
+    ordering: FieldOrdering,
+) -> Result<Vec<u8>, CanonicalProtobufError> {
+    let indexed_rules = validate_rules(rules)?;
+    let rule_order = rules
+        .iter()
+        .enumerate()
+        .map(|(index, rule)| (rule.number, index))
+        .collect::<HashMap<_, _>>();
     let mut cursor = 0;
     let mut parsed = Vec::new();
     let mut singular = HashSet::new();
@@ -156,7 +195,7 @@ pub fn canonicalize_message(
             return Err(CanonicalProtobufError::InvalidFieldNumber);
         }
         let wire_type = WireType::try_from((key & 0x07) as u8)?;
-        let rule = rules
+        let rule = indexed_rules
             .get(&number)
             .ok_or(CanonicalProtobufError::UnknownField(number))?;
         if rule.wire_type != wire_type {
@@ -182,7 +221,11 @@ pub fn canonicalize_message(
             let nested_value = value
                 .get(prefix..prefix + length)
                 .ok_or(CanonicalProtobufError::Truncated)?;
-            value = encode_length_delimited(&canonicalize_message(nested_value, nested)?);
+            value = encode_length_delimited(&canonicalize_message_with_order(
+                nested_value,
+                nested,
+                ordering,
+            )?);
         }
         parsed.push(ParsedField {
             number,
@@ -191,7 +234,12 @@ pub fn canonicalize_message(
         });
     }
 
-    parsed.sort_by_key(|field| field.number);
+    match ordering {
+        FieldOrdering::Number => parsed.sort_by_key(|field| field.number),
+        FieldOrdering::Rule => {
+            parsed.sort_by_key(|field| rule_order.get(&field.number).copied().unwrap())
+        }
+    }
     let mut canonical = Vec::with_capacity(input.len());
     for field in parsed {
         encode_key(field.number, field.wire_type, &mut canonical);
@@ -521,6 +569,20 @@ mod tests {
         assert_eq!(
             canonicalize_message(&outer, &rules).unwrap(),
             [0x0a, 0x05, 0x08, 0x01, 0x12, 0x01, 0x61]
+        );
+    }
+
+    #[test]
+    fn canonicalizes_in_declared_rule_order_when_requested() {
+        let rules = [
+            FieldRule::singular(1, WireType::Varint),
+            FieldRule::singular(3, WireType::Varint),
+            FieldRule::singular(2, WireType::Varint),
+        ];
+        assert_eq!(
+            canonicalize_message_in_rule_order(&[0x08, 0x01, 0x10, 0x02, 0x18, 0x03], &rules,)
+                .unwrap(),
+            [0x08, 0x01, 0x18, 0x03, 0x10, 0x02]
         );
     }
 }

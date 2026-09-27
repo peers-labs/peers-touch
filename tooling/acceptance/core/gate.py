@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import sys
 import time
 import traceback
@@ -8,38 +7,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional
 
-from ._paths import REPO_ROOT
 from .drivers.base import BaseDriver, DomDriver
 from .errors import GateError
 from .evidence import EvidenceReport, new_report
-from .evidence_store import (
-    RUN_GATE_ENV,
-    RUN_ID_ENV,
-    RUN_WORKSPACE_ENV,
-    current_run_directory,
-)
 from .harness import call_async_harness
-
-
-def _managed_run_context_active(gate_id: str) -> bool:
-    context = {
-        name: os.environ.get(name, "").strip()
-        for name in (RUN_WORKSPACE_ENV, RUN_GATE_ENV, RUN_ID_ENV)
-    }
-    populated = tuple(bool(value) for value in context.values())
-    if any(populated) and not all(populated):
-        raise GateError(
-            "Acceptance run context is incomplete; execute through acceptance-run"
-        )
-    if not all(populated):
-        return False
-    if context[RUN_GATE_ENV] != gate_id:
-        raise GateError(
-            "Acceptance run context gate mismatch: "
-            f"expected {gate_id}, got {context[RUN_GATE_ENV]}"
-        )
-    current_run_directory(repo_root=REPO_ROOT)
-    return True
 
 
 class AcceptanceGate(ABC):
@@ -53,9 +24,6 @@ class AcceptanceGate(ABC):
     def __init__(self) -> None:
         if not self.gate_id:
             raise GateError(f"Gate subclass {type(self).__name__} must define gate_id")
-        if _managed_run_context_active(self.gate_id):
-            self.report_path = None
-            self.evidence_dir = None
         self.report: EvidenceReport = new_report(
             self.gate_id,
             phase=self.phase or None,

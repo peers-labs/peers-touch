@@ -26,6 +26,8 @@ from tooling.acceptance.gates.agent.capability_binding_development import (
     resolve_machine_profile,
 )
 from tooling.acceptance.gates.agent.evaluation_development import (
+    ACTOR_ACCOUNTS,
+    ACTOR_IDENTITY_FIXTURES,
     _cleanup_client,
     authenticate_client,
     persist_actor_identity,
@@ -43,7 +45,9 @@ from tooling.acceptance.provisioners.home_station import AGENT_MARKETPLACE_GATE
 
 JOURNEY_ID = "X3-P4-3"
 PROFILE = "two"
-ACCOUNT = "alice@p.t"
+ACTOR_ROLE = "alice"
+ACCOUNT = ACTOR_ACCOUNTS[ACTOR_ROLE]
+IDENTITY_FIXTURE = ACTOR_IDENTITY_FIXTURES[ACTOR_ROLE]
 
 
 class MarketplaceCatalogError(RuntimeError):
@@ -266,7 +270,12 @@ def main() -> int:
                 profile_env,
                 station_url=catalog_proxy.url,
             )
-            reused = seed_actor_identity("alice", client.actor_identity_root, station_url)
+            reused = seed_actor_identity(
+                ACTOR_ROLE,
+                client.actor_identity_root,
+                station_url,
+                fixture=IDENTITY_FIXTURE,
+            )
             client.start()
             login = authenticate_client(
                 client,
@@ -274,10 +283,13 @@ def main() -> int:
                 password=profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
             )
             identity = persist_actor_identity(
-                "alice",
+                ACTOR_ROLE,
                 client.actor_identity_root,
                 station_url,
                 str(login["actorId"]),
+                str(login["stationPeerId"]),
+                fixture=IDENTITY_FIXTURE,
+                station_accepted=login.get("stationAccepted") is True,
             )
             result = client.harness(
                 "runMarketplaceCatalogDevelopment",

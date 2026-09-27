@@ -36,6 +36,28 @@ import { setAppletProductWindowLaunchContext } from '../applet/productWindowE2E'
 const WARM_RESUME_KEY = 'pt.auth.lastActiveAt';
 const LAST_ACTIVE_PAGE_KEY = 'pt.nav.lastActivePage';
 const RENDERER_AUTH_MARKER_KEY = 'pt.identity.rendererAuthenticated';
+const APPLET_PRODUCT_WINDOW_LAUNCH_CONTEXT_TIMEOUT_MS = 5_000;
+
+export async function resolveAppletProductWindowLaunchContext(
+  request: Promise<AppletProductWindowLaunchContext>,
+  timeoutMs = APPLET_PRODUCT_WINDOW_LAUNCH_CONTEXT_TIMEOUT_MS,
+): Promise<AppletProductWindowLaunchContext> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timeoutId = globalThis.setTimeout(() => {
+          reject(new Error('applet product window launch context timed out'));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      globalThis.clearTimeout(timeoutId);
+    }
+  }
+}
 
 // #region debug-point A-D:foundation-launch-context
 function reportFoundationLaunchContextDebug(
@@ -284,7 +306,9 @@ class IdentityRuntime {
     reportFoundationLaunchContextDebug('A', 'launch-context-started', {
       bootReason,
     });
-    api.appletsProductWindowLaunchContext().then((context) => {
+    resolveAppletProductWindowLaunchContext(
+      api.appletsProductWindowLaunchContext(),
+    ).then((context) => {
       reportFoundationLaunchContextDebug('A-D', 'launch-context-resolved', {
         bootReason,
         durationMs: Math.round(performance.now() - launchContextStartedAt),
@@ -322,35 +346,16 @@ class IdentityRuntime {
     });
   };
 
-  private verifySelectedStationBinding = async (): Promise<void> => {
-    const registry = await api.stationList();
-    const selectedUrl = registry.active_url?.trim().replace(/\/+$/, '') ?? '';
-    if (!selectedUrl) {
-      throw new Error('station_access_unselected');
-    }
-    const boundUrl = registry.binding.bound_url?.trim().replace(/\/+$/, '') ?? '';
-    if (
-      boundUrl === selectedUrl
-      && (
-        registry.binding.phase === 'access_gate'
-        || registry.binding.phase === 'bound'
-      )
-    ) {
-      return;
-    }
-    await api.stationSetActive(selectedUrl);
-  };
-
   resolveSession = async (source: 'live' | 'disk' | 'applet'): Promise<void> => {
     this.dispatch({ type: 'SESSION_RESOLVE_STARTED', source });
     try {
-      await this.verifySelectedStationBinding();
       await useSessionStore.getState().restoreSession();
       const user = currentSessionUser();
       if (!user) {
         await this.loadAuthGate('session_missing', false);
         return;
       }
+      await api.stationBindingComplete();
       await this.acceptAuthenticatedEdgeFromCurrentSession(source === 'applet' ? 'applet_launch' : 'restored_session');
     } catch (error) {
       await this.loadAuthGate(classifyRestoreFailure(error), false);
@@ -363,6 +368,7 @@ class IdentityRuntime {
     const user = currentSessionUser();
     if (!user) return;
 
+    await api.stationBindingComplete();
     useOAuth2Store.getState().loadAll().catch(() => {});
     if (this.phase.kind === 'authenticatedPendingCompletion') {
       this.restoredUser = user;
@@ -422,13 +428,22 @@ class IdentityRuntime {
   };
 
   unlockWithPin = async (accountId: string, pin: string): Promise<void> => {
+    this.dispatch({ type: 'SESSION_RESOLVE_STARTED', source: 'live' });
     markLocalIdentityAction();
-    const resp = await api.accountUnlock(accountId, pin);
+    let resp: Awaited<ReturnType<typeof api.accountUnlock>>;
+    try {
+      resp = await api.accountUnlock(accountId, pin);
+    } catch (error) {
+      clearLocalIdentityAction();
+      this.dispatch({ type: 'PIN_REQUIRED', accountId });
+      throw error;
+    }
     await runIdentityPipeline({
       reason: 'unlock',
       actorPtid: resp.actor_ptid ?? null,
       loginMethod: resp.login_method ?? null,
     });
+    useSessionStore.getState().activateAuthenticatedSession(resp);
     await useAccountIdentityStore.getState().load();
     await this.acceptAuthenticatedEdgeFromCurrentSession('pin_unlock');
   };

@@ -1,0 +1,47 @@
+{
+  "id": "chat-group-live",
+  "status": "active",
+  "product_area": "chat",
+  "owners": [
+    "apps/station/app/subserver/groupcall",
+    "apps/desktop/src/modules/groupCall",
+    "apps/desktop/src/components/chat/GroupCallSurface.tsx",
+    "apps/desktop/src/acceptance/chat/harness.ts",
+    "tooling/acceptance/gates/chat/lifecycle_group_live.py",
+    "tooling/acceptance/gates/chat/lifecycle_group_live_e2e.py"
+  ],
+  "truth_sources": [
+    "authenticated Group membership",
+    "deterministic LiveKit room identity",
+    "LiveKit participant and media-track state",
+    "native Desktop group-call surface"
+  ],
+  "visible_surfaces": [
+    {"type": "desktop-native", "selector": "[data-group-call-surface]"},
+    {"type": "desktop-native", "selector": "[data-group-call-participant]"},
+    {"type": "desktop-native", "selector": "[data-group-call-remote-audio]"}
+  ],
+  "required_gates": [
+    "desktop-check",
+    "chat-native-visible-static",
+    "chat-lifecycle-group-live-e2e"
+  ],
+  "acceptance": {
+    "service": [
+      "Station authorizes every join against active Group membership",
+      "all clients receive credentials for one deterministic SFU room",
+      "Station API and Desktop public LiveKit endpoints are configured separately"
+    ],
+    "visible": [
+      "three native clients complete group audio and video calls with live remote media",
+      "mute, camera, late join, leave, and resource release converge across clients",
+      "compact, expanded, and fullscreen call surfaces remain available during the call"
+    ]
+  },
+  "negative": [
+    "group calls must not use peer-to-peer mesh",
+    "Desktop UI and Harness must not import LiveKit directly",
+    "API-only, compile-only, or participant-count-only evidence cannot prove media",
+    "LiveKit tokens and media device identifiers must not enter durable evidence"
+  ]
+}

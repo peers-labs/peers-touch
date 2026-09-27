@@ -121,28 +121,6 @@ func TestDBStoreAllowsMultipleNonOAuthSessions(t *testing.T) {
 	require.Equal(t, int64(2), count)
 }
 
-func TestManagerBindsSessionDeviceOnce(t *testing.T) {
-	store, _ := newSQLiteDBStore(t)
-	manager := NewManager(store, time.Hour)
-	ctx := context.Background()
-	sess := newPersistentTestSession("session-device-binding", 77)
-	sess.Data = map[string]interface{}{
-		"device_type": string(DeviceTypeDesktop),
-		"auth_method": "password",
-	}
-	require.NoError(t, store.Set(ctx, sess.ID, sess))
-
-	require.NoError(t, manager.BindSessionDeviceID(ctx, sess.ID, "device-a"))
-	require.Equal(t, "device-a", manager.ResolveSessionDeviceID(ctx, sess.ID))
-	require.NoError(t, manager.BindSessionDeviceID(ctx, sess.ID, "device-a"))
-	require.ErrorIs(
-		t,
-		manager.BindSessionDeviceID(ctx, sess.ID, "device-b"),
-		ErrSessionDeviceConflict,
-	)
-	require.Equal(t, "device-a", manager.ResolveSessionDeviceID(ctx, sess.ID))
-}
-
 func newSQLiteDBStore(t *testing.T) (*DBStore, *gorm.DB) {
 	t.Helper()
 

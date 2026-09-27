@@ -77,12 +77,14 @@ describe('conversation settings command feedback', () => {
     const updateSource = pageSource.slice(start, end);
 
     expect(updateSource).toContain('useSocialStore.getState().conversationSettings');
+    expect(updateSource).toContain('useGroupStore.getState().settings');
     expect(updateSource).toContain("if (mode === 'retry')");
     expect(updateSource.indexOf('.loadConversationSettings')).toBeLessThan(
       updateSource.indexOf('await updateFriendConversationSettings'),
     );
-    expect(updateSource).toContain('const conversationId = activeConversationId');
-    expect(updateSource).not.toContain('useGroupStore');
+    expect(updateSource.indexOf('.loadSettings')).toBeLessThan(
+      updateSource.indexOf('await updateGroupSettings'),
+    );
     expect(updateSource.indexOf('chatActionStateMatchesPatch')).toBeLessThan(
       updateSource.indexOf("conversationSettingsFeedback(key, 'committed'"),
     );

@@ -306,74 +306,43 @@ class EnvironmentContractTests(unittest.TestCase):
         )
         self.assertFalse(contract.fixtures[0].authorization_required)
 
-    def test_current_profile_actor_resolution_uses_shared_fixture_owner(self):
+    def test_current_profile_actor_resolution_logs_out_discovery_session(self):
         from tooling.acceptance.provisioners import (
             native_tauri_current_profile,
         )
 
+        login_response = mock.MagicMock()
+        login_response.__enter__.return_value.read.return_value = json.dumps(
+            {
+                "data": {
+                    "actor_ref": {"ptid": "ptid:alice"},
+                    "tokens": {"access_token": "session-token"},
+                }
+            }
+        ).encode("utf-8")
+        logout_response = mock.MagicMock()
         with mock.patch.object(
-            native_tauri_current_profile,
-            "resolve_actor_identity",
-            return_value=mock.Mock(
-                role="alice",
-                account_ref="alice@p.t",
-                ptid="ptid:alice",
-            ),
-        ) as resolve:
+            native_tauri_current_profile.urllib.request,
+            "urlopen",
+            side_effect=[login_response, logout_response],
+        ) as urlopen:
             actor = (
                 native_tauri_current_profile.NativeTauriCurrentProfileProvisioner
                 ._resolve_existing_actor(
                     "http://station.example",
-                    "profile-four",
                     "alice",
+                    "fixture-password",
                 )
             )
 
         self.assertEqual(actor.ptid, "ptid:alice")
         self.assertEqual(actor.device_policy, "persistent-acceptance")
-        resolve.assert_called_once_with(
-            "http://station.example",
-            "profile-four",
-            "alice",
-        )
-
-    def test_current_profile_runtime_ports_use_each_worktree_allocation(self):
-        from tooling.acceptance.provisioners import (
-            native_tauri_current_profile,
-        )
-
-        worktree = native_tauri_current_profile.ClientWorktreeIdentity(
-            root=Path("/workspace/peers-chat-high-chat"),
-            logical_name="peers-chat-high-chat",
-            common_dir=Path("/workspace/.git"),
-            head="a" * 40,
-            tree="b" * 40,
-            clean=True,
-        )
-        with mock.patch.object(
-            native_tauri_current_profile,
-            "resolve_machine_profile_environment",
-            return_value=(
-                "four",
-                Path("/workspace/env/four.env"),
-                4,
-                {
-                    "PT_DESKTOP_APP_GATEWAY_PORT": "3430",
-                    "PT_DESKTOP_APP_WEB_PORT": "3610",
-                },
-            ),
-        ) as resolve:
-            ports = (
-                native_tauri_current_profile
-                .NativeTauriCurrentProfileProvisioner
-                ._worktree_runtime_ports(worktree, "four")
-            )
-
+        self.assertEqual(urlopen.call_count, 2)
+        logout_request = urlopen.call_args_list[1].args[0]
         self.assertEqual(
-            ports,
-            {"gateway": 3430, "renderer": 3610, "webdriver": 4485},
+            logout_request.headers["Authorization"],
+            "Bearer session-token",
         )
-        resolve.assert_called_once_with(repo_root=worktree.root)
 
     def test_current_profile_clients_use_actor_specific_storage_seeds(self):
         from tooling.acceptance.provisioners import (
@@ -462,21 +431,6 @@ class EnvironmentContractTests(unittest.TestCase):
                     clean=True,
                 ),
             }
-
-            def runtime_ports(worktree, profile_name):
-                self.assertEqual(profile_name, "four")
-                if worktree.logical_name == "peers-chat-high-chat":
-                    return {
-                        "gateway": 3430,
-                        "renderer": 3610,
-                        "webdriver": 4485,
-                    }
-                return {
-                    "gateway": 3330,
-                    "renderer": 3510,
-                    "webdriver": 4475,
-                }
-
             run_id = f"test-{root.name}"
             with (
                 mock.patch.dict(
@@ -499,11 +453,6 @@ class EnvironmentContractTests(unittest.TestCase):
                     provisioner,
                     "_client_worktrees",
                     return_value=client_worktrees,
-                ),
-                mock.patch.object(
-                    provisioner,
-                    "_worktree_runtime_ports",
-                    side_effect=runtime_ports,
                 ),
             ):
                 clients = provisioner._clients(
@@ -535,17 +484,6 @@ class EnvironmentContractTests(unittest.TestCase):
                 self.assertEqual(
                     [Path(client.worktree).name for client in clients],
                     ["peers-chat-high-chat", "peers-group-chat"],
-                )
-                self.assertEqual(
-                    [
-                        (
-                            client.gateway_port,
-                            client.renderer_port,
-                            client.webdriver_port,
-                        )
-                        for client in clients
-                    ],
-                    [(3430, 3610, 4485), (3330, 3510, 4475)],
                 )
                 self.assertEqual(
                     [client.storage_lifecycle for client in clients],
@@ -599,11 +537,6 @@ class EnvironmentContractTests(unittest.TestCase):
                         "_client_worktrees",
                         return_value=client_worktrees,
                     ),
-                    mock.patch.object(
-                        provisioner,
-                        "_worktree_runtime_ports",
-                        side_effect=runtime_ports,
-                    ),
                 ):
                     repeated = provisioner._clients(
                         run_id=f"{run_id}-repeat",
@@ -648,11 +581,6 @@ class EnvironmentContractTests(unittest.TestCase):
                         provisioner,
                         "_client_worktrees",
                         return_value=client_worktrees,
-                    ),
-                    mock.patch.object(
-                        provisioner,
-                        "_worktree_runtime_ports",
-                        side_effect=runtime_ports,
                     ),
                 ):
                     reset = provisioner._clients(
