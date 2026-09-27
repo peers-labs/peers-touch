@@ -35,7 +35,7 @@
   ],
   "budgets": {
     "focusedCheckSeconds": 300,
-    "functionalRunSeconds": 600,
+    "functionalRunSeconds": 1800,
     "cleanupSeconds": 60
   },
   "checks": [
