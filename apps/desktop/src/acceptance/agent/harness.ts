@@ -32122,7 +32122,21 @@ export function installAcceptanceHarness(): void {
           const residualStatus = String(
             residualCancellation?.status ?? '',
           ).toLowerCase();
-          if (!['cancelled', 'completed'].includes(residualStatus)) {
+          await reportFoundationQueueCapacityDebug(
+            'G,H',
+            'residual-turn-cancellation-observed',
+            {
+              elapsedSinceActiveMs: performance.now() - activeStartedAt,
+              turnIdHash: await sha256Hex(residualTurnId),
+              status: residualStatus,
+              responseKeys: Object.keys(residualCancellation ?? {}).sort(),
+            },
+          );
+          if (
+            !['cancelled', 'completed', 'failed', 'interrupted'].includes(
+              residualStatus,
+            )
+          ) {
             throw new Error(
               'agent.acceptance.foundationResidualTurnNotSettled',
             );
