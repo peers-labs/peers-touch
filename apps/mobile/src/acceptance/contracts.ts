@@ -87,6 +87,7 @@ export const MOBILE_ACCEPTANCE_ACTION_NAMES = [
   'moments.comments.read',
   'storage.cache.seed',
   'storage.conversation-clear.seed',
+  'storage.batch.scenario',
   'storage.retention.seed',
   'settings.profile.read',
   'settings.profile.update',
@@ -1283,6 +1284,14 @@ export interface MobileAcceptanceActionContract {
       conversationId: string;
       messageId: string;
     };
+  };
+  'storage.batch.scenario': {
+    input: {
+      delayMs?: number;
+      failureConversationId?: string;
+      scopeChangeConversationId?: string;
+    };
+    output: { configured: boolean };
   };
   'storage.retention.seed': {
     input: { oldPlaintextBytes: number };

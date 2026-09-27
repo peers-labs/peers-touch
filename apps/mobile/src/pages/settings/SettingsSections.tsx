@@ -783,6 +783,8 @@ export function StorageSection({
                     className="settings-station-actions"
                     data-chat-storage-batch-confirm
                     data-chat-storage-batch-estimated-bytes={String(selectedReclaimableBytes)}
+                    data-chat-storage-batch-selected-count={String(selectedConversations.length)}
+                    data-chat-storage-batch-scope="current-device"
                   >
                     <Button
                       block
@@ -819,7 +821,13 @@ export function StorageSection({
             </div>
           ) : null}
           {batchRunning ? (
-            <Text type="secondary" role="status" data-chat-storage-batch-progress>
+            <Text
+              type="secondary"
+              role="status"
+              data-chat-storage-batch-progress
+              data-chat-storage-batch-completed={String(batchProgress.completedCount)}
+              data-chat-storage-batch-total={String(batchProgress.totalCount)}
+            >
               {t('mobile.settings.storage.batchProgress', batchProgress)}
             </Text>
           ) : null}
