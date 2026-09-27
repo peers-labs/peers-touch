@@ -32748,7 +32748,10 @@ export function installAcceptanceHarness(): void {
         && currentConversationId
       ) {
         preservedReplayReadback = conversationReadback;
-        if (cell === 'BASE-INVALID_RESOURCE_REF') {
+        if (
+          cell === 'BASE-INVALID_RESOURCE_REF'
+          || cell === 'BASE-CANCELLED'
+        ) {
           clearFoundationLocalConversationProjection(currentConversationId);
         }
         const deletionErrorCode = await deleteFoundationConversation(

@@ -2007,6 +2007,24 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("data-pt-agent-message-error-recovery", self.source)
         self.assertIn("await cleanupFoundationToolConversation(", scenario)
         self.assertIn("if (cell === 'BASE-CANCELLED')", self.source)
+        direct_probe = self.source[self.source.index("async foundationDirectProbe") :]
+        cancellation_cleanup = (
+            "cell === 'BASE-INVALID_RESOURCE_REF'\n"
+            "          || cell === 'BASE-CANCELLED'"
+        )
+        self.assertIn(cancellation_cleanup, direct_probe)
+        self.assertLess(
+            direct_probe.index(
+                "clearFoundationLocalConversationProjection(currentConversationId)",
+                direct_probe.index(cancellation_cleanup),
+            ),
+            direct_probe.index(
+                "await deleteFoundationConversation(\n"
+                "          currentConversationId,\n"
+                "        )",
+                direct_probe.index(cancellation_cleanup),
+            ),
+        )
         self.assertNotIn("mock", scenario.lower())
 
     def test_context_overflow_uses_pre_admission_product_path(self) -> None:
