@@ -79,9 +79,9 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 )
 
 
-IOS_RUNTIME = "iOS 17.4"
-IOS_DEVICE_NAME = "iPhone 15 Pro"
-IOS_PEER_DEVICE_NAME = "iPhone 15 Pro Max"
+IOS_RUNTIME = "iOS 26.5"
+IOS_DEVICE_NAME = "iPhone 17"
+IOS_PEER_DEVICE_NAME = "iPhone 17 Pro Max"
 IOS_LAYOUT_ENVIRONMENT_ID = "mobile-ios-layout-simulator"
 STATION_LIFECYCLE_ENVIRONMENT_ID = "mobile-station-lifecycle-simulator"
 DIRECT_SIMULATOR_ENVIRONMENT_ID = "mobile-direct-simulator"
@@ -168,13 +168,9 @@ PROFILE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 IOS_LAYOUT_CLIENTS = {
-    "sim-ios-compact": (
-        "iPhone SE (3rd generation)",
-        "compact",
-    ),
-    "sim-ios-large": (
-        "iPhone 15 Pro Max",
-        "large",
+    "sim-ios-current": (
+        "iPhone 17",
+        "current",
     ),
 }
 ANDROID_AVD_NAME = "peers_touch_applet_l3_e2e"
@@ -1578,11 +1574,10 @@ def load_mobile_ios_layout_simulator_spec(
         client.id: (client.device_name, client.viewport_role)
         for client in clients
     }
-    if actual_clients != IOS_LAYOUT_CLIENTS or len(clients) != 2:
+    if actual_clients != IOS_LAYOUT_CLIENTS or len(clients) != 1:
         raise BlockedError(
             reason=(
-                "Mobile iOS layout clients must pin the compact iPhone SE "
-                "and large iPhone Pro Max cells"
+                "Mobile iOS layout clients must pin the current iPhone 17 cell"
             ),
             resource=f"{IOS_LAYOUT_ENVIRONMENT_ID}:clients",
         )

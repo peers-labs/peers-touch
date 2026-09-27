@@ -250,7 +250,7 @@ authority and the fallback for platform-specific coverage.
 |---|---|
 | `appium.py` | W3C transport, session capabilities, context switching |
 | `simulator_e2e.py` | Simulator callback/restart/fail-closed assertions |
-| `simulator_layout_accessibility_e2e.py` | W9-B compact/large iOS launch-surface layout, locale, keyboard, AX, DOM, and cleanup assertions |
+| `simulator_layout_accessibility_e2e.py` | W9-B current iPhone 17 launch-surface layout, locale, keyboard, AX, DOM, and cleanup assertions |
 | `native_build.py` | Shared source-bound iOS Simulator build validation for cross-plan release Gates |
 | `native_e2e.py` | Physical-device provider and product journeys |
 | `mobile_simulator.py` | Dual-iOS simulator/build/Appium resource lifecycle |
@@ -345,12 +345,9 @@ authoritative Station proof snapshots. They do not affect required completion.
 
 `mobile-ios-simulator-layout-accessibility-e2e` uses the dedicated
 `mobile-ios-layout-simulator` environment. It builds one embedded iOS
-application and installs it on:
+application and installs it on one iOS 26.5 iPhone 17 Simulator cell.
 
-- iPhone SE (3rd generation), the compact viewport cell;
-- iPhone 15 Pro Max, the large viewport cell.
-
-Each cell captures English portrait, keyboard-open portrait, Chinese portrait,
+The cell captures English portrait, keyboard-open portrait, Chinese portrait,
 and Chinese landscape evidence. The Gate rejects clipped leaf text, unlabeled
 interactive controls, controls outside native application bounds, controls
 outside the WebView viewport, missing locale changes, keyboard occlusion, and
@@ -415,8 +412,8 @@ conversation on both clients. Source-level adapter tests are not that proof.
 
 The W9-B Gate uses
 `tooling/acceptance/environments/mobile-ios-layout-simulator.yaml`, shares the
-base iOS build and XCUITest pins, runs the compact and large cells
-sequentially, emits the canonical `acceptance-gate-evidence-report`, and
+base iOS build and XCUITest pins, runs the current iPhone 17 cell, emits the
+canonical `acceptance-gate-evidence-report`, and
 releases sessions and Provisioner resources in reverse acquisition order.
 
 ### 9.2 Simulator E2E (`simulator_e2e.py`)
