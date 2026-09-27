@@ -484,74 +484,80 @@ class SimulatorSocialGateTests(unittest.TestCase):
                 "conversationId": f"conversation-clear-{suffix}",
                 "messageId": f"message-clear-{suffix}",
             }
-            for suffix in ("a", "b", "c", "d", "e", "f")
+            for suffix in ("a", "b", "c", "d", "e", "f", "g")
         ]
 
         class Session:
             def __init__(self) -> None:
                 self.seed_index = 0
-                self.selection_round = 0
                 self.success_result_index = 0
                 self.progress_index = 0
-                self.selection_sets = [
-                    ["conversation-clear-a", "conversation-clear-b"],
-                    ["conversation-clear-c", "conversation-clear-d"],
-                    ["conversation-clear-e", "conversation-clear-f"],
-                    ["conversation-clear-f"],
-                ]
+                self.search_query = ""
+                self.selected: set[str] = set()
                 self.snapshots = [
                     {
-                        "physicalTotalBytes": 8_000_000,
-                        "messageBytes": 4_200_000,
+                        "physicalTotalBytes": 10_000_000,
+                        "messageBytes": 6_300_000,
                         "conversationIds": [
                             "conversation-clear-a",
                             "conversation-clear-b",
+                            "conversation-clear-c",
                         ],
                         "conversationReclaimableBytes": {
                             "conversation-clear-a": 2_100_000,
                             "conversation-clear-b": 2_100_000,
+                            "conversation-clear-c": 2_100_000,
                         },
                     },
                     {
-                        "physicalTotalBytes": 6_000_000,
-                        "messageBytes": 4_200_000,
+                        "physicalTotalBytes": 8_000_000,
+                        "messageBytes": 6_300_000,
                         "conversationIds": [
                             "conversation-clear-c",
                             "conversation-clear-d",
+                            "conversation-clear-e",
                         ],
                         "conversationReclaimableBytes": {
                             "conversation-clear-c": 2_100_000,
                             "conversation-clear-d": 2_100_000,
+                            "conversation-clear-e": 2_100_000,
                         },
                     },
                     {
                         "physicalTotalBytes": 6_000_000,
-                        "messageBytes": 4_200_000,
+                        "messageBytes": 6_300_000,
                         "conversationIds": [
-                            "conversation-clear-e",
+                            "conversation-clear-c",
                             "conversation-clear-f",
+                            "conversation-clear-g",
                         ],
                         "conversationReclaimableBytes": {
-                            "conversation-clear-e": 2_100_000,
+                            "conversation-clear-c": 2_100_000,
                             "conversation-clear-f": 2_100_000,
+                            "conversation-clear-g": 2_100_000,
                         },
                     },
                     {
                         "physicalTotalBytes": 4_000_000,
-                        "messageBytes": 2_100_000,
+                        "messageBytes": 4_200_000,
                         "conversationIds": [
-                            "conversation-clear-e",
+                            "conversation-clear-c",
                             "conversation-clear-f",
+                            "conversation-clear-g",
                         ],
                         "conversationReclaimableBytes": {
-                            "conversation-clear-e": 0,
-                            "conversation-clear-f": 2_100_000,
+                            "conversation-clear-c": 2_100_000,
+                            "conversation-clear-f": 0,
+                            "conversation-clear-g": 2_100_000,
                         },
                     },
                     {
-                        "physicalTotalBytes": 2_000_000,
-                        "messageBytes": 0,
-                        "conversationIds": [],
+                        "physicalTotalBytes": 3_000_000,
+                        "messageBytes": 2_100_000,
+                        "conversationIds": ["conversation-clear-c"],
+                        "conversationReclaimableBytes": {
+                            "conversation-clear-c": 2_100_000,
+                        },
                     },
                 ]
 
@@ -575,9 +581,18 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     return {"configured": True}
                 if action == "messaging.projection.read":
                     conversation_id = payload["conversationId"]
-                    return {"messages": {conversation_id: []}}
+                    messages = (
+                        [{"messageId": "message-clear-c"}]
+                        if conversation_id == "conversation-clear-c"
+                        else []
+                    )
+                    return {"messages": {conversation_id: messages}}
                 if action == "messaging.search":
-                    return []
+                    return (
+                        [{"messageId": "message-clear-c"}]
+                        if payload["conversationId"] == "conversation-clear-c"
+                        else []
+                    )
                 if action == "lifecycle.restart":
                     return {"requested": True, "scope": "webview"}
                 raise AssertionError((action, payload))
@@ -591,22 +606,61 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     }
                 if "data-chat-storage-summary" in script:
                     return self.snapshots.pop(0)
+                if (
+                    "data-chat-storage-search" in script
+                    and "dispatchEvent" in script
+                ):
+                    self.search_query = str(args[0])
+                    return True
+                if (
+                    "data-chat-storage-batch-select-all" in script
+                    and "checkbox.click()" in script
+                ):
+                    self.selected.add("conversation-clear-a")
+                    return True
+                if "visibleIds:" in script:
+                    visible_ids = (
+                        ["conversation-clear-a"]
+                        if self.search_query
+                        else [
+                            "conversation-clear-a",
+                            "conversation-clear-b",
+                            "conversation-clear-c",
+                        ]
+                    )
+                    return {
+                        "visibleIds": visible_ids,
+                        "selectedIds": [
+                            conversation_id
+                            for conversation_id in visible_ids
+                            if conversation_id in self.selected
+                        ],
+                        "additionalSelected": (
+                            "conversation-clear-b" in self.selected
+                        ),
+                        "controlSelected": (
+                            "conversation-clear-c" in self.selected
+                        ),
+                        "clearEnabled": bool(self.selected),
+                    }
                 if "data-chat-storage-batch-result" in script:
                     status = args[0]
                     if status == "partial_failure":
+                        self.selected = {"conversation-clear-e"}
                         return {
                             "succeeded": 1,
                             "failed": 1,
                             "releasedBytes": 2_100_000,
                             "retryVisible": True,
-                            "selected": ["conversation-clear-d"],
+                            "selected": ["conversation-clear-e"],
                         }
                     succeeded = (2, 1, 1)[self.success_result_index]
                     self.success_result_index += 1
+                    self.selected = set()
                     return {
                         "succeeded": succeeded,
                         "failed": 0,
-                        "releasedBytes": 6_000_000,
+                        "releasedBytes": 4_200_000,
                         "retryVisible": False,
                         "selected": [],
                     }
@@ -619,21 +673,23 @@ class SimulatorSocialGateTests(unittest.TestCase):
                     self.progress_index += 1
                     return values
                 if "data-chat-storage-batch-confirm" in script:
-                    selected_count = len(
-                        self.selection_sets[max(0, self.selection_round - 1)]
-                    )
+                    selected_count = len(self.selected)
                     return {
                         "estimatedBytes": 4_200_000,
                         "selectedCount": selected_count,
                         "scope": "current-device",
                         "text": f"Clear {selected_count} on this device",
                     }
+                if "checkbox.click()" in script and args:
+                    self.selected.add(str(args[0]))
+                    return True
                 if "data-chat-storage-selected" in script:
                     if args:
-                        return True
-                    return self.selection_sets[self.selection_round - 1]
+                        return str(args[0]) in self.selected
+                    return sorted(self.selected)
                 if "data-chat-storage-batch-manage" in script:
-                    self.selection_round += 1
+                    self.search_query = ""
+                    self.selected = set()
                 return True
 
         session = Session()
@@ -650,14 +706,32 @@ class SimulatorSocialGateTests(unittest.TestCase):
         self.assertEqual(len(result["conversationIds"]), 6)
         self.assertEqual(result["succeeded"], 2)
         self.assertEqual(result["failed"], 0)
-        self.assertEqual(result["releasedBytes"], 6_000_000)
+        self.assertEqual(result["releasedBytes"], 4_200_000)
         self.assertEqual(result["estimatedReclaimableBytes"], 4_200_000)
+        self.assertEqual(
+            result["filteredSelection"]["filteredVisibleIds"],
+            ["conversation-clear-a"],
+        )
+        self.assertEqual(
+            result["filteredSelection"]["selectedAfterQueryClear"],
+            ["conversation-clear-a"],
+        )
+        self.assertEqual(
+            set(result["filteredSelection"]["selectedIds"]),
+            {"conversation-clear-a", "conversation-clear-b"},
+        )
+        self.assertFalse(result["filteredSelection"]["controlSelected"])
+        self.assertEqual(
+            result["unselectedControl"]["afterRestart"]["messageId"],
+            "message-clear-c",
+        )
+        self.assertTrue(result["unselectedPreserved"])
         self.assertEqual(result["partialFailure"]["failed"], 1)
         self.assertEqual(result["partialRetry"]["succeeded"], 1)
         self.assertEqual(result["scopeChange"]["completed"], 1)
         self.assertEqual(
             result["scopeChange"]["remainingConversationIds"],
-            ["conversation-clear-f"],
+            ["conversation-clear-g"],
         )
         self.assertTrue(result["restartStable"])
         self.assertTrue(result["messagingIdentityPreserved"])

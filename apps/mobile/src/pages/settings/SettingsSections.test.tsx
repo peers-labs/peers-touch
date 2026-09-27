@@ -131,6 +131,7 @@ describe('Settings truthful unavailable and permission states', () => {
   it('exposes batch selection, confirmation, progress, result, and retry controls', () => {
     for (const selector of [
       'data-chat-storage-batch-manage',
+      'data-chat-storage-search',
       'data-chat-storage-batch-select-all',
       'data-chat-storage-conversation-select',
       'data-chat-storage-batch-clear',

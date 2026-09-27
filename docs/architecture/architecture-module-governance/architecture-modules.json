@@ -144,6 +144,86 @@
           "gate": "station-api-ownership"
         }
       ]
+    },
+    {
+      "id": "chat-storage-governance",
+      "root": "docs/architecture/chat-storage-governance",
+      "status": "active",
+      "owner": "Device Messaging Engine",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "CSG-D01",
+        "CSG-D02",
+        "CSG-D03",
+        "CSG-D04",
+        "CSG-D05",
+        "CSG-D06",
+        "CSG-D07",
+        "CSG-D08",
+        "CSG-D09"
+      ],
+      "governedPaths": [
+        "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+        "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+        "apps/mobile/src/pages/settings/SettingsSections.tsx",
+        "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+        "apps/mobile/src-tauri/src/messaging/adapter.rs",
+        "apps/mobile/src-tauri/src/messaging/commands.rs",
+        "apps/mobile/src-tauri/src/messaging/engine.rs",
+        "docs/architecture/chat-storage-governance",
+        "model/domain/chat/storage.proto",
+        "packages/client-chat-core/src/storageBatch.ts",
+        "packages/messaging-core/src/storage_governance",
+        "tooling/acceptance/gates/chat/storage_batch_desktop_runner.py",
+        "tooling/acceptance/gates/chat/storage_governance_contract_test.py",
+        "tooling/acceptance/gates/chat/storage_governance_e2e.py",
+        "tooling/acceptance/gates/chat/storage_governance_runner.py",
+        "tooling/acceptance/gates/chat/storage_redaction_recovery_e2e.py",
+        "tooling/acceptance/gates/chat/storage_redaction_recovery_runner.py",
+        "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+      ],
+      "capabilities": [
+        {
+          "id": "chat.storage.device-governance",
+          "owner": "device.messaging.engine",
+          "contractRoots": [
+            "model/domain/chat/storage.proto",
+            "packages/messaging-core/src/storage_governance"
+          ],
+          "consumers": [
+            "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+            "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+            "packages/client-chat-core/src/storageBatch.ts"
+          ],
+          "allowedDependencies": [
+            "bufbuild.protobuf",
+            "client-chat-core",
+            "messaging-core",
+            "tauri"
+          ],
+          "evidenceGates": [
+            "chat-storage-governance-aggregate-e2e",
+            "chat-storage-batch-clear-aggregate-e2e"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
     }
   ]
 }

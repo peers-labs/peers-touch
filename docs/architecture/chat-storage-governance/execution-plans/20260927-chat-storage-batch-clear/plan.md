@@ -54,6 +54,7 @@
         "pathPrefix": "docs/architecture/chat-storage-governance",
         "mode": "exclusive-write"
       },
+      {"pathPrefix": "docs/architecture/architecture-module-governance", "mode": "exclusive-write"},
       {
         "pathPrefix": "docs/architecture/local-dev-control-plane",
         "mode": "exclusive-write"
@@ -112,11 +113,11 @@
         "pathPrefix": "apps/mobile/src-tauri/src/messaging",
         "mode": "exclusive-write"
       },
-      {"pathPrefix": "apps/mobile/package.json", "mode": "shared-read"},
-      {"pathPrefix": "apps/mobile/scripts", "mode": "shared-read"},
-      {"pathPrefix": "docs/architecture/mobile", "mode": "shared-read"},
-      {"pathPrefix": "docs/client/mobile", "mode": "shared-read"},
-      {"pathPrefix": "pnpm-lock.yaml", "mode": "shared-read"},
+      {"pathPrefix": "apps/mobile/package.json", "mode": "exclusive-write"},
+      {"pathPrefix": "apps/mobile/scripts/ios-dev-sim.sh", "mode": "exclusive-write"},
+      {"pathPrefix": "docs/architecture/mobile/mobile-acceptance-environment.md", "mode": "exclusive-write"},
+      {"pathPrefix": "docs/client/mobile/acceptance-setup.md", "mode": "exclusive-write"},
+      {"pathPrefix": "pnpm-lock.yaml", "mode": "exclusive-write"},
       {
         "pathPrefix": "packages/messaging-core",
         "mode": "shared-read"

@@ -1220,6 +1220,245 @@ return Array.from(document.querySelectorAll(
             "selected Mobile storage rows",
         )
 
+    def _select_mobile_storage_rows_from_filter(
+        self,
+        session: Any,
+        *,
+        filtered_id: str,
+        additional_id: str,
+        control_id: str,
+    ) -> dict[str, Any]:
+        session.execute_script(
+            """
+const button = document.querySelector('[data-chat-storage-batch-manage]');
+if (!button) throw new Error('batch manage action missing');
+button.click();
+"""
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+return Boolean(document.querySelector(
+  '[data-chat-storage-batch-actions]'
+));
+"""
+            )
+            or None,
+            "Mobile batch selection controls",
+        )
+
+        def set_search(query: str) -> None:
+            updated = session.execute_script(
+                """
+const marker = document.querySelector('[data-chat-storage-search]');
+const input = marker?.matches('input')
+  ? marker
+  : marker?.querySelector('input');
+if (!input) return false;
+const setter = Object.getOwnPropertyDescriptor(
+  window.HTMLInputElement.prototype,
+  'value'
+)?.set;
+if (!setter) return false;
+setter.call(input, arguments[0]);
+input.dispatchEvent(new Event('input', { bubbles: true }));
+return true;
+""",
+                query,
+            )
+            if updated is not True:
+                raise GateError("Mobile storage search input is unavailable")
+
+        def selection_state() -> dict[str, Any]:
+            return self._mapping(
+                session.execute_script(
+                    """
+const rows = Array.from(document.querySelectorAll(
+  '[data-chat-storage-conversation]'
+));
+const selectedIds = rows
+  .filter((row) => (
+    row.getAttribute('data-chat-storage-selected') === 'true'
+  ))
+  .map((row) => (
+    row.getAttribute('data-chat-storage-conversation') || ''
+  ));
+const selected = (conversationId) => rows.some((row) => (
+  row.getAttribute('data-chat-storage-conversation') === conversationId
+  && row.getAttribute('data-chat-storage-selected') === 'true'
+));
+return {
+  visibleIds: rows.map((row) => (
+    row.getAttribute('data-chat-storage-conversation') || ''
+  )),
+  selectedIds,
+  additionalSelected: selected(arguments[0]),
+  controlSelected: selected(arguments[1]),
+  clearEnabled: !document.querySelector(
+    '[data-chat-storage-batch-clear]'
+  )?.disabled,
+};
+""",
+                    additional_id,
+                    control_id,
+                ),
+                "Mobile filtered batch selection state",
+            )
+
+        set_search(filtered_id)
+        filtered = self._wait_for_value(
+            lambda: (
+                value
+                if (
+                    (value := selection_state()).get("visibleIds")
+                    == [filtered_id]
+                    and value.get("selectedIds") == []
+                )
+                else None
+            ),
+            "Mobile filtered storage row",
+        )
+        selected_all = session.execute_script(
+            """
+const control = document.querySelector(
+  '[data-chat-storage-batch-select-all]'
+);
+const checkbox = control?.matches('input')
+  ? control
+  : control?.querySelector('input');
+if (!checkbox || checkbox.disabled) return false;
+checkbox.click();
+return true;
+"""
+        )
+        if selected_all is not True:
+            raise GateError("Mobile filtered select-all is unavailable")
+        filtered_selected = self._wait_for_value(
+            lambda: (
+                value
+                if (
+                    (value := selection_state()).get("visibleIds")
+                    == [filtered_id]
+                    and value.get("selectedIds") == [filtered_id]
+                )
+                else None
+            ),
+            "Mobile filtered select-all result",
+        )
+
+        set_search("")
+        selection_after_clear = self._wait_for_value(
+            lambda: (
+                value
+                if (
+                    set(
+                        (value := selection_state()).get("visibleIds") or []
+                    )
+                    == {filtered_id, additional_id, control_id}
+                    and value.get("selectedIds") == [filtered_id]
+                    and value.get("additionalSelected") is False
+                    and value.get("controlSelected") is False
+                )
+                else None
+            ),
+            "Mobile filtered-out rows remain unselected",
+        )
+        selected = session.execute_script(
+            """
+const row = Array.from(document.querySelectorAll(
+  '[data-chat-storage-conversation]'
+)).find((candidate) => (
+  candidate.getAttribute('data-chat-storage-conversation') === arguments[0]
+));
+const control = row?.querySelector(
+  '[data-chat-storage-conversation-select]'
+);
+const checkbox = control?.matches('input')
+  ? control
+  : control?.querySelector('input');
+if (!checkbox) return false;
+checkbox.click();
+return true;
+""",
+            additional_id,
+        )
+        if selected is not True:
+            raise GateError(
+                f"storage batch row is not selectable: {additional_id}"
+            )
+        final = self._wait_for_value(
+            lambda: (
+                value
+                if (
+                    isinstance(value := selection_state(), Mapping)
+                    and set(value.get("selectedIds") or [])
+                    == {filtered_id, additional_id}
+                    and value.get("additionalSelected") is True
+                    and value.get("controlSelected") is False
+                    and value.get("clearEnabled") is True
+                )
+                else None
+            ),
+            "Mobile filtered and explicit batch selection",
+        )
+        return {
+            "query": filtered_id,
+            "filteredVisibleIds": filtered.get("visibleIds"),
+            "filteredSelectedIds": filtered_selected.get("selectedIds"),
+            "selectedAfterQueryClear": selection_after_clear.get(
+                "selectedIds"
+            ),
+            "selectedIds": final.get("selectedIds"),
+            "controlConversationId": control_id,
+            "controlSelected": final.get("controlSelected"),
+        }
+
+    def _require_mobile_message_visible(
+        self,
+        session: Any,
+        *,
+        conversation_id: str,
+        message_id: str,
+        description: str,
+    ) -> dict[str, Any]:
+        projection = self._mapping(
+            session.call_action(
+                "messaging.projection.read",
+                {"conversationId": conversation_id},
+            ),
+            description,
+        )
+        messages = self._mapping(
+            projection.get("messages"),
+            f"{description} messages",
+        ).get(conversation_id)
+        message_visible = isinstance(messages, list) and any(
+            isinstance(message, Mapping)
+            and message.get("messageId") == message_id
+            for message in messages
+        )
+        search = session.call_action(
+            "messaging.search",
+            {
+                "conversationId": conversation_id,
+                "query": "cccccccc",
+                "limit": 20,
+            },
+        )
+        search_visible = isinstance(search, list) and any(
+            isinstance(message, Mapping)
+            and message.get("messageId") == message_id
+            for message in search
+        )
+        if not message_visible or not search_visible:
+            raise GateError(f"{description} is not preserved")
+        return {
+            "conversationId": conversation_id,
+            "messageId": message_id,
+            "messageCount": len(messages),
+            "searchHit": True,
+        }
+
     def _mobile_batch_confirmation(self, session: Any) -> dict[str, Any]:
         session.execute_script(
             """
@@ -1362,7 +1601,14 @@ return {
         journey_id: str,
     ) -> dict[str, Any]:
         fixture_size = 2 * 1024 * 1024
-        conversation_ids, message_ids = self._seed_storage_batch(session)
+        conversation_ids, message_ids = self._seed_storage_batch(
+            session,
+            count=3,
+        )
+        selected_conversation_ids = conversation_ids[:2]
+        selected_message_ids = message_ids[:2]
+        control_conversation_id = conversation_ids[2]
+        control_message_id = message_ids[2]
 
         identity_before = self._mapping(
             session.call_action("getRealtimeDevice"),
@@ -1373,6 +1619,12 @@ return {
                 "messaging runtime is inactive before storage batch clear"
             )
         session.call_action("messaging.reconcile")
+        control_before = self._require_mobile_message_visible(
+            session,
+            conversation_id=control_conversation_id,
+            message_id=control_message_id,
+            description="unselected Mobile control before batch clear",
+        )
         session.call_action(
             "navigation.apply",
             {"kind": "primary", "routeId": "tab:settings"},
@@ -1388,19 +1640,22 @@ return {
             },
         )
         before = self._refresh_mobile_storage_rows(session, conversation_ids)
-        if int(before.get("messageBytes") or 0) < fixture_size * 2:
+        if int(before.get("messageBytes") or 0) < fixture_size * 3:
             raise GateError("Mobile batch fixture bytes are incomplete")
         session.call_action("storage.batch.scenario", {"delayMs": 400})
-        selected_ids = self._select_mobile_storage_rows(
+        filtered_selection = self._select_mobile_storage_rows_from_filter(
             session,
-            conversation_ids,
+            filtered_id=selected_conversation_ids[0],
+            additional_id=selected_conversation_ids[1],
+            control_id=control_conversation_id,
         )
+        selected_ids = filtered_selection.get("selectedIds") or []
         estimated_reclaimable_bytes = sum(
             int(before.get("conversationReclaimableBytes", {}).get(
                 conversation_id,
                 0,
             ))
-            for conversation_id in conversation_ids
+            for conversation_id in selected_conversation_ids
         )
 
         confirmation = self._mobile_batch_confirmation(session)
@@ -1423,7 +1678,14 @@ document.querySelector(
         batch_result = self._wait_mobile_batch_result(session, "succeeded")
         progress = self._mobile_batch_progress(session)
         if (
-            set(selected_ids) != set(conversation_ids)
+            set(selected_ids) != set(selected_conversation_ids)
+            or filtered_selection.get("filteredVisibleIds")
+            != [selected_conversation_ids[0]]
+            or filtered_selection.get("filteredSelectedIds")
+            != [selected_conversation_ids[0]]
+            or filtered_selection.get("selectedAfterQueryClear")
+            != [selected_conversation_ids[0]]
+            or filtered_selection.get("controlSelected") is not False
             or batch_result.get("succeeded") != 2
             or batch_result.get("failed") != 0
             or int(batch_result.get("releasedBytes") or 0) <= 0
@@ -1674,12 +1936,12 @@ document.querySelector(
             raise GateError("Mobile scope-change remainder cleanup is incomplete")
 
         all_conversation_ids = [
-            *conversation_ids,
+            *selected_conversation_ids,
             *partial_ids,
             *scope_ids,
         ]
         all_message_ids = [
-            *message_ids,
+            *selected_message_ids,
             *partial_message_ids,
             *scope_message_ids,
         ]
@@ -1709,6 +1971,12 @@ document.querySelector(
             if not isinstance(search, list) or search:
                 raise GateError("storage batch clear left searchable plaintext")
 
+        control_after_clear = self._require_mobile_message_visible(
+            session,
+            conversation_id=control_conversation_id,
+            message_id=control_message_id,
+            description="unselected Mobile control after batch clear",
+        )
         restart = session.call_action("lifecycle.restart")
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError("storage batch clear restart was not acknowledged")
@@ -1729,6 +1997,12 @@ document.querySelector(
                 raise GateError(
                     "storage batch-cleared plaintext returned after restart"
                 )
+        control_after_restart = self._require_mobile_message_visible(
+            session,
+            conversation_id=control_conversation_id,
+            message_id=control_message_id,
+            description="unselected Mobile control after batch restart",
+        )
 
         session.call_action(
             "navigation.apply",
@@ -1775,7 +2049,9 @@ return true;
             "journeyId": journey_id,
             "conversationIds": all_conversation_ids,
             "messageIds": all_message_ids,
-            "fixtureBytes": fixture_size * len(all_conversation_ids),
+            "fixtureBytes": fixture_size * (
+                len(all_conversation_ids) + 1
+            ),
             "estimatedReclaimableBytes": estimated_reclaimable_bytes,
             "physicalBytesBefore": int(before["physicalTotalBytes"]),
             "physicalBytesAfter": int(after["physicalTotalBytes"]),
@@ -1791,6 +2067,13 @@ return true;
                 "progress": scope_progress,
                 "remainingConversationIds": remaining_scope_ids,
             },
+            "filteredSelection": filtered_selection,
+            "unselectedControl": {
+                "before": control_before,
+                "afterClear": control_after_clear,
+                "afterRestart": control_after_restart,
+            },
+            "unselectedPreserved": True,
             "plaintextAbsent": True,
             "searchEntryAbsent": True,
             "restartStable": True,
