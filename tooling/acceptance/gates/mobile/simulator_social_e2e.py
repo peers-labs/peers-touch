@@ -1640,7 +1640,18 @@ return {
             or scope_completed not in {0, 1}
             or len(remaining_scope_ids) != 2 - scope_completed
         ):
-            raise GateError("Mobile batch scope-change isolation is incomplete")
+            raise GateError(
+                "Mobile batch scope-change isolation is incomplete: "
+                + json.dumps(
+                    {
+                        "completed": scope_completed,
+                        "progress": scope_progress,
+                        "remainingConversationIds": remaining_scope_ids,
+                        "ui": scope_ui,
+                    },
+                    sort_keys=True,
+                )
+            )
         self._select_mobile_storage_rows(session, remaining_scope_ids)
         self._mobile_batch_confirmation(session)
         session.execute_script(
