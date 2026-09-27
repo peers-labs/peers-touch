@@ -3567,6 +3567,7 @@ async function cleanupFoundationPermissionDeniedScenario(input: {
     }
     foundationPermissionDeniedScenarios.delete(input.scenarioKey);
   }
+  clearFoundationLocalConversationProjection(conversationId);
   return {
     conversationDeleted: true,
     localProjectionCleared: (
