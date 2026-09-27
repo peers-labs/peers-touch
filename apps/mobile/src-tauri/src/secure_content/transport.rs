@@ -7,7 +7,7 @@ use ed25519_dalek::pkcs8::{DecodePublicKey, EncodePublicKey};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
-use reqwest::blocking::{Client, Response};
+use reqwest::blocking::{Client, RequestBuilder, Response};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RANGE, RETRY_AFTER};
 use secure_content_core::prekey::canonicalize_publish_content_prekeys_request;
 use serde::{Deserialize, Serialize};
@@ -481,9 +481,7 @@ impl NativeSocialTransport {
         Resp: Message + Default,
     {
         decode_proto_response(
-            self.request(reqwest::Method::POST, path)
-                .header(CONTENT_TYPE, "application/protobuf")
-                .header(ACCEPT, "application/protobuf")
+            with_proto_content_negotiation(self.request(reqwest::Method::POST, path))
                 .body(request.to_vec())
                 .send()
                 .map_err(network_error)?,
@@ -499,18 +497,18 @@ impl NativeSocialTransport {
     where
         Resp: Message + Default,
     {
-        let request = self
-            .client
-            .request(
-                reqwest::Method::GET,
-                endpoint_url(&self.session.scope.station_origin, path, query)?,
-            )
-            .header(
-                AUTHORIZATION,
-                format!("Bearer {}", self.session.access_token()),
-            )
-            .header("X-Device-ID", &self.session.scope.device_id)
-            .header(ACCEPT, "application/protobuf");
+        let request = with_proto_content_negotiation(
+            self.client
+                .request(
+                    reqwest::Method::GET,
+                    endpoint_url(&self.session.scope.station_origin, path, query)?,
+                )
+                .header(
+                    AUTHORIZATION,
+                    format!("Bearer {}", self.session.access_token()),
+                )
+                .header("X-Device-ID", &self.session.scope.device_id),
+        );
         decode_proto_response(
             request.send().map_err(network_error)?,
             CommitSemantics::ReadOnly,
@@ -526,18 +524,18 @@ impl NativeSocialTransport {
     where
         Resp: Message + Default,
     {
-        let request = self
-            .client
-            .request(
-                reqwest::Method::GET,
-                endpoint_url(&self.session.scope.station_origin, path, query)?,
-            )
-            .header(
-                AUTHORIZATION,
-                format!("Bearer {}", self.session.access_token()),
-            )
-            .header("X-Device-ID", &self.session.scope.device_id)
-            .header(ACCEPT, "application/protobuf");
+        let request = with_proto_content_negotiation(
+            self.client
+                .request(
+                    reqwest::Method::GET,
+                    endpoint_url(&self.session.scope.station_origin, path, query)?,
+                )
+                .header(
+                    AUTHORIZATION,
+                    format!("Bearer {}", self.session.access_token()),
+                )
+                .header("X-Device-ID", &self.session.scope.device_id),
+        );
         decode_peers_proto_response(request.send().map_err(network_error)?, expected_type_url)
     }
 
@@ -557,6 +555,12 @@ impl NativeSocialTransport {
             )
             .header("X-Device-ID", &self.session.scope.device_id)
     }
+}
+
+fn with_proto_content_negotiation(request: RequestBuilder) -> RequestBuilder {
+    request
+        .header(CONTENT_TYPE, "application/protobuf")
+        .header(ACCEPT, "application/protobuf")
 }
 
 pub fn resolve_trusted_station_signing_key(
@@ -657,11 +661,15 @@ fn get_proto_at<Resp: Message + Default>(
     path: &str,
     query: Option<&[(&str, String)]>,
 ) -> Result<Resp, String> {
-    let request = client
-        .get(endpoint_url(&scope.station_origin, path, query).map_err(|error| error.to_string())?)
-        .header(AUTHORIZATION, format!("Bearer {access_token}"))
-        .header("X-Device-ID", &scope.device_id)
-        .header(ACCEPT, "application/protobuf");
+    let request = with_proto_content_negotiation(
+        client
+            .get(
+                endpoint_url(&scope.station_origin, path, query)
+                    .map_err(|error| error.to_string())?,
+            )
+            .header(AUTHORIZATION, format!("Bearer {access_token}"))
+            .header("X-Device-ID", &scope.device_id),
+    );
     decode_proto_response(
         request
             .send()
@@ -676,14 +684,15 @@ fn get_federation_self_at(
     scope: &PrivateSocialScope,
     access_token: &str,
 ) -> Result<federation::FederationSelfView, String> {
-    let request = client
-        .get(
-            endpoint_url(&scope.station_origin, "/actor/federation/me", None)
-                .map_err(|error| error.to_string())?,
-        )
-        .header(AUTHORIZATION, format!("Bearer {access_token}"))
-        .header("X-Device-ID", &scope.device_id)
-        .header(ACCEPT, "application/protobuf");
+    let request = with_proto_content_negotiation(
+        client
+            .get(
+                endpoint_url(&scope.station_origin, "/actor/federation/me", None)
+                    .map_err(|error| error.to_string())?,
+            )
+            .header(AUTHORIZATION, format!("Bearer {access_token}"))
+            .header("X-Device-ID", &scope.device_id),
+    );
     decode_peers_proto_response(
         request
             .send()
@@ -1174,6 +1183,23 @@ mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
 
+    #[test]
+    fn private_social_proto_requests_declare_request_and_response_media_types() {
+        let request =
+            with_proto_content_negotiation(Client::new().get("http://127.0.0.1/secure-content"))
+                .build()
+                .unwrap();
+
+        assert_eq!(
+            request.headers().get(CONTENT_TYPE).unwrap(),
+            "application/protobuf"
+        );
+        assert_eq!(
+            request.headers().get(ACCEPT).unwrap(),
+            "application/protobuf"
+        );
+    }
+
     fn spawn_peers_proto_response<Payload: Message>(
         payload: &Payload,
         type_url: &str,
@@ -1521,6 +1547,8 @@ mod tests {
         assert!(request.starts_with("get /actor/federation/me http/1.1"));
         assert!(request.contains("authorization: bearer access-token"));
         assert!(request.contains("x-device-id: device-1"));
+        assert!(request.contains("content-type: application/protobuf"));
+        assert!(request.contains("accept: application/protobuf"));
     }
 
     #[test]
