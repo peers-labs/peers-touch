@@ -1,4 +1,9 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
+import { messagingDomainRuntime } from '../../messaging/runtime';
+import {
+  chatStorageProjectionRuntime,
+  type ChatStorageBatchAcceptanceScenario,
+} from '../../runtimes/chatStorageRuntime';
 import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime';
 import { api } from '../../services/desktop_api';
 import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
@@ -47,6 +52,8 @@ interface SearchMessagesInput {
   conversationId: string;
   query: string;
 }
+
+type StorageBatchScenarioInput = ChatStorageBatchAcceptanceScenario;
 
 interface CreateGroupInput {
   name: string;
@@ -334,6 +341,21 @@ export function installAcceptanceHarness(): void {
       stationPeerId: string;
       plaintextBytes: number;
     }) => nativeAcceptanceBridge.seedConversationClear(input),
+
+    async configureStorageBatchScenario(input: StorageBatchScenarioInput) {
+      chatStorageProjectionRuntime.configureAcceptanceBatchScenario(input);
+      return { configured: true };
+    },
+
+    async restoreStorageScope(input: { actorPtid: string }) {
+      const actorPtid = requireCanonicalAcceptancePtid(input.actorPtid);
+      if (actorPtid !== activeActorPtid()) {
+        throw new Error('acceptance.chat.actorPtidMismatch');
+      }
+      await messagingDomainRuntime.bootstrap(actorPtid);
+      await chatStorageProjectionRuntime.refresh();
+      return { restored: true, actorPtid };
+    },
 
     resumeMessagingLifecycle: (input: { actorPtid: string }) =>
       nativeAcceptanceBridge.resumeMessagingLifecycle(input),

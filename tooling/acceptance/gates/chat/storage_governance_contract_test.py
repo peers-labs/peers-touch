@@ -496,6 +496,15 @@ class StorageGovernanceContractTest(unittest.TestCase):
             desktop_main,
         )
         self.assertIn("seedConversationClear:", desktop_harness)
+        self.assertIn("configureStorageBatchScenario", desktop_harness)
+        self.assertIn("restoreStorageScope", desktop_harness)
+        for selector in (
+            "data-chat-storage-batch-selected-count",
+            "data-chat-storage-batch-scope",
+            "data-chat-storage-batch-completed",
+            "data-chat-storage-batch-total",
+        ):
+            self.assertIn(selector, desktop)
         for source in (desktop, mobile):
             for selector in (
                 "data-chat-storage-batch-manage",

@@ -8,6 +8,7 @@ import {
   ChatStorageSnapshotSchema,
 } from '../gen/proto/domain/chat/storage_pb';
 import {
+  chatStorageProjectionRuntime,
   chatStorageReleasedBytes,
   chatStorageScopeRevision,
   isChatStorageResultForScope,
@@ -24,6 +25,12 @@ const scope = {
 };
 
 describe('chat storage runtime scope fencing', () => {
+  it('rejects acceptance fault controls outside an Acceptance build', () => {
+    expect(() => chatStorageProjectionRuntime.configureAcceptanceBatchScenario({
+      failureConversationId: 'conversation-1',
+    })).toThrow('chat_storage_acceptance_scenario_unavailable');
+  });
+
   it('accepts only the exact Station, actor, device, and generation revision', () => {
     const snapshot = create(ChatStorageSnapshotSchema, {
       scope: {
