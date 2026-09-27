@@ -31519,6 +31519,7 @@ export function installAcceptanceHarness(): void {
           idempotencyKey: crypto.randomUUID(),
           provider: agent.provider || undefined,
           model: agent.model || undefined,
+          thinkingMode: 'disabled',
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });
@@ -31556,6 +31557,7 @@ export function installAcceptanceHarness(): void {
           idempotencyKey: sharedIdempotencyKey,
           provider: agent.provider || undefined,
           model: agent.model || undefined,
+          thinkingMode: 'disabled',
           clientCapabilitySessionId:
             capabilitySessions.selectedStationSession?.session_id,
         });
@@ -31609,6 +31611,7 @@ export function installAcceptanceHarness(): void {
             idempotencyKey: crypto.randomUUID(),
             provider: agent.provider || undefined,
             model: agent.model || undefined,
+            thinkingMode: 'disabled',
             clientCapabilitySessionId:
               capabilitySessions.selectedStationSession?.session_id,
           }),
