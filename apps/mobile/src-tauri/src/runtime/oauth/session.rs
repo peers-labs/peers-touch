@@ -31,6 +31,8 @@ pub struct NativeSessionProjection {
     pub station_peer_id: String,
     pub session_id: String,
     pub actor_ptid: String,
+    pub device_id: String,
+    pub lifecycle_generation: u64,
     pub expires_at: String,
 }
 
@@ -128,6 +130,8 @@ impl PersistedNativeSession {
             station_peer_id: self.station_peer_id.clone(),
             session_id: self.session_id.clone(),
             actor_ptid: self.actor_ptid.clone(),
+            device_id: self.device_id.clone(),
+            lifecycle_generation: self.lifecycle_generation,
             expires_at: self.expires_at.clone(),
         }
     }
@@ -326,6 +330,8 @@ pub(super) fn persist_access_gate_credential<S: SecretStore>(
                 session: Some(OAuthSessionProjection {
                     session_id: session.session_id.clone(),
                     actor_ptid: session.actor_ptid.clone(),
+                    device_id: session.device_id.clone(),
+                    lifecycle_generation: session.lifecycle_generation,
                     expires_at: session.expires_at.clone(),
                 }),
                 ..OAuthPublicProjection::default()
@@ -408,6 +414,8 @@ fn persist_rotated_session<S: SecretStore>(
                 session: Some(OAuthSessionProjection {
                     session_id: session.session_id.clone(),
                     actor_ptid: session.actor_ptid.clone(),
+                    device_id: session.device_id.clone(),
+                    lifecycle_generation: session.lifecycle_generation,
                     expires_at: session.expires_at.clone(),
                 }),
                 ..OAuthPublicProjection::default()
@@ -546,6 +554,8 @@ mod tests {
             .expect("read projection")
             .expect("active projection");
         assert_eq!(projection.session_id, "session-new");
+        assert_eq!(projection.device_id, identity.device_id);
+        assert_eq!(projection.lifecycle_generation, identity.generation);
         let serialized = serde_json::to_string(&projection).expect("serialize projection");
         assert!(!serialized.contains("access-new"));
         assert!(!serialized.contains("refresh-new"));
@@ -553,10 +563,10 @@ mod tests {
 
         let oauth_projection = read_public_projection(&storage).expect("read oauth projection");
         assert_eq!(oauth_projection.phase, OAuthPublicPhase::ActiveSession);
-        assert_eq!(
-            oauth_projection.session.expect("public session").actor_ptid,
-            "ptid:alice"
-        );
+        let public_session = oauth_projection.session.expect("public session");
+        assert_eq!(public_session.actor_ptid, "ptid:alice");
+        assert_eq!(public_session.device_id, identity.device_id);
+        assert_eq!(public_session.lifecycle_generation, identity.generation);
     }
 
     #[test]
@@ -667,6 +677,8 @@ mod tests {
         )
         .expect("persist password credential");
         assert_eq!(projection.session_id, "session-new");
+        assert_eq!(projection.device_id, identity.device_id);
+        assert_eq!(projection.lifecycle_generation, identity.generation);
         let public = serde_json::to_string(&projection).expect("serialize projection");
         assert!(!public.contains("access-new"));
         assert!(!public.contains("refresh-new"));
