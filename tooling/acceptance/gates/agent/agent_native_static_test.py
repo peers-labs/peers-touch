@@ -2628,6 +2628,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "const streamId = observed.controller.streamId;",
             tool_turn,
         )
+        self.assertIn("thinkingMode: 'disabled'", tool_turn)
         self.assertNotIn("const streamId = input.streamId;", tool_turn)
         self.assertIn(
             "runtimeEvent: preparedRuntimeEvent.current,",
