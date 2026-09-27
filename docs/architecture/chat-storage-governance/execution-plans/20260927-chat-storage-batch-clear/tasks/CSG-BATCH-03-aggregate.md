@@ -19,6 +19,10 @@
     "docs/architecture/chat-storage-governance",
     "apps/mobile/src/features/social",
     "apps/mobile/src/runtimes",
+    "apps/station/app/subserver/conversation",
+    "apps/station/app/subserver/social/infrastructure",
+    "packages/sdk/dart/lib/src/gen",
+    "packages/sdk/go/gen",
     "tooling/acceptance"
   ],
   "readSet": [
@@ -94,10 +98,11 @@
 
 ## Current Snapshot
 
-- State: delivery-ready; formal closure is `PASS/DONE/PROVEN` and the latest
-  exact-source Gap Detector report is `PROVEN` with zero gaps.
+- State: implementing final integrated-source remediation after the branch
+  advanced beyond the previously proven source.
 - Dependencies: `CSG-BATCH-01-desktop`, `CSG-BATCH-02-mobile` are done.
-- Review: independent plan-scope completion review is the remaining close gate.
+- Review: final exact-source Acceptance, Gap Detector and independent
+  plan-scope completion review must be rerun after remediation.
 
 ## Closure
 
