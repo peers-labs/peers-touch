@@ -2151,6 +2151,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         scenario_start = self.source.index(
             "async function runDevelopmentClientPermissionDeniedScenario"
         )
+        cleanup_start = self.source.index(
+            "async function cleanupFoundationPermissionDeniedScenario"
+        )
+        cleanup = self.source[cleanup_start:scenario_start]
         scenario_end = self.source.index(
             "function firstToolApprovalOutcome",
             scenario_start,
@@ -2220,6 +2224,18 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn(
             "cleanupFoundationPermissionDeniedScenario({",
             direct_probe,
+        )
+        self.assertEqual(
+            cleanup.count(
+                "clearFoundationLocalConversationProjection(conversationId)"
+            ),
+            2,
+        )
+        self.assertLess(
+            cleanup.index("await cleanupFoundationToolConversation("),
+            cleanup.rindex(
+                "clearFoundationLocalConversationProjection(conversationId)"
+            ),
         )
         self.assertIn(
             "class FoundationPermissionDeniedCoordinator",
