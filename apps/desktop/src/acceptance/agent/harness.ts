@@ -26991,16 +26991,23 @@ export function installAcceptanceHarness(): void {
     }: {
       sampleId: string;
     }) {
-      const agent = selectedAgent();
-      if (!agent?.provider || !agent.model) {
+      const sourceAgent = selectedAgent();
+      if (!sourceAgent?.provider || !sourceAgent.model) {
         throw new Error('agent.acceptance.providerModelUnavailable');
       }
-      const agentId = agent.id || agent.name;
-      const originalModel = agent.model;
-      const originalModelConfig = useAgentStore.getState().availableModels.find(
+      const agentStore = useAgentStore.getState();
+      const priorSelection = agentStore.selectedAgent;
+      const priorSurface = agentStore.getAgentSurface(priorSelection);
+      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      const capabilitySessionId =
+        capabilitySessions.selectedStationSession?.session_id;
+      if (!capabilitySessionId) {
+        throw new Error('agent.acceptance.capabilitySessionUnavailable');
+      }
+      const originalModelConfig = agentStore.availableModels.find(
         (model) => (
-          model.provider_id === agent.provider
-          && model.id === originalModel
+          model.provider_id === sourceAgent.provider
+          && model.id === sourceAgent.model
         ),
       );
       if (!originalModelConfig) {
@@ -27012,12 +27019,14 @@ export function installAcceptanceHarness(): void {
       let modelAdded = false;
       let modelRemoved = false;
       let agentRestored = false;
+      let disposableAgentDeleted = false;
+      let disposableAgentId = '';
       let conversationDeleted = false;
       let localProjectionCleared = false;
       let conversationId = '';
       let capture: Record<string, unknown> | null = null;
       try {
-        await api.addModel(agent.provider, {
+        await api.addModel(sourceAgent.provider, {
           id: missingModel,
           display_name: missingModel,
           type: 'chat',
@@ -27033,15 +27042,23 @@ export function installAcceptanceHarness(): void {
         });
         modelAdded = true;
         await useAgentStore.getState().loadModels();
-        await useAgentStore.getState().updateAgentProfile(agentId, {
-          provider: agent.provider,
+        const agent = await useAgentStore.getState().createAgent({
+          name:
+            `foundation-model-unavailable-${sampleId}-${crypto.randomUUID()}`,
+          title: `Foundation model unavailable ${sampleId}`,
+          description: 'Foundation provider model unavailable fixture',
+          provider: sourceAgent.provider,
           model: missingModel,
         });
-        await useAgentStore.getState().loadAgents();
+        const agentId = agent.id || agent.name;
+        disposableAgentId = agentId;
+        await api.setSelectedAgent(agent.name);
+        useAgentStore.getState().setSelectedAgent(agent.name);
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
         const conversation = await api.createAgentConversation({
           agent_id: agentId,
           title: `Model unavailable ${sampleId}`,
-          provider_id: agent.provider,
+          provider_id: sourceAgent.provider,
           model_name: missingModel,
         });
         conversationId = conversation.conversation_id;
@@ -27369,32 +27386,156 @@ export function installAcceptanceHarness(): void {
             queueDelta:
               queueAfter.entries.length - queueBefore.entries.length,
           },
+          replay: {
+            sourceHash: sourceReadbackHash,
+            replayHash: replayReadbackHash,
+            equal: sourceReadbackHash === replayReadbackHash,
+          },
+          runtimeEvent,
+          cleanup: {
+            modelAdded: false,
+            modelRemoved: false,
+            agentRestored: false,
+            disposableAgentDeleted: false,
+            conversationDeleted: false,
+            localProjectionCleared: false,
+          },
+        };
+        const assertions = evaluateBaseProviderModelUnavailableFacts(
+          scenarioFacts,
+        );
+        const runtimeAttestation = await buildDirectRuntimeAttestation(
+          {
+            cell: 'BASE-MODEL_UNAVAILABLE',
+            agent,
+            agentId,
+            profile,
+            readiness,
+            capabilitySessions,
+            conversations,
+            conversationReadback: readbackAfter,
+            turnQueue: queueAfter,
+            turnEvidence,
+            chatState: useChatStore.getState(),
+            sessionState: useSessionStore.getState(),
+            providerState: useProviderStore.getState(),
+            operation: useChatStore.getState().operations[conversationId],
+            lastAssistant: errorMessage,
+            scenarioFacts,
+            platform,
+            locale,
+            sampleId,
+          },
+          sampleId,
+        );
+        capture = {
+          assertions,
+          facts: scenarioFacts,
+          scenarioFacts,
+          runtimeAttestation,
+          'receiver-dom': {
+            scenarioId: 'BASE-MODEL_UNAVAILABLE',
+            cellId: 'BASE-MODEL_UNAVAILABLE',
+            selector:
+              '[data-pt-agent-error-type="PROVIDER_MODEL_UNAVAILABLE"],'
+              + '[data-pt-agent-message-error-recovery='
+              + '"choose-compatible-model"],'
+              + '[data-pt-agent-profile-model]',
+            locale,
+            textHash: await sha256Hex(stableJson({
+              errorText: errorTextBeforeAction,
+              recoveryLabel: recoveryLabelBeforeAction,
+            })),
+            visible:
+              errorVisibleBeforeAction
+              && recoveryVisibleBeforeAction
+              && useAgentStore.getState().getAgentSurface(agent.name)
+                === 'profile',
+          },
+          'station-readback': {
+            entityKind: 'agent-provider-model-unavailable',
+            entityIdHash: await sha256Hex(stableJson({
+              conversationId,
+              turnId,
+            })),
+            revision: Number(readbackAfter.conversation.version),
+            stateHash: sourceReadbackHash,
+          },
+          'runtime-events': {
+            eventId: runtimeEvent.eventId,
+            sequence: runtimeEvent.sequence,
+            eventType: runtimeEvent.eventType,
+            occurredAt: runtimeEvent.observedAt,
+            streamGeneration: runtimeEvent.streamGeneration,
+            streamIdHash: runtimeEvent.streamIdHash,
+            conversationIdHash: runtimeEvent.conversationIdHash,
+            payloadHash: runtimeEvent.payloadHash,
+            errorType: runtimeEvent.errorType,
+            sourceTransport: runtimeEvent.sourceTransport,
+            sourcePtidHash: runtimeEvent.sourcePtidHash,
+            sourceConversationId: runtimeEvent.sourceConversationId,
+            sourceTurnId: runtimeEvent.sourceTurnId,
+            sourceSequence: runtimeEvent.sourceSequence,
+            sourceEventType: runtimeEvent.sourceEventType,
+          },
+          'measurement-report': {
+            metric: 'foundation-provider-model-unavailable-duration-ms',
+            sampleIds: [sampleId],
+            threshold: '<=120000',
+            passed: performance.now() - startedAt <= 120_000,
+            latencyMs: performance.now() - startedAt,
+          },
+          'side-effect-count': {
+            counterId: await sha256Hex(stableJson({
+              cell: 'BASE-MODEL_UNAVAILABLE',
+              conversationId,
+              turnId,
+            })),
+            count: completedAssistantMessages.length,
+            maximum: 0,
+          },
+          replay: scenarioFacts.replay,
         };
       } finally {
         try {
-          await useAgentStore.getState().updateAgentProfile(agentId, {
-            provider: agent.provider,
-            model: originalModel,
-          });
-          await useAgentStore.getState().loadAgents();
-          agentRestored = true;
-          useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+          if (conversationId) {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          }
         } finally {
           try {
-            if (modelAdded) {
-              await api.deleteModel(agent.provider, missingModel);
-              await useAgentStore.getState().loadModels();
-              modelRemoved = true;
+            if (disposableAgentId) {
+              await api.deleteAgent(disposableAgentId);
+              await useAgentStore.getState().loadAgents();
+              disposableAgentDeleted = !useAgentStore.getState().agents.some(
+                (candidate) => (
+                  (candidate.id || candidate.name) === disposableAgentId
+                ),
+              );
             }
           } finally {
-            if (conversationId) {
-              clearFoundationLocalConversationProjection(conversationId);
-              localProjectionCleared = true;
-              const deletionErrorCode = await deleteFoundationConversation(
-                conversationId,
-              );
-              conversationDeleted = deletionErrorCode === ''
-                || deletionErrorCode.includes('AGENT_4004');
+            try {
+              if (modelAdded) {
+                await api.deleteModel(sourceAgent.provider, missingModel);
+                await useAgentStore.getState().loadModels();
+                modelRemoved = true;
+              }
+            } finally {
+              if (priorSelection) {
+                useAgentStore.getState().setSelectedAgent(priorSelection);
+                useAgentStore.getState().setAgentSurface(
+                  priorSelection,
+                  priorSurface,
+                );
+                await api.setSelectedAgent(priorSelection);
+              }
+              agentRestored =
+                useAgentStore.getState().selectedAgent === priorSelection;
             }
           }
         }
@@ -27404,23 +27545,38 @@ export function installAcceptanceHarness(): void {
           'agent.acceptance.providerModelUnavailableCaptureMissing',
         );
       }
+      const cleanup = {
+        resourceKind: 'provider-model-unavailable-fixture',
+        resourceIdHash: await sha256Hex(stableJson({
+          conversationId,
+          modelId: missingModel,
+          platform,
+          providerId: sourceAgent.provider,
+        })),
+        modelAdded,
+        modelRemoved,
+        agentRestored,
+        disposableAgentDeleted,
+        conversationDeleted,
+        localProjectionCleared,
+        status:
+          modelAdded
+            && modelRemoved
+            && agentRestored
+            && disposableAgentDeleted
+            && conversationDeleted
+            && localProjectionCleared
+            ? 'clean'
+            : 'failed',
+      };
+      const scenarioFacts = evidenceRecord(
+        capture.scenarioFacts,
+        'foundationProviderModelUnavailableFacts',
+      );
+      scenarioFacts.cleanup = cleanup;
       return evidenceValue({
         ...capture,
-        cleanup: {
-          modelAdded,
-          modelRemoved,
-          agentRestored,
-          conversationDeleted,
-          localProjectionCleared,
-          status:
-            modelAdded
-              && modelRemoved
-              && agentRestored
-              && conversationDeleted
-              && localProjectionCleared
-              ? 'clean'
-              : 'failed',
-        },
+        cleanup,
       });
     },
 

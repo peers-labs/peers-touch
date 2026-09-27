@@ -5504,6 +5504,223 @@ def evaluate_base_credential_missing(
     return assertions
 
 
+def evaluate_base_model_unavailable(
+    capture: Mapping[str, Any],
+) -> dict[str, bool]:
+    scenario = "BASE-MODEL_UNAVAILABLE"
+    outcome = _mapping(capture, "outcome", scenario=scenario)
+    typed_error = _mapping(capture, "typedError", scenario=scenario)
+    details = _mapping(outcome, "details", scenario=scenario)
+    receiver = _mapping(capture, "receiver", scenario=scenario)
+    station = _mapping(capture, "station", scenario=scenario)
+    resolution = _mapping(capture, "resolution", scenario=scenario)
+    replay = _mapping(capture, "replay", scenario=scenario)
+    cleanup = _mapping(capture, "cleanup", scenario=scenario)
+    runtime_event = _mapping(capture, "runtimeEvent", scenario=scenario)
+
+    conversation_id = _nonempty_string(
+        station,
+        "conversationId",
+        scenario=scenario,
+    )
+    turn_id = _nonempty_string(
+        station,
+        "turnId",
+        scenario=scenario,
+    )
+    provider_id = _nonempty_string(
+        station,
+        "providerId",
+        scenario=scenario,
+    )
+    model_id = _nonempty_string(
+        station,
+        "modelId",
+        scenario=scenario,
+    )
+    source_hash = _sha256_string(
+        replay,
+        "sourceHash",
+        scenario=scenario,
+    )
+    replay_hash = _sha256_string(
+        replay,
+        "replayHash",
+        scenario=scenario,
+    )
+
+    assertions = {
+        "typedModelUnavailable": (
+            outcome.get("error") == "agent.errors.providerModelUnavailable"
+            and outcome.get("error_type") == "PROVIDER_MODEL_UNAVAILABLE"
+            and outcome.get("locale_key")
+            == "agent.errors.providerModelUnavailable"
+            and outcome.get("retryable") is True
+            and outcome.get("terminal") is True
+            and typed_error == outcome
+            and sorted(details) == ["model_id", "provider_id"]
+            and details.get("provider_id") == provider_id
+            and details.get("model_id") == model_id
+            and runtime_event.get("eventType") == "error"
+            and runtime_event.get("errorType")
+            == "PROVIDER_MODEL_UNAVAILABLE"
+            and _positive_int(
+                runtime_event,
+                "sequence",
+                scenario=scenario,
+            )
+            > 0
+            and _positive_int(
+                runtime_event,
+                "streamGeneration",
+                scenario=scenario,
+            )
+            > 0
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "eventId",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "streamIdHash",
+                    scenario=scenario,
+                )
+            )
+            and _sha256_string(
+                runtime_event,
+                "conversationIdHash",
+                scenario=scenario,
+            )
+            == hashlib.sha256(conversation_id.encode("utf-8")).hexdigest()
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "payloadHash",
+                    scenario=scenario,
+                )
+            )
+            and bool(
+                _nonempty_string(
+                    runtime_event,
+                    "observedAt",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceTransport") == "station-sse"
+            and bool(
+                _sha256_string(
+                    runtime_event,
+                    "sourcePtidHash",
+                    scenario=scenario,
+                )
+            )
+            and runtime_event.get("sourceConversationId") == conversation_id
+            and runtime_event.get("sourceTurnId") == turn_id
+            and _positive_int(
+                runtime_event,
+                "sourceSequence",
+                scenario=scenario,
+            )
+            > 0
+            and runtime_event.get("sourceEventType") == "error"
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("errorVisible") is True
+            and _nonempty_string(
+                receiver,
+                "errorText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedErrorText",
+                scenario=scenario,
+            )
+            and receiver.get("recoveryVisible") is True
+            and _nonempty_string(
+                receiver,
+                "recoveryText",
+                scenario=scenario,
+            )
+            == _nonempty_string(
+                receiver,
+                "expectedRecoveryText",
+                scenario=scenario,
+            )
+        ),
+        "chooseModelOpened": (
+            receiver.get("chooseModelExecuted") is True
+            and resolution.get("type") == "chooseCompatibleModel"
+            and resolution.get("providerId") == provider_id
+            and resolution.get("modelId") == model_id
+        ),
+        "oneTerminalProviderAttempt": (
+            _nonnegative_int(
+                station,
+                "traceDelta",
+                scenario=scenario,
+            )
+            == 1
+            and _nonnegative_int(
+                station,
+                "providerCallCount",
+                scenario=scenario,
+            )
+            == 1
+            and _nonnegative_int(
+                station,
+                "messageDelta",
+                scenario=scenario,
+            )
+            == 2
+        ),
+        "zeroSuccessfulCompletion": (
+            _nonnegative_int(
+                station,
+                "completedAssistantCount",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "queueUnchanged": (
+            _nonnegative_int(
+                station,
+                "queueDelta",
+                scenario=scenario,
+            )
+            == 0
+        ),
+        "replayEqual": (
+            replay.get("equal") is True
+            and source_hash == replay_hash
+            and source_hash
+            == _sha256_string(
+                station,
+                "stateHash",
+                scenario=scenario,
+            )
+        ),
+        "cleanupComplete": (
+            cleanup.get("modelAdded") is True
+            and cleanup.get("modelRemoved") is True
+            and cleanup.get("agentRestored") is True
+            and cleanup.get("disposableAgentDeleted") is True
+            and cleanup.get("conversationDeleted") is True
+            and cleanup.get("localProjectionCleared") is True
+        ),
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            f"{scenario} production facts failed assertions: {failed}"
+        )
+    return assertions
+
+
 def evaluate_base_duplicate_conflict(
     capture: Mapping[str, Any],
 ) -> dict[str, bool]:

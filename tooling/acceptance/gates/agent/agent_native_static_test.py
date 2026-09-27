@@ -978,8 +978,13 @@ class AgentHarnessStaticTest(unittest.TestCase):
         end = self.source.index("async sendMessage", start)
         scenario = self.source[start:end]
 
-        self.assertIn("await api.addModel(agent.provider", scenario)
+        self.assertIn("await api.addModel(sourceAgent.provider", scenario)
         self.assertIn("const originalModelConfig =", scenario)
+        self.assertIn(
+            "foundation-model-unavailable-${sampleId}-${crypto.randomUUID()}",
+            scenario,
+        )
+        self.assertIn("await useAgentStore.getState().createAgent({", scenario)
         self.assertIn(
             "streaming: originalModelConfig.streaming",
             scenario,
@@ -996,7 +1001,12 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "reasoning: originalModelConfig.reasoning",
             scenario,
         )
-        self.assertIn("updateAgentProfile(agentId", scenario)
+        self.assertIn("await api.setSelectedAgent(agent.name)", scenario)
+        self.assertIn(
+            "useAgentStore.getState().setSelectedAgent(agent.name)",
+            scenario,
+        )
+        self.assertIn("await waitForCapabilitySessionEvidence()", scenario)
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
         self.assertIn("=== 'PROVIDER_MODEL_UNAVAILABLE'", scenario)
         self.assertIn(
@@ -1015,9 +1025,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn(
-            "await api.deleteModel(agent.provider, missingModel)",
+            "await api.deleteAgent(disposableAgentId)",
             scenario,
         )
+        self.assertIn(
+            "await api.deleteModel(sourceAgent.provider, missingModel)",
+            scenario,
+        )
+        self.assertIn("disposableAgentDeleted,", scenario)
         self.assertIn("modelAdded,", scenario)
         self.assertIn("modelRemoved,", scenario)
 
