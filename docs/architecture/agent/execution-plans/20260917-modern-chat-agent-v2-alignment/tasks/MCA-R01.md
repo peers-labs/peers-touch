@@ -29,6 +29,9 @@
     "apps/station/app/subserver/agent/service/provider_tool_test.go",
     "apps/station/app/subserver/agent/service/tool_dispatch_service.go",
     "apps/station/app/subserver/agent/service/tool_dispatch_service_test.go",
+    "apps/station/app/subserver/conversation/production_peer_routes.go",
+    "apps/station/app/subserver/social/infrastructure/audience_grant_repo.go",
+    "apps/station/app/subserver/social/infrastructure/private_post_repo.go",
     "apps/desktop/src-tauri/src/application/desktop_executor_worker/supervisor.rs",
     "apps/desktop/src-tauri/src/application/runtime_evidence.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
@@ -112,6 +115,7 @@
     "The existing loop-budget product Journey is registered as a direct-runtime Foundation group with an independent oracle and complete role evidence",
     "Client capability permission kind and state originate in the client owner, are persisted in the signed lease, and produce the exact terminal CLIENT_PERMISSION_DENIED payload before ToolCall persistence or local execution",
     "Desktop and Browser receivers expose localized Open permission settings recovery without Browser capability fabrication or automatic resend",
+    "The sanitized-history reconciliation leaves Station source buildable with no superseded Social adapter or stale protobuf response construction",
     "The exact-source Foundation Journey passes with clean runtime teardown"
   ],
   "failureBehavior": [
@@ -121,7 +125,7 @@
     "Preserve terminal idempotency and active branch lineage",
     "Return only the first deterministic failure to its owning layer"
   ],
-  "updatedAt": "2026-09-25T20:35:00Z",
+  "updatedAt": "2026-09-27T18:18:00Z",
   "durableEvidence": []
 }
 ```
@@ -136,8 +140,7 @@ permission-denied contract exposed by the next exact-source Foundation run.
 
 ## Current Snapshot
 
-- Exact-source Foundation run
-  `20260924T200431539686Z-b02b1a38a66edf1e9af21f7bb280339e`
+- Exact-source Foundation run `20260924T200431539686Z-b02b1a38a66edf1e9af21f7bb280339e`
   failed at `agent.acceptance.foundationInterruptedMessageMissing`.
 - Runtime evidence shows the matching Turn Attempt is durably interrupted with
   `station_restart_interrupted`, while Station message readback contains only
@@ -164,3 +167,4 @@ permission-denied contract exposed by the next exact-source Foundation run.
   pre-dispatch rejection, receiver recovery action, Browser observer semantics,
   and zero-execution proof boundary.
 - Run `20260925T200337561495Z-2467c5cfacc56fecabff73ab2e5ce7a3` exposed a late canonical refresh dropping the local-only `BASE-DUPLICATE_CONFLICT` Assistant; the owner is Desktop chat merge with focused regression coverage.
+- Exact-source redeploy after the sanitized-history rebase exposed two orphaned legacy Social adapters and one stale Conversation response constructor; reconciliation removes the adapters and uses the canonical protobuf `oneof`.
