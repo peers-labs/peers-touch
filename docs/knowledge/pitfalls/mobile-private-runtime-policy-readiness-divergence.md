@@ -56,6 +56,12 @@ activation failed instead. Mobile generated a `mobile-cpk-publish-*` command ID
 from ordinary protobuf bytes, while Station requires the canonical
 `cpk-pub-v1-*` identity derived from deterministic shared bytes.
 
+After publish-result reconciliation was added, an iOS run could still remain
+inside `UNKNOWN_OUTCOME` until the 120-second Fixture deadline. The initial
+submit had committed remotely, but the Mobile worker retried submit before
+checking the authoritative resource readback, so it never consumed the
+already-committed result and the Fixture handler could not quiesce cleanly.
+
 ## Root cause
 
 Private Social implemented its own Station-origin policy instead of consuming
@@ -94,6 +100,12 @@ rejected that noncanonical command before committing any endpoint PreKeys, so
 the lifecycle remained inactive even though the authenticated runtime graph
 itself was otherwise healthy.
 
+For private Moment submissions, the worker treated a prior
+`UNKNOWN_OUTCOME` like a first dispatch. It resubmitted first and queried the
+resource only after another successful response. That inverted the accepted
+recovery order: authoritative readback must be checked before retrying a
+may-commit command.
+
 ## Mitigation
 
 ### What was done in code
@@ -123,6 +135,9 @@ itself was otherwise healthy.
 - Mobile Content PreKey publication now uses the shared canonical encoder for
   both the proof-free request hash and the final wire bytes, and derives the
   same `cpk-pub-v1-*` command ID as Desktop and Station.
+- A private Moment submission in `UNKNOWN_OUTCOME` now queries the exact
+  content resource first. A valid signed readback commits the local projection;
+  only an unavailable readback falls through to exact command resubmission.
 - Focused Rust and TypeScript regressions cover both policy modes and failed
   activation readiness.
 
@@ -147,6 +162,8 @@ itself was otherwise healthy.
   persistence boundary.
 - `content_prekey_publication_matches_the_shared_canonical_vector` verifies the
   Mobile wire bytes and command ID against the shared cross-platform vector.
+- `unknown_submission_reads_authoritative_resource_before_retry` verifies that
+  reconciliation probes the exact content identity before resubmission.
 
 ## How to detect a recurrence
 
@@ -178,6 +195,8 @@ the report must show positive endpoint and actor-recovery availability before
 private prepare; endpoint-only readiness is insufficient.
 Mobile must not derive Content PreKey publication identities from ordinary
 protobuf encoding or introduce a client-specific command prefix.
+An `UNKNOWN_OUTCOME` private Moment must never be blindly resubmitted before
+the exact content resource has been queried and cryptographically verified.
 
 ## Crosswalks
 

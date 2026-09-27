@@ -107,6 +107,38 @@ impl PrivateSocialWorker {
                     )
                 }
             };
+        if let Some(Ok(readback)) = unknown_submission_readback(
+            &command,
+            acquired.reconciles_unknown_outcome,
+            |content_id| self.transport.get_private_moment(content_id),
+        ) {
+            let submitted = social::SubmitPrivateMomentResponse {
+                post: readback.resource.clone(),
+                exact_replay: true,
+            };
+            return match verify_submit_readback(
+                self.session.as_ref(),
+                &command,
+                &request,
+                &submitted,
+                &readback,
+            ) {
+                Ok(post_id) => self.finish_submission(
+                    &command,
+                    DurableState::Committed,
+                    PrivatePublishState::Published,
+                    Some(post_id),
+                    None,
+                ),
+                Err(_) => self.finish_submission(
+                    &command,
+                    DurableState::Terminal,
+                    PrivatePublishState::PublishFailed,
+                    None,
+                    Some(20005),
+                ),
+            };
+        }
         match self.transport.submit_private_moment(&request) {
             Ok(submitted) => {
                 let readback = self.transport.get_private_moment(&command.content_id);
@@ -445,6 +477,17 @@ impl PrivateSocialWorker {
     }
 }
 
+fn unknown_submission_readback<F>(
+    command: &StoredSubmission,
+    reconciles_unknown_outcome: bool,
+    fetch: F,
+) -> Option<Result<social::GetMomentResourceResponse, TransportError>>
+where
+    F: FnOnce(&str) -> Result<social::GetMomentResourceResponse, TransportError>,
+{
+    reconciles_unknown_outcome.then(|| fetch(&command.content_id))
+}
+
 fn preserves_unknown_after_auth_rejection(
     reconciles_unknown_outcome: bool,
     error: &TransportError,
@@ -457,6 +500,8 @@ fn preserves_unknown_after_auth_rejection(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+
     use ed25519_dalek::{Signature, SigningKey};
     use messaging_core::identity::DeviceSigningKey;
 
@@ -505,6 +550,61 @@ mod tests {
         };
         assert!(!preserves_unknown_after_auth_rejection(false, &error));
         assert!(preserves_unknown_after_auth_rejection(true, &error));
+    }
+
+    #[test]
+    fn unknown_submission_reads_authoritative_resource_before_retry() {
+        let observed_content_id = RefCell::new(String::new());
+        let command = StoredSubmission {
+            command_id: "command-1".to_string(),
+            draft_id: "draft-1".to_string(),
+            draft_revision: 1,
+            content_id: "content-1".to_string(),
+            generation: 1,
+            request_bytes: vec![1],
+            request_sha256: [2; 32],
+            root_key: [3; 32],
+            projection_json: vec![4],
+            state: DurableState::InFlight,
+            lease_generation: 1,
+            session_generation: 1,
+            post_id: None,
+            last_error_code: Some(20005),
+        };
+
+        let readback = unknown_submission_readback(&command, true, |content_id| {
+            observed_content_id.replace(content_id.to_string());
+            Ok(social::GetMomentResourceResponse::default())
+        });
+
+        assert_eq!(observed_content_id.into_inner(), "content-1");
+        assert!(matches!(readback, Some(Ok(_))));
+    }
+
+    #[test]
+    fn first_submission_does_not_probe_authoritative_readback() {
+        let command = StoredSubmission {
+            command_id: "command-1".to_string(),
+            draft_id: "draft-1".to_string(),
+            draft_revision: 1,
+            content_id: "content-1".to_string(),
+            generation: 1,
+            request_bytes: vec![1],
+            request_sha256: [2; 32],
+            root_key: [3; 32],
+            projection_json: vec![4],
+            state: DurableState::InFlight,
+            lease_generation: 1,
+            session_generation: 1,
+            post_id: None,
+            last_error_code: None,
+        };
+
+        let readback = unknown_submission_readback(&command, false, |_| {
+            panic!("first submission must not query authoritative readback")
+        });
+
+        assert!(readback.is_none());
     }
 
     #[test]
