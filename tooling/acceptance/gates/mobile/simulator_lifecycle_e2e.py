@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -32,15 +33,19 @@ GATE_ID = "mobile-simulator-runtime-lifecycle-e2e"
 ENVIRONMENT_ID = "mobile-simulator"
 REQUIRED_HARNESS_ACTIONS = (
     "lifecycle.snapshot",
+    "lifecycle.waitReady",
     "lifecycle.suspend",
     "lifecycle.resume",
     "lifecycle.restart",
+    "navigation.snapshot",
+    "navigation.apply",
 )
 PROVEN_SCOPE = (
     "simulator runtime-graph start, suspend, resume, restart, generation, "
-    "visible-app survival, and cleanup"
+    "descriptor-owned navigation state, visible-app survival, and cleanup"
 )
 UNPROVEN_SCOPE = (
+    "visible detail and overlay layout, focus, and no-leak behavior",
     "Station session revalidation",
     "Station or actor switch",
     "session revocation",
@@ -136,6 +141,35 @@ def validate_lifecycle_snapshot(
     return dict(value)
 
 
+def validate_navigation_projection(
+    value: Any,
+    *,
+    primary_route_id: str,
+    detail_keys: list[str],
+    overlay_route_id: str | None,
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "primaryRouteId",
+        "detailKeys",
+        "overlayRouteId",
+    }:
+        raise GateError("Mobile navigation projection has an invalid shape")
+    public_values = [
+        value["primaryRouteId"],
+        value["detailKeys"],
+        value["overlayRouteId"],
+    ]
+    if redact_value(public_values) != public_values:
+        raise GateError("Mobile navigation projection contains sensitive data")
+    if value["primaryRouteId"] != primary_route_id:
+        raise GateError("Mobile primary navigation route is inconsistent")
+    if value["detailKeys"] != detail_keys:
+        raise GateError("Mobile detail navigation stack is inconsistent")
+    if value["overlayRouteId"] != overlay_route_id:
+        raise GateError("Mobile overlay navigation route is inconsistent")
+    return dict(value)
+
+
 class SimulatorRuntimeLifecycleGate(
     SimulatorCallbackRoutingGate,
     AcceptanceGate,
@@ -211,10 +245,20 @@ class SimulatorRuntimeLifecycleGate(
             session.switch_to_app_webview()
 
         session.require_harness(list(REQUIRED_HARNESS_ACTIONS))
-        initial = validate_lifecycle_snapshot(
-            session.call_action("lifecycle.snapshot"),
-            expected_phase="ACTIVE",
-        )
+        try:
+            initial = validate_lifecycle_snapshot(
+                session.call_action("lifecycle.waitReady"),
+                expected_phase="ACTIVE",
+            )
+        except GateError as error:
+            try:
+                diagnostics = redact_value(
+                    session.call_action("lifecycle.nativeBridgeDiagnostic")
+                )
+            except Exception:
+                diagnostics = None
+            raise GateError(f"{error}; bridgeDiagnostics={diagnostics!r}") from error
+        navigation = self._exercise_navigation(session)
         suspended = self._transition_snapshot(
             session,
             "lifecycle.suspend",
@@ -233,12 +277,11 @@ class SimulatorRuntimeLifecycleGate(
             raise GateError(
                 f"client {spec.client_id} returned an invalid lifecycle.restart result"
             )
-        restarted = validate_lifecycle_snapshot(
-            session.call_action("lifecycle.snapshot"),
-            expected_phase="ACTIVE",
-            minimum_generation=resumed["generation"] + 1,
-            expected_boot_order=initial["bootOrder"],
-            expected_launch_state=initial["launchState"],
+        restarted = self._wait_for_lifecycle_snapshot(
+            session,
+            minimum_generation=int(resumed["generation"]) + 1,
+            expected_boot_order=list(initial["bootOrder"]),
+            expected_launch_state=str(initial["launchState"]),
         )
         self._record(
             spec.client_id,
@@ -285,10 +328,174 @@ class SimulatorRuntimeLifecycleGate(
             "suspended": suspended,
             "resumed": resumed,
             "restarted": restarted,
+            "navigation": navigation,
             "nativeAccessibility": native_ax.to_dict(),
             "screenshot": screenshot.to_dict(),
             "webDom": web_dom.to_dict(),
         }
+
+    def _wait_for_lifecycle_snapshot(
+        self,
+        session: SimulatorAppiumSession,
+        *,
+        minimum_generation: int,
+        expected_boot_order: list[str],
+        expected_launch_state: str,
+        timeout_seconds: float = 20.0,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + timeout_seconds
+        last_snapshot: Any = None
+        last_error: GateError | None = None
+        while time.monotonic() < deadline:
+            last_snapshot = session.call_action("lifecycle.snapshot")
+            try:
+                return validate_lifecycle_snapshot(
+                    last_snapshot,
+                    expected_phase="ACTIVE",
+                    minimum_generation=minimum_generation,
+                    expected_boot_order=expected_boot_order,
+                    expected_launch_state=expected_launch_state,
+                )
+            except GateError as error:
+                last_error = error
+                time.sleep(0.25)
+        raise GateError(
+            "Mobile lifecycle did not converge after restart: "
+            f"{last_error}; snapshot={redact_value(last_snapshot)!r}"
+        )
+
+    def _exercise_navigation(
+        self,
+        session: SimulatorAppiumSession,
+    ) -> dict[str, Any]:
+        states = {
+            "initial": validate_navigation_projection(
+                session.call_action("navigation.snapshot"),
+                primary_route_id="tab:chat",
+                detail_keys=[],
+                overlay_route_id=None,
+            ),
+            "contacts": validate_navigation_projection(
+                session.call_action(
+                    "navigation.apply",
+                    {"kind": "primary", "routeId": "tab:contacts"},
+                ),
+                primary_route_id="tab:contacts",
+                detail_keys=[],
+                overlay_route_id=None,
+            ),
+            "findPeople": validate_navigation_projection(
+                session.call_action(
+                    "navigation.apply",
+                    {
+                        "kind": "overlay.open",
+                        "route": {"routeId": "overlay:add-friend"},
+                    },
+                ),
+                primary_route_id="tab:contacts",
+                detail_keys=[],
+                overlay_route_id="overlay:add-friend",
+            ),
+            "createGroup": validate_navigation_projection(
+                session.call_action(
+                    "navigation.apply",
+                    {
+                        "kind": "overlay.open",
+                        "route": {"routeId": "overlay:create-group"},
+                    },
+                ),
+                primary_route_id="tab:contacts",
+                detail_keys=[],
+                overlay_route_id="overlay:create-group",
+            ),
+            "overlayClosed": validate_navigation_projection(
+                session.call_action(
+                    "navigation.apply",
+                    {"kind": "overlay.close"},
+                ),
+                primary_route_id="tab:contacts",
+                detail_keys=[],
+                overlay_route_id=None,
+            ),
+        }
+        detail_routes = (
+            {
+                "routeId": "detail:contact-profile",
+                "actorPtid": "ptid:acceptance-contact",
+            },
+            {"routeId": "detail:moment", "postId": "acceptance-post"},
+            {
+                "routeId": "detail:setting",
+                "settingId": "privacy-security",
+            },
+            {"routeId": "detail:moment", "postId": "acceptance-post"},
+        )
+        expected_detail_keys = (
+            ["detail:contact-profile:ptid:acceptance-contact"],
+            [
+                "detail:contact-profile:ptid:acceptance-contact",
+                "detail:moment:acceptance-post",
+            ],
+            [
+                "detail:contact-profile:ptid:acceptance-contact",
+                "detail:moment:acceptance-post",
+                "detail:setting:privacy-security",
+            ],
+            [
+                "detail:contact-profile:ptid:acceptance-contact",
+                "detail:setting:privacy-security",
+                "detail:moment:acceptance-post",
+            ],
+        )
+        for index, (route, expected_keys) in enumerate(
+            zip(detail_routes, expected_detail_keys),
+            start=1,
+        ):
+            states[f"detail{index}"] = validate_navigation_projection(
+                session.call_action(
+                    "navigation.apply",
+                    {"kind": "detail.push", "route": route},
+                ),
+                primary_route_id="tab:contacts",
+                detail_keys=expected_keys,
+                overlay_route_id=None,
+            )
+        states["detailBack"] = validate_navigation_projection(
+            session.call_action(
+                "navigation.apply",
+                {"kind": "detail.pop"},
+            ),
+            primary_route_id="tab:contacts",
+            detail_keys=[
+                "detail:contact-profile:ptid:acceptance-contact",
+                "detail:setting:privacy-security",
+            ],
+            overlay_route_id=None,
+        )
+        states["primaryReplacement"] = validate_navigation_projection(
+            session.call_action(
+                "navigation.apply",
+                {"kind": "primary", "routeId": "tab:settings"},
+            ),
+            primary_route_id="tab:settings",
+            detail_keys=[],
+            overlay_route_id=None,
+        )
+        states["reset"] = validate_navigation_projection(
+            session.call_action(
+                "navigation.apply",
+                {"kind": "reset"},
+            ),
+            primary_route_id="tab:chat",
+            detail_keys=[],
+            overlay_route_id=None,
+        )
+        self._record(
+            session.client_id,
+            "descriptor-navigation-exercised",
+            {"stateCount": len(states)},
+        )
+        return states
 
     def _transition_snapshot(
         self,
@@ -305,13 +512,27 @@ class SimulatorRuntimeLifecycleGate(
         minimum_generation = int(previous["generation"])
         if require_generation_advance:
             minimum_generation += 1
-        snapshot = validate_lifecycle_snapshot(
-            result.get("snapshot"),
-            expected_phase=expected_phase,
-            minimum_generation=minimum_generation,
-            expected_boot_order=list(previous["bootOrder"]),
-            expected_launch_state=str(previous["launchState"]),
-        )
+        try:
+            snapshot = validate_lifecycle_snapshot(
+                result.get("snapshot"),
+                expected_phase=expected_phase,
+                minimum_generation=minimum_generation,
+                expected_boot_order=list(previous["bootOrder"]),
+                expected_launch_state=str(previous["launchState"]),
+            )
+        except GateError as error:
+            if expected_phase != "ACTIVE" or " is not ready" not in str(error):
+                raise
+            snapshot = validate_lifecycle_snapshot(
+                session.call_action(
+                    "lifecycle.waitReady",
+                    {"minimumGeneration": minimum_generation},
+                ),
+                expected_phase="ACTIVE",
+                minimum_generation=minimum_generation,
+                expected_boot_order=list(previous["bootOrder"]),
+                expected_launch_state=str(previous["launchState"]),
+            )
         self._record(
             session.client_id,
             action,
@@ -356,7 +577,7 @@ class SimulatorRuntimeLifecycleGate(
             "gateId": self.gate_id,
             "gate": self.gate_id,
             "environment": ENVIRONMENT_ID,
-            "runtimeCell": "ios-simulator-and-android-emulator",
+            "runtimeCell": "dual-ios-simulator",
             "status": status,
             "phase": "W9-C Lifecycle",
             "bom": ["W3", "W9-C"],

@@ -1,8 +1,7 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: accepted
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Created**: 2026-09-13 | **Updated**: 2026-09-23
 > **Owner**: Platform Team
 
 ---
@@ -15,20 +14,24 @@
 | `pt-god-view` | Methodology entry facade | Classifies intent and routes exactly one owner; never executes or persists |
 | `pt-dev-workflow` | Stage classification and dispatch | Sole intake-to-close Development Run application service |
 | `pt-architecture-execution-methodology` | Execution-plan analysis | Produces the vertical dependency model without writing files |
-| `pt-plan-and-document` | Document writer | Persists the accepted model as a bounded Plan Package and initial tracked locator |
-| `pt-trae-goal-orchestrator` | Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
+| `pt-plan-and-document` | Document writer | Persists the accepted model as a bounded Plan Package and generation-bound workspace Plan binding |
+| `pt-goal-orchestrator` | Host-neutral Goal scheduler | Projects Ready/Parked work, order, and concurrency without durable mutation |
+| `pt-dev-runtime-handoff` | Runtime verification owner | Selects project drivers, operates the Journey, commits Session results, and cleans up |
+| `pt-*-host-adapter` | Optional host transport | Invokes capabilities exposed by detected TRAE, Cursor, Codex, or future hosts |
 | `pt-execution-plan-guardian` | Plan-conformance guard | Returns a read-only allow/deny/escalate decision for one proposed action |
 | `pt-context-anchor` | Status adapter | Validates owners and renders a read-only chat projection |
-| `execution-plan.py` | Resolves local or explicit Plan input | Loads the immutable workspace binding locally; CI validates every Plan path declared by the PR |
+| `execution-plan.py` | Resolves local or explicit Plan input | Loads the current workspace Plan generation locally; CI validates every Plan path declared by the PR |
 | `acceptance-plan.py` | Selects current closure Gates | Uses current Task `closureId` from package |
 | `tooling/scripts/local-dev/` | Make-backed runtime commands | Adds public declaration and Session commands |
+| `skill-overlay-control.py` | Machine-local user Overlay lifecycle | Installs immutable copies and resolves interaction-only policy for `pt-ew` |
+| `pt-ew` | Shared personal-workflow entry | Loads enabled user Overlays, then delegates project routing to `pt-god-view` |
 | `tooling/acceptance/` | Formal product proof | Runs only after functional promotion |
 | execution plans | Scope and current status | Stable manifest + bounded Task snapshots |
 
 ## 2. Control-Plane Composition
 
 ```text
-active_work pointer
+workspace active-work pointer
       |
       v
 Plan Package -> current Task -> Development Session
@@ -92,12 +95,16 @@ Plan Package:
 ```bash
 make plan-bind PLAN=<package-plan.md>
 make plan-binding
+make plan-binding-advance PLAN=<next-package-plan.md> \
+  EXPECTED_GENERATION=<current-generation>
 make plan-validate PLAN=<package-plan.md>
+make plan-activate PLAN=<package-plan.md> TASK=<ready-id>
 make plan-current PLAN=<package-plan.md>
 make plan-next PLAN=<package-plan.md>
 make plan-status PLAN=<package-plan.md>
-make plan-advance PLAN=<package-plan.md> TASK=<current-id> \
-  TO=done NEXT=<ready-id>
+make plan-advance PLAN=<package-plan.md> WORK_ITEM=<id> \
+  TASK=<current-id> TO=done NEXT=<ready-id> SESSION=<session.json>
+make plan-reopen PLAN=<package-plan.md> WORK_ITEM=<id>
 make plan-migrate LEGACY_PLAN=<legacy.md> PACKAGE=<package-plan.md>
 ```
 
@@ -108,7 +115,20 @@ make dev-session-start \
   WORK_ITEM=<id> PLAN=<package-plan.md> TASK=<task-id> JOURNEY=<journey-id>
 make dev-session-status WORK_ITEM=<id>
 make dev-transition WORK_ITEM=<id> TO=<state> REASON=<text> \
-  [VERIFICATION_CLASS=<class>] [RESULT=<result>] [FAILURE=<json>]
+  [SOURCE=<json>] [VERIFICATION=<json>] [FAILURE=<json>] \
+  [RUNTIME_BINDING_REF=<ref>]
+make dev-functional-result WORK_ITEM=<id> REASON=<text> \
+  [RUNTIME_CELL=<cell>]
+make active-work-sync WORK_ITEM=<id> [EXPECTED_REVISION=<n>]
+make active-work-status
+make active-work-status-all
+make active-work-close WORK_ITEM=<id> EXPECTED_REVISION=<n>
+make completion-review-prepare WORK_ITEM=<id> [SCOPE=<task|plan>]
+make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> \
+  ASSESSMENT=<json-file>
+make completion-review-status WORK_ITEM=<id>
+make workflow-snapshot
+make workflow-doctor IDE=<trae|cursor|codex>
 ```
 
 All commands:
@@ -117,8 +137,57 @@ All commands:
 - return non-zero typed errors;
 - accept an injected machine root/clock in tests;
 - resolve direct and symlinked invocation identically;
-- never infer authorization or run broad Acceptance.
+- never infer authorization from operation need, declaration, or mere Plan
+  existence; consume explicit user grants and accepted Plan authorization
+  fields without requesting them again;
+- never run broad Acceptance before functional promotion;
 - use atomic replacement, lock metadata and replayable migration/session journals.
+
+`active-work-sync` runs from the consuming worktree and derives its record from
+the current Plan generation, Plan/Task, active declaration, Session and Git. It
+does not accept arbitrary progress data. `active-work-status-all` and Peers Dev
+only enumerate per-workspace records. The canonical implementation originates
+in `peers-dev-workflow`, but mutable records never report back to that source
+repository.
+
+`dev-functional-result` is the single run-and-commit path for deterministic
+Development proof. It derives the current closure from the bound Plan and
+starts the Development runner itself; callers cannot select one Gate or provide
+a result file. Under the Session lock it validates the aggregate run manifest,
+the exact Gate set, class-required source/runtime/cleanup artifacts, current Git
+identity and Task/Journey binding. It publishes a create-once,
+content-addressed evidence bundle before the Session journal and then commits
+`FUNCTIONAL_PASS`.
+
+User Skill Overlays:
+
+```bash
+make skill-overlay-install SOURCE=<local-skill-directory> [REPLACE=1]
+make skill-overlay-list
+make skill-overlay-enable OVERLAY=<name>
+make skill-overlay-disable OVERLAY=<name>
+make skill-overlay-uninstall OVERLAY=<name>
+make skill-overlay-resolve [TARGET=pt-ew]
+```
+
+These commands mutate only `~/.peers-touch/dev/skill-overlays/`. They do not
+project files into `.trae/skills`, `.cursor/skills`, or `.agents/skills`, and
+they do not change Plan, declaration, Session, active-work, or Acceptance
+state.
+
+Agent integration:
+
+```bash
+make skills IDE=<trae|cursor|codex>
+make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
+```
+
+This is the only canonical project Skill projector. Codex also receives the
+worktree-local `pt-ew-plugin`; TRAE receives merged workspace hooks. The
+installer preserves unrelated host files, never edits global hooks, and cannot
+run while this workspace has a live Development declaration. There is no
+separate acknowledgement command; restart the IDE only when the host cannot
+reload changed hooks, then rerun the audit.
 
 ## 4. Skill Integration
 
@@ -130,14 +199,54 @@ All commands:
 - asks the Goal scheduler what is ready and the Guardian whether each proposed
   action may execute;
 - performs allowed work and persists Session, Task, manifest, and
-  `active_work` updates through their owning commands;
+  workspace active-work updates through their owning commands;
 - drains supporting actions until the current Progress Slice closes one Task or
   reaches a hard boundary;
+- treats one user-authorized continuation as a Plan Run, repeatedly activating
+  dependency-ready successor Tasks until the Plan is terminal or DWF-D20
+  hard-boundary exhaustion is proven;
+- executes an operation already granted by the user or the accepted Plan
+  directly; it asks an authorization question only for an out-of-envelope
+  action or after an admitted attempt returns an actual external permission
+  failure;
+- invokes agent-led review, fixes source-backed findings, and reruns review
+  without delegating routine review to the user;
 - reports task/Journey progress, not file/Gate counts;
 - fences Acceptance before `FUNCTIONAL_PASS`;
 - releases declaration and leases on close/cancel.
 
+### `pt-ew`
+
+- handles explicit Overlay install/list/enable/disable/uninstall intent through
+  the repository-owned control command;
+- resolves enabled `pt-ew` Overlays from the machine-local registry before a
+  normal request;
+- reads only resolver-returned, digest-verified installed `SKILL.md` files;
+- permits interaction transforms but rejects any attempt to change task intent,
+  owner routing, authorization, Plan execution, verification, Acceptance, or
+  stop conditions;
+- passes the original request through unchanged when resolution is empty;
+- delegates exactly once to `pt-god-view` after Overlay processing.
+
+### `pt-ew-plugin`
+
+- normalizes Codex, Cursor and TRAE lifecycle payloads into one Kernel event;
+- prewarms on Session/prompt hooks but creates authority only on the first
+  blockable `PreToolUse`;
+- atomically binds one host conversation to one immutable `executionRoot`;
+- resolves each tool action's `subjectRoot` independently, allowing
+  cross-worktree reads and denying cross-worktree writes;
+- parses shell structure before classifying owner/read/mutation intent;
+- denies inconsistent owner state and direct runtime-owner execution without
+  mutating Plan, Task, Session, declaration, active-work or evidence;
+- renders a machine-owned Context Anchor and commits a create-once release
+  receipt at terminal or blocked Stop;
+- reports `OBSERVE_ONLY` when the host does not expose the identity or blocking
+  capability required for enforcement;
+- no-ops outside a Peers-Touch worktree.
+
 ### `pt-architecture-execution-methodology`
+
 
 - derives vertical Journey/functional closures and their dependency DAG;
 - defines atomic cutovers and risk/state-based verification;
@@ -147,8 +256,9 @@ All commands:
 
 - renders an accepted plan model into `plan.md` plus `tasks/*.md`;
 - enforces manifest/task/current-snapshot bounds;
-- registers the initial
-  `active_work.current_task_id/current_task_path/dev_state`;
+- creates generation 1 or explicitly advances a completed, quiescent workspace
+  Plan generation; after review, Dev Workflow publishes the
+  tracked declaration and derives workspace active-work from its owners;
 - creates no Context Anchor section and no progress appendix;
 - uses archive only for migrated historical input.
 
@@ -157,6 +267,10 @@ All commands:
 - consumes one scheduler-proposed action;
 - validates binding, current Task, dependencies, scope, ownership,
   authorization, concurrency safety, and evidence policy;
+- returns `ACTION_ALLOWED` for an exact user or accepted Plan grant when all
+  other checks pass, regardless of the operation category;
+- returns `OPERATION_AUTHORIZATION_REQUIRED` only for a denied or
+  out-of-envelope action, never to repeat an existing grant;
 - returns allow, deny, or typed amendment escalation;
 - never selects work, executes commands, or mutates Plan/Task/Session/tracking
   state.
@@ -165,7 +279,7 @@ All commands:
 
 Reads only:
 
-1. matching `active_work` row;
+1. matching workspace active-work record;
 2. compact `plan.md`;
 3. `current_task_path`;
 4. matching `session.json`;
@@ -184,20 +298,56 @@ continuation contract:
 - completed/total Task closures;
 - completed delta since the previous Anchor;
 - next Progress Slice;
+- machine-derived post-Next completed count and percentage;
 - expected `+1` closure and percentage-point delta;
-- newly unlocked Tasks, evidence, and hard boundaries.
+- ordered Plan Run successor queue;
+- newly unlocked Tasks, execution mandate/autonomous horizon, evidence, and
+  hard boundaries.
+
+The Anchor and Peers Dev copy `completedAfter` and `percentageAfter` from
+`planctl status.progress.nextProgressBoundary`. They never add rounded
+percentages locally or count unlocked pending Tasks as completed.
 
 It does not expose an administrative command as the user-facing next action.
+During an authorized Plan Run it does not ask for confirmation.
 
-### `pt-trae-goal-orchestrator`
+### `pt-goal-orchestrator`
 
 - builds ready queue from manifest DAG;
 - maps one Goal Slice to dependency-ready actions inside the current Task;
 - binds the Goal Slice completion boundary to the current Task's derived
   Progress Slice;
 - chooses serial/parallel/hybrid lanes and one integration order;
-- never rewrites manifest, Task, Session, `active_work`, or evidence;
+- returns a successor candidate after Task closure, while Dev Workflow alone
+  activates it;
+- never rewrites manifest, Task, Session, workspace active-work, or evidence;
 - treats stale/unaddressable agent records as runtime metadata, not blockers.
+
+The schedule is complete before any host transport is selected. Missing worker
+capability degrades to a safe serial or hybrid schedule.
+
+### `pt-dev-runtime-handoff`
+
+- owns runtime selection, launch, Journey operation, deterministic functional
+  interpretation, Session result commit, and cleanup;
+- prefers repository-native Make, Harness, WebDriver, Appium, accessibility,
+  and browser drivers;
+- reports a typed missing capability without selecting a host or creating a
+  request;
+- rejects PASS not committed to source-bound `FUNCTIONAL_PASS` as
+  `SESSION_PROJECTION_STALE`.
+
+Host adapters supply optional transport only. Goal Orchestrator projects the
+request; Dev Workflow invokes the selected adapter after Guardian admission.
+Unavailable capability and cleanup quarantine are persisted with immutable
+request identity, and independent ready Tasks continue.
+
+### Agent Review Loop
+
+Review prompts are workflow inputs, not user handoffs. Dev Workflow invokes the
+stage methodology review and applicable quality/completion/code review Skills,
+fixes source-backed findings, and reruns review. Only DWF-D20 hard-boundary
+decisions reach the user.
 
 ### `pt-completion-auditor`
 
@@ -207,12 +357,12 @@ Rejects:
 - completion inferred from archive or chat;
 - a product Task without current functional proof;
 - a plan completed while any Task is not `done`;
-- active_work pointers inconsistent with package/session.
+- workspace active-work pointers inconsistent with package/session.
 
 ## 5. Acceptance Integration
 
 `execution-plan.py` and `acceptance-plan.py` consume package manifests through a
-structured parser. Local execution loads only the immutable workspace
+structured parser. Local execution loads only the current workspace generation's
 `planId + planPath`; synchronized foreign Plans are ignored. Pull-request CI
 reads `## Execution Plans / 执行计划` and invokes `--plan` once per declared
 path. The current closure is the current Task's `closureId`.
@@ -271,7 +421,8 @@ Projection migration order is deterministic:
 7. emit a Context Anchor from the new sources.
 
 If projection update stops after manifest/Session mutation, resume repairs
-`active_work` from those owners. No fallback reads `current_step` after migration.
+workspace active-work from those owners. No fallback reads `current_step` after
+migration.
 
 The Mobile pilot has no `active_work` row in project memory. Its reviewed
 crosswalk therefore declares `NONE -> NONE`; prepare, commit and recovery read

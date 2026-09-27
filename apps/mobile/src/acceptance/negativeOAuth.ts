@@ -10,6 +10,24 @@ import type {
   PublicNegativeOAuthProjection,
 } from './contracts';
 
+export type OAuthSecureStorageFaultMode = 'none' | 'fail-next-remove';
+
+export async function configureOAuthSecureStorageFault(
+  mode: OAuthSecureStorageFaultMode,
+): Promise<{ mode: OAuthSecureStorageFaultMode }> {
+  const result = requireRecord(
+    await invoke<unknown>(
+      'oauth_acceptance_configure_secure_storage_fault',
+      { input: { mode } },
+    ),
+    'secureStorageFault',
+  );
+  if (result.mode !== 'none' && result.mode !== 'fail-next-remove') {
+    throw new Error('acceptance.mobile.invalidSecureStorageFaultProjection');
+  }
+  return { mode: result.mode };
+}
+
 export async function requestCallbackReplayHandle(
   input: CallbackReplayHandleInput,
 ): Promise<CallbackReplayHandleOutput> {

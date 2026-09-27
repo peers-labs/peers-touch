@@ -198,7 +198,6 @@ func TestRehydrate(t *testing.T) {
 
 func TestSettingsPatchCanonicalHashBindsOptionalFieldPresence(t *testing.T) {
 	empty := ""
-	zero := uint32(0)
 	tests := []struct {
 		name  string
 		patch valueobject.SettingsPatch
@@ -206,7 +205,6 @@ func TestSettingsPatchCanonicalHashBindsOptionalFieldPresence(t *testing.T) {
 		{name: "name", patch: valueobject.SettingsPatch{Name: &empty}},
 		{name: "description", patch: valueobject.SettingsPatch{Description: &empty}},
 		{name: "avatar object", patch: valueobject.SettingsPatch{AvatarObjectID: &empty}},
-		{name: "disappear timer", patch: valueobject.SettingsPatch{DisappearTimerSeconds: &zero}},
 	}
 
 	absent := mustRecord(t, domainevent.RecordInput{

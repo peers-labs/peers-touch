@@ -32,6 +32,7 @@ func TestDBStoreSetRoundTripsAuthorizationMetadataIdempotently(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sess.UserID, persisted.UserID)
 	requireAuthorizationMetadata(t, persisted.Data, sess.Data)
+	require.Equal(t, "device-set", store.ResolveSessionDeviceID(ctx, sess.ID))
 
 	sess.Data["access_decision_revision"] = uint64(8)
 	require.NoError(t, store.Set(ctx, sess.ID, sess))
@@ -118,6 +119,28 @@ func TestDBStoreAllowsMultipleNonOAuthSessions(t *testing.T) {
 		Where("oauth_candidate_id = ?", "").
 		Count(&count).Error)
 	require.Equal(t, int64(2), count)
+}
+
+func TestManagerBindsSessionDeviceOnce(t *testing.T) {
+	store, _ := newSQLiteDBStore(t)
+	manager := NewManager(store, time.Hour)
+	ctx := context.Background()
+	sess := newPersistentTestSession("session-device-binding", 77)
+	sess.Data = map[string]interface{}{
+		"device_type": string(DeviceTypeDesktop),
+		"auth_method": "password",
+	}
+	require.NoError(t, store.Set(ctx, sess.ID, sess))
+
+	require.NoError(t, manager.BindSessionDeviceID(ctx, sess.ID, "device-a"))
+	require.Equal(t, "device-a", manager.ResolveSessionDeviceID(ctx, sess.ID))
+	require.NoError(t, manager.BindSessionDeviceID(ctx, sess.ID, "device-a"))
+	require.ErrorIs(
+		t,
+		manager.BindSessionDeviceID(ctx, sess.ID, "device-b"),
+		ErrSessionDeviceConflict,
+	)
+	require.Equal(t, "device-a", manager.ResolveSessionDeviceID(ctx, sess.ID))
 }
 
 func newSQLiteDBStore(t *testing.T) (*DBStore, *gorm.DB) {

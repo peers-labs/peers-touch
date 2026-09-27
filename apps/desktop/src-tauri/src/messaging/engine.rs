@@ -1,12 +1,18 @@
-use super::recovery::{restore_profile_database_atomically, MessagingRecoveryArchive};
-use super::store::{CompletedSenderAttachmentSource, DirectAuthorityCheckpoint};
+use super::recovery::{
+    fetch_recovery_events_to_target, reconcile_archive_authority_events,
+    restore_profile_database_atomically, MessagingRecoveryArchive, RecoveryReconciliation,
+};
+use super::store::{
+    load_storage_retention_policy, CompletedSenderAttachmentSource, DirectAuthorityCheckpoint,
+};
 use super::{
     verify_device_event_delivery, AttachmentDownloadProjection, AttachmentRetryPolicy,
     AttachmentTransferControl, AttachmentTransferProgress, AttachmentTransferRecord,
     AttachmentTransferWorker, CommandDispatchProgress, CommandOutboxWorker,
     CommandReconciliationProgress, CommandReconciliationWorker, CommandRetryPolicy,
-    ConversationMemberProjection, ConversationMessageProjection, ConversationProjection,
-    DirectSessionBootstrapper, DrainProgress, EditTextIntent, MessagingItemConsumer,
+    ConversationMemberProjection, ConversationMessagePage, ConversationMessageProjection,
+    ConversationProjection, ConversationSummaryProjection, DirectSessionBootstrapper,
+    DrainProgress, EditTextIntent, MessageRetryDisposition, MessagingItemConsumer,
     MessagingLifecycleWorker, MessagingStore, PendingAttachmentUpload, PendingMembershipIntent,
     PendingMessageDraft, PreKeyPublisher, QueueDrain, SendPreparer, SendTextIntent,
     StationAttachmentTransferTransport, StationCommandTransport, StationDeliveryReceiptTransport,
@@ -20,20 +26,23 @@ use crate::infrastructure::attachment_blob::FilesystemAttachmentBlob;
 use crate::infrastructure::station_client;
 use crate::infrastructure::storage::{self, StorageKind};
 use crate::model::chat::{
-    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationEvent, ConversationKind,
+    ActorReadCursor, AttachmentTransferState, ChatCommand, ConversationCommandKind,
+    ConversationEvent, ConversationKind, ConversationPublicHeadSource,
     CreateDirectConversationRequest, CreateDirectConversationResponse, CryptoEndpoint,
     DeviceConsumptionReceipt, DeviceEventDelivery, DeviceInboxPayloadType, DurableDeviceInboxItem,
+    GetConversationPublicHeadRequest, GetConversationPublicHeadResponse,
     ListConversationEventsRequest, ListConversationEventsResponse, MemberRole,
-    MessagingMembershipAction, MlsLeaveIntent, PrepareConversationCommandRequest,
-    PrepareConversationCommandResponse, PreparedEndpointPayloadKind,
-    SubmitConversationReadCursorRequest, SubmitConversationReadCursorResponse,
-    SubmitConversationTypingRequest,
+    MessagingMembershipAction, MessagingProjectionKind, MlsLeaveIntent,
+    PrepareConversationCommandRequest, PrepareConversationCommandResponse,
+    PreparedEndpointPayloadKind, SubmitConversationReadCursorRequest,
+    SubmitConversationReadCursorResponse, SubmitConversationTypingRequest, VoiceNoteMetadata,
 };
 use messaging_core::codec::verification::{verify_authority_event, verify_direct_genesis_event};
 use messaging_core::contracts::CryptoEndpoint as CoreCryptoEndpoint;
-use messaging_core::identity::enrollment::load_or_create_device_identity_from_seed;
+use messaging_core::identity::enrollment::load_or_create_device_identity_for_device;
 use messaging_core::identity::{
     is_stale_endpoint_error, DeviceEnrollmentManager, FreshDeviceEnrollment,
+    FreshDeviceIdentityState,
 };
 use messaging_core::mls::actor_device_identity::ActorDeviceIdentity;
 use messaging_core::mls::group::MlsGroupManager;
@@ -50,6 +59,26 @@ pub use messaging_core::outbox::MetadataInteraction;
 use messaging_core::outbox::MetadataInteractionPreparer;
 use messaging_core::proto::actor::ActorDevice;
 use messaging_core::proto::actor_device_ref;
+use messaging_core::proto::chat::{
+    ChatStorageOperationState, ChatStoragePolicy, ChatStorageResult, ChatStorageScope,
+    ChatStorageSnapshot,
+};
+use messaging_core::storage_governance::cache::{
+    cache_cleanup_error_proto, cache_cleanup_operation_proto, execute_cache_cleanup,
+    finalize_cache_cleanup, prepare_cache_cleanup, storage_error_code_name, CacheCleanupError,
+    CacheCleanupJournalRepository, CacheCleanupOperation, CacheCleanupPlanInput,
+};
+use messaging_core::storage_governance::conversation_clear::{
+    clear_conversation, conversation_clear_error_proto, conversation_clear_operation_proto,
+    ConversationClearInput, ConversationClearRepository,
+};
+use messaging_core::storage_governance::retention::{
+    apply_retention, retention_error_proto, retention_operation_proto, RetentionApplyInput,
+    RetentionRepository,
+};
+use messaging_core::storage_governance::{
+    measure_storage, PhysicalStorageClass, PhysicalStoragePath, StorageAccountingInput,
+};
 use prost::Message;
 use reqwest::Method;
 use secure_content_core::object::{
@@ -76,12 +105,43 @@ const SENDER_ATTACHMENT_SOURCE_INVALID: &str = "messaging sender attachment sour
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessagingProjectionChange {
     pub profile_id: String,
+    pub actor_ptid: String,
+    pub home_station_peer_id: String,
+    pub device_id: String,
     pub conversation_id: String,
     pub event_id: String,
     pub lane_sequence: i64,
+    pub kind: MessagingProjectionKind,
+    pub message_id: String,
+    pub message_removed_from_projection: bool,
 }
 
 pub type MessagingProjectionNotifier = Arc<dyn Fn(MessagingProjectionChange) + Send + Sync>;
+
+fn projection_change_metadata(
+    item: &DurableDeviceInboxItem,
+    actor_ptid: &str,
+) -> (MessagingProjectionKind, String, bool) {
+    if DeviceInboxPayloadType::try_from(item.payload_type).ok()
+        != Some(DeviceInboxPayloadType::ConversationEvent)
+    {
+        return (MessagingProjectionKind::Conversation, String::new(), false);
+    }
+    let Ok(delivery) = DeviceEventDelivery::decode(item.opaque_payload.as_slice()) else {
+        return (MessagingProjectionKind::Conversation, String::new(), false);
+    };
+    let Some(event) = delivery.event else {
+        return (MessagingProjectionKind::Conversation, String::new(), false);
+    };
+    match event.payload {
+        Some(crate::model::chat::conversation_event::Payload::MessageHiddenForActor(fact))
+            if fact.actor_ptid == actor_ptid =>
+        {
+            (MessagingProjectionKind::Message, fact.message_id, true)
+        }
+        _ => (MessagingProjectionKind::Conversation, String::new(), false),
+    }
+}
 
 #[derive(Default)]
 struct PreKeyMaintenanceState {
@@ -103,6 +163,13 @@ pub struct SubmitMessageOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryMessageOutcome {
+    pub command_id: Option<String>,
+    pub message_id: String,
+    pub state: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PreparedGroupConversation {
     pub conversation_id: String,
     pub command_id: String,
@@ -113,6 +180,7 @@ pub struct LocalAttachmentIntent {
     pub source_local_ref: String,
     pub filename: String,
     pub mime_type: String,
+    pub voice_note: Option<VoiceNoteMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -398,6 +466,7 @@ pub struct MessagingEngine {
     membership_transition_lock: Mutex<()>,
     prekey_maintenance: Mutex<PreKeyMaintenanceState>,
     attachment_source_lock: Mutex<()>,
+    storage_governance_lock: Mutex<()>,
     attachment_transfer_control: Arc<AttachmentTransferControl>,
     runtime_consumer_epoch: Arc<AtomicU64>,
     projection_notifier: Mutex<Option<MessagingProjectionNotifier>>,
@@ -432,10 +501,13 @@ impl MessagingEngine {
         actor_profile_version: u64,
         store: Arc<MessagingStore>,
     ) -> Result<Self, String> {
-        let enrollment = load_or_create_device_identity_from_seed(
+        let device_id = crate::application::key_exchange::device_install::get_or_create_device_id()
+            .map_err(|error| format!("load canonical installation device identity: {error}"))?;
+        let enrollment = load_or_create_device_identity_for_device(
             store.as_ref(),
             &ptid,
-            actor_identity_seed,
+            &device_id,
+            *actor_identity_seed,
             actor_profile_version,
         )?;
         let device = enrollment
@@ -519,6 +591,7 @@ impl MessagingEngine {
             membership_transition_lock: Mutex::new(()),
             prekey_maintenance: Mutex::new(PreKeyMaintenanceState::default()),
             attachment_source_lock: Mutex::new(()),
+            storage_governance_lock: Mutex::new(()),
             attachment_transfer_control: Arc::new(AttachmentTransferControl::new()),
             runtime_consumer_epoch: Arc::new(AtomicU64::new(0)),
             projection_notifier: Mutex::new(None),
@@ -527,6 +600,420 @@ impl MessagingEngine {
 
     pub fn profile_id(&self) -> &str {
         &self.profile_id
+    }
+
+    pub fn chat_storage_snapshot(
+        &self,
+        station_peer_id: &str,
+        scope_revision: &str,
+    ) -> Result<ChatStorageSnapshot, String> {
+        if station_peer_id.trim().is_empty() || scope_revision.trim().is_empty() {
+            return Err("chat storage scope is incomplete".to_string());
+        }
+        let database_path = self.store.storage_database_path()?;
+        let mut physical_paths = vec![
+            PhysicalStoragePath::required(database_path.clone(), PhysicalStorageClass::System),
+            PhysicalStoragePath::optional(
+                sqlite_sidecar_path(&database_path, "-wal"),
+                PhysicalStorageClass::System,
+            ),
+            PhysicalStoragePath::optional(
+                sqlite_sidecar_path(&database_path, "-shm"),
+                PhysicalStorageClass::System,
+            ),
+            PhysicalStoragePath::optional(
+                attachment_source_root(&self.profile_id)?,
+                PhysicalStorageClass::Protected,
+            ),
+        ];
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+        physical_paths.push(PhysicalStoragePath::optional(
+            cache_root,
+            PhysicalStorageClass::Cache,
+        ));
+        physical_paths.extend(
+            self.store
+                .storage_media_paths()?
+                .into_iter()
+                .map(|path| PhysicalStoragePath::required(path, PhysicalStorageClass::Media)),
+        );
+
+        let scope = ChatStorageScope {
+            station_peer_id: station_peer_id.to_string(),
+            actor_ptid: self.endpoint.ptid.clone(),
+            device_id: self.endpoint.device_id.clone(),
+        };
+        let mut snapshot = measure_storage(StorageAccountingInput {
+            scope: scope.clone(),
+            revision: scope_revision.to_string(),
+            measured_at_unix_ms: now_unix_ms(),
+            physical_paths,
+            conversations: self.store.storage_logical_usage()?,
+        })
+        .map_err(|error| error.to_string())?;
+        snapshot.retention_policy =
+            Some(load_storage_retention_policy(self.store.as_ref(), &scope)?);
+        Ok(snapshot)
+    }
+
+    pub fn chat_storage_clear_cache(
+        &self,
+        station_peer_id: &str,
+        scope_revision: &str,
+    ) -> Result<ChatStorageResult, String> {
+        let _guard = self
+            .storage_governance_lock
+            .lock()
+            .map_err(|_| "chat storage governance lock poisoned".to_string())?;
+        let before = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        let operation = prepare_cache_cleanup(
+            self.store.as_ref(),
+            CacheCleanupPlanInput {
+                scope_revision: scope_revision.to_string(),
+                cache_roots: vec![cache_root.clone()],
+                protected_paths: protected_paths.clone(),
+                physical_bytes_before: before.physical_total_bytes,
+                now_unix_ms: now_unix_ms(),
+            },
+        )
+        .map_err(|error| error.to_string())?;
+        let mut progress = execute_cache_cleanup(
+            self.store.as_ref(),
+            &operation,
+            std::slice::from_ref(&cache_root),
+            &protected_paths,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+
+        if progress.operation.state == ChatStorageOperationState::Compacting {
+            if self.store.storage_checkpoint().is_err() {
+                let after = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+                progress.operation = self.store.update_cache_cleanup_operation(
+                    &progress.operation.operation_id,
+                    ChatStorageOperationState::CompactionPending,
+                    Some(after.physical_total_bytes),
+                    Some(storage_error_code_name(
+                        messaging_core::proto::chat::ChatStorageErrorCode::CompactionPending,
+                    )),
+                    now_unix_ms(),
+                )?;
+                progress.error = Some(CacheCleanupError::CompactionPending);
+                return Ok(cache_cleanup_result(after, progress));
+            }
+        }
+        let after = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+        let execution_error = progress.error.clone();
+        progress = finalize_cache_cleanup(
+            self.store.as_ref(),
+            &progress.operation,
+            after.physical_total_bytes,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+        if progress.error.is_none() {
+            progress.error = execution_error;
+        }
+        Ok(cache_cleanup_result(after, progress))
+    }
+
+    pub fn chat_storage_set_retention(
+        &self,
+        station_peer_id: &str,
+        scope_revision: &str,
+        retention_preset: i32,
+    ) -> Result<ChatStorageResult, String> {
+        let _guard = self
+            .storage_governance_lock
+            .lock()
+            .map_err(|_| "chat storage governance lock poisoned".to_string())?;
+        let mut before = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+        let scope = before
+            .scope
+            .clone()
+            .ok_or_else(|| "chat retention scope is unavailable".to_string())?;
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+
+        if let Some(resume) = self
+            .store
+            .load_resumable_retention(&scope, scope_revision)?
+        {
+            let resumed_preset = resume.policy.retention_preset;
+            let resumed = self.finish_retention_operation(
+                station_peer_id,
+                scope_revision,
+                resume.policy,
+                resume.operation,
+                &cache_root,
+            )?;
+            let resumed_succeeded = resumed.operation.as_ref().is_some_and(|operation| {
+                operation.state == ChatStorageOperationState::Succeeded as i32
+            });
+            if !resumed_succeeded || resumed_preset == retention_preset {
+                return Ok(resumed);
+            }
+            before = resumed
+                .snapshot
+                .clone()
+                .ok_or_else(|| "chat retention resume snapshot is unavailable".to_string())?;
+        }
+
+        let retention = match apply_retention(
+            self.store.as_ref(),
+            RetentionApplyInput {
+                scope,
+                scope_revision: scope_revision.to_string(),
+                retention_preset,
+                physical_bytes_before: before.physical_total_bytes,
+                now_unix_ms: now_unix_ms(),
+            },
+        ) {
+            Ok(retention) => retention,
+            Err(error) => {
+                return Ok(ChatStorageResult {
+                    snapshot: Some(before),
+                    policy: None,
+                    operation: None,
+                    error: Some(retention_error_proto(&error)),
+                })
+            }
+        };
+        self.finish_retention_operation(
+            station_peer_id,
+            scope_revision,
+            retention.policy,
+            retention.commit.operation,
+            &cache_root,
+        )
+    }
+
+    pub fn chat_storage_clear_conversation(
+        &self,
+        station_peer_id: &str,
+        scope_revision: &str,
+        conversation_id: &str,
+    ) -> Result<ChatStorageResult, String> {
+        let _guard = self
+            .storage_governance_lock
+            .lock()
+            .map_err(|_| "chat storage governance lock poisoned".to_string())?;
+        let before = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+        let scope = before
+            .scope
+            .clone()
+            .ok_or_else(|| "chat conversation clear scope is unavailable".to_string())?;
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+
+        let operation = if let Some(operation) =
+            self.store
+                .load_resumable_conversation_clear(&scope, scope_revision, conversation_id)?
+        {
+            operation
+        } else {
+            match clear_conversation(
+                self.store.as_ref(),
+                ConversationClearInput {
+                    scope,
+                    scope_revision: scope_revision.to_string(),
+                    conversation_id: conversation_id.to_string(),
+                    physical_bytes_before: before.physical_total_bytes,
+                    now_unix_ms: now_unix_ms(),
+                },
+            ) {
+                Ok(progress) => progress.commit.operation,
+                Err(error) => {
+                    return Ok(ChatStorageResult {
+                        snapshot: Some(before),
+                        policy: None,
+                        operation: None,
+                        error: Some(conversation_clear_error_proto(&error)),
+                    })
+                }
+            }
+        };
+        self.finish_conversation_clear_operation(
+            station_peer_id,
+            scope_revision,
+            conversation_id,
+            operation,
+            &cache_root,
+        )
+    }
+
+    fn finish_conversation_clear_operation(
+        &self,
+        station_peer_id: &str,
+        scope_revision: &str,
+        conversation_id: &str,
+        mut operation: CacheCleanupOperation,
+        cache_root: &PathBuf,
+    ) -> Result<ChatStorageResult, String> {
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        let mut cleanup_error = None;
+        let mut failed_item_count = 0;
+        if matches!(
+            operation.state,
+            ChatStorageOperationState::DeletingFiles
+                | ChatStorageOperationState::CompactionPending
+                | ChatStorageOperationState::PausedScopeInactive
+                | ChatStorageOperationState::FailedRetryable
+        ) {
+            let progress = execute_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                std::slice::from_ref(cache_root),
+                &protected_paths,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            operation = progress.operation;
+            cleanup_error = progress.error;
+            failed_item_count = progress.failed_item_count;
+        }
+        if operation.state == ChatStorageOperationState::Compacting {
+            if self.store.storage_compact().is_err() {
+                operation = self.store.update_cache_cleanup_operation(
+                    &operation.operation_id,
+                    ChatStorageOperationState::CompactionPending,
+                    None,
+                    Some(storage_error_code_name(
+                        messaging_core::proto::chat::ChatStorageErrorCode::CompactionPending,
+                    )),
+                    now_unix_ms(),
+                )?;
+                cleanup_error = Some(CacheCleanupError::CompactionPending);
+            }
+        }
+        let after = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+        if operation.state == ChatStorageOperationState::Compacting {
+            let progress = finalize_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                after.physical_total_bytes,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            operation = progress.operation;
+            cleanup_error = cleanup_error.or(progress.error);
+            failed_item_count = failed_item_count.max(progress.failed_item_count);
+        }
+        Ok(conversation_clear_result(
+            after,
+            operation,
+            conversation_id,
+            cleanup_error,
+            failed_item_count,
+        ))
+    }
+
+    fn finish_retention_operation(
+        &self,
+        station_peer_id: &str,
+        scope_revision: &str,
+        policy: ChatStoragePolicy,
+        mut operation: CacheCleanupOperation,
+        cache_root: &PathBuf,
+    ) -> Result<ChatStorageResult, String> {
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        let mut cleanup_error = None;
+        let mut failed_item_count = 0;
+        if matches!(
+            operation.state,
+            ChatStorageOperationState::DeletingFiles
+                | ChatStorageOperationState::CompactionPending
+                | ChatStorageOperationState::PausedScopeInactive
+                | ChatStorageOperationState::FailedRetryable
+        ) {
+            let progress = execute_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                std::slice::from_ref(cache_root),
+                &protected_paths,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            operation = progress.operation;
+            cleanup_error = progress.error;
+            failed_item_count = progress.failed_item_count;
+        }
+        if operation.state == ChatStorageOperationState::Compacting {
+            if self.store.storage_compact().is_err() {
+                operation = self.store.update_cache_cleanup_operation(
+                    &operation.operation_id,
+                    ChatStorageOperationState::CompactionPending,
+                    None,
+                    Some(storage_error_code_name(
+                        messaging_core::proto::chat::ChatStorageErrorCode::CompactionPending,
+                    )),
+                    now_unix_ms(),
+                )?;
+                cleanup_error = Some(CacheCleanupError::CompactionPending);
+            }
+        }
+        let after = self.chat_storage_snapshot(station_peer_id, scope_revision)?;
+        if operation.state == ChatStorageOperationState::Compacting {
+            let progress = finalize_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                after.physical_total_bytes,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            operation = progress.operation;
+            cleanup_error = cleanup_error.or(progress.error);
+            failed_item_count = failed_item_count.max(progress.failed_item_count);
+        }
+        Ok(retention_result(
+            after,
+            policy,
+            operation,
+            cleanup_error,
+            failed_item_count,
+        ))
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn seed_acceptance_storage_conversation_clear(
+        &self,
+        station_peer_id: &str,
+        plaintext_bytes: usize,
+    ) -> Result<(String, String), String> {
+        self.store.acceptance_seed_conversation_clear_fixture(
+            station_peer_id,
+            plaintext_bytes,
+            now_unix_ms(),
+        )
+    }
+
+    #[cfg(feature = "acceptance-webdriver")]
+    pub fn seed_acceptance_storage_cache(&self, size_bytes: usize) -> Result<PathBuf, String> {
+        if size_bytes == 0 || size_bytes > 16 * 1024 * 1024 {
+            return Err("acceptance cache fixture size is invalid".to_string());
+        }
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+        std::fs::create_dir_all(&cache_root)
+            .map_err(|error| format!("create acceptance cache root: {error}"))?;
+        let path = cache_root.join(format!("acceptance-rebuildable-{}.bin", Ulid::new()));
+        std::fs::write(&path, vec![0x5a_u8; size_bytes])
+            .map_err(|error| format!("write acceptance cache fixture: {error}"))?;
+        Ok(path)
     }
 
     pub fn endpoint(&self) -> &EngineEndpoint {
@@ -889,6 +1376,164 @@ impl MessagingEngine {
         )
     }
 
+    pub fn reconcile_recovery_archive_redactions(
+        &self,
+        token: &str,
+        archive: &MessagingRecoveryArchive,
+    ) -> Result<RecoveryReconciliation, String> {
+        if token.trim().is_empty() || archive.ptid != self.endpoint.ptid {
+            return Err("messaging recovery reconciliation identity is invalid".to_string());
+        }
+
+        const PAGE_LIMIT: i32 = 500;
+        const MAX_PAGES_PER_CONVERSATION: usize = 1_000;
+        let mut reconciliation = RecoveryReconciliation::default();
+        for conversation in &archive.conversations {
+            let conversation_id = &conversation.conversation_id;
+            let query = [("conversation_id", conversation_id.clone())];
+            let response = station_client::request_proto_for_device::<
+                GetConversationPublicHeadRequest,
+                GetConversationPublicHeadResponse,
+            >(
+                Method::GET,
+                "/conversation/public-head",
+                token,
+                Some(&query),
+                None,
+                &self.endpoint.device_id,
+            )
+            .map_err(|error| format!("snapshot messaging recovery authority head: {error}"))?;
+            let mut target = response.head.ok_or_else(|| {
+                "messaging recovery reconciliation authority snapshot is missing".to_string()
+            })?;
+            let mut source =
+                ConversationPublicHeadSource::try_from(target.source).map_err(|_| {
+                    "messaging recovery reconciliation authority snapshot source is invalid"
+                        .to_string()
+                })?;
+            let authority_url = if source == ConversationPublicHeadSource::Follower {
+                let matches = station_client::station_registry()
+                    .list()
+                    .into_iter()
+                    .filter(|entry| {
+                        entry.peer_id.as_deref() == Some(conversation.authority_station_id.as_str())
+                    })
+                    .collect::<Vec<_>>();
+                if matches.len() != 1 {
+                    return Err(
+                        "messaging recovery authority Station route is unavailable".to_string()
+                    );
+                }
+                let authority_url = matches[0].url.clone();
+                let authority_pin = station_client::station_registry()
+                    .federation_signing_key_pin(&authority_url)
+                    .map_err(|error| {
+                        format!("messaging recovery authority Station pin is invalid: {error}")
+                    })?
+                    .ok_or_else(|| {
+                        "messaging recovery authority Station route is not pinned".to_string()
+                    })?;
+                if authority_pin.station_peer_id != conversation.authority_station_id {
+                    return Err(
+                        "messaging recovery authority Station pin binding mismatch".to_string()
+                    );
+                }
+                let authority_response = station_client::request_proto_for_device_at::<
+                    GetConversationPublicHeadRequest,
+                    GetConversationPublicHeadResponse,
+                >(
+                    &authority_url,
+                    Method::GET,
+                    "/conversation/public-head",
+                    token,
+                    Some(&query),
+                    None,
+                    &self.endpoint.device_id,
+                )
+                .map_err(|error| {
+                    format!("snapshot messaging recovery authority head directly: {error}")
+                })?;
+                target = authority_response.head.ok_or_else(|| {
+                    "messaging recovery authority Station snapshot is missing".to_string()
+                })?;
+                source = ConversationPublicHeadSource::try_from(target.source).map_err(|_| {
+                    "messaging recovery authority Station snapshot source is invalid".to_string()
+                })?;
+                Some(authority_url)
+            } else {
+                None
+            };
+            if target.conversation_id != *conversation_id
+                || target.authority_station_peer_id != conversation.authority_station_id
+                || target.federation_id != conversation.federation_id
+                || source != ConversationPublicHeadSource::Authority
+            {
+                return Err(
+                    "messaging recovery reconciliation authority snapshot binding mismatch"
+                        .to_string(),
+                );
+            }
+            let archive_head = archive
+                .authority_heads
+                .iter()
+                .find(|head| head.conversation_id == *conversation_id)
+                .ok_or_else(|| {
+                    "messaging recovery reconciliation authority head is missing".to_string()
+                })?;
+            let events = fetch_recovery_events_to_target(
+                archive_head.event_sequence,
+                target.group_seq,
+                PAGE_LIMIT,
+                MAX_PAGES_PER_CONVERSATION,
+                |after_sequence, limit| {
+                    let query = [
+                        ("conversation_id", conversation_id.clone()),
+                        ("after_seq", after_sequence.to_string()),
+                        ("limit", limit.to_string()),
+                    ];
+                    let response = match authority_url.as_deref() {
+                        Some(authority_url) => station_client::request_proto_for_device_at::<
+                            ListConversationEventsRequest,
+                            ListConversationEventsResponse,
+                        >(
+                            authority_url,
+                            Method::GET,
+                            "/conversation/events",
+                            token,
+                            Some(&query),
+                            None,
+                            &self.endpoint.device_id,
+                        ),
+                        None => station_client::request_proto_for_device::<
+                            ListConversationEventsRequest,
+                            ListConversationEventsResponse,
+                        >(
+                            Method::GET,
+                            "/conversation/events",
+                            token,
+                            Some(&query),
+                            None,
+                            &self.endpoint.device_id,
+                        ),
+                    };
+                    response.map(|response| response.events).map_err(|error| {
+                        format!("reconcile messaging recovery redactions: {error}")
+                    })
+                },
+            )?;
+            reconciliation
+                .redactions
+                .extend(reconcile_archive_authority_events(
+                    archive,
+                    conversation_id,
+                    target.group_seq,
+                    &target.event_hash,
+                    &events,
+                )?);
+        }
+        Ok(reconciliation)
+    }
+
     pub fn mls_manager(&self) -> Arc<MlsGroupManager> {
         self.mls_manager.clone()
     }
@@ -902,6 +1547,9 @@ impl MessagingEngine {
             .drain_lock
             .lock()
             .map_err(|_| "messaging drain lock poisoned".to_string())?;
+        if let Err(error) = self.resume_redaction_file_cleanup() {
+            tracing::warn!(error = %error, "messaging redaction file cleanup remains pending");
+        }
         let (cursor, _) = self.store.lane_checkpoint()?;
         let consumer_epoch = self.runtime_consumer_epoch.load(Ordering::Acquire);
         let transport = StationQueueTransport::new(
@@ -938,16 +1586,109 @@ impl MessagingEngine {
             .clone();
         if let Some(notifier) = notifier {
             let profile_id = self.profile_id.clone();
+            let actor_ptid = self.endpoint.ptid.clone();
+            let device_id = self.endpoint.device_id.clone();
+            let home_station_peer_id =
+                station_client::active_station_peer_id().ok_or_else(|| {
+                    "messaging projection Home Station identity is unavailable".to_string()
+                })?;
             drain = drain.with_acknowledged_item_observer(Arc::new(move |item| {
+                let (kind, message_id, message_removed_from_projection) =
+                    projection_change_metadata(item, &actor_ptid);
                 notifier(MessagingProjectionChange {
                     profile_id: profile_id.clone(),
+                    actor_ptid: actor_ptid.clone(),
+                    home_station_peer_id: home_station_peer_id.clone(),
+                    device_id: device_id.clone(),
                     conversation_id: item.conversation_id.clone(),
                     event_id: item.event_id.clone(),
                     lane_sequence: item.lane_sequence,
+                    kind,
+                    message_id,
+                    message_removed_from_projection,
                 });
             }));
         }
-        drain.drain_once(cursor, consumer_epoch)
+        let progress = drain.drain_once(cursor, consumer_epoch)?;
+        if let Err(error) = self.resume_redaction_file_cleanup() {
+            tracing::warn!(error = %error, "messaging redaction file cleanup remains pending");
+        }
+        Ok(progress)
+    }
+
+    fn resume_redaction_file_cleanup(&self) -> Result<(), String> {
+        let cache_root = attachment_cache_path(&self.profile_id, "root")?
+            .parent()
+            .ok_or_else(|| "messaging attachment cache root is unavailable".to_string())?
+            .to_path_buf();
+        let source_root = attachment_source_root(&self.profile_id)?;
+        let roots = [cache_root, source_root];
+        let protected_paths = self.store.storage_cache_protected_paths()?;
+        for operation in self.store.pending_redaction_cleanup_operations()? {
+            if matches!(
+                operation.state,
+                ChatStorageOperationState::Compacting
+                    | ChatStorageOperationState::CompactionPending
+                    | ChatStorageOperationState::FailedTerminal
+            ) {
+                self.finalize_redaction_cleanup_operation(&operation)?;
+                continue;
+            }
+            let progress = execute_cache_cleanup(
+                self.store.as_ref(),
+                &operation,
+                &roots,
+                &protected_paths,
+                now_unix_ms(),
+            )
+            .map_err(|error| error.to_string())?;
+            if matches!(
+                progress.operation.state,
+                ChatStorageOperationState::Compacting | ChatStorageOperationState::FailedTerminal
+            ) {
+                self.finalize_redaction_cleanup_operation(&progress.operation)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn finalize_redaction_cleanup_operation(
+        &self,
+        operation: &CacheCleanupOperation,
+    ) -> Result<(), String> {
+        let now = now_unix_ms();
+        let compacting = if operation.state == ChatStorageOperationState::Compacting {
+            operation.clone()
+        } else {
+            self.store.update_cache_cleanup_operation(
+                &operation.operation_id,
+                ChatStorageOperationState::Compacting,
+                operation.physical_bytes_after,
+                operation.last_error_code.as_deref(),
+                now,
+            )?
+        };
+        if let Err(error) = self.store.storage_compact() {
+            self.store.update_cache_cleanup_operation(
+                &operation.operation_id,
+                ChatStorageOperationState::CompactionPending,
+                operation.physical_bytes_after,
+                Some(storage_error_code_name(
+                    CacheCleanupError::CompactionPending.code(),
+                )),
+                now_unix_ms(),
+            )?;
+            return Err(error);
+        }
+        let physical_bytes_after = self.store.storage_redaction_physical_bytes()?;
+        finalize_cache_cleanup(
+            self.store.as_ref(),
+            &compacting,
+            physical_bytes_after,
+            now_unix_ms(),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(())
     }
 
     pub fn dispatch_delivery_receipt_once(&self, token: &str) -> Result<bool, String> {
@@ -1044,6 +1785,15 @@ impl MessagingEngine {
         token: &str,
         conversation_id: &str,
     ) -> Result<PrepareConversationCommandResponse, String> {
+        self.prepare_command_plan(token, conversation_id, ConversationCommandKind::SendMessage)
+    }
+
+    fn prepare_command_plan(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        command_kind: ConversationCommandKind,
+    ) -> Result<PrepareConversationCommandResponse, String> {
         if conversation_id.trim().is_empty() {
             return Err("messaging send plan requires conversation ID".to_string());
         }
@@ -1058,6 +1808,7 @@ impl MessagingEngine {
                     &self.endpoint.device_id,
                 )),
                 authority_station_peer_id: authority_station_id,
+                command_kind: command_kind as i32,
             })
     }
 
@@ -1403,11 +2154,85 @@ impl MessagingEngine {
         )
     }
 
+    pub fn retry_message(
+        &self,
+        token: &str,
+        conversation_id: &str,
+        message_id: &str,
+    ) -> Result<RetryMessageOutcome, String> {
+        let _guard = self
+            .send_intent_lock
+            .lock()
+            .map_err(|_| "messaging send intent lock poisoned".to_string())?;
+        let now = now_unix_ms();
+        match self
+            .store
+            .prepare_message_retry(conversation_id, message_id, now)?
+        {
+            MessageRetryDisposition::ExactCommand { command_id } => Ok(RetryMessageOutcome {
+                command_id: Some(command_id),
+                message_id: message_id.to_string(),
+                state: "retrying",
+            }),
+            MessageRetryDisposition::DraftReady => {
+                let draft = self
+                    .store
+                    .message_draft(message_id)?
+                    .ok_or_else(|| "messaging retry draft is unavailable".to_string())?;
+                if draft.conversation_id != conversation_id
+                    || draft.sender_ptid != self.endpoint.ptid
+                    || draft.sender_device_id != self.endpoint.device_id
+                {
+                    return Err("messaging retry draft identity mismatch".to_string());
+                }
+                match self.prepare_message_draft(token, &draft) {
+                    Ok(command_id) => Ok(RetryMessageOutcome {
+                        command_id: Some(command_id),
+                        message_id: message_id.to_string(),
+                        state: "pending",
+                    }),
+                    Err(error) => {
+                        tracing::warn!(
+                            conversation_id,
+                            message_id,
+                            error = %error,
+                            "messaging manual retry preparation deferred"
+                        );
+                        self.schedule_message_draft_retry(&draft, now)?;
+                        Ok(RetryMessageOutcome {
+                            command_id: None,
+                            message_id: message_id.to_string(),
+                            state: "retrying",
+                        })
+                    }
+                }
+            }
+        }
+    }
+
     pub fn conversation_messages(
         &self,
         conversation_id: &str,
     ) -> Result<Vec<ConversationMessageProjection>, String> {
         self.store.conversation_message_projections(conversation_id)
+    }
+
+    pub fn conversation_message_page(
+        &self,
+        conversation_id: &str,
+        before_sequence: Option<i64>,
+        limit: usize,
+    ) -> Result<ConversationMessagePage, String> {
+        self.store
+            .conversation_message_page(conversation_id, before_sequence, limit)
+    }
+
+    pub fn conversation_summary(
+        &self,
+        conversation_id: &str,
+    ) -> Result<ConversationSummaryProjection, String> {
+        self.store
+            .conversation_summary_projection(conversation_id, &self.endpoint.ptid)
     }
 
     pub fn thread_messages(
@@ -1528,7 +2353,11 @@ impl MessagingEngine {
         if projection.sender_ptid != self.endpoint.ptid {
             return Err("messaging edit target is not authored by this actor".to_string());
         }
-        let plan = self.prepare_send_plan(token, conversation_id)?;
+        let plan = self.prepare_command_plan(
+            token,
+            conversation_id,
+            ConversationCommandKind::EditMessage,
+        )?;
         let conversation_kind = ConversationKind::try_from(plan.conversation_kind)
             .map_err(|_| "messaging edit conversation kind is invalid".to_string())?;
         let command_id = Ulid::new().to_string();
@@ -1590,7 +2419,14 @@ impl MessagingEngine {
             return Err("messaging interaction target is required".to_string());
         }
         self.drain_once(token, INTERACTION_PREFLIGHT_DRAIN_LIMIT)?;
-        let plan = self.prepare_send_plan(token, conversation_id)?;
+        let command_kind = match interaction {
+            MetadataInteraction::HideForActor => ConversationCommandKind::HideMessageForActor,
+            MetadataInteraction::Moderate { .. } => ConversationCommandKind::ModerateMessage,
+            MetadataInteraction::Retract => ConversationCommandKind::RetractMessage,
+            MetadataInteraction::Reaction { .. } => ConversationCommandKind::React,
+            MetadataInteraction::Pin { .. } => ConversationCommandKind::PinMessage,
+        };
+        let plan = self.prepare_command_plan(token, conversation_id, command_kind)?;
         let command_id = Ulid::new().to_string();
         let now = now_unix_ms();
         MetadataInteractionPreparer::new(
@@ -1937,6 +2773,21 @@ impl MessagingEngine {
         )
     }
 
+    pub fn ensure_current_device_enrolled(
+        &self,
+        token: &str,
+        label: String,
+    ) -> Result<ActorDevice, String> {
+        let manager = DeviceEnrollmentManager::new(
+            self.store.clone(),
+            self.endpoint.ptid.clone(),
+            self.endpoint.device_id.clone(),
+        )?;
+        let transport =
+            StationDeviceTransport::new(token.to_string(), self.endpoint.device_id.clone())?;
+        manager.enroll_current(label, &transport)
+    }
+
     pub fn recover_stale_enrollment(&self, error: &str) -> bool {
         let manager = match DeviceEnrollmentManager::new(
             self.store.clone(),
@@ -2247,8 +3098,9 @@ impl EngineRegistry {
         &self,
         profile_id: &str,
         archive: &MessagingRecoveryArchive,
+        reconciliation: &RecoveryReconciliation,
     ) -> Result<FreshDeviceEnrollment, String> {
-        let (previous_ptid, previous_seed, previous_profile_version) = {
+        let (previous_ptid, previous_seed, previous_profile_version, device_identity) = {
             let engines = self
                 .engines
                 .lock()
@@ -2270,16 +3122,28 @@ impl EngineRegistry {
                     .ok_or_else(|| "messaging profile actor identity is unavailable".to_string())?
                     .seed_bytes(),
             );
-            let previous_profile_version = engine
+            let enrollment = engine
                 .store
                 .device_enrollment()?
-                .ok_or_else(|| "messaging profile device enrollment is unavailable".to_string())?
-                .certificate
-                .observed_profile_version;
+                .ok_or_else(|| "messaging profile device enrollment is unavailable".to_string())?;
+            let previous_profile_version = enrollment.certificate.observed_profile_version;
+            let (device_signing_seed, signing_key_id) = engine
+                .store
+                .device_signing_seed()?
+                .ok_or_else(|| "messaging profile device signing key is unavailable".to_string())?;
+            if enrollment.certificate.signing_key_id != signing_key_id {
+                return Err(
+                    "messaging profile device signing key identity is inconsistent".to_string(),
+                );
+            }
             (
                 engine.endpoint.ptid.clone(),
                 previous_seed,
                 previous_profile_version,
+                FreshDeviceIdentityState {
+                    enrollment,
+                    device_signing_seed,
+                },
             )
         };
         let (worker, worker_token) = {
@@ -2329,7 +3193,12 @@ impl EngineRegistry {
         drop(engine);
         drop(engines);
 
-        match restore_profile_database_atomically(profile_id, archive) {
+        match restore_profile_database_atomically(
+            profile_id,
+            archive,
+            reconciliation,
+            &device_identity,
+        ) {
             Ok(enrollment) => {
                 let engine = Arc::new(MessagingEngine::open_profile(
                     profile_id.to_string(),
@@ -2460,6 +3329,10 @@ fn prepare_local_attachment_upload(
     {
         return Err("messaging local attachment intent is incomplete".to_string());
     }
+    messaging_core::codec::private_content::validate_voice_note_metadata(
+        &intent.mime_type,
+        intent.voice_note.as_ref(),
+    )?;
     let source = std::fs::canonicalize(Path::new(&intent.source_local_ref))
         .map_err(|error| format!("resolve messaging attachment source: {error}"))?;
     let metadata = source
@@ -2511,6 +3384,7 @@ fn prepare_local_attachment_upload(
         filename: intent.filename.clone(),
         mime_type: intent.mime_type.clone(),
         plaintext_sha256: hasher.finalize().to_vec(),
+        voice_note: intent.voice_note.clone(),
     })
 }
 
@@ -2581,6 +3455,85 @@ fn managed_attachment_source(profile_id: &str, path: &Path) -> Result<bool, Stri
             }))
 }
 
+fn retention_result(
+    snapshot: ChatStorageSnapshot,
+    policy: messaging_core::proto::chat::ChatStoragePolicy,
+    operation: messaging_core::storage_governance::cache::CacheCleanupOperation,
+    cleanup_error: Option<CacheCleanupError>,
+    failed_item_count: usize,
+) -> ChatStorageResult {
+    let scope = snapshot.scope.clone().unwrap_or_default();
+    let error = cleanup_error.as_ref().map(|error| {
+        let mut value = cache_cleanup_error_proto(error);
+        if failed_item_count > 0 {
+            value.message = format!(
+                "{}; {} retention media item(s) remain",
+                value.message, failed_item_count
+            );
+        }
+        value
+    });
+    ChatStorageResult {
+        snapshot: Some(snapshot),
+        policy: Some(policy),
+        operation: Some(retention_operation_proto(scope, &operation)),
+        error,
+    }
+}
+
+fn conversation_clear_result(
+    snapshot: ChatStorageSnapshot,
+    operation: messaging_core::storage_governance::cache::CacheCleanupOperation,
+    conversation_id: &str,
+    cleanup_error: Option<CacheCleanupError>,
+    failed_item_count: usize,
+) -> ChatStorageResult {
+    let scope = snapshot.scope.clone().unwrap_or_default();
+    let error = cleanup_error.as_ref().map(|error| {
+        let mut value = cache_cleanup_error_proto(error);
+        if failed_item_count > 0 {
+            value.message = format!(
+                "{}; {} conversation media item(s) remain",
+                value.message, failed_item_count
+            );
+        }
+        value
+    });
+    ChatStorageResult {
+        snapshot: Some(snapshot),
+        policy: None,
+        operation: Some(conversation_clear_operation_proto(
+            scope,
+            &operation,
+            conversation_id,
+        )),
+        error,
+    }
+}
+
+fn cache_cleanup_result(
+    snapshot: ChatStorageSnapshot,
+    progress: messaging_core::storage_governance::cache::CacheCleanupProgress,
+) -> ChatStorageResult {
+    let scope = snapshot.scope.clone().unwrap_or_default();
+    let error = progress.error.as_ref().map(|error| {
+        let mut value = cache_cleanup_error_proto(error);
+        if progress.failed_item_count > 0 {
+            value.message = format!(
+                "{}; {} cache item(s) remain",
+                value.message, progress.failed_item_count
+            );
+        }
+        value
+    });
+    ChatStorageResult {
+        snapshot: Some(snapshot),
+        policy: None,
+        operation: Some(cache_cleanup_operation_proto(scope, &progress.operation)),
+        error,
+    }
+}
+
 fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBuf, String> {
     if profile_id.trim().is_empty() || attachment_id.trim().is_empty() {
         return Err("messaging attachment cache identity is incomplete".to_string());
@@ -2592,6 +3545,12 @@ fn attachment_cache_path(profile_id: &str, attachment_id: &str) -> Result<PathBu
         &["messaging-cache", &profile_hash, attachment_id],
     )
     .map_err(|error| format!("resolve messaging attachment cache path: {error}"))
+}
+
+fn sqlite_sidecar_path(database_path: &Path, suffix: &str) -> PathBuf {
+    let mut path = database_path.as_os_str().to_os_string();
+    path.push(suffix);
+    PathBuf::from(path)
 }
 
 fn materialize_attachment_cache(
@@ -2669,8 +3628,8 @@ mod tests {
     use crate::model::chat::{
         conversation_event, ConversationAuthorityEndpoint, ConversationAuthorityMember,
         ConversationAuthoritySnapshot, ConversationCreatedFact, DeviceEventDelivery,
-        DeviceInboxPayloadType, DurableDeviceInboxItem, MessageCommittedFact, MessagingContentKind,
-        PreparedEndpointPayloadKind,
+        DeviceInboxPayloadType, DurableDeviceInboxItem, MessageCommittedFact,
+        MessageHiddenForActorFact, MessagingContentKind, PreparedEndpointPayloadKind,
     };
     use messaging_core::mls::group::MlsMemberKeyPackage;
     use messaging_core::proto::actor_device_ptid;
@@ -2699,11 +3658,15 @@ mod tests {
                 ptid: alice.ptid.clone(),
                 role: "member".to_string(),
                 home_station_peer_id: "station-local".to_string(),
+                muted: false,
+                muted_until: None,
             },
             ConversationAuthorityMember {
                 ptid: bob.ptid.clone(),
                 role: "member".to_string(),
                 home_station_peer_id: "station-local".to_string(),
+                muted: false,
+                muted_until: None,
             },
         ];
         let mut event = ConversationEvent {
@@ -2840,6 +3803,58 @@ mod tests {
             payload_sha256: Sha256::digest(&opaque_payload).to_vec(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn projection_change_identifies_actor_hidden_message_removal() {
+        let genesis = direct_genesis_event();
+        let previous = direct_message_event(&genesis);
+        let mut hidden = ConversationEvent {
+            event_id: "hide:direct-1".to_string(),
+            conversation_id: previous.conversation_id.clone(),
+            sequence: previous.sequence + 1,
+            command_id: "hide-command".to_string(),
+            actor: previous.actor.clone(),
+            previous_hash: previous.event_hash.clone(),
+            event_hash: Vec::new(),
+            committed_at: Some(prost_types::Timestamp {
+                seconds: 3,
+                nanos: 0,
+            }),
+            delivery_commitments: Vec::new(),
+            membership_epoch: previous.membership_epoch,
+            mls_epoch: previous.mls_epoch,
+            authority_station_peer_id: previous.authority_station_peer_id,
+            payload: Some(conversation_event::Payload::MessageHiddenForActor(
+                MessageHiddenForActorFact {
+                    message_id: "message-1".to_string(),
+                    actor_ptid: "ptid:alice".to_string(),
+                    ..Default::default()
+                },
+            )),
+        };
+        hidden.event_hash = Sha256::digest(hidden.encode_to_vec()).to_vec();
+        let item = direct_delivery_item(
+            hidden,
+            CryptoEndpoint {
+                ptid: "ptid:alice".to_string(),
+                device_id: "alice-device".to_string(),
+            },
+            PreparedEndpointPayloadKind::PublicEvent,
+        );
+
+        assert_eq!(
+            projection_change_metadata(&item, "ptid:alice"),
+            (
+                MessagingProjectionKind::Message,
+                "message-1".to_string(),
+                true,
+            )
+        );
+        assert_eq!(
+            projection_change_metadata(&item, "ptid:bob"),
+            (MessagingProjectionKind::Conversation, String::new(), false,)
+        );
     }
 
     #[test]
@@ -3397,11 +4412,20 @@ mod tests {
             actor_profile_version: 3,
             conversations: Vec::new(),
             messages: Vec::new(),
+            retention_floors: Vec::new(),
+            authority_heads: Vec::new(),
+            redaction_tombstones: Vec::new(),
             attachments: Vec::new(),
             trust: Vec::new(),
         };
 
-        assert!(registry.restore_profile("alice-profile", &archive).is_err());
+        assert!(registry
+            .restore_profile(
+                "alice-profile",
+                &archive,
+                &RecoveryReconciliation::default(),
+            )
+            .is_err());
         let registered = registry.get("alice-profile").unwrap().unwrap();
         assert!(Arc::ptr_eq(&engine, &registered));
         assert!(registry.wake_profile("alice-profile").is_ok());

@@ -4,7 +4,6 @@
 
 ```json
 {
-  "schemaVersion": 1,
   "kind": "peers-touch-task-slice",
   "planId": "DWF-PROGRESS-20260917",
   "taskId": "DWF-P1",

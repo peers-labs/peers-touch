@@ -49,13 +49,15 @@ for arch in ${ARCHS:?}; do
 
   cargo_target_dir="${CARGO_TARGET_DIR:-$SRC_TAURI_DIR/target}"
   rust_lib="$cargo_target_dir/$rust_target/$profile_dir/libpeers_touch_mobile_lib.a"
-  if [[ "$rust_target" == *-sim ]] && {
-    [ ! -f "$rust_lib" ] \
-      || [ "${MOBILE_TAURI_STATIC_BUNDLE_BUILD:-0}" = "1" ]
-  }; then
-    cargo_features="tauri/rustls-tls"
+  # The CLI can compile the device target for an arm64 simulator invocation.
+  # Always ask Cargo to validate the exact simulator target before copying it.
+  if [[ "$SDKROOT" == *iPhoneSimulator* ]]; then
+    cargo_features="custom-protocol,tauri/rustls-tls"
     if [ "${MOBILE_TAURI_STATIC_BUNDLE_BUILD:-0}" = "1" ]; then
-      cargo_features="custom-protocol,tauri/rustls-tls"
+      cargo_features="acceptance-harness,custom-protocol,tauri/rustls-tls"
+    elif [ -n "${MOBILE_TAURI_DEV_CONFIG:-}" ] \
+      && [ -f "$MOBILE_TAURI_DEV_CONFIG" ]; then
+      cargo_features="tauri/rustls-tls"
     fi
     cargo_args=(
       build

@@ -11,7 +11,7 @@ import {
   type ChatActorIdentityProjection,
 } from '../../store/friendshipProjection';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { imServiceV1 } from '../../services/im-service';
+import { messagingCommands } from '../../messaging/runtime';
 import { log } from '../../utils/logger';
 import { ChatActorIdentityRow } from './ChatActorIdentityRow';
 import { PresentedErrorAlert } from '../common/PresentedErrorAlert';
@@ -216,7 +216,7 @@ export function CreateGroupModal({ open, onClose }: Props) {
     const conversationId = draftConversationId ?? crypto.randomUUID();
     setDraftConversationId(conversationId);
     try {
-      const created = await imServiceV1.messaging.createGroup(
+      const created = await messagingCommands.createGroup(
         conversationId,
         groupName,
         memberPtids,

@@ -415,7 +415,7 @@ class ContactMessageResilienceTest(unittest.TestCase):
 
         intent_pos = page.find("setDirectOpenIntent(intent)")
         create_direct_pos = page.find(
-            "imServiceV1.messaging.createDirect({"
+            "messagingCommands.createDirect({"
         )
         navigation_pos = page.find("setSubPage('chats')", intent_pos)
         self.assertGreater(
@@ -438,6 +438,7 @@ class ContactMessageResilienceTest(unittest.TestCase):
             "federationId: contact.federationId",
             page[create_direct_pos:create_direct_end],
         )
+        self.assertNotIn("imServiceV1.messaging.createDirect", page)
         self.assertIn("mode: 'inline'", page)
         self.assertIn("failDirectConversationOpen", page)
 

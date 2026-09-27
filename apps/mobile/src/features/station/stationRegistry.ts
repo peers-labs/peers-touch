@@ -84,7 +84,10 @@ export function addStationEntry(
   if (!stationPeerId || !normalized) return { ok: false, error: 'mobile.launch.stationIdentityInvalid' };
   if (identityVerified) {
     const conflictingUrl = registry.entries.find(
-      (entry) => entry.url === normalized && entry.stationPeerId !== stationPeerId,
+      (entry) => (
+        normalizeVerifiedStationUrl(entry.url) === normalized
+        && entry.stationPeerId !== stationPeerId
+      ),
     );
     if (conflictingUrl) return { ok: false, error: 'mobile.launch.stationIdentityMismatch' };
   }
@@ -160,8 +163,66 @@ export function removeStationEntry(registry: StoredStationRegistry, stationPeerI
   return { activeStationPeerId, entries };
 }
 
+export function replaceStationEntryIdentity(
+  registry: StoredStationRegistry,
+  expectedStationPeerId: string,
+  input: VerifiedStationInput,
+  status: StationStatusInput = {},
+): { ok: true; registry: StoredStationRegistry } | { ok: false; error: string } {
+  const stationPeerId = input.stationPeerId.trim();
+  const normalized = normalizeVerifiedStationUrl(input.url);
+  const existing = registry.entries.find(
+    (entry) => entry.stationPeerId === expectedStationPeerId,
+  );
+  if (
+    !stationPeerId
+    || !normalized
+    || !existing
+    || normalizeVerifiedStationUrl(existing.url) !== normalized
+  ) {
+    return { ok: false, error: 'mobile.launch.stationIdentityInvalid' };
+  }
+
+  const now = Date.now();
+  const replacement = applyStationStatus({
+    stationPeerId,
+    url: normalized,
+    label: extractStationLabel(normalized),
+    createdAt: now,
+    lastUsedAt: now,
+    identityVerified: true,
+  }, status);
+
+  return {
+    ok: true,
+    registry: {
+      activeStationPeerId: stationPeerId,
+      entries: [
+        replacement,
+        ...registry.entries.filter(
+          (entry) => (
+            entry.stationPeerId !== expectedStationPeerId
+            && entry.stationPeerId !== stationPeerId
+          ),
+        ),
+      ].sort(compareRecentlyUsed),
+    },
+  };
+}
+
 export function activeStationEntry(registry: StoredStationRegistry): MobileStationEntry | null {
   return registry.entries.find((entry) => entry.stationPeerId === registry.activeStationPeerId) ?? null;
+}
+
+export function stationEntryAtUrl(
+  registry: StoredStationRegistry,
+  url: string,
+): MobileStationEntry | null {
+  const normalized = normalizeVerifiedStationUrl(url);
+  if (!normalized) return null;
+  return registry.entries.find(
+    (entry) => normalizeVerifiedStationUrl(entry.url) === normalized,
+  ) ?? null;
 }
 
 export function requireMatchingStationIdentity(
@@ -180,10 +241,8 @@ export function buildStationUrl(input: StationAddressInput): string | null {
 
   try {
     const url = new URL(`${input.protocol}://${address}`);
-    if (!url.hostname) return null;
-    url.hash = '';
-    url.search = '';
-    return url.toString().replace(/\/$/, '');
+    if (!isRootHttpOrigin(url)) return null;
+    return url.origin;
   } catch {
     return null;
   }
@@ -207,13 +266,23 @@ function createEmptyStationRegistry(): StoredStationRegistry {
 function normalizeVerifiedStationUrl(value: string): string | null {
   try {
     const url = new URL(value);
-    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || !url.hostname) return null;
-    url.hash = '';
-    url.search = '';
-    return url.toString().replace(/\/$/, '');
+    if (!isRootHttpOrigin(url)) return null;
+    return url.origin;
   } catch {
     return null;
   }
+}
+
+function isRootHttpOrigin(url: URL): boolean {
+  return (
+    (url.protocol === 'https:' || url.protocol === 'http:')
+    && Boolean(url.hostname)
+    && !url.username
+    && !url.password
+    && (url.pathname === '' || url.pathname === '/')
+    && !url.search
+    && !url.hash
+  );
 }
 
 function normalizeStationAddress(value: string): string | null {
@@ -254,7 +323,8 @@ function isSameStationEntry(a: MobileStationEntry, b: MobileStationEntry): boole
     a.createdAt === b.createdAt &&
     a.lastUsedAt === b.lastUsedAt &&
     a.lastCheckedAt === b.lastCheckedAt &&
-    a.online === b.online
+    a.online === b.online &&
+    a.identityVerified === b.identityVerified
   );
 }
 
@@ -265,6 +335,7 @@ function isStationEntry(value: unknown): value is MobileStationEntry {
     typeof entry.stationPeerId === 'string' &&
     Boolean(entry.stationPeerId.trim()) &&
     typeof entry.url === 'string' &&
+    normalizeVerifiedStationUrl(entry.url) !== null &&
     typeof entry.label === 'string' &&
     typeof entry.createdAt === 'number' &&
     typeof entry.lastUsedAt === 'number'

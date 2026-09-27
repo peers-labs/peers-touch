@@ -658,6 +658,109 @@ func TestConversationApplyMembershipTransition(t *testing.T) {
 	})
 }
 
+func TestConversationMessageActionsRemainDistinct(t *testing.T) {
+	t.Run("actor hide is scoped to the requesting actor", func(t *testing.T) {
+		fixture := mustCreateGroup(t)
+		required := []valueobject.Endpoint{fixture.owner}
+		preparation, err := fixture.conversation.PrepareCommand(fixture.owner, required)
+		if err != nil {
+			t.Fatal(err)
+		}
+		deliveries := mustDeliveries(t, required, fixture.station, "hide")
+		deliveries[0].Kind = valueobject.DeliveryKindPublicEvent
+		command := aggregate.Command{
+			ID:                      valueobject.CommandID("hide-command"),
+			ConversationID:          fixture.conversation.ID(),
+			AuthorityStation:        fixture.station,
+			Sender:                  fixture.owner,
+			ObservedMembershipEpoch: preparation.Head.MembershipEpoch,
+			ObservedMLSEpoch:        preparation.Head.MLSEpoch,
+			DeliveryPlanHash:        preparation.DeliveryPlanHash,
+			Kind:                    domainevent.KindMessageHiddenForActor,
+			MessageID:               valueobject.MessageID("message-1"),
+			Payload:                 []byte("hide-command"),
+			Deliveries:              deliveries,
+			RequiredEndpoints:       required,
+			CommittedAt:             testTime.Add(time.Minute),
+			EventSealer:             testEventSealer{},
+		}
+
+		transition, err := fixture.conversation.ApplyCommand(command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if transition.Event.Fact.Kind != domainevent.KindMessageHiddenForActor ||
+			len(transition.Deliveries) != 1 ||
+			transition.Deliveries[0].Recipient != fixture.owner {
+			t.Fatalf("actor-hide transition = %+v", transition)
+		}
+	})
+
+	t.Run("moderation requires a group administrator and a reason", func(t *testing.T) {
+		fixture := mustCreateGroup(t)
+		memberCommand := mustCommand(
+			t,
+			fixture,
+			fixture.member,
+			"member-moderation",
+			domainevent.KindMessageModerated,
+			testTime.Add(time.Minute),
+		)
+		memberCommand.ReasonCode = "group_policy_violation"
+		_, err := fixture.conversation.ApplyCommand(memberCommand)
+		assertErrorCode(t, err, conversationdomain.ErrorCodeUnauthorized)
+
+		ownerCommand := mustCommand(
+			t,
+			fixture,
+			fixture.owner,
+			"owner-moderation",
+			domainevent.KindMessageModerated,
+			testTime.Add(time.Minute),
+		)
+		ownerCommand.ReasonCode = "group_policy_violation"
+		transition, err := fixture.conversation.ApplyCommand(ownerCommand)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if transition.Event.Fact.Kind != domainevent.KindMessageModerated {
+			t.Fatalf("moderation event kind = %q", transition.Event.Fact.Kind)
+		}
+	})
+
+	t.Run("forward is a new MLS destination message", func(t *testing.T) {
+		fixture := mustCreateGroup(t)
+		command := mustCommand(
+			t,
+			fixture,
+			fixture.owner,
+			"forward-command",
+			domainevent.KindMessageForwarded,
+			testTime.Add(time.Minute),
+		)
+
+		transition, err := fixture.conversation.ApplyCommand(command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if transition.Event.Fact.Kind != domainevent.KindMessageForwarded ||
+			transition.Event.Fact.MessageID != command.MessageID {
+			t.Fatalf("forward transition = %+v", transition)
+		}
+		for _, delivery := range transition.Deliveries {
+			if delivery.Recipient == fixture.owner {
+				if delivery.Kind != valueobject.DeliveryKindPublicEvent {
+					t.Fatalf("forward sender delivery = %+v", delivery)
+				}
+				continue
+			}
+			if delivery.Kind != valueobject.DeliveryKindMLSApplication {
+				t.Fatalf("forward recipient delivery = %+v", delivery)
+			}
+		}
+	})
+}
+
 func TestConversationRejectsMemberDeviceHomeStationChange(t *testing.T) {
 	fixture := mustCreateGroup(t)
 	secondDevice := mustEndpoint(t, string(fixture.member.Actor), "member-device-2")
@@ -1132,7 +1235,6 @@ func TestConversationUpdateSettings(t *testing.T) {
 	fixture := mustCreateGroup(t)
 	name := "  Project Room  "
 	description := "  Shared planning  "
-	timer := uint32(3600)
 	command := aggregate.SettingsCommand{
 		Command: mustCommand(
 			t,
@@ -1143,9 +1245,8 @@ func TestConversationUpdateSettings(t *testing.T) {
 			testTime.Add(time.Minute),
 		),
 		Patch: valueobject.SettingsPatch{
-			Name:                  &name,
-			Description:           &description,
-			DisappearTimerSeconds: &timer,
+			Name:        &name,
+			Description: &description,
 		},
 	}
 
@@ -1155,8 +1256,7 @@ func TestConversationUpdateSettings(t *testing.T) {
 	}
 	settings := fixture.conversation.Settings()
 	if settings.Name != "Project Room" ||
-		settings.Description != "Shared planning" ||
-		settings.DisappearTimerSeconds != timer {
+		settings.Description != "Shared planning" {
 		t.Fatalf("Settings() = %+v, want applied and normalized patch", settings)
 	}
 	if transition.Event.Fact.Kind != domainevent.KindConversationSettings ||
@@ -1712,6 +1812,7 @@ func mustCommand(
 		case deliveries[index].Recipient == sender:
 			deliveries[index].Kind = valueobject.DeliveryKindPublicEvent
 		case kind == domainevent.KindMessageCommitted ||
+			kind == domainevent.KindMessageForwarded ||
 			kind == domainevent.KindMessageEdited:
 			deliveries[index].Kind = valueobject.DeliveryKindMLSApplication
 		default:

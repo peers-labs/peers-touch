@@ -39,7 +39,6 @@ def package_manifest_text(
 
 ```json
 {{
-  "schemaVersion": 2,
   "kind": "peers-touch-plan-package"
 }}
 ```
@@ -68,7 +67,6 @@ def package_status(
             "C2": "done",
         },
         "acceptance": {
-            "schemaVersion": 1,
             "closures": {"C1": ["cheap-gate"], "C2": []},
             "completion": ["cheap-gate"],
             "full": ["cheap-gate", "runtime-gate"],
@@ -94,7 +92,6 @@ def plan_text(
 
 ```json
 {{
-  "schemaVersion": 1,
   "closures": {{"C1": ["cheap-gate"], "C2": []}},
   "completion": ["cheap-gate"],
   "full": ["cheap-gate", "runtime-gate"]
@@ -149,7 +146,6 @@ class ExecutionPlanTest(unittest.TestCase):
             tasks = package / "tasks"
             tasks.mkdir()
             manifest = {
-                "schemaVersion": 2,
                 "kind": "peers-touch-plan-package",
                 "planId": "DWF-PYTHON-INTEGRATION",
                 "status": "active",
@@ -206,7 +202,6 @@ class ExecutionPlanTest(unittest.TestCase):
                 },
             }
             acceptance = {
-                "schemaVersion": 1,
                 "closures": {
                     "development-workflow-control-plane": [
                         "development-workflow-control-plane"
@@ -216,7 +211,6 @@ class ExecutionPlanTest(unittest.TestCase):
                 "full": ["development-workflow-control-plane"],
             }
             task = {
-                "schemaVersion": 1,
                 "kind": "peers-touch-task-slice",
                 "planId": manifest["planId"],
                 "taskId": "DWF-PY-01",
@@ -378,6 +372,24 @@ class ExecutionPlanTest(unittest.TestCase):
             plan.all_declared_gate_ids(),
             {"cheap-gate", "runtime-gate"},
         )
+
+    def test_rejects_a_versioned_acceptance_execution_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "plan.md"
+            content = plan_text("1" * 16).replace(
+                '"closures"',
+                '"schemaVersion": 1,\n  "closures"',
+                1,
+            )
+            path.write_text(content, encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                ExecutionPlanError,
+                "must not declare a workflow version",
+            ) as raised:
+                load_formal_plan(path)
+
+        self.assertEqual(raised.exception.code, PLAN_INVALID)
 
     def test_rejects_multiple_current_closures(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

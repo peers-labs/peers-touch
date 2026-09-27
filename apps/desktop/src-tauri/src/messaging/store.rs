@@ -1,15 +1,17 @@
 use super::recovery::{
-    MessagingRecoveryArchive, RecoveryAttachmentMetadata, RecoveryConversationProjection,
-    RecoveryMessageProjection, RecoveryTrustRecord,
+    MessagingRecoveryArchive, RecoveryAttachmentMetadata, RecoveryAuthorityHead,
+    RecoveryConversationProjection, RecoveryMessageProjection, RecoveryMessageRedactionTombstone,
+    RecoveryReconciliation, RecoveryRetentionFloor, RecoveryTrustRecord,
 };
 use crate::domain::crypto::double_ratchet::{DrSessionState, DrSkippedMessageKey};
 use crate::domain::crypto::{CryptoEndpoint, DirectSession, DirectSessionKey};
 use crate::domain::storage::database::DatabaseOpenSpec;
 use crate::infrastructure::storage::key_provider::PlatformKeyProvider;
-use crate::infrastructure::storage::open_database;
+use crate::infrastructure::storage::{open_database, resolve_database_path};
 use crate::model::chat::{
     chat_command, AttachmentPlaintextMetadata, AttachmentTransferState, ChatCommand,
     ConversationKind, EncryptedObjectDescriptor, EncryptedObjectUploadSpec, MemberRole,
+    VoiceNoteMetadata,
 };
 pub use messaging_core::attachment::AttachmentTransferRecord;
 use messaging_core::attachment::{
@@ -39,7 +41,28 @@ use messaging_core::identity::{
 };
 use messaging_core::inbox::CommandResultRepository;
 use messaging_core::outbox::{MetadataInteractionCommit, MetadataInteractionRepository};
+use messaging_core::proto::chat::{
+    ChatRetentionPreset, ChatStorageOperationState, ChatStoragePolicy, ChatStorageScope,
+};
 use messaging_core::proto::{actor_device_ptid, actor_device_ref};
+use messaging_core::storage_governance::cache::{
+    cleanup_file_physical_identity, failed_file_cleanup_item, immutable_file_cleanup_item,
+    parse_storage_operation_state, storage_error_code_name, storage_operation_state_name,
+    CacheCleanupItem, CacheCleanupItemState, CacheCleanupJournalRepository, CacheCleanupOperation,
+    CACHE_SCOPE_KIND,
+};
+use messaging_core::storage_governance::conversation_clear::{
+    ConversationClearCommit, ConversationClearPlan, ConversationClearRepository,
+    ConversationClearSnapshot, CONVERSATION_CLEAR_SCOPE_KIND,
+};
+use messaging_core::storage_governance::redaction::{
+    prepare_message_redaction, MessageRedactionInput, MessageRedactionKind, MessageRedactionPlan,
+    ACTOR_HIDE_SCOPE_KIND, RETRACT_SCOPE_KIND,
+};
+use messaging_core::storage_governance::retention::{
+    RetentionBoundary, RetentionCandidate, RetentionCommit, RetentionFloor, RetentionPlan,
+    RetentionRepository, RetentionResume, RETENTION_SCOPE_KIND,
+};
 use messaging_core::store::{migrate_messaging_schema, MessagingSchemaBackend};
 use messaging_core::store::{
     DirectOutboundEditCommit, DirectOutboundRepository, DirectOutboundSendCommit,
@@ -52,6 +75,8 @@ use prost::Message;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use zeroize::Zeroizing;
 
@@ -157,6 +182,7 @@ pub struct PendingAttachmentUpload {
     pub filename: String,
     pub mime_type: String,
     pub plaintext_sha256: Vec<u8>,
+    pub voice_note: Option<VoiceNoteMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -205,6 +231,25 @@ pub struct ConversationProjection {
     pub mls_epoch: i64,
     pub active: bool,
     pub updated_at_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationSummaryProjection {
+    pub unread_count: i64,
+    pub latest_message: Option<ConversationMessageProjection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationMessagePage {
+    pub messages: Vec<ConversationMessageProjection>,
+    pub has_more: bool,
+    pub next_before_sequence: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MessageRetryDisposition {
+    ExactCommand { command_id: String },
+    DraftReady,
 }
 
 pub struct DirectAuthorityCheckpoint<'a> {
@@ -323,11 +368,18 @@ pub struct PublicEventReceiveCommit<'a> {
 }
 
 pub enum InteractionMutation<'a> {
+    ObserveOnly,
     Edit {
         edited_text: &'a str,
         edited_at_unix_ms: i64,
     },
     Retract,
+    HideForActor,
+    Moderate {
+        moderator_ptid: &'a str,
+        reason_code: &'a str,
+        moderated_at_unix_ms: i64,
+    },
     Reaction {
         actor_ptid: &'a str,
         reaction: &'a str,
@@ -571,6 +623,33 @@ impl OrderedMessageProjection for ThreadReplyProjection {
     }
 }
 
+fn map_conversation_message_projection(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<ConversationMessageProjection> {
+    Ok(ConversationMessageProjection {
+        event_id: row.get(0)?,
+        event_sequence: row.get(1)?,
+        message_id: row.get(2)?,
+        sender_ptid: row.get(3)?,
+        sender_device_id: row.get(4)?,
+        plaintext: row.get(5)?,
+        attachments: Vec::new(),
+        state: row.get(6)?,
+        timestamp_unix_ms: row.get(7)?,
+        reply_to_message_id: row.get(8)?,
+        thread_root_message_id: row.get(9)?,
+        edited_text: row.get(10)?,
+        edited_at_unix_ms: row.get(11)?,
+        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
+        moderated: false,
+        moderation_reason_code: None,
+        reactions: Vec::new(),
+        pinned_by_ptid: None,
+        pinned_at_unix_ms: None,
+        read_by_ptids: Vec::new(),
+    })
+}
+
 fn merge_message_projection_rows<T: OrderedMessageProjection>(rows: Vec<(T, i64)>) -> Vec<T> {
     let (mut committed, mut pending): (Vec<_>, Vec<_>) = rows
         .into_iter()
@@ -605,8 +684,101 @@ fn merge_message_projection_rows<T: OrderedMessageProjection>(rows: Vec<(T, i64)
     merged
 }
 
+fn conversation_message_projection_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<ConversationMessageProjection> {
+    let retracted = row.get::<_, i64>(12)? != 0;
+    let moderated = row.get::<_, i64>(14)? != 0;
+    let unavailable = retracted || moderated;
+    Ok(ConversationMessageProjection {
+        event_id: row.get(0)?,
+        event_sequence: row.get(1)?,
+        message_id: row.get(2)?,
+        sender_ptid: row.get(3)?,
+        sender_device_id: row.get(4)?,
+        plaintext: if unavailable {
+            String::new()
+        } else {
+            row.get(5)?
+        },
+        attachments: Vec::new(),
+        state: row.get(6)?,
+        timestamp_unix_ms: row.get(7)?,
+        reply_to_message_id: row.get(8)?,
+        thread_root_message_id: row.get(9)?,
+        edited_text: if unavailable { None } else { row.get(10)? },
+        edited_at_unix_ms: if unavailable { None } else { row.get(11)? },
+        retracted,
+        moderated,
+        moderation_reason_code: row.get(15)?,
+        reactions: Vec::new(),
+        pinned_by_ptid: None,
+        pinned_at_unix_ms: None,
+        read_by_ptids: Vec::new(),
+    })
+}
+
 pub struct MessagingStore {
     connection: Mutex<Connection>,
+    database_path: Option<PathBuf>,
+}
+
+struct RecoveryDirectPreKeyBundle {
+    signed_prekey_id: i32,
+    signed_prekey_private: Zeroizing<Vec<u8>>,
+    state: String,
+    created_at_unix_ms: i64,
+    one_time_prekey_high_watermark: i64,
+}
+
+struct RecoveryOneTimePreKey {
+    prekey_id: i32,
+    private_key: Zeroizing<Vec<u8>>,
+    state: String,
+}
+
+struct RecoveryMlsActorIdentity {
+    ptid: String,
+    device_id: String,
+    identity_state: Zeroizing<Vec<u8>>,
+}
+
+struct RecoveryMlsJoinProviderPool {
+    provider_pool_state: Zeroizing<Vec<u8>>,
+    updated_at_unix_ms: i64,
+}
+
+struct RecoveryMlsKeyPackage {
+    package_id: String,
+    data: Zeroizing<Vec<u8>>,
+    state: String,
+    created_at_unix_ms: i64,
+}
+
+struct RecoveryMlsRetiredCheckpoint {
+    conversation_id: String,
+    transition_id: String,
+    event_id: String,
+    retirement_sequence: i64,
+    retirement_hash: Vec<u8>,
+    endpoint_ptid: String,
+    endpoint_device_id: String,
+    membership_epoch: i64,
+    mls_epoch: i64,
+    retired_at_unix_ms: i64,
+}
+
+struct PreparedMessageRedactionCleanup {
+    candidates: Vec<PreparedMessageRedactionPath>,
+    physical_bytes_before: u64,
+    measurement_failed: bool,
+    logical_reclaimable_bytes: u64,
+}
+
+struct PreparedMessageRedactionPath {
+    target_ref: String,
+    cleanup_item: Option<CacheCleanupItem>,
+    physical_identity: Option<String>,
 }
 
 impl MessagingStore {
@@ -615,16 +787,300 @@ impl MessagingStore {
             return Err("messaging store requires a profile ID".to_string());
         }
         let spec = DatabaseOpenSpec::new_chat_main(profile_id.to_string());
+        let database_path = resolve_database_path(
+            &spec.app_name,
+            &spec.domain,
+            &spec.profile,
+            &spec.user_scope,
+        )
+        .map_err(|error| format!("{error:?}"))?;
         let connection = open_database(&spec, PlatformKeyProvider::shared())
             .map_err(|error| format!("{error:?}"))?;
-        Self::from_connection(connection)
+        Self::from_connection_with_path(connection, Some(database_path))
     }
 
     pub(super) fn from_connection(connection: Connection) -> Result<Self, String> {
+        Self::from_connection_with_path(connection, None)
+    }
+
+    fn from_connection_with_path(
+        connection: Connection,
+        database_path: Option<PathBuf>,
+    ) -> Result<Self, String> {
         migrate(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            database_path,
         })
+    }
+
+    pub(super) fn storage_database_path(&self) -> Result<PathBuf, String> {
+        self.database_path
+            .clone()
+            .ok_or_else(|| "messaging storage path is unavailable".to_string())
+    }
+
+    pub(super) fn storage_logical_usage(
+        &self,
+    ) -> Result<Vec<messaging_core::storage_governance::ConversationLogicalUsage>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT
+                    conversation.conversation_id,
+                    conversation.name,
+                    conversation.kind,
+                    COALESCE((
+                        SELECT SUM(
+                            length(CAST(message.message_id AS BLOB))
+                            + length(CAST(message.sender_ptid AS BLOB))
+                            + length(CAST(message.sender_device_id AS BLOB))
+                            + length(CAST(message.plaintext AS BLOB))
+                            + length(CAST(COALESCE(message.edited_text, '') AS BLOB))
+                            + length(CAST(COALESCE(message.reply_to_message_id, '') AS BLOB))
+                            + length(CAST(COALESCE(message.thread_root_message_id, '') AS BLOB))
+                        )
+                        FROM messaging_message_projections AS message
+                        WHERE message.conversation_id = conversation.conversation_id
+                    ), 0),
+                    COALESCE((
+                        SELECT SUM(attachment.plaintext_size)
+                        FROM messaging_attachment_projections AS attachment
+                        JOIN messaging_message_projections AS message
+                          ON message.message_id = attachment.message_id
+                        WHERE message.conversation_id = conversation.conversation_id
+                    ), 0),
+                    MAX(
+                        conversation.updated_at_unix_ms,
+                        COALESCE((
+                            SELECT MAX(message.committed_at_unix_ms)
+                            FROM messaging_message_projections AS message
+                            WHERE message.conversation_id = conversation.conversation_id
+                        ), 0)
+                    )
+                 FROM messaging_conversations AS conversation
+                 ORDER BY conversation.conversation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| {
+                let message_bytes = row.get::<_, i64>(3)?;
+                let media_bytes = row.get::<_, i64>(4)?;
+                let message_bytes = u64::try_from(message_bytes.max(0)).unwrap_or(0);
+                let media_bytes = u64::try_from(media_bytes.max(0)).unwrap_or(0);
+                Ok(
+                    messaging_core::storage_governance::ConversationLogicalUsage {
+                        conversation_id: row.get(0)?,
+                        conversation_name: row.get(1)?,
+                        conversation_kind: row.get(2)?,
+                        message_bytes,
+                        media_bytes,
+                        reclaimable_bytes: message_bytes.saturating_add(media_bytes),
+                        last_activity_unix_ms: row.get(5)?,
+                    },
+                )
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(rows)
+    }
+
+    pub(super) fn storage_media_paths(&self) -> Result<Vec<PathBuf>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT DISTINCT local_cache_path
+                 FROM messaging_attachment_projections
+                 WHERE local_cache_path IS NOT NULL AND local_cache_path <> ''
+                 ORDER BY local_cache_path",
+            )
+            .map_err(|error| error.to_string())?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(paths)
+    }
+
+    pub(super) fn storage_cache_protected_paths(&self) -> Result<Vec<PathBuf>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT local_cache_path AS path
+                 FROM messaging_attachment_projections
+                 WHERE local_cache_path IS NOT NULL AND local_cache_path <> ''
+                 UNION
+                 SELECT source_local_ref AS path
+                 FROM messaging_attachment_transfers
+                 WHERE source_local_ref <> ''
+                 UNION
+                 SELECT partial_local_ref AS path
+                 FROM messaging_attachment_transfers
+                 WHERE partial_local_ref <> ''
+                 ORDER BY path",
+            )
+            .map_err(|error| error.to_string())?;
+        let paths = statement
+            .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(paths)
+    }
+
+    pub(super) fn pending_redaction_cleanup_operations(
+        &self,
+    ) -> Result<Vec<CacheCleanupOperation>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT operation_id, scope_revision, state,
+                        estimated_reclaimable_bytes, physical_bytes_before,
+                        physical_bytes_after, last_error_code,
+                        created_at_unix_ms, updated_at_unix_ms
+                 FROM chat_cleanup_journal
+                 WHERE scope_kind IN (?1, ?2)
+                   AND (
+                       state IN (
+                           'deleting_files', 'compacting',
+                           'compaction_pending', 'failed_retryable'
+                       )
+                       OR (state = 'failed_terminal' AND physical_bytes_after IS NULL)
+                   )
+                 ORDER BY created_at_unix_ms, operation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let operations = statement
+            .query_map(params![ACTOR_HIDE_SCOPE_KIND, RETRACT_SCOPE_KIND], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(8)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?
+            .map(|row| {
+                row.map_err(|error| error.to_string())
+                    .and_then(cache_cleanup_operation_from_sql)
+            })
+            .collect();
+        operations
+    }
+
+    fn prepare_message_redaction_cleanup(
+        &self,
+        plan: &MessageRedactionPlan,
+    ) -> Result<PreparedMessageRedactionCleanup, String> {
+        let (candidate_paths, logical_reclaimable_bytes) = {
+            let connection = self.connection()?;
+            let candidate_paths = message_redaction_candidate_paths(&connection, plan)?;
+            let logical_reclaimable_bytes = connection
+                .query_row(
+                    "SELECT length(CAST(plaintext AS BLOB))
+                          + length(CAST(COALESCE(edited_text, '') AS BLOB))
+                     FROM messaging_message_projections
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![plan.conversation_id, plan.message_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .unwrap_or_default();
+            (
+                candidate_paths,
+                u64::try_from(logical_reclaimable_bytes)
+                    .map_err(|_| "messaging redaction logical bytes are invalid".to_string())?,
+            )
+        };
+        let candidates = candidate_paths
+            .into_iter()
+            .map(|target_ref| {
+                let path = PathBuf::from(&target_ref);
+                let (cleanup_item, physical_identity) = match immutable_file_cleanup_item(&path) {
+                    Ok(item) => match cleanup_file_physical_identity(&path) {
+                        Ok(identity) => (item, identity),
+                        Err(error) => (
+                            Some(failed_file_cleanup_item(
+                                &path,
+                                storage_error_code_name(error.code()),
+                            )),
+                            None,
+                        ),
+                    },
+                    Err(error) => (
+                        Some(failed_file_cleanup_item(
+                            &path,
+                            storage_error_code_name(error.code()),
+                        )),
+                        None,
+                    ),
+                };
+                Ok(PreparedMessageRedactionPath {
+                    target_ref,
+                    cleanup_item,
+                    physical_identity,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let (physical_bytes_before, measurement_failed) =
+            match self.storage_redaction_physical_bytes() {
+                Ok(bytes) => (bytes, false),
+                Err(_) => (0, true),
+            };
+        Ok(PreparedMessageRedactionCleanup {
+            candidates,
+            physical_bytes_before,
+            measurement_failed,
+            logical_reclaimable_bytes,
+        })
+    }
+
+    pub(super) fn storage_checkpoint(&self) -> Result<(), String> {
+        self.connection()?
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn storage_compact(&self) -> Result<(), String> {
+        self.connection()?
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+            .map_err(|error| error.to_string())
+    }
+
+    pub(super) fn storage_redaction_physical_bytes(&self) -> Result<u64, String> {
+        let protected_paths = self.storage_cache_protected_paths()?;
+        let journal_paths = {
+            let connection = self.connection()?;
+            let mut statement = connection
+                .prepare(
+                    "SELECT DISTINCT target_ref
+                     FROM chat_cleanup_items
+                     WHERE item_kind = 'file'
+                       AND state <> 'deleted'
+                       AND target_ref <> ''
+                     ORDER BY target_ref",
+                )
+                .map_err(|error| error.to_string())?;
+            let paths = statement
+                .query_map([], |row| row.get::<_, String>(0).map(PathBuf::from))
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            paths
+        };
+        storage_redaction_physical_bytes(
+            self.database_path.as_deref(),
+            protected_paths,
+            journal_paths,
+        )
     }
 
     fn connection(&self) -> Result<MutexGuard<'_, Connection>, String> {
@@ -2095,7 +2551,8 @@ impl MessagingStore {
         let mut statement = connection
             .prepare(
                 "SELECT attachment_id, filename, mime_type, plaintext_size,
-                        plaintext_sha256, object_key, base_nonce, descriptor_bytes
+                        plaintext_sha256, object_key, base_nonce, descriptor_bytes,
+                        voice_note_bytes
                  FROM messaging_attachment_projections
                  WHERE message_id = ?1
                  ORDER BY attachment_id",
@@ -2129,6 +2586,7 @@ impl MessagingStore {
                     object_key: row.get(5)?,
                     base_nonce: row.get(6)?,
                     object: Some(object),
+                    voice_note: decode_voice_note_column(row.get(8)?, 8)?,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -2665,16 +3123,17 @@ impl MessagingStore {
                            delivery_state, committed_at_unix_ms,
                            reply_to_message_id, thread_root_message_id,
                            edited_text, edited_at_unix_ms, retracted,
+                           hidden_for_actor, moderated, moderation_reason_code,
                            0 AS pending_rank
                     FROM messaging_message_projections
-                    WHERE conversation_id = ?1
+                    WHERE conversation_id = ?1 AND hidden_for_actor = 0
                     UNION ALL
                     SELECT NULL, NULL, pending.message_id,
                            pending.sender_ptid, pending.sender_device_id,
                            pending.plaintext, pending.state, pending.created_at_unix_ms,
                            NULLIF(pending.reply_to_message_id, ''),
                            NULLIF(pending.thread_root_message_id, ''),
-                           NULL, NULL, 0,
+                           NULL, NULL, 0, 0, 0, NULL,
                            1
                     FROM messaging_pending_messages pending
                     WHERE pending.conversation_id = ?1
@@ -2689,6 +3148,7 @@ impl MessagingStore {
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
                         edited_text, edited_at_unix_ms, retracted,
+                        hidden_for_actor, moderated, moderation_reason_code,
                         pending_rank
                  FROM conversation_messages
                  ORDER BY pending_rank ASC, event_sequence ASC, message_id ASC",
@@ -2697,27 +3157,8 @@ impl MessagingStore {
         let projection_rows = statement
             .query_map(params![conversation_id], |row| {
                 Ok((
-                    ConversationMessageProjection {
-                        event_id: row.get(0)?,
-                        event_sequence: row.get(1)?,
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        attachments: Vec::new(),
-                        state: row.get(6)?,
-                        timestamp_unix_ms: row.get(7)?,
-                        reply_to_message_id: row.get(8)?,
-                        thread_root_message_id: row.get(9)?,
-                        edited_text: row.get(10)?,
-                        edited_at_unix_ms: row.get(11)?,
-                        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
-                        reactions: Vec::new(),
-                        pinned_by_ptid: None,
-                        pinned_at_unix_ms: None,
-                        read_by_ptids: Vec::new(),
-                    },
-                    row.get::<_, i64>(13)?,
+                    conversation_message_projection_from_row(row)?,
+                    row.get::<_, i64>(16)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -2745,6 +3186,166 @@ impl MessagingStore {
         Ok(rows)
     }
 
+    pub fn conversation_message_page(
+        &self,
+        conversation_id: &str,
+        before_sequence: Option<i64>,
+        limit: usize,
+    ) -> Result<ConversationMessagePage, String> {
+        if conversation_id.trim().is_empty()
+            || before_sequence.is_some_and(|sequence| sequence <= 0)
+            || !(1..=200).contains(&limit)
+        {
+            return Err("messaging message page request is invalid".to_string());
+        }
+        let connection = self.connection()?;
+        let floor_sequence: i64 = connection
+            .query_row(
+                "SELECT COALESCE(MAX(pruned_through_sequence), 0)
+                 FROM chat_retention_floor WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if before_sequence.is_some_and(|sequence| sequence <= floor_sequence + 1) {
+            return Ok(ConversationMessagePage {
+                messages: Vec::new(),
+                has_more: false,
+                next_before_sequence: None,
+            });
+        }
+        let upper_sequence = before_sequence.unwrap_or(i64::MAX);
+        let query_limit = i64::try_from(limit + 1)
+            .map_err(|_| "messaging message page limit exceeds i64".to_string())?;
+        let mut statement = connection
+            .prepare(
+                "SELECT event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms,
+                        reply_to_message_id, thread_root_message_id,
+                        edited_text, edited_at_unix_ms, retracted
+                 FROM messaging_message_projections
+                 WHERE conversation_id = ?1
+                   AND event_sequence < ?2
+                   AND event_sequence > ?3
+                   AND hidden_for_actor = 0
+                   AND COALESCE(thread_root_message_id, '') = ''
+                 ORDER BY event_sequence DESC, message_id DESC
+                 LIMIT ?4",
+            )
+            .map_err(|error| error.to_string())?;
+        let mut committed = statement
+            .query_map(
+                params![conversation_id, upper_sequence, floor_sequence, query_limit],
+                map_conversation_message_projection,
+            )
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        let has_more = committed.len() > limit;
+        if has_more {
+            committed.truncate(limit);
+        }
+        committed.reverse();
+        let next_before_sequence = has_more
+            .then(|| committed.first().and_then(|message| message.event_sequence))
+            .flatten();
+
+        let mut messages = committed;
+        if before_sequence.is_none() {
+            let mut pending_statement = connection
+                .prepare(
+                    "SELECT NULL, NULL, pending.message_id,
+                            pending.sender_ptid, pending.sender_device_id,
+                            pending.plaintext, pending.state, pending.created_at_unix_ms,
+                            NULLIF(pending.reply_to_message_id, ''),
+                            NULLIF(pending.thread_root_message_id, ''),
+                            NULL, NULL, 0
+                     FROM messaging_pending_messages pending
+                     WHERE pending.conversation_id = ?1
+                       AND pending.thread_root_message_id = ''
+                       AND NOT EXISTS (
+                           SELECT 1 FROM messaging_message_projections committed
+                           WHERE committed.conversation_id = pending.conversation_id
+                             AND committed.message_id = pending.message_id
+                       )
+                     ORDER BY pending.created_at_unix_ms ASC, pending.message_id ASC",
+                )
+                .map_err(|error| error.to_string())?;
+            let pending = pending_statement
+                .query_map(
+                    params![conversation_id],
+                    map_conversation_message_projection,
+                )
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            messages.extend(pending);
+        }
+
+        let pins = load_pins_for_conversation(&connection, conversation_id)?;
+        for message in &mut messages {
+            message.attachments =
+                load_visible_message_attachments(&connection, &message.message_id)?;
+            message.reactions = load_reactions_for_message(&connection, &message.message_id)?;
+            message.read_by_ptids = load_readers_for_message(
+                &connection,
+                conversation_id,
+                message.event_sequence,
+                &message.sender_ptid,
+            )?;
+            if let Some((_, actor_ptid, pinned_at_unix_ms)) = pins
+                .iter()
+                .find(|(message_id, _, _)| message_id == &message.message_id)
+            {
+                message.pinned_by_ptid = Some(actor_ptid.clone());
+                message.pinned_at_unix_ms = Some(*pinned_at_unix_ms);
+            }
+        }
+        Ok(ConversationMessagePage {
+            messages,
+            has_more,
+            next_before_sequence,
+        })
+    }
+
+    pub fn conversation_summary_projection(
+        &self,
+        conversation_id: &str,
+        actor_ptid: &str,
+    ) -> Result<ConversationSummaryProjection, String> {
+        if conversation_id.trim().is_empty() || actor_ptid.trim().is_empty() {
+            return Err("messaging conversation summary identity is incomplete".to_string());
+        }
+        let unread_count = self
+            .connection()?
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM messaging_message_projections message
+                 WHERE message.conversation_id = ?1
+                   AND message.sender_ptid <> ?2
+                   AND message.hidden_for_actor = 0
+                   AND message.event_sequence > COALESCE((
+                       SELECT cursor.last_read_sequence
+                       FROM read_cursors cursor
+                       WHERE cursor.conversation_id = message.conversation_id
+                         AND cursor.actor_ptid = ?2
+                   ), 0)",
+                params![conversation_id, actor_ptid],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let page = self.conversation_message_page(conversation_id, None, 1)?;
+        Ok(ConversationSummaryProjection {
+            unread_count,
+            latest_message: page.messages.into_iter().max_by(|left, right| {
+                left.timestamp_unix_ms
+                    .cmp(&right.timestamp_unix_ms)
+                    .then_with(|| left.message_id.cmp(&right.message_id))
+            }),
+        })
+    }
+
     pub fn thread_message_projections(
         &self,
         conversation_id: &str,
@@ -2762,10 +3363,12 @@ impl MessagingStore {
                            delivery_state, committed_at_unix_ms,
                            reply_to_message_id, thread_root_message_id,
                            edited_text, edited_at_unix_ms, retracted,
+                           hidden_for_actor, moderated, moderation_reason_code,
                            CASE WHEN message_id = ?2 THEN 0 ELSE 1 END AS root_rank,
                            0 AS pending_rank
                     FROM messaging_message_projections
                     WHERE conversation_id = ?1
+                      AND hidden_for_actor = 0
                       AND (message_id = ?2 OR thread_root_message_id = ?2)
                     UNION ALL
                     SELECT NULL, NULL, pending.message_id,
@@ -2773,7 +3376,7 @@ impl MessagingStore {
                            pending.plaintext, pending.state, pending.created_at_unix_ms,
                            NULLIF(pending.reply_to_message_id, ''),
                            NULLIF(pending.thread_root_message_id, ''),
-                           NULL, NULL, 0,
+                           NULL, NULL, 0, 0, 0, NULL,
                            CASE WHEN pending.message_id = ?2 THEN 0 ELSE 1 END,
                            1
                     FROM messaging_pending_messages pending
@@ -2793,6 +3396,7 @@ impl MessagingStore {
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, thread_root_message_id,
                         edited_text, edited_at_unix_ms, retracted,
+                        hidden_for_actor, moderated, moderation_reason_code,
                         root_rank, pending_rank
                  FROM thread_messages
                  ORDER BY root_rank ASC,
@@ -2804,28 +3408,9 @@ impl MessagingStore {
         let projection_rows = statement
             .query_map(params![conversation_id, thread_root_message_id], |row| {
                 Ok((
-                    ConversationMessageProjection {
-                        event_id: row.get(0)?,
-                        event_sequence: row.get(1)?,
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        attachments: Vec::new(),
-                        state: row.get(6)?,
-                        timestamp_unix_ms: row.get(7)?,
-                        reply_to_message_id: row.get(8)?,
-                        thread_root_message_id: row.get(9)?,
-                        edited_text: row.get(10)?,
-                        edited_at_unix_ms: row.get(11)?,
-                        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
-                        reactions: Vec::new(),
-                        pinned_by_ptid: None,
-                        pinned_at_unix_ms: None,
-                        read_by_ptids: Vec::new(),
-                    },
-                    row.get::<_, i64>(13)?,
-                    row.get::<_, i64>(14)?,
+                    conversation_message_projection_from_row(row)?,
+                    row.get::<_, i64>(16)?,
+                    row.get::<_, i64>(17)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -2895,6 +3480,7 @@ impl MessagingStore {
                     FROM messaging_message_projections
                     WHERE conversation_id = ?1
                       AND thread_root_message_id = ?2
+                      AND hidden_for_actor = 0
                     UNION ALL
                     SELECT pending.message_id, pending.sender_ptid, NULL,
                            pending.created_at_unix_ms, 1
@@ -2999,13 +3585,18 @@ impl MessagingStore {
                         message.sender_ptid, message.sender_device_id, message.plaintext,
                         message.delivery_state, message.committed_at_unix_ms,
                         message.reply_to_message_id, message.thread_root_message_id,
-                        message.edited_text, message.edited_at_unix_ms, message.retracted
+                        message.edited_text, message.edited_at_unix_ms, message.retracted,
+                        message.hidden_for_actor, message.moderated,
+                        message.moderation_reason_code
                  FROM messaging_message_search_fts
                  JOIN messaging_message_projections message
                    ON message.conversation_id = messaging_message_search_fts.conversation_id
                   AND message.message_id = messaging_message_search_fts.message_id
                  WHERE messaging_message_search_fts MATCH ?1
                    AND messaging_message_search_fts.conversation_id = ?2
+                   AND message.retracted = 0
+                   AND message.hidden_for_actor = 0
+                   AND message.moderated = 0
                    AND (
                      message.committed_at_unix_ms < ?3
                      OR (
@@ -3026,28 +3617,7 @@ impl MessagingStore {
                     before_message_id,
                     i64::try_from(limit).map_err(|_| "messaging search limit exceeds i64")?
                 ],
-                |row| {
-                    Ok(ConversationMessageProjection {
-                        event_id: Some(row.get(0)?),
-                        event_sequence: Some(row.get(1)?),
-                        message_id: row.get(2)?,
-                        sender_ptid: row.get(3)?,
-                        sender_device_id: row.get(4)?,
-                        plaintext: row.get(5)?,
-                        attachments: Vec::new(),
-                        state: row.get(6)?,
-                        timestamp_unix_ms: row.get(7)?,
-                        reply_to_message_id: row.get(8)?,
-                        thread_root_message_id: row.get(9)?,
-                        edited_text: row.get(10)?,
-                        edited_at_unix_ms: row.get(11)?,
-                        retracted: row.get::<_, i64>(12).unwrap_or(0) != 0,
-                        reactions: Vec::new(),
-                        pinned_by_ptid: None,
-                        pinned_at_unix_ms: None,
-                        read_by_ptids: Vec::new(),
-                    })
-                },
+                conversation_message_projection_from_row,
             )
             .map_err(|error| error.to_string())?
             .collect::<Result<Vec<_>, _>>()
@@ -3411,8 +3981,8 @@ impl MessagingStore {
                     "INSERT INTO messaging_attachment_drafts(
                         attachment_id, conversation_id, message_id, filename,
                         mime_type, plaintext_sha256, descriptor_bytes,
-                        created_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)",
+                        voice_note_bytes, created_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, ?8)",
                     params![
                         transfer.attachment_id,
                         transfer.conversation_id,
@@ -3420,6 +3990,7 @@ impl MessagingStore {
                         upload.filename,
                         upload.mime_type,
                         upload.plaintext_sha256,
+                        encode_voice_note_column(upload.voice_note.as_ref()),
                         draft.created_at_unix_ms,
                     ],
                 )
@@ -3689,7 +4260,8 @@ impl MessagingStore {
                         attachment.filename, attachment.mime_type,
                         attachment.plaintext_size, attachment.plaintext_sha256,
                         attachment.object_key, attachment.base_nonce,
-                        attachment.descriptor_bytes, attachment.local_cache_path
+                        attachment.descriptor_bytes, attachment.voice_note_bytes,
+                        attachment.local_cache_path
                  FROM messaging_attachment_projections attachment
                  JOIN messaging_message_projections message
                    ON message.message_id = attachment.message_id
@@ -3726,8 +4298,9 @@ impl MessagingStore {
                             object_key: row.get(7)?,
                             base_nonce: row.get(8)?,
                             object: Some(object),
+                            voice_note: decode_voice_note_column(row.get(10)?, 10)?,
                         },
-                        local_cache_path: row.get(10)?,
+                        local_cache_path: row.get(11)?,
                     })
                 },
             )
@@ -4474,6 +5047,99 @@ impl MessagingStore {
         Ok(Some(draft))
     }
 
+    pub fn prepare_message_retry(
+        &self,
+        conversation_id: &str,
+        message_id: &str,
+        now_unix_ms: i64,
+    ) -> Result<MessageRetryDisposition, String> {
+        if conversation_id.trim().is_empty() || message_id.trim().is_empty() || now_unix_ms <= 0 {
+            return Err("messaging retry identity is incomplete".to_string());
+        }
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let pending_state = transaction
+            .query_row(
+                "SELECT state
+                 FROM messaging_pending_messages
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![conversation_id, message_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging retry target is unavailable".to_string())?;
+        if pending_state == "draft" {
+            return Ok(MessageRetryDisposition::DraftReady);
+        }
+
+        let command = transaction
+            .query_row(
+                "SELECT attempt.command_id, outbox.state
+                 FROM messaging_command_attempts attempt
+                 JOIN messaging_command_outbox outbox
+                   ON outbox.command_id = attempt.command_id
+                 WHERE attempt.conversation_id = ?1
+                   AND attempt.message_id = ?2
+                 ORDER BY attempt.created_at_unix_ms DESC, attempt.command_id DESC
+                 LIMIT 1",
+                params![conversation_id, message_id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "messaging retry command is unavailable".to_string())?;
+
+        match command.1.as_str() {
+            "pending" | "retry_wait" => {
+                let changed = transaction
+                    .execute(
+                        "UPDATE messaging_command_outbox
+                         SET next_attempt_at_unix_ms = ?2,
+                             last_error_code = ''
+                         WHERE command_id = ?1
+                           AND state IN ('pending', 'retry_wait')",
+                        params![command.0, now_unix_ms],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if changed != 1 {
+                    return Err("messaging exact retry was not fenced".to_string());
+                }
+                transaction.commit().map_err(|error| error.to_string())?;
+                Ok(MessageRetryDisposition::ExactCommand {
+                    command_id: command.0,
+                })
+            }
+            "failed" | "superseded" => {
+                let changed = transaction
+                    .execute(
+                        "UPDATE messaging_pending_messages
+                         SET state = 'draft',
+                             attempt_count = 0,
+                             next_attempt_at_unix_ms = ?3,
+                             last_error_code = ''
+                         WHERE conversation_id = ?1
+                           AND message_id = ?2
+                           AND state IN ('failed', 'draft')",
+                        params![conversation_id, message_id, now_unix_ms],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if changed != 1 {
+                    return Err("messaging logical retry was not fenced".to_string());
+                }
+                transaction.commit().map_err(|error| error.to_string())?;
+                Ok(MessageRetryDisposition::DraftReady)
+            }
+            "submitted" => {
+                Err("messaging submitted command is awaiting canonical reconciliation".to_string())
+            }
+            "committed" => Err("messaging committed message cannot be retried".to_string()),
+            state => Err(format!("messaging retry state is unsupported: {state}")),
+        }
+    }
+
     pub fn schedule_message_draft_retry(
         &self,
         conversation_id: &str,
@@ -4606,16 +5272,52 @@ impl MessagingStore {
                 updated_at_unix_ms: row.9,
             });
         }
+        let mut head_statement = connection
+            .prepare(
+                "SELECT head.conversation_id, head.event_sequence,
+                        head.event_hash, head.updated_at_unix_ms
+                 FROM messaging_authority_heads head
+                 JOIN messaging_conversations conversation
+                   ON conversation.conversation_id = head.conversation_id
+                  AND conversation.authority_station_id <> ''
+                 ORDER BY head.conversation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let authority_heads = head_statement
+            .query_map([], |row| {
+                Ok(RecoveryAuthorityHead {
+                    conversation_id: row.get(0)?,
+                    event_sequence: row.get(1)?,
+                    event_hash: row.get(2)?,
+                    updated_at_unix_ms: row.get(3)?,
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
         let mut message_statement = connection
             .prepare(
-                "SELECT conversation_id, event_id, event_sequence, message_id,
-                        sender_ptid, sender_device_id, plaintext, committed_at_unix_ms
-                 FROM messaging_message_projections
-                 WHERE conversation_id IN (
+                "SELECT message.conversation_id, message.event_id,
+                        message.event_sequence, authority.event_hash,
+                        message.message_id, message.sender_ptid,
+                        message.sender_device_id, message.plaintext,
+                        message.committed_at_unix_ms, message.retracted
+                 FROM messaging_message_projections message
+                 JOIN messaging_authority_events authority
+                   ON authority.conversation_id = message.conversation_id
+                  AND authority.event_id = message.event_id
+                  AND authority.event_sequence = message.event_sequence
+                 WHERE message.conversation_id IN (
                      SELECT conversation_id FROM messaging_conversations
                      WHERE authority_station_id <> ''
                  )
-                 ORDER BY conversation_id, event_sequence, event_id",
+                   AND message.event_sequence > COALESCE((
+                       SELECT MAX(floor.pruned_through_sequence)
+                       FROM chat_retention_floor floor
+                       WHERE floor.conversation_id = message.conversation_id
+                   ), 0)
+                   AND message.hidden_for_actor = 0
+                 ORDER BY message.conversation_id, message.event_sequence, message.event_id",
             )
             .map_err(|error| error.to_string())?;
         let messages = message_statement
@@ -4624,11 +5326,81 @@ impl MessagingStore {
                     conversation_id: row.get(0)?,
                     event_id: row.get(1)?,
                     event_sequence: row.get(2)?,
-                    message_id: row.get(3)?,
-                    sender_ptid: row.get(4)?,
-                    sender_device_id: row.get(5)?,
-                    plaintext: row.get(6)?,
-                    committed_at_unix_ms: row.get(7)?,
+                    authority_event_hash: row.get(3)?,
+                    message_id: row.get(4)?,
+                    sender_ptid: row.get(5)?,
+                    sender_device_id: row.get(6)?,
+                    plaintext: row.get(7)?,
+                    committed_at_unix_ms: row.get(8)?,
+                    retracted: row.get(9)?,
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        let mut floor_statement = connection
+            .prepare(
+                "SELECT floor.station_peer_id, floor.conversation_id,
+                        floor.pruned_through_sequence, floor.authority_event_hash,
+                        floor.policy_cutoff_unix_ms, floor.reason,
+                        floor.updated_at_unix_ms
+                 FROM chat_retention_floor floor
+                 JOIN messaging_device_identity identity
+                   ON identity.id = 1
+                  AND identity.ptid = floor.actor_ptid
+                  AND identity.device_id = floor.device_id
+                 JOIN (
+                     SELECT scoped.station_peer_id, scoped.conversation_id,
+                            MAX(scoped.pruned_through_sequence) AS max_sequence
+                     FROM chat_retention_floor scoped
+                     JOIN messaging_device_identity identity
+                       ON identity.id = 1
+                      AND identity.ptid = scoped.actor_ptid
+                      AND identity.device_id = scoped.device_id
+                     GROUP BY scoped.station_peer_id, scoped.conversation_id
+                 ) latest
+                   ON latest.station_peer_id = floor.station_peer_id
+                  AND latest.conversation_id = floor.conversation_id
+                  AND latest.max_sequence = floor.pruned_through_sequence
+                 ORDER BY floor.station_peer_id, floor.conversation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let retention_floors = floor_statement
+            .query_map([], |row| {
+                Ok(RecoveryRetentionFloor {
+                    station_peer_id: row.get(0)?,
+                    conversation_id: row.get(1)?,
+                    pruned_through_sequence: row.get(2)?,
+                    authority_event_hash: row.get(3)?,
+                    policy_cutoff_unix_ms: row.get(4)?,
+                    reason: row.get(5)?,
+                    updated_at_unix_ms: row.get(6)?,
+                })
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        let mut redaction_statement = connection
+            .prepare(
+                "SELECT conversation_id, message_id, kind, authority_sequence,
+                        authority_event_hash, applied_at_unix_ms
+                 FROM message_redaction_tombstones
+                 WHERE conversation_id IN (
+                     SELECT conversation_id FROM messaging_conversations
+                     WHERE authority_station_id <> ''
+                 )
+                 ORDER BY conversation_id, authority_sequence, message_id, kind",
+            )
+            .map_err(|error| error.to_string())?;
+        let redaction_tombstones = redaction_statement
+            .query_map([], |row| {
+                Ok(RecoveryMessageRedactionTombstone {
+                    conversation_id: row.get(0)?,
+                    message_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    authority_sequence: row.get(3)?,
+                    authority_event_hash: row.get(4)?,
+                    applied_at_unix_ms: row.get(5)?,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -4638,7 +5410,7 @@ impl MessagingStore {
             .prepare(
                 "SELECT message_id, attachment_id, filename, mime_type,
                         plaintext_size, plaintext_sha256, object_key, base_nonce,
-                        descriptor_bytes
+                        descriptor_bytes, voice_note_bytes
                  FROM messaging_attachment_projections
                  WHERE message_id IN (
                      SELECT message_id FROM messaging_message_projections
@@ -4679,6 +5451,7 @@ impl MessagingStore {
                     object_key: row.get(6)?,
                     base_nonce: row.get(7)?,
                     object: Some(object),
+                    voice_note: decode_voice_note_column(row.get(9)?, 9)?,
                 };
                 Ok(RecoveryAttachmentMetadata {
                     message_id: row.get(0)?,
@@ -4712,6 +5485,9 @@ impl MessagingStore {
             actor_profile_version,
             conversations,
             messages,
+            retention_floors,
+            authority_heads,
+            redaction_tombstones,
             attachments,
             trust,
         })
@@ -4736,6 +5512,12 @@ impl MessagingStore {
                  DELETE FROM messaging_inbox_items;
                  DELETE FROM messaging_lane_cursor;
                  DELETE FROM messaging_authority_heads;
+                 DELETE FROM messaging_authority_events;
+                 DELETE FROM chat_cleanup_items;
+                 DELETE FROM chat_cleanup_journal;
+                 DELETE FROM chat_storage_policy;
+                 DELETE FROM chat_retention_floor;
+                 DELETE FROM message_redaction_tombstones;
                  DELETE FROM messaging_command_outbox;
                  DELETE FROM messaging_interaction_intents;
                  DELETE FROM messaging_command_attempts;
@@ -4793,11 +5575,9 @@ impl MessagingStore {
                     .member_roles
                     .get(member_ptid)
                     .copied()
-                    .unwrap_or(if member_ptid == &conversation.owner_ptid {
-                        MemberRole::Owner as i32
-                    } else {
-                        MemberRole::Unspecified as i32
-                    });
+                    .ok_or_else(|| {
+                        "messaging recovery member role is missing from v4 archive".to_string()
+                    })?;
                 transaction
                     .execute(
                         "INSERT INTO messaging_conversation_members(
@@ -4817,7 +5597,7 @@ impl MessagingStore {
                         delivery_state, committed_at_unix_ms,
                         reply_to_message_id, edited_text, edited_at_unix_ms, retracted
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'restored', ?8,
-                               NULL, NULL, NULL, 0)",
+                               NULL, NULL, NULL, ?9)",
                     params![
                         message.conversation_id,
                         message.event_id,
@@ -4826,7 +5606,77 @@ impl MessagingStore {
                         message.sender_ptid,
                         message.sender_device_id,
                         message.plaintext,
-                        message.committed_at_unix_ms
+                        message.committed_at_unix_ms,
+                        message.retracted,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "INSERT INTO messaging_authority_events(
+                        conversation_id, event_id, event_sequence,
+                        event_hash, committed_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        message.conversation_id,
+                        message.event_id,
+                        message.event_sequence,
+                        message.authority_event_hash,
+                        message.committed_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for tombstone in &archive.redaction_tombstones {
+            transaction
+                .execute(
+                    "INSERT INTO message_redaction_tombstones(
+                        conversation_id, message_id, kind, authority_sequence,
+                        authority_event_hash, applied_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        tombstone.conversation_id,
+                        tombstone.message_id,
+                        tombstone.kind,
+                        tombstone.authority_sequence,
+                        tombstone.authority_event_hash,
+                        tombstone.applied_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for floor in &archive.retention_floors {
+            transaction
+                .execute(
+                    "INSERT INTO chat_retention_floor(
+                        station_peer_id, actor_ptid, device_id, conversation_id,
+                        pruned_through_sequence, authority_event_hash,
+                        policy_cutoff_unix_ms, reason, updated_at_unix_ms
+                     ) VALUES(?1, ?2, '', ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        floor.station_peer_id,
+                        archive.ptid,
+                        floor.conversation_id,
+                        floor.pruned_through_sequence,
+                        floor.authority_event_hash,
+                        floor.policy_cutoff_unix_ms,
+                        floor.reason,
+                        floor.updated_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for head in &archive.authority_heads {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_authority_heads(
+                        conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        head.conversation_id,
+                        head.event_sequence,
+                        head.event_hash,
+                        head.updated_at_unix_ms
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -4844,10 +5694,10 @@ impl MessagingStore {
                     "INSERT INTO messaging_attachment_projections(
                         message_id, attachment_id, object_id, storage_ref,
                         filename, mime_type, plaintext_size, plaintext_sha256,
-                        object_key, base_nonce, descriptor_bytes,
+                        object_key, base_nonce, descriptor_bytes, voice_note_bytes,
                         availability_state, local_cache_path
                      ) VALUES (
-                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                        ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                         'remote', NULL
                      )",
                     params![
@@ -4863,6 +5713,7 @@ impl MessagingStore {
                         metadata.object_key,
                         metadata.base_nonce,
                         object.encode_to_vec(),
+                        encode_voice_note_column(metadata.voice_note.as_ref()),
                     ],
                 )
                 .map_err(|error| error.to_string())?;
@@ -4905,6 +5756,667 @@ impl MessagingStore {
                     ],
                 )
                 .map_err(|error| error.to_string())?;
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub(super) fn install_in_place_recovery_continuity_from(
+        &self,
+        source: &Self,
+        expected_device_identity: &FreshDeviceIdentityState,
+    ) -> Result<(), String> {
+        if std::ptr::eq(self, source) {
+            return Err("messaging recovery continuity source must be distinct".to_string());
+        }
+        let source_enrollment = source
+            .device_enrollment()?
+            .ok_or_else(|| "messaging recovery continuity device is unavailable".to_string())?;
+        let (source_signing_seed, source_signing_key_id) =
+            source.device_signing_seed()?.ok_or_else(|| {
+                "messaging recovery continuity signing key is unavailable".to_string()
+            })?;
+        if source_enrollment != expected_device_identity.enrollment
+            || source_signing_seed.as_slice()
+                != expected_device_identity.device_signing_seed.as_slice()
+            || source_signing_key_id
+                != expected_device_identity
+                    .enrollment
+                    .certificate
+                    .signing_key_id
+        {
+            return Err("messaging recovery continuity device binding mismatch".to_string());
+        }
+        let staged_enrollment = self
+            .device_enrollment()?
+            .ok_or_else(|| "messaging recovery staging device is unavailable".to_string())?;
+        let (staged_signing_seed, staged_signing_key_id) = self
+            .device_signing_seed()?
+            .ok_or_else(|| "messaging recovery staging signing key is unavailable".to_string())?;
+        if staged_enrollment != expected_device_identity.enrollment
+            || staged_signing_seed.as_slice()
+                != expected_device_identity.device_signing_seed.as_slice()
+            || staged_signing_key_id
+                != expected_device_identity
+                    .enrollment
+                    .certificate
+                    .signing_key_id
+        {
+            return Err("messaging recovery staging device binding mismatch".to_string());
+        }
+        let expected_device = expected_device_identity
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .ok_or_else(|| "messaging recovery continuity endpoint is missing".to_string())?;
+        let expected_ptid = actor_device_ptid(expected_device)?;
+
+        let (
+            enrollment_status,
+            lane_cursor,
+            consumption_markers,
+            authority_heads,
+            direct_prekey_bundle,
+            direct_one_time_prekeys,
+            mls_actor_identity,
+            mls_join_provider_pool,
+            mls_key_packages,
+            mls_retired_checkpoints,
+        ) = {
+            let connection = source.connection()?;
+            let enrollment_status = connection
+                .query_row(
+                    "SELECT status FROM messaging_recovery_state WHERE id = 1",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| {
+                    "messaging recovery continuity enrollment state is unavailable".to_string()
+                })?;
+            let lane_cursor = connection
+                .query_row(
+                    "SELECT lane_sequence, consumer_epoch, updated_at_unix_ms
+                     FROM messaging_lane_cursor WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let consumption_markers = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT item_id, event_id, conversation_id,
+                                payload_sha256, consumed_at_unix_ms
+                         FROM messaging_consumption_markers
+                         ORDER BY consumed_at_unix_ms, item_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, Vec<u8>>(3)?,
+                            row.get::<_, i64>(4)?,
+                        ))
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            let authority_heads = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                         FROM messaging_authority_heads
+                         ORDER BY conversation_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, Vec<u8>>(2)?,
+                            row.get::<_, i64>(3)?,
+                        ))
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            let direct_prekey_bundle = connection
+                .query_row(
+                    "SELECT signed_prekey_id, signed_prekey_private, state,
+                            created_at_unix_ms, one_time_prekey_high_watermark
+                     FROM messaging_prekey_bundle WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok(RecoveryDirectPreKeyBundle {
+                            signed_prekey_id: row.get(0)?,
+                            signed_prekey_private: Zeroizing::new(row.get(1)?),
+                            state: row.get(2)?,
+                            created_at_unix_ms: row.get(3)?,
+                            one_time_prekey_high_watermark: row.get(4)?,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let direct_one_time_prekeys = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT prekey_id, private_key, state
+                         FROM messaging_one_time_prekeys
+                         ORDER BY prekey_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok(RecoveryOneTimePreKey {
+                            prekey_id: row.get(0)?,
+                            private_key: Zeroizing::new(row.get(1)?),
+                            state: row.get(2)?,
+                        })
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            let mls_actor_identity = connection
+                .query_row(
+                    "SELECT ptid, device_id, identity_state
+                     FROM messaging_mls_actor_identity WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok(RecoveryMlsActorIdentity {
+                            ptid: row.get(0)?,
+                            device_id: row.get(1)?,
+                            identity_state: Zeroizing::new(row.get(2)?),
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let mls_join_provider_pool = connection
+                .query_row(
+                    "SELECT provider_pool_state, updated_at_unix_ms
+                     FROM messaging_mls_join_provider_pool WHERE id = 1",
+                    [],
+                    |row| {
+                        Ok(RecoveryMlsJoinProviderPool {
+                            provider_pool_state: Zeroizing::new(row.get(0)?),
+                            updated_at_unix_ms: row.get(1)?,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let mls_key_packages = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT package_id, data, state, created_at_unix_ms
+                         FROM messaging_mls_key_packages
+                         ORDER BY package_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok(RecoveryMlsKeyPackage {
+                            package_id: row.get(0)?,
+                            data: Zeroizing::new(row.get(1)?),
+                            state: row.get(2)?,
+                            created_at_unix_ms: row.get(3)?,
+                        })
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            let mls_retired_checkpoints = {
+                let mut statement = connection
+                    .prepare(
+                        "SELECT conversation_id, transition_id, event_id,
+                                retirement_sequence, retirement_hash,
+                                endpoint_ptid, endpoint_device_id,
+                                membership_epoch, mls_epoch, retired_at_unix_ms
+                         FROM messaging_mls_retired_checkpoints
+                         ORDER BY conversation_id",
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok(RecoveryMlsRetiredCheckpoint {
+                            conversation_id: row.get(0)?,
+                            transition_id: row.get(1)?,
+                            event_id: row.get(2)?,
+                            retirement_sequence: row.get(3)?,
+                            retirement_hash: row.get(4)?,
+                            endpoint_ptid: row.get(5)?,
+                            endpoint_device_id: row.get(6)?,
+                            membership_epoch: row.get(7)?,
+                            mls_epoch: row.get(8)?,
+                            retired_at_unix_ms: row.get(9)?,
+                        })
+                    })
+                    .map_err(|error| error.to_string())?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| error.to_string())?;
+                rows
+            };
+            (
+                enrollment_status,
+                lane_cursor,
+                consumption_markers,
+                authority_heads,
+                direct_prekey_bundle,
+                direct_one_time_prekeys,
+                mls_actor_identity,
+                mls_join_provider_pool,
+                mls_key_packages,
+                mls_retired_checkpoints,
+            )
+        };
+
+        if !matches!(
+            enrollment_status.as_str(),
+            "awaiting_device_enrollment" | "active"
+        ) {
+            return Err("messaging recovery continuity enrollment state is invalid".to_string());
+        }
+        if lane_cursor.is_some_and(|(sequence, epoch, updated_at)| {
+            sequence < 0 || epoch <= 0 || updated_at <= 0
+        }) {
+            return Err("messaging recovery continuity lane cursor is invalid".to_string());
+        }
+        if consumption_markers.iter().any(
+            |(item_id, event_id, conversation_id, payload_sha256, consumed_at)| {
+                item_id.trim().is_empty()
+                    || event_id.trim().is_empty()
+                    || conversation_id.trim().is_empty()
+                    || payload_sha256.len() != 32
+                    || *consumed_at <= 0
+            },
+        ) {
+            return Err("messaging recovery continuity marker is invalid".to_string());
+        }
+        if authority_heads
+            .iter()
+            .any(|(conversation_id, sequence, hash, updated_at)| {
+                conversation_id.trim().is_empty()
+                    || *sequence <= 0
+                    || hash.len() != 32
+                    || *updated_at <= 0
+            })
+        {
+            return Err("messaging recovery continuity authority head is invalid".to_string());
+        }
+        match direct_prekey_bundle.as_ref() {
+            Some(bundle) => {
+                if bundle.signed_prekey_id <= 0
+                    || bundle.signed_prekey_private.len() != 32
+                    || !matches!(bundle.state.as_str(), "awaiting_publication" | "published")
+                    || bundle.created_at_unix_ms <= 0
+                    || bundle.one_time_prekey_high_watermark <= 0
+                    || i64::try_from(direct_one_time_prekeys.len()).ok()
+                        != Some(bundle.one_time_prekey_high_watermark)
+                    || direct_one_time_prekeys
+                        .iter()
+                        .enumerate()
+                        .any(|(index, prekey)| {
+                            usize::try_from(prekey.prekey_id).ok() != Some(index + 1)
+                                || prekey.private_key.len() != 32
+                                || !matches!(
+                                    prekey.state.as_str(),
+                                    "awaiting_publication"
+                                        | "available"
+                                        | "consumed"
+                                        | "awaiting_replenishment"
+                                )
+                        })
+                {
+                    return Err(
+                        "messaging recovery continuity Direct prekeys are invalid".to_string()
+                    );
+                }
+            }
+            None if !direct_one_time_prekeys.is_empty() => {
+                return Err(
+                    "messaging recovery continuity Direct prekey bundle is missing".to_string(),
+                )
+            }
+            None => {}
+        }
+        if enrollment_status != "active"
+            && (direct_prekey_bundle.is_some() || !mls_key_packages.is_empty())
+        {
+            return Err(
+                "messaging recovery continuity key material requires active enrollment".to_string(),
+            );
+        }
+        if mls_actor_identity.as_ref().is_some_and(|identity| {
+            identity.ptid != expected_ptid
+                || identity.device_id != expected_device.device_id
+                || identity.identity_state.is_empty()
+        }) {
+            return Err("messaging recovery continuity MLS identity is invalid".to_string());
+        }
+        if mls_join_provider_pool
+            .as_ref()
+            .is_some_and(|pool| pool.provider_pool_state.is_empty() || pool.updated_at_unix_ms <= 0)
+            || mls_key_packages.iter().any(|package| {
+                package.package_id.trim().is_empty()
+                    || package.data.is_empty()
+                    || !matches!(package.state.as_str(), "awaiting_publication" | "published")
+                    || package.created_at_unix_ms <= 0
+            })
+            || (!mls_key_packages.is_empty()
+                && (mls_actor_identity.is_none() || mls_join_provider_pool.is_none()))
+        {
+            return Err("messaging recovery continuity MLS bootstrap is invalid".to_string());
+        }
+        if mls_retired_checkpoints.iter().any(|checkpoint| {
+            checkpoint.conversation_id.trim().is_empty()
+                || checkpoint.transition_id.trim().is_empty()
+                || checkpoint.event_id.trim().is_empty()
+                || checkpoint.retirement_sequence <= 0
+                || checkpoint.retirement_hash.len() != 32
+                || checkpoint.endpoint_ptid != expected_ptid
+                || checkpoint.endpoint_device_id != expected_device.device_id
+                || checkpoint.membership_epoch < 0
+                || checkpoint.mls_epoch < 0
+                || checkpoint.retired_at_unix_ms <= 0
+        }) {
+            return Err(
+                "messaging recovery continuity MLS retirement checkpoint is invalid".to_string(),
+            );
+        }
+
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let updated = transaction
+            .execute(
+                "UPDATE messaging_recovery_state SET status = ?1 WHERE id = 1",
+                params![enrollment_status],
+            )
+            .map_err(|error| error.to_string())?;
+        if updated != 1 {
+            return Err(
+                "messaging recovery continuity enrollment state was not installed".to_string(),
+            );
+        }
+        if let Some((lane_sequence, consumer_epoch, updated_at_unix_ms)) = lane_cursor {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_lane_cursor(
+                        id, lane_sequence, consumer_epoch, updated_at_unix_ms
+                     ) VALUES(1, ?1, ?2, ?3)",
+                    params![lane_sequence, consumer_epoch, updated_at_unix_ms],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for (item_id, event_id, conversation_id, payload_sha256, consumed_at_unix_ms) in
+            consumption_markers
+        {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_consumption_markers(
+                        item_id, event_id, conversation_id,
+                        payload_sha256, consumed_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        item_id,
+                        event_id,
+                        conversation_id,
+                        payload_sha256,
+                        consumed_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for (conversation_id, event_sequence, event_hash, updated_at_unix_ms) in authority_heads {
+            let existing = transaction
+                .query_row(
+                    "SELECT event_sequence, event_hash
+                     FROM messaging_authority_heads
+                     WHERE conversation_id = ?1",
+                    params![conversation_id],
+                    |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            if existing.as_ref().is_some_and(|(sequence, hash)| {
+                event_sequence < *sequence || (event_sequence == *sequence && event_hash != *hash)
+            }) {
+                return Err(
+                    "messaging recovery continuity authority head conflicts with archive"
+                        .to_string(),
+                );
+            }
+            transaction
+                .execute(
+                    "INSERT INTO messaging_authority_heads(
+                        conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4)
+                     ON CONFLICT(conversation_id) DO UPDATE SET
+                        event_sequence=excluded.event_sequence,
+                        event_hash=excluded.event_hash,
+                        updated_at_unix_ms=excluded.updated_at_unix_ms",
+                    params![
+                        conversation_id,
+                        event_sequence,
+                        event_hash,
+                        updated_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(bundle) = direct_prekey_bundle {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_prekey_bundle(
+                        id, signed_prekey_id, signed_prekey_private, state,
+                        created_at_unix_ms, one_time_prekey_high_watermark
+                     ) VALUES(1, ?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        bundle.signed_prekey_id,
+                        bundle.signed_prekey_private.as_slice(),
+                        bundle.state,
+                        bundle.created_at_unix_ms,
+                        bundle.one_time_prekey_high_watermark
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for prekey in direct_one_time_prekeys {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_one_time_prekeys(
+                        prekey_id, private_key, state
+                     ) VALUES(?1, ?2, ?3)",
+                    params![
+                        prekey.prekey_id,
+                        prekey.private_key.as_slice(),
+                        prekey.state
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(identity) = mls_actor_identity {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_actor_identity(
+                        id, ptid, device_id, identity_state
+                     ) VALUES(1, ?1, ?2, ?3)",
+                    params![
+                        identity.ptid,
+                        identity.device_id,
+                        identity.identity_state.as_slice()
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        if let Some(pool) = mls_join_provider_pool {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_join_provider_pool(
+                        id, provider_pool_state, updated_at_unix_ms
+                     ) VALUES(1, ?1, ?2)",
+                    params![pool.provider_pool_state.as_slice(), pool.updated_at_unix_ms],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for package in mls_key_packages {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_key_packages(
+                        package_id, data, state, created_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4)",
+                    params![
+                        package.package_id,
+                        package.data.as_slice(),
+                        package.state,
+                        package.created_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        for checkpoint in mls_retired_checkpoints {
+            transaction
+                .execute(
+                    "INSERT INTO messaging_mls_retired_checkpoints(
+                        conversation_id, transition_id, event_id,
+                        retirement_sequence, retirement_hash,
+                        endpoint_ptid, endpoint_device_id,
+                        membership_epoch, mls_epoch, retired_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        checkpoint.conversation_id,
+                        checkpoint.transition_id,
+                        checkpoint.event_id,
+                        checkpoint.retirement_sequence,
+                        checkpoint.retirement_hash,
+                        checkpoint.endpoint_ptid,
+                        checkpoint.endpoint_device_id,
+                        checkpoint.membership_epoch,
+                        checkpoint.mls_epoch,
+                        checkpoint.retired_at_unix_ms
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    pub(super) fn apply_recovery_reconciliation(
+        &self,
+        reconciliation: &RecoveryReconciliation,
+    ) -> Result<(), String> {
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        for redaction in &reconciliation.redactions {
+            let archive_head: Option<i64> = transaction
+                .query_row(
+                    "SELECT event_sequence FROM messaging_authority_heads
+                     WHERE conversation_id = ?1",
+                    params![redaction.conversation_id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            if archive_head.is_none_or(|head| redaction.authority_sequence <= head) {
+                return Err(
+                    "messaging recovery reconciliation redaction is outside replay range"
+                        .to_string(),
+                );
+            }
+            let (retracted, hidden_for_actor) = match redaction.kind.as_str() {
+                "retracted" => (1, 0),
+                "hidden_for_actor" => (0, 1),
+                _ => {
+                    return Err(
+                        "messaging recovery reconciliation redaction kind is invalid".to_string(),
+                    )
+                }
+            };
+            transaction
+                .execute(
+                    "UPDATE messaging_message_projections
+                     SET plaintext = '', edited_text = NULL, edited_at_unix_ms = NULL,
+                         retracted = MAX(retracted, ?3),
+                         hidden_for_actor = MAX(hidden_for_actor, ?4)
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![
+                        redaction.conversation_id,
+                        redaction.message_id,
+                        retracted,
+                        hidden_for_actor,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            transaction
+                .execute(
+                    "INSERT INTO message_redaction_tombstones(
+                        conversation_id, message_id, kind, authority_sequence,
+                        authority_event_hash, applied_at_unix_ms
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                     ON CONFLICT(conversation_id, message_id, kind) DO UPDATE SET
+                        authority_sequence=excluded.authority_sequence,
+                        authority_event_hash=excluded.authority_event_hash,
+                        applied_at_unix_ms=excluded.applied_at_unix_ms
+                     WHERE excluded.authority_sequence >
+                           message_redaction_tombstones.authority_sequence",
+                    params![
+                        redaction.conversation_id,
+                        redaction.message_id,
+                        redaction.kind,
+                        redaction.authority_sequence,
+                        redaction.authority_event_hash,
+                        redaction.applied_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+            for (sql, parameters) in [
+                (
+                    "DELETE FROM messaging_message_search_fts
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![redaction.conversation_id, redaction.message_id],
+                ),
+                (
+                    "DELETE FROM messaging_attachment_projections WHERE message_id = ?2",
+                    params![redaction.conversation_id, redaction.message_id],
+                ),
+                (
+                    "DELETE FROM messaging_attachment_drafts WHERE message_id = ?2",
+                    params![redaction.conversation_id, redaction.message_id],
+                ),
+                (
+                    "DELETE FROM messaging_attachment_transfers
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![redaction.conversation_id, redaction.message_id],
+                ),
+            ] {
+                transaction
+                    .execute(sql, parameters)
+                    .map_err(|error| error.to_string())?;
+            }
         }
         transaction.commit().map_err(|error| error.to_string())
     }
@@ -4953,6 +6465,14 @@ impl MessagingStore {
                     i64::try_from(certificate.observed_profile_version)
                         .map_err(|_| "fresh messaging profile version is invalid")?
                 ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "UPDATE chat_retention_floor
+                 SET actor_ptid = ?1, device_id = ?2
+                 WHERE actor_ptid = ?1 AND device_id = ''",
+                params![ptid, device.device_id],
             )
             .map_err(|error| error.to_string())?;
         transaction
@@ -5250,6 +6770,28 @@ impl MessagingStore {
         if input.message_id.trim().is_empty() {
             return Err("messaging interaction target message is required".to_string());
         }
+        let redaction = match input.mutation {
+            InteractionMutation::Retract => Some(MessageRedactionKind::Retracted),
+            InteractionMutation::HideForActor => Some(MessageRedactionKind::HiddenForActor),
+            _ => None,
+        }
+        .map(|kind| {
+            prepare_message_redaction(MessageRedactionInput {
+                event_id: input.event_id,
+                conversation_id: input.conversation_id,
+                message_id: input.message_id,
+                kind,
+                authority_sequence: input.event_sequence,
+                authority_event_hash: input.event_hash,
+                applied_at_unix_ms: input.consumed_at_unix_ms,
+            })
+            .map_err(|error| error.to_string())
+        })
+        .transpose()?;
+        let redaction_cleanup = redaction
+            .as_ref()
+            .map(|plan| self.prepare_message_redaction_cleanup(plan))
+            .transpose()?;
         let core = ReceiveCommitCore {
             item_id: input.item_id,
             event_id: input.event_id,
@@ -5302,10 +6844,14 @@ impl MessagingStore {
                     |row| row.get::<_, bool>(0),
                 )
                 .map_err(|error| error.to_string())?;
-            if !message_exists {
+            if !message_exists
+                && redaction.is_none()
+                && !matches!(&input.mutation, InteractionMutation::ObserveOnly)
+            {
                 return Err("messaging interaction target message not found".to_string());
             }
             match &input.mutation {
+                InteractionMutation::ObserveOnly => {}
                 InteractionMutation::Edit {
                     edited_text,
                     edited_at_unix_ms,
@@ -5344,11 +6890,42 @@ impl MessagingStore {
                         )
                         .map_err(|error| error.to_string())?;
                 }
-                InteractionMutation::Retract => {
-                    transaction
+                InteractionMutation::Retract | InteractionMutation::HideForActor => {
+                    apply_message_redaction(
+                        transaction,
+                        redaction
+                            .as_ref()
+                            .ok_or_else(|| "messaging redaction plan is missing".to_string())?,
+                        redaction_cleanup.as_ref().ok_or_else(|| {
+                            "messaging redaction cleanup plan is missing".to_string()
+                        })?,
+                    )?;
+                }
+                InteractionMutation::Moderate {
+                    moderator_ptid,
+                    reason_code,
+                    moderated_at_unix_ms,
+                } => {
+                    if moderator_ptid.trim().is_empty()
+                        || reason_code.trim().is_empty()
+                        || *moderated_at_unix_ms <= 0
+                    {
+                        return Err("messaging moderation event is incomplete".to_string());
+                    }
+                    let changed = transaction
                         .execute(
                             "UPDATE messaging_message_projections
-                             SET retracted = 1
+                             SET moderated = 1, moderation_reason_code = ?1
+                             WHERE conversation_id = ?2 AND message_id = ?3",
+                            params![reason_code, input.conversation_id, input.message_id],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    if changed != 1 {
+                        return Err("messaging moderation target message not found".to_string());
+                    }
+                    transaction
+                        .execute(
+                            "DELETE FROM messaging_message_search_fts
                              WHERE conversation_id = ?1 AND message_id = ?2",
                             params![input.conversation_id, input.message_id],
                         )
@@ -7006,10 +8583,10 @@ impl MessagingStore {
                         "INSERT INTO messaging_attachment_projections(
                             message_id, attachment_id, object_id, storage_ref,
                             filename, mime_type, plaintext_size, plaintext_sha256,
-                            object_key, base_nonce, descriptor_bytes,
+                            object_key, base_nonce, descriptor_bytes, voice_note_bytes,
                             availability_state, local_cache_path
                          ) VALUES (
-                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                             'remote', NULL
                          )",
                         params![
@@ -7025,6 +8602,7 @@ impl MessagingStore {
                             attachment.object_key,
                             attachment.base_nonce,
                             object.encode_to_vec(),
+                            encode_voice_note_column(attachment.voice_note.as_ref()),
                         ],
                     )
                     .map_err(|error| error.to_string())?;
@@ -7059,6 +8637,24 @@ impl MessagingStore {
             return Err("injected receive failure after search index".to_string());
         }
 
+        let recorded = transaction
+            .execute(
+                "INSERT INTO messaging_authority_events(
+                    conversation_id, event_id, event_sequence,
+                    event_hash, committed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    input.conversation_id,
+                    input.event_id,
+                    input.event_sequence,
+                    input.event_hash,
+                    input.consumed_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if recorded != 1 {
+            return Err("messaging authority event hash was not persisted".to_string());
+        }
         transaction
             .execute(
                 "INSERT INTO messaging_authority_heads(
@@ -7192,6 +8788,109 @@ impl MessagingStore {
         }
         let connection = self.connection()?;
         load_pins_for_conversation(&connection, conversation_id)
+    }
+
+    #[cfg(any(test, feature = "acceptance-webdriver"))]
+    pub fn acceptance_seed_conversation_clear_fixture(
+        &self,
+        station_peer_id: &str,
+        plaintext_bytes: usize,
+        now_unix_ms: i64,
+    ) -> Result<(String, String), String> {
+        if station_peer_id.trim().is_empty()
+            || !(64 * 1024..=8 * 1024 * 1024).contains(&plaintext_bytes)
+            || now_unix_ms <= 0
+        {
+            return Err("desktop conversation clear acceptance fixture is invalid".to_string());
+        }
+        let suffix = ulid::Ulid::new().to_string();
+        let conversation_id = format!("acceptance-conversation-clear-{suffix}");
+        let message_id = format!("acceptance-conversation-clear-message-{suffix}");
+        let event_id = format!("event-{message_id}");
+        let event_hash = Sha256::digest(event_id.as_bytes()).to_vec();
+        let mut connection = self.connection()?;
+        let actor_ptid: String = connection
+            .query_row(
+                "SELECT ptid FROM messaging_device_identity WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_conversations(
+                    conversation_id, authority_station_id, federation_id,
+                    kind, name, description, owner_ptid, membership_epoch,
+                    mls_epoch, active, updated_at_unix_ms
+                 ) VALUES(?1, ?2, 'acceptance-federation', 1,
+                          'Conversation clear fixture', '', ?3, 1, 0, 1, ?4)",
+                params![conversation_id, station_peer_id, actor_ptid, now_unix_ms,],
+            )
+            .map_err(|error| error.to_string())?;
+        let plaintext = "c".repeat(plaintext_bytes);
+        transaction
+            .execute(
+                "INSERT INTO messaging_authority_events(
+                    conversation_id, event_id, event_sequence, event_hash,
+                    committed_at_unix_ms
+                 ) VALUES(?1, ?2, 1, ?3, ?4)",
+                params![conversation_id, event_id, event_hash, now_unix_ms],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_authority_heads(
+                    conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                 ) VALUES(?1, 1, ?2, ?3)",
+                params![conversation_id, event_hash, now_unix_ms],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext, delivery_state,
+                    committed_at_unix_ms
+                 ) VALUES(?1, ?2, 1, ?3, ?4, 'acceptance-peer-device',
+                          ?5, 'consumed', ?6)",
+                params![
+                    conversation_id,
+                    event_id,
+                    message_id,
+                    actor_ptid,
+                    plaintext,
+                    now_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_consumption_markers(
+                    item_id, event_id, conversation_id, payload_sha256,
+                    consumed_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5)",
+                params![
+                    format!("item-{message_id}"),
+                    event_id,
+                    conversation_id,
+                    Sha256::digest(message_id.as_bytes()).to_vec(),
+                    now_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO messaging_message_search_fts(
+                    conversation_id, message_id, plaintext, attachment_filenames
+                 ) VALUES(?1, ?2, ?3, '')",
+                params![conversation_id, message_id, plaintext],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok((conversation_id, message_id))
     }
 
     #[cfg(any(test, feature = "acceptance-webdriver"))]
@@ -7518,7 +9217,8 @@ impl MessagingStore {
             .query_row(
                 "SELECT event_id, event_sequence, delivery_state,
                         reply_to_message_id, thread_root_message_id,
-                        edited_text, edited_at_unix_ms, retracted
+                        edited_text, edited_at_unix_ms, retracted,
+                        plaintext = '', hidden_for_actor
                  FROM messaging_message_projections
                  WHERE conversation_id = ?1 AND message_id = ?2",
                 params![conversation_id, message_id],
@@ -7535,6 +9235,8 @@ impl MessagingStore {
                             .unwrap_or_default(),
                         "editedAtUnixMs": row.get::<_, Option<i64>>(6)?.unwrap_or_default(),
                         "retracted": row.get::<_, i64>(7)? != 0,
+                        "plaintextEmpty": row.get::<_, i64>(8)? != 0,
+                        "hiddenForActor": row.get::<_, i64>(9)? != 0,
                     }))
                 },
             )
@@ -7713,6 +9415,83 @@ impl MessagingStore {
                 .map_err(|error| error.to_string())?;
             cursors
         };
+        let redaction_tombstones = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT kind, authority_sequence,
+                            lower(hex(authority_event_hash)), applied_at_unix_ms
+                     FROM message_redaction_tombstones
+                     WHERE conversation_id = ?1 AND message_id = ?2
+                     ORDER BY kind",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![conversation_id, message_id], |row| {
+                    Ok(serde_json::json!({
+                        "kind": row.get::<_, String>(0)?,
+                        "authoritySequence": row.get::<_, i64>(1)?,
+                        "authorityEventHash": row.get::<_, String>(2)?,
+                        "appliedAtUnixMs": row.get::<_, i64>(3)?,
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let search_entry_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_message_search_fts
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![conversation_id, message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let attachment_projection_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_attachment_projections
+                 WHERE message_id = ?1",
+                params![message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let attachment_transfer_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_attachment_transfers
+                 WHERE conversation_id = ?1 AND message_id = ?2",
+                params![conversation_id, message_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let redaction_cleanup = {
+            let mut statement = connection
+                .prepare(
+                    "SELECT operation_id, scope_kind, state,
+                            estimated_reclaimable_bytes, physical_bytes_before,
+                            physical_bytes_after, last_error_code
+                     FROM chat_cleanup_journal
+                     WHERE conversation_id = ?1
+                       AND scope_kind IN ('actor_hide', 'retract')
+                     ORDER BY created_at_unix_ms, operation_id",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![conversation_id], |row| {
+                    Ok(serde_json::json!({
+                        "operationId": row.get::<_, String>(0)?,
+                        "scopeKind": row.get::<_, String>(1)?,
+                        "state": row.get::<_, String>(2)?,
+                        "estimatedReclaimableBytes": row.get::<_, i64>(3)?,
+                        "physicalBytesBefore": row.get::<_, i64>(4)?,
+                        "physicalBytesAfter": row.get::<_, Option<i64>>(5)?,
+                        "lastErrorCode": row.get::<_, Option<String>>(6)?,
+                    }))
+                })
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
         let consumption_count = connection
             .query_row(
                 "SELECT COUNT(*) FROM messaging_consumption_markers
@@ -7742,6 +9521,11 @@ impl MessagingStore {
             "reactions": reactions,
             "pins": pins,
             "readCursors": read_cursors,
+            "redactionTombstones": redaction_tombstones,
+            "searchEntryCount": search_entry_count,
+            "attachmentProjectionCount": attachment_projection_count,
+            "attachmentTransferCount": attachment_transfer_count,
+            "redactionCleanup": redaction_cleanup,
             "consumptionCount": consumption_count,
             "laneSequence": lane_sequence,
             "consumerEpoch": consumer_epoch,
@@ -7787,11 +9571,7 @@ impl CommandResultRepository for MessagingStore {
         MessagingStore::consumption_marker_matches(self, item_id, payload_sha256)
     }
 
-    fn command_bytes(
-        &self,
-        conversation_id: &str,
-        command_id: &str,
-    ) -> Result<Vec<u8>, String> {
+    fn command_bytes(&self, conversation_id: &str, command_id: &str) -> Result<Vec<u8>, String> {
         MessagingStore::command_bytes(self, conversation_id, command_id)
     }
 
@@ -8261,6 +10041,7 @@ impl MlsInboundRepository for MessagingStore {
         commit: &CoreInteractionReceiveCommit<'_>,
     ) -> Result<CoreReceiveCommitResult, String> {
         let mutation = match &commit.mutation {
+            CoreInteractionMutation::ObserveOnly => InteractionMutation::ObserveOnly,
             CoreInteractionMutation::Edit {
                 edited_text,
                 edited_at_unix_ms,
@@ -8269,6 +10050,16 @@ impl MlsInboundRepository for MessagingStore {
                 edited_at_unix_ms: *edited_at_unix_ms,
             },
             CoreInteractionMutation::Retract => InteractionMutation::Retract,
+            CoreInteractionMutation::HideForActor => InteractionMutation::HideForActor,
+            CoreInteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code,
+                moderated_at_unix_ms,
+            } => InteractionMutation::Moderate {
+                moderator_ptid,
+                reason_code,
+                moderated_at_unix_ms: *moderated_at_unix_ms,
+            },
             CoreInteractionMutation::Reaction {
                 actor_ptid,
                 reaction,
@@ -9251,6 +11042,28 @@ fn apply_terminal_command_result(
     Ok(())
 }
 
+fn encode_voice_note_column(voice_note: Option<&VoiceNoteMetadata>) -> Vec<u8> {
+    voice_note.map(Message::encode_to_vec).unwrap_or_default()
+}
+
+fn decode_voice_note_column(
+    bytes: Vec<u8>,
+    column_index: usize,
+) -> rusqlite::Result<Option<VoiceNoteMetadata>> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    VoiceNoteMetadata::decode(bytes.as_slice())
+        .map(Some)
+        .map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                column_index,
+                rusqlite::types::Type::Blob,
+                Box::new(error),
+            )
+        })
+}
+
 fn persist_sender_content(
     transaction: &Transaction<'_>,
     conversation_id: &str,
@@ -9273,10 +11086,10 @@ fn persist_sender_content(
                 "INSERT INTO messaging_attachment_projections(
                     message_id, attachment_id, object_id, storage_ref,
                     filename, mime_type, plaintext_size, plaintext_sha256,
-                    object_key, base_nonce, descriptor_bytes,
+                    object_key, base_nonce, descriptor_bytes, voice_note_bytes,
                     availability_state, local_cache_path
                  ) VALUES (
-                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                    ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                     'local', NULL
                  )
                  ON CONFLICT(message_id, attachment_id) DO UPDATE SET
@@ -9289,7 +11102,8 @@ fn persist_sender_content(
                    AND messaging_attachment_projections.plaintext_sha256 = excluded.plaintext_sha256
                    AND messaging_attachment_projections.object_key = excluded.object_key
                    AND messaging_attachment_projections.base_nonce = excluded.base_nonce
-                   AND messaging_attachment_projections.descriptor_bytes = excluded.descriptor_bytes",
+                   AND messaging_attachment_projections.descriptor_bytes = excluded.descriptor_bytes
+                   AND messaging_attachment_projections.voice_note_bytes = excluded.voice_note_bytes",
                 params![
                     message_id,
                     attachment.attachment_id,
@@ -9303,6 +11117,7 @@ fn persist_sender_content(
                     attachment.object_key,
                     attachment.base_nonce,
                     object.encode_to_vec(),
+                    encode_voice_note_column(attachment.voice_note.as_ref()),
                 ],
             )
             .map_err(|error| error.to_string())?;
@@ -9356,7 +11171,8 @@ fn load_attachment_metadata(
     let mut statement = connection
         .prepare(
             "SELECT attachment_id, filename, mime_type, plaintext_size,
-                    plaintext_sha256, object_key, base_nonce, descriptor_bytes
+                    plaintext_sha256, object_key, base_nonce, descriptor_bytes,
+                    voice_note_bytes
              FROM messaging_attachment_projections
              WHERE message_id = ?1
              ORDER BY attachment_id",
@@ -9389,6 +11205,7 @@ fn load_attachment_metadata(
                 object_key: row.get(5)?,
                 base_nonce: row.get(6)?,
                 object: Some(object),
+                voice_note: decode_voice_note_column(row.get(8)?, 8)?,
             })
         })
         .map_err(|error| error.to_string())?
@@ -9418,7 +11235,8 @@ fn load_staged_attachment_metadata(
         .prepare(
             "SELECT draft.attachment_id, draft.filename, draft.mime_type,
                     transfer.plaintext_size, draft.plaintext_sha256,
-                    transfer.object_key, transfer.base_nonce, draft.descriptor_bytes
+                    transfer.object_key, transfer.base_nonce, draft.descriptor_bytes,
+                    draft.voice_note_bytes
              FROM messaging_attachment_drafts draft
              JOIN messaging_attachment_transfers transfer
                ON transfer.attachment_id = draft.attachment_id
@@ -9456,6 +11274,7 @@ fn load_staged_attachment_metadata(
                     object_key: row.get(5)?,
                     base_nonce: row.get(6)?,
                     object: Some(object),
+                    voice_note: decode_voice_note_column(row.get(8)?, 8)?,
                 })
             },
         )
@@ -10131,6 +11950,279 @@ fn fts_phrase_query(query: &str) -> Result<String, String> {
     Ok(format!("\"{}\"", normalized.replace('"', "\"\"")))
 }
 
+fn storage_redaction_physical_bytes(
+    database_path: Option<&Path>,
+    protected_paths: Vec<PathBuf>,
+    journal_paths: Vec<PathBuf>,
+) -> Result<u64, String> {
+    let mut paths = Vec::new();
+    if let Some(database_path) = database_path {
+        paths.push((database_path.to_path_buf(), true));
+        paths.push((
+            PathBuf::from(format!("{}-wal", database_path.display())),
+            false,
+        ));
+        paths.push((
+            PathBuf::from(format!("{}-shm", database_path.display())),
+            false,
+        ));
+    }
+    paths.extend(protected_paths.into_iter().map(|path| (path, true)));
+    paths.extend(journal_paths.into_iter().map(|path| (path, false)));
+    let mut total = 0_u64;
+    let mut seen = HashSet::new();
+    for (path, required) in paths {
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+                let identity = cleanup_file_physical_identity(&path)
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| {
+                        format!(
+                            "messaging storage path disappeared during measurement: {}",
+                            path.display()
+                        )
+                    })?;
+                if seen.insert(identity) {
+                    total = total.saturating_add(metadata.len());
+                }
+            }
+            Ok(_) => {
+                return Err(format!(
+                    "messaging database storage path is not a regular file: {}",
+                    path.display()
+                ))
+            }
+            Err(error) if !required && error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Ok(total)
+}
+
+fn message_redaction_candidate_paths(
+    connection: &Connection,
+    plan: &MessageRedactionPlan,
+) -> Result<Vec<String>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT path FROM (
+                SELECT local_cache_path AS path
+                FROM messaging_attachment_projections
+                WHERE message_id = ?1
+                  AND local_cache_path IS NOT NULL
+                  AND local_cache_path <> ''
+                UNION
+                SELECT source_local_ref AS path
+                FROM messaging_attachment_transfers
+                WHERE conversation_id = ?2 AND message_id = ?1
+                  AND source_local_ref <> ''
+                UNION
+                SELECT partial_local_ref AS path
+                FROM messaging_attachment_transfers
+                WHERE conversation_id = ?2 AND message_id = ?1
+                  AND partial_local_ref <> ''
+             ) ORDER BY path",
+        )
+        .map_err(|error| error.to_string())?;
+    let paths = statement
+        .query_map(params![plan.message_id, plan.conversation_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    Ok(paths)
+}
+
+fn apply_message_redaction(
+    transaction: &Transaction<'_>,
+    plan: &MessageRedactionPlan,
+    prepared_cleanup: &PreparedMessageRedactionCleanup,
+) -> Result<(), String> {
+    let candidate_paths = message_redaction_candidate_paths(transaction, plan)?;
+    if candidate_paths
+        != prepared_cleanup
+            .candidates
+            .iter()
+            .map(|candidate| candidate.target_ref.clone())
+            .collect::<Vec<_>>()
+    {
+        return Err("messaging redaction attachment references changed".to_string());
+    }
+
+    let (retracted, hidden_for_actor) = match plan.kind {
+        MessageRedactionKind::Retracted => (1, 0),
+        MessageRedactionKind::HiddenForActor => (0, 1),
+    };
+    transaction
+        .execute(
+            "UPDATE messaging_message_projections
+             SET plaintext = '', edited_text = NULL, edited_at_unix_ms = NULL,
+                 retracted = MAX(retracted, ?3),
+                 hidden_for_actor = MAX(hidden_for_actor, ?4)
+             WHERE conversation_id = ?1 AND message_id = ?2",
+            params![
+                plan.conversation_id,
+                plan.message_id,
+                retracted,
+                hidden_for_actor,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    transaction
+        .execute(
+            "INSERT INTO message_redaction_tombstones(
+                conversation_id, message_id, kind, authority_sequence,
+                authority_event_hash, applied_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(conversation_id, message_id, kind) DO UPDATE SET
+                authority_sequence=excluded.authority_sequence,
+                authority_event_hash=excluded.authority_event_hash,
+                applied_at_unix_ms=excluded.applied_at_unix_ms
+             WHERE excluded.authority_sequence >
+                   message_redaction_tombstones.authority_sequence",
+            params![
+                plan.conversation_id,
+                plan.message_id,
+                plan.kind.tombstone_name(),
+                plan.authority_sequence,
+                plan.authority_event_hash.as_slice(),
+                plan.applied_at_unix_ms,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    for (sql, parameters) in [
+        (
+            "DELETE FROM messaging_message_search_fts
+             WHERE conversation_id = ?1 AND message_id = ?2",
+            params![plan.conversation_id, plan.message_id],
+        ),
+        (
+            "DELETE FROM message_reactions WHERE message_id = ?2",
+            params![plan.conversation_id, plan.message_id],
+        ),
+        (
+            "DELETE FROM message_pins
+             WHERE conversation_id = ?1 AND message_id = ?2",
+            params![plan.conversation_id, plan.message_id],
+        ),
+        (
+            "DELETE FROM messaging_attachment_projections WHERE message_id = ?2",
+            params![plan.conversation_id, plan.message_id],
+        ),
+        (
+            "DELETE FROM messaging_attachment_drafts WHERE message_id = ?2",
+            params![plan.conversation_id, plan.message_id],
+        ),
+        (
+            "DELETE FROM messaging_attachment_transfers
+             WHERE conversation_id = ?1 AND message_id = ?2",
+            params![plan.conversation_id, plan.message_id],
+        ),
+    ] {
+        transaction
+            .execute(sql, parameters)
+            .map_err(|error| error.to_string())?;
+    }
+
+    let mut cleanup_items = Vec::new();
+    let mut cleanup_file_bytes = 0_u64;
+    let mut physical_identities = HashSet::new();
+    for candidate in &prepared_cleanup.candidates {
+        let references: i64 = transaction
+            .query_row(
+                "SELECT
+                    (SELECT COUNT(*) FROM messaging_attachment_projections
+                     WHERE local_cache_path = ?1)
+                  + (SELECT COUNT(*) FROM messaging_attachment_transfers
+                     WHERE source_local_ref = ?1 OR partial_local_ref = ?1)",
+                params![candidate.target_ref],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if references == 0 {
+            if let Some(item) = &candidate.cleanup_item {
+                if item.state == CacheCleanupItemState::Pending
+                    && candidate
+                        .physical_identity
+                        .as_ref()
+                        .is_some_and(|identity| physical_identities.insert(identity.clone()))
+                {
+                    cleanup_file_bytes =
+                        cleanup_file_bytes.saturating_add(item.expected_size_bytes);
+                }
+                cleanup_items.push(item.clone());
+            }
+        }
+    }
+    if prepared_cleanup.measurement_failed {
+        cleanup_items.push(failed_file_cleanup_item(
+            Path::new("chat-storage-physical-measurement"),
+            "CHAT_STORAGE_ERROR_CODE_IO_FAILED",
+        ));
+    }
+
+    let capture_failed = prepared_cleanup.measurement_failed
+        || cleanup_items
+            .iter()
+            .any(|item| item.state == CacheCleanupItemState::FailedTerminal);
+    let operation_state = if cleanup_items
+        .iter()
+        .any(|item| item.state == CacheCleanupItemState::Pending)
+    {
+        ChatStorageOperationState::DeletingFiles
+    } else {
+        ChatStorageOperationState::Compacting
+    };
+    let estimated_reclaimable_bytes = prepared_cleanup
+        .logical_reclaimable_bytes
+        .saturating_add(cleanup_file_bytes);
+    let physical_bytes_before = prepared_cleanup.physical_bytes_before;
+    transaction
+        .execute(
+            "INSERT INTO chat_cleanup_journal(
+                operation_id, scope_kind, conversation_id, scope_revision,
+                state, estimated_reclaimable_bytes, physical_bytes_before,
+                physical_bytes_after, retention_preset, policy_cutoff_unix_ms,
+                last_error_code, created_at_unix_ms, updated_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, NULL, ?8, ?9, ?9)",
+            params![
+                plan.operation_id,
+                plan.kind.cleanup_scope_kind(),
+                plan.conversation_id,
+                plan.scope_revision,
+                storage_operation_state_name(operation_state),
+                sql_i64(estimated_reclaimable_bytes, "redaction bytes")?,
+                sql_i64(physical_bytes_before, "redaction physical bytes before")?,
+                capture_failed.then_some("CHAT_STORAGE_ERROR_CODE_IO_FAILED"),
+                plan.applied_at_unix_ms,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+    for item in cleanup_items {
+        transaction
+            .execute(
+                "INSERT INTO chat_cleanup_items(
+                    operation_id, item_id, item_kind, target_ref,
+                    expected_size_bytes, expected_digest, state,
+                    last_error_code, updated_at_unix_ms
+                 ) VALUES (?1, ?2, 'file', ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    plan.operation_id,
+                    item.item_id,
+                    item.target_ref,
+                    sql_i64(item.expected_size_bytes, "redaction file bytes")?,
+                    item.expected_digest.as_slice(),
+                    item.state.as_str(),
+                    item.last_error_code,
+                    plan.applied_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 fn validate_attachment_transfer(transfer: &AttachmentTransferRecord) -> Result<(), String> {
     validate_chat_attachment_transfer_record(transfer)
 }
@@ -10162,43 +12254,1435 @@ fn attachment_transfer_from_row(
     })
 }
 
+impl CacheCleanupJournalRepository for MessagingStore {
+    fn load_resumable_cache_cleanup(
+        &self,
+        scope_revision: &str,
+    ) -> Result<Option<CacheCleanupOperation>, String> {
+        let connection = self.connection()?;
+        let row = connection
+            .query_row(
+                "SELECT operation_id, scope_revision, state,
+                        estimated_reclaimable_bytes, physical_bytes_before,
+                        physical_bytes_after, last_error_code,
+                        created_at_unix_ms, updated_at_unix_ms
+                 FROM chat_cleanup_journal
+                 WHERE scope_kind = ?1 AND scope_revision = ?2
+                   AND state IN (
+                       'planned', 'deleting_files', 'compacting',
+                       'compaction_pending', 'paused_scope_inactive',
+                       'failed_retryable'
+                   )
+                 ORDER BY updated_at_unix_ms DESC, operation_id DESC
+                 LIMIT 1",
+                params![CACHE_SCOPE_KIND, scope_revision],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        row.map(cache_cleanup_operation_from_sql).transpose()
+    }
+
+    fn create_cache_cleanup(
+        &self,
+        operation: &CacheCleanupOperation,
+        items: &[CacheCleanupItem],
+    ) -> Result<(), String> {
+        let mut connection = self.connection()?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO chat_cleanup_journal(
+                    operation_id, scope_kind, conversation_id, scope_revision,
+                    state, estimated_reclaimable_bytes, physical_bytes_before,
+                    physical_bytes_after, last_error_code,
+                    created_at_unix_ms, updated_at_unix_ms
+                 ) VALUES(?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?7)",
+                params![
+                    operation.operation_id,
+                    CACHE_SCOPE_KIND,
+                    operation.scope_revision,
+                    storage_operation_state_name(operation.state),
+                    sql_i64(
+                        operation.estimated_reclaimable_bytes,
+                        "estimated cache bytes"
+                    )?,
+                    sql_i64(operation.physical_bytes_before, "physical bytes before")?,
+                    operation.created_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        for item in items {
+            transaction
+                .execute(
+                    "INSERT INTO chat_cleanup_items(
+                        operation_id, item_id, item_kind, target_ref,
+                        expected_size_bytes, expected_digest, state,
+                        last_error_code, updated_at_unix_ms
+                     ) VALUES(?1, ?2, 'file', ?3, ?4, ?5, ?6, NULL, ?7)",
+                    params![
+                        operation.operation_id,
+                        item.item_id,
+                        item.target_ref,
+                        sql_i64(item.expected_size_bytes, "expected cache item bytes")?,
+                        item.expected_digest.as_slice(),
+                        item.state.as_str(),
+                        operation.created_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        transaction.commit().map_err(|error| error.to_string())
+    }
+
+    fn load_cache_cleanup_items(
+        &self,
+        operation_id: &str,
+    ) -> Result<Vec<CacheCleanupItem>, String> {
+        let connection = self.connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT item_id, target_ref, expected_size_bytes,
+                        expected_digest, state, last_error_code
+                 FROM chat_cleanup_items
+                 WHERE operation_id = ?1
+                 ORDER BY item_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map(params![operation_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        rows.into_iter().map(cache_cleanup_item_from_sql).collect()
+    }
+
+    fn update_cache_cleanup_item(
+        &self,
+        operation_id: &str,
+        item_id: &str,
+        state: CacheCleanupItemState,
+        last_error_code: Option<&str>,
+        updated_at_unix_ms: i64,
+    ) -> Result<(), String> {
+        let changed = self
+            .connection()?
+            .execute(
+                "UPDATE chat_cleanup_items
+                 SET state = ?3, last_error_code = ?4, updated_at_unix_ms = ?5
+                 WHERE operation_id = ?1 AND item_id = ?2",
+                params![
+                    operation_id,
+                    item_id,
+                    state.as_str(),
+                    last_error_code,
+                    updated_at_unix_ms
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("cache cleanup journal item is missing".to_string());
+        }
+        Ok(())
+    }
+
+    fn update_cache_cleanup_operation(
+        &self,
+        operation_id: &str,
+        state: ChatStorageOperationState,
+        physical_bytes_after: Option<u64>,
+        last_error_code: Option<&str>,
+        updated_at_unix_ms: i64,
+    ) -> Result<CacheCleanupOperation, String> {
+        let physical_bytes_after = physical_bytes_after
+            .map(|value| sql_i64(value, "physical bytes after"))
+            .transpose()?;
+        let connection = self.connection()?;
+        let changed = connection
+            .execute(
+                "UPDATE chat_cleanup_journal
+                 SET state = ?2, physical_bytes_after = ?3,
+                     last_error_code = ?4, updated_at_unix_ms = ?5
+                 WHERE operation_id = ?1",
+                params![
+                    operation_id,
+                    storage_operation_state_name(state),
+                    physical_bytes_after,
+                    last_error_code,
+                    updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err("cache cleanup journal operation is missing".to_string());
+        }
+        load_cache_cleanup_operation(&connection, operation_id)
+    }
+}
+
+impl ConversationClearRepository for MessagingStore {
+    fn load_resumable_conversation_clear(
+        &self,
+        scope: &ChatStorageScope,
+        scope_revision: &str,
+        conversation_id: &str,
+    ) -> Result<Option<CacheCleanupOperation>, String> {
+        if scope_revision.trim().is_empty() || conversation_id.trim().is_empty() {
+            return Err("chat conversation clear identity is incomplete".to_string());
+        }
+        let connection = self.connection()?;
+        validate_retention_scope_identity(&connection, scope)?;
+        let row = connection
+            .query_row(
+                "SELECT operation_id, scope_revision, state,
+                        estimated_reclaimable_bytes, physical_bytes_before,
+                        physical_bytes_after, last_error_code,
+                        created_at_unix_ms, updated_at_unix_ms
+                 FROM chat_cleanup_journal
+                 WHERE scope_kind = ?1 AND scope_revision = ?2
+                   AND conversation_id = ?3
+                   AND state IN (
+                       'deleting_rows', 'deleting_files', 'compacting',
+                       'compaction_pending', 'paused_scope_inactive',
+                       'failed_retryable'
+                   )
+                 ORDER BY updated_at_unix_ms DESC, operation_id DESC
+                 LIMIT 1",
+                params![
+                    CONVERSATION_CLEAR_SCOPE_KIND,
+                    scope_revision,
+                    conversation_id
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, i64>(8)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        row.map(cache_cleanup_operation_from_sql).transpose()
+    }
+
+    fn load_conversation_clear_snapshot(
+        &self,
+        scope: &ChatStorageScope,
+        conversation_id: &str,
+    ) -> Result<ConversationClearSnapshot, String> {
+        let connection = self.connection()?;
+        validate_retention_scope_identity(&connection, scope)?;
+        let (authority_sequence, authority_event_hash) = connection
+            .query_row(
+                "SELECT event_sequence, event_hash
+                 FROM messaging_authority_heads
+                 WHERE conversation_id = ?1",
+                params![conversation_id],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+            )
+            .map_err(|error| error.to_string())?;
+        let existing_floor = connection
+            .query_row(
+                "SELECT conversation_id, pruned_through_sequence,
+                        authority_event_hash, policy_cutoff_unix_ms,
+                        updated_at_unix_ms
+                 FROM chat_retention_floor
+                 WHERE station_peer_id = ?1 AND actor_ptid = ?2
+                   AND device_id = ?3 AND conversation_id = ?4",
+                params![
+                    scope.station_peer_id,
+                    scope.actor_ptid,
+                    scope.device_id,
+                    conversation_id,
+                ],
+                |row| {
+                    Ok(RetentionFloor {
+                        conversation_id: row.get(0)?,
+                        pruned_through_sequence: row.get(1)?,
+                        authority_event_hash: row
+                            .get::<_, Vec<u8>>(2)?
+                            .try_into()
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        policy_cutoff_unix_ms: row.get(3)?,
+                        updated_at_unix_ms: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let floor_sequence = existing_floor
+            .as_ref()
+            .map(|floor| floor.pruned_through_sequence)
+            .unwrap_or(0);
+        let mut statement = connection
+            .prepare(
+                "SELECT message.conversation_id, message.event_id,
+                        message.event_sequence, authority.event_hash,
+                        message.message_id, message.committed_at_unix_ms,
+                        length(CAST(message.message_id AS BLOB))
+                          + length(CAST(message.sender_ptid AS BLOB))
+                          + length(CAST(message.sender_device_id AS BLOB))
+                          + length(CAST(message.plaintext AS BLOB))
+                          + length(CAST(COALESCE(message.edited_text, '') AS BLOB))
+                          + COALESCE((
+                              SELECT SUM(attachment.plaintext_size)
+                              FROM messaging_attachment_projections attachment
+                              WHERE attachment.message_id = message.message_id
+                            ), 0) AS estimated_bytes,
+                        EXISTS(
+                            SELECT 1 FROM messaging_consumption_markers marker
+                            WHERE marker.conversation_id = message.conversation_id
+                              AND marker.event_id = message.event_id
+                        ) AS durable_consumed,
+                        EXISTS(
+                            SELECT 1 FROM messaging_pending_messages pending
+                            WHERE pending.conversation_id = message.conversation_id
+                              AND pending.message_id = message.message_id
+                            UNION ALL
+                            SELECT 1 FROM messaging_command_attempts attempt
+                            WHERE attempt.conversation_id = message.conversation_id
+                              AND attempt.message_id = message.message_id
+                              AND attempt.state <> 'committed'
+                            UNION ALL
+                            SELECT 1 FROM messaging_receipt_outbox receipt
+                            WHERE receipt.event_id = message.event_id
+                              AND receipt.state <> 'sent'
+                            UNION ALL
+                            SELECT 1 FROM messaging_attachment_drafts draft
+                            WHERE draft.conversation_id = message.conversation_id
+                              AND draft.message_id = message.message_id
+                        ) AS reliability_protected,
+                        EXISTS(
+                            SELECT 1 FROM messaging_attachment_transfers transfer
+                            WHERE transfer.conversation_id = message.conversation_id
+                              AND transfer.message_id = message.message_id
+                              AND transfer.state NOT IN (?4, ?5, ?6)
+                        ) AS active_transfer
+                 FROM messaging_message_projections message
+                 JOIN messaging_authority_events authority
+                   ON authority.conversation_id = message.conversation_id
+                  AND authority.event_id = message.event_id
+                  AND authority.event_sequence = message.event_sequence
+                 WHERE message.conversation_id = ?1
+                   AND message.event_sequence > ?2
+                   AND message.event_sequence <= ?3
+                 ORDER BY message.event_sequence, message.event_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let candidates = statement
+            .query_map(
+                params![
+                    conversation_id,
+                    floor_sequence,
+                    authority_sequence,
+                    AttachmentTransferState::Complete as i32,
+                    AttachmentTransferState::Cancelled as i32,
+                    AttachmentTransferState::Terminal as i32,
+                ],
+                |row| {
+                    Ok(RetentionCandidate {
+                        conversation_id: row.get(0)?,
+                        event_id: row.get(1)?,
+                        event_sequence: row.get(2)?,
+                        authority_event_hash: row.get(3)?,
+                        message_id: row.get(4)?,
+                        committed_at_unix_ms: row.get(5)?,
+                        estimated_reclaimable_bytes: u64::try_from(row.get::<_, i64>(6)?.max(0))
+                            .unwrap_or(0),
+                        durable_consumed: row.get(7)?,
+                        reliability_protected: row.get(8)?,
+                        active_transfer: row.get(9)?,
+                    })
+                },
+            )
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(ConversationClearSnapshot {
+            conversation_id: conversation_id.to_string(),
+            authority_sequence,
+            authority_event_hash,
+            existing_floor,
+            candidates,
+        })
+    }
+
+    fn commit_conversation_clear(
+        &self,
+        scope: &ChatStorageScope,
+        operation: &CacheCleanupOperation,
+        plan: &ConversationClearPlan,
+    ) -> Result<ConversationClearCommit, String> {
+        if operation.scope_revision.trim().is_empty()
+            || plan.conversation_id.trim().is_empty()
+            || operation.state != ChatStorageOperationState::DeletingRows
+        {
+            return Err("chat conversation clear commit binding mismatch".to_string());
+        }
+        let mut connection = self.connection()?;
+        validate_retention_scope_identity(&connection, scope)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        let persisted_hash = transaction
+            .query_row(
+                "SELECT event_hash FROM messaging_authority_events
+                 WHERE conversation_id = ?1 AND event_sequence = ?2",
+                params![plan.conversation_id, plan.pruned_through_sequence],
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if persisted_hash != plan.authority_event_hash {
+            return Err("chat conversation clear authority hash changed".to_string());
+        }
+        let authority_head: i64 = transaction
+            .query_row(
+                "SELECT event_sequence FROM messaging_authority_heads
+                 WHERE conversation_id = ?1",
+                params![plan.conversation_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if authority_head < plan.pruned_through_sequence {
+            return Err("chat conversation clear boundary exceeds authority head".to_string());
+        }
+        let existing_sequence = transaction
+            .query_row(
+                "SELECT pruned_through_sequence
+                 FROM chat_retention_floor
+                 WHERE station_peer_id = ?1 AND actor_ptid = ?2
+                   AND device_id = ?3 AND conversation_id = ?4",
+                params![
+                    scope.station_peer_id,
+                    scope.actor_ptid,
+                    scope.device_id,
+                    plan.conversation_id,
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .unwrap_or(0);
+        if existing_sequence > plan.pruned_through_sequence {
+            return Err("chat conversation clear floor moved beyond the plan".to_string());
+        }
+
+        let mut current_statement = transaction
+            .prepare(
+                "SELECT message.message_id, message.event_id,
+                        EXISTS(
+                            SELECT 1 FROM messaging_consumption_markers marker
+                            WHERE marker.conversation_id = message.conversation_id
+                              AND marker.event_id = message.event_id
+                        ),
+                        EXISTS(
+                            SELECT 1 FROM messaging_pending_messages pending
+                            WHERE pending.conversation_id = message.conversation_id
+                              AND pending.message_id = message.message_id
+                            UNION ALL
+                            SELECT 1 FROM messaging_command_attempts attempt
+                            WHERE attempt.conversation_id = message.conversation_id
+                              AND attempt.message_id = message.message_id
+                              AND attempt.state <> 'committed'
+                            UNION ALL
+                            SELECT 1 FROM messaging_receipt_outbox receipt
+                            WHERE receipt.event_id = message.event_id
+                              AND receipt.state <> 'sent'
+                            UNION ALL
+                            SELECT 1 FROM messaging_attachment_drafts draft
+                            WHERE draft.conversation_id = message.conversation_id
+                              AND draft.message_id = message.message_id
+                        ),
+                        EXISTS(
+                            SELECT 1 FROM messaging_attachment_transfers transfer
+                            WHERE transfer.conversation_id = message.conversation_id
+                              AND transfer.message_id = message.message_id
+                              AND transfer.state NOT IN (?4, ?5, ?6)
+                        )
+                 FROM messaging_message_projections message
+                 JOIN messaging_authority_events authority
+                   ON authority.conversation_id = message.conversation_id
+                  AND authority.event_id = message.event_id
+                  AND authority.event_sequence = message.event_sequence
+                 WHERE message.conversation_id = ?1
+                   AND message.event_sequence > ?2
+                   AND message.event_sequence <= ?3
+                 ORDER BY message.event_sequence, message.event_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let current = current_statement
+            .query_map(
+                params![
+                    plan.conversation_id,
+                    existing_sequence,
+                    plan.pruned_through_sequence,
+                    AttachmentTransferState::Complete as i32,
+                    AttachmentTransferState::Cancelled as i32,
+                    AttachmentTransferState::Terminal as i32,
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, bool>(2)?,
+                        row.get::<_, bool>(3)?,
+                        row.get::<_, bool>(4)?,
+                    ))
+                },
+            )
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        drop(current_statement);
+        let planned = plan
+            .message_ids
+            .iter()
+            .cloned()
+            .zip(plan.event_ids.iter().cloned())
+            .collect::<Vec<_>>();
+        if current
+            .iter()
+            .map(|row| (row.0.clone(), row.1.clone()))
+            .collect::<Vec<_>>()
+            != planned
+        {
+            return Err("chat conversation clear candidate set changed".to_string());
+        }
+        if let Some((message_id, _, _, _, _)) = current.iter().find(|row| !row.2 || row.3 || row.4)
+        {
+            return Err(format!(
+                "chat conversation clear candidate became protected: {message_id}"
+            ));
+        }
+
+        transaction
+            .execute(
+                "INSERT INTO chat_cleanup_journal(
+                    operation_id, scope_kind, conversation_id, scope_revision,
+                    state, estimated_reclaimable_bytes, physical_bytes_before,
+                    physical_bytes_after, retention_preset, policy_cutoff_unix_ms,
+                    last_error_code, created_at_unix_ms, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, 'deleting_rows', ?5, ?6,
+                          NULL, NULL, NULL, NULL, ?7, ?7)",
+                params![
+                    operation.operation_id,
+                    CONVERSATION_CLEAR_SCOPE_KIND,
+                    plan.conversation_id,
+                    operation.scope_revision,
+                    sql_i64(
+                        operation.estimated_reclaimable_bytes,
+                        "estimated conversation clear bytes"
+                    )?,
+                    sql_i64(
+                        operation.physical_bytes_before,
+                        "conversation clear physical bytes before"
+                    )?,
+                    operation.created_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+
+        let mut possible_media_paths = HashSet::<PathBuf>::new();
+        for (message_id, event_id) in plan.message_ids.iter().zip(&plan.event_ids) {
+            let mut paths = transaction
+                .prepare(
+                    "SELECT DISTINCT local_cache_path
+                     FROM messaging_attachment_projections
+                     WHERE message_id = ?1
+                       AND local_cache_path IS NOT NULL
+                       AND local_cache_path <> ''",
+                )
+                .map_err(|error| error.to_string())?;
+            for path in paths
+                .query_map(params![message_id], |row| row.get::<_, String>(0))
+                .map_err(|error| error.to_string())?
+            {
+                possible_media_paths
+                    .insert(PathBuf::from(path.map_err(|error| error.to_string())?));
+            }
+            drop(paths);
+            for (sql, parameters) in [
+                (
+                    "DELETE FROM messaging_message_search_fts
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![plan.conversation_id, message_id],
+                ),
+                (
+                    "DELETE FROM message_reactions WHERE message_id = ?2",
+                    params![plan.conversation_id, message_id],
+                ),
+                (
+                    "DELETE FROM message_pins
+                     WHERE conversation_id = ?1 AND message_id = ?2",
+                    params![plan.conversation_id, message_id],
+                ),
+                (
+                    "DELETE FROM messaging_attachment_projections WHERE message_id = ?2",
+                    params![plan.conversation_id, message_id],
+                ),
+                (
+                    "DELETE FROM messaging_attachment_transfers
+                     WHERE conversation_id = ?1 AND message_id = ?2
+                       AND state IN (?3, ?4, ?5)",
+                    params![
+                        plan.conversation_id,
+                        message_id,
+                        AttachmentTransferState::Complete as i32,
+                        AttachmentTransferState::Cancelled as i32,
+                        AttachmentTransferState::Terminal as i32,
+                    ],
+                ),
+            ] {
+                transaction
+                    .execute(sql, parameters)
+                    .map_err(|error| error.to_string())?;
+            }
+            let deleted = transaction
+                .execute(
+                    "DELETE FROM messaging_message_projections
+                     WHERE conversation_id = ?1 AND message_id = ?2 AND event_id = ?3",
+                    params![plan.conversation_id, message_id, event_id],
+                )
+                .map_err(|error| error.to_string())?;
+            if deleted != 1 {
+                return Err(format!(
+                    "chat conversation clear projection delete was not exact: {message_id}"
+                ));
+            }
+        }
+        if existing_sequence < plan.pruned_through_sequence {
+            transaction
+                .execute(
+                    "INSERT INTO chat_retention_floor(
+                        station_peer_id, actor_ptid, device_id, conversation_id,
+                        pruned_through_sequence, authority_event_hash,
+                        policy_cutoff_unix_ms, reason, updated_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, NULL, 'manual_clear', ?7)
+                     ON CONFLICT(station_peer_id, actor_ptid, device_id, conversation_id)
+                     DO UPDATE SET
+                        pruned_through_sequence=excluded.pruned_through_sequence,
+                        authority_event_hash=excluded.authority_event_hash,
+                        policy_cutoff_unix_ms=NULL,
+                        reason='manual_clear',
+                        updated_at_unix_ms=excluded.updated_at_unix_ms
+                     WHERE excluded.pruned_through_sequence >
+                           chat_retention_floor.pruned_through_sequence",
+                    params![
+                        scope.station_peer_id,
+                        scope.actor_ptid,
+                        scope.device_id,
+                        plan.conversation_id,
+                        plan.pruned_through_sequence,
+                        plan.authority_event_hash.as_slice(),
+                        operation.created_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+
+        let mut media_items = Vec::new();
+        for path in possible_media_paths {
+            let path_text = path.to_string_lossy().to_string();
+            let references: i64 = transaction
+                .query_row(
+                    "SELECT
+                        (SELECT COUNT(*) FROM messaging_attachment_projections
+                         WHERE local_cache_path = ?1)
+                      + (SELECT COUNT(*) FROM messaging_attachment_transfers
+                         WHERE source_local_ref = ?1 OR partial_local_ref = ?1)",
+                    params![path_text],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if references != 0 {
+                continue;
+            }
+            if let Some(item) =
+                immutable_file_cleanup_item(&path).map_err(|error| error.to_string())?
+            {
+                transaction
+                    .execute(
+                        "INSERT INTO chat_cleanup_items(
+                            operation_id, item_id, item_kind, target_ref,
+                            expected_size_bytes, expected_digest, state,
+                            last_error_code, updated_at_unix_ms
+                         ) VALUES(?1, ?2, 'file', ?3, ?4, ?5, ?6, NULL, ?7)",
+                        params![
+                            operation.operation_id,
+                            item.item_id,
+                            item.target_ref,
+                            sql_i64(item.expected_size_bytes, "conversation clear media bytes")?,
+                            item.expected_digest.as_slice(),
+                            item.state.as_str(),
+                            operation.created_at_unix_ms,
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                media_items.push(item.target_ref);
+            }
+        }
+        let mut committed_operation = operation.clone();
+        committed_operation.state = if existing_sequence >= plan.pruned_through_sequence {
+            ChatStorageOperationState::Succeeded
+        } else if media_items.is_empty() {
+            ChatStorageOperationState::Compacting
+        } else {
+            ChatStorageOperationState::DeletingFiles
+        };
+        committed_operation.physical_bytes_after = (committed_operation.state
+            == ChatStorageOperationState::Succeeded)
+            .then_some(committed_operation.physical_bytes_before);
+        transaction
+            .execute(
+                "UPDATE chat_cleanup_journal
+                 SET state = ?2, physical_bytes_after = ?3, updated_at_unix_ms = ?4
+                 WHERE operation_id = ?1",
+                params![
+                    operation.operation_id,
+                    storage_operation_state_name(committed_operation.state),
+                    committed_operation
+                        .physical_bytes_after
+                        .map(|value| sql_i64(value, "conversation clear bytes after"))
+                        .transpose()?,
+                    operation.created_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(ConversationClearCommit {
+            operation: committed_operation,
+            pruned_projection_count: plan.message_ids.len() as u64,
+            zero_reference_media_paths: media_items,
+        })
+    }
+}
+
+impl RetentionRepository for MessagingStore {
+    fn load_resumable_retention(
+        &self,
+        scope: &ChatStorageScope,
+        scope_revision: &str,
+    ) -> Result<Option<RetentionResume>, String> {
+        if scope_revision.trim().is_empty() {
+            return Err("chat retention scope revision is empty".to_string());
+        }
+        let connection = self.connection()?;
+        validate_retention_scope_identity(&connection, scope)?;
+        let pending = connection
+            .query_row(
+                "SELECT operation_id, retention_preset
+                 FROM chat_cleanup_journal
+                 WHERE scope_kind = ?1 AND scope_revision = ?2
+                   AND state IN (
+                       'deleting_rows', 'deleting_files', 'compacting',
+                       'compaction_pending', 'paused_scope_inactive',
+                       'failed_retryable'
+                   )
+                 ORDER BY updated_at_unix_ms DESC, operation_id DESC
+                 LIMIT 1",
+                params![RETENTION_SCOPE_KIND, scope_revision],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?)),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let Some((operation_id, retention_preset)) = pending else {
+            return Ok(None);
+        };
+        let operation = load_cache_cleanup_operation(&connection, &operation_id)?;
+        Ok(Some(RetentionResume {
+            policy: ChatStoragePolicy {
+                scope: Some(scope.clone()),
+                retention_preset,
+                updated_at_unix_ms: operation.created_at_unix_ms,
+            },
+            operation,
+        }))
+    }
+
+    fn load_retention_floors(
+        &self,
+        scope: &ChatStorageScope,
+    ) -> Result<Vec<RetentionFloor>, String> {
+        let connection = self.connection()?;
+        validate_retention_scope_identity(&connection, scope)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT conversation_id, pruned_through_sequence,
+                        authority_event_hash, policy_cutoff_unix_ms,
+                        updated_at_unix_ms
+                 FROM chat_retention_floor
+                 WHERE station_peer_id = ?1 AND actor_ptid = ?2 AND device_id = ?3
+                 ORDER BY conversation_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let floors = statement
+            .query_map(
+                params![scope.station_peer_id, scope.actor_ptid, scope.device_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, Vec<u8>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .map_err(|error| error.to_string())?
+            .map(|row| {
+                let (conversation_id, sequence, hash, cutoff, updated_at) =
+                    row.map_err(|error| error.to_string())?;
+                Ok(RetentionFloor {
+                    conversation_id,
+                    pruned_through_sequence: sequence,
+                    authority_event_hash: hash
+                        .try_into()
+                        .map_err(|_| "chat retention floor hash is invalid".to_string())?,
+                    policy_cutoff_unix_ms: cutoff,
+                    updated_at_unix_ms: updated_at,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(floors)
+    }
+
+    fn load_retention_candidates(
+        &self,
+        scope: &ChatStorageScope,
+        cutoff_unix_ms: i64,
+    ) -> Result<Vec<RetentionCandidate>, String> {
+        let connection = self.connection()?;
+        validate_retention_scope_identity(&connection, scope)?;
+        let mut statement = connection
+            .prepare(
+                "SELECT message.conversation_id, message.event_id,
+                        message.event_sequence, authority.event_hash,
+                        message.message_id, message.committed_at_unix_ms,
+                        length(CAST(message.message_id AS BLOB))
+                          + length(CAST(message.sender_ptid AS BLOB))
+                          + length(CAST(message.sender_device_id AS BLOB))
+                          + length(CAST(message.plaintext AS BLOB))
+                          + length(CAST(COALESCE(message.edited_text, '') AS BLOB))
+                          + COALESCE((
+                              SELECT SUM(attachment.plaintext_size)
+                              FROM messaging_attachment_projections attachment
+                              WHERE attachment.message_id = message.message_id
+                            ), 0) AS estimated_bytes,
+                        EXISTS(
+                            SELECT 1 FROM messaging_consumption_markers marker
+                            WHERE marker.conversation_id = message.conversation_id
+                              AND marker.event_id = message.event_id
+                        ) AS durable_consumed,
+                        EXISTS(
+                            SELECT 1 FROM messaging_pending_messages pending
+                            WHERE pending.conversation_id = message.conversation_id
+                              AND pending.message_id = message.message_id
+                            UNION ALL
+                            SELECT 1 FROM messaging_command_attempts attempt
+                            WHERE attempt.conversation_id = message.conversation_id
+                              AND attempt.message_id = message.message_id
+                              AND attempt.state <> 'committed'
+                            UNION ALL
+                            SELECT 1 FROM messaging_receipt_outbox receipt
+                            WHERE receipt.event_id = message.event_id
+                              AND receipt.state <> 'sent'
+                        ) AS reliability_protected,
+                        EXISTS(
+                            SELECT 1 FROM messaging_attachment_transfers transfer
+                            WHERE transfer.conversation_id = message.conversation_id
+                              AND transfer.message_id = message.message_id
+                              AND transfer.state NOT IN (?2, ?3, ?4)
+                        ) AS active_transfer
+                 FROM messaging_message_projections message
+                 LEFT JOIN messaging_authority_events authority
+                   ON authority.conversation_id = message.conversation_id
+                  AND authority.event_id = message.event_id
+                  AND authority.event_sequence = message.event_sequence
+                 WHERE message.event_sequence > COALESCE((
+                           SELECT floor.pruned_through_sequence
+                           FROM chat_retention_floor floor
+                           WHERE floor.station_peer_id = ?5
+                             AND floor.actor_ptid = ?6
+                             AND floor.device_id = ?7
+                             AND floor.conversation_id = message.conversation_id
+                       ), 0)
+                   AND message.event_sequence <= COALESCE((
+                           SELECT MAX(expired.event_sequence)
+                           FROM messaging_message_projections expired
+                           WHERE expired.conversation_id = message.conversation_id
+                             AND expired.committed_at_unix_ms < ?1
+                       ), 0)
+                 ORDER BY message.conversation_id, message.event_sequence, message.event_id",
+            )
+            .map_err(|error| error.to_string())?;
+        let candidates = statement
+            .query_map(
+                params![
+                    cutoff_unix_ms,
+                    AttachmentTransferState::Complete as i32,
+                    AttachmentTransferState::Cancelled as i32,
+                    AttachmentTransferState::Terminal as i32,
+                    scope.station_peer_id,
+                    scope.actor_ptid,
+                    scope.device_id,
+                ],
+                |row| {
+                    Ok(RetentionCandidate {
+                        conversation_id: row.get(0)?,
+                        event_id: row.get(1)?,
+                        event_sequence: row.get(2)?,
+                        authority_event_hash: row.get::<_, Option<Vec<u8>>>(3)?.unwrap_or_default(),
+                        message_id: row.get(4)?,
+                        committed_at_unix_ms: row.get(5)?,
+                        estimated_reclaimable_bytes: u64::try_from(row.get::<_, i64>(6)?.max(0))
+                            .unwrap_or(0),
+                        durable_consumed: row.get(7)?,
+                        reliability_protected: row.get(8)?,
+                        active_transfer: row.get(9)?,
+                    })
+                },
+            )
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        Ok(candidates)
+    }
+
+    fn commit_retention_plan(
+        &self,
+        scope: &ChatStorageScope,
+        policy: &ChatStoragePolicy,
+        operation: &CacheCleanupOperation,
+        plan: &RetentionPlan,
+    ) -> Result<RetentionCommit, String> {
+        if policy.scope.as_ref() != Some(scope)
+            || policy.retention_preset != plan.preset as i32
+            || operation.scope_revision.trim().is_empty()
+        {
+            return Err("chat retention commit binding mismatch".to_string());
+        }
+        let mut connection = self.connection()?;
+        validate_retention_scope_identity(&connection, scope)?;
+        let transaction = connection
+            .transaction()
+            .map_err(|error| error.to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO chat_storage_policy(
+                    id, station_peer_id, actor_ptid, device_id,
+                    retention_preset, updated_at_unix_ms
+                 ) VALUES(1, ?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(id) DO UPDATE SET
+                    station_peer_id=excluded.station_peer_id,
+                    actor_ptid=excluded.actor_ptid,
+                    device_id=excluded.device_id,
+                    retention_preset=excluded.retention_preset,
+                    updated_at_unix_ms=excluded.updated_at_unix_ms",
+                params![
+                    scope.station_peer_id,
+                    scope.actor_ptid,
+                    scope.device_id,
+                    policy.retention_preset,
+                    policy.updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+
+        if plan.boundaries.is_empty() {
+            transaction.commit().map_err(|error| error.to_string())?;
+            return Ok(RetentionCommit {
+                operation: operation.clone(),
+                pruned_projection_count: 0,
+                zero_reference_media_paths: Vec::new(),
+            });
+        }
+        let cutoff = plan
+            .cutoff_unix_ms
+            .ok_or_else(|| "chat retention cutoff is missing".to_string())?;
+        transaction
+            .execute(
+                "INSERT INTO chat_cleanup_journal(
+                    operation_id, scope_kind, conversation_id, scope_revision,
+                    state, estimated_reclaimable_bytes, physical_bytes_before,
+                    physical_bytes_after, retention_preset, policy_cutoff_unix_ms,
+                    last_error_code, created_at_unix_ms, updated_at_unix_ms
+                 ) VALUES(?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL, ?7, ?8, NULL, ?9, ?9)",
+                params![
+                    operation.operation_id,
+                    RETENTION_SCOPE_KIND,
+                    operation.scope_revision,
+                    storage_operation_state_name(operation.state),
+                    sql_i64(
+                        operation.estimated_reclaimable_bytes,
+                        "estimated retention bytes"
+                    )?,
+                    sql_i64(operation.physical_bytes_before, "physical bytes before")?,
+                    policy.retention_preset,
+                    cutoff,
+                    operation.created_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+
+        let mut pruned_projection_count = 0_u64;
+        let mut possible_media_paths = HashSet::<PathBuf>::new();
+        for boundary in &plan.boundaries {
+            validate_retention_boundary(&transaction, scope, boundary)?;
+            for (message_id, event_id) in boundary.message_ids.iter().zip(&boundary.event_ids) {
+                let eligible: i64 = transaction
+                    .query_row(
+                        "SELECT COUNT(*)
+                         FROM messaging_message_projections message
+                         JOIN messaging_authority_events authority
+                           ON authority.conversation_id = message.conversation_id
+                          AND authority.event_id = message.event_id
+                          AND authority.event_sequence = message.event_sequence
+                         WHERE message.conversation_id = ?1
+                           AND message.message_id = ?2
+                           AND message.event_id = ?3
+                           AND message.event_sequence <= ?4
+                           AND message.committed_at_unix_ms < ?5
+                           AND EXISTS(
+                               SELECT 1 FROM messaging_consumption_markers marker
+                               WHERE marker.conversation_id = message.conversation_id
+                                 AND marker.event_id = message.event_id
+                           )
+                           AND NOT EXISTS(
+                               SELECT 1 FROM messaging_pending_messages pending
+                               WHERE pending.conversation_id = message.conversation_id
+                                 AND pending.message_id = message.message_id
+                           )
+                           AND NOT EXISTS(
+                               SELECT 1 FROM messaging_command_attempts attempt
+                               WHERE attempt.conversation_id = message.conversation_id
+                                 AND attempt.message_id = message.message_id
+                                 AND attempt.state <> 'committed'
+                           )
+                           AND NOT EXISTS(
+                               SELECT 1 FROM messaging_receipt_outbox receipt
+                               WHERE receipt.event_id = message.event_id
+                                 AND receipt.state <> 'sent'
+                           )
+                           AND NOT EXISTS(
+                               SELECT 1 FROM messaging_attachment_transfers transfer
+                               WHERE transfer.conversation_id = message.conversation_id
+                                 AND transfer.message_id = message.message_id
+                                 AND transfer.state NOT IN (?6, ?7, ?8)
+                           )",
+                        params![
+                            boundary.conversation_id,
+                            message_id,
+                            event_id,
+                            boundary.pruned_through_sequence,
+                            cutoff,
+                            AttachmentTransferState::Complete as i32,
+                            AttachmentTransferState::Cancelled as i32,
+                            AttachmentTransferState::Terminal as i32,
+                        ],
+                        |row| row.get(0),
+                    )
+                    .map_err(|error| error.to_string())?;
+                if eligible != 1 {
+                    return Err(format!(
+                        "chat retention candidate became protected: {message_id}"
+                    ));
+                }
+                let mut paths = transaction
+                    .prepare(
+                        "SELECT DISTINCT local_cache_path
+                         FROM messaging_attachment_projections
+                         WHERE message_id = ?1
+                           AND local_cache_path IS NOT NULL
+                           AND local_cache_path <> ''",
+                    )
+                    .map_err(|error| error.to_string())?;
+                for path in paths
+                    .query_map(params![message_id], |row| row.get::<_, String>(0))
+                    .map_err(|error| error.to_string())?
+                {
+                    possible_media_paths
+                        .insert(PathBuf::from(path.map_err(|error| error.to_string())?));
+                }
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_message_search_fts
+                         WHERE conversation_id = ?1 AND message_id = ?2",
+                        params![boundary.conversation_id, message_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "DELETE FROM message_reactions WHERE message_id = ?1",
+                        params![message_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "DELETE FROM message_pins
+                         WHERE conversation_id = ?1 AND message_id = ?2",
+                        params![boundary.conversation_id, message_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_attachment_projections WHERE message_id = ?1",
+                        params![message_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                transaction
+                    .execute(
+                        "DELETE FROM messaging_attachment_transfers
+                         WHERE conversation_id = ?1 AND message_id = ?2
+                           AND state IN (?3, ?4, ?5)",
+                        params![
+                            boundary.conversation_id,
+                            message_id,
+                            AttachmentTransferState::Complete as i32,
+                            AttachmentTransferState::Cancelled as i32,
+                            AttachmentTransferState::Terminal as i32,
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                let deleted = transaction
+                    .execute(
+                        "DELETE FROM messaging_message_projections
+                         WHERE conversation_id = ?1 AND message_id = ?2 AND event_id = ?3",
+                        params![boundary.conversation_id, message_id, event_id],
+                    )
+                    .map_err(|error| error.to_string())?;
+                if deleted != 1 {
+                    return Err(format!(
+                        "chat retention projection delete was not exact: {message_id}"
+                    ));
+                }
+                pruned_projection_count = pruned_projection_count.saturating_add(1);
+            }
+            transaction
+                .execute(
+                    "INSERT INTO chat_retention_floor(
+                        station_peer_id, actor_ptid, device_id, conversation_id,
+                        pruned_through_sequence, authority_event_hash,
+                        policy_cutoff_unix_ms, reason, updated_at_unix_ms
+                     ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, 'policy', ?8)
+                     ON CONFLICT(station_peer_id, actor_ptid, device_id, conversation_id)
+                     DO UPDATE SET
+                        pruned_through_sequence=excluded.pruned_through_sequence,
+                        authority_event_hash=excluded.authority_event_hash,
+                        policy_cutoff_unix_ms=excluded.policy_cutoff_unix_ms,
+                        reason='policy',
+                        updated_at_unix_ms=excluded.updated_at_unix_ms
+                     WHERE excluded.pruned_through_sequence > chat_retention_floor.pruned_through_sequence",
+                    params![
+                        scope.station_peer_id,
+                        scope.actor_ptid,
+                        scope.device_id,
+                        boundary.conversation_id,
+                        boundary.pruned_through_sequence,
+                        boundary.authority_event_hash.as_slice(),
+                        boundary.policy_cutoff_unix_ms,
+                        policy.updated_at_unix_ms,
+                    ],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+
+        let mut media_items = Vec::new();
+        for path in possible_media_paths {
+            let path_text = path.to_string_lossy().to_string();
+            let references: i64 = transaction
+                .query_row(
+                    "SELECT
+                        (SELECT COUNT(*) FROM messaging_attachment_projections
+                         WHERE local_cache_path = ?1)
+                      + (SELECT COUNT(*) FROM messaging_attachment_transfers
+                         WHERE source_local_ref = ?1 OR partial_local_ref = ?1)",
+                    params![path_text],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if references != 0 {
+                continue;
+            }
+            if let Some(item) =
+                immutable_file_cleanup_item(&path).map_err(|error| error.to_string())?
+            {
+                transaction
+                    .execute(
+                        "INSERT INTO chat_cleanup_items(
+                            operation_id, item_id, item_kind, target_ref,
+                            expected_size_bytes, expected_digest, state,
+                            last_error_code, updated_at_unix_ms
+                         ) VALUES(?1, ?2, 'file', ?3, ?4, ?5, ?6, NULL, ?7)",
+                        params![
+                            operation.operation_id,
+                            item.item_id,
+                            item.target_ref,
+                            sql_i64(item.expected_size_bytes, "retention media bytes")?,
+                            item.expected_digest.as_slice(),
+                            item.state.as_str(),
+                            policy.updated_at_unix_ms,
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?;
+                media_items.push(item.target_ref);
+            }
+        }
+        let mut committed_operation = operation.clone();
+        committed_operation.state = if media_items.is_empty() {
+            ChatStorageOperationState::Compacting
+        } else {
+            ChatStorageOperationState::DeletingFiles
+        };
+        transaction
+            .execute(
+                "UPDATE chat_cleanup_journal
+                 SET state = ?2, updated_at_unix_ms = ?3
+                 WHERE operation_id = ?1",
+                params![
+                    operation.operation_id,
+                    storage_operation_state_name(committed_operation.state),
+                    policy.updated_at_unix_ms,
+                ],
+            )
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(RetentionCommit {
+            operation: committed_operation,
+            pruned_projection_count,
+            zero_reference_media_paths: media_items,
+        })
+    }
+}
+
+fn validate_retention_scope_identity(
+    connection: &Connection,
+    scope: &ChatStorageScope,
+) -> Result<(), String> {
+    if scope.station_peer_id.trim().is_empty()
+        || scope.actor_ptid.trim().is_empty()
+        || scope.device_id.trim().is_empty()
+    {
+        return Err("chat retention scope is incomplete".to_string());
+    }
+    let matches: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM messaging_device_identity
+             WHERE id = 1 AND ptid = ?1 AND device_id = ?2",
+            params![scope.actor_ptid, scope.device_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if matches != 1 {
+        return Err("chat retention scope does not match the active device".to_string());
+    }
+    Ok(())
+}
+
+fn validate_retention_boundary(
+    transaction: &Transaction<'_>,
+    scope: &ChatStorageScope,
+    boundary: &RetentionBoundary,
+) -> Result<(), String> {
+    let persisted_hash = transaction
+        .query_row(
+            "SELECT event_hash FROM messaging_authority_events
+             WHERE conversation_id = ?1 AND event_sequence = ?2",
+            params![boundary.conversation_id, boundary.pruned_through_sequence],
+            |row| row.get::<_, Vec<u8>>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "chat retention boundary has no authority event".to_string())?;
+    if persisted_hash != boundary.authority_event_hash {
+        return Err("chat retention boundary authority hash changed".to_string());
+    }
+    let authority_head: i64 = transaction
+        .query_row(
+            "SELECT event_sequence FROM messaging_authority_heads
+             WHERE conversation_id = ?1",
+            params![boundary.conversation_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if authority_head < boundary.pruned_through_sequence {
+        return Err("chat retention boundary exceeds authority head".to_string());
+    }
+    let existing_sequence = transaction
+        .query_row(
+            "SELECT pruned_through_sequence
+             FROM chat_retention_floor
+             WHERE station_peer_id = ?1 AND actor_ptid = ?2
+               AND device_id = ?3 AND conversation_id = ?4",
+            params![
+                scope.station_peer_id,
+                scope.actor_ptid,
+                scope.device_id,
+                boundary.conversation_id,
+            ],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    if existing_sequence.is_some_and(|sequence| sequence >= boundary.pruned_through_sequence) {
+        return Err("chat retention floor is not monotonic".to_string());
+    }
+    Ok(())
+}
+
+pub(super) fn load_storage_retention_policy(
+    store: &MessagingStore,
+    scope: &ChatStorageScope,
+) -> Result<ChatStoragePolicy, String> {
+    let connection = store.connection()?;
+    validate_retention_scope_identity(&connection, scope)?;
+    connection
+        .query_row(
+            "SELECT retention_preset, updated_at_unix_ms
+             FROM chat_storage_policy
+             WHERE id = 1 AND station_peer_id = ?1
+               AND actor_ptid = ?2 AND device_id = ?3",
+            params![scope.station_peer_id, scope.actor_ptid, scope.device_id],
+            |row| {
+                Ok(ChatStoragePolicy {
+                    scope: Some(scope.clone()),
+                    retention_preset: row.get(0)?,
+                    updated_at_unix_ms: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .map(Ok)
+        .unwrap_or_else(|| {
+            Ok(ChatStoragePolicy {
+                scope: Some(scope.clone()),
+                retention_preset: ChatRetentionPreset::Forever as i32,
+                updated_at_unix_ms: 0,
+            })
+        })
+}
+
+fn sql_i64(value: u64, field: &str) -> Result<i64, String> {
+    i64::try_from(value).map_err(|_| format!("{field} exceeds SQLCipher range"))
+}
+
+fn cache_cleanup_operation_from_sql(
+    row: (
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        Option<i64>,
+        Option<String>,
+        i64,
+        i64,
+    ),
+) -> Result<CacheCleanupOperation, String> {
+    let (operation_id, scope_revision, state, estimated, before, after, error, created, updated) =
+        row;
+    Ok(CacheCleanupOperation {
+        operation_id,
+        scope_revision,
+        state: parse_storage_operation_state(&state).map_err(|error| error.to_string())?,
+        estimated_reclaimable_bytes: u64::try_from(estimated)
+            .map_err(|_| "estimated cache bytes are invalid".to_string())?,
+        physical_bytes_before: u64::try_from(before)
+            .map_err(|_| "physical bytes before are invalid".to_string())?,
+        physical_bytes_after: after
+            .map(|value| {
+                u64::try_from(value).map_err(|_| "physical bytes after are invalid".to_string())
+            })
+            .transpose()?,
+        last_error_code: error,
+        created_at_unix_ms: created,
+        updated_at_unix_ms: updated,
+    })
+}
+
+fn cache_cleanup_item_from_sql(
+    row: (String, String, i64, Vec<u8>, String, Option<String>),
+) -> Result<CacheCleanupItem, String> {
+    let (item_id, target_ref, expected_size, digest, state, last_error_code) = row;
+    let expected_digest: [u8; 32] = digest
+        .try_into()
+        .map_err(|_| "cache cleanup item digest is invalid".to_string())?;
+    Ok(CacheCleanupItem {
+        item_id,
+        target_ref,
+        expected_size_bytes: u64::try_from(expected_size)
+            .map_err(|_| "expected cache item bytes are invalid".to_string())?,
+        expected_digest,
+        state: CacheCleanupItemState::from_str(&state).map_err(|error| error.to_string())?,
+        last_error_code,
+    })
+}
+
+fn load_cache_cleanup_operation(
+    connection: &Connection,
+    operation_id: &str,
+) -> Result<CacheCleanupOperation, String> {
+    let row = connection
+        .query_row(
+            "SELECT operation_id, scope_revision, state,
+                    estimated_reclaimable_bytes, physical_bytes_before,
+                    physical_bytes_after, last_error_code,
+                    created_at_unix_ms, updated_at_unix_ms
+             FROM chat_cleanup_journal WHERE operation_id = ?1",
+            params![operation_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, i64>(8)?,
+                ))
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    cache_cleanup_operation_from_sql(row)
+}
+
 struct RusqliteMessagingSchema<'a>(&'a Connection);
 
 impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
     fn execute_batch(&self, sql: &str) -> Result<(), String> {
         self.0.execute_batch(sql).map_err(|error| error.to_string())
-    }
-
-    fn table_columns(&self, table: &str) -> Result<Vec<String>, String> {
-        self.0
-            .prepare(&format!("PRAGMA table_info({table})"))
-            .map_err(|error| error.to_string())?
-            .query_map([], |row| row.get::<_, String>(1))
-            .map_err(|error| error.to_string())?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| error.to_string())
-    }
-
-    fn table_exists(&self, table: &str) -> Result<bool, String> {
-        self.0
-            .query_row(
-                "SELECT EXISTS(
-                    SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1
-                 )",
-                params![table],
-                |row| row.get(0),
-            )
-            .map_err(|error| error.to_string())
-    }
-
-    fn query_i64(&self, sql: &str) -> Result<i64, String> {
-        self.0
-            .query_row(sql, [], |row| row.get(0))
-            .map_err(|error| error.to_string())
-    }
-
-    fn migrate_legacy_attachment_rows(&self) -> Result<(), String> {
-        Err("legacy Mobile attachment metadata cannot exist in a Desktop profile".to_string())
     }
 }
 
@@ -10238,6 +13722,334 @@ mod tests {
             active: true,
             updated_at_unix_ms: 100,
         }
+    }
+
+    #[test]
+    fn storage_logical_usage_reads_conversation_owned_plaintext_bytes() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_conversations(
+                    conversation_id, authority_station_id, federation_id, kind,
+                    name, owner_ptid, membership_epoch, mls_epoch, active,
+                    updated_at_unix_ms
+                 ) VALUES('conversation-1', 'station-1', 'federation-1', 2,
+                    'Family', 'ptid:alice', 1, 1, 1, 100)",
+                [],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_message_projections(
+                    conversation_id, event_id, event_sequence, message_id,
+                    sender_ptid, sender_device_id, plaintext, delivery_state,
+                    committed_at_unix_ms
+                 ) VALUES('conversation-1', 'event-1', 1, 'message-1',
+                    'ptid:alice', 'device-1', 'hello', 'committed', 200)",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let usage = store.storage_logical_usage().unwrap();
+
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].conversation_name, "Family");
+        assert_eq!(usage[0].conversation_kind, 2);
+        assert!(usage[0].message_bytes >= 5);
+        assert_eq!(
+            usage[0].reclaimable_bytes,
+            usage[0].message_bytes.saturating_add(usage[0].media_bytes)
+        );
+        assert!(usage[0].reclaimable_bytes > 0);
+        assert_eq!(usage[0].last_activity_unix_ms, 200);
+    }
+
+    #[test]
+    fn conversation_clear_commits_floor_and_removes_plaintext_projection() {
+        let store = MessagingStore::in_memory().unwrap();
+        let scope = ChatStorageScope {
+            station_peer_id: "station-five".to_string(),
+            actor_ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        {
+            let connection = store.connection().unwrap();
+            connection
+                .execute_batch(
+                    "INSERT INTO messaging_device_identity(
+                        id, ptid, device_id, device_signing_seed,
+                        actor_identity_public_key, actor_identity_key_fingerprint,
+                        device_signing_public_key, actor_cross_signature,
+                        signing_key_id, profile_version
+                     ) VALUES(
+                        1, 'ptid:alice', 'alice-device', zeroblob(32),
+                        zeroblob(32), zeroblob(32), zeroblob(32), zeroblob(64),
+                        'key-1', 1
+                     );
+                     INSERT INTO messaging_conversations(
+                        conversation_id, authority_station_id, federation_id, kind,
+                        name, description, owner_ptid, membership_epoch, mls_epoch,
+                        active, updated_at_unix_ms
+                     ) VALUES(
+                        'conversation-1', 'station-five', 'federation-1', 1,
+                        'Alice', '', 'ptid:alice', 1, 0, 1, 100
+                     );
+                     INSERT INTO messaging_authority_events(
+                        conversation_id, event_id, event_sequence, event_hash,
+                        committed_at_unix_ms
+                     ) VALUES
+                        ('conversation-1', 'event-1', 1, zeroblob(32), 100),
+                        ('conversation-1', 'event-2', 2, X'0202020202020202020202020202020202020202020202020202020202020202', 200);
+                     UPDATE messaging_authority_events
+                     SET event_hash = X'0101010101010101010101010101010101010101010101010101010101010101'
+                     WHERE event_sequence = 1;
+                     INSERT INTO messaging_authority_heads(
+                        conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                     ) VALUES(
+                        'conversation-1', 2,
+                        X'0202020202020202020202020202020202020202020202020202020202020202',
+                        200
+                     );
+                     INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext, delivery_state,
+                        committed_at_unix_ms
+                     ) VALUES
+                        ('conversation-1', 'event-1', 1, 'message-1',
+                         'ptid:bob', 'bob-device', 'first plaintext', 'consumed', 100),
+                        ('conversation-1', 'event-2', 2, 'message-2',
+                         'ptid:bob', 'bob-device', 'second plaintext', 'consumed', 200);
+                     INSERT INTO messaging_consumption_markers(
+                        item_id, event_id, conversation_id, payload_sha256,
+                        consumed_at_unix_ms
+                     ) VALUES
+                        ('item-1', 'event-1', 'conversation-1', zeroblob(32), 100),
+                        ('item-2', 'event-2', 'conversation-1', zeroblob(32), 200);
+                     INSERT INTO messaging_message_search_fts(
+                        conversation_id, message_id, plaintext, attachment_filenames
+                     ) VALUES
+                        ('conversation-1', 'message-1', 'first plaintext', ''),
+                        ('conversation-1', 'message-2', 'second plaintext', '');",
+                )
+                .unwrap();
+        }
+
+        let progress = messaging_core::storage_governance::conversation_clear::clear_conversation(
+            &store,
+            messaging_core::storage_governance::conversation_clear::ConversationClearInput {
+                scope: scope.clone(),
+                scope_revision: "scope-1".to_string(),
+                conversation_id: "conversation-1".to_string(),
+                physical_bytes_before: 4096,
+                now_unix_ms: 300,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            progress.commit.operation.state,
+            ChatStorageOperationState::Compacting
+        );
+        assert_eq!(progress.commit.pruned_projection_count, 2);
+        assert!(store
+            .conversation_message_projections("conversation-1")
+            .unwrap()
+            .is_empty());
+        assert!(store
+            .search_message_projections("conversation-1", "plaintext", None, 10)
+            .unwrap()
+            .is_empty());
+        let floor = store.load_retention_floors(&scope).unwrap();
+        assert_eq!(floor.len(), 1);
+        assert_eq!(floor[0].pruned_through_sequence, 2);
+        assert_eq!(floor[0].authority_event_hash, [2; 32]);
+    }
+
+    #[test]
+    fn conversation_clear_compaction_reclaims_desktop_database_bytes() {
+        let root = std::env::temp_dir().join(format!(
+            "peers-touch-desktop-conversation-clear-{}",
+            ulid::Ulid::new()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let database_path = root.join("chat.sqlite3");
+        let store = MessagingStore::from_connection_with_path(
+            Connection::open(&database_path).unwrap(),
+            Some(database_path),
+        )
+        .unwrap();
+        let scope = ChatStorageScope {
+            station_peer_id: "station-five".to_string(),
+            actor_ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        let plaintext = "d".repeat(4 * 1024 * 1024);
+        {
+            let connection = store.connection().unwrap();
+            connection
+                .execute_batch(
+                    "INSERT INTO messaging_device_identity(
+                        id, ptid, device_id, device_signing_seed,
+                        actor_identity_public_key, actor_identity_key_fingerprint,
+                        device_signing_public_key, actor_cross_signature,
+                        signing_key_id, profile_version
+                     ) VALUES(
+                        1, 'ptid:alice', 'alice-device', zeroblob(32),
+                        zeroblob(32), zeroblob(32), zeroblob(32), zeroblob(64),
+                        'key-1', 1
+                     );
+                     INSERT INTO messaging_conversations(
+                        conversation_id, authority_station_id, federation_id, kind,
+                        name, description, owner_ptid, membership_epoch, mls_epoch,
+                        active, updated_at_unix_ms
+                     ) VALUES(
+                        'conversation-1', 'station-five', 'federation-1', 1,
+                        'Alice', '', 'ptid:alice', 1, 0, 1, 100
+                     );
+                     INSERT INTO messaging_authority_events(
+                        conversation_id, event_id, event_sequence, event_hash,
+                        committed_at_unix_ms
+                     ) VALUES(
+                        'conversation-1', 'event-1', 1,
+                        X'0101010101010101010101010101010101010101010101010101010101010101',
+                        100
+                     );
+                     INSERT INTO messaging_authority_heads(
+                        conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                     ) VALUES(
+                        'conversation-1', 1,
+                        X'0101010101010101010101010101010101010101010101010101010101010101',
+                        100
+                     );
+                     INSERT INTO messaging_consumption_markers(
+                        item_id, event_id, conversation_id, payload_sha256,
+                        consumed_at_unix_ms
+                     ) VALUES(
+                        'item-1', 'event-1', 'conversation-1', zeroblob(32), 100
+                     );",
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext, delivery_state,
+                        committed_at_unix_ms
+                     ) VALUES(
+                        'conversation-1', 'event-1', 1, 'message-1',
+                        'ptid:bob', 'bob-device', ?1, 'consumed', 100
+                     )",
+                    params![&plaintext],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_search_fts(
+                        conversation_id, message_id, plaintext, attachment_filenames
+                     ) VALUES('conversation-1', 'message-1', ?1, '')",
+                    params![&plaintext],
+                )
+                .unwrap();
+        }
+        store.storage_checkpoint().unwrap();
+        let physical_bytes_before = store.storage_redaction_physical_bytes().unwrap();
+
+        let progress = messaging_core::storage_governance::conversation_clear::clear_conversation(
+            &store,
+            messaging_core::storage_governance::conversation_clear::ConversationClearInput {
+                scope,
+                scope_revision: "scope-1".to_string(),
+                conversation_id: "conversation-1".to_string(),
+                physical_bytes_before,
+                now_unix_ms: 300,
+            },
+        )
+        .unwrap();
+        store.storage_compact().unwrap();
+        let physical_bytes_after = store.storage_redaction_physical_bytes().unwrap();
+        let completed = messaging_core::storage_governance::cache::finalize_cache_cleanup(
+            &store,
+            &progress.commit.operation,
+            physical_bytes_after,
+            400,
+        )
+        .unwrap();
+
+        assert_eq!(
+            completed.operation.state,
+            ChatStorageOperationState::Succeeded
+        );
+        assert!(physical_bytes_after < physical_bytes_before);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cache_cleanup_journal_round_trips_resumable_items() {
+        let store = MessagingStore::in_memory().unwrap();
+        let operation = CacheCleanupOperation {
+            operation_id: "cache-operation-1".to_string(),
+            scope_revision: "scope-1".to_string(),
+            state: ChatStorageOperationState::Planned,
+            estimated_reclaimable_bytes: 4096,
+            physical_bytes_before: 8192,
+            physical_bytes_after: None,
+            last_error_code: None,
+            created_at_unix_ms: 100,
+            updated_at_unix_ms: 100,
+        };
+        let item = CacheCleanupItem {
+            item_id: "cache-item-1".to_string(),
+            target_ref: "/managed/cache/item".to_string(),
+            expected_size_bytes: 4096,
+            expected_digest: [7; 32],
+            state: CacheCleanupItemState::Pending,
+            last_error_code: None,
+        };
+
+        store
+            .create_cache_cleanup(&operation, std::slice::from_ref(&item))
+            .unwrap();
+        assert_eq!(
+            store.load_resumable_cache_cleanup("scope-1").unwrap(),
+            Some(operation.clone())
+        );
+        assert_eq!(
+            store.load_cache_cleanup_items("cache-operation-1").unwrap(),
+            vec![item.clone()]
+        );
+
+        store
+            .update_cache_cleanup_item(
+                "cache-operation-1",
+                "cache-item-1",
+                CacheCleanupItemState::Deleted,
+                None,
+                200,
+            )
+            .unwrap();
+        let completed = store
+            .update_cache_cleanup_operation(
+                "cache-operation-1",
+                ChatStorageOperationState::Succeeded,
+                Some(4096),
+                None,
+                200,
+            )
+            .unwrap();
+
+        assert_eq!(completed.state, ChatStorageOperationState::Succeeded);
+        assert_eq!(completed.physical_bytes_after, Some(4096));
+        assert_eq!(
+            store.load_cache_cleanup_items("cache-operation-1").unwrap()[0].state,
+            CacheCleanupItemState::Deleted
+        );
+        assert!(store
+            .load_resumable_cache_cleanup("scope-1")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -10342,94 +14154,6 @@ mod tests {
                 "messaging one-time prekey history is incomplete"
             );
         }
-    }
-
-    #[test]
-    fn messaging_schema_marks_legacy_prekey_history_untrusted() {
-        let connection = Connection::open_in_memory().unwrap();
-        connection
-            .execute_batch(
-                "CREATE TABLE messaging_prekey_bundle (
-                    id INTEGER PRIMARY KEY CHECK(id = 1),
-                    signed_prekey_id INTEGER NOT NULL,
-                    signed_prekey_private BLOB NOT NULL,
-                    state TEXT NOT NULL,
-                    created_at_unix_ms INTEGER NOT NULL
-                 );
-                 CREATE TABLE messaging_one_time_prekeys (
-                    prekey_id INTEGER PRIMARY KEY,
-                    private_key BLOB NOT NULL,
-                    state TEXT NOT NULL
-                 );
-                 INSERT INTO messaging_prekey_bundle(
-                    id, signed_prekey_id, signed_prekey_private,
-                    state, created_at_unix_ms
-                 ) VALUES (1, 7, zeroblob(32), 'published', 100);
-                 INSERT INTO messaging_one_time_prekeys(
-                    prekey_id, private_key, state
-                 ) VALUES
-                    (1, zeroblob(32), 'consumed'),
-                    (2, zeroblob(32), 'available'),
-                    (3, zeroblob(32), 'available');",
-            )
-            .unwrap();
-
-        let store = MessagingStore::from_connection(connection).unwrap();
-
-        assert_eq!(
-            store.next_one_time_prekey_id().unwrap_err(),
-            "messaging one-time prekey history is incomplete"
-        );
-    }
-
-    #[test]
-    fn messaging_schema_backfills_search_for_existing_message_projections() {
-        let store = MessagingStore::in_memory().unwrap();
-        {
-            let connection = store.connection().unwrap();
-            connection
-                .execute(
-                    "DELETE FROM messaging_schema_migrations
-                     WHERE migration_id = 'message-search-backfill-v1'",
-                    [],
-                )
-                .unwrap();
-            connection
-                .execute(
-                    "INSERT INTO messaging_message_projections(
-                        conversation_id, event_id, event_sequence, message_id,
-                        sender_ptid, sender_device_id, plaintext, delivery_state,
-                        committed_at_unix_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                    params![
-                        "direct-legacy",
-                        "event-legacy",
-                        1,
-                        "message-legacy",
-                        "ptid:alice",
-                        "alice-device",
-                        "legacy searchable plaintext",
-                        "consumed",
-                        100,
-                    ],
-                )
-                .unwrap();
-        }
-        assert!(store
-            .search_message_projections("direct-legacy", "searchable", None, 10)
-            .unwrap()
-            .is_empty());
-        {
-            let connection = store.connection().unwrap();
-            migrate(&connection).unwrap();
-        }
-
-        let results = store
-            .search_message_projections("direct-legacy", "searchable", None, 10)
-            .unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].message_id, "message-legacy");
-        assert_eq!(results[0].plaintext, "legacy searchable plaintext");
     }
 
     #[test]
@@ -11177,6 +14901,14 @@ mod tests {
         }
     }
 
+    fn completed_chunk_bitmap(chunk_count: u32) -> Vec<u8> {
+        let mut bitmap = vec![u8::MAX; chunk_count.div_ceil(8) as usize];
+        if chunk_count % 8 != 0 {
+            *bitmap.last_mut().unwrap() = (1_u8 << (chunk_count % 8)) - 1;
+        }
+        bitmap
+    }
+
     fn direct_session(receive_counter: u32) -> DirectSession {
         let session_id = "session-1".to_string();
         DirectSession {
@@ -11280,15 +15012,54 @@ mod tests {
                 active: true,
                 updated_at_unix_ms: 77,
             }],
-            messages: vec![RecoveryMessageProjection {
+            messages: vec![
+                RecoveryMessageProjection {
+                    conversation_id: "restored-conversation".to_string(),
+                    event_id: "restored-event".to_string(),
+                    event_sequence: 7,
+                    authority_event_hash: vec![7; 32],
+                    message_id: "restored-message".to_string(),
+                    sender_ptid: "ptid:bob".to_string(),
+                    sender_device_id: "bob-device".to_string(),
+                    plaintext: "restored plaintext".to_string(),
+                    retracted: false,
+                    committed_at_unix_ms: 77,
+                },
+                RecoveryMessageProjection {
+                    conversation_id: "restored-conversation".to_string(),
+                    event_id: "redacted-message-event".to_string(),
+                    event_sequence: 8,
+                    authority_event_hash: vec![8; 32],
+                    message_id: "redacted-message".to_string(),
+                    sender_ptid: "ptid:alice".to_string(),
+                    sender_device_id: "alice-device".to_string(),
+                    plaintext: String::new(),
+                    retracted: true,
+                    committed_at_unix_ms: 78,
+                },
+            ],
+            retention_floors: vec![RecoveryRetentionFloor {
+                station_peer_id: "station-local".to_string(),
                 conversation_id: "restored-conversation".to_string(),
-                event_id: "restored-event".to_string(),
-                event_sequence: 7,
-                message_id: "restored-message".to_string(),
-                sender_ptid: "ptid:bob".to_string(),
-                sender_device_id: "bob-device".to_string(),
-                plaintext: "restored plaintext".to_string(),
-                committed_at_unix_ms: 77,
+                pruned_through_sequence: 6,
+                authority_event_hash: vec![6; 32],
+                policy_cutoff_unix_ms: Some(60),
+                reason: "policy".to_string(),
+                updated_at_unix_ms: 70,
+            }],
+            authority_heads: vec![RecoveryAuthorityHead {
+                conversation_id: "restored-conversation".to_string(),
+                event_sequence: 9,
+                event_hash: vec![9; 32],
+                updated_at_unix_ms: 79,
+            }],
+            redaction_tombstones: vec![RecoveryMessageRedactionTombstone {
+                conversation_id: "restored-conversation".to_string(),
+                message_id: "redacted-message".to_string(),
+                kind: "retracted".to_string(),
+                authority_sequence: 9,
+                authority_event_hash: vec![9; 32],
+                applied_at_unix_ms: 79,
             }],
             attachments: vec![RecoveryAttachmentMetadata {
                 message_id: "restored-message".to_string(),
@@ -11329,6 +15100,134 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 1, "table {table}");
         }
+    }
+
+    #[test]
+    fn conversation_message_page_and_summary_are_durable_and_actor_scoped() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        for (sequence, sender_ptid, hidden_for_actor) in
+            [(1, "ptid:bob", 0), (2, "ptid:bob", 1), (3, "ptid:alice", 0)]
+        {
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext, delivery_state,
+                        committed_at_unix_ms, retracted, hidden_for_actor
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'committed', ?8, 0, ?9)",
+                    params![
+                        "conversation-1",
+                        format!("event-{sequence}"),
+                        sequence,
+                        format!("message-{sequence}"),
+                        sender_ptid,
+                        format!("device-{sequence}"),
+                        format!("message body {sequence}"),
+                        sequence * 100,
+                        hidden_for_actor,
+                    ],
+                )
+                .unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO read_cursors(
+                    conversation_id, actor_ptid, last_read_sequence, updated_at_unix_ms
+                 ) VALUES (?1, ?2, 1, 100)",
+                params!["conversation-1", "ptid:alice"],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_pending_messages(
+                    conversation_id, conversation_kind, message_id, sender_ptid,
+                    sender_device_id, plaintext, state, attempt_count,
+                    next_attempt_at_unix_ms, last_error_code, created_at_unix_ms
+                 ) VALUES (?1, 1, ?2, ?3, ?4, ?5, 'failed', 1, 0, 'rejected', 400)",
+                params![
+                    "conversation-1",
+                    "message-pending",
+                    "ptid:alice",
+                    "alice-device",
+                    "pending body",
+                ],
+            )
+            .unwrap();
+        drop(connection);
+
+        let newest = store
+            .conversation_message_page("conversation-1", None, 2)
+            .unwrap();
+        assert_eq!(
+            newest
+                .messages
+                .iter()
+                .map(|message| message.message_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["message-1", "message-3", "message-pending"]
+        );
+        assert!(!newest.has_more);
+        assert_eq!(newest.next_before_sequence, None);
+
+        let older = store
+            .conversation_message_page("conversation-1", Some(2), 2)
+            .unwrap();
+        assert_eq!(older.messages.len(), 1);
+        assert_eq!(older.messages[0].message_id, "message-1");
+        assert!(!older.has_more);
+        assert_eq!(older.next_before_sequence, None);
+
+        let summary = store
+            .conversation_summary_projection("conversation-1", "ptid:alice")
+            .unwrap();
+        assert_eq!(summary.unread_count, 0);
+        assert_eq!(
+            summary.latest_message.unwrap().message_id,
+            "message-pending"
+        );
+    }
+
+    #[test]
+    fn manual_retry_preserves_message_identity_and_selects_safe_command_path() {
+        let exact_store = MessagingStore::in_memory().unwrap();
+        persist_direct_command(&exact_store, "message-1", b"exact bytes", 10).unwrap();
+        exact_store
+            .mark_command_retry("message-1", b"exact bytes", 0, 1_000, "offline")
+            .unwrap();
+        assert_eq!(
+            exact_store
+                .prepare_message_retry("conversation-1", "message-1", 20)
+                .unwrap(),
+            MessageRetryDisposition::ExactCommand {
+                command_id: "message-1".to_string(),
+            }
+        );
+        let exact = exact_store.next_command(20).unwrap().unwrap();
+        assert_eq!(exact.command_id, "message-1");
+        assert_eq!(exact.command_bytes, b"exact bytes");
+
+        let failed_store = MessagingStore::in_memory().unwrap();
+        persist_direct_command(&failed_store, "message-2", b"terminal bytes", 10).unwrap();
+        failed_store
+            .mark_command_failed("message-2", b"terminal bytes", 0, "rejected")
+            .unwrap();
+        assert_eq!(
+            failed_store
+                .prepare_message_retry("conversation-1", "message-2", 20)
+                .unwrap(),
+            MessageRetryDisposition::DraftReady
+        );
+        let draft = failed_store.message_draft("message-2").unwrap().unwrap();
+        assert_eq!(draft.message_id, "message-2");
+        assert_eq!(
+            failed_store
+                .command_status("message-2")
+                .unwrap()
+                .unwrap()
+                .state,
+            "failed"
+        );
     }
 
     #[test]
@@ -11585,6 +15484,492 @@ mod tests {
     }
 
     #[test]
+    fn conversation_projection_distinguishes_moderation_and_actor_hide() {
+        let store = MessagingStore::in_memory().unwrap();
+        let connection = store.connection().unwrap();
+        for (event_sequence, message_id, hidden, moderated, reason) in [
+            (1, "visible", 0, 0, None),
+            (2, "moderated", 0, 1, Some("group_policy_violation")),
+            (3, "hidden", 1, 0, None),
+        ] {
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms,
+                        hidden_for_actor, moderated, moderation_reason_code
+                     ) VALUES (
+                        'conversation-1', ?1, ?2, ?3,
+                        'ptid:alice', 'alice-device', ?3,
+                        'consumed', ?2, ?4, ?5, ?6
+                     )",
+                    params![
+                        format!("event-{message_id}"),
+                        event_sequence,
+                        message_id,
+                        hidden,
+                        moderated,
+                        reason
+                    ],
+                )
+                .unwrap();
+        }
+        drop(connection);
+
+        let transcript = store
+            .conversation_message_projections("conversation-1")
+            .unwrap();
+
+        assert_eq!(
+            transcript
+                .iter()
+                .map(|message| message.message_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["visible", "moderated"]
+        );
+        assert_eq!(transcript[0].plaintext, "visible");
+        assert!(transcript[1].moderated);
+        assert_eq!(transcript[1].plaintext, "");
+        assert_eq!(
+            transcript[1].moderation_reason_code.as_deref(),
+            Some("group_policy_violation")
+        );
+    }
+
+    #[test]
+    fn redaction_atomically_clears_content_and_advances_consumption() {
+        for (kind, scope_kind, mutation) in [
+            ("retracted", "retract", InteractionMutation::Retract),
+            (
+                "hidden_for_actor",
+                "actor_hide",
+                InteractionMutation::HideForActor,
+            ),
+        ] {
+            let store = MessagingStore::in_memory().unwrap();
+            let first_hash = [3_u8; 32];
+            let redaction_hash = [4_u8; 32];
+            {
+                let connection = store.connection().unwrap();
+                connection
+                    .execute(
+                        "INSERT INTO messaging_message_projections(
+                            conversation_id, event_id, event_sequence, message_id,
+                            sender_ptid, sender_device_id, plaintext,
+                            delivery_state, committed_at_unix_ms,
+                            edited_text, edited_at_unix_ms
+                         ) VALUES (
+                            'conversation-1', 'message-event', 1, 'message-1',
+                            'ptid:alice', 'alice-device', 'secret',
+                            'consumed', 10, 'edited secret', 11
+                         )",
+                        [],
+                    )
+                    .unwrap();
+                connection
+                    .execute(
+                        "INSERT INTO messaging_message_search_fts(
+                            conversation_id, message_id, plaintext, attachment_filenames
+                         ) VALUES ('conversation-1', 'message-1', 'secret', '')",
+                        [],
+                    )
+                    .unwrap();
+            }
+            store
+                .install_test_authority_head("conversation-1", 1, &first_hash)
+                .unwrap();
+            store
+                .persist_claimed_item(
+                    "redaction-item",
+                    "redaction-event",
+                    "conversation-1",
+                    1,
+                    1,
+                    &redaction_hash,
+                    b"redaction",
+                    20,
+                )
+                .unwrap();
+
+            assert_eq!(
+                store
+                    .commit_interaction_event(&InteractionReceiveCommit {
+                        item_id: "redaction-item",
+                        event_id: "redaction-event",
+                        command_id: "",
+                        conversation_id: "conversation-1",
+                        event_sequence: 2,
+                        lane_sequence: 1,
+                        consumer_epoch: 1,
+                        payload_sha256: &redaction_hash,
+                        event_hash: &redaction_hash,
+                        previous_event_hash: &first_hash,
+                        message_id: "message-1",
+                        mutation,
+                        mls_session_state: None,
+                        membership_epoch: 0,
+                        mls_epoch: 0,
+                        receipt_id: "redaction-receipt",
+                        receipt_bytes: b"receipt",
+                        consumed_at_unix_ms: 20,
+                    })
+                    .unwrap(),
+                ReceiveCommitResult::Committed
+            );
+
+            let connection = store.connection().unwrap();
+            let projection = connection
+                .query_row(
+                    "SELECT plaintext, edited_text, retracted, hidden_for_actor
+                     FROM messaging_message_projections
+                     WHERE conversation_id = 'conversation-1'
+                       AND message_id = 'message-1'",
+                    [],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, bool>(2)?,
+                            row.get::<_, bool>(3)?,
+                        ))
+                    },
+                )
+                .unwrap();
+            assert_eq!(projection.0, "");
+            assert_eq!(projection.1, None);
+            assert_eq!(projection.2, kind == "retracted");
+            assert_eq!(projection.3, kind == "hidden_for_actor");
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT authority_sequence, authority_event_hash
+                         FROM message_redaction_tombstones
+                         WHERE conversation_id = 'conversation-1'
+                           AND message_id = 'message-1'
+                           AND kind = ?1",
+                        params![kind],
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+                    )
+                    .unwrap(),
+                (2, redaction_hash.to_vec())
+            );
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT COUNT(*) FROM messaging_message_search_fts
+                         WHERE conversation_id = 'conversation-1'
+                           AND message_id = 'message-1'",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .unwrap(),
+                0
+            );
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT state FROM chat_cleanup_journal
+                         WHERE operation_id = ?1",
+                        params![format!("{scope_kind}:redaction-event")],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .unwrap(),
+                "compacting"
+            );
+            drop(connection);
+            assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
+            assert!(store
+                .consumption_marker_matches("redaction-item", &redaction_hash)
+                .unwrap());
+            let evidence = store
+                .acceptance_interaction_snapshot("conversation-1", "message-1", "")
+                .unwrap();
+            assert_eq!(evidence["projection"]["plaintextEmpty"], true);
+            assert_eq!(evidence["projection"]["retracted"], kind == "retracted");
+            assert_eq!(
+                evidence["projection"]["hiddenForActor"],
+                kind == "hidden_for_actor"
+            );
+            assert_eq!(evidence["redactionTombstones"][0]["kind"], kind);
+            assert_eq!(evidence["searchEntryCount"], 0);
+            assert_eq!(evidence["attachmentProjectionCount"], 0);
+            assert_eq!(evidence["attachmentTransferCount"], 0);
+            assert_eq!(evidence["redactionCleanup"][0]["scopeKind"], scope_kind);
+        }
+    }
+
+    #[test]
+    fn redaction_after_retention_advances_without_a_projection_row() {
+        let store = MessagingStore::in_memory().unwrap();
+        let first_hash = [31_u8; 32];
+        let redaction_hash = [32_u8; 32];
+        store
+            .install_test_authority_head("conversation-1", 1, &first_hash)
+            .unwrap();
+        store
+            .persist_claimed_item(
+                "retained-redaction-item",
+                "retained-redaction-event",
+                "conversation-1",
+                1,
+                1,
+                &redaction_hash,
+                b"redaction",
+                20,
+            )
+            .unwrap();
+
+        assert_eq!(
+            store
+                .commit_interaction_event(&InteractionReceiveCommit {
+                    item_id: "retained-redaction-item",
+                    event_id: "retained-redaction-event",
+                    command_id: "",
+                    conversation_id: "conversation-1",
+                    event_sequence: 2,
+                    lane_sequence: 1,
+                    consumer_epoch: 1,
+                    payload_sha256: &redaction_hash,
+                    event_hash: &redaction_hash,
+                    previous_event_hash: &first_hash,
+                    message_id: "retained-message",
+                    mutation: InteractionMutation::Retract,
+                    mls_session_state: None,
+                    membership_epoch: 0,
+                    mls_epoch: 0,
+                    receipt_id: "retained-redaction-receipt",
+                    receipt_bytes: b"receipt",
+                    consumed_at_unix_ms: 20,
+                })
+                .unwrap(),
+            ReceiveCommitResult::Committed
+        );
+        assert_eq!(
+            store.authority_head("conversation-1").unwrap(),
+            (2, redaction_hash.to_vec())
+        );
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
+        assert!(store
+            .consumption_marker_matches("retained-redaction-item", &redaction_hash)
+            .unwrap());
+        let connection = store.connection().unwrap();
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM message_redaction_tombstones
+                     WHERE conversation_id = 'conversation-1'
+                       AND message_id = 'retained-message'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn redaction_physical_measurement_includes_transfer_and_journal_paths() {
+        let store = MessagingStore::in_memory().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "desktop-redaction-measurement-{}",
+            ulid::Ulid::new()
+        ));
+        let source_path = root.join("source.bin");
+        let partial_path = root.join("partial.bin");
+        let journal_path = root.join("journal.bin");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&source_path, b"source").unwrap();
+        std::fs::write(&partial_path, b"partial").unwrap();
+        std::fs::write(&journal_path, b"journal").unwrap();
+        let transfer = AttachmentTransferRecord {
+            attachment_id: "measurement-transfer".to_string(),
+            source_local_ref: source_path.to_string_lossy().into_owned(),
+            partial_local_ref: partial_path.to_string_lossy().into_owned(),
+            ..attachment_transfer()
+        };
+        assert!(store.create_attachment_transfer(&transfer).unwrap());
+        let operation = CacheCleanupOperation {
+            operation_id: "measurement-operation".to_string(),
+            scope_revision: "measurement-scope".to_string(),
+            state: ChatStorageOperationState::FailedTerminal,
+            estimated_reclaimable_bytes: 7,
+            physical_bytes_before: 20,
+            physical_bytes_after: Some(20),
+            last_error_code: Some("STORAGE_IO_FAILED".to_string()),
+            created_at_unix_ms: 10,
+            updated_at_unix_ms: 10,
+        };
+        let item = immutable_file_cleanup_item(&journal_path).unwrap().unwrap();
+        store.create_cache_cleanup(&operation, &[item]).unwrap();
+
+        assert_eq!(store.storage_redaction_physical_bytes().unwrap(), 20);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn redaction_persists_an_immutable_file_identity_with_the_receive_commit() {
+        let store = MessagingStore::in_memory().unwrap();
+        let root = std::env::temp_dir().join(format!("desktop-redaction-{}", ulid::Ulid::new()));
+        let path = root.join("attachment.bin");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&path, b"redacted attachment").unwrap();
+        let first_hash = [3_u8; 32];
+        let redaction_hash = [4_u8; 32];
+        {
+            let connection = store.connection().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms
+                     ) VALUES (
+                        'conversation-1', 'message-event', 1, 'message-1',
+                        'ptid:alice', 'alice-device', 'secret', 'consumed', 10
+                     )",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_attachment_projections(
+                        message_id, attachment_id, object_id, storage_ref,
+                        filename, mime_type, plaintext_size, plaintext_sha256,
+                        object_key, base_nonce, descriptor_bytes, voice_note_bytes,
+                        availability_state, local_cache_path
+                     ) VALUES (
+                        'message-1', 'attachment-redacted', 'object-1', 'storage-1',
+                        'secret.bin', 'application/octet-stream', 19, zeroblob(32),
+                        zeroblob(32), zeroblob(12), X'01', X'', 'local', ?1
+                     )",
+                    params![path.to_string_lossy()],
+                )
+                .unwrap();
+        }
+        store
+            .install_test_authority_head("conversation-1", 1, &first_hash)
+            .unwrap();
+        store
+            .persist_claimed_item(
+                "redaction-file-item",
+                "redaction-file-event",
+                "conversation-1",
+                1,
+                1,
+                &redaction_hash,
+                b"redaction",
+                20,
+            )
+            .unwrap();
+        store
+            .commit_interaction_event(&InteractionReceiveCommit {
+                item_id: "redaction-file-item",
+                event_id: "redaction-file-event",
+                command_id: "",
+                conversation_id: "conversation-1",
+                event_sequence: 2,
+                lane_sequence: 1,
+                consumer_epoch: 1,
+                payload_sha256: &redaction_hash,
+                event_hash: &redaction_hash,
+                previous_event_hash: &first_hash,
+                message_id: "message-1",
+                mutation: InteractionMutation::Retract,
+                mls_session_state: None,
+                membership_epoch: 0,
+                mls_epoch: 0,
+                receipt_id: "redaction-file-receipt",
+                receipt_bytes: b"receipt",
+                consumed_at_unix_ms: 20,
+            })
+            .unwrap();
+
+        assert!(path.is_file());
+        assert_eq!(store.lane_checkpoint().unwrap(), (1, 1));
+        let operations = store.pending_redaction_cleanup_operations().unwrap();
+        assert_eq!(operations.len(), 1);
+        assert_eq!(
+            operations[0].state,
+            ChatStorageOperationState::DeletingFiles
+        );
+        assert_eq!(operations[0].physical_bytes_before, 19);
+        assert_eq!(store.storage_redaction_physical_bytes().unwrap(), 19);
+        let prepared = store
+            .load_cache_cleanup_items(&operations[0].operation_id)
+            .unwrap();
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0].expected_size_bytes, 19);
+        assert_ne!(prepared[0].expected_digest, [0; 32]);
+        assert_eq!(prepared[0].state, CacheCleanupItemState::Pending);
+        std::fs::write(&path, b"replacement").unwrap();
+        let changed = messaging_core::storage_governance::cache::execute_cache_cleanup(
+            &store,
+            &operations[0],
+            std::slice::from_ref(&root),
+            &[],
+            21,
+        )
+        .unwrap();
+        assert_eq!(
+            changed.operation.state,
+            ChatStorageOperationState::FailedTerminal
+        );
+        assert!(path.is_file());
+
+        std::fs::write(&path, b"redacted attachment").unwrap();
+        store
+            .update_cache_cleanup_item(
+                &operations[0].operation_id,
+                &prepared[0].item_id,
+                CacheCleanupItemState::Pending,
+                None,
+                22,
+            )
+            .unwrap();
+        let retry = store
+            .update_cache_cleanup_operation(
+                &operations[0].operation_id,
+                ChatStorageOperationState::DeletingFiles,
+                None,
+                None,
+                22,
+            )
+            .unwrap();
+        let progress = messaging_core::storage_governance::cache::execute_cache_cleanup(
+            &store,
+            &retry,
+            std::slice::from_ref(&root),
+            &[],
+            23,
+        )
+        .unwrap();
+        assert_eq!(
+            progress.operation.state,
+            ChatStorageOperationState::Compacting
+        );
+        assert!(!path.exists());
+        assert_eq!(store.storage_redaction_physical_bytes().unwrap(), 0);
+        let resumable = store.pending_redaction_cleanup_operations().unwrap();
+        assert_eq!(resumable.len(), 1);
+        assert_eq!(resumable[0].state, ChatStorageOperationState::Compacting);
+        store
+            .update_cache_cleanup_operation(
+                &operations[0].operation_id,
+                ChatStorageOperationState::CompactionPending,
+                Some(0),
+                Some("CHAT_STORAGE_ERROR_CODE_COMPACTION_PENDING"),
+                24,
+            )
+            .unwrap();
+        assert_eq!(
+            store.pending_redaction_cleanup_operations().unwrap()[0].state,
+            ChatStorageOperationState::CompactionPending
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn conversation_projection_places_pending_draft_at_its_creation_time() {
         let store = MessagingStore::in_memory().unwrap();
         let connection = store.connection().unwrap();
@@ -11727,6 +16112,17 @@ mod tests {
         store
             .update_read_cursor("conversation-1", "ptid:bob", 11, 1_000)
             .unwrap();
+        store
+            .connection()
+            .unwrap()
+            .execute(
+                "UPDATE messaging_message_projections
+                 SET hidden_for_actor = 1
+                 WHERE conversation_id = 'conversation-1'
+                   AND message_id = 'reply-late'",
+                [],
+            )
+            .unwrap();
         let counts = store
             .thread_count_projections(
                 "conversation-1",
@@ -11743,10 +16139,10 @@ mod tests {
             vec![
                 ThreadCountProjection {
                     root_message_id: "root".to_string(),
-                    reply_count: 4,
-                    latest_reply_id: "reply-late".to_string(),
-                    latest_reply_at_unix_ms: 500,
-                    unread_count: 1,
+                    reply_count: 3,
+                    latest_reply_id: "pending-z".to_string(),
+                    latest_reply_at_unix_ms: 400,
+                    unread_count: 0,
                 },
                 ThreadCountProjection {
                     root_message_id: "missing-root".to_string(),
@@ -11926,6 +16322,7 @@ mod tests {
                     filename: metadata.filename.clone(),
                     mime_type: metadata.mime_type.clone(),
                     plaintext_sha256: metadata.plaintext_sha256.clone(),
+                    voice_note: metadata.voice_note.clone(),
                 }],
             )
             .unwrap();
@@ -12253,6 +16650,27 @@ mod tests {
                     params![conversation_id, format!("event-{message_id}"), message_id],
                 )
                 .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_authority_events(
+                        conversation_id, event_id, event_sequence,
+                        event_hash, committed_at_unix_ms
+                     ) VALUES (?1, ?2, 1, ?3, 100)",
+                    params![
+                        conversation_id,
+                        format!("event-{message_id}"),
+                        [7_u8; 32].as_slice(),
+                    ],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_authority_heads(
+                        conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                     ) VALUES (?1, 1, ?2, 100)",
+                    params![conversation_id, [7_u8; 32].as_slice()],
+                )
+                .unwrap();
         }
         drop(connection);
 
@@ -12267,6 +16685,13 @@ mod tests {
         assert_eq!(archive.conversations[0].federation_id, "federation-1");
         assert_eq!(archive.messages.len(), 1);
         assert_eq!(archive.messages[0].message_id, "canonical-message");
+        assert_eq!(archive.authority_heads.len(), 1);
+        assert_eq!(
+            archive.authority_heads[0].conversation_id,
+            "canonical-conversation"
+        );
+        assert_eq!(archive.authority_heads[0].event_sequence, 1);
+        assert_eq!(archive.authority_heads[0].event_hash, vec![7_u8; 32]);
     }
 
     #[test]
@@ -12716,11 +17141,35 @@ mod tests {
         store
             .populate_recovery_staging(&recovery_archive())
             .unwrap();
+        let identity = IdentityKeyPair::from_seed(&[42; 32]);
+        let fresh = generate_fresh_device_identity("ptid:alice", identity.seed_bytes(), 3).unwrap();
+        let fresh_device_id = fresh
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .clone();
+        store.install_fresh_device_identity(&fresh).unwrap();
 
         let exported = store
             .build_recovery_archive("ptid:alice", &[42; 32], 3)
             .unwrap();
         assert_eq!(exported, recovery_archive());
+        assert_eq!(
+            store.authority_head("restored-conversation").unwrap(),
+            (9, vec![9; 32])
+        );
+        let floors = store
+            .load_retention_floors(&ChatStorageScope {
+                station_peer_id: "station-local".to_string(),
+                actor_ptid: "ptid:alice".to_string(),
+                device_id: fresh_device_id,
+            })
+            .unwrap();
+        assert_eq!(floors.len(), 1);
+        assert_eq!(floors[0].pruned_through_sequence, 6);
         let restored = store
             .message_projection("restored-conversation", "restored-message")
             .unwrap()
@@ -12730,6 +17179,14 @@ mod tests {
             restored.attachments,
             vec![test_attachment_metadata("attachment-1")]
         );
+        let retracted = store
+            .message_projection("restored-conversation", "redacted-message")
+            .unwrap()
+            .unwrap()
+            .0;
+        assert!(retracted.retracted);
+        assert!(retracted.plaintext.is_empty());
+        assert!(retracted.attachments.is_empty());
         assert_eq!(
             store
                 .search_message_projections(
@@ -12768,7 +17225,6 @@ mod tests {
             "messaging_inbox_items",
             "messaging_consumption_markers",
             "messaging_lane_cursor",
-            "messaging_authority_heads",
             "messaging_receipt_outbox",
         ] {
             let count: i64 = connection
@@ -12778,6 +17234,214 @@ mod tests {
                 .unwrap();
             assert_eq!(count, 0, "live table {table}");
         }
+    }
+
+    #[test]
+    fn in_place_recovery_preserves_device_continuity_without_restoring_sessions() {
+        let source = MessagingStore::in_memory().unwrap();
+        let actor_identity = IdentityKeyPair::from_seed(&[42; 32]);
+        let device_identity =
+            generate_fresh_device_identity("ptid:alice", actor_identity.seed_bytes(), 3).unwrap();
+        let device_id = device_identity
+            .enrollment
+            .certificate
+            .device
+            .as_ref()
+            .unwrap()
+            .device_id
+            .clone();
+        source
+            .install_fresh_device_identity(&device_identity)
+            .unwrap();
+        source.complete_device_enrollment(&device_id).unwrap();
+        source
+            .install_fresh_prekey_bundle(7, &[7; 32], &[(1, [1; 32]), (2, [2; 32])], 100)
+            .unwrap();
+        source.complete_prekey_publication(7).unwrap();
+        source.consume_one_time_prekey(1).unwrap();
+        source
+            .save_mls_actor_identity("ptid:alice", &device_id, b"MLS actor identity")
+            .unwrap();
+        MlsKeyPackageRepository::install_fresh_mls_key_packages(
+            &source,
+            &[b"MLS KeyPackage".to_vec()],
+            b"MLS join provider pool",
+            101,
+        )
+        .unwrap();
+        let package_id = hex::encode(Sha256::digest(b"MLS KeyPackage"));
+        MlsKeyPackageRepository::complete_mls_key_package_publication(&source, &package_id)
+            .unwrap();
+        source.save_direct_session(&direct_session(3)).unwrap();
+        source
+            .save_mls_session_state("restored-conversation", b"live MLS group", 3, 3, 102)
+            .unwrap();
+        {
+            let connection = source.connection().unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_lane_cursor(
+                        id, lane_sequence, consumer_epoch, updated_at_unix_ms
+                     ) VALUES(1, 12, 4, 103)",
+                    [],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_consumption_markers(
+                        item_id, event_id, conversation_id,
+                        payload_sha256, consumed_at_unix_ms
+                     ) VALUES('item-12', 'event-12', 'restored-conversation', ?1, 103)",
+                    params![[8_u8; 32].as_slice()],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_authority_heads(
+                        conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                     ) VALUES('restored-conversation', 12, ?1, 103)",
+                    params![[12_u8; 32].as_slice()],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_mls_retired_checkpoints(
+                        conversation_id, transition_id, event_id,
+                        retirement_sequence, retirement_hash,
+                        endpoint_ptid, endpoint_device_id,
+                        membership_epoch, mls_epoch, retired_at_unix_ms
+                     ) VALUES(
+                        'retired-conversation', 'transition-12', 'event-12',
+                        12, ?1, 'ptid:alice', ?2, 4, 4, 103
+                     )",
+                    params![[12_u8; 32].as_slice(), device_id],
+                )
+                .unwrap();
+        }
+
+        let staging = MessagingStore::in_memory().unwrap();
+        staging
+            .populate_recovery_staging(&recovery_archive())
+            .unwrap();
+        staging
+            .install_fresh_device_identity(&device_identity)
+            .unwrap();
+        staging
+            .install_in_place_recovery_continuity_from(&source, &device_identity)
+            .unwrap();
+
+        assert_eq!(staging.pending_device_enrollment().unwrap(), None);
+        assert_eq!(staging.lane_checkpoint().unwrap(), (12, 4));
+        assert!(staging
+            .consumption_marker_matches("item-12", &[8; 32])
+            .unwrap());
+        assert_eq!(
+            staging.authority_head("restored-conversation").unwrap(),
+            (12, vec![12; 32])
+        );
+        assert_eq!(staging.load_signed_prekey(7).unwrap(), [7; 32]);
+        assert!(staging.load_one_time_prekey(1).is_err());
+        assert_eq!(staging.load_one_time_prekey(2).unwrap(), [2; 32]);
+        assert_eq!(staging.next_one_time_prekey_id().unwrap(), 3);
+        assert_eq!(
+            staging.load_mls_actor_identity().unwrap(),
+            Some((
+                "ptid:alice".to_string(),
+                device_id.clone(),
+                b"MLS actor identity".to_vec()
+            ))
+        );
+        assert_eq!(
+            staging.load_mls_join_provider_pool().unwrap(),
+            Some(b"MLS join provider pool".to_vec())
+        );
+        assert!(MlsKeyPackageRepository::pending_mls_key_packages(&staging)
+            .unwrap()
+            .is_empty());
+
+        let connection = staging.connection().unwrap();
+        for table in [
+            "direct_sessions",
+            "direct_skipped_message_keys",
+            "direct_session_bootstraps",
+            "messaging_mls_groups",
+            "messaging_mls_pending_transitions",
+            "messaging_mls_applied_transitions",
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 0, "session table {table}");
+        }
+        for table in [
+            "messaging_prekey_bundle",
+            "messaging_mls_actor_identity",
+            "messaging_mls_join_provider_pool",
+            "messaging_mls_key_packages",
+            "messaging_mls_retired_checkpoints",
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(count, 1, "continuity table {table}");
+        }
+    }
+
+    #[test]
+    fn recovery_reconciliation_redacts_staging_without_advancing_the_replay_head() {
+        let store = MessagingStore::in_memory().unwrap();
+        store
+            .populate_recovery_staging(&recovery_archive())
+            .unwrap();
+        store
+            .apply_recovery_reconciliation(&RecoveryReconciliation {
+                redactions: vec![RecoveryMessageRedactionTombstone {
+                    conversation_id: "restored-conversation".to_string(),
+                    message_id: "restored-message".to_string(),
+                    kind: "hidden_for_actor".to_string(),
+                    authority_sequence: 10,
+                    authority_event_hash: vec![10; 32],
+                    applied_at_unix_ms: 80,
+                }],
+            })
+            .unwrap();
+
+        assert_eq!(
+            store.authority_head("restored-conversation").unwrap(),
+            (9, vec![9; 32])
+        );
+        assert!(store
+            .conversation_message_projections("restored-conversation")
+            .unwrap()
+            .iter()
+            .all(|message| message.message_id != "restored-message"));
+        assert!(store
+            .search_message_projections("restored-conversation", "restored plaintext", None, 10,)
+            .unwrap()
+            .is_empty());
+        assert!(store
+            .attachment_download_projection("attachment-1")
+            .unwrap()
+            .is_none());
+        let connection = store.connection().unwrap();
+        let tombstone: (String, i64, Vec<u8>) = connection
+            .query_row(
+                "SELECT kind, authority_sequence, authority_event_hash
+                 FROM message_redaction_tombstones
+                 WHERE conversation_id = 'restored-conversation'
+                   AND message_id = 'restored-message'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            tombstone,
+            ("hidden_for_actor".to_string(), 10, vec![10; 32])
+        );
     }
 
     #[test]
@@ -12802,7 +17466,7 @@ mod tests {
             upload_id: String::new(),
             generation: 0,
             descriptor_sha256,
-            completed_chunk_bitmap: vec![0xff; descriptor.chunk_count.div_ceil(8) as usize],
+            completed_chunk_bitmap: completed_chunk_bitmap(descriptor.chunk_count),
             source_local_ref: String::new(),
             partial_local_ref: "/tmp/attachment-1.part".to_string(),
             object_key: projection.metadata.object_key,
@@ -12858,7 +17522,7 @@ mod tests {
             upload_id: "upload-1".to_string(),
             generation: 7,
             descriptor_sha256: Sha256::digest(descriptor.encode_to_vec()).to_vec(),
-            completed_chunk_bitmap: vec![0xff; descriptor.chunk_count.div_ceil(8) as usize],
+            completed_chunk_bitmap: completed_chunk_bitmap(descriptor.chunk_count),
             source_local_ref: "/tmp/completed-upload-source".to_string(),
             partial_local_ref: String::new(),
             object_key: projection.metadata.object_key.clone(),
@@ -13000,5 +17664,177 @@ mod tests {
             )
             .unwrap();
         assert_eq!(restored_count, 0);
+    }
+
+    #[test]
+    fn retention_prunes_only_durable_old_projection_and_advances_verified_floor() {
+        let store = MessagingStore::in_memory().unwrap();
+        let scope = ChatStorageScope {
+            station_peer_id: "station-five".to_string(),
+            actor_ptid: "ptid:alice".to_string(),
+            device_id: "alice-device".to_string(),
+        };
+        let now = 40 * 24 * 60 * 60 * 1_000_i64;
+        let connection = store.connection().unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_device_identity(
+                    id, ptid, device_id, device_signing_seed,
+                    actor_identity_public_key, actor_identity_key_fingerprint,
+                    device_signing_public_key, actor_cross_signature,
+                    signing_key_id, profile_version
+                 ) VALUES(1, ?1, ?2, ?3, ?3, ?3, ?3, ?4, 'key-1', 1)",
+                params![
+                    scope.actor_ptid,
+                    scope.device_id,
+                    [3_u8; 32].as_slice(),
+                    [4_u8; 64].as_slice()
+                ],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_conversations(
+                    conversation_id, authority_station_id, federation_id,
+                    kind, name, owner_ptid, membership_epoch, mls_epoch,
+                    active, updated_at_unix_ms
+                 ) VALUES('conversation-1', 'authority-five', 'federation-1',
+                          1, 'Alice', 'ptid:alice', 1, 0, 1, ?1)",
+                params![now],
+            )
+            .unwrap();
+        for (sequence, committed_at) in [(1_i64, 1_i64), (2_i64, now - 1), (3_i64, 2_i64)] {
+            let event_id = format!("event-{sequence}");
+            let message_id = format!("message-{sequence}");
+            let event_hash = [sequence as u8; 32];
+            connection
+                .execute(
+                    "INSERT INTO messaging_message_projections(
+                        conversation_id, event_id, event_sequence, message_id,
+                        sender_ptid, sender_device_id, plaintext,
+                        delivery_state, committed_at_unix_ms
+                     ) VALUES('conversation-1', ?1, ?2, ?3,
+                              'ptid:bob', 'bob-device', ?3, 'consumed', ?4)",
+                    params![event_id, sequence, message_id, committed_at],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_authority_events(
+                        conversation_id, event_id, event_sequence,
+                        event_hash, committed_at_unix_ms
+                     ) VALUES('conversation-1', ?1, ?2, ?3, ?4)",
+                    params![event_id, sequence, event_hash.as_slice(), committed_at],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO messaging_consumption_markers(
+                        item_id, event_id, conversation_id,
+                        payload_sha256, consumed_at_unix_ms
+                     ) VALUES(?1, ?2, 'conversation-1', ?3, ?4)",
+                    params![
+                        format!("item-{sequence}"),
+                        event_id,
+                        [8_u8; 32].as_slice(),
+                        committed_at,
+                    ],
+                )
+                .unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO messaging_attachment_transfers(
+                    attachment_id, conversation_id, message_id,
+                    authority_station_id, direction, state, upload_id,
+                    generation, descriptor_sha256, completed_chunk_bitmap,
+                    source_local_ref, partial_local_ref, object_key, base_nonce,
+                    plaintext_size, chunk_size, attempt_count,
+                    next_attempt_at_unix_ms, last_error_code, updated_at_unix_ms
+                 ) VALUES('attachment-terminal', 'conversation-1', 'message-1',
+                          'authority-five', 1, ?1, 'upload-1', 1, ?2, X'',
+                          '', '', ?2, ?3, 1, 1, 0, 0, 0, ?4)",
+                params![
+                    AttachmentTransferState::Cancelled as i32,
+                    [9_u8; 32].as_slice(),
+                    [5_u8; 12].as_slice(),
+                    now,
+                ],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO messaging_authority_heads(
+                    conversation_id, event_sequence, event_hash, updated_at_unix_ms
+                 ) VALUES('conversation-1', 3, ?1, ?2)",
+                params![[3_u8; 32].as_slice(), now],
+            )
+            .unwrap();
+        drop(connection);
+
+        let progress = messaging_core::storage_governance::retention::apply_retention(
+            &store,
+            messaging_core::storage_governance::retention::RetentionApplyInput {
+                scope: scope.clone(),
+                scope_revision: "scope-1".to_string(),
+                retention_preset: ChatRetentionPreset::ChatRetentionPreset30Days as i32,
+                physical_bytes_before: 1_024,
+                now_unix_ms: now,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(progress.commit.pruned_projection_count, 1);
+        assert_eq!(
+            progress.commit.operation.state,
+            ChatStorageOperationState::Compacting
+        );
+        assert!(store
+            .message_projection("conversation-1", "message-1")
+            .unwrap()
+            .is_none());
+        assert!(store
+            .message_projection("conversation-1", "message-2")
+            .unwrap()
+            .is_some());
+        assert!(store
+            .message_projection("conversation-1", "message-3")
+            .unwrap()
+            .is_some());
+        let connection = store.connection().unwrap();
+        let terminal_transfer_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM messaging_attachment_transfers
+                 WHERE attachment_id = 'attachment-terminal'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(connection);
+        assert_eq!(terminal_transfer_count, 0);
+        let resume = store
+            .load_resumable_retention(&scope, "scope-1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            resume.operation.operation_id,
+            progress.commit.operation.operation_id
+        );
+        assert_eq!(
+            resume.policy.retention_preset,
+            ChatRetentionPreset::ChatRetentionPreset30Days as i32
+        );
+        let floor = store.load_retention_floors(&scope).unwrap();
+        assert_eq!(floor.len(), 1);
+        assert_eq!(floor[0].pruned_through_sequence, 1);
+        assert_eq!(floor[0].authority_event_hash, [1; 32]);
+        assert_eq!(
+            store
+                .conversation_message_page("conversation-1", Some(2), 50)
+                .unwrap()
+                .messages
+                .len(),
+            0
+        );
     }
 }

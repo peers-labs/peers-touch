@@ -119,16 +119,15 @@ type AuthorityPlanRepository interface {
 }
 
 type MemberSettings struct {
-	ConversationID      valueobject.ConversationID
-	Actor               valueobject.PTID
-	Nickname            string
-	Muted               bool
-	Pinned              bool
-	AlertEnabled        bool
-	Background          string
-	BackgroundImage     string
-	ClearedAtUnixMillis int64
-	UpdatedAt           time.Time
+	ConversationID  valueobject.ConversationID
+	Actor           valueobject.PTID
+	Nickname        string
+	Muted           bool
+	Pinned          bool
+	AlertEnabled    bool
+	Background      string
+	BackgroundImage string
+	UpdatedAt       time.Time
 }
 
 type MemberSettingsRepository interface {
@@ -217,15 +216,24 @@ type FollowerStatus string
 
 const (
 	FollowerStatusActive         FollowerStatus = "active"
+	FollowerStatusRetired        FollowerStatus = "retired"
 	FollowerStatusResyncRequired FollowerStatus = "resync_required"
 	FollowerStatusDegraded       FollowerStatus = "degraded"
 	FollowerStatusReadOnly       FollowerStatus = "read_only"
+)
+
+type FollowerCheckpoint string
+
+const (
+	FollowerCheckpointNone   FollowerCheckpoint = ""
+	FollowerCheckpointRejoin FollowerCheckpoint = "rejoin"
 )
 
 type FollowerProjection struct {
 	Conversation aggregate.Snapshot
 	Head         valueobject.AuthorityHead
 	Status       FollowerStatus
+	Checkpoint   FollowerCheckpoint
 	UpdatedAt    time.Time
 }
 

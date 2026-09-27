@@ -61,7 +61,7 @@ export interface NotificationGateway {
 // ---------------------------------------------------------------------------
 
 export function createNotificationGateway(session: MobileAuthSession): NotificationGateway {
-  const { command } = createGatewayTransport(session);
+  const { command } = createGatewayTransport(session, 'notification');
 
   return {
     listNotifications: async (limit = 30, cursor) => {

@@ -85,6 +85,89 @@ message CreateResponse {}
 	}
 }
 
+func TestRouteInventoryRecognizesStrictTypedHandler(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "apps/station/app/subserver/notification/handler.go", `
+package notification
+
+import "github.com/peers-labs/peers-touch/station/frame/core/server"
+
+func handlers() {
+	_ = server.NewStrictTypedHandler(
+		"notification-push-register",
+		"/notification/push/register",
+		server.POST,
+		nil,
+	)
+}
+`)
+
+	routes, diagnostics, _ := discoverRoutes(
+		root,
+		[]string{"apps/station/app/subserver/notification"},
+	)
+	if len(diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", diagnostics)
+	}
+	if len(routes) != 1 ||
+		routes[0].Path != "/notification/push/register" ||
+		routes[0].Method != "POST" ||
+		routes[0].Function != "NewStrictTypedHandler" {
+		t.Fatalf("routes = %+v", routes)
+	}
+}
+
+func TestRouteInventoryRecognizesActorHandlerInfo(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "apps/station/frame/touch/actor_handler.go", `
+package touch
+
+import "github.com/peers-labs/peers-touch/station/frame/core/server"
+
+type RouterPath string
+type ActorHandlerInfo struct {
+	RouterURL RouterPath
+	Method server.Method
+}
+
+const RouterURLAccessAttemptStart RouterPath = "/access/start"
+
+func handlers() []ActorHandlerInfo {
+	return []ActorHandlerInfo{
+		{
+			RouterURL: RouterURLAccessAttemptStart,
+			Method: server.POST,
+		},
+		{
+			RouterURL: RouterURLAccessAttemptStart,
+			Method: server.OPTIONS,
+		},
+	}
+}
+`)
+
+	routes, diagnostics, _ := discoverRoutes(
+		root,
+		[]string{"apps/station/frame/touch"},
+	)
+	if len(diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v", diagnostics)
+	}
+	if len(routes) != 2 {
+		t.Fatalf("routes = %+v, want two Actor routes", routes)
+	}
+	if routes[0].Path != "/actor/access/start" ||
+		routes[0].Method != "OPTIONS" ||
+		routes[0].Function != "ActorHandlerInfo" {
+		t.Fatalf("first route = %+v", routes[0])
+	}
+	if routes[1].Path != "/actor/access/start" ||
+		routes[1].Method != "POST" ||
+		routes[1].Function != "ActorHandlerInfo" {
+		t.Fatalf("second route = %+v", routes[1])
+	}
+}
+
 func TestAnalyzeReportsEveryFailClosedOwnershipCondition(t *testing.T) {
 	root := t.TempDir()
 	writeFixture(t, root, "docs/registry.yaml", `

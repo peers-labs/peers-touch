@@ -24,6 +24,11 @@ function snapshot(): MessagingAcceptanceInteractionSnapshot {
     reactions: [],
     pins: [],
     readCursors: [],
+    redactionTombstones: [],
+    searchEntryCount: 0,
+    attachmentProjectionCount: 0,
+    attachmentTransferCount: 0,
+    redactionCleanup: [],
     consumptionCount: 0,
     laneSequence: 0,
     consumerEpoch: 0,
@@ -43,6 +48,7 @@ function lifecycleDependencies() {
     createRestorableCommand: vi.fn(),
     prepareSubmittedCommand: vi.fn(),
     resumeMessagingLifecycle: vi.fn(),
+    seedConversationClear: vi.fn(),
   };
 }
 
@@ -244,6 +250,42 @@ describe('nativeAcceptanceBridge', () => {
     });
   });
 
+  it('seeds a bounded conversation-clear fixture for the matching actor', async () => {
+    const seedConversationClear = vi.fn().mockResolvedValue({
+      actorPtid: ACTOR_PTID,
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+    });
+    const bridge = createNativeAcceptanceBridge({
+      ...lifecycleDependencies(),
+      activeActorPtid: () => ACTOR_PTID,
+      markLocalIdentityAction: vi.fn(),
+      logoutWindowSession: vi.fn(),
+      completeLogoutLifecycle: vi.fn(),
+      readInteractionSnapshot: vi.fn(),
+      seedConversationClear,
+      readMessages: vi.fn(),
+      readConversations: vi.fn(),
+      readMemberSettings: vi.fn(),
+      openAttachment: vi.fn(),
+      identityState: vi.fn(),
+    });
+
+    await expect(bridge.seedConversationClear({
+      actorPtid: ACTOR_PTID,
+      stationPeerId: ' station-one ',
+      plaintextBytes: 2 * 1024 * 1024,
+    })).resolves.toMatchObject({
+      conversationId: 'conversation-1',
+      messageId: 'message-1',
+    });
+    expect(seedConversationClear).toHaveBeenCalledWith({
+      actorPtid: ACTOR_PTID,
+      stationPeerId: 'station-one',
+      plaintextBytes: 2 * 1024 * 1024,
+    });
+  });
+
   it('routes bounded readbacks through the matching Tauri-window actor', async () => {
     const messages: MessagingProjection[] = [];
     const conversations: MessagingConversationProjection[] = [];
@@ -253,8 +295,6 @@ describe('nativeAcceptanceBridge', () => {
       alertEnabled: true,
       pinned: false,
       background: 'default',
-      backgroundImage: '',
-      clearedAtUnixMs: 0,
     };
     const bridge = createNativeAcceptanceBridge({
       ...lifecycleDependencies(),

@@ -38,7 +38,7 @@ message Conversation {
   string owner_ptid = 13;
   int32 max_members = 14;
   GroupVisibilityV1 visibility = 15;
-  uint32 disappear_timer_seconds = 16;
+  reserved 16;
   int64 mls_epoch = 17;
   string federation_id = 18;
   int64 authority_epoch = 19;
@@ -211,6 +211,10 @@ enum ConversationCommandKind {
   CONVERSATION_COMMAND_KIND_REACT = 6;
   CONVERSATION_COMMAND_KIND_PIN_MESSAGE = 7;
   CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION = 8;
+  CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY = 9;
+  CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR = 10;
+  CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE = 11;
+  CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE = 12;
 }
 
 enum ConversationCommandRejectCode {

@@ -28,17 +28,6 @@ pub struct AuthSessionPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthLoginInput {
-    pub account: String,
-    pub password: String,
-    pub base_url: Option<String>,
-    /// Device type sent to Station for session scoping.
-    /// When omitted, callers inject a transport-specific default:
-    /// Tauri commands → "desktop-native", HTTP gateway → "desktop-browser".
-    pub device_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthValidateTokenInput {
     pub token: Option<String>,
 }
@@ -46,33 +35,85 @@ pub struct AuthValidateTokenInput {
 // --- Access gate (interactive chain) contracts ---
 //
 // The Station owns the access policy and emits an ordered gate chain. The
-// desktop client drives the chain interactively: it starts an attempt, then
-// submits the gate the Station marks `action_required` (invite code first,
-// then login credentials). `AccessDecisionPayload.decision` carries the raw
-// Station decision JSON unchanged so the TS layer can normalize the
-// snake_case / string-enum wire shape with the same logic mobile uses.
+// desktop client drives the chain interactively through one generated Proto
+// decoder. Tauri exposes one stable camelCase projection to the renderer.
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccessDecisionInput {
+    pub attempt_id: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessSubmitInviteInput {
     pub attempt_id: String,
+    pub gate_id: String,
+    pub gate_type: i32,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+    pub submission_id: String,
     pub invite_code: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessSubmitLoginInput {
     pub attempt_id: String,
+    pub gate_id: String,
+    pub gate_type: i32,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+    pub submission_id: String,
     pub account: String,
     pub password: String,
     pub device_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessGateActionProjection {
+    pub action_id: String,
+    pub action_type: String,
+    pub submit_action: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessGateProjection {
+    pub gate_id: String,
+    pub gate_type: String,
+    pub state: String,
+    pub title: String,
+    pub description: String,
+    pub blocking_reason: String,
+    pub submit_action: String,
+    pub input_schema_json: String,
+    pub alternative_actions: Vec<AccessGateActionProjection>,
+    pub action_id: String,
+    pub schema_revision: u32,
+    pub schema_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessDecisionProjection {
+    pub state: String,
+    pub attempt_id: String,
+    pub current_gate_id: String,
+    pub gates: Vec<AccessGateProjection>,
+    pub actor_ptid: Option<String>,
+    pub access_grant_id: String,
+    pub expires_at_unix_ms: Option<u64>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessDecisionPayload {
     pub command: String,
     pub status: String,
-    /// Raw Station `AccessDecision` JSON. Passed through verbatim so the
-    /// frontend normalizes the wire shape (snake_case keys, string enums).
-    pub decision: serde_json::Value,
+    pub decision: AccessDecisionProjection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,45 +259,6 @@ pub struct KeyExchangeFetchInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListInput {
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatListMessagesInput {
-    pub group_ulid: String,
-    pub before_ulid: Option<String>,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatThreadInput {
-    pub group_ulid: String,
-    pub root_ulid: String,
-    pub after_ulid: Option<String>,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatUnreadInput {
-    pub group_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatMarkReadInput {
-    pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatSyncInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub max_pages: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatLocalSearchInput {
     pub query: String,
     pub limit: Option<u32>,
@@ -288,6 +290,8 @@ pub struct ProfileUpdateInput {
     pub timezone: Option<String>,
     pub tags: Option<Vec<String>>,
     pub links: Option<Vec<ProfileLinkInput>>,
+    pub discoverability: Option<String>,
+    pub observed_revision: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1579,126 +1583,6 @@ pub struct ProviderModelToggleAllInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupCreateInput {
-    pub name: String,
-    pub description: Option<String>,
-    pub member_ptids: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUlidInput {
-    pub group_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUpdateInput {
-    pub group_ulid: String,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub avatar_cid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupInviteInput {
-    pub group_ulid: String,
-    pub member_ptids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupAddFederatedMemberInput {
-    pub group_ulid: String,
-    pub member: GroupChatFederatedActorInput,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupRemoveMemberInput {
-    pub group_ulid: String,
-    pub member_ptid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupTransferOwnershipInput {
-    pub group_ulid: String,
-    pub next_owner_ptid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUpdateMemberInput {
-    pub group_ulid: String,
-    pub member_ptid: String,
-    pub role: Option<i32>,
-    pub muted: Option<bool>,
-    pub muted_until_unix_ms: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupMessageActionInput {
-    pub group_ulid: String,
-    pub message_ulid: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatEditInput {
-    pub group_ulid: String,
-    pub message_ulid: String,
-    /// Plaintext replacement body. Mutually optional with
-    /// `new_encrypted_payload`; at least one must be non-empty.
-    pub new_content: Option<String>,
-    /// E2EE replacement body. Decoded from base64 by the TS layer
-    /// before reaching this contract.
-    pub new_encrypted_payload: Option<Vec<u8>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupSearchMessagesInput {
-    pub group_ulid: String,
-    pub query: String,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUpdateNicknameInput {
-    pub group_ulid: String,
-    pub nickname: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupUpdateMySettingsInput {
-    pub group_ulid: String,
-    pub is_muted: Option<bool>,
-    pub is_pinned: Option<bool>,
-    pub show_member_nickname: Option<bool>,
-    pub alert_enabled: Option<bool>,
-    pub background: Option<String>,
-    pub cleared_at_unix_ms: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupAckOfflineInput {
-    pub group_ulid: String,
-    pub message_ulids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupJoinInput {
-    pub group_ulid: String,
-    pub invitation_ulid: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupMembersInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-    pub offset: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupOfflineMessagesInput {
-    pub group_ulid: String,
-    pub limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrontendLogInput {
     pub level: String,
     pub tag: String,
@@ -1732,32 +1616,6 @@ pub struct WizardExecuteApiInput {
 pub struct ActorSearchUsersInput {
     pub q: String,
     pub limit: Option<u32>,
-}
-
-// --- Group chat create / leave contracts ---
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatFederatedActorInput {
-    pub actor_ptid: String,
-    pub home_station_peer_id: String,
-    pub home_station_domain: Option<String>,
-    pub federated_handle: Option<String>,
-    pub actor_identity_public_key: Option<Vec<u8>>,
-    pub profile_version: Option<i64>,
-    pub federation_id: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatCreateGroupInput {
-    pub name: String,
-    pub description: Option<String>,
-    pub member_ptids: Option<Vec<String>>,
-    pub initial_federated_members: Option<Vec<GroupChatFederatedActorInput>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GroupChatLeaveGroupInput {
-    pub group_ulid: String,
 }
 
 // --- Friend Request contracts ---
@@ -1811,11 +1669,17 @@ pub struct NotificationDeleteInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NotificationPreferenceUpdateInput {
+pub struct NotificationPreferencePatchInput {
     pub category: i32,
     pub enabled: bool,
     pub push_enabled: bool,
     pub sound_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationPreferencesUpdateInput {
+    pub updates: Vec<NotificationPreferencePatchInput>,
+    pub observed_revision: u64,
 }
 
 // ===========================================================================
@@ -2029,26 +1893,11 @@ pub struct SocialCircleListMembersInput {
     pub circle_id: String,
 }
 
-// Federation gateway inputs (Tier A1 — Desktop FederationRuntime).
-//
-// Two non-trivial commands take input:
-//
-//   • `federation_update_visibility`: the dropdown label the user just
-//     picked ("hidden" | "by_handle" | "indexed"). Server validates the
-//     vocabulary; we only round-trip whatever the UI sent.
-//   • `federation_resolve`: the canonical "@user@host" handle the user
-//     typed into search / add-friend.
-//
-// The remaining two (`federation_get_self`, `federation_health`) take
-// no payload and reuse `tauri::command` argument injection only.
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationVisibilityInput {
-    pub visibility: String,
-}
+// Read-only Federation context and discovery inputs.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationResolveInput {
+    pub federation_id: String,
     pub handle: String,
 }
 
@@ -2060,42 +1909,4 @@ pub struct FederationCatalogSearchInput {
     pub station_id: Option<String>,
     #[serde(default)]
     pub page_size: Option<u32>,
-}
-
-// ─── Federation Lifecycle Inputs ────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationCreateInput {
-    pub name: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub policy_type: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationJoinInput {
-    #[serde(default)]
-    pub federation_endpoint: String,
-    #[serde(default)]
-    pub federation_id: String,
-    #[serde(default)]
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationLeaveInput {
-    pub federation_id: String,
-    #[serde(default)]
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationListMemberStationsInput {
-    pub federation_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationDeleteInput {
-    pub federation_id: String,
 }

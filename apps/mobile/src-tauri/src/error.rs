@@ -9,6 +9,13 @@ pub struct MobileError {
 }
 
 impl MobileError {
+    pub fn coded(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+
     pub fn invalid_input(message: impl Into<String>) -> Self {
         Self {
             code: "MOBILE_INVALID_INPUT",
@@ -72,6 +79,13 @@ impl MobileError {
         }
     }
 
+    pub fn reliability(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_RELIABILITY",
+            message: message.into(),
+        }
+    }
+
     pub fn lifecycle(message: impl Into<String>) -> Self {
         Self {
             code: "MOBILE_LIFECYCLE",
@@ -89,6 +103,13 @@ impl MobileError {
     pub fn network(message: impl Into<String>) -> Self {
         Self {
             code: "MOBILE_NETWORK",
+            message: message.into(),
+        }
+    }
+
+    pub fn station_transport(message: impl Into<String>) -> Self {
+        Self {
+            code: "MOBILE_STATION_TRANSPORT",
             message: message.into(),
         }
     }

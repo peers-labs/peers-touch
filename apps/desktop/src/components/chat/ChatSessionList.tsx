@@ -175,6 +175,8 @@ export function ChatSessionList({
     selectGroup,
     getIMConversations,
     updateConversationLocalState,
+    markFriendRead,
+    markGroupRead,
     hideConversation,
     loadSessions,
     loadGroups,
@@ -199,18 +201,15 @@ export function ChatSessionList({
     selectGroup: state.selectGroup,
     getIMConversations: state.getIMConversations,
     updateConversationLocalState: state.updateConversationLocalState,
+    markFriendRead: state.markFriendRead,
+    markGroupRead: state.markGroupRead,
     hideConversation: state.hideConversation,
     loadSessions: state.loadSessions,
     loadGroups: state.loadGroups,
   }));
-  const {
-    actorStationEntries,
-    federations,
-    memberStationsByFederation,
-  } = useActiveChatFederationSlice((state) => ({
+  const { actorStationEntries, federations } = useActiveChatFederationSlice((state) => ({
     actorStationEntries: state.actorStationEntries,
     federations: state.federations,
-    memberStationsByFederation: state.memberStationsByFederation,
   }));
 
   const [searchText, setSearchText] = useState('');
@@ -218,11 +217,10 @@ export function ChatSessionList({
   const [showFindPeople, setShowFindPeople] = useState(false);
   const clearChatUnread = useNavigationBadgeStore((state) => state.clearChatUnread);
   const stationNamesByPeerId = useMemo(() => Object.fromEntries(
-    Object.values(memberStationsByFederation)
-      .flat()
-      .map((station) => [station.stationPeerId.trim(), station.stationName.trim()])
+    Object.values(actorStationEntries)
+      .map((entry) => [entry.homeStationPeerId.trim(), entry.homeStationName.trim()])
       .filter(([peerId, name]) => Boolean(peerId && name)),
-  ), [memberStationsByFederation]);
+  ), [actorStationEntries]);
   const stationNamesByActorPtid = useMemo(() => Object.fromEntries(
     Object.values(actorStationEntries)
       .map((entry) => [entry.actorPtid.trim(), entry.homeStationName.trim()])
@@ -464,9 +462,8 @@ export function ChatSessionList({
             }
             break;
           case 'markRead':
-            // Mark-read clears unread badge; for friend chats this acks messages.
             try {
-              await updateConversationLocalState(c.kind, c.id, { clearedAt: 0 });
+              await (c.kind === 'friend' ? markFriendRead(c.id) : markGroupRead(c.id));
             } catch (error) {
               presentError(error, {
                 mapper: mapChatError,
@@ -475,12 +472,19 @@ export function ChatSessionList({
             }
             break;
           case 'hide':
-            hideConversation(c.kind, c.id, true);
+            hideConversation(c.kind, c.id);
             break;
         }
       },
     };
-  }, [conversationLocalState, t, updateConversationLocalState, hideConversation]);
+  }, [
+    conversationLocalState,
+    hideConversation,
+    markFriendRead,
+    markGroupRead,
+    t,
+    updateConversationLocalState,
+  ]);
 
   const isRowActive = (c: DesktopIMConversationProjection) => {
     if (c.kind === 'friend') {
@@ -619,6 +623,9 @@ export function ChatSessionList({
                     data-chat-conversation-kind={c.kind}
                     data-chat-session-ulid={c.kind === 'friend' ? c.id : undefined}
                     data-chat-group-ulid={c.kind === 'group' ? c.id : undefined}
+                    data-chat-conversation-preview={c.preview?.content ?? ''}
+                    data-chat-conversation-latest-at={c.lastActivityMs}
+                    data-chat-conversation-unread={unread}
                     data-testid={`pt-context-menu-trigger-chat-${c.kind}-${c.id}`}
                     data-pt-context-menu-trigger="chat-conversation"
                     data-pt-context-menu-kind={c.kind}

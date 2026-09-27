@@ -3,6 +3,7 @@ package social
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -129,6 +130,9 @@ CREATE TABLE friend_chat_friendships (
 	updated_at datetime
 )`).Error; err != nil {
 		t.Fatalf("migrate friendships: %v", err)
+	}
+	if err := infrastructure.MigrateIdentitySchema(gdb); err != nil {
+		t.Fatalf("migrate Social relationship authority: %v", err)
 	}
 
 	handlerStoreOnce.Do(func() {
@@ -1062,7 +1066,31 @@ func TestSocialPublicReadRoutesUseStrictOptionalJWT(t *testing.T) {
 	}
 
 	handler := socialHandlerByName(t, fixture.subserver.Handlers(), "social-get-moment")
-	testServer := serveSocialHandler(t, handler)
+	testServer := serveSocialHandlerWithEndpoint(
+		t,
+		handler,
+		func(
+			ctx context.Context,
+			_ server.Request,
+			response server.Response,
+		) error {
+			result, err := fixture.subserver.handleGetMomentResource(
+				ctx,
+				&privatecontentpb.GetMomentResourceRequest{},
+			)
+			if err != nil {
+				return err
+			}
+			body, err := proto.Marshal(result)
+			if err != nil {
+				return err
+			}
+			response.SetHeader("Content-Type", "application/x-protobuf")
+			response.WriteHeader(http.StatusOK)
+			_, err = response.Write(body)
+			return err
+		},
+	)
 	t.Cleanup(testServer.Close)
 
 	tests := []struct {
@@ -1489,6 +1517,24 @@ func TestHandler_GetPost_NotFoundOnMissingID(t *testing.T) {
 	_ = server.NotFound // keep import alive even if shape changes
 }
 
+func TestHandler_GetPost_ReturnsTypedUnavailableForMissingRecord(t *testing.T) {
+	f := newHandlerFixture(t)
+	response, err := f.subserver.handleGetPost(
+		context.Background(),
+		&model.GetPostRequest{PostId: "999999999999"},
+	)
+	if err != nil {
+		t.Fatalf("get missing post: %v", err)
+	}
+	if response.GetOutcome() !=
+		model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE {
+		t.Fatalf("outcome = %s, want unavailable", response.GetOutcome())
+	}
+	if response.GetPost() != nil || response.GetExplanation() != nil {
+		t.Fatal("unavailable detail must not include post or explanation")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Canonical Friend Request boundary
 // ---------------------------------------------------------------------------
@@ -1496,6 +1542,9 @@ func TestHandler_GetPost_NotFoundOnMissingID(t *testing.T) {
 type recordingFederatedFriendRequestAPI struct {
 	submittedCommand *model.FriendRequestCommand
 	projection       domain.FriendRequestProjection
+	lookupActorPTID  string
+	lookupRequest    *model.LookupFriendRequestCommandResultRequest
+	lookupResponse   *model.LookupFriendRequestCommandResultResponse
 	listActorPTID    string
 	listState        model.FriendRequestState
 	listLimit        int32
@@ -1516,6 +1565,19 @@ func (a *recordingFederatedFriendRequestAPI) SubmitFriendRequestCommand(
 	return application.SubmitFriendRequestCommandResult{
 		Projection: a.projection,
 	}, nil
+}
+
+func (a *recordingFederatedFriendRequestAPI) LookupFriendRequestCommandResult(
+	_ context.Context,
+	actorPTID string,
+	request *model.LookupFriendRequestCommandResultRequest,
+) (*model.LookupFriendRequestCommandResultResponse, error) {
+	a.lookupActorPTID = actorPTID
+	a.lookupRequest = request
+	if a.err != nil {
+		return nil, a.err
+	}
+	return a.lookupResponse, nil
 }
 
 func (a *recordingFederatedFriendRequestAPI) ListFriendRequestProjections(
@@ -1554,8 +1616,12 @@ func TestFriendRequestHandlersUseCanonicalSocialContracts(t *testing.T) {
 		context.Context,
 		*model.ListSocialFriendRequestsRequest,
 	) (*model.ListSocialFriendRequestsResponse, error) = subserver.handleListFriendRequests
+	var lookup func(
+		context.Context,
+		*model.LookupFriendRequestCommandResultRequest,
+	) (*model.LookupFriendRequestCommandResultResponse, error) = subserver.handleLookupFriendRequestCommandResult
 
-	if send == nil || accept == nil || reject == nil || list == nil {
+	if send == nil || accept == nil || reject == nil || list == nil || lookup == nil {
 		t.Fatal("canonical Friend Request handlers must be registered functions")
 	}
 }
@@ -1596,6 +1662,22 @@ func TestFriendRequestMutationRequiresAuthenticatedActorAndDevice(t *testing.T) 
 				t.Fatalf("missing authenticated %s status = %d", test.name, status)
 			}
 		})
+	}
+}
+
+func TestFriendRequestResultLookupRequiresAuthenticatedActor(t *testing.T) {
+	response, err := (&subServer{}).handleLookupFriendRequestCommandResult(
+		context.Background(),
+		&model.LookupFriendRequestCommandResultRequest{
+			CommandId:            "command-1",
+			CommandPayloadSha256: bytes.Repeat([]byte{0x51}, sha256.Size),
+		},
+	)
+	if err == nil {
+		t.Fatalf("unauthenticated lookup returned %+v", response)
+	}
+	if status := statusOf(err); status != 0 && status != 401 {
+		t.Fatalf("unauthenticated lookup status = %d", status)
 	}
 }
 
@@ -1726,6 +1808,46 @@ func TestHandleListFriendRequestsMapsCanonicalProjection(t *testing.T) {
 		request.GetSenderHomeStationPeerId() != "station-a" ||
 		request.GetReceiverHomeStationPeerId() != "station-b" {
 		t.Fatalf("canonical Friend Request mapping = %+v", request)
+	}
+}
+
+func TestLookupFriendRequestCommandResultForwardsAuthenticatedActorAndHash(
+	t *testing.T,
+) {
+	const actorPTID = "ptid:v1:actor:peers:p:alice:alice-fingerprint"
+	payloadHash := bytes.Repeat([]byte{0x51}, sha256.Size)
+	request := &model.LookupFriendRequestCommandResultRequest{
+		CommandId:            "command-1",
+		CommandPayloadSha256: payloadHash,
+	}
+	api := &recordingFederatedFriendRequestAPI{
+		lookupResponse: &model.LookupFriendRequestCommandResultResponse{
+			State:                model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING,
+			CommandId:            "command-1",
+			CommandPayloadSha256: payloadHash,
+		},
+	}
+
+	response, err := lookupFriendRequestCommandResultWithAPI(
+		context.Background(),
+		actorPTID,
+		request,
+		api,
+	)
+	if err != nil {
+		t.Fatalf("lookup Friend Request result: %v", err)
+	}
+	if api.lookupActorPTID != actorPTID || api.lookupRequest != request {
+		t.Fatalf(
+			"lookup delegation actor=%q request=%+v",
+			api.lookupActorPTID,
+			api.lookupRequest,
+		)
+	}
+	if response.GetState() !=
+		model.FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING ||
+		!bytes.Equal(response.GetCommandPayloadSha256(), payloadHash) {
+		t.Fatalf("lookup response = %+v", response)
 	}
 }
 

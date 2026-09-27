@@ -195,7 +195,7 @@ pub fn dkx_send(
     if actor_ptid.trim().is_empty() {
         return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
     }
-    let sender_device_id = match device_install::get_or_create_device_id(&actor_ptid) {
+    let sender_device_id = match device_install::get_or_create_device_id() {
         Ok(device_id) => device_id,
         Err(error) => {
             return AppResult::fail(
@@ -228,7 +228,7 @@ pub fn dkx_send(
 }
 
 // =============================================================================
-// Unified Message Queries (P2 — replaces friend_chat_* + group_chat_* commands)
+// Unified Message Queries (P2 — canonical conversation commands)
 // =============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

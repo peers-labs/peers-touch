@@ -338,6 +338,10 @@ describe('Messaging conversation projection', () => {
           mls_status: 'active',
           active: true,
           updated_at_unix_ms: 1_800_000_000_000,
+          summary: {
+            unread_count: 2,
+            latest_message: null,
+          },
         }],
       },
     })
@@ -368,6 +372,10 @@ describe('Messaging conversation projection', () => {
       mlsStatus: 'active',
       active: true,
       updatedAtUnixMs: 1_800_000_000_000,
+      summary: {
+        unreadCount: 2,
+        latestMessage: undefined,
+      },
     }])
     expect(invokeMock).toHaveBeenCalledWith('messaging_list_conversations', undefined)
   })
@@ -392,32 +400,67 @@ describe('Messaging message projection', () => {
           reactions: [],
           read_by_ptids: ['ptid:test:bob'],
         }],
+        has_more: true,
+        next_before_sequence: 7,
       },
     })
 
-    await expect(imServiceV1.messaging.listMessages('conversation-1')).resolves.toEqual([{
-      eventId: 'event-1',
-      eventSequence: 7,
-      messageId: 'message-1',
-      senderPtid: 'ptid:test:alice',
-      senderDeviceId: 'alice-device',
-      plaintext: 'canonical plaintext',
-      attachments: [],
-      state: 'committed',
-      timestampUnixMs: 1_800_000_000_000,
-      replyToMessageId: undefined,
-      threadRootMessageId: undefined,
-      editedText: undefined,
-      editedAtUnixMs: undefined,
-      retracted: false,
-      reactions: [],
-      pinnedByPtid: undefined,
-      pinnedAtUnixMs: undefined,
-      readByPtids: ['ptid:test:bob'],
-    }])
+    await expect(imServiceV1.messaging.listMessages('conversation-1')).resolves.toEqual({
+      messages: [{
+        eventId: 'event-1',
+        eventSequence: 7,
+        messageId: 'message-1',
+        senderPtid: 'ptid:test:alice',
+        senderDeviceId: 'alice-device',
+        plaintext: 'canonical plaintext',
+        attachments: [],
+        state: 'committed',
+        timestampUnixMs: 1_800_000_000_000,
+        replyToMessageId: undefined,
+        threadRootMessageId: undefined,
+        editedText: undefined,
+        editedAtUnixMs: undefined,
+        retracted: false,
+        reactions: [],
+        pinnedByPtid: undefined,
+        pinnedAtUnixMs: undefined,
+        readByPtids: ['ptid:test:bob'],
+      }],
+      hasMore: true,
+      nextBeforeSequence: 7,
+    })
     expect(invokeMock).toHaveBeenCalledOnce()
     expect(invokeMock).toHaveBeenCalledWith('messaging_list_messages', {
-      input: { conversation_id: 'conversation-1' },
+      input: {
+        conversation_id: 'conversation-1',
+        before_sequence: undefined,
+        limit: undefined,
+      },
+    })
+  })
+
+  it('retries the same logical message through the Engine owner', async () => {
+    invokeMock.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        command_id: 'command-2',
+        message_id: 'message-1',
+        state: 'retrying',
+      },
+    })
+
+    await expect(
+      imServiceV1.messaging.retryMessage('conversation-1', 'message-1'),
+    ).resolves.toEqual({
+      commandId: 'command-2',
+      messageId: 'message-1',
+      state: 'retrying',
+    })
+    expect(invokeMock).toHaveBeenCalledWith('messaging_retry_message', {
+      input: {
+        conversation_id: 'conversation-1',
+        message_id: 'message-1',
+      },
     })
   })
 })
@@ -467,7 +510,6 @@ describe('Messaging local projections and member settings', () => {
         pinned: true,
         background: 'mint',
         backgroundImage: 'oss://station/background',
-        clearedAtUnixMs: 1_800_000_000_000,
       },
     })
 
@@ -476,7 +518,6 @@ describe('Messaging local projections and member settings', () => {
       pinned: true,
       background: 'mint',
       backgroundImage: 'oss://station/background',
-      clearedAtUnixMs: 1_800_000_000_000,
     })).resolves.toEqual({
       nickname: '',
       muted: true,
@@ -484,7 +525,6 @@ describe('Messaging local projections and member settings', () => {
       pinned: true,
       background: 'mint',
       backgroundImage: 'oss://station/background',
-      clearedAtUnixMs: 1_800_000_000_000,
     })
 
     expect(invokeMock).toHaveBeenCalledWith('messaging_update_member_settings', {
@@ -496,7 +536,6 @@ describe('Messaging local projections and member settings', () => {
         pinned: true,
         background: 'mint',
         background_image: 'oss://station/background',
-        cleared_at_unix_ms: 1_800_000_000_000,
       },
     })
   })

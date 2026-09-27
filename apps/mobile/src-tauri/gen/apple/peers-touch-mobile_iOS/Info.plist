@@ -6,6 +6,17 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Peers</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>peers-touch</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>peers-touch</string>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -20,6 +31,11 @@
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>0.1.0</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.peers.touch.mobile.reconcile.v1.development</string>
+		<string>com.peers.touch.mobile.reconcile.v1.production</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>

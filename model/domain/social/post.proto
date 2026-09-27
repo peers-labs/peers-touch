@@ -328,6 +328,15 @@ message GetPostRequest {
 message GetPostResponse {
   Post post = 1;
   FeedObjectExplanation explanation = 2;
+  PostDetailOutcome outcome = 3;
+}
+
+enum PostDetailOutcome {
+  POST_DETAIL_OUTCOME_UNSPECIFIED = 0;
+  POST_DETAIL_OUTCOME_AVAILABLE = 1;
+  POST_DETAIL_OUTCOME_HIDDEN = 2;
+  POST_DETAIL_OUTCOME_DELETED = 3;
+  POST_DETAIL_OUTCOME_UNAVAILABLE = 4;
 }
 
 message ListPostsRequest {
@@ -371,6 +380,20 @@ message GetTimelineResponse {
   string next_cursor = 2;
   bool has_more = 3;
   repeated FeedObjectExplanation explanations = 4;
+  TimelinePageOutcome outcome = 5;
+  TimelinePolicySummary policy_summary = 6;
+}
+
+enum TimelinePageOutcome {
+  TIMELINE_PAGE_OUTCOME_UNSPECIFIED = 0;
+  TIMELINE_PAGE_OUTCOME_ITEMS = 1;
+  TIMELINE_PAGE_OUTCOME_EMPTY = 2;
+  TIMELINE_PAGE_OUTCOME_FILTERED_EMPTY = 3;
+}
+
+message TimelinePolicySummary {
+  uint32 scanned_count = 1;
+  uint32 filtered_count = 2;
 }
 
 // FeedObjectExplanation is a viewer-scoped projection, not intrinsic

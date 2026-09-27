@@ -45,12 +45,11 @@ BLOCKED_STEP = "gateway.frontend_telemetry_upload"
 BLOCKED_PHASE = "P0a-3"
 BLOCKED_DOWNSTREAM_STEPS = [
     "preflight.gateway_station",
-    "gateway.auth_login",
-    "station.auth_login",
-    "station.telemetry_routes",
+    "gateway.access_login",
     "gateway.frontend_telemetry_upload",
-    "station.raw_query",
-    "station.rollup_query",
+    "station.telemetry_routes",
+    "gateway.frontend_telemetry_query",
+    "gateway.frontend_telemetry_rollup_query",
     "dev_mirror",
 ]
 

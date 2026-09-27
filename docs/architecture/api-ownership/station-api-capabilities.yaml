@@ -8,6 +8,8 @@ activation:
     - complete_inventory_for_every_governed_prefix
     - implementation_gate_and_schema_validation_land_together
 governed_prefixes:
+  - /sub-bootstrap/station-identity
+  - /actor/access/
   - /conversation/
   - /messaging/
   - /envelope/
@@ -16,8 +18,18 @@ governed_prefixes:
   - /key-exchange/
   - /api/v1/social/friend-request
   - /api/v1/social/friend-requests
+  - /api/v1/social/relationships/block
+  - /api/v1/social/relationships/unblock
+  - /api/v1/social/relationships/blocked
+  - /api/v1/social/relationships/status
+  - /api/v1/social/relationships/result
+  - /notification/push/
   - /federation/
 owner_roots:
+  station.bootstrap_identity:
+    - apps/station/frame/core/plugin/native/subserver/bootstrap/
+  station.access:
+    - apps/station/frame/touch/
   station.conversation:
     - apps/station/app/subserver/conversation/
   station.conversation.delivery:
@@ -30,6 +42,8 @@ owner_roots:
     - apps/station/app/subserver/key_exchange/
   station.social:
     - apps/station/app/subserver/social/handler.go
+  station.notification:
+    - apps/station/app/subserver/notification/
   station.federation:
     - apps/station/frame/core/federation/
 
@@ -64,6 +78,150 @@ ddd_layers:
       - github.com/peers-labs/peers-touch/station/app/subserver/conversation/infrastructure
 
 capabilities:
+  - id: station.identity.verify
+    domain_owner: station.bootstrap_identity
+    truth_owner: station.identity
+    exposure: client
+    canonical_route: { method: POST, path: /sub-bootstrap/station-identity }
+    request_proto: peers_touch.model.peer.v1.StationIdentityRequest
+    response_proto: peers_touch.model.peer.v1.StationIdentityResponse
+    truth_stores: []
+    allowed_dependencies: [station.host_identity.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.start
+    domain_owner: station.access
+    truth_owner: access.attempt
+    exposure: client
+    canonical_route: { method: POST, path: /actor/access/start }
+    request_proto: peers_touch.model.access_gate.v1.StartAccessAttemptRequest
+    response_proto: peers_touch.model.access_gate.v1.StartAccessAttemptResponse
+    truth_stores: [access_gate_attempts]
+    allowed_dependencies: [station.identity, actor.session.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.start.preflight
+    domain_owner: station.access
+    truth_owner: access.transport
+    exposure: internal
+    canonical_route: { method: OPTIONS, path: /actor/access/start }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.submit
+    domain_owner: station.access
+    truth_owner: access.attempt
+    exposure: client
+    canonical_route: { method: POST, path: /actor/access/submit }
+    request_proto: peers_touch.model.access_gate.v1.SubmitAccessGateRequest
+    response_proto: peers_touch.model.access_gate.v1.SubmitAccessGateResponse
+    truth_stores: [access_gate_attempts, access_gate_submissions]
+    allowed_dependencies: [access.gate.evaluate, actor.session.issue]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.submit.preflight
+    domain_owner: station.access
+    truth_owner: access.transport
+    exposure: internal
+    canonical_route: { method: OPTIONS, path: /actor/access/submit }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.decision
+    domain_owner: station.access
+    truth_owner: access.attempt
+    exposure: client
+    canonical_route: { method: POST, path: /actor/access/decision }
+    request_proto: peers_touch.model.access_gate.v1.GetAccessDecisionRequest
+    response_proto: peers_touch.model.access_gate.v1.GetAccessDecisionResponse
+    truth_stores: [access_gate_attempts]
+    allowed_dependencies: [access.gate.evaluate, actor.session.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.decision.preflight
+    domain_owner: station.access
+    truth_owner: access.transport
+    exposure: internal
+    canonical_route: { method: OPTIONS, path: /actor/access/decision }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.cancel
+    domain_owner: station.access
+    truth_owner: access.attempt
+    exposure: client
+    canonical_route: { method: POST, path: /actor/access/cancel }
+    request_proto: peers_touch.model.access_gate.v1.CancelAccessAttemptRequest
+    response_proto: peers_touch.model.access_gate.v1.CancelAccessAttemptResponse
+    truth_stores: [access_gate_attempts, access_gate_submissions]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: access.gate.cancel.preflight
+    domain_owner: station.access
+    truth_owner: access.transport
+    exposure: internal
+    canonical_route: { method: OPTIONS, path: /actor/access/cancel }
+    request_proto: ""
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: notification.push.register
+    domain_owner: station.notification
+    truth_owner: notification.push_registration
+    exposure: client
+    canonical_route: { method: POST, path: /notification/push/register }
+    request_proto: peers_touch.model.notification.v1.RegisterPushDeviceRequest
+    response_proto: peers_touch.model.notification.v1.RegisterPushDeviceResponse
+    truth_stores: [notification_push_registrations, notification_push_mutation_receipts]
+    allowed_dependencies: [actor.session_device.verify]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: notification.push.unregister
+    domain_owner: station.notification
+    truth_owner: notification.push_registration
+    exposure: client
+    canonical_route: { method: POST, path: /notification/push/unregister }
+    request_proto: peers_touch.model.notification.v1.UnregisterPushDeviceRequest
+    response_proto: peers_touch.model.notification.v1.UnregisterPushDeviceResponse
+    truth_stores: [notification_push_registrations, notification_push_mutation_receipts]
+    allowed_dependencies: [actor.session_device.verify]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: notification.push.list
+    domain_owner: station.notification
+    truth_owner: notification.push_registration
+    exposure: client
+    canonical_route: { method: GET, path: /notification/push/devices }
+    request_proto: peers_touch.model.notification.v1.ListPushDevicesRequest
+    response_proto: peers_touch.model.notification.v1.ListPushDevicesResponse
+    truth_stores: [notification_push_registrations]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: chat.conversation.create_direct
     domain_owner: station.conversation
     truth_owner: conversation.authority
@@ -380,6 +538,18 @@ capabilities:
       - peers_touch.model.chat.v1.RejectFriendRequestRequest
       - peers_touch.model.chat.v1.RejectFriendRequestResponse
 
+  - id: social.friend_request.result_lookup
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/friend-request/result }
+    request_proto: peers_touch.model.social.v1.LookupFriendRequestCommandResultRequest
+    response_proto: peers_touch.model.social.v1.LookupFriendRequestCommandResultResponse
+    truth_stores: [social_friend_request_commands]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: social.friend_request.list
     domain_owner: station.social
     truth_owner: social.relationship
@@ -394,6 +564,70 @@ capabilities:
     superseded_symbols:
       - peers_touch.model.chat.v1.ListFriendRequestsRequest
       - peers_touch.model.chat.v1.ListFriendRequestsResponse
+
+  - id: social.relationship.block
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/relationships/block }
+    request_proto: peers_touch.model.social.v1.BlockSocialActorRequest
+    response_proto: peers_touch.model.social.v1.BlockSocialActorResponse
+    truth_stores: [social_relationship_commands, social_directional_relationships, follows, social_relationship_projections]
+    allowed_dependencies: [federation.delivery.enqueue]
+    forbidden_aliases:
+      - { method: POST, path: /friend-chat/block }
+    superseded_symbols: []
+
+  - id: social.relationship.unblock
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/relationships/unblock }
+    request_proto: peers_touch.model.social.v1.UnblockSocialActorRequest
+    response_proto: peers_touch.model.social.v1.UnblockSocialActorResponse
+    truth_stores: [social_relationship_commands, social_directional_relationships]
+    allowed_dependencies: [federation.delivery.enqueue]
+    forbidden_aliases:
+      - { method: DELETE, path: /friend-chat/block }
+    superseded_symbols: []
+
+  - id: social.relationship.result_lookup
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: POST, path: /api/v1/social/relationships/result }
+    request_proto: peers_touch.model.social.v1.LookupSocialRelationshipCommandResultRequest
+    response_proto: peers_touch.model.social.v1.LookupSocialRelationshipCommandResultResponse
+    truth_stores: [social_relationship_commands]
+    allowed_dependencies: []
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: social.relationship.blocked_list
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: GET, path: /api/v1/social/relationships/blocked }
+    request_proto: peers_touch.model.social.v1.ListBlockedActorsRequest
+    response_proto: peers_touch.model.social.v1.ListBlockedActorsResponse
+    truth_stores: [social_directional_relationships]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: GET, path: /friend-chat/blocked }
+    superseded_symbols: []
+
+  - id: social.relationship.status
+    domain_owner: station.social
+    truth_owner: social.relationship
+    exposure: client
+    canonical_route: { method: GET, path: /api/v1/social/relationships/status }
+    request_proto: peers_touch.model.social.v1.GetSocialRelationshipStatusRequest
+    response_proto: peers_touch.model.social.v1.GetSocialRelationshipStatusResponse
+    truth_stores: [social_directional_relationships, follows]
+    allowed_dependencies: []
+    forbidden_aliases:
+      - { method: GET, path: /friend-chat/friendship/status }
+    superseded_symbols: []
 
   - id: federation.delivery.receive
     domain_owner: station.federation
@@ -1027,6 +1261,18 @@ capabilities:
     response_proto: peers_touch.model.chat.v1.SyncAuthorityConversationEventsResponse
     truth_stores: [conversation_events]
     allowed_dependencies: [federation.auth.verify, conversation.events.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.realtime.call_resolution.get
+    domain_owner: station.federation
+    truth_owner: realtime.call_resolution
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/realtime/call-resolution }
+    request_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionRequest
+    response_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionResponse
+    truth_stores: [realtime_call_resolutions]
+    allowed_dependencies: [federation.auth.verify, actor.home_station.read, realtime.call_resolution.read]
     forbidden_aliases: []
     superseded_symbols: []
 

@@ -234,7 +234,7 @@ npx vitest
 ```typescript
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { AuthCommandException, api } from '../services/desktop_api';
+import { api } from '../services/desktop_api';
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -247,7 +247,7 @@ describe('TS <-> Rust command contract', () => {
     invokeMock.mockReset();
   });
 
-  it('auth_login 透传 input', async () => {
+  it('access_start 透传统一错误', async () => {
     invokeMock.mockResolvedValue({
       ok: false,
       error: { code: 'NOT_IMPLEMENTED', message: 'not implemented' },
@@ -255,26 +255,13 @@ describe('TS <-> Rust command contract', () => {
 
     let rejectedError: unknown;
     try {
-      await api.authLogin({
-        account: 'demo',
-        password: 'pwd',
-        base_url: 'http://localhost:8420',
-      });
+      await api.accessStart();
     } catch (error) {
       rejectedError = error;
     }
 
-    expect(invokeMock).toHaveBeenCalledWith('auth_login', {
-      input: {
-        account: 'demo',
-        password: 'pwd',
-        base_url: 'http://localhost:8420',
-      },
-    });
-
-    if (rejectedError) {
-      expect(rejectedError).toBeInstanceOf(AuthCommandException);
-    }
+    expect(invokeMock).toHaveBeenCalledWith('access_start', undefined);
+    expect(rejectedError).toBeInstanceOf(Error);
   });
 
   it('无 input 的命令不传入参数对象', async () => {

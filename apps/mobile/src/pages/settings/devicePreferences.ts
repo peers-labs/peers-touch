@@ -1,80 +1,62 @@
 /**
  * devicePreferences.ts — Typed device-local preferences
  *
- * Device preferences are stored locally (never sent to Station).
- * This module owns the type, default factory, persistence key,
- * and typed local readback.
+ * Device preferences are stored locally (never sent to Station). Their
+ * projection and persistence lifecycle belong to deviceSettingsRuntime;
+ * this module keeps settings-facing platform adapters together.
  */
 
-import { createMobileAppStorageRuntime } from '../../storage/mobileClientStorage';
+import { getVersion } from '@tauri-apps/api/app';
+import type { ClientStorageDomainId } from '@peers-touch/client-storage';
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import type { MobileAuthSession } from '../../features/auth/authSession';
+import {
+  checkAllPermissions,
+  requestPermission,
+  type PermissionCheckResult,
+  type PermissionKind,
+  type PermissionRequestResult,
+} from '../../runtimes/nativeLifecycleBridge';
+import { createMobileClientStorageRuntime } from '../../storage/mobileClientStorage';
 
-export type ThemeMode = 'system' | 'light' | 'dark';
-export type FontSizePreset = 'small' | 'medium' | 'large';
+export {
+  defaultDevicePreferences,
+  loadDevicePreferences,
+  normalizeDevicePreferences,
+  persistDevicePreferences,
+} from '../../runtimes/deviceSettingsRuntime';
+export type {
+  DevicePreferences,
+  FontSizePreset,
+  ThemeMode,
+} from '../../runtimes/deviceSettingsRuntime';
 
-export interface DevicePreferences {
-  readonly theme: ThemeMode;
-  readonly fontSize: FontSizePreset;
-  readonly compactMode: boolean;
-  readonly mediaAutoDownload: boolean;
+export type DevicePermission = PermissionCheckResult;
+
+const CLEARABLE_CACHE_DOMAINS: readonly ClientStorageDomainId[] = [
+  'asset.avatar',
+  'profile.peer',
+  'runtime.projection',
+];
+
+export async function clearMobileCache(
+  session: MobileAuthSession | null,
+): Promise<void> {
+  await createMobileClientStorageRuntime(session).kernel.invalidateDomains(
+    CLEARABLE_CACHE_DOMAINS,
+  );
 }
 
-// ---------------------------------------------------------------------------
-// Defaults
-// ---------------------------------------------------------------------------
-
-export function defaultDevicePreferences(): DevicePreferences {
-  return {
-    theme: 'system',
-    fontSize: 'medium',
-    compactMode: false,
-    mediaAutoDownload: true,
-  };
+export async function loadAppVersion(): Promise<string> {
+  return getVersion();
 }
 
-// ---------------------------------------------------------------------------
-// Persistence
-// ---------------------------------------------------------------------------
-
-const DEVICE_PREFS_KEY = 'peers-touch.mobile.device-preferences.v1';
-
-export async function loadDevicePreferences(): Promise<DevicePreferences> {
-  try {
-    const repository = createMobileAppStorageRuntime().repositories.chatPreferences;
-    const raw = await repository.readValue(DEVICE_PREFS_KEY) as Partial<DevicePreferences> | null;
-    if (!raw) return defaultDevicePreferences();
-    return normalizeDevicePreferences(raw);
-  } catch {
-    return defaultDevicePreferences();
-  }
+export async function loadDevicePermissions(): Promise<DevicePermission[]> {
+  return checkAllPermissions();
 }
 
-export async function persistDevicePreferences(prefs: DevicePreferences): Promise<void> {
-  const repository = createMobileAppStorageRuntime().repositories.chatPreferences;
-  await repository.write(DEVICE_PREFS_KEY, prefs as unknown as Record<string, unknown>);
-}
-
-// ---------------------------------------------------------------------------
-// Normalizer (JSON quarantine)
-// ---------------------------------------------------------------------------
-
-function normalizeDevicePreferences(raw: Partial<DevicePreferences>): DevicePreferences {
-  const defaults = defaultDevicePreferences();
-  return {
-    theme: isThemeMode(raw.theme) ? raw.theme : defaults.theme,
-    fontSize: isFontSizePreset(raw.fontSize) ? raw.fontSize : defaults.fontSize,
-    compactMode: typeof raw.compactMode === 'boolean' ? raw.compactMode : defaults.compactMode,
-    mediaAutoDownload: typeof raw.mediaAutoDownload === 'boolean' ? raw.mediaAutoDownload : defaults.mediaAutoDownload,
-  };
-}
-
-function isThemeMode(value: unknown): value is ThemeMode {
-  return value === 'system' || value === 'light' || value === 'dark';
-}
-
-function isFontSizePreset(value: unknown): value is FontSizePreset {
-  return value === 'small' || value === 'medium' || value === 'large';
+export async function requestDevicePermission(
+  kind: PermissionKind,
+): Promise<PermissionRequestResult> {
+  return requestPermission(kind);
 }

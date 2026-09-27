@@ -4,7 +4,6 @@
 
 ```json
 {
-  "schemaVersion": 1,
   "kind": "peers-touch-task-slice",
   "planId": "CHAT-LIFECYCLE-20260916",
   "taskId": "CHAT-09-release",
@@ -47,7 +46,7 @@
     }
   ],
   "doneWhen": [
-    "CHAT-G00 through CHAT-G13 pass on one exact source",
+    "CHAT-G00 through CHAT-G12 and CHAT-G14 pass on one exact source",
     "Required Desktop and Mobile runtime cells have receiver and durable evidence",
     "Old owners and obsolete plan discovery have zero active references",
     "Gap detector, quality evidence, completion audit, and independent review pass"

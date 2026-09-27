@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Appium-backed W2-E1 simulator callback-routing Acceptance Gate."""
+"""Appium-backed dual-iOS simulator callback-routing Acceptance Gate."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ PROVEN_SCOPE = "simulator-callback-routing"
 ENVIRONMENT_ID = "mobile-simulator"
 EXPECTED_CLIENTS = {
     "sim-ios": "ios",
-    "sim-android": "android",
+    "sim-ios-peer": "ios",
 }
 EXPECTED_DEVICE_ROLE_MARKERS = {
     "ios": "simulator",
@@ -60,6 +60,7 @@ REQUIRED_HARNESS_ACTIONS = (
 )
 IOS_NATIVE_PREFLIGHT_TIMEOUT_SECONDS = 15.0
 IOS_WEBVIEW_PREFLIGHT_TIMEOUT_SECONDS = 30.0
+IOS_WEBVIEW_CONNECT_ATTEMPT_TIMEOUT_MS = 5000
 MAX_APPIUM_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_APPIUM_ERROR_RESPONSE_BYTES = 1024 * 1024
 MAX_MOBILE_PAGE_SOURCE_BYTES = 32 * 1024 * 1024
@@ -86,10 +87,11 @@ const root = window.__PEERS_MOBILE_ACCEPTANCE__;
 return root ? Object.keys(root).sort() : null;
 """
 
-DOCUMENT_TIME_ORIGIN_SCRIPT = """
-return window.performance && Number.isFinite(window.performance.timeOrigin)
-  ? window.performance.timeOrigin
-  : null;
+DOCUMENT_SOURCE_SCRIPT = """
+const done = arguments[arguments.length - 1];
+done(document.documentElement
+  ? document.documentElement.outerHTML
+  : "");
 """
 
 HARNESS_ACTION_SCRIPT = """
@@ -108,6 +110,40 @@ Promise.resolve(root[action](input))
   }));
 """
 
+START_FINALIZE_EVIDENCE_SCRIPT = """
+const key = "__PEERS_MOBILE_FINALIZE_RESULT__";
+const root = window.__PEERS_MOBILE_ACCEPTANCE__;
+if (!root
+    || typeof root["projection.read"] !== "function"
+    || typeof root.cleanup !== "function") {
+  return {started: false, error: "acceptance.mobile.finalizeUnavailable"};
+}
+const source = document.documentElement
+  ? document.documentElement.outerHTML
+  : "";
+window[key] = {state: "pending"};
+Promise.resolve(root["projection.read"]({}))
+  .then((projection) => Promise.resolve(root.cleanup({}))
+    .then((cleanup) => {
+      window[key] = {state: "done", value: {source, projection, cleanup}};
+    }))
+  .catch((error) => {
+    window[key] = {
+      state: "error",
+      error: String(error && error.message || error),
+    };
+  });
+return {started: true};
+"""
+
+READ_FINALIZE_EVIDENCE_SCRIPT = """
+const key = "__PEERS_MOBILE_FINALIZE_RESULT__";
+const result = window[key] || null;
+if (result && result.state !== "pending") {
+  delete window[key];
+}
+return result;
+"""
 
 class EvidenceWriter(Protocol):
     def write_json(
@@ -357,7 +393,7 @@ class SimulatorAppiumSession:
         self.ports = dict(ports)
         self.chromedriver_executable = chromedriver_executable
         self.session_id = ""
-        self._document_time_origin_before_refresh: float | None = None
+        self.current_context = "NATIVE_APP"
 
     def start(self) -> "SimulatorAppiumSession":
         capabilities: dict[str, Any] = {
@@ -374,9 +410,13 @@ class SimulatorAppiumSession:
             capabilities.update(
                 {
                     "appium:bundleId": self.build.application_id,
+                    "appium:isHeadless": True,
+                    "appium:shouldTerminateApp": False,
                     "appium:wdaLocalPort": self._required_port("wda-local"),
                     "appium:mjpegServerPort": self._required_port("mjpeg"),
-                    "appium:webviewConnectTimeout": 30000,
+                    "appium:webviewConnectTimeout": (
+                        IOS_WEBVIEW_CONNECT_ATTEMPT_TIMEOUT_MS
+                    ),
                     "appium:includeSafariInWebviews": True,
                 }
             )
@@ -431,9 +471,22 @@ class SimulatorAppiumSession:
         if not session_id:
             raise DriverError("Appium session response is missing sessionId")
         self.session_id = session_id
+        self.current_context = "NATIVE_APP"
         if self.platform == "ios":
             self._request("POST", self._path("/timeouts"), {"script": 45000})
         return self
+
+    def reconnect_after_runtime_relaunch(
+        self,
+    ) -> "SimulatorAppiumSession":
+        if self.platform != "ios":
+            return self
+        if not self.session_id:
+            raise DriverError(
+                "iOS Appium session must be active before reconnect"
+            )
+        self.stop()
+        return self.start()
 
     def stop(self) -> None:
         if not self.session_id:
@@ -481,6 +534,7 @@ class SimulatorAppiumSession:
             self._path("/context"),
             {"name": name},
         )
+        self.current_context = name
 
     def switch_to_native(self) -> None:
         self.switch_context("NATIVE_APP")
@@ -496,26 +550,12 @@ class SimulatorAppiumSession:
                 if context.upper().startswith(("WEBVIEW", "CHROMIUM"))
             ]
             for context in webviews:
-                self.switch_context(context)
                 try:
-                    document_time_origin = self.execute_script(
-                        DOCUMENT_TIME_ORIGIN_SCRIPT
-                    )
+                    self.switch_context(context)
                     inventory = self.execute_script(HARNESS_INVENTORY_SCRIPT)
                 except DriverError:
                     continue
-                previous_time_origin = (
-                    self._document_time_origin_before_refresh
-                )
-                if previous_time_origin is not None and (
-                    isinstance(document_time_origin, bool)
-                    or not isinstance(document_time_origin, (int, float))
-                    or not math.isfinite(document_time_origin)
-                    or float(document_time_origin) == previous_time_origin
-                ):
-                    continue
                 if isinstance(inventory, list):
-                    self._document_time_origin_before_refresh = None
                     return context
             time.sleep(0.25)
         raise DriverError(
@@ -544,11 +584,16 @@ class SimulatorAppiumSession:
         action: str,
         payload: Mapping[str, Any] | None = None,
     ) -> Any:
-        result = self.execute_async_script(
-            HARNESS_ACTION_SCRIPT,
-            action,
-            dict(payload or {}),
-        )
+        try:
+            result = self.execute_async_script(
+                HARNESS_ACTION_SCRIPT,
+                action,
+                dict(payload or {}),
+            )
+        except DriverError as error:
+            raise DriverError(
+                f"Mobile Acceptance action {action!r} transport failed: {error}"
+            ) from error
         if not isinstance(result, dict):
             raise DriverError(
                 f"Mobile Acceptance action {action!r} returned an invalid envelope"
@@ -558,6 +603,47 @@ class SimulatorAppiumSession:
                 f"Mobile Acceptance action {action!r} failed: {result['error']}"
             )
         return result.get("value")
+
+    def finalize_evidence_and_cleanup(
+        self,
+        timeout: float = 45.0,
+    ) -> tuple[str, Any, Any]:
+        started = self.execute_script(START_FINALIZE_EVIDENCE_SCRIPT)
+        if started != {"started": True}:
+            raise DriverError(
+                "Mobile Acceptance finalization could not start"
+            )
+        deadline = time.monotonic() + _positive_timeout(timeout)
+        while time.monotonic() < deadline:
+            result = self.execute_script(READ_FINALIZE_EVIDENCE_SCRIPT)
+            if result is None or (
+                isinstance(result, dict) and result.get("state") == "pending"
+            ):
+                time.sleep(0.25)
+                continue
+            if not isinstance(result, dict):
+                raise DriverError(
+                    "Mobile Acceptance finalization returned an invalid envelope"
+                )
+            if result.get("state") == "error":
+                raise DriverError(
+                    "Mobile Acceptance finalization failed: "
+                    f"{result.get('error')}"
+                )
+            value = result.get("value")
+            if result.get("state") != "done" or not isinstance(value, dict):
+                raise DriverError(
+                    "Mobile Acceptance finalization returned an invalid value"
+                )
+            source = value.get("source")
+            if not isinstance(source, str):
+                raise DriverError(
+                    "Mobile Acceptance finalization returned invalid WebView source"
+                )
+            if len(source.encode("utf-8")) > MAX_MOBILE_PAGE_SOURCE_BYTES:
+                raise DriverError("Mobile WebView source exceeds its byte limit")
+            return source, value.get("projection"), value.get("cleanup")
+        raise DriverError("Mobile Acceptance finalization timed out")
 
     def execute_script(self, script: str, *args: Any) -> Any:
         return self._request(
@@ -572,23 +658,6 @@ class SimulatorAppiumSession:
             self._path("/execute/async"),
             {"script": script, "args": list(args)},
         )
-
-    def refresh_webview(self) -> None:
-        document_time_origin = self.execute_script(
-            DOCUMENT_TIME_ORIGIN_SCRIPT
-        )
-        if (
-            isinstance(document_time_origin, bool)
-            or not isinstance(document_time_origin, (int, float))
-            or not math.isfinite(document_time_origin)
-        ):
-            raise DriverError(
-                "Mobile WebView document identity is unavailable before refresh"
-            )
-        self._document_time_origin_before_refresh = float(
-            document_time_origin
-        )
-        self._request("POST", self._path("/refresh"), {})
 
     def find_element(self, using: str, value: str) -> str:
         result = self._request(
@@ -613,6 +682,9 @@ class SimulatorAppiumSession:
             ),
             {},
         )
+
+    def refresh_webview(self) -> None:
+        self._request("POST", self._path("/refresh"), {})
 
     def set_orientation(self, orientation: str) -> None:
         normalized = orientation.upper()
@@ -671,6 +743,19 @@ class SimulatorAppiumSession:
             raise DriverError("Appium page source response is invalid")
         if len(value.encode("utf-8")) > MAX_MOBILE_PAGE_SOURCE_BYTES:
             raise DriverError("Appium page source exceeds its byte limit")
+        return value
+
+    def get_webview_source(self) -> str:
+        value = self._request(
+            "POST",
+            self._path("/execute/async"),
+            {"script": DOCUMENT_SOURCE_SCRIPT, "args": []},
+            max_response_bytes=MAX_MOBILE_PAGE_SOURCE_RESPONSE_BYTES,
+        )
+        if not isinstance(value, str):
+            raise DriverError("Mobile WebView source response is invalid")
+        if len(value.encode("utf-8")) > MAX_MOBILE_PAGE_SOURCE_BYTES:
+            raise DriverError("Mobile WebView source exceeds its byte limit")
         return value
 
     def get_current_url(self) -> str:
@@ -816,8 +901,9 @@ def _validate_runtime_identity(resources: Mapping[str, Any]) -> dict[str, Any]:
         "drivers",
         "mobile-simulator Appium",
     )
+    required_platforms = set(EXPECTED_CLIENTS.values())
     driver_identity: dict[str, Any] = {}
-    for platform in EXPECTED_CLIENTS.values():
+    for platform in sorted(required_platforms):
         driver = _required_object(
             drivers,
             platform,
@@ -858,7 +944,7 @@ def _validate_runtime_identity(resources: Mapping[str, Any]) -> dict[str, Any]:
         "mobile-simulator resources",
     )
     application_identity: dict[str, Any] = {}
-    for platform in EXPECTED_CLIENTS.values():
+    for platform in sorted(required_platforms):
         application = _required_object(
             applications,
             platform,
@@ -883,69 +969,13 @@ def _validate_runtime_identity(resources: Mapping[str, Any]) -> dict[str, Any]:
             "sha256": sha256,
         }
 
-    chromedriver = _required_object(
-        resources,
-        "chromedriver",
-        "mobile-simulator resources",
-    )
-    browser = _required_object(
-        chromedriver,
-        "browser",
-        "mobile-simulator Chromedriver",
-    )
-    chromedriver_identity = {
-        "version": _required_text(
-            chromedriver,
-            "version",
-            "mobile-simulator Chromedriver",
-        ),
-        "source": _required_text(
-            chromedriver,
-            "source",
-            "mobile-simulator Chromedriver",
-        ),
-        "sha256": _required_text(
-            chromedriver,
-            "sha256",
-            "mobile-simulator Chromedriver",
-        ),
-        "executableReference": _required_text(
-            chromedriver,
-            "executableReference",
-            "mobile-simulator Chromedriver",
-        ),
-        "browser": {
-            "activePackage": _required_text(
-                browser,
-                "activePackage",
-                "mobile-simulator Android browser",
-            ),
-            "version": _required_text(
-                browser,
-                "version",
-                "mobile-simulator Android browser",
-            ),
-            "major": browser.get("major"),
-        },
-    }
-    if re.fullmatch(r"[0-9a-f]{64}", chromedriver_identity["sha256"]) is None:
-        raise SimulatorGateBlocked(
-            "mobile-simulator Chromedriver hash is invalid",
-            "mobile-simulator:chromedriver-sha256",
-        )
-    if not isinstance(chromedriver_identity["browser"]["major"], int):
-        raise SimulatorGateBlocked(
-            "mobile-simulator Android browser major is invalid",
-            "mobile-simulator:android-browser-version",
-        )
-
     return {
         "appium": {
             "serverVersion": server_version,
             "drivers": driver_identity,
         },
         "applications": application_identity,
-        "chromedriver": chromedriver_identity,
+        "chromedriver": {},
     }
 
 
@@ -1081,6 +1111,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
         self.sessions: list[SimulatorAppiumSession] = []
         self.lifecycle: list[dict[str, Any]] = []
         self.cleanup: list[dict[str, Any]] = []
+        self.cleaned_clients: set[str] = set()
         self.preflights: dict[str, dict[str, Any]] = {}
 
     def run(self) -> dict[str, Any]:
@@ -1331,7 +1362,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
             )
         if set(clients) != set(EXPECTED_CLIENTS):
             raise SimulatorGateBlocked(
-                "mobile-simulator requires exactly sim-ios and sim-android",
+                "mobile-simulator requires exactly sim-ios and sim-ios-peer",
                 "mobile-simulator:clients",
             )
 
@@ -1528,11 +1559,26 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
         )
         self._record(spec.client_id, "cold-invalid-deep-link")
         session.wait_for_ready()
+        if spec.platform == "ios":
+            self._capture_native_ax(
+                artifacts,
+                session,
+                spec,
+                "cold-invalid",
+            )
+            session.reconnect_after_runtime_relaunch()
+            self._record(
+                spec.client_id,
+                "appium-session-reconnected",
+                {"reason": "cold-application-relaunch"},
+            )
+            session.wait_for_ready()
         self._observe_fail_closed_state(
             artifacts,
             session,
             spec,
             "cold-invalid",
+            capture_native_ax=spec.platform != "ios",
         )
 
         restart = session.call_action("lifecycle.restart")
@@ -1541,15 +1587,12 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                 f"client {spec.client_id} returned an invalid lifecycle.restart result"
             )
         self._record(spec.client_id, "lifecycle.restart")
-        session.refresh_webview()
-        self._record(spec.client_id, "webview-refreshed")
-        session.switch_to_native()
-        session.wait_for_ready()
         final_projection = self._observe_fail_closed_state(
             artifacts,
             session,
             spec,
             "restart-reconnected",
+            reuse_current_webview=True,
         )
         return {
             "platform": spec.platform,
@@ -1649,7 +1692,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
             preflight["firstFailedStep"] = "webview-source"
             artifacts.write_bytes(
                 f"{evidence_path}/webview-source.html",
-                _redacted_markup(session.get_page_source()),
+                _redacted_markup(session.get_webview_source()),
                 media_type="text/html",
                 role=f"{spec.client_id}-preflight-webview-source",
             )
@@ -1756,20 +1799,41 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
         session: SimulatorAppiumSession,
         spec: SimulatorClientSpec,
         stage: str,
+        *,
+        capture_native_ax: bool = True,
+        reuse_current_webview: bool = False,
     ) -> dict[str, Any]:
-        session.switch_to_native()
-        artifacts.write_bytes(
-            f"mobile-simulator/{spec.client_id}/{stage}/native-ax.xml",
-            _redacted_markup(session.get_page_source()),
-            media_type="application/xml",
-            role=f"{spec.client_id}-{stage}-native-ax",
-        )
+        if stage != "restart-reconnected" and capture_native_ax:
+            self._capture_native_ax(
+                artifacts,
+                session,
+                spec,
+                stage,
+            )
 
-        webview = session.switch_to_app_webview()
+        if reuse_current_webview:
+            webview = session.current_context
+            if not webview.upper().startswith(("WEBVIEW", "CHROMIUM")):
+                raise DriverError(
+                    f"client {spec.client_id} is not attached to its WebView"
+                )
+        else:
+            webview = session.switch_to_app_webview()
         inventory = session.require_harness(list(REQUIRED_HARNESS_ACTIONS))
-        projection = _validate_fail_closed_projection(
-            session.call_action("projection.read")
-        )
+        screenshot = session.screenshot_bytes()
+        if stage == "restart-reconnected":
+            source_value, projection_value, cleanup_value = (
+                session.finalize_evidence_and_cleanup()
+            )
+            webview_source = _redacted_markup(source_value)
+            projection = _validate_fail_closed_projection(projection_value)
+            _validate_cleanup_result(cleanup_value)
+            self.cleaned_clients.add(spec.client_id)
+        else:
+            webview_source = _redacted_markup(session.get_webview_source())
+            projection = _validate_fail_closed_projection(
+                session.call_action("projection.read")
+            )
         artifacts.write_json(
             f"mobile-simulator/{spec.client_id}/{stage}/projection.json",
             projection,
@@ -1777,13 +1841,13 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
         )
         artifacts.write_bytes(
             f"mobile-simulator/{spec.client_id}/{stage}/web-dom.html",
-            _redacted_markup(session.get_page_source()),
+            webview_source,
             media_type="text/html",
             role=f"{spec.client_id}-{stage}-web-dom",
         )
         artifacts.write_bytes(
             f"mobile-simulator/{spec.client_id}/{stage}/screenshot.png",
-            session.screenshot_bytes(),
+            screenshot,
             media_type="image/png",
             role=f"{spec.client_id}-{stage}-screenshot",
         )
@@ -1797,6 +1861,21 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
             },
         )
         return projection
+
+    def _capture_native_ax(
+        self,
+        artifacts: EvidenceWriter,
+        session: SimulatorAppiumSession,
+        spec: SimulatorClientSpec,
+        stage: str,
+    ) -> None:
+        session.switch_to_native()
+        artifacts.write_bytes(
+            f"mobile-simulator/{spec.client_id}/{stage}/native-ax.xml",
+            _redacted_markup(session.get_page_source()),
+            media_type="application/xml",
+            role=f"{spec.client_id}-{stage}-native-ax",
+        )
 
     def _terminate_application(
         self,
@@ -1815,10 +1894,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
         for session in reversed(self.sessions):
             client_id = session.client_id
             if getattr(session, "session_id", ""):
-                try:
-                    session.switch_to_app_webview(timeout=5)
-                    session.require_harness(["cleanup"])
-                    _validate_cleanup_result(session.call_action("cleanup"))
+                if client_id in self.cleaned_clients:
                     self.cleanup.append(
                         {
                             "clientId": client_id,
@@ -1826,16 +1902,28 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                             "status": "passed",
                         }
                     )
-                except Exception as error:
-                    self.cleanup.append(
-                        {
-                            "clientId": client_id,
-                            "resource": "product-harness",
-                            "status": "failed",
-                            "errorType": type(error).__name__,
-                            "reason": redact_text(str(error)),
-                        }
-                    )
+                else:
+                    try:
+                        session.switch_to_app_webview(timeout=5)
+                        session.require_harness(["cleanup"])
+                        _validate_cleanup_result(session.call_action("cleanup"))
+                        self.cleanup.append(
+                            {
+                                "clientId": client_id,
+                                "resource": "product-harness",
+                                "status": "passed",
+                            }
+                        )
+                    except Exception as error:
+                        self.cleanup.append(
+                            {
+                                "clientId": client_id,
+                                "resource": "product-harness",
+                                "status": "failed",
+                                "errorType": type(error).__name__,
+                                "reason": redact_text(str(error)),
+                            }
+                        )
             try:
                 session.stop()
                 self.cleanup.append(
@@ -1856,6 +1944,7 @@ class SimulatorCallbackRoutingGate(AcceptanceGate):
                     }
                 )
         self.sessions.clear()
+        self.cleaned_clients.clear()
         artifacts.write_json(
             "mobile-simulator/cleanup.json",
             {

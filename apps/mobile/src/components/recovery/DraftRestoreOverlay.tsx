@@ -6,8 +6,12 @@
  * This component does not own persistence or retry logic.
  */
 
-import { useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
+import {
+  discardReliabilityDrafts,
+  restoreReliabilityDrafts,
+} from '../../runtimes/commandRuntime';
 import type { DraftRestorePending } from '../../runtimes/recoveryProjection';
 import { getRecoveryProjection } from '../../runtimes/recoveryProjection';
 
@@ -16,25 +20,48 @@ interface DraftRestoreOverlayProps {
   readonly t: (key: string, params?: Record<string, string | number>) => string;
 }
 
+export async function executeDraftRestoreAction(
+  action: 'restore' | 'discard',
+  drafts: DraftRestorePending['drafts'],
+): Promise<void> {
+  if (action === 'restore') {
+    await restoreReliabilityDrafts(drafts);
+  } else {
+    await discardReliabilityDrafts(drafts);
+  }
+  getRecoveryProjection().clearDraftRestore();
+}
+
 export function DraftRestoreOverlay({ state, t }: DraftRestoreOverlayProps) {
-  const handleRestore = useCallback(() => {
-    // The owning runtime (commandRuntime) performs the actual restore.
-    // We only clear the recovery projection state.
-    window.dispatchEvent(new CustomEvent('recovery:draft-restore', { detail: { action: 'restore' } }));
-    getRecoveryProjection().clearDraftRestore();
+  const primaryActionRef = useRef<HTMLButtonElement>(null);
+  const [pendingAction, setPendingAction] = useState<'restore' | 'discard' | null>(null);
+  const [actionFailed, setActionFailed] = useState(false);
+
+  useEffect(() => {
+    primaryActionRef.current?.focus();
   }, []);
 
-  const handleDiscard = useCallback(() => {
-    window.dispatchEvent(new CustomEvent('recovery:draft-restore', { detail: { action: 'discard' } }));
-    getRecoveryProjection().clearDraftRestore();
-  }, []);
+  async function runAction(action: 'restore' | 'discard') {
+    if (pendingAction) return;
+    setActionFailed(false);
+    setPendingAction(action);
+    try {
+      await executeDraftRestoreAction(action, state.drafts);
+    } catch {
+      setActionFailed(true);
+    } finally {
+      setPendingAction(null);
+    }
+  }
 
   return (
     <div
       className="recovery-overlay recovery-draft-restore"
+      data-acceptance-id="recovery-draft-restore"
       role="dialog"
       aria-modal="true"
       aria-label={t('mobile.recovery.draftRestore.title')}
+      aria-busy={pendingAction !== null}
     >
       <div className="recovery-overlay__backdrop" />
       <div className="recovery-overlay__panel">
@@ -55,19 +82,33 @@ export function DraftRestoreOverlay({ state, t }: DraftRestoreOverlayProps) {
         <div className="recovery-overlay__actions">
           <button
             type="button"
+            data-acceptance-id="recovery-draft-discard"
             className="recovery-btn recovery-btn--secondary"
-            onClick={handleDiscard}
+            disabled={pendingAction !== null}
+            onClick={() => {
+              void runAction('discard');
+            }}
           >
             {t('mobile.recovery.draftRestore.discard')}
           </button>
           <button
+            ref={primaryActionRef}
             type="button"
+            data-acceptance-id="recovery-draft-restore-action"
             className="recovery-btn recovery-btn--primary"
-            onClick={handleRestore}
+            disabled={pendingAction !== null}
+            onClick={() => {
+              void runAction('restore');
+            }}
           >
             {t('mobile.recovery.draftRestore.restore')}
           </button>
         </div>
+        {actionFailed && (
+          <span className="recovery-panel__error" role="alert">
+            {t('mobile.recovery.actionFailed')}
+          </span>
+        )}
       </div>
     </div>
   );

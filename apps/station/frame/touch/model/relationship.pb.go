@@ -254,6 +254,440 @@ func (FriendRequestCommandErrorCode) EnumDescriptor() ([]byte, []int) {
 	return file_domain_social_relationship_proto_rawDescGZIP(), []int{3}
 }
 
+type FriendRequestCommandLookupState int32
+
+const (
+	FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNSPECIFIED      FriendRequestCommandLookupState = 0
+	FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_NOT_FOUND        FriendRequestCommandLookupState = 1
+	FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING FriendRequestCommandLookupState = 2
+	FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_TERMINAL_RESULT  FriendRequestCommandLookupState = 3
+	FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED       FriendRequestCommandLookupState = 4
+)
+
+// Enum value maps for FriendRequestCommandLookupState.
+var (
+	FriendRequestCommandLookupState_name = map[int32]string{
+		0: "FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNSPECIFIED",
+		1: "FRIEND_REQUEST_COMMAND_LOOKUP_STATE_NOT_FOUND",
+		2: "FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING",
+		3: "FRIEND_REQUEST_COMMAND_LOOKUP_STATE_TERMINAL_RESULT",
+		4: "FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED",
+	}
+	FriendRequestCommandLookupState_value = map[string]int32{
+		"FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNSPECIFIED":      0,
+		"FRIEND_REQUEST_COMMAND_LOOKUP_STATE_NOT_FOUND":        1,
+		"FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING": 2,
+		"FRIEND_REQUEST_COMMAND_LOOKUP_STATE_TERMINAL_RESULT":  3,
+		"FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED":       4,
+	}
+)
+
+func (x FriendRequestCommandLookupState) Enum() *FriendRequestCommandLookupState {
+	p := new(FriendRequestCommandLookupState)
+	*p = x
+	return p
+}
+
+func (x FriendRequestCommandLookupState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (FriendRequestCommandLookupState) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_relationship_proto_enumTypes[4].Descriptor()
+}
+
+func (FriendRequestCommandLookupState) Type() protoreflect.EnumType {
+	return &file_domain_social_relationship_proto_enumTypes[4]
+}
+
+func (x FriendRequestCommandLookupState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use FriendRequestCommandLookupState.Descriptor instead.
+func (FriendRequestCommandLookupState) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{4}
+}
+
+type SocialRelationshipAction int32
+
+const (
+	SocialRelationshipAction_SOCIAL_RELATIONSHIP_ACTION_UNSPECIFIED SocialRelationshipAction = 0
+	SocialRelationshipAction_SOCIAL_RELATIONSHIP_ACTION_BLOCK       SocialRelationshipAction = 1
+	SocialRelationshipAction_SOCIAL_RELATIONSHIP_ACTION_UNBLOCK     SocialRelationshipAction = 2
+)
+
+// Enum value maps for SocialRelationshipAction.
+var (
+	SocialRelationshipAction_name = map[int32]string{
+		0: "SOCIAL_RELATIONSHIP_ACTION_UNSPECIFIED",
+		1: "SOCIAL_RELATIONSHIP_ACTION_BLOCK",
+		2: "SOCIAL_RELATIONSHIP_ACTION_UNBLOCK",
+	}
+	SocialRelationshipAction_value = map[string]int32{
+		"SOCIAL_RELATIONSHIP_ACTION_UNSPECIFIED": 0,
+		"SOCIAL_RELATIONSHIP_ACTION_BLOCK":       1,
+		"SOCIAL_RELATIONSHIP_ACTION_UNBLOCK":     2,
+	}
+)
+
+func (x SocialRelationshipAction) Enum() *SocialRelationshipAction {
+	p := new(SocialRelationshipAction)
+	*p = x
+	return p
+}
+
+func (x SocialRelationshipAction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SocialRelationshipAction) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_relationship_proto_enumTypes[5].Descriptor()
+}
+
+func (SocialRelationshipAction) Type() protoreflect.EnumType {
+	return &file_domain_social_relationship_proto_enumTypes[5]
+}
+
+func (x SocialRelationshipAction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SocialRelationshipAction.Descriptor instead.
+func (SocialRelationshipAction) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{5}
+}
+
+type SocialRelationshipAllowedAction int32
+
+const (
+	SocialRelationshipAllowedAction_SOCIAL_RELATIONSHIP_ALLOWED_ACTION_UNSPECIFIED         SocialRelationshipAllowedAction = 0
+	SocialRelationshipAllowedAction_SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FOLLOW              SocialRelationshipAllowedAction = 1
+	SocialRelationshipAllowedAction_SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FRIEND_REQUEST      SocialRelationshipAllowedAction = 2
+	SocialRelationshipAllowedAction_SOCIAL_RELATIONSHIP_ALLOWED_ACTION_DIRECT_CONVERSATION SocialRelationshipAllowedAction = 3
+	SocialRelationshipAllowedAction_SOCIAL_RELATIONSHIP_ALLOWED_ACTION_PRIVATE_CONTENT     SocialRelationshipAllowedAction = 4
+)
+
+// Enum value maps for SocialRelationshipAllowedAction.
+var (
+	SocialRelationshipAllowedAction_name = map[int32]string{
+		0: "SOCIAL_RELATIONSHIP_ALLOWED_ACTION_UNSPECIFIED",
+		1: "SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FOLLOW",
+		2: "SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FRIEND_REQUEST",
+		3: "SOCIAL_RELATIONSHIP_ALLOWED_ACTION_DIRECT_CONVERSATION",
+		4: "SOCIAL_RELATIONSHIP_ALLOWED_ACTION_PRIVATE_CONTENT",
+	}
+	SocialRelationshipAllowedAction_value = map[string]int32{
+		"SOCIAL_RELATIONSHIP_ALLOWED_ACTION_UNSPECIFIED":         0,
+		"SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FOLLOW":              1,
+		"SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FRIEND_REQUEST":      2,
+		"SOCIAL_RELATIONSHIP_ALLOWED_ACTION_DIRECT_CONVERSATION": 3,
+		"SOCIAL_RELATIONSHIP_ALLOWED_ACTION_PRIVATE_CONTENT":     4,
+	}
+)
+
+func (x SocialRelationshipAllowedAction) Enum() *SocialRelationshipAllowedAction {
+	p := new(SocialRelationshipAllowedAction)
+	*p = x
+	return p
+}
+
+func (x SocialRelationshipAllowedAction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SocialRelationshipAllowedAction) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_relationship_proto_enumTypes[6].Descriptor()
+}
+
+func (SocialRelationshipAllowedAction) Type() protoreflect.EnumType {
+	return &file_domain_social_relationship_proto_enumTypes[6]
+}
+
+func (x SocialRelationshipAllowedAction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SocialRelationshipAllowedAction.Descriptor instead.
+func (SocialRelationshipAllowedAction) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{6}
+}
+
+type SocialRelationshipDeniedReason int32
+
+const (
+	SocialRelationshipDeniedReason_SOCIAL_RELATIONSHIP_DENIED_REASON_UNSPECIFIED        SocialRelationshipDeniedReason = 0
+	SocialRelationshipDeniedReason_SOCIAL_RELATIONSHIP_DENIED_REASON_NONE               SocialRelationshipDeniedReason = 1
+	SocialRelationshipDeniedReason_SOCIAL_RELATIONSHIP_DENIED_REASON_INTERACTION_DENIED SocialRelationshipDeniedReason = 2
+)
+
+// Enum value maps for SocialRelationshipDeniedReason.
+var (
+	SocialRelationshipDeniedReason_name = map[int32]string{
+		0: "SOCIAL_RELATIONSHIP_DENIED_REASON_UNSPECIFIED",
+		1: "SOCIAL_RELATIONSHIP_DENIED_REASON_NONE",
+		2: "SOCIAL_RELATIONSHIP_DENIED_REASON_INTERACTION_DENIED",
+	}
+	SocialRelationshipDeniedReason_value = map[string]int32{
+		"SOCIAL_RELATIONSHIP_DENIED_REASON_UNSPECIFIED":        0,
+		"SOCIAL_RELATIONSHIP_DENIED_REASON_NONE":               1,
+		"SOCIAL_RELATIONSHIP_DENIED_REASON_INTERACTION_DENIED": 2,
+	}
+)
+
+func (x SocialRelationshipDeniedReason) Enum() *SocialRelationshipDeniedReason {
+	p := new(SocialRelationshipDeniedReason)
+	*p = x
+	return p
+}
+
+func (x SocialRelationshipDeniedReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SocialRelationshipDeniedReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_relationship_proto_enumTypes[7].Descriptor()
+}
+
+func (SocialRelationshipDeniedReason) Type() protoreflect.EnumType {
+	return &file_domain_social_relationship_proto_enumTypes[7]
+}
+
+func (x SocialRelationshipDeniedReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SocialRelationshipDeniedReason.Descriptor instead.
+func (SocialRelationshipDeniedReason) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{7}
+}
+
+type SocialRelationshipInvalidationClass int32
+
+const (
+	SocialRelationshipInvalidationClass_SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_UNSPECIFIED                SocialRelationshipInvalidationClass = 0
+	SocialRelationshipInvalidationClass_SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FOLLOW                     SocialRelationshipInvalidationClass = 1
+	SocialRelationshipInvalidationClass_SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FRIEND_REQUEST_ELIGIBILITY SocialRelationshipInvalidationClass = 2
+	SocialRelationshipInvalidationClass_SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_PRIVATE_CONTENT_GRANT      SocialRelationshipInvalidationClass = 3
+	SocialRelationshipInvalidationClass_SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_CONVERSATION_ENTRY         SocialRelationshipInvalidationClass = 4
+)
+
+// Enum value maps for SocialRelationshipInvalidationClass.
+var (
+	SocialRelationshipInvalidationClass_name = map[int32]string{
+		0: "SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_UNSPECIFIED",
+		1: "SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FOLLOW",
+		2: "SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FRIEND_REQUEST_ELIGIBILITY",
+		3: "SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_PRIVATE_CONTENT_GRANT",
+		4: "SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_CONVERSATION_ENTRY",
+	}
+	SocialRelationshipInvalidationClass_value = map[string]int32{
+		"SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_UNSPECIFIED":                0,
+		"SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FOLLOW":                     1,
+		"SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FRIEND_REQUEST_ELIGIBILITY": 2,
+		"SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_PRIVATE_CONTENT_GRANT":      3,
+		"SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_CONVERSATION_ENTRY":         4,
+	}
+)
+
+func (x SocialRelationshipInvalidationClass) Enum() *SocialRelationshipInvalidationClass {
+	p := new(SocialRelationshipInvalidationClass)
+	*p = x
+	return p
+}
+
+func (x SocialRelationshipInvalidationClass) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SocialRelationshipInvalidationClass) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_relationship_proto_enumTypes[8].Descriptor()
+}
+
+func (SocialRelationshipInvalidationClass) Type() protoreflect.EnumType {
+	return &file_domain_social_relationship_proto_enumTypes[8]
+}
+
+func (x SocialRelationshipInvalidationClass) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SocialRelationshipInvalidationClass.Descriptor instead.
+func (SocialRelationshipInvalidationClass) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{8}
+}
+
+type SocialRelationshipCommandResultKind int32
+
+const (
+	SocialRelationshipCommandResultKind_SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_UNSPECIFIED SocialRelationshipCommandResultKind = 0
+	SocialRelationshipCommandResultKind_SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_COMMITTED   SocialRelationshipCommandResultKind = 1
+	SocialRelationshipCommandResultKind_SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_DUPLICATE   SocialRelationshipCommandResultKind = 2
+	SocialRelationshipCommandResultKind_SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_REJECTED    SocialRelationshipCommandResultKind = 3
+	SocialRelationshipCommandResultKind_SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_CONFLICT    SocialRelationshipCommandResultKind = 4
+)
+
+// Enum value maps for SocialRelationshipCommandResultKind.
+var (
+	SocialRelationshipCommandResultKind_name = map[int32]string{
+		0: "SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_UNSPECIFIED",
+		1: "SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_COMMITTED",
+		2: "SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_DUPLICATE",
+		3: "SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_REJECTED",
+		4: "SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_CONFLICT",
+	}
+	SocialRelationshipCommandResultKind_value = map[string]int32{
+		"SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_UNSPECIFIED": 0,
+		"SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_COMMITTED":   1,
+		"SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_DUPLICATE":   2,
+		"SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_REJECTED":    3,
+		"SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_CONFLICT":    4,
+	}
+)
+
+func (x SocialRelationshipCommandResultKind) Enum() *SocialRelationshipCommandResultKind {
+	p := new(SocialRelationshipCommandResultKind)
+	*p = x
+	return p
+}
+
+func (x SocialRelationshipCommandResultKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SocialRelationshipCommandResultKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_relationship_proto_enumTypes[9].Descriptor()
+}
+
+func (SocialRelationshipCommandResultKind) Type() protoreflect.EnumType {
+	return &file_domain_social_relationship_proto_enumTypes[9]
+}
+
+func (x SocialRelationshipCommandResultKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SocialRelationshipCommandResultKind.Descriptor instead.
+func (SocialRelationshipCommandResultKind) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{9}
+}
+
+type SocialRelationshipCommandErrorCode int32
+
+const (
+	SocialRelationshipCommandErrorCode_SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNSPECIFIED          SocialRelationshipCommandErrorCode = 0
+	SocialRelationshipCommandErrorCode_SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_INVALID              SocialRelationshipCommandErrorCode = 1
+	SocialRelationshipCommandErrorCode_SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNAUTHORIZED         SocialRelationshipCommandErrorCode = 2
+	SocialRelationshipCommandErrorCode_SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_STALE_REVISION       SocialRelationshipCommandErrorCode = 3
+	SocialRelationshipCommandErrorCode_SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT SocialRelationshipCommandErrorCode = 4
+	SocialRelationshipCommandErrorCode_SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_EXPIRED              SocialRelationshipCommandErrorCode = 5
+	SocialRelationshipCommandErrorCode_SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_RETRY_LATER          SocialRelationshipCommandErrorCode = 6
+)
+
+// Enum value maps for SocialRelationshipCommandErrorCode.
+var (
+	SocialRelationshipCommandErrorCode_name = map[int32]string{
+		0: "SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNSPECIFIED",
+		1: "SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_INVALID",
+		2: "SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNAUTHORIZED",
+		3: "SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_STALE_REVISION",
+		4: "SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT",
+		5: "SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_EXPIRED",
+		6: "SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_RETRY_LATER",
+	}
+	SocialRelationshipCommandErrorCode_value = map[string]int32{
+		"SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNSPECIFIED":          0,
+		"SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_INVALID":              1,
+		"SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNAUTHORIZED":         2,
+		"SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_STALE_REVISION":       3,
+		"SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT": 4,
+		"SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_EXPIRED":              5,
+		"SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_RETRY_LATER":          6,
+	}
+)
+
+func (x SocialRelationshipCommandErrorCode) Enum() *SocialRelationshipCommandErrorCode {
+	p := new(SocialRelationshipCommandErrorCode)
+	*p = x
+	return p
+}
+
+func (x SocialRelationshipCommandErrorCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SocialRelationshipCommandErrorCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_relationship_proto_enumTypes[10].Descriptor()
+}
+
+func (SocialRelationshipCommandErrorCode) Type() protoreflect.EnumType {
+	return &file_domain_social_relationship_proto_enumTypes[10]
+}
+
+func (x SocialRelationshipCommandErrorCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SocialRelationshipCommandErrorCode.Descriptor instead.
+func (SocialRelationshipCommandErrorCode) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{10}
+}
+
+type SocialRelationshipCommandLookupState int32
+
+const (
+	SocialRelationshipCommandLookupState_SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNSPECIFIED      SocialRelationshipCommandLookupState = 0
+	SocialRelationshipCommandLookupState_SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_NOT_FOUND        SocialRelationshipCommandLookupState = 1
+	SocialRelationshipCommandLookupState_SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING SocialRelationshipCommandLookupState = 2
+	SocialRelationshipCommandLookupState_SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_TERMINAL_RESULT  SocialRelationshipCommandLookupState = 3
+	SocialRelationshipCommandLookupState_SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNRESOLVED       SocialRelationshipCommandLookupState = 4
+)
+
+// Enum value maps for SocialRelationshipCommandLookupState.
+var (
+	SocialRelationshipCommandLookupState_name = map[int32]string{
+		0: "SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNSPECIFIED",
+		1: "SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_NOT_FOUND",
+		2: "SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING",
+		3: "SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_TERMINAL_RESULT",
+		4: "SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNRESOLVED",
+	}
+	SocialRelationshipCommandLookupState_value = map[string]int32{
+		"SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNSPECIFIED":      0,
+		"SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_NOT_FOUND":        1,
+		"SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING": 2,
+		"SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_TERMINAL_RESULT":  3,
+		"SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNRESOLVED":       4,
+	}
+)
+
+func (x SocialRelationshipCommandLookupState) Enum() *SocialRelationshipCommandLookupState {
+	p := new(SocialRelationshipCommandLookupState)
+	*p = x
+	return p
+}
+
+func (x SocialRelationshipCommandLookupState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SocialRelationshipCommandLookupState) Descriptor() protoreflect.EnumDescriptor {
+	return file_domain_social_relationship_proto_enumTypes[11].Descriptor()
+}
+
+func (SocialRelationshipCommandLookupState) Type() protoreflect.EnumType {
+	return &file_domain_social_relationship_proto_enumTypes[11]
+}
+
+func (x SocialRelationshipCommandLookupState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SocialRelationshipCommandLookupState.Descriptor instead.
+func (SocialRelationshipCommandLookupState) EnumDescriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{11}
+}
+
 type FollowRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	TargetActorPtid string                 `protobuf:"bytes,1,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
@@ -2159,6 +2593,1266 @@ func (x *FriendRequestCommandResult) GetRetryable() bool {
 	return false
 }
 
+type LookupFriendRequestCommandResultRequest struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	CommandId            string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CommandPayloadSha256 []byte                 `protobuf:"bytes,2,opt,name=command_payload_sha256,json=commandPayloadSha256,proto3" json:"command_payload_sha256,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *LookupFriendRequestCommandResultRequest) Reset() {
+	*x = LookupFriendRequestCommandResultRequest{}
+	mi := &file_domain_social_relationship_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupFriendRequestCommandResultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupFriendRequestCommandResultRequest) ProtoMessage() {}
+
+func (x *LookupFriendRequestCommandResultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupFriendRequestCommandResultRequest.ProtoReflect.Descriptor instead.
+func (*LookupFriendRequestCommandResultRequest) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *LookupFriendRequestCommandResultRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *LookupFriendRequestCommandResultRequest) GetCommandPayloadSha256() []byte {
+	if x != nil {
+		return x.CommandPayloadSha256
+	}
+	return nil
+}
+
+type LookupFriendRequestCommandResultResponse struct {
+	state                protoimpl.MessageState          `protogen:"open.v1"`
+	State                FriendRequestCommandLookupState `protobuf:"varint,1,opt,name=state,proto3,enum=peers_touch.model.social.v1.FriendRequestCommandLookupState" json:"state,omitempty"`
+	CommandId            string                          `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CommandPayloadSha256 []byte                          `protobuf:"bytes,3,opt,name=command_payload_sha256,json=commandPayloadSha256,proto3" json:"command_payload_sha256,omitempty"`
+	TerminalResult       *FriendRequestCommandResult     `protobuf:"bytes,4,opt,name=terminal_result,json=terminalResult,proto3" json:"terminal_result,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *LookupFriendRequestCommandResultResponse) Reset() {
+	*x = LookupFriendRequestCommandResultResponse{}
+	mi := &file_domain_social_relationship_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupFriendRequestCommandResultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupFriendRequestCommandResultResponse) ProtoMessage() {}
+
+func (x *LookupFriendRequestCommandResultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupFriendRequestCommandResultResponse.ProtoReflect.Descriptor instead.
+func (*LookupFriendRequestCommandResultResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *LookupFriendRequestCommandResultResponse) GetState() FriendRequestCommandLookupState {
+	if x != nil {
+		return x.State
+	}
+	return FriendRequestCommandLookupState_FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNSPECIFIED
+}
+
+func (x *LookupFriendRequestCommandResultResponse) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *LookupFriendRequestCommandResultResponse) GetCommandPayloadSha256() []byte {
+	if x != nil {
+		return x.CommandPayloadSha256
+	}
+	return nil
+}
+
+func (x *LookupFriendRequestCommandResultResponse) GetTerminalResult() *FriendRequestCommandResult {
+	if x != nil {
+		return x.TerminalResult
+	}
+	return nil
+}
+
+type SocialRelationshipCommandBody struct {
+	state                   protoimpl.MessageState   `protogen:"open.v1"`
+	FormatVersion           uint32                   `protobuf:"varint,1,opt,name=format_version,json=formatVersion,proto3" json:"format_version,omitempty"`
+	CommandId               string                   `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Action                  SocialRelationshipAction `protobuf:"varint,3,opt,name=action,proto3,enum=peers_touch.model.social.v1.SocialRelationshipAction" json:"action,omitempty"`
+	Actor                   *ActorRef                `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	TargetActor             *ActorRef                `protobuf:"bytes,5,opt,name=target_actor,json=targetActor,proto3" json:"target_actor,omitempty"`
+	ActorHomeStationPeerId  string                   `protobuf:"bytes,6,opt,name=actor_home_station_peer_id,json=actorHomeStationPeerId,proto3" json:"actor_home_station_peer_id,omitempty"`
+	TargetHomeStationPeerId string                   `protobuf:"bytes,7,opt,name=target_home_station_peer_id,json=targetHomeStationPeerId,proto3" json:"target_home_station_peer_id,omitempty"`
+	ObservedRevision        int64                    `protobuf:"varint,8,opt,name=observed_revision,json=observedRevision,proto3" json:"observed_revision,omitempty"`
+	CreatedAt               *timestamppb.Timestamp   `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	ExpiresAt               *timestamppb.Timestamp   `protobuf:"bytes,10,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	AuthorizingDevice       *ActorDeviceRef          `protobuf:"bytes,11,opt,name=authorizing_device,json=authorizingDevice,proto3" json:"authorizing_device,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *SocialRelationshipCommandBody) Reset() {
+	*x = SocialRelationshipCommandBody{}
+	mi := &file_domain_social_relationship_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SocialRelationshipCommandBody) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SocialRelationshipCommandBody) ProtoMessage() {}
+
+func (x *SocialRelationshipCommandBody) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SocialRelationshipCommandBody.ProtoReflect.Descriptor instead.
+func (*SocialRelationshipCommandBody) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *SocialRelationshipCommandBody) GetFormatVersion() uint32 {
+	if x != nil {
+		return x.FormatVersion
+	}
+	return 0
+}
+
+func (x *SocialRelationshipCommandBody) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipCommandBody) GetAction() SocialRelationshipAction {
+	if x != nil {
+		return x.Action
+	}
+	return SocialRelationshipAction_SOCIAL_RELATIONSHIP_ACTION_UNSPECIFIED
+}
+
+func (x *SocialRelationshipCommandBody) GetActor() *ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommandBody) GetTargetActor() *ActorRef {
+	if x != nil {
+		return x.TargetActor
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommandBody) GetActorHomeStationPeerId() string {
+	if x != nil {
+		return x.ActorHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipCommandBody) GetTargetHomeStationPeerId() string {
+	if x != nil {
+		return x.TargetHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipCommandBody) GetObservedRevision() int64 {
+	if x != nil {
+		return x.ObservedRevision
+	}
+	return 0
+}
+
+func (x *SocialRelationshipCommandBody) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommandBody) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommandBody) GetAuthorizingDevice() *ActorDeviceRef {
+	if x != nil {
+		return x.AuthorizingDevice
+	}
+	return nil
+}
+
+type SocialRelationshipCommandSigningInput struct {
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Body          *SocialRelationshipCommandBody `protobuf:"bytes,1,opt,name=body,proto3" json:"body,omitempty"`
+	SigningKeyId  string                         `protobuf:"bytes,2,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SocialRelationshipCommandSigningInput) Reset() {
+	*x = SocialRelationshipCommandSigningInput{}
+	mi := &file_domain_social_relationship_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SocialRelationshipCommandSigningInput) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SocialRelationshipCommandSigningInput) ProtoMessage() {}
+
+func (x *SocialRelationshipCommandSigningInput) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SocialRelationshipCommandSigningInput.ProtoReflect.Descriptor instead.
+func (*SocialRelationshipCommandSigningInput) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *SocialRelationshipCommandSigningInput) GetBody() *SocialRelationshipCommandBody {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommandSigningInput) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+type SocialRelationshipCommand struct {
+	state                protoimpl.MessageState         `protogen:"open.v1"`
+	Body                 *SocialRelationshipCommandBody `protobuf:"bytes,1,opt,name=body,proto3" json:"body,omitempty"`
+	SigningKeyId         string                         `protobuf:"bytes,2,opt,name=signing_key_id,json=signingKeyId,proto3" json:"signing_key_id,omitempty"`
+	ActorDeviceSignature []byte                         `protobuf:"bytes,3,opt,name=actor_device_signature,json=actorDeviceSignature,proto3" json:"actor_device_signature,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *SocialRelationshipCommand) Reset() {
+	*x = SocialRelationshipCommand{}
+	mi := &file_domain_social_relationship_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SocialRelationshipCommand) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SocialRelationshipCommand) ProtoMessage() {}
+
+func (x *SocialRelationshipCommand) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SocialRelationshipCommand.ProtoReflect.Descriptor instead.
+func (*SocialRelationshipCommand) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *SocialRelationshipCommand) GetBody() *SocialRelationshipCommandBody {
+	if x != nil {
+		return x.Body
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommand) GetSigningKeyId() string {
+	if x != nil {
+		return x.SigningKeyId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipCommand) GetActorDeviceSignature() []byte {
+	if x != nil {
+		return x.ActorDeviceSignature
+	}
+	return nil
+}
+
+type SocialRelationshipProjection struct {
+	state                   protoimpl.MessageState            `protogen:"open.v1"`
+	TargetActor             *ActorRef                         `protobuf:"bytes,1,opt,name=target_actor,json=targetActor,proto3" json:"target_actor,omitempty"`
+	Following               bool                              `protobuf:"varint,2,opt,name=following,proto3" json:"following,omitempty"`
+	FollowedBy              bool                              `protobuf:"varint,3,opt,name=followed_by,json=followedBy,proto3" json:"followed_by,omitempty"`
+	BlockedByViewer         bool                              `protobuf:"varint,4,opt,name=blocked_by_viewer,json=blockedByViewer,proto3" json:"blocked_by_viewer,omitempty"`
+	InteractionAllowed      bool                              `protobuf:"varint,5,opt,name=interaction_allowed,json=interactionAllowed,proto3" json:"interaction_allowed,omitempty"`
+	DeniedReason            SocialRelationshipDeniedReason    `protobuf:"varint,6,opt,name=denied_reason,json=deniedReason,proto3,enum=peers_touch.model.social.v1.SocialRelationshipDeniedReason" json:"denied_reason,omitempty"`
+	AllowedActions          []SocialRelationshipAllowedAction `protobuf:"varint,7,rep,packed,name=allowed_actions,json=allowedActions,proto3,enum=peers_touch.model.social.v1.SocialRelationshipAllowedAction" json:"allowed_actions,omitempty"`
+	Revision                int64                             `protobuf:"varint,8,opt,name=revision,proto3" json:"revision,omitempty"`
+	TargetHomeStationPeerId string                            `protobuf:"bytes,9,opt,name=target_home_station_peer_id,json=targetHomeStationPeerId,proto3" json:"target_home_station_peer_id,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *SocialRelationshipProjection) Reset() {
+	*x = SocialRelationshipProjection{}
+	mi := &file_domain_social_relationship_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SocialRelationshipProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SocialRelationshipProjection) ProtoMessage() {}
+
+func (x *SocialRelationshipProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SocialRelationshipProjection.ProtoReflect.Descriptor instead.
+func (*SocialRelationshipProjection) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *SocialRelationshipProjection) GetTargetActor() *ActorRef {
+	if x != nil {
+		return x.TargetActor
+	}
+	return nil
+}
+
+func (x *SocialRelationshipProjection) GetFollowing() bool {
+	if x != nil {
+		return x.Following
+	}
+	return false
+}
+
+func (x *SocialRelationshipProjection) GetFollowedBy() bool {
+	if x != nil {
+		return x.FollowedBy
+	}
+	return false
+}
+
+func (x *SocialRelationshipProjection) GetBlockedByViewer() bool {
+	if x != nil {
+		return x.BlockedByViewer
+	}
+	return false
+}
+
+func (x *SocialRelationshipProjection) GetInteractionAllowed() bool {
+	if x != nil {
+		return x.InteractionAllowed
+	}
+	return false
+}
+
+func (x *SocialRelationshipProjection) GetDeniedReason() SocialRelationshipDeniedReason {
+	if x != nil {
+		return x.DeniedReason
+	}
+	return SocialRelationshipDeniedReason_SOCIAL_RELATIONSHIP_DENIED_REASON_UNSPECIFIED
+}
+
+func (x *SocialRelationshipProjection) GetAllowedActions() []SocialRelationshipAllowedAction {
+	if x != nil {
+		return x.AllowedActions
+	}
+	return nil
+}
+
+func (x *SocialRelationshipProjection) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *SocialRelationshipProjection) GetTargetHomeStationPeerId() string {
+	if x != nil {
+		return x.TargetHomeStationPeerId
+	}
+	return ""
+}
+
+type BlockedActorProjection struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Actor             *ActorRef              `protobuf:"bytes,1,opt,name=actor,proto3" json:"actor,omitempty"`
+	Revision          int64                  `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	BlockedAt         *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=blocked_at,json=blockedAt,proto3" json:"blocked_at,omitempty"`
+	HomeStationPeerId string                 `protobuf:"bytes,4,opt,name=home_station_peer_id,json=homeStationPeerId,proto3" json:"home_station_peer_id,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *BlockedActorProjection) Reset() {
+	*x = BlockedActorProjection{}
+	mi := &file_domain_social_relationship_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BlockedActorProjection) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BlockedActorProjection) ProtoMessage() {}
+
+func (x *BlockedActorProjection) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BlockedActorProjection.ProtoReflect.Descriptor instead.
+func (*BlockedActorProjection) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *BlockedActorProjection) GetActor() *ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *BlockedActorProjection) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *BlockedActorProjection) GetBlockedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.BlockedAt
+	}
+	return nil
+}
+
+func (x *BlockedActorProjection) GetHomeStationPeerId() string {
+	if x != nil {
+		return x.HomeStationPeerId
+	}
+	return ""
+}
+
+type SocialRelationshipEvent struct {
+	state                   protoimpl.MessageState                `protogen:"open.v1"`
+	EventId                 string                                `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	CommandId               string                                `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	Action                  SocialRelationshipAction              `protobuf:"varint,3,opt,name=action,proto3,enum=peers_touch.model.social.v1.SocialRelationshipAction" json:"action,omitempty"`
+	Actor                   *ActorRef                             `protobuf:"bytes,4,opt,name=actor,proto3" json:"actor,omitempty"`
+	TargetActor             *ActorRef                             `protobuf:"bytes,5,opt,name=target_actor,json=targetActor,proto3" json:"target_actor,omitempty"`
+	ActorHomeStationPeerId  string                                `protobuf:"bytes,6,opt,name=actor_home_station_peer_id,json=actorHomeStationPeerId,proto3" json:"actor_home_station_peer_id,omitempty"`
+	TargetHomeStationPeerId string                                `protobuf:"bytes,7,opt,name=target_home_station_peer_id,json=targetHomeStationPeerId,proto3" json:"target_home_station_peer_id,omitempty"`
+	Revision                int64                                 `protobuf:"varint,8,opt,name=revision,proto3" json:"revision,omitempty"`
+	Blocked                 bool                                  `protobuf:"varint,9,opt,name=blocked,proto3" json:"blocked,omitempty"`
+	InvalidationClasses     []SocialRelationshipInvalidationClass `protobuf:"varint,10,rep,packed,name=invalidation_classes,json=invalidationClasses,proto3,enum=peers_touch.model.social.v1.SocialRelationshipInvalidationClass" json:"invalidation_classes,omitempty"`
+	CommittedAt             *timestamppb.Timestamp                `protobuf:"bytes,11,opt,name=committed_at,json=committedAt,proto3" json:"committed_at,omitempty"`
+	PreviousHash            []byte                                `protobuf:"bytes,12,opt,name=previous_hash,json=previousHash,proto3" json:"previous_hash,omitempty"`
+	EventHash               []byte                                `protobuf:"bytes,13,opt,name=event_hash,json=eventHash,proto3" json:"event_hash,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *SocialRelationshipEvent) Reset() {
+	*x = SocialRelationshipEvent{}
+	mi := &file_domain_social_relationship_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SocialRelationshipEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SocialRelationshipEvent) ProtoMessage() {}
+
+func (x *SocialRelationshipEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SocialRelationshipEvent.ProtoReflect.Descriptor instead.
+func (*SocialRelationshipEvent) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *SocialRelationshipEvent) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipEvent) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipEvent) GetAction() SocialRelationshipAction {
+	if x != nil {
+		return x.Action
+	}
+	return SocialRelationshipAction_SOCIAL_RELATIONSHIP_ACTION_UNSPECIFIED
+}
+
+func (x *SocialRelationshipEvent) GetActor() *ActorRef {
+	if x != nil {
+		return x.Actor
+	}
+	return nil
+}
+
+func (x *SocialRelationshipEvent) GetTargetActor() *ActorRef {
+	if x != nil {
+		return x.TargetActor
+	}
+	return nil
+}
+
+func (x *SocialRelationshipEvent) GetActorHomeStationPeerId() string {
+	if x != nil {
+		return x.ActorHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipEvent) GetTargetHomeStationPeerId() string {
+	if x != nil {
+		return x.TargetHomeStationPeerId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipEvent) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *SocialRelationshipEvent) GetBlocked() bool {
+	if x != nil {
+		return x.Blocked
+	}
+	return false
+}
+
+func (x *SocialRelationshipEvent) GetInvalidationClasses() []SocialRelationshipInvalidationClass {
+	if x != nil {
+		return x.InvalidationClasses
+	}
+	return nil
+}
+
+func (x *SocialRelationshipEvent) GetCommittedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CommittedAt
+	}
+	return nil
+}
+
+func (x *SocialRelationshipEvent) GetPreviousHash() []byte {
+	if x != nil {
+		return x.PreviousHash
+	}
+	return nil
+}
+
+func (x *SocialRelationshipEvent) GetEventHash() []byte {
+	if x != nil {
+		return x.EventHash
+	}
+	return nil
+}
+
+type SocialRelationshipCommandResult struct {
+	state                protoimpl.MessageState              `protogen:"open.v1"`
+	CommandId            string                              `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CommandPayloadSha256 []byte                              `protobuf:"bytes,2,opt,name=command_payload_sha256,json=commandPayloadSha256,proto3" json:"command_payload_sha256,omitempty"`
+	Kind                 SocialRelationshipCommandResultKind `protobuf:"varint,3,opt,name=kind,proto3,enum=peers_touch.model.social.v1.SocialRelationshipCommandResultKind" json:"kind,omitempty"`
+	Event                *SocialRelationshipEvent            `protobuf:"bytes,4,opt,name=event,proto3" json:"event,omitempty"`
+	Projection           *SocialRelationshipProjection       `protobuf:"bytes,5,opt,name=projection,proto3" json:"projection,omitempty"`
+	ErrorCode            SocialRelationshipCommandErrorCode  `protobuf:"varint,6,opt,name=error_code,json=errorCode,proto3,enum=peers_touch.model.social.v1.SocialRelationshipCommandErrorCode" json:"error_code,omitempty"`
+	Retryable            bool                                `protobuf:"varint,7,opt,name=retryable,proto3" json:"retryable,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *SocialRelationshipCommandResult) Reset() {
+	*x = SocialRelationshipCommandResult{}
+	mi := &file_domain_social_relationship_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SocialRelationshipCommandResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SocialRelationshipCommandResult) ProtoMessage() {}
+
+func (x *SocialRelationshipCommandResult) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SocialRelationshipCommandResult.ProtoReflect.Descriptor instead.
+func (*SocialRelationshipCommandResult) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *SocialRelationshipCommandResult) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *SocialRelationshipCommandResult) GetCommandPayloadSha256() []byte {
+	if x != nil {
+		return x.CommandPayloadSha256
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommandResult) GetKind() SocialRelationshipCommandResultKind {
+	if x != nil {
+		return x.Kind
+	}
+	return SocialRelationshipCommandResultKind_SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_UNSPECIFIED
+}
+
+func (x *SocialRelationshipCommandResult) GetEvent() *SocialRelationshipEvent {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommandResult) GetProjection() *SocialRelationshipProjection {
+	if x != nil {
+		return x.Projection
+	}
+	return nil
+}
+
+func (x *SocialRelationshipCommandResult) GetErrorCode() SocialRelationshipCommandErrorCode {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return SocialRelationshipCommandErrorCode_SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNSPECIFIED
+}
+
+func (x *SocialRelationshipCommandResult) GetRetryable() bool {
+	if x != nil {
+		return x.Retryable
+	}
+	return false
+}
+
+type BlockSocialActorRequest struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Command       *SocialRelationshipCommand `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BlockSocialActorRequest) Reset() {
+	*x = BlockSocialActorRequest{}
+	mi := &file_domain_social_relationship_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BlockSocialActorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BlockSocialActorRequest) ProtoMessage() {}
+
+func (x *BlockSocialActorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BlockSocialActorRequest.ProtoReflect.Descriptor instead.
+func (*BlockSocialActorRequest) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *BlockSocialActorRequest) GetCommand() *SocialRelationshipCommand {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
+type BlockSocialActorResponse struct {
+	state         protoimpl.MessageState           `protogen:"open.v1"`
+	Result        *SocialRelationshipCommandResult `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BlockSocialActorResponse) Reset() {
+	*x = BlockSocialActorResponse{}
+	mi := &file_domain_social_relationship_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BlockSocialActorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BlockSocialActorResponse) ProtoMessage() {}
+
+func (x *BlockSocialActorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BlockSocialActorResponse.ProtoReflect.Descriptor instead.
+func (*BlockSocialActorResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *BlockSocialActorResponse) GetResult() *SocialRelationshipCommandResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+type UnblockSocialActorRequest struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Command       *SocialRelationshipCommand `protobuf:"bytes,1,opt,name=command,proto3" json:"command,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnblockSocialActorRequest) Reset() {
+	*x = UnblockSocialActorRequest{}
+	mi := &file_domain_social_relationship_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnblockSocialActorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnblockSocialActorRequest) ProtoMessage() {}
+
+func (x *UnblockSocialActorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnblockSocialActorRequest.ProtoReflect.Descriptor instead.
+func (*UnblockSocialActorRequest) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *UnblockSocialActorRequest) GetCommand() *SocialRelationshipCommand {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
+type UnblockSocialActorResponse struct {
+	state         protoimpl.MessageState           `protogen:"open.v1"`
+	Result        *SocialRelationshipCommandResult `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnblockSocialActorResponse) Reset() {
+	*x = UnblockSocialActorResponse{}
+	mi := &file_domain_social_relationship_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnblockSocialActorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnblockSocialActorResponse) ProtoMessage() {}
+
+func (x *UnblockSocialActorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnblockSocialActorResponse.ProtoReflect.Descriptor instead.
+func (*UnblockSocialActorResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *UnblockSocialActorResponse) GetResult() *SocialRelationshipCommandResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
+type LookupSocialRelationshipCommandResultRequest struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	CommandId            string                 `protobuf:"bytes,1,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CommandPayloadSha256 []byte                 `protobuf:"bytes,2,opt,name=command_payload_sha256,json=commandPayloadSha256,proto3" json:"command_payload_sha256,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *LookupSocialRelationshipCommandResultRequest) Reset() {
+	*x = LookupSocialRelationshipCommandResultRequest{}
+	mi := &file_domain_social_relationship_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupSocialRelationshipCommandResultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupSocialRelationshipCommandResultRequest) ProtoMessage() {}
+
+func (x *LookupSocialRelationshipCommandResultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupSocialRelationshipCommandResultRequest.ProtoReflect.Descriptor instead.
+func (*LookupSocialRelationshipCommandResultRequest) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *LookupSocialRelationshipCommandResultRequest) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *LookupSocialRelationshipCommandResultRequest) GetCommandPayloadSha256() []byte {
+	if x != nil {
+		return x.CommandPayloadSha256
+	}
+	return nil
+}
+
+type LookupSocialRelationshipCommandResultResponse struct {
+	state                protoimpl.MessageState               `protogen:"open.v1"`
+	State                SocialRelationshipCommandLookupState `protobuf:"varint,1,opt,name=state,proto3,enum=peers_touch.model.social.v1.SocialRelationshipCommandLookupState" json:"state,omitempty"`
+	CommandId            string                               `protobuf:"bytes,2,opt,name=command_id,json=commandId,proto3" json:"command_id,omitempty"`
+	CommandPayloadSha256 []byte                               `protobuf:"bytes,3,opt,name=command_payload_sha256,json=commandPayloadSha256,proto3" json:"command_payload_sha256,omitempty"`
+	TerminalResult       *SocialRelationshipCommandResult     `protobuf:"bytes,4,opt,name=terminal_result,json=terminalResult,proto3" json:"terminal_result,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
+}
+
+func (x *LookupSocialRelationshipCommandResultResponse) Reset() {
+	*x = LookupSocialRelationshipCommandResultResponse{}
+	mi := &file_domain_social_relationship_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupSocialRelationshipCommandResultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupSocialRelationshipCommandResultResponse) ProtoMessage() {}
+
+func (x *LookupSocialRelationshipCommandResultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupSocialRelationshipCommandResultResponse.ProtoReflect.Descriptor instead.
+func (*LookupSocialRelationshipCommandResultResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *LookupSocialRelationshipCommandResultResponse) GetState() SocialRelationshipCommandLookupState {
+	if x != nil {
+		return x.State
+	}
+	return SocialRelationshipCommandLookupState_SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNSPECIFIED
+}
+
+func (x *LookupSocialRelationshipCommandResultResponse) GetCommandId() string {
+	if x != nil {
+		return x.CommandId
+	}
+	return ""
+}
+
+func (x *LookupSocialRelationshipCommandResultResponse) GetCommandPayloadSha256() []byte {
+	if x != nil {
+		return x.CommandPayloadSha256
+	}
+	return nil
+}
+
+func (x *LookupSocialRelationshipCommandResultResponse) GetTerminalResult() *SocialRelationshipCommandResult {
+	if x != nil {
+		return x.TerminalResult
+	}
+	return nil
+}
+
+type ListBlockedActorsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Cursor        string                 `protobuf:"bytes,1,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBlockedActorsRequest) Reset() {
+	*x = ListBlockedActorsRequest{}
+	mi := &file_domain_social_relationship_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBlockedActorsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBlockedActorsRequest) ProtoMessage() {}
+
+func (x *ListBlockedActorsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBlockedActorsRequest.ProtoReflect.Descriptor instead.
+func (*ListBlockedActorsRequest) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *ListBlockedActorsRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+func (x *ListBlockedActorsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListBlockedActorsResponse struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	Items         []*BlockedActorProjection `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	NextCursor    string                    `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	Revision      int64                     `protobuf:"varint,3,opt,name=revision,proto3" json:"revision,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBlockedActorsResponse) Reset() {
+	*x = ListBlockedActorsResponse{}
+	mi := &file_domain_social_relationship_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBlockedActorsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBlockedActorsResponse) ProtoMessage() {}
+
+func (x *ListBlockedActorsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBlockedActorsResponse.ProtoReflect.Descriptor instead.
+func (*ListBlockedActorsResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *ListBlockedActorsResponse) GetItems() []*BlockedActorProjection {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+func (x *ListBlockedActorsResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+func (x *ListBlockedActorsResponse) GetRevision() int64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+type GetSocialRelationshipStatusRequest struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	TargetActorPtid string                 `protobuf:"bytes,1,opt,name=target_actor_ptid,json=targetActorPtid,proto3" json:"target_actor_ptid,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetSocialRelationshipStatusRequest) Reset() {
+	*x = GetSocialRelationshipStatusRequest{}
+	mi := &file_domain_social_relationship_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSocialRelationshipStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSocialRelationshipStatusRequest) ProtoMessage() {}
+
+func (x *GetSocialRelationshipStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSocialRelationshipStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetSocialRelationshipStatusRequest) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *GetSocialRelationshipStatusRequest) GetTargetActorPtid() string {
+	if x != nil {
+		return x.TargetActorPtid
+	}
+	return ""
+}
+
+type GetSocialRelationshipStatusResponse struct {
+	state         protoimpl.MessageState        `protogen:"open.v1"`
+	Relationship  *SocialRelationshipProjection `protobuf:"bytes,1,opt,name=relationship,proto3" json:"relationship,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSocialRelationshipStatusResponse) Reset() {
+	*x = GetSocialRelationshipStatusResponse{}
+	mi := &file_domain_social_relationship_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSocialRelationshipStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSocialRelationshipStatusResponse) ProtoMessage() {}
+
+func (x *GetSocialRelationshipStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_domain_social_relationship_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSocialRelationshipStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetSocialRelationshipStatusResponse) Descriptor() ([]byte, []int) {
+	return file_domain_social_relationship_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *GetSocialRelationshipStatusResponse) GetRelationship() *SocialRelationshipProjection {
+	if x != nil {
+		return x.Relationship
+	}
+	return nil
+}
+
 var File_domain_social_relationship_proto protoreflect.FileDescriptor
 
 const file_domain_social_relationship_proto_rawDesc = "" +
@@ -2328,7 +4022,116 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"\x05event\x18\x05 \x01(\v2/.peers_touch.model.social.v1.FriendRequestEventR\x05event\x12Y\n" +
 	"\n" +
 	"error_code\x18\x06 \x01(\x0e2:.peers_touch.model.social.v1.FriendRequestCommandErrorCodeR\terrorCode\x12\x1c\n" +
-	"\tretryable\x18\a \x01(\bR\tretryable*\xa0\x01\n" +
+	"\tretryable\x18\a \x01(\bR\tretryable\"~\n" +
+	"'LookupFriendRequestCommandResultRequest\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x124\n" +
+	"\x16command_payload_sha256\x18\x02 \x01(\fR\x14commandPayloadSha256\"\xb5\x02\n" +
+	"(LookupFriendRequestCommandResultResponse\x12R\n" +
+	"\x05state\x18\x01 \x01(\x0e2<.peers_touch.model.social.v1.FriendRequestCommandLookupStateR\x05state\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x02 \x01(\tR\tcommandId\x124\n" +
+	"\x16command_payload_sha256\x18\x03 \x01(\fR\x14commandPayloadSha256\x12`\n" +
+	"\x0fterminal_result\x18\x04 \x01(\v27.peers_touch.model.social.v1.FriendRequestCommandResultR\x0eterminalResult\"\xb1\x05\n" +
+	"\x1dSocialRelationshipCommandBody\x12%\n" +
+	"\x0eformat_version\x18\x01 \x01(\rR\rformatVersion\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x02 \x01(\tR\tcommandId\x12M\n" +
+	"\x06action\x18\x03 \x01(\x0e25.peers_touch.model.social.v1.SocialRelationshipActionR\x06action\x12:\n" +
+	"\x05actor\x18\x04 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12G\n" +
+	"\ftarget_actor\x18\x05 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\vtargetActor\x12:\n" +
+	"\x1aactor_home_station_peer_id\x18\x06 \x01(\tR\x16actorHomeStationPeerId\x12<\n" +
+	"\x1btarget_home_station_peer_id\x18\a \x01(\tR\x17targetHomeStationPeerId\x12+\n" +
+	"\x11observed_revision\x18\b \x01(\x03R\x10observedRevision\x129\n" +
+	"\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"expires_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12Y\n" +
+	"\x12authorizing_device\x18\v \x01(\v2*.peers_touch.model.actor.v1.ActorDeviceRefR\x11authorizingDevice\"\x9d\x01\n" +
+	"%SocialRelationshipCommandSigningInput\x12N\n" +
+	"\x04body\x18\x01 \x01(\v2:.peers_touch.model.social.v1.SocialRelationshipCommandBodyR\x04body\x12$\n" +
+	"\x0esigning_key_id\x18\x02 \x01(\tR\fsigningKeyId\"\xc7\x01\n" +
+	"\x19SocialRelationshipCommand\x12N\n" +
+	"\x04body\x18\x01 \x01(\v2:.peers_touch.model.social.v1.SocialRelationshipCommandBodyR\x04body\x12$\n" +
+	"\x0esigning_key_id\x18\x02 \x01(\tR\fsigningKeyId\x124\n" +
+	"\x16actor_device_signature\x18\x03 \x01(\fR\x14actorDeviceSignature\"\xa6\x04\n" +
+	"\x1cSocialRelationshipProjection\x12G\n" +
+	"\ftarget_actor\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\vtargetActor\x12\x1c\n" +
+	"\tfollowing\x18\x02 \x01(\bR\tfollowing\x12\x1f\n" +
+	"\vfollowed_by\x18\x03 \x01(\bR\n" +
+	"followedBy\x12*\n" +
+	"\x11blocked_by_viewer\x18\x04 \x01(\bR\x0fblockedByViewer\x12/\n" +
+	"\x13interaction_allowed\x18\x05 \x01(\bR\x12interactionAllowed\x12`\n" +
+	"\rdenied_reason\x18\x06 \x01(\x0e2;.peers_touch.model.social.v1.SocialRelationshipDeniedReasonR\fdeniedReason\x12e\n" +
+	"\x0fallowed_actions\x18\a \x03(\x0e2<.peers_touch.model.social.v1.SocialRelationshipAllowedActionR\x0eallowedActions\x12\x1a\n" +
+	"\brevision\x18\b \x01(\x03R\brevision\x12<\n" +
+	"\x1btarget_home_station_peer_id\x18\t \x01(\tR\x17targetHomeStationPeerId\"\xdc\x01\n" +
+	"\x16BlockedActorProjection\x12:\n" +
+	"\x05actor\x18\x01 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12\x1a\n" +
+	"\brevision\x18\x02 \x01(\x03R\brevision\x129\n" +
+	"\n" +
+	"blocked_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tblockedAt\x12/\n" +
+	"\x14home_station_peer_id\x18\x04 \x01(\tR\x11homeStationPeerId\"\xcf\x05\n" +
+	"\x17SocialRelationshipEvent\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x02 \x01(\tR\tcommandId\x12M\n" +
+	"\x06action\x18\x03 \x01(\x0e25.peers_touch.model.social.v1.SocialRelationshipActionR\x06action\x12:\n" +
+	"\x05actor\x18\x04 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\x05actor\x12G\n" +
+	"\ftarget_actor\x18\x05 \x01(\v2$.peers_touch.model.actor.v1.ActorRefR\vtargetActor\x12:\n" +
+	"\x1aactor_home_station_peer_id\x18\x06 \x01(\tR\x16actorHomeStationPeerId\x12<\n" +
+	"\x1btarget_home_station_peer_id\x18\a \x01(\tR\x17targetHomeStationPeerId\x12\x1a\n" +
+	"\brevision\x18\b \x01(\x03R\brevision\x12\x18\n" +
+	"\ablocked\x18\t \x01(\bR\ablocked\x12s\n" +
+	"\x14invalidation_classes\x18\n" +
+	" \x03(\x0e2@.peers_touch.model.social.v1.SocialRelationshipInvalidationClassR\x13invalidationClasses\x12=\n" +
+	"\fcommitted_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\vcommittedAt\x12#\n" +
+	"\rprevious_hash\x18\f \x01(\fR\fpreviousHash\x12\x1d\n" +
+	"\n" +
+	"event_hash\x18\r \x01(\fR\teventHash\"\xf1\x03\n" +
+	"\x1fSocialRelationshipCommandResult\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x124\n" +
+	"\x16command_payload_sha256\x18\x02 \x01(\fR\x14commandPayloadSha256\x12T\n" +
+	"\x04kind\x18\x03 \x01(\x0e2@.peers_touch.model.social.v1.SocialRelationshipCommandResultKindR\x04kind\x12J\n" +
+	"\x05event\x18\x04 \x01(\v24.peers_touch.model.social.v1.SocialRelationshipEventR\x05event\x12Y\n" +
+	"\n" +
+	"projection\x18\x05 \x01(\v29.peers_touch.model.social.v1.SocialRelationshipProjectionR\n" +
+	"projection\x12^\n" +
+	"\n" +
+	"error_code\x18\x06 \x01(\x0e2?.peers_touch.model.social.v1.SocialRelationshipCommandErrorCodeR\terrorCode\x12\x1c\n" +
+	"\tretryable\x18\a \x01(\bR\tretryable\"k\n" +
+	"\x17BlockSocialActorRequest\x12P\n" +
+	"\acommand\x18\x01 \x01(\v26.peers_touch.model.social.v1.SocialRelationshipCommandR\acommand\"p\n" +
+	"\x18BlockSocialActorResponse\x12T\n" +
+	"\x06result\x18\x01 \x01(\v2<.peers_touch.model.social.v1.SocialRelationshipCommandResultR\x06result\"m\n" +
+	"\x19UnblockSocialActorRequest\x12P\n" +
+	"\acommand\x18\x01 \x01(\v26.peers_touch.model.social.v1.SocialRelationshipCommandR\acommand\"r\n" +
+	"\x1aUnblockSocialActorResponse\x12T\n" +
+	"\x06result\x18\x01 \x01(\v2<.peers_touch.model.social.v1.SocialRelationshipCommandResultR\x06result\"\x83\x01\n" +
+	",LookupSocialRelationshipCommandResultRequest\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x01 \x01(\tR\tcommandId\x124\n" +
+	"\x16command_payload_sha256\x18\x02 \x01(\fR\x14commandPayloadSha256\"\xc4\x02\n" +
+	"-LookupSocialRelationshipCommandResultResponse\x12W\n" +
+	"\x05state\x18\x01 \x01(\x0e2A.peers_touch.model.social.v1.SocialRelationshipCommandLookupStateR\x05state\x12\x1d\n" +
+	"\n" +
+	"command_id\x18\x02 \x01(\tR\tcommandId\x124\n" +
+	"\x16command_payload_sha256\x18\x03 \x01(\fR\x14commandPayloadSha256\x12e\n" +
+	"\x0fterminal_result\x18\x04 \x01(\v2<.peers_touch.model.social.v1.SocialRelationshipCommandResultR\x0eterminalResult\"H\n" +
+	"\x18ListBlockedActorsRequest\x12\x16\n" +
+	"\x06cursor\x18\x01 \x01(\tR\x06cursor\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"\xa3\x01\n" +
+	"\x19ListBlockedActorsResponse\x12I\n" +
+	"\x05items\x18\x01 \x03(\v23.peers_touch.model.social.v1.BlockedActorProjectionR\x05items\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\x12\x1a\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"P\n" +
+	"\"GetSocialRelationshipStatusRequest\x12*\n" +
+	"\x11target_actor_ptid\x18\x01 \x01(\tR\x0ftargetActorPtid\"\x84\x01\n" +
+	"#GetSocialRelationshipStatusResponse\x12]\n" +
+	"\frelationship\x18\x01 \x01(\v29.peers_touch.model.social.v1.SocialRelationshipProjectionR\frelationship*\xa0\x01\n" +
 	"\x13FriendRequestAction\x12%\n" +
 	"!FRIEND_REQUEST_ACTION_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aFRIEND_REQUEST_ACTION_SEND\x10\x01\x12 \n" +
@@ -2356,7 +4159,53 @@ const file_domain_social_relationship_proto_rawDesc = "" +
 	"0FRIEND_REQUEST_COMMAND_ERROR_CODE_STATE_CONFLICT\x10\x06\x12:\n" +
 	"6FRIEND_REQUEST_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT\x10\a\x12-\n" +
 	")FRIEND_REQUEST_COMMAND_ERROR_CODE_EXPIRED\x10\b\x121\n" +
-	"-FRIEND_REQUEST_COMMAND_ERROR_CODE_RETRY_LATER\x10\tBCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
+	"-FRIEND_REQUEST_COMMAND_ERROR_CODE_RETRY_LATER\x10\t*\xb0\x02\n" +
+	"\x1fFriendRequestCommandLookupState\x123\n" +
+	"/FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNSPECIFIED\x10\x00\x121\n" +
+	"-FRIEND_REQUEST_COMMAND_LOOKUP_STATE_NOT_FOUND\x10\x01\x128\n" +
+	"4FRIEND_REQUEST_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING\x10\x02\x127\n" +
+	"3FRIEND_REQUEST_COMMAND_LOOKUP_STATE_TERMINAL_RESULT\x10\x03\x122\n" +
+	".FRIEND_REQUEST_COMMAND_LOOKUP_STATE_UNRESOLVED\x10\x04*\x94\x01\n" +
+	"\x18SocialRelationshipAction\x12*\n" +
+	"&SOCIAL_RELATIONSHIP_ACTION_UNSPECIFIED\x10\x00\x12$\n" +
+	" SOCIAL_RELATIONSHIP_ACTION_BLOCK\x10\x01\x12&\n" +
+	"\"SOCIAL_RELATIONSHIP_ACTION_UNBLOCK\x10\x02*\xaf\x02\n" +
+	"\x1fSocialRelationshipAllowedAction\x122\n" +
+	".SOCIAL_RELATIONSHIP_ALLOWED_ACTION_UNSPECIFIED\x10\x00\x12-\n" +
+	")SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FOLLOW\x10\x01\x125\n" +
+	"1SOCIAL_RELATIONSHIP_ALLOWED_ACTION_FRIEND_REQUEST\x10\x02\x12:\n" +
+	"6SOCIAL_RELATIONSHIP_ALLOWED_ACTION_DIRECT_CONVERSATION\x10\x03\x126\n" +
+	"2SOCIAL_RELATIONSHIP_ALLOWED_ACTION_PRIVATE_CONTENT\x10\x04*\xb9\x01\n" +
+	"\x1eSocialRelationshipDeniedReason\x121\n" +
+	"-SOCIAL_RELATIONSHIP_DENIED_REASON_UNSPECIFIED\x10\x00\x12*\n" +
+	"&SOCIAL_RELATIONSHIP_DENIED_REASON_NONE\x10\x01\x128\n" +
+	"4SOCIAL_RELATIONSHIP_DENIED_REASON_INTERACTION_DENIED\x10\x02*\xd8\x02\n" +
+	"#SocialRelationshipInvalidationClass\x126\n" +
+	"2SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_UNSPECIFIED\x10\x00\x121\n" +
+	"-SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FOLLOW\x10\x01\x12E\n" +
+	"ASOCIAL_RELATIONSHIP_INVALIDATION_CLASS_FRIEND_REQUEST_ELIGIBILITY\x10\x02\x12@\n" +
+	"<SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_PRIVATE_CONTENT_GRANT\x10\x03\x12=\n" +
+	"9SOCIAL_RELATIONSHIP_INVALIDATION_CLASS_CONVERSATION_ENTRY\x10\x04*\xb8\x02\n" +
+	"#SocialRelationshipCommandResultKind\x127\n" +
+	"3SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_UNSPECIFIED\x10\x00\x125\n" +
+	"1SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_COMMITTED\x10\x01\x125\n" +
+	"1SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_DUPLICATE\x10\x02\x124\n" +
+	"0SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_REJECTED\x10\x03\x124\n" +
+	"0SOCIAL_RELATIONSHIP_COMMAND_RESULT_KIND_CONFLICT\x10\x04*\xb1\x03\n" +
+	"\"SocialRelationshipCommandErrorCode\x126\n" +
+	"2SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNSPECIFIED\x10\x00\x122\n" +
+	".SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_INVALID\x10\x01\x127\n" +
+	"3SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_UNAUTHORIZED\x10\x02\x129\n" +
+	"5SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_STALE_REVISION\x10\x03\x12?\n" +
+	";SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_IDEMPOTENCY_CONFLICT\x10\x04\x122\n" +
+	".SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_EXPIRED\x10\x05\x126\n" +
+	"2SOCIAL_RELATIONSHIP_COMMAND_ERROR_CODE_RETRY_LATER\x10\x06*\xce\x02\n" +
+	"$SocialRelationshipCommandLookupState\x128\n" +
+	"4SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNSPECIFIED\x10\x00\x126\n" +
+	"2SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_NOT_FOUND\x10\x01\x12=\n" +
+	"9SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_ACCEPTED_PENDING\x10\x02\x12<\n" +
+	"8SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_TERMINAL_RESULT\x10\x03\x127\n" +
+	"3SOCIAL_RELATIONSHIP_COMMAND_LOOKUP_STATE_UNRESOLVED\x10\x04BCZAgithub.com/peers-labs/peers-touch/station/frame/touch/model;modelb\x06proto3"
 
 var (
 	file_domain_social_relationship_proto_rawDescOnce sync.Once
@@ -2370,89 +4219,148 @@ func file_domain_social_relationship_proto_rawDescGZIP() []byte {
 	return file_domain_social_relationship_proto_rawDescData
 }
 
-var file_domain_social_relationship_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_domain_social_relationship_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_domain_social_relationship_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
+var file_domain_social_relationship_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_domain_social_relationship_proto_goTypes = []any{
-	(FriendRequestAction)(0),                  // 0: peers_touch.model.social.v1.FriendRequestAction
-	(FriendRequestState)(0),                   // 1: peers_touch.model.social.v1.FriendRequestState
-	(FriendRequestCommandResultKind)(0),       // 2: peers_touch.model.social.v1.FriendRequestCommandResultKind
-	(FriendRequestCommandErrorCode)(0),        // 3: peers_touch.model.social.v1.FriendRequestCommandErrorCode
-	(*FollowRequest)(nil),                     // 4: peers_touch.model.social.v1.FollowRequest
-	(*FollowResponse)(nil),                    // 5: peers_touch.model.social.v1.FollowResponse
-	(*UnfollowRequest)(nil),                   // 6: peers_touch.model.social.v1.UnfollowRequest
-	(*UnfollowResponse)(nil),                  // 7: peers_touch.model.social.v1.UnfollowResponse
-	(*GetRelationshipRequest)(nil),            // 8: peers_touch.model.social.v1.GetRelationshipRequest
-	(*GetRelationshipResponse)(nil),           // 9: peers_touch.model.social.v1.GetRelationshipResponse
-	(*GetRelationshipsRequest)(nil),           // 10: peers_touch.model.social.v1.GetRelationshipsRequest
-	(*GetRelationshipsResponse)(nil),          // 11: peers_touch.model.social.v1.GetRelationshipsResponse
-	(*Relationship)(nil),                      // 12: peers_touch.model.social.v1.Relationship
-	(*GetFollowersRequest)(nil),               // 13: peers_touch.model.social.v1.GetFollowersRequest
-	(*GetFollowersResponse)(nil),              // 14: peers_touch.model.social.v1.GetFollowersResponse
-	(*GetFollowingRequest)(nil),               // 15: peers_touch.model.social.v1.GetFollowingRequest
-	(*GetFollowingResponse)(nil),              // 16: peers_touch.model.social.v1.GetFollowingResponse
-	(*Follower)(nil),                          // 17: peers_touch.model.social.v1.Follower
-	(*Following)(nil),                         // 18: peers_touch.model.social.v1.Following
-	(*SocialFriendRequest)(nil),               // 19: peers_touch.model.social.v1.SocialFriendRequest
-	(*SendSocialFriendRequestRequest)(nil),    // 20: peers_touch.model.social.v1.SendSocialFriendRequestRequest
-	(*SendSocialFriendRequestResponse)(nil),   // 21: peers_touch.model.social.v1.SendSocialFriendRequestResponse
-	(*AcceptSocialFriendRequestRequest)(nil),  // 22: peers_touch.model.social.v1.AcceptSocialFriendRequestRequest
-	(*AcceptSocialFriendRequestResponse)(nil), // 23: peers_touch.model.social.v1.AcceptSocialFriendRequestResponse
-	(*RejectSocialFriendRequestRequest)(nil),  // 24: peers_touch.model.social.v1.RejectSocialFriendRequestRequest
-	(*RejectSocialFriendRequestResponse)(nil), // 25: peers_touch.model.social.v1.RejectSocialFriendRequestResponse
-	(*ListSocialFriendRequestsRequest)(nil),   // 26: peers_touch.model.social.v1.ListSocialFriendRequestsRequest
-	(*ListSocialFriendRequestsResponse)(nil),  // 27: peers_touch.model.social.v1.ListSocialFriendRequestsResponse
-	(*FriendRequestCommandBody)(nil),          // 28: peers_touch.model.social.v1.FriendRequestCommandBody
-	(*FriendRequestCommandSigningInput)(nil),  // 29: peers_touch.model.social.v1.FriendRequestCommandSigningInput
-	(*FriendRequestCommand)(nil),              // 30: peers_touch.model.social.v1.FriendRequestCommand
-	(*FriendRequestEvent)(nil),                // 31: peers_touch.model.social.v1.FriendRequestEvent
-	(*FriendRequestCommandResult)(nil),        // 32: peers_touch.model.social.v1.FriendRequestCommandResult
-	(*timestamppb.Timestamp)(nil),             // 33: google.protobuf.Timestamp
-	(*ActorRef)(nil),                          // 34: peers_touch.model.actor.v1.ActorRef
-	(*ActorDeviceRef)(nil),                    // 35: peers_touch.model.actor.v1.ActorDeviceRef
+	(FriendRequestAction)(0),                              // 0: peers_touch.model.social.v1.FriendRequestAction
+	(FriendRequestState)(0),                               // 1: peers_touch.model.social.v1.FriendRequestState
+	(FriendRequestCommandResultKind)(0),                   // 2: peers_touch.model.social.v1.FriendRequestCommandResultKind
+	(FriendRequestCommandErrorCode)(0),                    // 3: peers_touch.model.social.v1.FriendRequestCommandErrorCode
+	(FriendRequestCommandLookupState)(0),                  // 4: peers_touch.model.social.v1.FriendRequestCommandLookupState
+	(SocialRelationshipAction)(0),                         // 5: peers_touch.model.social.v1.SocialRelationshipAction
+	(SocialRelationshipAllowedAction)(0),                  // 6: peers_touch.model.social.v1.SocialRelationshipAllowedAction
+	(SocialRelationshipDeniedReason)(0),                   // 7: peers_touch.model.social.v1.SocialRelationshipDeniedReason
+	(SocialRelationshipInvalidationClass)(0),              // 8: peers_touch.model.social.v1.SocialRelationshipInvalidationClass
+	(SocialRelationshipCommandResultKind)(0),              // 9: peers_touch.model.social.v1.SocialRelationshipCommandResultKind
+	(SocialRelationshipCommandErrorCode)(0),               // 10: peers_touch.model.social.v1.SocialRelationshipCommandErrorCode
+	(SocialRelationshipCommandLookupState)(0),             // 11: peers_touch.model.social.v1.SocialRelationshipCommandLookupState
+	(*FollowRequest)(nil),                                 // 12: peers_touch.model.social.v1.FollowRequest
+	(*FollowResponse)(nil),                                // 13: peers_touch.model.social.v1.FollowResponse
+	(*UnfollowRequest)(nil),                               // 14: peers_touch.model.social.v1.UnfollowRequest
+	(*UnfollowResponse)(nil),                              // 15: peers_touch.model.social.v1.UnfollowResponse
+	(*GetRelationshipRequest)(nil),                        // 16: peers_touch.model.social.v1.GetRelationshipRequest
+	(*GetRelationshipResponse)(nil),                       // 17: peers_touch.model.social.v1.GetRelationshipResponse
+	(*GetRelationshipsRequest)(nil),                       // 18: peers_touch.model.social.v1.GetRelationshipsRequest
+	(*GetRelationshipsResponse)(nil),                      // 19: peers_touch.model.social.v1.GetRelationshipsResponse
+	(*Relationship)(nil),                                  // 20: peers_touch.model.social.v1.Relationship
+	(*GetFollowersRequest)(nil),                           // 21: peers_touch.model.social.v1.GetFollowersRequest
+	(*GetFollowersResponse)(nil),                          // 22: peers_touch.model.social.v1.GetFollowersResponse
+	(*GetFollowingRequest)(nil),                           // 23: peers_touch.model.social.v1.GetFollowingRequest
+	(*GetFollowingResponse)(nil),                          // 24: peers_touch.model.social.v1.GetFollowingResponse
+	(*Follower)(nil),                                      // 25: peers_touch.model.social.v1.Follower
+	(*Following)(nil),                                     // 26: peers_touch.model.social.v1.Following
+	(*SocialFriendRequest)(nil),                           // 27: peers_touch.model.social.v1.SocialFriendRequest
+	(*SendSocialFriendRequestRequest)(nil),                // 28: peers_touch.model.social.v1.SendSocialFriendRequestRequest
+	(*SendSocialFriendRequestResponse)(nil),               // 29: peers_touch.model.social.v1.SendSocialFriendRequestResponse
+	(*AcceptSocialFriendRequestRequest)(nil),              // 30: peers_touch.model.social.v1.AcceptSocialFriendRequestRequest
+	(*AcceptSocialFriendRequestResponse)(nil),             // 31: peers_touch.model.social.v1.AcceptSocialFriendRequestResponse
+	(*RejectSocialFriendRequestRequest)(nil),              // 32: peers_touch.model.social.v1.RejectSocialFriendRequestRequest
+	(*RejectSocialFriendRequestResponse)(nil),             // 33: peers_touch.model.social.v1.RejectSocialFriendRequestResponse
+	(*ListSocialFriendRequestsRequest)(nil),               // 34: peers_touch.model.social.v1.ListSocialFriendRequestsRequest
+	(*ListSocialFriendRequestsResponse)(nil),              // 35: peers_touch.model.social.v1.ListSocialFriendRequestsResponse
+	(*FriendRequestCommandBody)(nil),                      // 36: peers_touch.model.social.v1.FriendRequestCommandBody
+	(*FriendRequestCommandSigningInput)(nil),              // 37: peers_touch.model.social.v1.FriendRequestCommandSigningInput
+	(*FriendRequestCommand)(nil),                          // 38: peers_touch.model.social.v1.FriendRequestCommand
+	(*FriendRequestEvent)(nil),                            // 39: peers_touch.model.social.v1.FriendRequestEvent
+	(*FriendRequestCommandResult)(nil),                    // 40: peers_touch.model.social.v1.FriendRequestCommandResult
+	(*LookupFriendRequestCommandResultRequest)(nil),       // 41: peers_touch.model.social.v1.LookupFriendRequestCommandResultRequest
+	(*LookupFriendRequestCommandResultResponse)(nil),      // 42: peers_touch.model.social.v1.LookupFriendRequestCommandResultResponse
+	(*SocialRelationshipCommandBody)(nil),                 // 43: peers_touch.model.social.v1.SocialRelationshipCommandBody
+	(*SocialRelationshipCommandSigningInput)(nil),         // 44: peers_touch.model.social.v1.SocialRelationshipCommandSigningInput
+	(*SocialRelationshipCommand)(nil),                     // 45: peers_touch.model.social.v1.SocialRelationshipCommand
+	(*SocialRelationshipProjection)(nil),                  // 46: peers_touch.model.social.v1.SocialRelationshipProjection
+	(*BlockedActorProjection)(nil),                        // 47: peers_touch.model.social.v1.BlockedActorProjection
+	(*SocialRelationshipEvent)(nil),                       // 48: peers_touch.model.social.v1.SocialRelationshipEvent
+	(*SocialRelationshipCommandResult)(nil),               // 49: peers_touch.model.social.v1.SocialRelationshipCommandResult
+	(*BlockSocialActorRequest)(nil),                       // 50: peers_touch.model.social.v1.BlockSocialActorRequest
+	(*BlockSocialActorResponse)(nil),                      // 51: peers_touch.model.social.v1.BlockSocialActorResponse
+	(*UnblockSocialActorRequest)(nil),                     // 52: peers_touch.model.social.v1.UnblockSocialActorRequest
+	(*UnblockSocialActorResponse)(nil),                    // 53: peers_touch.model.social.v1.UnblockSocialActorResponse
+	(*LookupSocialRelationshipCommandResultRequest)(nil),  // 54: peers_touch.model.social.v1.LookupSocialRelationshipCommandResultRequest
+	(*LookupSocialRelationshipCommandResultResponse)(nil), // 55: peers_touch.model.social.v1.LookupSocialRelationshipCommandResultResponse
+	(*ListBlockedActorsRequest)(nil),                      // 56: peers_touch.model.social.v1.ListBlockedActorsRequest
+	(*ListBlockedActorsResponse)(nil),                     // 57: peers_touch.model.social.v1.ListBlockedActorsResponse
+	(*GetSocialRelationshipStatusRequest)(nil),            // 58: peers_touch.model.social.v1.GetSocialRelationshipStatusRequest
+	(*GetSocialRelationshipStatusResponse)(nil),           // 59: peers_touch.model.social.v1.GetSocialRelationshipStatusResponse
+	(*timestamppb.Timestamp)(nil),                         // 60: google.protobuf.Timestamp
+	(*ActorRef)(nil),                                      // 61: peers_touch.model.actor.v1.ActorRef
+	(*ActorDeviceRef)(nil),                                // 62: peers_touch.model.actor.v1.ActorDeviceRef
 }
 var file_domain_social_relationship_proto_depIdxs = []int32{
-	12, // 0: peers_touch.model.social.v1.FollowResponse.relationship:type_name -> peers_touch.model.social.v1.Relationship
-	12, // 1: peers_touch.model.social.v1.GetRelationshipResponse.relationship:type_name -> peers_touch.model.social.v1.Relationship
-	12, // 2: peers_touch.model.social.v1.GetRelationshipsResponse.relationships:type_name -> peers_touch.model.social.v1.Relationship
-	33, // 3: peers_touch.model.social.v1.Relationship.followed_at:type_name -> google.protobuf.Timestamp
-	17, // 4: peers_touch.model.social.v1.GetFollowersResponse.followers:type_name -> peers_touch.model.social.v1.Follower
-	18, // 5: peers_touch.model.social.v1.GetFollowingResponse.following:type_name -> peers_touch.model.social.v1.Following
-	33, // 6: peers_touch.model.social.v1.Follower.followed_at:type_name -> google.protobuf.Timestamp
-	33, // 7: peers_touch.model.social.v1.Following.followed_at:type_name -> google.protobuf.Timestamp
-	34, // 8: peers_touch.model.social.v1.SocialFriendRequest.sender:type_name -> peers_touch.model.actor.v1.ActorRef
-	34, // 9: peers_touch.model.social.v1.SocialFriendRequest.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
+	20, // 0: peers_touch.model.social.v1.FollowResponse.relationship:type_name -> peers_touch.model.social.v1.Relationship
+	20, // 1: peers_touch.model.social.v1.GetRelationshipResponse.relationship:type_name -> peers_touch.model.social.v1.Relationship
+	20, // 2: peers_touch.model.social.v1.GetRelationshipsResponse.relationships:type_name -> peers_touch.model.social.v1.Relationship
+	60, // 3: peers_touch.model.social.v1.Relationship.followed_at:type_name -> google.protobuf.Timestamp
+	25, // 4: peers_touch.model.social.v1.GetFollowersResponse.followers:type_name -> peers_touch.model.social.v1.Follower
+	26, // 5: peers_touch.model.social.v1.GetFollowingResponse.following:type_name -> peers_touch.model.social.v1.Following
+	60, // 6: peers_touch.model.social.v1.Follower.followed_at:type_name -> google.protobuf.Timestamp
+	60, // 7: peers_touch.model.social.v1.Following.followed_at:type_name -> google.protobuf.Timestamp
+	61, // 8: peers_touch.model.social.v1.SocialFriendRequest.sender:type_name -> peers_touch.model.actor.v1.ActorRef
+	61, // 9: peers_touch.model.social.v1.SocialFriendRequest.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
 	1,  // 10: peers_touch.model.social.v1.SocialFriendRequest.state:type_name -> peers_touch.model.social.v1.FriendRequestState
-	33, // 11: peers_touch.model.social.v1.SocialFriendRequest.created_at:type_name -> google.protobuf.Timestamp
-	33, // 12: peers_touch.model.social.v1.SocialFriendRequest.responded_at:type_name -> google.protobuf.Timestamp
-	30, // 13: peers_touch.model.social.v1.SendSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
-	19, // 14: peers_touch.model.social.v1.SendSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
-	30, // 15: peers_touch.model.social.v1.AcceptSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
-	19, // 16: peers_touch.model.social.v1.AcceptSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
-	30, // 17: peers_touch.model.social.v1.RejectSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
-	19, // 18: peers_touch.model.social.v1.RejectSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
+	60, // 11: peers_touch.model.social.v1.SocialFriendRequest.created_at:type_name -> google.protobuf.Timestamp
+	60, // 12: peers_touch.model.social.v1.SocialFriendRequest.responded_at:type_name -> google.protobuf.Timestamp
+	38, // 13: peers_touch.model.social.v1.SendSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
+	27, // 14: peers_touch.model.social.v1.SendSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
+	38, // 15: peers_touch.model.social.v1.AcceptSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
+	27, // 16: peers_touch.model.social.v1.AcceptSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
+	38, // 17: peers_touch.model.social.v1.RejectSocialFriendRequestRequest.command:type_name -> peers_touch.model.social.v1.FriendRequestCommand
+	27, // 18: peers_touch.model.social.v1.RejectSocialFriendRequestResponse.request:type_name -> peers_touch.model.social.v1.SocialFriendRequest
 	1,  // 19: peers_touch.model.social.v1.ListSocialFriendRequestsRequest.state:type_name -> peers_touch.model.social.v1.FriendRequestState
-	19, // 20: peers_touch.model.social.v1.ListSocialFriendRequestsResponse.requests:type_name -> peers_touch.model.social.v1.SocialFriendRequest
+	27, // 20: peers_touch.model.social.v1.ListSocialFriendRequestsResponse.requests:type_name -> peers_touch.model.social.v1.SocialFriendRequest
 	0,  // 21: peers_touch.model.social.v1.FriendRequestCommandBody.action:type_name -> peers_touch.model.social.v1.FriendRequestAction
-	34, // 22: peers_touch.model.social.v1.FriendRequestCommandBody.sender:type_name -> peers_touch.model.actor.v1.ActorRef
-	34, // 23: peers_touch.model.social.v1.FriendRequestCommandBody.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
+	61, // 22: peers_touch.model.social.v1.FriendRequestCommandBody.sender:type_name -> peers_touch.model.actor.v1.ActorRef
+	61, // 23: peers_touch.model.social.v1.FriendRequestCommandBody.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
 	1,  // 24: peers_touch.model.social.v1.FriendRequestCommandBody.observed_request_state:type_name -> peers_touch.model.social.v1.FriendRequestState
-	33, // 25: peers_touch.model.social.v1.FriendRequestCommandBody.created_at:type_name -> google.protobuf.Timestamp
-	33, // 26: peers_touch.model.social.v1.FriendRequestCommandBody.expires_at:type_name -> google.protobuf.Timestamp
-	35, // 27: peers_touch.model.social.v1.FriendRequestCommandBody.authorizing_device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
-	28, // 28: peers_touch.model.social.v1.FriendRequestCommandSigningInput.body:type_name -> peers_touch.model.social.v1.FriendRequestCommandBody
-	28, // 29: peers_touch.model.social.v1.FriendRequestCommand.body:type_name -> peers_touch.model.social.v1.FriendRequestCommandBody
+	60, // 25: peers_touch.model.social.v1.FriendRequestCommandBody.created_at:type_name -> google.protobuf.Timestamp
+	60, // 26: peers_touch.model.social.v1.FriendRequestCommandBody.expires_at:type_name -> google.protobuf.Timestamp
+	62, // 27: peers_touch.model.social.v1.FriendRequestCommandBody.authorizing_device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	36, // 28: peers_touch.model.social.v1.FriendRequestCommandSigningInput.body:type_name -> peers_touch.model.social.v1.FriendRequestCommandBody
+	36, // 29: peers_touch.model.social.v1.FriendRequestCommand.body:type_name -> peers_touch.model.social.v1.FriendRequestCommandBody
 	1,  // 30: peers_touch.model.social.v1.FriendRequestEvent.state:type_name -> peers_touch.model.social.v1.FriendRequestState
-	34, // 31: peers_touch.model.social.v1.FriendRequestEvent.sender:type_name -> peers_touch.model.actor.v1.ActorRef
-	34, // 32: peers_touch.model.social.v1.FriendRequestEvent.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
-	33, // 33: peers_touch.model.social.v1.FriendRequestEvent.committed_at:type_name -> google.protobuf.Timestamp
+	61, // 31: peers_touch.model.social.v1.FriendRequestEvent.sender:type_name -> peers_touch.model.actor.v1.ActorRef
+	61, // 32: peers_touch.model.social.v1.FriendRequestEvent.receiver:type_name -> peers_touch.model.actor.v1.ActorRef
+	60, // 33: peers_touch.model.social.v1.FriendRequestEvent.committed_at:type_name -> google.protobuf.Timestamp
 	2,  // 34: peers_touch.model.social.v1.FriendRequestCommandResult.kind:type_name -> peers_touch.model.social.v1.FriendRequestCommandResultKind
-	31, // 35: peers_touch.model.social.v1.FriendRequestCommandResult.event:type_name -> peers_touch.model.social.v1.FriendRequestEvent
+	39, // 35: peers_touch.model.social.v1.FriendRequestCommandResult.event:type_name -> peers_touch.model.social.v1.FriendRequestEvent
 	3,  // 36: peers_touch.model.social.v1.FriendRequestCommandResult.error_code:type_name -> peers_touch.model.social.v1.FriendRequestCommandErrorCode
-	37, // [37:37] is the sub-list for method output_type
-	37, // [37:37] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	4,  // 37: peers_touch.model.social.v1.LookupFriendRequestCommandResultResponse.state:type_name -> peers_touch.model.social.v1.FriendRequestCommandLookupState
+	40, // 38: peers_touch.model.social.v1.LookupFriendRequestCommandResultResponse.terminal_result:type_name -> peers_touch.model.social.v1.FriendRequestCommandResult
+	5,  // 39: peers_touch.model.social.v1.SocialRelationshipCommandBody.action:type_name -> peers_touch.model.social.v1.SocialRelationshipAction
+	61, // 40: peers_touch.model.social.v1.SocialRelationshipCommandBody.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	61, // 41: peers_touch.model.social.v1.SocialRelationshipCommandBody.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	60, // 42: peers_touch.model.social.v1.SocialRelationshipCommandBody.created_at:type_name -> google.protobuf.Timestamp
+	60, // 43: peers_touch.model.social.v1.SocialRelationshipCommandBody.expires_at:type_name -> google.protobuf.Timestamp
+	62, // 44: peers_touch.model.social.v1.SocialRelationshipCommandBody.authorizing_device:type_name -> peers_touch.model.actor.v1.ActorDeviceRef
+	43, // 45: peers_touch.model.social.v1.SocialRelationshipCommandSigningInput.body:type_name -> peers_touch.model.social.v1.SocialRelationshipCommandBody
+	43, // 46: peers_touch.model.social.v1.SocialRelationshipCommand.body:type_name -> peers_touch.model.social.v1.SocialRelationshipCommandBody
+	61, // 47: peers_touch.model.social.v1.SocialRelationshipProjection.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	7,  // 48: peers_touch.model.social.v1.SocialRelationshipProjection.denied_reason:type_name -> peers_touch.model.social.v1.SocialRelationshipDeniedReason
+	6,  // 49: peers_touch.model.social.v1.SocialRelationshipProjection.allowed_actions:type_name -> peers_touch.model.social.v1.SocialRelationshipAllowedAction
+	61, // 50: peers_touch.model.social.v1.BlockedActorProjection.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	60, // 51: peers_touch.model.social.v1.BlockedActorProjection.blocked_at:type_name -> google.protobuf.Timestamp
+	5,  // 52: peers_touch.model.social.v1.SocialRelationshipEvent.action:type_name -> peers_touch.model.social.v1.SocialRelationshipAction
+	61, // 53: peers_touch.model.social.v1.SocialRelationshipEvent.actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	61, // 54: peers_touch.model.social.v1.SocialRelationshipEvent.target_actor:type_name -> peers_touch.model.actor.v1.ActorRef
+	8,  // 55: peers_touch.model.social.v1.SocialRelationshipEvent.invalidation_classes:type_name -> peers_touch.model.social.v1.SocialRelationshipInvalidationClass
+	60, // 56: peers_touch.model.social.v1.SocialRelationshipEvent.committed_at:type_name -> google.protobuf.Timestamp
+	9,  // 57: peers_touch.model.social.v1.SocialRelationshipCommandResult.kind:type_name -> peers_touch.model.social.v1.SocialRelationshipCommandResultKind
+	48, // 58: peers_touch.model.social.v1.SocialRelationshipCommandResult.event:type_name -> peers_touch.model.social.v1.SocialRelationshipEvent
+	46, // 59: peers_touch.model.social.v1.SocialRelationshipCommandResult.projection:type_name -> peers_touch.model.social.v1.SocialRelationshipProjection
+	10, // 60: peers_touch.model.social.v1.SocialRelationshipCommandResult.error_code:type_name -> peers_touch.model.social.v1.SocialRelationshipCommandErrorCode
+	45, // 61: peers_touch.model.social.v1.BlockSocialActorRequest.command:type_name -> peers_touch.model.social.v1.SocialRelationshipCommand
+	49, // 62: peers_touch.model.social.v1.BlockSocialActorResponse.result:type_name -> peers_touch.model.social.v1.SocialRelationshipCommandResult
+	45, // 63: peers_touch.model.social.v1.UnblockSocialActorRequest.command:type_name -> peers_touch.model.social.v1.SocialRelationshipCommand
+	49, // 64: peers_touch.model.social.v1.UnblockSocialActorResponse.result:type_name -> peers_touch.model.social.v1.SocialRelationshipCommandResult
+	11, // 65: peers_touch.model.social.v1.LookupSocialRelationshipCommandResultResponse.state:type_name -> peers_touch.model.social.v1.SocialRelationshipCommandLookupState
+	49, // 66: peers_touch.model.social.v1.LookupSocialRelationshipCommandResultResponse.terminal_result:type_name -> peers_touch.model.social.v1.SocialRelationshipCommandResult
+	47, // 67: peers_touch.model.social.v1.ListBlockedActorsResponse.items:type_name -> peers_touch.model.social.v1.BlockedActorProjection
+	46, // 68: peers_touch.model.social.v1.GetSocialRelationshipStatusResponse.relationship:type_name -> peers_touch.model.social.v1.SocialRelationshipProjection
+	69, // [69:69] is the sub-list for method output_type
+	69, // [69:69] is the sub-list for method input_type
+	69, // [69:69] is the sub-list for extension type_name
+	69, // [69:69] is the sub-list for extension extendee
+	0,  // [0:69] is the sub-list for field type_name
 }
 
 func init() { file_domain_social_relationship_proto_init() }
@@ -2466,8 +4374,8 @@ func file_domain_social_relationship_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_domain_social_relationship_proto_rawDesc), len(file_domain_social_relationship_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   29,
+			NumEnums:      12,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

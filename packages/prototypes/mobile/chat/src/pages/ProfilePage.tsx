@@ -79,14 +79,19 @@ export function ProfilePage({ onChangeStation, onSettingClick }: { onChangeStati
               {group.items.map((item, idx) => {
                 const Icon = item.icon;
                 return (
-                  <div key={item.label} className={`mp-setting-row ${idx > 0 ? 'mp-setting-row--border' : ''}`} onClick={() => onSettingClick(item)}>
+                  <button
+                    key={item.label}
+                    type="button"
+                    className={`mp-setting-row ${idx > 0 ? 'mp-setting-row--border' : ''}`}
+                    onClick={() => onSettingClick(item)}
+                  >
                     <span className="mp-setting-icon" style={{ backgroundColor: `${item.tint}14`, color: item.tint }}>
                       <Icon size={17} />
                     </span>
                     <Text className="mp-setting-label">{item.label}</Text>
                     {item.value && <Text type="secondary" className="mp-setting-value">{item.value}</Text>}
                     <ChevronRight size={17} color="#c1c4cc" />
-                  </div>
+                  </button>
                 );
               })}
             </Card>

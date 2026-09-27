@@ -35,7 +35,7 @@ It does not:
 - invent or revise product behavior;
 - redesign architecture, ownership, topology, or protocols;
 - choose runtime scheduling or subagent lanes;
-- persist `plan.md`, Task Slice files, or `active_work`;
+- persist `plan.md`, Task Slice files, or workspace active-work;
 - execute implementation or verification;
 - update Task lifecycle or Development Session state.
 
@@ -128,7 +128,7 @@ Derive dependencies from:
 - deletion before single-source completion.
 
 Mark possible parallelism as a property of the graph. Runtime lane selection is
-deferred to `pt-trae-goal-orchestrator`.
+deferred to the host-neutral `pt-goal-orchestrator`.
 
 ### 5. Define Atomic Cutovers
 
@@ -190,7 +190,7 @@ Return a structured model containing:
 - completion/release criteria.
 
 The model is not yet a repository Plan Package and has no Task lifecycle,
-current selection, Development Session, or `active_work` state.
+current selection, Development Session, or workspace active-work state.
 
 ## Handoff To Persistence
 
@@ -201,7 +201,9 @@ Pass the accepted model to `pt-plan-and-document`, which:
 - records verified binding and authorization;
 - runs `planctl validate`;
 - leaves the package `prepared`;
-- registers the initial tracked locator.
+- creates the first workspace Plan generation, or explicitly advances a
+  completed and quiescent generation; runtime active-work is derived
+  later by Dev Workflow after current Task, declaration, and Session exist.
 
 The persistence Skill may reject an invalid model but may not redesign it.
 
@@ -218,7 +220,16 @@ Return `PLAN_MODEL_READY` only when:
 - completion claims are bounded.
 - each closure is small enough to be one meaningful Task-closing continuation.
 
-The owner/reviewer accepts the plan model before persistence/final plan review.
+Before persistence, the Development Run invokes an agent-led plan-model review.
+An independent agent, or the current agent in a separate findings-first pass,
+checks closure verticality, dependency fidelity, cutovers, evidence, claim
+boundaries, and Task sizing. Source-backed findings are corrected and reviewed
+again inside the Run.
+
+Human owner input is required only for a product/architecture/security/privacy/
+compatibility/rollout choice that accepted sources cannot resolve, or for a
+DWF-D20 destructive, irreversible, permission, or external-resource boundary.
+Routine plan review is not a user handoff.
 
 ## Escalation
 
@@ -249,3 +260,5 @@ Never:
 - weaken accepted architecture or quality thresholds;
 - leave old and new owners live without an accepted cutover;
 - use Gate count as a planning quality metric.
+- ask the user to review the entire plan model when project Review Skills can
+  decide and remediate it.

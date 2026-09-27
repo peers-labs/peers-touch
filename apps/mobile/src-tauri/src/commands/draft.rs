@@ -1,105 +1,123 @@
-// Tauri commands for the encrypted draft store.
-//
-// These commands are the IPC bridge between the TypeScript layer
-// and the Rust `DraftStore`.
-
+use prost::Message;
 use serde::Deserialize;
 use tauri::State;
 
 use crate::error::{MobileError, MobileResult};
-use crate::runtime::draft_store::types::{DraftKind, DraftProjection};
-use crate::runtime::draft_store::DraftStore;
+use crate::runtime::draft_store::DraftKey;
+use crate::runtime::reliability::ReliabilityRuntime;
+use crate::runtime::reliability_proto::peers_touch::model::mobile::v1::{
+    MobileDraftEnvelopeV2, MobileDraftSurfaceKind,
+};
 
-/// Input for `draft_store_initialize`.
-#[derive(Debug, Deserialize)]
-pub struct DraftStoreInitInput {
-    pub db_dir: String,
-    pub encryption_secret_b64: String,
-}
+use super::ledger::map_reliability_error;
 
-/// Input for `draft_save`.
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DraftSaveInput {
-    pub kind: String,
-    pub domain_key: String,
-    pub payload_json: String,
+    pub station_peer_id: String,
+    pub actor_ptid: String,
+    pub envelope_bytes: Vec<u8>,
 }
 
-/// Input for `draft_load`.
 #[derive(Debug, Deserialize)]
-pub struct DraftLoadInput {
-    pub kind: String,
-    pub domain_key: String,
+#[serde(rename_all = "camelCase")]
+pub struct DraftKeyInput {
+    pub station_peer_id: String,
+    pub actor_ptid: String,
+    pub surface_kind: i32,
+    pub target_id: String,
 }
 
-/// Input for `draft_remove`.
 #[derive(Debug, Deserialize)]
-pub struct DraftRemoveInput {
-    pub kind: String,
-    pub domain_key: String,
-}
-
-/// Input for `draft_list`.
-#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DraftListInput {
-    pub kind: String,
+    pub station_peer_id: String,
+    pub actor_ptid: String,
+    pub surface_kind: Option<i32>,
 }
 
-use base64::Engine;
-
 #[tauri::command]
-pub async fn draft_store_initialize(
-    input: DraftStoreInitInput,
-    store: State<'_, DraftStore>,
+pub fn draft_save(
+    runtime: State<'_, ReliabilityRuntime>,
+    input: DraftSaveInput,
 ) -> MobileResult<()> {
-    let secret = base64::engine::general_purpose::STANDARD
-        .decode(&input.encryption_secret_b64)
-        .map_err(|e| MobileError::draft(format!("invalid base64 secret: {e}")))?;
-
-    let db_dir = std::path::PathBuf::from(&input.db_dir);
-
-    store.initialize(&db_dir, &secret)
+    let envelope = MobileDraftEnvelopeV2::decode(input.envelope_bytes.as_slice())
+        .map_err(|error| MobileError::draft(format!("decode generated draft envelope: {error}")))?;
+    if envelope.encode_to_vec() != input.envelope_bytes {
+        return Err(MobileError::draft(
+            "generated draft envelope bytes are not canonical",
+        ));
+    }
+    let active = runtime
+        .active_for_scope(&input.station_peer_id, &input.actor_ptid)
+        .map_err(map_reliability_error)?;
+    active.save_draft(&envelope).map_err(map_reliability_error)
 }
 
 #[tauri::command]
-pub async fn draft_save(input: DraftSaveInput, store: State<'_, DraftStore>) -> MobileResult<()> {
-    let kind = parse_draft_kind(&input.kind)?;
-    store.save(kind, &input.domain_key, &input.payload_json)
+pub fn draft_load(
+    runtime: State<'_, ReliabilityRuntime>,
+    input: DraftKeyInput,
+) -> MobileResult<Option<Vec<u8>>> {
+    let active = runtime
+        .active_for_scope(&input.station_peer_id, &input.actor_ptid)
+        .map_err(map_reliability_error)?;
+    let key = DraftKey::new(
+        active.scope.clone(),
+        parse_surface(input.surface_kind)?,
+        input.target_id,
+    )
+    .map_err(map_reliability_error)?;
+    active
+        .drafts
+        .load(&key)
+        .map(|draft| draft.map(|draft| draft.encode_to_vec()))
+        .map_err(map_reliability_error)
 }
 
 #[tauri::command]
-pub async fn draft_load(
-    input: DraftLoadInput,
-    store: State<'_, DraftStore>,
-) -> MobileResult<Option<DraftProjection>> {
-    let kind = parse_draft_kind(&input.kind)?;
-    store.load(kind, &input.domain_key)
+pub fn draft_remove(
+    runtime: State<'_, ReliabilityRuntime>,
+    input: DraftKeyInput,
+) -> MobileResult<bool> {
+    let active = runtime
+        .active_for_scope(&input.station_peer_id, &input.actor_ptid)
+        .map_err(map_reliability_error)?;
+    let key = DraftKey::new(
+        active.scope.clone(),
+        parse_surface(input.surface_kind)?,
+        input.target_id,
+    )
+    .map_err(map_reliability_error)?;
+    active.drafts.remove(&key).map_err(map_reliability_error)
 }
 
 #[tauri::command]
-pub async fn draft_remove(
-    input: DraftRemoveInput,
-    store: State<'_, DraftStore>,
-) -> MobileResult<()> {
-    let kind = parse_draft_kind(&input.kind)?;
-    store.remove(kind, &input.domain_key)
-}
-
-#[tauri::command]
-pub async fn draft_list(
+pub fn draft_list(
+    runtime: State<'_, ReliabilityRuntime>,
     input: DraftListInput,
-    store: State<'_, DraftStore>,
-) -> MobileResult<Vec<DraftProjection>> {
-    let kind = parse_draft_kind(&input.kind)?;
-    store.list_by_kind(kind)
+) -> MobileResult<Vec<Vec<u8>>> {
+    let active = runtime
+        .active_for_scope(&input.station_peer_id, &input.actor_ptid)
+        .map_err(map_reliability_error)?;
+    let surface = input.surface_kind.map(parse_surface).transpose()?;
+    active
+        .drafts
+        .list(surface)
+        .map(|drafts| {
+            drafts
+                .into_iter()
+                .map(|draft| draft.encode_to_vec())
+                .collect()
+        })
+        .map_err(map_reliability_error)
 }
 
-#[tauri::command]
-pub async fn draft_store_shutdown(store: State<'_, DraftStore>) -> MobileResult<()> {
-    store.shutdown()
-}
-
-fn parse_draft_kind(value: &str) -> MobileResult<DraftKind> {
-    DraftKind::from_str(value)
-        .ok_or_else(|| MobileError::invalid_input(format!("unknown draft kind: {value}")))
+fn parse_surface(value: i32) -> MobileResult<MobileDraftSurfaceKind> {
+    let surface = MobileDraftSurfaceKind::try_from(value)
+        .map_err(|_| MobileError::invalid_input("unknown generated draft surface"))?;
+    if surface == MobileDraftSurfaceKind::Unspecified {
+        return Err(MobileError::invalid_input("draft surface must be explicit"));
+    }
+    Ok(surface)
 }

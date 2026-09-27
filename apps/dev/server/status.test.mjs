@@ -12,6 +12,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { workspaceIdForRoot } from '../../../tooling/scripts/lib/machine-dev-paths.mjs';
+import { reduceWorkflowActivity } from '../../../tooling/scripts/local-dev/workflow-action-store.mjs';
 import {
   buildDevSnapshot,
   collectProfiles,
@@ -30,7 +31,6 @@ function addProfile(
   envRepo,
   name,
   {
-    agentControlMode,
     stationUrl,
     deployEnvironment,
     relayUrl = '',
@@ -45,7 +45,6 @@ function addProfile(
     [
       `PT_DEV_PROFILE=${name}`,
       'PT_DEV_SLOT=2',
-      `PT_AGENT_CONTROL_MODE=${agentControlMode}`,
       'PT_STATION_MODE=remote',
       `PT_STATION_NAME=${name}`,
       `PT_STATION_URL=${stationUrl}`,
@@ -107,8 +106,31 @@ function fakePlanPackage(workspaceId, head) {
       ],
     },
     taskSlices: new Map([
-      ['TEST-CURRENT', { title: 'Current test task' }],
+      [
+        'TEST-CURRENT',
+        {
+          taskId: 'TEST-CURRENT',
+          title: 'Current test task',
+          workstreamId: 'TEST-WORKSTREAM',
+          completionClass: 'functional',
+          runtimeClass: 'source-only',
+          closureId: 'TEST-CLOSURE',
+        },
+      ],
     ]),
+    currentTask: {
+      taskId: 'TEST-CURRENT',
+      title: 'Current test task',
+      workstreamId: 'TEST-WORKSTREAM',
+      completionClass: 'functional',
+      runtimeClass: 'source-only',
+      closureId: 'TEST-CLOSURE',
+    },
+    acceptance: {
+      closures: {
+        'TEST-CLOSURE': [],
+      },
+    },
   };
 }
 
@@ -116,39 +138,43 @@ test('collectProfiles exposes only selected public fields', () => {
   const scope = fixture();
   try {
     addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
-      stationUrl: 'http://10.10.0.1:18080',
+      stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
       relayUrl:
-        'http://dashboard:must-not-leak@10.10.0.1:18081/path?token=secret',
+        'http://fixture-user:fixture-value@192.0.2.1:18081/path?token=fixture-value',
       relayDeployEnvironment: 'relay-one',
     });
     addProfile(scope.root, 'untracked-disposable', {
-      agentControlMode: 'disposable',
-      stationUrl: 'http://10.10.0.2:18132',
+      stationUrl: 'http://192.0.2.2:18132',
       deployEnvironment: 'station-disposable',
       tracked: false,
+    });
+    addProfile(scope.root, 'bad profile', {
+      stationUrl: 'http://192.0.2.3:18132',
+      deployEnvironment: 'station-bad',
     });
 
     const profiles = collectProfiles(scope.root);
     assert.deepEqual(
       profiles.map((profile) => [
         profile.name,
-        profile.agentControlMode,
+        profile.resetPolicy,
         profile.sourceState,
         profile.status,
       ]),
       [
-        ['managed-one', 'managed', 'tracked-clean', 'available'],
+        ['bad profile', null, 'tracked-clean', 'blocked'],
+        ['managed-one', 'agent-resettable', 'tracked-clean', 'available'],
         [
           'untracked-disposable',
-          'disposable',
+          'agent-resettable',
           'untracked',
           'blocked',
         ],
       ],
     );
-    assert.equal(profiles[0].relayUrl, 'http://10.10.0.1:18081/path');
+    assert.equal(profiles[0].error.code, 'PROFILE_IDENTITY_INVALID');
+    assert.equal(profiles[1].relayUrl, 'http://192.0.2.1:18081/path');
     assert.equal(JSON.stringify(profiles).includes('must-not-leak'), false);
   } finally {
     scope.close();
@@ -175,6 +201,7 @@ test('resolveDeclarationPlan uses only declaration and immutable workspace bindi
     );
     const declaration = {
       workItemId: 'TEST-WORK',
+      sessionId: 'TEST-SESSION',
       workspaceId,
       branch: 'main',
       sourceHead: head,
@@ -197,16 +224,58 @@ test('resolveDeclarationPlan uses only declaration and immutable workspace bindi
       home: scope.root,
       loadPlanPackage,
       resolveWorkspacePlanBinding,
+      readSession: () => ({
+        kind: 'peers-touch-development-session',
+        eventDigest: 'a'.repeat(64),
+        state: {
+          sessionId: 'TEST-SESSION',
+          workItemId: 'TEST-WORK',
+          planId: 'TEST-PLAN',
+          taskId: 'TEST-CURRENT',
+          workspaceId,
+          branch: 'main',
+          state: 'DELIVERY_READY',
+          updatedAt: '2026-09-26T00:00:00.000Z',
+          lastVerification: {
+            verificationClass: 'FUNCTIONAL_CHECK',
+            result: 'PASS',
+            durationMs: 12,
+          },
+          currentFailure: null,
+        },
+      }),
+      readReview: () => ({
+        state: 'PASS',
+        reviewedAt: '2026-09-26T00:01:00.000Z',
+        reviewId: 'review-test',
+      }),
     });
     assert.equal(direct.status, 'available');
     assert.equal(direct.locatorSource, 'declaration');
+    assert.equal(direct.stages[3].state, 'active');
+    assert.equal(direct.task.id, 'TEST-CURRENT');
+    assert.deepEqual(
+      direct.task.segments.map((segment) => segment.state),
+      ['done', 'done', 'not_required', 'done'],
+    );
+    assert.equal(direct.review.state, 'PASS');
     assert.deepEqual(
       {
         completed: direct.progress.completed,
         total: direct.progress.total,
         percentage: direct.progress.percentage,
+        completedAfter:
+          direct.progress.nextProgressBoundary.completedAfter,
+        percentageAfter:
+          direct.progress.nextProgressBoundary.percentageAfter,
       },
-      { completed: 1, total: 2, percentage: 50 },
+      {
+        completed: 1,
+        total: 2,
+        percentage: 50,
+        completedAfter: 2,
+        percentageAfter: 100,
+      },
     );
 
     const boundWithoutLocator = await resolveDeclarationPlan(
@@ -282,17 +351,14 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
   const scope = fixture();
   try {
     addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
-      stationUrl: 'http://10.10.0.1:18080',
+      stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
-      relayUrl: 'http://10.10.0.1:18081',
+      relayUrl: 'http://192.0.2.1:18081',
       relayDeployEnvironment: 'relay-one',
     });
     const workspaceId = '0123456789abcdef';
     const server = {
-      schemaVersion: 1,
       kind: 'peers-touch-dev-server',
-      protocolVersion: 2,
       endpoint: 'http://127.0.0.1:4177',
       startedAt: '2026-09-17T00:00:00.000Z',
       source: {
@@ -303,6 +369,7 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
     };
     const snapshot = await buildDevSnapshot({
       envRepo: scope.root,
+      activeWork: { records: [], errors: [] },
       server,
       machineStatus: {
         authority: 'machine-control-plane',
@@ -317,7 +384,7 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
             purpose: 'Peers Dev test',
             owner: 'peers-dev-test@example.invalid',
             activity: 'active',
-            agentControlMode: 'managed',
+            resetPolicy: 'agent-resettable',
             profileState: 'available',
             profileError: null,
             canonicalRoot: '/private/path/must-not-leak',
@@ -396,12 +463,92 @@ test('buildDevSnapshot joins worktree resources and redacts authority paths', as
   }
 });
 
+test('buildDevSnapshot aggregates workspace-owned active work without cross-workspace writes', async () => {
+  const scope = fixture();
+  try {
+    const workspaceId = '0123456789abcdef';
+    const activeWork = {
+      workspaceId,
+      workItemId: 'DWF-ACTIVE-WORK',
+      planId: 'DWF-PLAN',
+      planPath: 'docs/architecture/dwf/execution-plans/test/plan.md',
+      planStatus: 'active',
+      currentTaskId: 'DWF-T1',
+      currentTaskPath:
+        'docs/architecture/dwf/execution-plans/test/tasks/DWF-T1.md',
+      taskStatus: 'in_progress',
+      sessionId: 'dwf-session',
+      journeyId: 'DWF-J01',
+      devState: 'IMPLEMENTING',
+      branch: 'feature/dwf',
+      initialHead: '1'.repeat(40),
+      expectedHead: '2'.repeat(40),
+      revision: 3,
+      updatedAt: '2026-09-19T08:00:00.000Z',
+    };
+    const snapshot = await buildDevSnapshot({
+      envRepo: scope.root,
+      activeWork: {
+        records: [activeWork],
+        errors: [
+          {
+            workspaceId: 'fedcba9876543210',
+            code: 'ACTIVE_WORK_INVALID',
+            message: 'invalid record',
+          },
+        ],
+      },
+      machineStatus: {
+        authority: 'machine-control-plane',
+        registrations: [
+          {
+            workspaceId,
+            name: 'dwf-consumer',
+            branch: 'feature/dwf',
+            profile: null,
+            slot: null,
+            allowedCapabilities: [],
+            purpose: 'active-work aggregation test',
+            owner: 'peers-dev-test@example.invalid',
+            activity: 'active',
+            resetPolicy: 'agent-resettable',
+            profileState: 'available',
+            profileError: null,
+          },
+        ],
+        activeLeases: [],
+        staleLeaseMetadata: [],
+        unregisteredObservations: null,
+      },
+      ledger: { declarations: {} },
+      now: new Date('2026-09-19T08:00:00.000Z'),
+    });
+
+    assert.equal(snapshot.activeWork.records.length, 1);
+    assert.equal(snapshot.activeWork.errors.length, 1);
+    assert.equal(snapshot.worktrees[0].workState, 'in-progress');
+    assert.equal(snapshot.worktrees[0].activeWork.currentTaskId, 'DWF-T1');
+    assert.equal(snapshot.worktrees[0].workflow.plan.id, 'DWF-PLAN');
+    assert.equal(snapshot.worktrees[0].workflow.task.id, 'DWF-T1');
+    assert.equal(snapshot.worktrees[0].workflow.stages[3].state, 'active');
+    assert.equal(snapshot.worktrees[0].agentActivity.state, 'idle');
+    assert.match(snapshot.digest, /^[0-9a-f]{64}$/);
+    assert.equal(
+      JSON.stringify(snapshot).includes('/Users/'),
+      false,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('declaration-only worktrees remain visible as unregistered', async () => {
   const scope = fixture();
   try {
     const workspaceId = 'fedcba9876543210';
     const snapshot = await buildDevSnapshot({
       envRepo: scope.root,
+      activeWork: { records: [], errors: [] },
       machineStatus: {
         authority: 'machine-control-plane',
         registrations: [],
@@ -445,8 +592,7 @@ test('work progress remains in progress while environment health is blocked and 
   const scope = fixture();
   try {
     addProfile(scope.root, 'managed-one', {
-      agentControlMode: 'managed',
-      stationUrl: 'http://10.10.0.1:18080',
+      stationUrl: 'http://192.0.2.1:18080',
       deployEnvironment: 'station-one',
     });
     const profileFile = path.join(
@@ -471,6 +617,7 @@ test('work progress remains in progress while environment health is blocked and 
     };
     const snapshot = await buildDevSnapshot({
       envRepo: scope.root,
+      activeWork: { records: [], errors: [] },
       machineStatus: {
         authority: 'machine-control-plane',
         registrations: [
@@ -485,7 +632,7 @@ test('work progress remains in progress while environment health is blocked and 
             purpose: 'Peers Dev test',
             owner: 'peers-dev-test@example.invalid',
             activity: 'stale',
-            agentControlMode: 'managed',
+            resetPolicy: 'agent-resettable',
             profileState: 'blocked',
             profileError: {
               code: 'PROFILE_SOURCE_UNREVIEWED',
@@ -588,4 +735,199 @@ test('work progress remains in progress while environment health is blocked and 
   } finally {
     scope.close();
   }
+});
+
+test('Git discovery owns current source identity and freshness keeps separate clocks', async () => {
+  const scope = fixture();
+  try {
+    const workspaceId = '0123456789abcdef';
+    const snapshot = await buildDevSnapshot({
+      envRepo: scope.root,
+      discovery: {
+        checkedAt: '2026-09-23T01:00:20.000Z',
+        available: true,
+        error: null,
+        records: [
+          {
+            workspaceId,
+            canonicalRoot: '/private/path/must-not-leak',
+            name: 'current-worktree',
+            branch: 'feature/current',
+            head: '3'.repeat(40),
+            detached: false,
+            checkedAt: '2026-09-23T01:00:20.000Z',
+          },
+          {
+            workspaceId: 'fedcba9876543210',
+            canonicalRoot: '/private/other/must-not-leak',
+            name: 'discovered-only',
+            branch: 'feature/discovered',
+            head: '4'.repeat(40),
+            detached: false,
+            checkedAt: '2026-09-23T01:00:20.000Z',
+          },
+        ],
+      },
+      observations: {
+        records: [
+          {
+            kind: 'peers-touch-worktree-observation',
+            workspaceId,
+            name: 'current-worktree',
+            branch: 'feature/current',
+            head: '3'.repeat(40),
+            dirty: true,
+            reporter: { host: 'trae', event: 'UserPromptSubmit' },
+            reportedAt: '2026-09-23T01:00:10.000Z',
+            recordDigest: '5'.repeat(64),
+          },
+        ],
+        errors: [],
+      },
+      activeWork: {
+        records: [
+          {
+            workspaceId,
+            workItemId: 'STALE-WORK',
+            planId: 'STALE-PLAN',
+            planPath: 'docs/architecture/stale/plan.md',
+            planStatus: 'active',
+            currentTaskId: 'STALE-TASK',
+            currentTaskPath: 'docs/architecture/stale/task.md',
+            taskStatus: 'in_progress',
+            sessionId: 'stale-session',
+            journeyId: 'DUI-J01',
+            devState: 'IMPLEMENTING',
+            branch: 'feature/old',
+            initialHead: '1'.repeat(40),
+            expectedHead: '2'.repeat(40),
+            revision: 2,
+            updatedAt: '2026-09-23T00:59:00.000Z',
+          },
+        ],
+        errors: [],
+      },
+      machineStatus: {
+        authority: 'machine-control-plane',
+        registrations: [
+          {
+            workspaceId,
+            name: 'registered-name',
+            branch: 'feature/old',
+            profile: null,
+            slot: null,
+            allowedCapabilities: [],
+            purpose: 'stale registration',
+            owner: 'test@example.invalid',
+            updatedAt: '2026-09-23T00:58:00.000Z',
+            activity: 'stale',
+            resetPolicy: null,
+            profileState: 'available',
+            profileError: null,
+          },
+        ],
+        activeLeases: [],
+        staleLeaseMetadata: [],
+        unregisteredObservations: null,
+      },
+      ledger: { declarations: {} },
+      now: new Date('2026-09-23T01:00:20.000Z'),
+    });
+
+    const current = snapshot.worktrees.find(
+      (worktree) => worktree.workspaceId === workspaceId,
+    );
+    const discoveredOnly = snapshot.worktrees.find(
+      (worktree) => worktree.workspaceId === 'fedcba9876543210',
+    );
+    assert.equal(current.name, 'current-worktree');
+    assert.deepEqual(current.branches, ['feature/current']);
+    assert.equal(current.git.head, '3'.repeat(40));
+    assert.equal(current.git.dirty, true);
+    assert.equal(current.workState, 'stale');
+    assert.equal(current.freshness.state, 'stale');
+    assert.deepEqual(current.freshness.issues, ['WORKFLOW_SOURCE_STALE']);
+    assert.equal(current.freshness.lastReportedAt, '2026-09-23T01:00:10.000Z');
+    assert.equal(current.freshness.stateUpdatedAt, '2026-09-23T00:59:00.000Z');
+    assert.equal(current.freshness.checkedAt, '2026-09-23T01:00:20.000Z');
+    assert.equal(discoveredOnly.workState, 'observed');
+    assert.equal(discoveredOnly.freshness.state, 'unreported');
+    assert.equal(JSON.stringify(snapshot).includes('/private/path'), false);
+    assert.equal(JSON.stringify(snapshot).includes('/private/other'), false);
+  } finally {
+    scope.close();
+  }
+});
+
+test('corrupt or orphan observations degrade one row without hiding others', async () => {
+  const scope = fixture();
+  try {
+    const snapshot = await buildDevSnapshot({
+      envRepo: scope.root,
+      discovery: {
+        checkedAt: '2026-09-23T01:10:00.000Z',
+        available: true,
+        error: null,
+        records: [],
+      },
+      observations: {
+        records: [],
+        errors: [
+          {
+            workspaceId: '0123456789abcdef',
+            code: 'WORKTREE_OBSERVATION_INVALID',
+            message: 'invalid report',
+          },
+        ],
+      },
+      activeWork: { records: [], errors: [] },
+      machineStatus: {
+        authority: 'machine-control-plane',
+        registrations: [],
+        activeLeases: [],
+        staleLeaseMetadata: [],
+        unregisteredObservations: null,
+      },
+      ledger: { declarations: {} },
+      now: new Date('2026-09-23T01:10:00.000Z'),
+    });
+    assert.equal(snapshot.worktrees.length, 1);
+    assert.equal(snapshot.worktrees[0].freshness.state, 'invalid');
+    assert.deepEqual(snapshot.worktrees[0].freshness.issues, [
+      'WORKTREE_OBSERVATION_INVALID',
+    ]);
+  } finally {
+    scope.close();
+  }
+});
+
+test('action receipts reduce independently from Plan progress', () => {
+  const repeated = Array.from({ length: 4 }, (_, index) => ({
+    sequence: index + 1,
+    actionId: `action-${index}`,
+    event: 'FINISHED',
+    result: 'PASS',
+    operation: {
+      family: 'WRITE',
+      label: 'apply_patch',
+      targetRef: 'apps/dev',
+    },
+    fingerprint: 'a'.repeat(64),
+    progressStamp: 'b'.repeat(64),
+    at: `2026-09-26T00:00:0${index}.000Z`,
+    leaseUntil: null,
+  }));
+  assert.equal(
+    reduceWorkflowActivity(repeated, {
+      now: new Date('2026-09-26T00:01:00.000Z'),
+    }).state,
+    'looping',
+  );
+  assert.equal(
+    reduceWorkflowActivity(repeated, {
+      now: new Date('2026-09-26T00:01:00.000Z'),
+      drift: true,
+    }).state,
+    'drift',
+  );
 });

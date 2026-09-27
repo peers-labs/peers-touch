@@ -293,6 +293,11 @@ interface MessagingMessageWire {
     storage_ref: string
     ciphertext_size: number
     availability_state: 'uploading' | 'remote' | 'local' | 'failed'
+    voice_note?: {
+      duration_ms: number
+      codec: string
+      waveform: number[]
+    }
   }>
   state: string
   timestamp_unix_ms: number
@@ -328,6 +333,13 @@ function projectMessagingMessage(message: MessagingMessageWire): MessagingProjec
       storageRef: attachment.storage_ref,
       ciphertextSize: attachment.ciphertext_size,
       availabilityState: attachment.availability_state,
+      voiceNote: attachment.voice_note
+        ? {
+          durationMs: attachment.voice_note.duration_ms,
+          codec: attachment.voice_note.codec,
+          waveform: attachment.voice_note.waveform,
+        }
+        : undefined,
     })),
     state: message.state,
     timestampUnixMs: message.timestamp_unix_ms,
@@ -529,6 +541,10 @@ const messagingService: MessagingServiceContract = {
           mls_status: 'idle' | 'active' | 'establishing' | 'crypto_desynced' | null
           active: boolean
           updated_at_unix_ms: number
+          summary: {
+            unread_count: number
+            latest_message?: MessagingMessageWire | null
+          }
         }>
       }
     >('messaging_list_conversations')
@@ -547,6 +563,12 @@ const messagingService: MessagingServiceContract = {
       mlsStatus: conversation.mls_status,
       active: conversation.active,
       updatedAtUnixMs: conversation.updated_at_unix_ms,
+      summary: {
+        unreadCount: conversation.summary.unread_count,
+        latestMessage: conversation.summary.latest_message
+          ? projectMessagingMessage(conversation.summary.latest_message)
+          : undefined,
+      },
     }))
     return conversations
   },
@@ -606,6 +628,11 @@ const messagingService: MessagingServiceContract = {
           file_path: string
           filename: string
           mime_type: string
+          voice_note?: {
+            duration_ms: number
+            codec: string
+            waveform: number[]
+          }
         }>
       },
       {
@@ -624,6 +651,13 @@ const messagingService: MessagingServiceContract = {
         file_path: attachment.filePath,
         filename: attachment.filename,
         mime_type: attachment.mimeType,
+        voice_note: attachment.voiceNote
+          ? {
+            duration_ms: attachment.voiceNote.durationMs,
+            codec: attachment.voiceNote.codec,
+            waveform: attachment.voiceNote.waveform,
+          }
+          : undefined,
       })),
     })
     return {
@@ -635,12 +669,43 @@ const messagingService: MessagingServiceContract = {
     }
   },
 
-  async listMessages(conversationId) {
+  async listMessages(conversationId, options = {}) {
     const response = await cmd<
-      { conversation_id: string },
-      { messages: MessagingMessageWire[] }
-    >('messaging_list_messages', { conversation_id: conversationId })
-    return response.messages.map(projectMessagingMessage)
+      { conversation_id: string; before_sequence?: number; limit?: number },
+      {
+        messages: MessagingMessageWire[]
+        has_more: boolean
+        next_before_sequence?: number
+      }
+    >('messaging_list_messages', {
+      conversation_id: conversationId,
+      before_sequence: options.beforeSequence,
+      limit: options.limit,
+    })
+    return {
+      messages: response.messages.map(projectMessagingMessage),
+      hasMore: response.has_more,
+      nextBeforeSequence: response.next_before_sequence,
+    }
+  },
+
+  async retryMessage(conversationId, messageId) {
+    const response = await cmd<
+      { conversation_id: string; message_id: string },
+      {
+        command_id: string
+        message_id: string
+        state: 'pending' | 'retrying'
+      }
+    >('messaging_retry_message', {
+      conversation_id: conversationId,
+      message_id: messageId,
+    })
+    return {
+      commandId: response.command_id || undefined,
+      messageId: response.message_id,
+      state: response.state,
+    }
   },
 
   async listThreadMessages(conversationId, threadRootMessageId) {
@@ -677,7 +742,6 @@ const messagingService: MessagingServiceContract = {
       pinned: response.pinned ?? false,
       background: response.background ?? 'default',
       backgroundImage: response.backgroundImage ?? '',
-      clearedAtUnixMs: response.clearedAtUnixMs ?? 0,
     }
   },
 
@@ -691,7 +755,6 @@ const messagingService: MessagingServiceContract = {
         pinned?: boolean
         background?: string
         background_image?: string
-        cleared_at_unix_ms?: number
       },
       MemberSettingsResult
     >('messaging_update_member_settings', {
@@ -702,7 +765,6 @@ const messagingService: MessagingServiceContract = {
       pinned: settings.pinned,
       background: settings.background,
       background_image: settings.backgroundImage,
-      cleared_at_unix_ms: settings.clearedAtUnixMs,
     })
     return {
       nickname: response.nickname ?? '',
@@ -711,7 +773,6 @@ const messagingService: MessagingServiceContract = {
       pinned: response.pinned ?? false,
       background: response.background ?? 'default',
       backgroundImage: response.backgroundImage ?? '',
-      clearedAtUnixMs: response.clearedAtUnixMs ?? 0,
     }
   },
 
@@ -724,41 +785,7 @@ const messagingService: MessagingServiceContract = {
         before_message_id?: string
         limit: number
       },
-      {
-        messages: Array<{
-          event_id?: string
-          event_sequence?: number
-          message_id: string
-          sender_ptid: string
-          sender_device_id: string
-          plaintext: string
-          attachments: Array<{
-            attachment_id: string
-            filename: string
-            mime_type: string
-            plaintext_size: number
-            object_id: string
-            storage_ref: string
-            ciphertext_size: number
-            availability_state: 'uploading' | 'remote' | 'local' | 'failed'
-          }>
-          state: string
-          timestamp_unix_ms: number
-          reply_to_message_id?: string
-          thread_root_message_id?: string
-          edited_text?: string
-          edited_at_unix_ms?: number
-          retracted: boolean
-          reactions: Array<{
-            actor_ptid: string
-            reaction: string
-            created_at_unix_ms: number
-          }>
-          pinned_by_ptid?: string
-          pinned_at_unix_ms?: number
-          read_by_ptids: string[]
-        }>
-      }
+      { messages: MessagingMessageWire[] }
     >('messaging_search_messages', {
       conversation_id: conversationId,
       query,
@@ -766,39 +793,7 @@ const messagingService: MessagingServiceContract = {
       before_message_id: options.beforeMessageId,
       limit: options.limit ?? 50,
     })
-    return response.messages.map(message => ({
-      eventId: message.event_id,
-      eventSequence: message.event_sequence,
-      messageId: message.message_id,
-      senderPtid: message.sender_ptid,
-      senderDeviceId: message.sender_device_id,
-      plaintext: message.plaintext,
-      attachments: message.attachments.map(attachment => ({
-        attachmentId: attachment.attachment_id,
-        filename: attachment.filename,
-        mimeType: attachment.mime_type,
-        plaintextSize: attachment.plaintext_size,
-        objectId: attachment.object_id,
-        storageRef: attachment.storage_ref,
-        ciphertextSize: attachment.ciphertext_size,
-        availabilityState: attachment.availability_state,
-      })),
-      state: message.state,
-      timestampUnixMs: message.timestamp_unix_ms,
-      replyToMessageId: message.reply_to_message_id,
-      threadRootMessageId: message.thread_root_message_id,
-      editedText: message.edited_text,
-      editedAtUnixMs: message.edited_at_unix_ms,
-      retracted: message.retracted,
-      reactions: message.reactions.map(reaction => ({
-        actorPtid: reaction.actor_ptid,
-        reaction: reaction.reaction,
-        createdAtUnixMs: reaction.created_at_unix_ms,
-      })),
-      pinnedByPtid: message.pinned_by_ptid,
-      pinnedAtUnixMs: message.pinned_at_unix_ms,
-      readByPtids: message.read_by_ptids,
-    }))
+    return response.messages.map(projectMessagingMessage)
   },
 
   async openAttachment(attachmentId) {

@@ -10,6 +10,7 @@ import type { JsonValue, Message as ProtoMessage } from '@bufbuild/protobuf';
 import type { GenMessage } from '@bufbuild/protobuf/codegenv2';
 import { log } from '../utils/logger';
 import { resolvePresenceOnline } from './chatPresence';
+import type { AccessDecision } from './accessGate';
 import { throttleInvoke } from '../kernel/invokeThrottler';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
@@ -31,50 +32,32 @@ import {
   SendSocialFriendRequestResponseSchema,
 } from '../gen/proto/domain/social/relationship_pb';
 import {
-  CreateGroupResponseSchema,
-  GetGroupResponseSchema,
-  UpdateGroupResponseSchema,
-  InviteToGroupResponseSchema,
-  JoinGroupResponseSchema,
-  LeaveGroupResponseSchema,
-  TransferGroupOwnershipResponseSchema,
-  DissolveGroupResponseSchema,
-  RemoveMemberResponseSchema,
-  UpdateMemberResponseSchema,
-  RecallGroupMessageResponseSchema,
-  EditGroupMessageResponseSchema,
-  DeleteGroupMessageResponseSchema,
-  UpdateMyNicknameResponseSchema,
-  GetGroupSettingsResponseSchema,
-  UpdateGroupSettingsResponseSchema,
-  GetOfflineMessagesResponseSchema,
-  AckOfflineMessagesResponseSchema,
-  GetGroupStatsResponseSchema,
-} from '../gen/proto/domain/chat/group_chat_pb';
+  ChatStorageConversationRequestSchema,
+  ChatStorageResultSchema,
+  ChatStorageRetentionRequestSchema,
+  ChatStorageSnapshotRequestSchema,
+  ChatStorageSnapshotSchema,
+  type ChatRetentionPreset,
+} from '../gen/proto/domain/chat/storage_pb';
+export type {
+  ChatRetentionPreset,
+  ChatStorageResult,
+  ChatStorageSnapshot,
+  ConversationStorageUsage,
+} from '../gen/proto/domain/chat/storage_pb';
 export type {
   ActorList,
   ActorProfile,
   Actor,
 } from '../gen/proto/domain/actor/actor_pb';
 import {
-  FederationSelfViewSchema,
-} from '../gen/proto/domain/federation/federation_self_pb';
-import {
   FederationResolveViewSchema,
 } from '../gen/proto/domain/federation/federation_resolve_pb';
-import {
-  FederationHealthViewSchema,
-} from '../gen/proto/domain/federation/federation_health_pb';
 import {
   FederationCatalogSearchResponseSchema,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 import {
-  CreateFederationResponseSchema,
-  DeleteFederationResponseSchema,
-  JoinFederationResponseSchema,
-  LeaveFederationResponseSchema,
-  ListFederationsResponseSchema,
-  ListMemberStationsResponseSchema,
+  ListFederationContextsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
   ExportTurnDiagnosticsResponse,
@@ -161,73 +144,20 @@ import type {
   ListCollaborationTasksResponse,
   ListTaskEventsResponse,
 } from '../gen/proto/domain/agent/orchestration_pb';
-export {
-  FederationVisibility,
-  FederationVisibilityRequestSchema,
-} from '../gen/proto/domain/federation/federation_self_pb';
-export type {
-  FederationSelfView,
-  FederationVisibilityRequest,
-} from '../gen/proto/domain/federation/federation_self_pb';
 export type {
   FederationResolveView,
 } from '../gen/proto/domain/federation/federation_resolve_pb';
-export type {
-  FederationHealthView,
-} from '../gen/proto/domain/federation/federation_health_pb';
 export type {
   FederationCatalogSearchResponse,
   FederationCatalogEntry,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 export type {
-  ListFederationsResponse,
-  FederationSummary,
-  ActorCapability,
-  CreateFederationResponse,
-  DeleteFederationResponse,
-  JoinFederationResponse,
-  LeaveFederationResponse,
-  ListMemberStationsResponse,
-  MemberStationView,
+  ListFederationContextsResponse,
+  FederationContext,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 export type {
   Friend,
 } from '../gen/proto/domain/chat/chat_pb';
-export type {
-  FriendChatSession,
-  FriendChatMessage,
-} from '../gen/proto/domain/chat/friend_chat_pb';
-export type {
-  Group,
-  GroupMessage,
-  ListGroupsResponse,
-  GetGroupMessagesResponse,
-  GetUnreadCountResponse,
-  MarkGroupReadResponse,
-  GroupMember,
-  GroupInvitation,
-  CreateGroupResponse,
-  GetGroupResponse,
-  UpdateGroupResponse,
-  InviteToGroupResponse,
-  JoinGroupResponse,
-  LeaveGroupResponse,
-  TransferGroupOwnershipResponse,
-  DissolveGroupResponse,
-  GetGroupMembersResponse,
-  RemoveMemberResponse,
-  UpdateMemberResponse,
-  RecallGroupMessageResponse,
-  DeleteGroupMessageResponse,
-  SearchGroupMessagesResponse,
-  UpdateMyNicknameResponse,
-  GetGroupSettingsResponse,
-  UpdateGroupSettingsResponse,
-  GetOfflineMessagesResponse,
-  AckOfflineMessagesResponse,
-  GetGroupStatsResponse,
-} from '../gen/proto/domain/chat/group_chat_pb';
-
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export type RustErrorCode =
@@ -279,16 +209,6 @@ export interface GroupChatFederatedActorInput {
   actorIdentityPublicKey?: Uint8Array | number[];
   profileVersion?: number | bigint;
   federationId?: string;
-}
-
-interface GroupChatFederatedActorWireInput {
-  actor_ptid: string;
-  home_station_peer_id: string;
-  home_station_domain?: string;
-  federated_handle?: string;
-  actor_identity_public_key?: number[];
-  profile_version?: number;
-  federation_id?: string;
 }
 
 export interface DesktopNativeHostEventInput {
@@ -597,26 +517,6 @@ async function invokeRustProtoRequest<
   );
 }
 
-function normalizeGroupChatFederatedActors(
-  actors?: GroupChatFederatedActorInput[],
-): GroupChatFederatedActorWireInput[] | undefined {
-  if (!actors || actors.length === 0) {
-    return undefined;
-  }
-  return actors.map((actor) => ({
-    actor_ptid: actor.ptid,
-    home_station_peer_id: actor.homeStationPeerId,
-    home_station_domain: actor.homeStationDomain,
-    federated_handle: actor.federatedHandle,
-    actor_identity_public_key: actor.actorIdentityPublicKey
-      ? Array.from(actor.actorIdentityPublicKey)
-      : undefined,
-    profile_version:
-      actor.profileVersion == null ? undefined : Number(actor.profileVersion),
-    federation_id: actor.federationId,
-  }));
-}
-
 async function invokeAppResultStub<TOut>(command: string, payload?: Record<string, unknown>): Promise<TOut> {
   const quiet = isQuietCommand(command);
   const start = Date.now();
@@ -697,6 +597,16 @@ export interface PresenceTransitionEvent {
 export interface PresenceStatusProjection {
   actorPtid: string;
   online: boolean | null;
+}
+
+export interface RealtimeCallResolutionProjection {
+  call_id: string;
+  state: 'OPEN' | 'ACCEPTED' | 'REJECTED' | 'NO_ANSWER';
+  winning_device_id?: string;
+  terminal_action?: 'accept' | 'reject' | 'no_answer';
+  ring_deadline_unix_ms: number;
+  resolved_at_unix_ms?: number;
+  expires_at_unix_ms: number;
 }
 
 /**
@@ -2282,6 +2192,11 @@ export interface MessagingAcceptanceInteractionSnapshot {
   reactions: Array<Record<string, unknown>>;
   pins: Array<Record<string, unknown>>;
   readCursors: Array<Record<string, unknown>>;
+  redactionTombstones: Array<Record<string, unknown>>;
+  searchEntryCount: number;
+  attachmentProjectionCount: number;
+  attachmentTransferCount: number;
+  redactionCleanup: Array<Record<string, unknown>>;
   consumptionCount: number;
   laneSequence: number;
   consumerEpoch: number;
@@ -2299,27 +2214,41 @@ export interface MessagingAcceptanceRestorableCommand
   commandId: string;
 }
 
-export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
-
-export interface AuthLoginInput {
-  account: string;
-  password: string;
-  base_url?: string;
+export interface ChatStorageAcceptanceConversationClearFixture {
+  actorPtid: string;
+  conversationId: string;
+  messageId: string;
 }
 
-/// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
-/// The frontend normalizes the wire shape (snake_case keys, string enums).
+export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
+
 export interface AccessDecisionResponse extends TauriStubPayload {
-  decision: unknown;
+  decision: AccessDecision;
+}
+
+export interface AccessDecisionInput {
+  attempt_id: string;
 }
 
 export interface AccessSubmitInviteInput {
   attempt_id: string;
+  gate_id: string;
+  gate_type: number;
+  action_id: string;
+  schema_revision: number;
+  schema_digest: string;
+  submission_id: string;
   invite_code: string;
 }
 
 export interface AccessSubmitLoginInput {
   attempt_id: string;
+  gate_id: string;
+  gate_type: number;
+  action_id: string;
+  schema_revision: number;
+  schema_digest: string;
+  submission_id: string;
   account: string;
   password: string;
 }
@@ -2400,6 +2329,8 @@ export interface ProfileUpdateInput {
   timezone?: string;
   tags?: string[];
   links?: AccountProfileLink[];
+  discoverability?: 'hidden' | 'by_handle' | 'indexed';
+  observed_revision: number;
 }
 
 export interface AccountProfileLink {
@@ -2409,6 +2340,7 @@ export interface AccountProfileLink {
 
 export interface AccountProfile {
   id: string;
+  profile_revision: number;
   username: string;
   acct: string;
   display_name: string;
@@ -2429,9 +2361,23 @@ export interface AccountProfile {
   manually_approves_followers: boolean;
   message_permission: string;
   auto_expire_days: number;
+  federated_handle: string;
+  home_station_peer_id: string;
+  home_station_domain: string;
+  discoverability: 'hidden' | 'by_handle' | 'indexed';
   peers_touch: {
     network_id: string;
   };
+}
+
+export type ProfileUpdateOutcome =
+  | 'PROFILE_UPDATE_OUTCOME_APPLIED'
+  | 'PROFILE_UPDATE_OUTCOME_UNCHANGED'
+  | 'PROFILE_UPDATE_OUTCOME_CONFLICT';
+
+export interface ProfileUpdateResult {
+  outcome: ProfileUpdateOutcome;
+  profile: AccountProfile;
 }
 
 export interface ProfilePrivacyInput {
@@ -3711,6 +3657,14 @@ function toRustUint64(value: number | bigint, field: string): number {
   return numeric;
 }
 
+function toPositiveRustUint64(value: number | bigint, field: string): number {
+  const numeric = toRustUint64(value, field);
+  if (numeric === 0) {
+    throw new Error(`agent.capabilityInvalidUint64:${field}`);
+  }
+  return numeric;
+}
+
 export interface AgentRuntimeActivityInput {
   runtime_kind: 1 | 2;
   runtime_id: 'trae-cli' | 'external-agent';
@@ -4648,9 +4602,6 @@ function requireEvaluationValue<T>(
 }
 
 export const api = {
-  authLogin: (input: AuthLoginInput) =>
-    invokeAuthCommand<AuthLoginInput>('auth_login', input),
-
   accessStart: () =>
     invokeAccessCommand<void>('access_start'),
 
@@ -4659,6 +4610,12 @@ export const api = {
 
   accessSubmitLogin: (input: AccessSubmitLoginInput) =>
     invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
+
+  accessDecision: (attemptId: string) =>
+    invokeAccessCommand<AccessDecisionInput>('access_decision', { attempt_id: attemptId }),
+
+  accessCancel: (attemptId: string) =>
+    invokeAccessCommand<AccessDecisionInput>('access_cancel', { attempt_id: attemptId }),
 
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
@@ -4714,7 +4671,13 @@ export const api = {
     invokeRustDataFromStatus<{ actor_ptid: string }, AccountProfile>('peer_profile_get', { actor_ptid: actorPtid }),
 
   profileUpdate: (input: ProfileUpdateInput) =>
-    invokeRustDataFromStatus<ProfileUpdateInput, AccountProfile>('profile_update', input),
+    invokeRustDataFromStatus<ProfileUpdateInput, ProfileUpdateResult>('profile_update', {
+      ...input,
+      observed_revision: toPositiveRustUint64(
+        input.observed_revision,
+        'observed_revision',
+      ),
+    }),
 
   profileUploadAvatar: (input: FileUploadInput) =>
     invokeRustCommand<FileUploadInput, TauriStubPayload>('profile_upload_avatar', input),
@@ -4723,10 +4686,10 @@ export const api = {
     invokeRustCommand<FileUploadInput, TauriStubPayload>('profile_upload_header', input),
 
   profileUploadAvatarOss: (input: FileUploadInput) =>
-    invokeRustDataFromStatus<FileUploadInput, AccountProfile>('profile_upload_avatar_oss', input),
+    invokeRustDataFromStatus<FileUploadInput, ProfileUpdateResult>('profile_upload_avatar_oss', input),
 
   profileUploadHeaderOss: (input: FileUploadInput) =>
-    invokeRustDataFromStatus<FileUploadInput, AccountProfile>('profile_upload_header_oss', input),
+    invokeRustDataFromStatus<FileUploadInput, ProfileUpdateResult>('profile_upload_header_oss', input),
 
   pickImageFile: async (): Promise<string> => {
     const response = await invokeRustCommand<void, TauriStubPayload>('pick_image_file');
@@ -5740,7 +5703,7 @@ export const api = {
     invokeRustDataFromStatus<void, { ok: boolean }>('onboarding_reset'),
 
   getStatistics: () =>
-    invokeRustDataFromStatus<void, StatisticsData>('statistics_get'),
+    Promise.reject(new Error('legacy_statistics_removed')),
 
   getPreferences: () =>
     invokeRustDataFromStatus<void, UserPreferences>('preferences_get'),
@@ -7089,29 +7052,14 @@ export const api = {
     return data;
   },
 
-  // Federation API (Tier A1) — proto-first end-to-end. The Rust shim
-  // already encodes a typed FederationSelfView / FederationResolveView /
-  // FederationHealthView; `invokeRustProto` decodes the byte stream back
-  // into a typed proto-es message so callers never touch JSON.
-  federationGetSelf: () =>
-    invokeRustProto('federation_get_self', FederationSelfViewSchema),
-
-  federationUpdateVisibility: (visibility: string) =>
-    invokeRustProto(
-      'federation_update_visibility',
-      FederationSelfViewSchema,
-      { visibility },
-    ),
-
-  federationResolve: (handle: string) =>
+  // Read-only Federation context and discovery. Actor identity and
+  // discoverability are owned by the canonical profile commands.
+  federationResolve: (federationId: string, handle: string) =>
     invokeRustProto(
       'federation_resolve',
       FederationResolveViewSchema,
-      { handle },
+      { federation_id: federationId, handle },
     ),
-
-  federationHealth: () =>
-    invokeRustProto('federation_health', FederationHealthViewSchema),
 
   federationCatalogSearch: (params: {
     federation_id: string;
@@ -7121,30 +7069,9 @@ export const api = {
   }) =>
     invokeRustProto('federation_catalog_search', FederationCatalogSearchResponseSchema, params),
 
-  // Federation Lifecycle (Governance Subserver)
-  federationListFederations: () =>
-    invokeRustProto('federation_list_federations', ListFederationsResponseSchema),
+  federationListContexts: () =>
+    invokeRustProto('federation_list_contexts', ListFederationContextsResponseSchema),
 
-  federationCreate: (params: { name: string; description?: string; policy_type?: string }) =>
-    invokeRustProto('federation_create', CreateFederationResponseSchema, params),
-
-  federationJoin: (params: {
-    federation_endpoint?: string;
-    federation_id?: string;
-    message?: string;
-  }) =>
-    invokeRustProto('federation_join', JoinFederationResponseSchema, params),
-
-  federationLeave: (params: { federation_id: string; reason?: string }) =>
-    invokeRustProto('federation_leave', LeaveFederationResponseSchema, params),
-
-  federationDelete: (params: { federation_id: string }) =>
-    invokeRustProto('federation_delete', DeleteFederationResponseSchema, params),
-
-  federationListMemberStations: (federationId: string) =>
-    invokeRustProto('federation_list_member_stations', ListMemberStationsResponseSchema, {
-      federation_id: federationId,
-    }),
 
   /**
    * Fire a presence trigger to the Rust supervisor. Always resolves; the
@@ -7218,6 +7145,8 @@ export const api = {
     sessionUlid: string,
     kind: RealtimeCallSignalKind,
     payloadB64: string,
+    callId?: string,
+    deviceId?: string,
   ) =>
     invokeRustDataFromStatus<
       {
@@ -7225,6 +7154,8 @@ export const api = {
         session_ulid: string;
         kind: string;
         payload_b64: string;
+        call_id: string;
+        device_id: string;
       },
       Record<string, unknown>
     >('realtime_signal_send', {
@@ -7232,6 +7163,17 @@ export const api = {
       session_ulid: sessionUlid,
       kind,
       payload_b64: payloadB64,
+      call_id: callId ?? '',
+      device_id: deviceId ?? '',
+    }),
+
+  realtimeCallResolutionGet: (callId: string, peerActorPtid: string) =>
+    invokeRustDataFromStatus<
+      { call_id: string; peer_actor_ptid: string },
+      RealtimeCallResolutionProjection
+    >('realtime_call_resolution_get', {
+      call_id: callId,
+      peer_actor_ptid: peerActorPtid,
     }),
 
   /**
@@ -7257,6 +7199,90 @@ export const api = {
       last_read_sequence: lastReadSequence,
     }),
 
+  chatStorageSnapshot: (input: {
+    stationPeerId: string;
+    actorPtid: string;
+    deviceId: string;
+    scopeRevision: string;
+  }) =>
+    invokeRustProtoRequest(
+      'chat_storage_snapshot',
+      ChatStorageSnapshotRequestSchema,
+      ChatStorageSnapshotSchema,
+      create(ChatStorageSnapshotRequestSchema, {
+        scope: {
+          stationPeerId: input.stationPeerId,
+          actorPtid: input.actorPtid,
+          deviceId: input.deviceId,
+        },
+        scopeRevision: input.scopeRevision,
+      }),
+    ),
+
+  chatStorageClearCache: (input: {
+    stationPeerId: string;
+    actorPtid: string;
+    deviceId: string;
+    scopeRevision: string;
+  }) =>
+    invokeRustProtoRequest(
+      'chat_storage_clear_cache',
+      ChatStorageSnapshotRequestSchema,
+      ChatStorageResultSchema,
+      create(ChatStorageSnapshotRequestSchema, {
+        scope: {
+          stationPeerId: input.stationPeerId,
+          actorPtid: input.actorPtid,
+          deviceId: input.deviceId,
+        },
+        scopeRevision: input.scopeRevision,
+      }),
+    ),
+
+  chatStorageClearConversation: (input: {
+    stationPeerId: string;
+    actorPtid: string;
+    deviceId: string;
+    scopeRevision: string;
+    conversationId: string;
+  }) =>
+    invokeRustProtoRequest(
+      'chat_storage_clear_conversation',
+      ChatStorageConversationRequestSchema,
+      ChatStorageResultSchema,
+      create(ChatStorageConversationRequestSchema, {
+        scope: {
+          stationPeerId: input.stationPeerId,
+          actorPtid: input.actorPtid,
+          deviceId: input.deviceId,
+        },
+        scopeRevision: input.scopeRevision,
+        conversationId: input.conversationId,
+      }),
+    ),
+
+  chatStorageSetRetention: (input: {
+    stationPeerId: string;
+    actorPtid: string;
+    deviceId: string;
+    scopeRevision: string;
+    retentionPreset: ChatRetentionPreset;
+  }) =>
+    invokeRustProtoRequest(
+      'chat_storage_set_retention',
+      ChatStorageRetentionRequestSchema,
+      ChatStorageResultSchema,
+      create(ChatStorageRetentionRequestSchema, {
+        scope: {
+          stationPeerId: input.stationPeerId,
+          actorPtid: input.actorPtid,
+          deviceId: input.deviceId,
+        },
+        scopeRevision: input.scopeRevision,
+        retentionPreset: input.retentionPreset,
+      }),
+    ),
+
   messagingEditMessage: (
     conversationId: string,
     messageId: string,
@@ -7278,7 +7304,7 @@ export const api = {
   messagingMetadataInteraction: (
     conversationId: string,
     messageId: string,
-    kind: 'retract' | 'reaction' | 'pin',
+    kind: 'hideForActor' | 'retract' | 'reaction' | 'pin',
     options: { reaction?: string; remove?: boolean } = {},
   ) =>
     invokeRustData<
@@ -7374,6 +7400,24 @@ export const api = {
       expected_actor_ptid: expectedActorPtid,
     }),
 
+  chatStorageAcceptanceSeedConversationClear: (input: {
+    actorPtid: string;
+    stationPeerId: string;
+    plaintextBytes: number;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        station_peer_id: string;
+        plaintext_bytes: number;
+      },
+      ChatStorageAcceptanceConversationClearFixture
+    >('chat_storage_acceptance_seed_conversation_clear', {
+      expected_actor_ptid: input.actorPtid,
+      station_peer_id: input.stationPeerId,
+      plaintext_bytes: input.plaintextBytes,
+    }),
+
   /**
    * Seal a WebRTC signaling plaintext (canonical JSON for SDP /
    * candidate / hangup) into the standalone signaling envelope
@@ -7418,123 +7462,6 @@ export const api = {
       kind,
       payloadB64,
     }),
-
-  groupChatLocalSearch: (query: string, limit?: number) =>
-    invokeRustDataFromStatus<ChatLocalSearchInput, { messages: any[] }>(
-      'group_chat_local_search_scoped', { query, limit },
-    ).then(r => r.messages || []),
-
-  groupChatCreateGroup: (
-    name: string,
-    description?: string,
-    memberPtids?: string[],
-    initialFederatedMembers?: GroupChatFederatedActorInput[],
-  ) =>
-    invokeRustProto('group_chat_create_group', CreateGroupResponseSchema, {
-      name,
-      description,
-      member_ptids: memberPtids,
-      initial_federated_members: normalizeGroupChatFederatedActors(initialFederatedMembers),
-    }),
-
-  groupChatGetGroup: (groupUlid: string) =>
-    invokeRustProto('group_chat_get_group', GetGroupResponseSchema, { group_ulid: groupUlid }),
-
-  groupChatUpdateGroup: (groupUlid: string, name?: string, description?: string, avatarCid?: string) =>
-    invokeRustProto('group_chat_update_group', UpdateGroupResponseSchema, {
-      group_ulid: groupUlid,
-      name,
-      description,
-      avatar_cid: avatarCid,
-    }),
-
-  groupChatInviteToGroup: (groupUlid: string, memberPtids: string[]) =>
-    invokeRustProto('group_chat_invite_to_group', InviteToGroupResponseSchema, { group_ulid: groupUlid, member_ptids: memberPtids }),
-
-  groupChatAddFederatedMember: (groupUlid: string, member: GroupChatFederatedActorInput) =>
-    invokeRustDataFromStatus<{
-      group_ulid: string;
-      member: GroupChatFederatedActorWireInput;
-    }, { success: boolean; group?: Record<string, unknown>; member?: Record<string, unknown> }>(
-      'group_chat_add_federated_member',
-      { group_ulid: groupUlid, member: normalizeGroupChatFederatedActors([member])![0] },
-    ),
-
-  groupChatJoinGroup: (groupUlid: string, invitationUlid?: string) =>
-    invokeRustProto('group_chat_join_group', JoinGroupResponseSchema, { group_ulid: groupUlid, invitation_ulid: invitationUlid }),
-
-  groupChatLeaveGroup: (groupUlid: string) =>
-    invokeRustProto('group_chat_leave_group', LeaveGroupResponseSchema, { group_ulid: groupUlid }),
-
-  groupChatTransferOwnership: (groupUlid: string, nextOwnerPtid: string) =>
-    invokeRustProto('group_chat_transfer_ownership', TransferGroupOwnershipResponseSchema, {
-      group_ulid: groupUlid,
-      next_owner_ptid: nextOwnerPtid,
-    }),
-
-  groupChatDissolveGroup: (groupUlid: string) =>
-    invokeRustProto('group_chat_dissolve_group', DissolveGroupResponseSchema, { group_ulid: groupUlid }),
-
-  groupChatRemoveMember: (groupUlid: string, memberPtid: string) =>
-    invokeRustProto('group_chat_remove_member', RemoveMemberResponseSchema, { group_ulid: groupUlid, member_ptid: memberPtid }),
-
-  groupChatUpdateMember: (groupUlid: string, memberPtid: string, input: { role?: number; muted?: boolean; mutedUntilUnixMs?: number }) =>
-    invokeRustProto('group_chat_update_member', UpdateMemberResponseSchema, {
-      group_ulid: groupUlid,
-      member_ptid: memberPtid,
-      ...(input.role !== undefined ? { role: input.role } : {}),
-      ...(input.muted !== undefined ? { muted: input.muted } : {}),
-      ...(input.mutedUntilUnixMs !== undefined ? { muted_until_unix_ms: input.mutedUntilUnixMs } : {}),
-    }),
-
-  groupChatRecallMessage: (groupUlid: string, messageUlid: string) =>
-    invokeRustProto('group_chat_recall_message', RecallGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
-
-  groupChatEditMessage: (
-    groupUlid: string,
-    messageUlid: string,
-    newContent?: string,
-    newEncryptedPayload?: Uint8Array,
-  ) =>
-    invokeRustProto('group_chat_edit_message', EditGroupMessageResponseSchema, {
-      group_ulid: groupUlid,
-      message_ulid: messageUlid,
-      ...(newContent != null && newContent !== '' ? { new_content: newContent } : {}),
-      ...(newEncryptedPayload != null && newEncryptedPayload.byteLength > 0
-        ? { new_encrypted_payload: Array.from(newEncryptedPayload) }
-        : {}),
-    }),
-
-  groupChatDeleteMessage: (groupUlid: string, messageUlid: string) =>
-    invokeRustProto('group_chat_delete_message', DeleteGroupMessageResponseSchema, { group_ulid: groupUlid, message_ulid: messageUlid }),
-
-  groupChatUpdateNickname: (groupUlid: string, nickname: string) =>
-    invokeRustProto('group_chat_update_nickname', UpdateMyNicknameResponseSchema, { group_ulid: groupUlid, nickname }),
-
-  groupChatGetSettings: (groupUlid: string) =>
-    invokeRustProto('group_chat_get_settings', GetGroupSettingsResponseSchema, { group_ulid: groupUlid }),
-
-  groupChatUpdateSettings: (
-    groupUlid: string,
-    settings: { isMuted?: boolean; isPinned?: boolean; alertEnabled?: boolean; background?: string; clearedAt?: number },
-  ) =>
-    invokeRustProto('group_chat_update_settings', UpdateGroupSettingsResponseSchema, {
-      group_ulid: groupUlid,
-      ...(settings.isMuted !== undefined ? { is_muted: settings.isMuted } : {}),
-      ...(settings.isPinned !== undefined ? { is_pinned: settings.isPinned } : {}),
-      ...(settings.alertEnabled !== undefined ? { alert_enabled: settings.alertEnabled } : {}),
-      ...(settings.background !== undefined ? { background: settings.background } : {}),
-      ...(settings.clearedAt !== undefined ? { cleared_at_unix_ms: settings.clearedAt } : {}),
-    }),
-
-  groupChatGetOfflineMessages: (groupUlid: string, limit?: number) =>
-    invokeRustProto('group_chat_get_offline_messages', GetOfflineMessagesResponseSchema, { group_ulid: groupUlid, limit }),
-
-  groupChatAckOfflineMessages: (groupUlid: string, messageUlids: string[]) =>
-    invokeRustProto('group_chat_ack_offline_messages', AckOfflineMessagesResponseSchema, { group_ulid: groupUlid, message_ulids: messageUlids }),
-
-  groupChatGetStats: () =>
-    invokeRustProto('group_chat_get_stats', GetGroupStatsResponseSchema),
 
   cryptoRatchetTelemetrySnapshot: () =>
     invokeAppResultStub<{
@@ -7667,14 +7594,58 @@ export const api = {
     ),
 
   notificationPreferences: () =>
-    invokeRustDataFromStatus<void, { preferences: NotificationPreferenceData[] }>(
+    invokeRustDataFromStatus<void, NotificationPreferencesSnapshotData>(
       'notification_preferences',
     ),
 
-  notificationPreferencesUpdate: (category: number, enabled: boolean, pushEnabled: boolean, soundEnabled: boolean) =>
-    invokeRustDataFromStatus<{ category: number; enabled: boolean; push_enabled: boolean; sound_enabled: boolean }, { preference: NotificationPreferenceData }>(
-      'notification_preferences_update', { category, enabled, push_enabled: pushEnabled, sound_enabled: soundEnabled },
-    ),
+  notificationPreferencesUpdate: async (input: NotificationPreferencesUpdateInput) => {
+    const categories = new Set<number>();
+    const invalidBatch = input.updates.length === 0 || input.updates.some((update) => {
+      if (update.category === 0 || categories.has(update.category)) return true;
+      categories.add(update.category);
+      return false;
+    });
+    if (invalidBatch) {
+      throw new Error('notification.preferences.invalidBatch');
+    }
+    const request = {
+      updates: input.updates.map((update) => ({
+        category: update.category,
+        enabled: update.enabled,
+        push_enabled: update.pushEnabled,
+        sound_enabled: update.soundEnabled,
+      })),
+      observed_revision: toPositiveRustUint64(
+        input.observedRevision,
+        'notification_preferences.observed_revision',
+      ),
+    };
+    try {
+      return await invokeRustDataFromStatus<
+        typeof request,
+        NotificationPreferencesUpdateResult
+      >('notification_preferences_update', request);
+    } catch (error) {
+      const snapshot = await api.notificationPreferences().catch(() => null);
+      if (!snapshot) throw error;
+      if (notificationSnapshotMatchesUpdates(snapshot, input.updates)) {
+        return {
+          outcome:
+            snapshot.notificationPreferencesRevision === input.observedRevision
+              ? 'NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED'
+              : 'NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED',
+          snapshot,
+        } satisfies NotificationPreferencesUpdateResult;
+      }
+      if (snapshot.notificationPreferencesRevision > input.observedRevision) {
+        return {
+          outcome: 'NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT',
+          snapshot,
+        } satisfies NotificationPreferencesUpdateResult;
+      }
+      throw error;
+    }
+  },
 
   desktopNativeHostEventEmit: (input: DesktopNativeHostEventInput) =>
     invokeRustDataFromStatus<DesktopNativeHostEventInput, { emitted: boolean; kind: string }>(
@@ -7860,6 +7831,51 @@ export interface NotificationPreferenceData {
   pushEnabled: boolean;
   soundEnabled: boolean;
   updatedAt: string;
+}
+
+export interface NotificationPreferencesSnapshotData {
+  preferences: NotificationPreferenceData[];
+  notificationPreferencesRevision: number;
+}
+
+export interface NotificationPreferencePatchInput {
+  category: number;
+  enabled: boolean;
+  pushEnabled: boolean;
+  soundEnabled: boolean;
+}
+
+export interface NotificationPreferencesUpdateInput {
+  updates: NotificationPreferencePatchInput[];
+  observedRevision: number;
+}
+
+export type NotificationPreferencesUpdateOutcome =
+  | 'NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_APPLIED'
+  | 'NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_UNCHANGED'
+  | 'NOTIFICATION_PREFERENCES_UPDATE_OUTCOME_CONFLICT';
+
+export interface NotificationPreferencesUpdateResult {
+  outcome: NotificationPreferencesUpdateOutcome;
+  snapshot: NotificationPreferencesSnapshotData;
+}
+
+function notificationSnapshotMatchesUpdates(
+  snapshot: NotificationPreferencesSnapshotData,
+  updates: readonly NotificationPreferencePatchInput[],
+): boolean {
+  const preferences = new Map(
+    snapshot.preferences.map((preference) => [preference.category, preference]),
+  );
+  return updates.every((update) => {
+    const preference = preferences.get(update.category);
+    return Boolean(
+      preference
+      && preference.enabled === update.enabled
+      && preference.pushEnabled === update.pushEnabled
+      && preference.soundEnabled === update.soundEnabled,
+    );
+  });
 }
 
 export interface StreamEvent {

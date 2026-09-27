@@ -21,7 +21,8 @@ not the generic SKILL.md format.
 
 - Every Peers-Touch project skill name and directory must start with `pt-`.
 - Canonical source path: `tooling/skills/pt-<name>/SKILL.md`.
-- Runtime mirror path, when present: `.trae/skills/pt-<name>/SKILL.md`.
+- Host-private locations such as `.trae/skills`, `.cursor/skills`, and
+  `.agents/skills` are runtime projections only; never edit them as sources.
 - Do not use unprefixed project skill names.
 - Avoid duplicated branding such as `pt-peers-touch-*`; use `pt-*`.
 
@@ -51,7 +52,7 @@ Use this compact structure unless a skill genuinely needs more:
 When a skill is added, renamed, or removed, update all relevant references:
 
 - `AGENTS.md` skill table.
-- Other `tooling/skills/**` and `.trae/skills/**` files.
+- Other `tooling/skills/**` files.
 - Architecture docs, execution plans, quality gates, scripts, fixtures, and
   evidence files that mention the skill name or path.
 
@@ -59,9 +60,9 @@ When a skill is added, renamed, or removed, update all relevant references:
 
 Run these checks before reporting:
 
-- `cmp -s tooling/skills/pt-<name>/SKILL.md .trae/skills/pt-<name>/SKILL.md`
-  when a `.trae` mirror exists.
-- `git diff --check -- tooling/skills .trae/skills AGENTS.md`
+- Verify each supported host projects `tooling/skills/` into its own
+  discoverable runtime location without introducing a second tracked copy.
+- `git diff --check -- tooling/skills AGENTS.md`
 - Search for stale unprefixed names when renaming a skill.
 
 Report only the exact scope changed and any remaining stale references.
@@ -72,6 +73,6 @@ Never:
 
 - Add a Peers-Touch skill without the `pt-` prefix.
 - Leave `name:` frontmatter different from the directory name.
-- Let `.trae` and `tooling/skills` copies diverge.
+- Edit a host-private projection instead of `tooling/skills`.
 - Add long background sections that do not change agent behavior.
 - Hide a skill rename from scripts or quality gates that hardcode the old path.

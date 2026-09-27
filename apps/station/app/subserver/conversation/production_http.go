@@ -42,6 +42,47 @@ const (
 	maximumConversationQueryLimit     = 500
 )
 
+func validateProductionCommandKind(kind chatmodel.ConversationCommandKind) error {
+	switch kind {
+	case chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UNSPECIFIED,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_SEND_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_EDIT_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_RETRACT_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_DISSOLVE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_UPDATE_SETTINGS,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_REACT,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_PIN_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBERSHIP_TRANSITION,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MEMBER_AUTHORITY,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_MODERATE_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_FORWARD_MESSAGE,
+		chatmodel.ConversationCommandKind_CONVERSATION_COMMAND_KIND_HIDE_MESSAGE_FOR_ACTOR:
+		return nil
+	default:
+		return server.BadRequest(
+			"Conversation command preparation kind is unsupported",
+		)
+	}
+}
+
+func productionPrepareCommandRequest(
+	conversationID valueobject.ConversationID,
+	sender valueobject.Endpoint,
+	senderHomeStation valueobject.StationID,
+	verifiedRoutes []ports.EndpointRoute,
+	kind chatmodel.ConversationCommandKind,
+) (command.PrepareCommandRequest, error) {
+	if err := validateProductionCommandKind(kind); err != nil {
+		return command.PrepareCommandRequest{}, err
+	}
+	return command.PrepareCommandRequest{
+		ConversationID:    conversationID,
+		Sender:            sender,
+		SenderHomeStation: senderHomeStation,
+		VerifiedRoutes:    verifiedRoutes,
+	}, nil
+}
+
 func (s *subServer) handleCreateDirectConversation(
 	ctx context.Context,
 	request *chatmodel.CreateDirectConversationRequest,
@@ -413,14 +454,19 @@ func (s *subServer) handlePrepareCommand(
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
 	}
+	prepareRequest, err := productionPrepareCommandRequest(
+		conversationID,
+		sender,
+		s.localStation,
+		verifiedRoutes,
+		request.GetCommandKind(),
+	)
+	if err != nil {
+		return nil, err
+	}
 	preparation, err := s.composition.CommandService.PrepareCommand(
 		ctx,
-		command.PrepareCommandRequest{
-			ConversationID:    conversationID,
-			Sender:            sender,
-			SenderHomeStation: s.localStation,
-			VerifiedRoutes:    verifiedRoutes,
-		},
+		prepareRequest,
 	)
 	if err != nil {
 		return nil, mapProductionConversationError(ctx, err)
@@ -701,6 +747,24 @@ func (s *subServer) handleUpdateConversationMember(
 	ctx context.Context,
 	request *chatmodel.UpdateConversationMemberRequest,
 ) (*chatmodel.UpdateConversationMemberResponse, error) {
+	if proposal := request.GetProposal(); proposal != nil {
+		authenticated, _, err := authenticatedConversationActor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if proposal.GetMemberAuthorityCommand().GetAction() !=
+			chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_UPDATE_MEMBER {
+			return nil, server.BadRequest(
+				"Conversation member authority proposal has the wrong action",
+			)
+		}
+		if err := s.forwardConversationProposal(ctx, authenticated, proposal); err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
+		return &chatmodel.UpdateConversationMemberResponse{
+			AcceptedForForwarding: true,
+		}, nil
+	}
 	result, err := s.submitMemberAuthorityCommand(
 		ctx,
 		request.GetCommand(),
@@ -736,6 +800,24 @@ func (s *subServer) handleTransferConversationOwnership(
 	ctx context.Context,
 	request *chatmodel.TransferConversationOwnershipRequest,
 ) (*chatmodel.TransferConversationOwnershipResponse, error) {
+	if proposal := request.GetProposal(); proposal != nil {
+		authenticated, _, err := authenticatedConversationActor(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if proposal.GetMemberAuthorityCommand().GetAction() !=
+			chatmodel.ConversationMemberAuthorityAction_CONVERSATION_MEMBER_AUTHORITY_ACTION_TRANSFER_OWNERSHIP {
+			return nil, server.BadRequest(
+				"Conversation ownership-transfer proposal has the wrong action",
+			)
+		}
+		if err := s.forwardConversationProposal(ctx, authenticated, proposal); err != nil {
+			return nil, mapProductionConversationError(ctx, err)
+		}
+		return &chatmodel.TransferConversationOwnershipResponse{
+			AcceptedForForwarding: true,
+		}, nil
+	}
 	result, err := s.submitMemberAuthorityCommand(
 		ctx,
 		request.GetCommand(),
@@ -890,23 +972,36 @@ func (s *subServer) handleListConversationMessages(
 	ctx context.Context,
 	request *chatmodel.ListConversationMessagesRequest,
 ) (*chatmodel.ListConversationMessagesResponse, error) {
-	limit := normalizedConversationLimit(int(request.GetLimit()))
-	events, hasMore, err := s.filteredConversationEvents(
-		ctx,
-		request.GetConversationId(),
-		request.GetAfterSeq(),
-		limit,
-		func(record domainevent.Record) bool {
-			return productionMessageEvent(record.Fact.Kind)
-		},
-	)
+	actor, err := authenticatedConversationPTID(ctx)
 	if err != nil {
 		return nil, err
+	}
+	conversationID, err := valueobject.NewConversationID(request.GetConversationId())
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	if request.GetAfterSeq() < 0 {
+		return nil, server.BadRequest("after sequence cannot be negative")
+	}
+	limit := normalizedConversationLimit(int(request.GetLimit()))
+	page, err := s.composition.QueryService.ListMessages(
+		ctx,
+		conversationID,
+		actor,
+		valueobject.Sequence(request.GetAfterSeq()),
+		limit,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	events, err := productionEvents(page.Events)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
 	}
 
 	return &chatmodel.ListConversationMessagesResponse{
 		Events:  events,
-		HasMore: hasMore,
+		HasMore: page.HasMore,
 	}, nil
 }
 
@@ -917,23 +1012,41 @@ func (s *subServer) handleListThreadMessages(
 	if request.GetRootId() == "" {
 		return nil, server.BadRequest("thread root message ID is required")
 	}
-	limit := normalizedConversationLimit(int(request.GetLimit()))
-	events, hasMore, err := s.filteredConversationEvents(
-		ctx,
-		request.GetConversationId(),
-		request.GetAfterSeq(),
-		limit,
-		func(record domainevent.Record) bool {
-			return productionThreadEvent(record, request.GetRootId())
-		},
-	)
+	actor, err := authenticatedConversationPTID(ctx)
 	if err != nil {
 		return nil, err
+	}
+	conversationID, err := valueobject.NewConversationID(request.GetConversationId())
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	threadRootID, err := valueobject.NewMessageID(request.GetRootId())
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	if request.GetAfterSeq() < 0 {
+		return nil, server.BadRequest("after sequence cannot be negative")
+	}
+	limit := normalizedConversationLimit(int(request.GetLimit()))
+	page, err := s.composition.QueryService.ListThreadMessages(
+		ctx,
+		conversationID,
+		actor,
+		threadRootID,
+		valueobject.Sequence(request.GetAfterSeq()),
+		limit,
+	)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
+	}
+	events, err := productionEvents(page.Events)
+	if err != nil {
+		return nil, mapProductionConversationError(ctx, err)
 	}
 
 	return &chatmodel.ListThreadMessagesResponse{
 		Events:  events,
-		HasMore: hasMore,
+		HasMore: page.HasMore,
 	}, nil
 }
 
@@ -1045,13 +1158,12 @@ func (s *subServer) handleUpdateMemberSettings(
 		conversationID,
 		actor,
 		command.MemberSettingsPatch{
-			Nickname:            productionStringPointer(settings.GetNickname()),
-			Muted:               productionBoolPointer(settings.GetMuted()),
-			Pinned:              productionBoolPointer(settings.GetPinned()),
-			AlertEnabled:        productionBoolPointer(settings.GetAlertEnabled()),
-			Background:          productionStringPointer(settings.GetBackground()),
-			BackgroundImage:     productionStringPointer(settings.GetBackgroundImage()),
-			ClearedAtUnixMillis: productionInt64Pointer(settings.GetClearedAtMs()),
+			Nickname:        productionStringPointer(settings.GetNickname()),
+			Muted:           productionBoolPointer(settings.GetMuted()),
+			Pinned:          productionBoolPointer(settings.GetPinned()),
+			AlertEnabled:    productionBoolPointer(settings.GetAlertEnabled()),
+			Background:      productionStringPointer(settings.GetBackground()),
+			BackgroundImage: productionStringPointer(settings.GetBackgroundImage()),
 		},
 	)
 	if err != nil {
@@ -1250,40 +1362,6 @@ func (s *subServer) authenticatedEventRecords(
 	return records, nil
 }
 
-func (s *subServer) filteredConversationEvents(
-	ctx context.Context,
-	conversationID string,
-	afterSequence int64,
-	limit int,
-	include func(domainevent.Record) bool,
-) ([]*chatmodel.ConversationEvent, bool, error) {
-	records, err := s.authenticatedEventRecords(
-		ctx,
-		conversationID,
-		afterSequence,
-		maximumConversationQueryLimit,
-	)
-	if err != nil {
-		return nil, false, err
-	}
-	filtered := make([]domainevent.Record, 0, limit+1)
-	for _, record := range records {
-		if include(record) {
-			filtered = append(filtered, record)
-			if len(filtered) == limit+1 {
-				break
-			}
-		}
-	}
-	hasMore := len(filtered) > limit
-	if hasMore {
-		filtered = filtered[:limit]
-	}
-	events, err := productionEvents(filtered)
-
-	return events, hasMore, err
-}
-
 func (s *subServer) localCommandPreparation(
 	ctx context.Context,
 	authenticated conversationhttp.AuthenticatedActor,
@@ -1329,14 +1407,19 @@ func (s *subServer) localCommandPreparation(
 	if err != nil {
 		return aggregate.CommandPreparation{}, nil, err
 	}
+	prepareRequest, err := productionPrepareCommandRequest(
+		conversationID,
+		sender,
+		s.localStation,
+		verifiedRoutes,
+		productionWireCommandKind(wireCommand),
+	)
+	if err != nil {
+		return aggregate.CommandPreparation{}, nil, err
+	}
 	preparation, err := s.composition.CommandService.PrepareCommand(
 		ctx,
-		command.PrepareCommandRequest{
-			ConversationID:    conversationID,
-			Sender:            sender,
-			SenderHomeStation: s.localStation,
-			VerifiedRoutes:    verifiedRoutes,
-		},
+		prepareRequest,
 	)
 	return preparation, verifiedRoutes, err
 }
@@ -1962,7 +2045,6 @@ func productionConversation(snapshot aggregate.Snapshot) *chatmodel.Conversation
 		AvatarCid:              snapshot.Settings.AvatarObjectID,
 		OwnerPtid:              string(snapshot.Owner),
 		Visibility:             productionConversationVisibility(snapshot.Settings.Visibility),
-		DisappearTimerSeconds:  snapshot.Settings.DisappearTimerSeconds,
 		MlsEpoch:               int64(snapshot.Head.MLSEpoch),
 		FederationId:           string(snapshot.FederationID),
 		AuthorityEpoch:         int64(snapshot.AuthorityEpoch),
@@ -2199,25 +2281,6 @@ func productionGenesisMembers(plan entity.AuthorityPlan) []valueobject.PTID {
 	return result
 }
 
-func productionMessageEvent(kind domainevent.Kind) bool {
-	switch kind {
-	case domainevent.KindMessageCommitted,
-		domainevent.KindMessageEdited,
-		domainevent.KindMessageRetracted,
-		domainevent.KindReactionCommitted,
-		domainevent.KindMessagePinCommitted:
-		return true
-	default:
-		return false
-	}
-}
-
-func productionThreadEvent(record domainevent.Record, rootID string) bool {
-	root, _, matched := productionThreadReply(record)
-
-	return matched && root == rootID
-}
-
 func productionThreadReply(
 	record domainevent.Record,
 ) (rootID string, replyID string, matched bool) {
@@ -2245,7 +2308,6 @@ func productionMemberSettings(
 		AlertEnabled:    settings.AlertEnabled,
 		Pinned:          settings.Pinned,
 		Background:      settings.Background,
-		ClearedAtMs:     settings.ClearedAtUnixMillis,
 		BackgroundImage: settings.BackgroundImage,
 	}
 }

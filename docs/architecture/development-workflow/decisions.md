@@ -1,8 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: accepted
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-09-18
+> **Created**: 2026-09-13 | **Updated**: 2026-09-23
 > **Owner**: Platform Team
 
 ---
@@ -28,8 +27,20 @@
 | DWF-D15 | Make a Task-closing Progress Slice the continuation unit | accepted |
 | DWF-D16 | Bind tracked declarations to an explicit Plan locator | accepted |
 | DWF-D17 | Bind the current worktree, not the sibling inventory | accepted |
-| DWF-D18 | Bind each workspace to one immutable Plan | accepted |
+| DWF-D18 | Bind each workspace to one immutable current Plan generation | accepted |
 | DWF-D19 | Keep advancing source identity outside tracked Plan content | accepted |
+| DWF-D20 | Make an authorized Plan Run continuous across Tasks and agent review gates | accepted |
+| DWF-D21 | Keep orchestration and runtime verification host-neutral | accepted |
+| DWF-D22 | Separate workflow distribution from consuming-worktree runtime state | accepted |
+| DWF-D23 | Keep the internal Development Workflow unversioned | accepted |
+| DWF-D24 | Reopen frozen source through one Plan-declared invalidation owner | accepted |
+| DWF-D25 | Keep user Skill overlays machine-local and interaction-only | accepted |
+| DWF-D26 | Bind workflow enforcement to one immutable conversation execution root | accepted |
+| DWF-D27 | Project workflow status through one read-only Workflow Snapshot | accepted |
+| DWF-D28 | Require independent current-source Completion Review | accepted |
+| DWF-D29 | Derive agent activity from bounded Action Receipts | accepted |
+| DWF-D30 | Make documentation claims executable through Workflow Doctor | accepted |
+| DWF-D31 | Advance completed workspace bindings by explicit Plan generation | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -488,8 +499,10 @@ actions produces no visible project progress.
 
 - Overall progress is completed Task closures divided by total Task closures.
 - `planctl status` derives the current Task's exact completion effect:
-  `in_progress -> done`, `+1` closure, percentage-point delta, and newly
-  unlocked Task IDs.
+  `in_progress -> done`, `+1` closure, post-Next completed count and
+  percentage, percentage-point delta, and newly unlocked Task IDs.
+- The post-Next percentage is recalculated from integer Task counts. Consumers
+  cannot add rounded percentages or treat newly unlocked Tasks as completed.
 - Context Anchor replaces `Next action` with one `Next Progress Slice` that
   targets that completion effect.
 - Goal orchestration may schedule several supporting actions inside the Slice,
@@ -542,10 +555,7 @@ three fields are either all non-null for tracked work or all null for explicitly
 untracked work. During rollout, legacy records may omit the tuple and remain
 readable without bulk rewrite. `planPath` is repository-relative and
 containment-checked. On publication or update, tracked declarations must match
-the package identity and immutable workspace binding. An active package must
-match its single current Task. A blocked/completed package may retain only the
-corresponding blocked/done Task locator until cleanup, delivery, and declaration
-release finish.
+the package identity, binding, and single current Task.
 
 Task handoff, commit, merge, rebase, or other source-identity change requires
 one declaration update. Heartbeat extends liveness only; it does not change the
@@ -632,7 +642,7 @@ distinguishes sibling worktrees, while branch and HEAD fence source state.
 - Regression coverage must prove that unrelated sibling worktree churn leaves
   capture and verification output unchanged.
 
-## DWF-D18: Bind Each Workspace To One Immutable Plan
+## DWF-D18: Bind Each Workspace To One Immutable Current Plan Generation
 
 **Status**: accepted
 **Date**: 2026-09-18
@@ -648,24 +658,23 @@ a synchronized foreign Plan to the current worktree.
 ### Decision
 
 - A repository and PR may contain any number of active Plan Packages.
-- Each workspace has exactly one machine-local Plan binding identified by
-  `workspaceId + planId + repository-relative planPath`.
+- Each workspace has exactly one machine-local current Plan generation
+  identified by
+  `workspaceId + generation + planId + repository-relative planPath`.
 - The binding lives at
   `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json`.
-  It is created explicitly once, is idempotent for the same tuple, and has no
-  unbind or rebind operation.
-- Starting another Plan requires another worktree and therefore another
-  `workspaceId`.
+  Generation 1 is created explicitly and is idempotent for the same tuple.
+  A different tuple cannot replace an unfinished generation.
+- Starting another Plan in the same workspace follows DWF-D31's explicit,
+  completed-and-quiescent generation advance. There is no unbind operation.
 - Local Plan discovery resolves the binding directly. It never scans by branch,
   active status, latest timestamp, directory order, or PR contents.
 - Plan manifest, tracked declaration, `active_work`, Session and Context Anchor
   must match the immutable binding. They are projections or consumers, not
   alternative binding owners.
 - A Plan-bound workspace cannot publish untracked work.
-- CI has no machine workspace binding. A pull request declares every owned Plan
-  path in `## Execution Plans / 执行计划`; CI passes each path explicitly and
-  requires all declared Plans to be complete before ready-for-review.
-  Missing or malformed input fails with `PR_EXECUTION_PLAN_INPUT_INVALID`.
+- CI has no machine workspace binding and must receive an explicit Plan path.
+  Missing input returns `EXECUTION_PLAN_INPUT_REQUIRED`.
 
 ### Rationale
 
@@ -683,8 +692,8 @@ artifact from silently switching the workspace owner.
   mutable intent, not durable ownership.
 - Read `active_work` as the runtime binding: rejected because it is a
   repository/cloud projection and can be synchronized from another worktree.
-- Allow explicit rebind after Plan completion: rejected because it makes resume
-  history ambiguous; create a new worktree for the next Plan instead.
+- Overwrite or delete the binding after Plan completion: rejected because it
+  destroys resume history; DWF-D31 retains immutable generation records.
 
 ### Consequences
 
@@ -692,7 +701,8 @@ artifact from silently switching the workspace owner.
 - Synchronizing a foreign Plan into a branch has no effect on local execution.
 - Deleting or corrupting the bound Plan fails closed; no other Plan is selected.
 - Tests must cover same-branch multi-Plan isolation, idempotent same binding,
-  rebind denial, missing binding, missing bound Plan, and explicit CI input.
+  unfinished-generation replacement denial, missing binding, missing bound
+  Plan, and explicit CI input. DWF-D31 adds advance tests.
 
 ## DWF-D19: Keep Advancing Source Identity Outside Tracked Plan Content
 
@@ -736,5 +746,462 @@ identity checks at their actual owners.
 - `planctl status` no longer projects an advancing HEAD.
 - Dev declarations and Sessions must continue to reject any mismatch with the
   actual worktree HEAD.
-- Context Anchor still reports expected/verified HEAD from `active_work` plus
-  the worktree verifier, not from `plan.md`.
+- Context Anchor reports expected/verified HEAD from the workspace-owned
+  active-work record plus the worktree verifier, not from `plan.md`.
+
+## DWF-D20: Plan Run Is The User-Facing Continuation Boundary
+
+**Status**: accepted
+**Date**: 2026-09-19
+
+### Context
+
+DWF-D15 made one Task-closing Progress Slice larger than an individual command,
+but `continue` still returned control after each Task. Review prompts were also
+handed to the user when repository Skills and accepted sources could decide
+them, turning a large accepted Plan into many short interactions. Agents also
+re-requested checkpoint, deploy, reset, merge, or similar permission solely
+because the operation category was sensitive, even when the user or accepted
+Plan had already granted the exact operation.
+
+### Decision
+
+- One explicit `continue`, `resume`, `execute the plan`, or equivalent request
+  authorizes one Plan Run over the current Plan's accepted scope and
+  authorization envelope.
+- Dev Workflow repeatedly schedules one Task-bounded Goal Slice, executes it,
+  runs agent review and remediation, closes or parks the Task, activates a
+  dependency-ready successor and continues.
+- Goal Slice remains a single-Task recoverable scheduler unit. It is not the
+  user interaction boundary.
+- Context Anchor may report at meaningful boundaries, but it does not request
+  confirmation or pause an authorized Plan Run.
+- An exact authorization granted by the user or recorded as allowed in the
+  accepted Plan remains valid for the full Plan Run. Task/Goal transitions,
+  retries, context compaction, and host changes do not consume it.
+- A sensitive operation category never overrides an existing exact grant.
+  `OPERATION_AUTHORIZATION_REQUIRED` is legal only when the action is denied or
+  outside every explicit grant. After admission, a permission question is legal
+  only when the attempted operation returns an actual external permission,
+  credential, or scope failure.
+- Plan existence and public declarations do not imply authorization; only
+  explicit user grants and the Plan's explicit authorization fields do.
+- Human escalation is limited to denied or missing authority, destructive or
+  irreversible operations, unresolved product/architecture/security/privacy/
+  compatibility/rollout choices, unavailable external resources or
+  fixed-point exhaustion.
+
+### Consequences
+
+- `pt-dev-workflow` owns the Plan Run loop and successor activation.
+- `pt-goal-orchestrator` schedules one Task at a time.
+- Ordinary review findings, failed checks, mechanical Plan repairs, Task
+  handoff and non-destructive retries remain internal Run work.
+- Dev Workflow and Guardian must reject repeat-confirmation behavior for an
+  already-authorized operation and preserve the evidence source of the grant.
+- Durable Plan, Task, Session, declaration and workspace active-work state
+  remain the recovery inputs across context windows.
+
+## DWF-D21: Host Tools Are Replaceable Transport Adapters
+
+**Status**: accepted
+**Date**: 2026-09-19
+
+### Context
+
+The Development Workflow named a TRAE-specific scheduler and debugger path as
+mandatory. That made project progress depend on one IDE host even though the
+repository already owns stronger Make, Session, Journey, WebDriver, Appium and
+Acceptance contracts.
+
+### Decision
+
+- `pt-goal-orchestrator` is the single host-neutral scheduler.
+- `pt-dev-runtime-handoff` owns runtime launch, product interaction policy,
+  deterministic Journey interpretation, Session result commit and cleanup.
+- Repository-native drivers are preferred and determine proof strength.
+- TRAE, Cursor, Codex and future hosts are optional narrow adapters selected
+  only after scheduling and Guardian admission.
+- An adapter cannot mutate Plan, Task, Session, active-work state, evidence,
+  authorization, scheduling or Journey assertions.
+- Missing optional worker capability degrades to safe serial/hybrid execution.
+  Missing required UI capability parks only its dependent Task when no
+  repository-native driver exists.
+- A failed host side effect receives one idempotent cleanup attempt and then a
+  bounded quarantine; it cannot recursively retry cleanup or block unrelated
+  ready Tasks.
+- Deterministic functional PASS and the matching Session transition are
+  committed through one owner-controlled result slice.
+
+### Consequences
+
+- The old `pt-trae-goal-orchestrator` source is deleted after references move.
+- Host adapters stay intentionally narrow and capability-discovered.
+- Rollout is worktree-scoped semantic integration followed by source and host
+  projection audit, never raw cross-worktree patching.
+
+## DWF-D22: Workflow Distribution Is Not Runtime-State Ownership
+
+**Status**: accepted
+**Date**: 2026-09-19
+
+### Context
+
+`peers-dev-workflow` is the development and distribution source for workflow
+scripts and Skills. Treating that repository, or a shared
+`project_memory.md ## active_work` table, as the mutable progress owner would
+make independent worktrees overwrite one another.
+
+### Decision
+
+- `peers-dev-workflow` owns canonical source, tests, rollout control and release
+  metadata only.
+- Every consuming worktree executes the distributed implementation in its own
+  canonical root and derives its own `workspaceId`.
+- Each workspace exclusively writes
+  `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/active-work.json`.
+- The record is revisioned, CAS-protected, digest-protected and derived only
+  from Plan binding, Plan/Task, declaration, Session and Git owners.
+- Project memory, Context Anchor and Peers Dev are read-only aggregators. No
+  normal runtime path writes a shared cross-workspace progress table.
+- Legacy Markdown is readable only by the bounded Plan migration flow and has
+  no compatibility writer.
+
+### Consequences
+
+- Concurrent Goals in different worktrees never write the same active-work
+  file.
+- Corruption in one workspace record is reported for that workspace and does
+  not hide healthy workspaces.
+- Rollout tests must prove the same distributed code derives disjoint paths in
+  at least two consuming roots.
+
+## DWF-D23: The Internal Development Workflow Is Unversioned
+
+**Status**: accepted
+**Date**: 2026-09-19
+
+### Context
+
+Development Workflow docs claimed `v1.3/v1.4`, Plan Packages claimed
+`schemaVersion: 2`, and rollout receipts claimed `schemaVersion: 3`. These
+numbers described unrelated file revisions but appeared to be competing
+versions of one unstable internal workflow.
+
+### Decision
+
+- The internal Development Workflow has no project-stage or release version.
+- Git history and accepted `DWF-D*` decisions identify the current state.
+- Plan Package, Task Slice, Acceptance Execution and rollout receipt contracts
+  use `kind` plus one strict current shape and contain no version field.
+- Existing machine Session, ledger, registry and active-work format guards may
+  remain while they participate in live digest/replay chains. They are
+  integrity details, not workflow versions, and must not be surfaced as one.
+- External protocol, framework, package and formal Acceptance evidence versions
+  retain their own independently governed semantics.
+
+### Consequences
+
+- Workflow documents no longer publish `vN` metadata.
+- New workflow contracts cannot introduce `version`, `schemaVersion`,
+  `_v2`, `_v3`, `next-gen` or equivalent labels.
+- A future incompatible workflow change replaces the current internal shape
+  atomically instead of adding a parallel workflow version.
+
+## DWF-D24: Reopen Frozen Source Through One Plan-Declared Invalidation Owner
+
+**Status**: accepted
+**Date**: 2026-09-21
+
+### Context
+
+A functional Task can expose a source defect after its source-owning predecessor
+has completed. Reopening by hand would make the Plan manifest, immutable
+evidence, Session, declaration, and workspace projection disagree. The generic
+blocked/reactivate transition cannot select a completed predecessor or
+invalidate a transitive functional closure.
+
+### Decision
+
+- A Plan that supports source reopening declares one closed
+  `Source Invalidation Policy` block with one `sourceOwnerTaskId` and one or
+  more `rootTaskIds`.
+- `planctl invalidate-source` accepts only the current failed Task and its first
+  failure reference. It derives the source owner and complete transitive
+  invalidation closure from the Plan policy.
+- The caller must quiesce and release the failed Session, runtime resources,
+  leases, and declaration through their existing owners before invalidation.
+- The command atomically returns every Task in the affected closure to
+  `pending`, makes the completed source owner the sole `in_progress` Task, and
+  clears package exhaustion.
+- Before Plan replacement, the command creates one immutable machine-local
+  proof containing the prior manifest digest and every invalidated durable
+  evidence reference. Evidence files are never rewritten or relabeled.
+- Plans without the policy fail closed. Callers cannot supply a source owner,
+  invalidation root, or affected Task list.
+
+### Rationale
+
+The Plan remains the single source of dependency and invalidation scope, while
+runtime cleanup and evidence stores retain their existing owners. The
+transition is explicit and recoverable without introducing a second Plan
+implementation or allowing arbitrary lifecycle rewrites.
+
+### Consequences
+
+- Source-owning Tasks may be replayed only after all failed runtime ownership is
+  quiescent.
+- A reopened source owner must produce a new checkpoint and all source-bound
+  runtime activation required by its Task.
+- Old evidence remains immutable history but cannot satisfy the reopened
+  closure.
+
+## DWF-D25: User Skill Overlays Are Machine-Local Interaction Policy
+
+**Status**: accepted
+**Date**: 2026-09-21
+
+### Context
+
+`pt-ew` embedded one contributor's English-learning policy in a canonical
+project Skill. Every consumer therefore received translation, correction, and
+English-response behavior even when they did not want it. Adding user files to
+the canonical Skill projection would create the opposite problem: machine
+preferences would become repository content or host-specific state.
+
+### Decision
+
+- `pt-ew` is a shared Overlay host that always delegates project routing to
+  `pt-god-view`.
+- Optional user behavior is installed into a machine-local registry under
+  `~/.peers-touch/dev/skill-overlays/`.
+- Installation validates a closed unversioned manifest, rejects symlinks,
+  copies the source into a digest-addressed immutable store, and atomically
+  updates the registry.
+- The registry is the only enable/disable source. Runtime resolution verifies
+  the installed digest and returns enabled overlays in deterministic priority
+  and name order.
+- Overlays may transform interaction wording, language, response structure, or
+  coaching only. They cannot alter task intent, Plan scope, authorization,
+  owner selection, execution, verification, Acceptance, or stop conditions.
+- Canonical `make skills` remains limited to repository-owned
+  `tooling/skills/pt-*` and supported host hooks; user overlays never enter
+  `.trae/skills`, `.cursor/skills`, or `.agents/skills`.
+- Overlay resources are treated as data. The host reads the resolved
+  `SKILL.md` and never executes scripts or hooks shipped by an overlay.
+
+### Rationale
+
+This keeps shared methodology deterministic while allowing opt-in personal
+work habits. A content-addressed installed copy prevents later edits or
+symlink retargeting in the source directory from changing active behavior
+without an explicit replacement operation.
+
+### Alternatives Considered
+
+- Keep English behavior in canonical `pt-ew`: rejected because personal policy
+  becomes mandatory for every user.
+- Copy local overlays into the canonical or host Skill tree: rejected because
+  it mixes ownership and makes project rollout machine-dependent.
+- Resolve the mutable source directory on every turn: rejected because runtime
+  behavior could change after installation without registry mutation.
+
+### Consequences
+
+- `pt-ew` has passthrough behavior when no overlay is enabled.
+- Local overlay installation has its own control command and lifecycle.
+- Existing English behavior moves entirely to the external `english` Overlay;
+  no canonical compatibility copy remains.
+- Malformed registry entries or modified installed copies fail closed instead
+  of silently disabling user policy.
+
+## DWF-D26: Bind Workflow Enforcement To The Conversation
+
+**Status**: accepted
+**Date**: 2026-09-23
+
+### Context
+
+The first IDE guard derived the active worktree from every hook payload's
+`cwd`. That value describes the current operation and can legitimately point
+at a sibling worktree during read-only investigation. Reusing it as authority
+let one chat silently change write identity. Regex command classification also
+allowed shell composition to escape the intended admission boundary, and
+`SessionStart` was treated as mandatory even though Cursor Cloud does not
+provide it.
+
+### Decision
+
+- One stable host conversation ID maps to one machine-local, create-once
+  `executionRoot` binding.
+- `SessionStart` and prompt hooks only prewarm. The first blockable
+  `PreToolUse` atomically creates or reads back the binding.
+- The installed project integration is the preferred root hint. Tool paths and
+  command working directories are separate `subjectRoot` inputs and never
+  rebind the conversation.
+- Cross-worktree reads are allowed. Every cross-worktree write is denied before
+  workflow state inspection.
+- Shell commands are parsed into a Tool Intent AST. Multiline, substitution,
+  unknown operators, and parse failures fail closed; regular expressions do
+  not decide command authority.
+- The Kernel validates declaration, immutable Plan binding, active-work,
+  Development Session, Git identity and declared source scope without changing
+  those owners.
+- A host without a stable conversation ID or blockable pre-tool hook is
+  explicitly `OBSERVE_ONLY`.
+- Stop renders a machine-owned Context Anchor receipt. Active Plans continue;
+  terminal or blocked conversations receive a create-once release receipt only
+  after the exact rendered Anchor is observable in the response/transcript.
+- TRAE, Cursor and Codex adapters only normalize payloads and render native
+  responses. Cursor project hooks set `failClosed: true`.
+
+### Consequences
+
+- Conversation binding is not a worktree lease and does not serialize other
+  agents or worktrees.
+- The old `workflow-guard.mjs` and cwd-derived authority path are deleted with
+  no compatibility wrapper.
+- Machine-local conversation records contain the hashed host conversation key,
+  never the raw conversation ID.
+- Core owner commands remain the final state-transition authority; the Kernel
+  is an earlier admission and handoff-completeness boundary.
+
+## DWF-D27: Project Workflow Status Through One Snapshot
+
+**Status**: accepted
+**Date**: 2026-09-26
+
+### Decision
+
+One read-only Workflow Snapshot joins Plan, Task, Session, declaration,
+active-work, Git, runtime, review, and Action Receipt owner state. CLI, Context
+Anchor, Workflow Doctor, and Peers Dev consume that projection instead of
+reimplementing joins.
+
+### Rationale
+
+Independent status joins produced contradictory progress and allowed logs or
+prose to stand in for owner state.
+
+### Consequences
+
+The Snapshot never repairs or advances state. Progress remains Task closure
+progress from the Plan; activity and freshness remain diagnostic projections.
+
+## DWF-D28: Completion Requires Independent Current-Source Review
+
+**Status**: accepted
+**Date**: 2026-09-26
+
+### Decision
+
+Every Task completion and final Plan completion requires a create-once
+Completion Review receipt with `PASS`, produced by a reviewer context distinct
+from the implementation context and bound to current source and obligation
+digests.
+
+### Rationale
+
+Successful implementation checks prove what was exercised, not that all
+required work, deletions, and claim boundaries were included.
+
+### Consequences
+
+Missing, failed, same-context, or stale receipts reject lifecycle completion.
+Source or obligation drift reopens the affected closure through the existing
+source-invalidation owner.
+
+## DWF-D29: Derive Agent Activity From Bounded Action Receipts
+
+**Status**: accepted
+**Date**: 2026-09-26
+
+### Decision
+
+The Workflow Kernel emits redacted, bounded Action Receipts. The Workflow
+Snapshot reduces those receipts into working, waiting, blocked, stalled,
+looping, drift, and complete projections.
+
+### Rationale
+
+Process lists and chat prose cannot reliably distinguish useful progress from
+repetition or inactivity.
+
+### Consequences
+
+Receipts never contain raw prompts, unrestricted tool arguments, or secrets.
+Activity is diagnostic and cannot advance Plan, Task, Session, or Acceptance
+state.
+
+## DWF-D30: Make Workflow Documentation Executable
+
+**Status**: accepted
+**Date**: 2026-09-26
+
+### Decision
+
+`docs/global/workflow.md` is the concise human operating guide. Every public
+operational promise maps to a `workflow-doctor` check or is explicitly marked
+as a non-machine policy.
+
+### Rationale
+
+A guide that describes absent hooks or unenforced gates creates false trust.
+
+### Consequences
+
+Documentation drift fails the Peers Dev product Gate. Architecture documents
+retain design detail and do not duplicate the operating manual.
+
+## DWF-D31: Advance Completed Workspace Bindings By Plan Generation
+
+**Status**: accepted
+**Date**: 2026-09-26
+
+### Context
+
+DWF-D18 correctly removed branch-wide Plan discovery, but its permanent
+workspace-to-Plan restriction made a long-lived canonical owner worktree
+single-use. That rule encouraged an Agent to create a new worktree merely to
+start the next owner Plan, contradicting the explicit worktree authorization
+boundary.
+
+### Decision
+
+- A workspace binding is immutable for the lifetime of one active Plan
+  generation.
+- `plan-bind` creates generation 1 and remains idempotent only for the same
+  `planId + planPath`.
+- A different Plan never replaces an active, blocked, prepared, or otherwise
+  unfinished generation.
+- An explicit owner command may advance `N -> N+1` only when the current Plan is
+  `completed`, no live Development declaration or active-work projection
+  remains, and the workspace holds no runtime lease.
+- Every generation is retained as an immutable machine-local record; the
+  current pointer changes atomically with generation compare-and-swap.
+- A new worktree is created only for user-selected isolation or concurrency.
+  An Agent must not create one to bypass a binding or lifecycle failure.
+
+### Rationale
+
+Plan ownership must remain fail-closed during execution without turning a
+stable owner worktree into disposable infrastructure.
+
+### Alternatives Considered
+
+- Keep one permanent Plan per workspace: rejected because canonical owner
+  worktrees necessarily execute sequential maintenance Plans.
+- Delete or overwrite `plan-binding.json`: rejected because it destroys
+  lineage and permits silent reassignment.
+- Auto-select the next repository Plan: rejected because source contents are
+  not execution ownership.
+
+### Consequences
+
+- Existing bindings are generation 1 on read and migrate only during an
+  explicit successful advance.
+- Callers must provide the expected current generation.
+- Old generation declarations and Sessions remain historical records and
+  cannot authorize mutation after the current pointer advances.
+- Binding generation and quiescence checks are covered by focused concurrency,
+  migration, tamper, and resource-release tests.

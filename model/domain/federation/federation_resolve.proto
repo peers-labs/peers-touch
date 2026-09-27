@@ -21,6 +21,11 @@ option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/feder
 // because a stale Desktop binary running against a newer Station will
 // still issue this request.
 
+message FederationResolveRequest {
+  string federation_id = 1 [json_name = "federation_id"];
+  string handle = 2;
+}
+
 message FederationResolveView {
   // Canonical handle this view describes (always lower-cased,
   // always carrying the "@user@host" form). Echoes the request so
@@ -59,4 +64,8 @@ message FederationResolveView {
   // actor's home station has not rotated keys — useful for clients
   // that pin TOFU on top of Station-side TOFU as defence in depth.
   string signing_key_kid = 10 [json_name = "signing_key_kid"];
+
+  // Explicit context in which both the local and Home Stations were
+  // verified as active members before this result was returned.
+  string federation_id = 11 [json_name = "federation_id"];
 }

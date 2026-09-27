@@ -1,8 +1,8 @@
 # Messaging Platform — 架构设计
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-08-08 | **Updated**: 2026-09-13
+> **Version**: v1.5
+> **Created**: 2026-08-08 | **Updated**: 2026-09-26
 > **Owner**: Messaging Platform Team
 > **Module**: `model/domain/chat/`, `apps/station/`, `apps/desktop/`, `apps/mobile/`
 >
@@ -872,6 +872,11 @@ Receipt aggregate 必须按 conversation kind 使用正确的 endpoint truth：
   `waiting-for-epoch`且不得ACK。
 - Recovery 恢复 actor identity/history/trust，排除 SPK/OPK、ratchet、MLS live state。
 - fresh install 完成 restore 后才 enroll fresh device，随后重建 sessions/leaves。
+- same-device in-place restore 不把 continuity 写入 archive；它在停止当前 worker 后，
+  直接把该 endpoint 的 enrollment、SPK/OPK、MLS bootstrap inventory、lane
+  cursor、consumption markers、authority heads 与 retired checkpoints 从 live
+  SQLCipher store 转移到 staging，同时清除 Direct ratchet、MLS
+  group/session/transition、pending command 与 transfer state。
 - Restore为每个conversation写one-shot `recovery_ready`；只有当前fresh endpoint的
   ADD Welcome可在无head/session/marker时原子安装current checkpoint并清除该状态，
   同时保留archive中的合法旧history。

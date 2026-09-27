@@ -9,6 +9,11 @@ import {
   machineDevRoot,
   workspaceIdForRoot,
 } from '../lib/machine-dev-paths.mjs';
+import {
+  ArchitectureGovernanceError,
+  DEFAULT_REGISTRY_PATH,
+  validatePlanArchitecture,
+} from '../architecture/module-governance.mjs';
 
 const MANIFEST_MAX_LINES = 300;
 const MANIFEST_MAX_BYTES = 20 * 1024;
@@ -535,7 +540,6 @@ function validateManifestSchema(manifest) {
   assertClosedObject(
     manifest,
     [
-      'schemaVersion',
       'kind',
       'planId',
       'status',
@@ -549,8 +553,8 @@ function validateManifestSchema(manifest) {
     ],
     'Plan Package',
   );
-  if (manifest.schemaVersion !== 2 || manifest.kind !== 'peers-touch-plan-package') {
-    fail('PLAN_SCHEMA_INVALID', 'Plan Package schemaVersion or kind is unsupported');
+  if (manifest.kind !== 'peers-touch-plan-package') {
+    fail('PLAN_SCHEMA_INVALID', 'Plan Package kind is unsupported');
   }
   assertString(manifest.planId, 'Plan Package.planId', { pattern: ID_PATTERN });
   assertEnum(manifest.status, PLAN_STATUSES, 'Plan Package.status');
@@ -747,7 +751,6 @@ function validateTaskSliceSchema(task) {
   assertClosedObject(
     task,
     [
-      'schemaVersion',
       'kind',
       'planId',
       'taskId',
@@ -770,8 +773,8 @@ function validateTaskSliceSchema(task) {
     ],
     'Task Slice',
   );
-  if (task.schemaVersion !== 1 || task.kind !== 'peers-touch-task-slice') {
-    fail('PLAN_SCHEMA_INVALID', 'Task Slice schemaVersion or kind is unsupported');
+  if (task.kind !== 'peers-touch-task-slice') {
+    fail('PLAN_SCHEMA_INVALID', 'Task Slice kind is unsupported');
   }
   assertString(task.planId, 'Task Slice.planId', { pattern: ID_PATTERN });
   assertString(task.taskId, 'Task Slice.taskId', { pattern: ID_PATTERN });
@@ -943,12 +946,9 @@ function validateTaskSliceSchema(task) {
 function validateAcceptanceSchema(acceptance) {
   assertClosedObject(
     acceptance,
-    ['schemaVersion', 'closures', 'completion', 'full'],
+    ['closures', 'completion', 'full'],
     'Acceptance Execution',
   );
-  if (acceptance.schemaVersion !== 1) {
-    fail('PLAN_SCHEMA_INVALID', 'Acceptance Execution.schemaVersion must be 1');
-  }
   if (!isPlainObject(acceptance.closures)) {
     fail('PLAN_SCHEMA_INVALID', 'Acceptance Execution.closures must be an object');
   }
@@ -1164,12 +1164,18 @@ async function findRepoRoot(startPath) {
 }
 
 async function resolveRepoRoot(planPath, explicitRoot) {
-  let root;
+  const inferredRoot = await findRepoRoot(path.dirname(planPath));
+  let root = inferredRoot;
   if (explicitRoot !== undefined) {
     assertString(explicitRoot, 'options.repoRoot');
     root = await fsp.realpath(path.resolve(explicitRoot));
-  } else {
-    root = await findRepoRoot(path.dirname(planPath));
+    if (root !== inferredRoot) {
+      fail(
+        'PLAN_REPO_ROOT_MISMATCH',
+        'Explicit repository root does not match the Plan Git root',
+        { explicitRoot: root, inferredRoot },
+      );
+    }
   }
   const realPlan = await fsp.realpath(planPath);
   if (!isNativePathInside(root, realPlan)) {
@@ -1376,6 +1382,43 @@ async function taskMarkdownFiles(tasksDirectory) {
     .sort();
 }
 
+async function validateRegisteredArchitecture(manifest, repoRoot) {
+  const registryPath = DEFAULT_REGISTRY_PATH;
+  if (
+    !fs.existsSync(path.join(repoRoot, ...registryPath.split('/')))
+  ) {
+    const governanceRoot = path.join(
+      repoRoot,
+      'docs/architecture/architecture-module-governance',
+    );
+    if (fs.existsSync(governanceRoot)) {
+      fail(
+        'ARCHITECTURE_REGISTRY_INVALID',
+        'architecture module registry is required by this repository',
+        { path: registryPath },
+      );
+    }
+    return null;
+  }
+  try {
+    return await validatePlanArchitecture({
+      repoRoot,
+      registryPath,
+      sources: manifest.architecture.sources,
+      decisions: manifest.architecture.decisions,
+    });
+  } catch (error) {
+    if (error instanceof ArchitectureGovernanceError || error?.code) {
+      fail(
+        error.code ?? 'ARCHITECTURE_REGISTRY_INVALID',
+        error.message,
+        error.details,
+      );
+    }
+    throw error;
+  }
+}
+
 /**
  * Loads and validates one Plan Package.
  *
@@ -1424,6 +1467,10 @@ export async function loadPlanPackage(planPath, options = {}) {
       `Plan Package.architecture.sources[${index}]`,
     );
   }
+  const architectureGovernance = await validateRegisteredArchitecture(
+    manifest,
+    repoRoot,
+  );
   for (const [index, claim] of manifest.scope.sourceClaims.entries()) {
     await assertRepositoryPathContained(
       repoRoot,
@@ -1511,6 +1558,7 @@ export async function loadPlanPackage(planPath, options = {}) {
     repoRoot,
     manifest,
     acceptance,
+    architectureGovernance,
     taskSlices,
     currentTask,
     readyTasks,
@@ -1526,12 +1574,22 @@ export function allDeclaredGateIds(acceptance) {
   return [...new Set(ordered)];
 }
 
+function progressPercentage(completed, total) {
+  return total === 0
+    ? 100
+    : Number(((completed / total) * 100).toFixed(2));
+}
+
 export function summarizePlanProgress(planPackage) {
   const tasks = planPackage.manifest.tasks;
   const completed = tasks.filter((task) => task.status === 'done').length;
   const total = tasks.length;
-  const percentage = total === 0 ? 100 : Number(((completed / total) * 100).toFixed(2));
-  const current = tasks.find((task) => task.status === 'in_progress') ?? null;
+  const percentage = progressPercentage(completed, total);
+  const currentTasks = tasks.filter((task) => task.status === 'in_progress');
+  const current =
+    planPackage.manifest.status === 'active' && currentTasks.length === 1
+      ? currentTasks[0]
+      : null;
 
   if (!current) {
     return {
@@ -1545,7 +1603,7 @@ export function summarizePlanProgress(planPackage) {
   }
 
   const completedAfter = completed + 1;
-  const percentageAfter = Number(((completedAfter / total) * 100).toFixed(2));
+  const percentageAfter = progressPercentage(completedAfter, total);
   const doneAfter = new Set(
     tasks
       .filter((task) => task.status === 'done')
@@ -1586,6 +1644,8 @@ export function summarizePlanProgress(planPackage) {
       title: planPackage.taskSlices.get(current.id).title,
       transition: 'in_progress->done',
       completedDelta: 1,
+      completedAfter,
+      percentageAfter,
       percentagePointDelta: Number((percentageAfter - percentage).toFixed(2)),
       unlocksTaskIds,
     },
@@ -1612,6 +1672,10 @@ export function summarizePlanPackage(planPackage) {
     branch: planPackage.manifest.binding.branch,
     workspaceId: planPackage.manifest.binding.workspaceId,
     initialHead: planPackage.manifest.binding.initialHead,
+    sourceClaims: planPackage.manifest.scope.sourceClaims.map((claim) => ({
+      pathPrefix: claim.pathPrefix,
+      mode: claim.mode,
+    })),
     progress: summarizePlanProgress(planPackage),
     currentTaskId: currentManifestTask?.id ?? null,
     currentTaskPath: currentManifestTask?.path ?? null,

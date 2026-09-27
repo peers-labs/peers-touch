@@ -18,6 +18,6 @@ pub use receipt::{
     DeliveryReceiptTransport,
 };
 pub use send::{
-    encrypt_direct_fan_out, DirectEditIntent, DirectFanOutResult, DirectOutboundPreparer,
-    DirectSendIntent, DirectSessionBootstrap, DirectSessionWithInit,
+    encrypt_direct_fan_out, DirectEditIntent, DirectFanOutResult, DirectForwardIntent,
+    DirectOutboundPreparer, DirectSendIntent, DirectSessionBootstrap, DirectSessionWithInit,
 };

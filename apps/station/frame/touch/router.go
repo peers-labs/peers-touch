@@ -3,6 +3,7 @@ package touch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/types"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -114,7 +116,33 @@ func shouldUseProto(ctx *app.RequestContext) bool {
 	accept := string(ctx.GetHeader("Accept"))
 	contentType := string(ctx.GetHeader("Content-Type"))
 	return strings.Contains(accept, model.AcceptProtobuf) ||
-		strings.Contains(contentType, model.ContentTypeProtobuf)
+		strings.Contains(accept, model.AcceptXProtobuf) ||
+		strings.Contains(contentType, model.ContentTypeProtobuf) ||
+		strings.Contains(contentType, model.ContentTypeXProtobuf)
+}
+
+func bindProtoOrJSON(ctx *app.RequestContext, msg proto.Message) error {
+	ct := string(ctx.Request.Header.ContentType())
+	if strings.Contains(ct, model.ContentTypeProtobuf) || strings.Contains(ct, model.ContentTypeXProtobuf) {
+		return proto.Unmarshal(ctx.Request.Body(), msg)
+	}
+	opts := protojson.UnmarshalOptions{DiscardUnknown: true}
+	return opts.Unmarshal(ctx.Request.Body(), msg)
+}
+
+func bindAccessProto(ctx *app.RequestContext, msg proto.Message) error {
+	contentType := strings.TrimSpace(strings.Split(
+		string(ctx.Request.Header.ContentType()),
+		";",
+	)[0])
+	accept := strings.TrimSpace(strings.Split(
+		string(ctx.GetHeader("Accept")),
+		";",
+	)[0])
+	if contentType != model.ContentTypeProtobuf || accept != model.AcceptProtobuf {
+		return fmt.Errorf("access gate requires %s request and response", model.ContentTypeProtobuf)
+	}
+	return proto.Unmarshal(ctx.Request.Body(), msg)
 }
 
 // SuccessResponse sends a success response in proto or JSON format based on Accept header
@@ -165,10 +193,7 @@ func FailedResponse(c context.Context, ctx *app.RequestContext, err error) {
 		errResp = model.UndefinedError(err)
 	}
 
-	statusCode := http.StatusBadRequest
-	if errResp.Code == model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR {
-		statusCode = http.StatusInternalServerError
-	}
+	statusCode := statusCodeForError(errResp)
 
 	if shouldUseProto(ctx) {
 		// Return protobuf error
@@ -184,4 +209,15 @@ func FailedResponse(c context.Context, ctx *app.RequestContext, err error) {
 
 	// Return JSON error
 	ctx.JSON(statusCode, errResp)
+}
+
+func statusCodeForError(err *model.ErrorResponse) int {
+	switch err.Code {
+	case model.ErrorCode_ERROR_CODE_UNAUTHORIZED:
+		return http.StatusUnauthorized
+	case model.ErrorCode_ERROR_CODE_INTERNAL_SERVER_ERROR:
+		return http.StatusInternalServerError
+	default:
+		return http.StatusBadRequest
+	}
 }
