@@ -29,6 +29,8 @@ const INVENTORY_CAPABILITY: &str = "key_exchange.content_prekey.inventory";
 const PROFILE_MAX_LIFETIME_MS: i64 = 60 * 60 * 1_000;
 const PROFILE_CLOCK_SKEW_MS: i64 = 30_000;
 const FEDERATION_KEY_ID_LENGTH: usize = 26;
+const FEDERATION_SELF_TYPE_URL: &str =
+    "type.googleapis.com/peers_touch.model.federation.v1.FederationSelfView";
 const FEDERATION_RESOLVE_TYPE_URL: &str =
     "type.googleapis.com/peers_touch.model.federation.v1.FederationResolveView";
 
@@ -543,8 +545,7 @@ pub fn resolve_trusted_station_signing_key(
 ) -> Result<TrustedStationSigningKey, String> {
     require_authenticated_transport(&scope.station_origin)?;
     let client = http_client()?;
-    let federation_self: federation::FederationSelfView =
-        get_proto_at(&client, scope, access_token, "/actor/federation/me", None)?;
+    let federation_self = get_federation_self_at(&client, scope, access_token)?;
     if federation_self.home_station_peer_id != scope.station_peer_id
         || federation_self
             .actor_ref
@@ -636,6 +637,28 @@ fn get_proto_at<Resp: Message + Default>(
             .send()
             .map_err(|error| format!("load private Social trust material: {error}"))?,
         CommitSemantics::ReadOnly,
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn get_federation_self_at(
+    client: &Client,
+    scope: &PrivateSocialScope,
+    access_token: &str,
+) -> Result<federation::FederationSelfView, String> {
+    let request = client
+        .get(
+            endpoint_url(&scope.station_origin, "/actor/federation/me", None)
+                .map_err(|error| error.to_string())?,
+        )
+        .header(AUTHORIZATION, format!("Bearer {access_token}"))
+        .header("X-Device-ID", &scope.device_id)
+        .header(ACCEPT, "application/protobuf");
+    decode_peers_proto_response(
+        request
+            .send()
+            .map_err(|error| format!("load private Social trust material: {error}"))?,
+        FEDERATION_SELF_TYPE_URL,
     )
     .map_err(|error| error.to_string())
 }
@@ -1114,8 +1137,47 @@ fn sender_federated_handle(sender: &actor::ActorRef) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+    use std::thread;
+
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+
+    fn spawn_peers_proto_response<Payload: Message>(
+        payload: &Payload,
+        type_url: &str,
+    ) -> (String, thread::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test Station");
+        let origin = format!(
+            "http://{}",
+            listener.local_addr().expect("test Station address")
+        );
+        let body = common::PeersResponse {
+            code: "200".to_string(),
+            msg: "ok".to_string(),
+            data: Some(prost_types::Any {
+                type_url: type_url.to_string(),
+                value: payload.encode_to_vec(),
+            }),
+        }
+        .encode_to_vec();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept trust request");
+            let mut request = vec![0_u8; 8_192];
+            let read = stream.read(&mut request).expect("read trust request");
+            request.truncate(read);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .expect("write response headers");
+            stream.write_all(&body).expect("write response body");
+            String::from_utf8(request).expect("request is HTTP text")
+        });
+        (origin, handle)
+    }
 
     fn signed_sender_profile(
         station_key: &SigningKey,
@@ -1331,6 +1393,43 @@ mod tests {
             FEDERATION_RESOLVE_TYPE_URL,
         )
         .is_err());
+    }
+
+    #[test]
+    fn federation_self_request_decodes_peers_response_envelope() {
+        let view = federation::FederationSelfView {
+            federated_handle: "@alice@station.test".to_string(),
+            home_station_peer_id: "station-1".to_string(),
+            actor_ref: Some(actor::ActorRef {
+                ptid: "ptid:alice".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let (station_origin, request) = spawn_peers_proto_response(
+            &view,
+            "type.googleapis.com/peers_touch.model.federation.v1.FederationSelfView",
+        );
+        let scope = PrivateSocialScope {
+            profile_id: "profile-1".to_string(),
+            station_peer_id: "station-1".to_string(),
+            station_origin,
+            actor_ptid: "ptid:alice".to_string(),
+            device_id: "device-1".to_string(),
+        };
+
+        let decoded = get_federation_self_at(
+            &http_client().expect("build test client"),
+            &scope,
+            "access-token",
+        )
+        .expect("decode Federation self envelope");
+        assert_eq!(decoded, view);
+
+        let request = request.join().expect("join test Station").to_lowercase();
+        assert!(request.starts_with("get /actor/federation/me http/1.1"));
+        assert!(request.contains("authorization: bearer access-token"));
+        assert!(request.contains("x-device-id: device-1"));
     }
 
     #[test]

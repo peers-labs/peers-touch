@@ -1,6 +1,6 @@
 ---
 kind: pitfall
-title: Mobile private runtimes must share policy and readiness
+title: Mobile private runtimes must share policy, readiness, and Station wire contracts
 status: active
 owns:
   - apps/mobile/src-tauri/src/secure_content/
@@ -36,6 +36,9 @@ private Social first-use trust requires HTTPS or loopback HTTP
 The same Journey later reached an authenticated `ACTIVE` scope after a lifecycle
 restart while `private-social` remained inactive with no local error.
 
+A direct Native activation probe then returned HTTP `200` with stable code
+`20005` while loading `/actor/federation/me`.
+
 ## Root cause
 
 Private Social implemented its own Station-origin policy instead of consuming
@@ -51,6 +54,12 @@ therefore skipped `private-social.bootstrap()` entirely during restart. Because
 the descriptor never ran, its module snapshot remained the empty inactive state
 without an activation error.
 
+After those lifecycle defects were fixed, Mobile still decoded
+`/actor/federation/me` as a raw `FederationSelfView`. The Station route and
+Desktop client use the canonical `PeersResponse` envelope with an exact
+`google.protobuf.Any` type URL, so the successful HTTP response failed local
+protobuf decoding before Private Social could pin the Station signing key.
+
 ## Mitigation
 
 ### What was done in code
@@ -64,6 +73,9 @@ without an activation error.
 - Private Social hard dependencies are limited to `session` and
   `secure-storage`. Messaging and Social remain degradable sibling capabilities;
   their failure cannot suppress Private Social activation.
+- The Federation self trust request decodes the canonical `PeersResponse`
+  envelope and requires the exact `FederationSelfView` type URL. The separate
+  Federation profile route retains its raw protobuf response contract.
 - Focused Rust and TypeScript regressions cover both policy modes and failed
   activation readiness.
 
@@ -76,6 +88,9 @@ without an activation error.
 - `restarts independently of failed degradable messaging and social runtimes`
   verifies that an authenticated restart still activates Private Social when a
   degradable sibling fails.
+- `federation_self_request_decodes_peers_response_envelope` verifies the real
+  HTTP request path, Bearer/device headers, canonical envelope, and exact
+  Federation self payload type.
 
 ## How to detect a recurrence
 
@@ -84,6 +99,8 @@ Run:
 ```bash
 cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
   private_social_uses_the_shared_station_origin_policy
+cargo test --manifest-path apps/mobile/src-tauri/Cargo.toml \
+  federation_self_request_decodes_peers_response_envelope
 pnpm --dir apps/mobile exec vitest run \
   src/runtimes/privateMomentsRuntime.test.ts
 ```
@@ -91,13 +108,14 @@ pnpm --dir apps/mobile exec vitest run \
 Then inspect Mobile Station-origin validation and session transition owners:
 
 ```bash
-rg -n "StationOriginPolicy|runRuntimeSessionTransition" \
+rg -n "StationOriginPolicy|runRuntimeSessionTransition|FEDERATION_SELF_TYPE_URL" \
   apps/mobile/src-tauri/src/secure_content \
   apps/mobile/src/runtimes/privateMomentsRuntime.ts
 ```
 
 Private Social must not add a parallel transport policy or swallow a
-current-scope activation failure outside lifecycle readiness.
+current-scope activation failure outside lifecycle readiness. Station routes
+that return `PeersResponse` must not be decoded as their raw payload type.
 
 ## Crosswalks
 
