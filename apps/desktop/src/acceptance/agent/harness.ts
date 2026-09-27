@@ -16393,19 +16393,22 @@ async function createFoundationDisposableRuntimeFixture(
   purpose: string,
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
-  const providerId = 'ollama';
+  const requestedProviderId = `mca-fx-${suffix}`;
+  let providerId = requestedProviderId;
   const modelId = `model-${suffix}`;
-  const catalogProvider = await api.getProvider(providerId);
-  if (
-    catalogProvider.version !== 0
-    || catalogProvider.has_api_key
-    || catalogProvider.show_api_key !== false
-  ) {
-    throw new Error(
-      'agent.acceptance.disposableRuntimeProviderUnavailable',
-    );
-  }
   try {
+    const created = await api.createProvider({
+      id: requestedProviderId,
+      name: requestedProviderId,
+      description: `Acceptance ${purpose} runtime fixture`,
+      base_url: 'https://foundation.invalid/v1',
+    });
+    providerId = String(created.provider?.id || '');
+    if (providerId !== requestedProviderId) {
+      throw new Error(
+        'agent.acceptance.disposableRuntimeProviderIdentityMismatch',
+      );
+    }
     await api.addModel(providerId, {
       id: modelId,
       display_name: `Disposable ${purpose} model`,
@@ -16435,11 +16438,14 @@ async function createFoundationDisposableRuntimeFixture(
     return { providerId, modelId };
   } catch (error) {
     try {
-      const configuredProvider = (await api.listProviders()).find(
-        (provider) => provider.id === providerId && provider.version > 0,
-      );
-      if (configuredProvider) {
-        await api.deleteProvider(providerId);
+      if (providerId) {
+        await api.deleteProvider(providerId).catch(
+          (cleanupCandidateError: unknown) => {
+            if (!isFoundationResourceNotFound(cleanupCandidateError)) {
+              throw cleanupCandidateError;
+            }
+          },
+        );
       }
     } catch (cleanupError) {
       throw Object.assign(
@@ -16457,6 +16463,11 @@ async function deleteFoundationDisposableRuntimeFixture(
   providerRestored: boolean;
   modelDeleted: boolean;
 }> {
+  if (!fixture.providerId.startsWith('mca-fx-')) {
+    throw new Error(
+      'agent.acceptance.disposableRuntimeProviderIdentityInvalid',
+    );
+  }
   const configuredProvider = (await api.listProviders()).find(
     (provider) => provider.id === fixture.providerId && provider.version > 0,
   );

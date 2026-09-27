@@ -1856,6 +1856,25 @@ class AgentHarnessStaticTest(unittest.TestCase):
     def test_incompatible_capability_uses_station_readiness_and_model_recovery(
         self,
     ) -> None:
+        fixture_start = self.source.index(
+            "async function createFoundationDisposableRuntimeFixture"
+        )
+        fixture_end = self.source.index(
+            "async function runFoundationIncompatibleCapabilityScenario",
+            fixture_start,
+        )
+        fixture = self.source[fixture_start:fixture_end]
+        self.assertIn(
+            "const requestedProviderId = `mca-fx-${suffix}`;",
+            fixture,
+        )
+        self.assertIn("await api.createProvider({", fixture)
+        self.assertIn(
+            "fixture.providerId.startsWith('mca-fx-')",
+            fixture,
+        )
+        self.assertNotIn("const providerId = 'ollama'", fixture)
+
         scenario_start = self.source.index(
             "async function runFoundationIncompatibleCapabilityScenario"
         )
