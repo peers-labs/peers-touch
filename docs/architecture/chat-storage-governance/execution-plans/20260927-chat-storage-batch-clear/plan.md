@@ -160,7 +160,7 @@
       "dependsOn": [
         "CSG-BATCH-01-desktop"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -170,7 +170,7 @@
       "dependsOn": [
         "CSG-BATCH-01-desktop"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {

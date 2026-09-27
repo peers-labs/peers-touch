@@ -76,17 +76,17 @@
     "Do not report partial success as complete",
     "Do not retain an Acceptance fixture command outside acceptance-webdriver builds"
   ],
-  "updatedAt": "2026-09-27T10:48:00.000Z",
+  "updatedAt": "2026-09-27T12:18:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "FUNCTIONAL_CHECK",
       "result": "PASS",
-      "ref": "Development Session CSG-BATCH-02A-desktop-R3 / functional run 20260927T104313383183Z-23be45d3b84980e50354e6e1ff5f3368"
+      "ref": "Development Session CSG-BATCH-02A-desktop-R4 / functional run 20260927T120639670397Z-c8e7d96fc34aceb9aa68592a6cd05855"
     },
     {
       "verificationClass": "ACCEPTANCE_PROOF",
       "result": "PASS",
-      "ref": "acceptance-run 20260927T104542769126Z-927195ed0b4c537c158d6ea5132707a6; gap detector PROVEN"
+      "ref": "acceptance-run 20260927T120921655916Z-40f683bd02ad3446c971f8cda0bd2f4f; gap detector PROVEN; completion review review-311783e8db43049a7358a3bff050d275 PASS"
     }
   ]
 }
@@ -94,8 +94,7 @@
 
 ## Current Snapshot
 
-- State: acceptance-ready; completion is controlled by the current Development
-  Session and independent review.
+- State: done.
 - Dependency: `CSG-BATCH-01-desktop` done.
 
 ## Closure
