@@ -46,6 +46,12 @@ modules as blocking architecture findings. Parser, Hook, Plan, Review and
 integration-audit regressions provide executable coverage; no generic golden
 review fixture is needed.
 
+The `peers-touch-git` integration adds the reviewed Worktree Governance product,
+state, experience, Acceptance and execution contracts under the existing Local
+Dev Control Plane. Existing review rules already cover owner-state isolation,
+worktree identity, destructive-operation authorization and evidence freshness,
+so no `SKILL.md`, fixture or knowledge change is required.
+
 ## 2026-09-26 Review
 
 The current upstream source set retains the existing review behavior for
