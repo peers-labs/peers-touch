@@ -11,8 +11,13 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { evaluateWorkflowEvent } from './workflow-kernel.mjs';
+
+const REPO_ROOT = realpathSync(
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..'),
+);
 
 function projectRoot(parent, name) {
   const root = path.join(parent, name);
@@ -457,6 +462,87 @@ test('bound mutations emit one redacted action receipt without changing admissio
   assert.equal(receipts[0].operation.family, 'WRITE');
   assert.equal(receipts[0].operation.targetRef, 'tooling/scripts/file.mjs');
   assert.equal('toolInput' in receipts[0], false);
+});
+
+test('admitted repository writes load the real shared governance context', async () => {
+  const result = await evaluateWorkflowEvent(
+    event({
+      toolWorkingDirectory: REPO_ROOT,
+      toolName: 'Write',
+      toolInput: {
+        file_path: path.join(
+          REPO_ROOT,
+          'tooling/scripts/plan/plan-package.mjs',
+        ),
+      },
+    }),
+    injectedBinding(REPO_ROOT, {
+      inspectWorkflowContext: async () => ({
+        status: 'READY',
+        tracked: true,
+        declaration: {
+          sourceClaims: [
+            {
+              mode: 'exclusive-write',
+              pathPrefix: 'tooling/scripts/plan',
+            },
+          ],
+        },
+      }),
+    }),
+  );
+
+  assert.equal(result.action, 'ALLOW');
+  assert.equal(
+    result.contextReceipt.kind,
+    'peers-touch-pre-edit-context',
+  );
+  assert.deepEqual(
+    result.contextReceipt.architecture.map((entry) => entry.moduleId),
+    ['architecture-module-governance'],
+  );
+  assert.match(result.additionalContext, /PT_PRE_EDIT_CONTEXT/);
+});
+
+test('pre-edit context failure denies a previously scoped write', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-governance-'));
+  try {
+    const root = projectRoot(temporary, 'root');
+    mkdirSync(
+      path.join(root, 'docs/architecture/architecture-module-governance'),
+      { recursive: true },
+    );
+    const result = await evaluateWorkflowEvent(
+      event({
+        toolWorkingDirectory: root,
+        toolName: 'Write',
+        toolInput: {
+          file_path: path.join(root, 'tooling/scripts/file.mjs'),
+        },
+      }),
+      injectedBinding(root, {
+        inspectWorkflowContext: async () => ({
+          status: 'READY',
+          tracked: true,
+          declaration: {
+            sourceClaims: [
+              { mode: 'exclusive-write', pathPrefix: 'tooling/scripts' },
+            ],
+          },
+        }),
+      }),
+    );
+
+    assert.equal(result.action, 'DENY');
+    assert.equal(result.code, 'ARCHITECTURE_REGISTRY_INVALID');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
 });
 
 test('PreToolUse starts heartbeat and PostToolUse records terminal completion', async () => {

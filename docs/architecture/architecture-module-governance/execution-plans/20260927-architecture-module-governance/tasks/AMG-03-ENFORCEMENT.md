@@ -25,6 +25,7 @@
     "tooling/scripts/agent-integration-control.py",
     "tooling/skills/pt-architecture-design-methodology",
     "tooling/skills/pt-plan-and-document",
+    "tooling/skills/pt-github-review",
     "tooling/make/review.mk",
     "docs/knowledge"
   ],

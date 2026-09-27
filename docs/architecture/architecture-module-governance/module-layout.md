@@ -32,11 +32,21 @@ tooling/scripts/review/
 └── knowledge-match.sh
 
 tooling/scripts/local-dev/
-└── workflow-kernel.mjs
+├── workflow-kernel.mjs
+└── workflow-host-adapters.mjs
 
 tooling/plugins/pt-ew-plugin/
 └── scripts/
     └── hook-entry.mjs
+
+tooling/scripts/
+├── agent-integration-audit.py
+└── agent-integration-control.py
+
+tooling/skills/
+├── pt-architecture-design-methodology/
+├── pt-github-review/
+└── pt-plan-and-document/
 ```
 
 ## 2. 文件职责
@@ -49,7 +59,11 @@ tooling/plugins/pt-ew-plugin/
 | `plan-package.mjs` | 对已登记 architecture sources 调用共享校验 |
 | `knowledge-match.sh` | 对 changed paths 调用共享校验并保留 knowledge 新鲜度检查 |
 | `workflow-kernel.mjs` | 在写入授权前请求 Context Receipt |
+| `workflow-host-adapters.mjs` | 将已判定的 allow 与只读 context 转成宿主响应 |
 | `hook-entry.mjs` | 宿主输入输出适配，不复制治理规则 |
+| `agent-integration-audit.py` | 将共享 parser 纳入安装完整性审计 |
+| `agent-integration-control.py` | 将共享 parser 纳入安装源目录摘要 |
+| 架构、计划与 Review Skills | 要求 active 模块登记正向投影并在评审时执行共享校验 |
 
 ## 3. 依赖关系
 

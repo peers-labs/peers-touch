@@ -144,6 +144,39 @@ test('renders Claude-compatible TRAE and Codex responses', () => {
     },
   );
   assert.deepEqual(
+    renderHostResponse(
+      'trae',
+      {
+        action: 'ALLOW',
+        additionalContext: 'PT_PRE_EDIT_CONTEXT\nreceipt',
+      },
+      { event: 'PRE_TOOL_USE', hostEvent: 'PreToolUse' },
+    ),
+    {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'allow',
+        permissionDecisionReason:
+          'Architecture and operational knowledge context loaded.',
+        additionalContext: 'PT_PRE_EDIT_CONTEXT\nreceipt',
+      },
+    },
+  );
+  assert.deepEqual(
+    renderHostResponse(
+      'cursor',
+      {
+        action: 'ALLOW',
+        additionalContext: 'PT_PRE_EDIT_CONTEXT\nreceipt',
+      },
+      { event: 'PRE_TOOL_USE', hostEvent: 'preToolUse' },
+    ),
+    {
+      permission: 'allow',
+      additional_context: 'PT_PRE_EDIT_CONTEXT\nreceipt',
+    },
+  );
+  assert.deepEqual(
     renderHostFailure('codex', 'Stop', new Error('broken')),
     {
       decision: 'block',
