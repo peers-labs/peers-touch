@@ -23,6 +23,7 @@ import urllib.request
 
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioner import (
+    resolve_deployment_environment_path,
     resolve_machine_profile_environment,
 )
 from tooling.acceptance.transports.ssh import SshTarget, SshTransport
@@ -162,7 +163,7 @@ def load_environment_file(path: Path) -> dict[str, str]:
 
 def deploy_environment(name: str) -> dict[str, str]:
     return load_environment_file(
-        REPO_ROOT / ".local" / "deploy" / "envs" / f"{name}.env"
+        resolve_deployment_environment_path(name, repo_root=REPO_ROOT)
     )
 
 

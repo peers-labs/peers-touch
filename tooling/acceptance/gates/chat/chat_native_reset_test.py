@@ -17,6 +17,7 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     _remote_transport,
     active_profile_environment,
     acceptance_station_environment,
+    deploy_environment,
     duplicate_acceptance_queue_delivery,
     fixture_federation_id,
     prepare_local_friend_request_lifecycle,
@@ -80,6 +81,32 @@ class FixtureFederationIdentityTest(unittest.TestCase):
 
 
 class DisposableAcceptanceTargetTest(unittest.TestCase):
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset."
+        "resolve_deployment_environment_path",
+        return_value=Path("/env/chat-native-five/deploy.env.example"),
+    )
+    @patch(
+        "tooling.acceptance.fixtures.chat_native_reset."
+        "load_environment_file",
+        return_value={"PT_DEPLOY_HOST": "station.example"},
+    )
+    def test_deploy_environment_uses_reviewed_authority(
+        self,
+        load_environment,
+        resolve_environment,
+    ) -> None:
+        values = deploy_environment("chat-native-five")
+
+        resolve_environment.assert_called_once_with(
+            "chat-native-five",
+            repo_root=Path(__file__).resolve().parents[4],
+        )
+        load_environment.assert_called_once_with(
+            Path("/env/chat-native-five/deploy.env.example")
+        )
+        self.assertEqual(values["PT_DEPLOY_HOST"], "station.example")
+
     @patch(
         "tooling.acceptance.fixtures.chat_native_reset."
         "resolve_machine_profile_environment",
