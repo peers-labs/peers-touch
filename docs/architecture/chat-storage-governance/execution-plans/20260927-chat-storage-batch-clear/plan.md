@@ -40,8 +40,14 @@
   ],
   "full": [
     "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "acceptance-infra-validation",
-    "agent-marketplace-catalog-e2e", "agent-native-knowledge-binding-e2e", "agent-quick-completion-e2e", "agent-stream-resilience-e2e",
-    "chat-desktop-gateway-e2e", "chat-lifecycle-call-resolution-e2e", "chat-lifecycle-direct-e2e", "chat-lifecycle-mixed-client-cross-station-e2e",
+    "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-conversation-e2e", "agent-core-lifecycle-native-e2e",
+    "agent-ecosystem-e2e", "agent-event-stream-e2e", "agent-follow-up-e2e", "agent-marketplace-catalog-e2e",
+    "agent-native-connector-lifecycle-e2e", "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-provider-credential-e2e",
+    "agent-quick-completion-e2e", "agent-stream-resilience-e2e", "agent-topic-comments-e2e", "agent-translation-e2e",
+    "agent-v2-capability-binding-e2e", "agent-v2-connector-invocation-e2e", "agent-v2-evaluation-lab-e2e", "agent-v2-governed-tool-loop-e2e",
+    "agent-v2-home-command-center-e2e", "agent-v2-kernel-foundation-e2e", "agent-v2-mcp-lifecycle-e2e", "applet-desktop-lifecycle-smoothness",
+    "chat-contact-message-resilience-e2e", "chat-desktop-gateway-e2e", "chat-friend-request-gateway-e2e", "chat-lifecycle-call-resolution-e2e",
+    "chat-lifecycle-direct-e2e", "chat-lifecycle-mixed-client-cross-station-e2e",
     "chat-lifecycle-mixed-client-group-mls-e2e", "chat-lifecycle-mixed-client-multi-device-e2e", "chat-lifecycle-mixed-client-same-station-e2e", "chat-lifecycle-onboarding-e2e",
     "chat-lifecycle-tree-zero-reference-e2e", "chat-native-current-profile-two-client-e2e", "chat-native-group-mls-e2e", "chat-native-interactions-e2e",
     "chat-native-multi-device-e2e", "chat-native-recovery-e2e", "chat-native-submitted-command-recovery-e2e", "chat-native-typing-e2e",
@@ -49,14 +55,16 @@
     "chat-storage-batch-clear-aggregate-e2e", "chat-storage-cache-clear-e2e", "chat-storage-dead-contract-zero-e2e", "chat-storage-delete-reclaim-e2e",
     "chat-storage-desktop-batch-clear-e2e", "chat-storage-governance-aggregate-e2e", "chat-storage-mobile-batch-clear-e2e", "chat-storage-redaction-recovery-e2e",
     "chat-storage-retention-e2e", "chat-storage-zero-legacy-e2e", "desktop-check", "desktop-dev-runtime-isolation-static", "development-workflow-control-plane",
-    "desktop-release-build", "dev-ui-browser-e2e", "federation-three-node-e2e", "machine-dev-registry-self",
-    "messaging-platform-contract", "mobile-contract-static", "mobile-hard-cut-static", "mobile-ios-simulator-layout-accessibility-e2e",
+    "desktop-release-build", "dev-ui-browser-e2e", "federation-desktop-gateway-smoke", "federation-surface-smoke", "federation-three-node-e2e",
+    "machine-dev-registry-self", "messaging-platform-contract", "mobile-contract-static", "mobile-hard-cut-static",
+    "mobile-identity-contract", "mobile-ios-simulator-layout-accessibility-e2e",
     "mobile-native-build", "mobile-simulator-access-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e",
     "mobile-simulator-platform-e2e", "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-runtime-lifecycle-e2e",
     "mobile-simulator-settings-e2e", "mobile-simulator-social-convergence-e2e", "mobile-simulator-station-lifecycle-e2e",
     "peers-dev-product", "peers-dev-ui-browser-e2e", "proto-build", "station-access-federation-boundary-e2e",
     "station-access-auth-e2e", "station-access-capability-contract", "station-access-domain-validation", "station-access-lifecycle-aggregate-e2e", "station-access-scope-isolation-e2e",
-    "station-agent-unit", "station-api-ownership", "station-federation-unit", "station-messaging-unit", "workspace-plan-generation-self"
+    "station-agent-unit", "station-api-ownership", "station-dashboard-unit", "station-dashboard-web-check",
+    "station-federation-unit", "station-messaging-unit", "workspace-plan-generation-self"
   ]
 }
 ```
