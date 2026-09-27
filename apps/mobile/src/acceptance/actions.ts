@@ -115,6 +115,7 @@ import {
   getRecoveryProjection,
   type RecoveryState,
 } from '../runtimes/recoveryProjection';
+import { mobileChatStorageProjectionRuntime } from '../runtimes/chatStorageRuntime';
 import {
   MobileMutationAdmissionError,
   mobileMutationScopeKey,
@@ -1224,6 +1225,15 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
         ),
       },
     });
+  },
+
+  'storage.batch.scenario': async (input) => {
+    mobileChatStorageProjectionRuntime.configureAcceptanceBatchScenario({
+      delayMs: input?.delayMs,
+      failureConversationId: input?.failureConversationId,
+      scopeChangeConversationId: input?.scopeChangeConversationId,
+    });
+    return { configured: true };
   },
 
   'storage.retention.seed': async (input) => {

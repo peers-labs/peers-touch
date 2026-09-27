@@ -251,9 +251,11 @@
     "chat-storage-retention-e2e", "chat-storage-zero-legacy-e2e", "desktop-check", "desktop-dev-runtime-isolation-static",
     "desktop-release-build", "dev-ui-browser-e2e", "federation-three-node-e2e", "machine-dev-registry-self",
     "messaging-platform-contract", "mobile-contract-static", "mobile-hard-cut-static", "mobile-ios-simulator-layout-accessibility-e2e",
-    "mobile-native-build", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-platform-e2e",
-    "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-settings-e2e", "mobile-simulator-social-convergence-e2e",
+    "mobile-native-build", "mobile-simulator-access-e2e", "mobile-simulator-chat-contacts-e2e", "mobile-simulator-moments-e2e",
+    "mobile-simulator-platform-e2e", "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-runtime-lifecycle-e2e",
+    "mobile-simulator-settings-e2e", "mobile-simulator-social-convergence-e2e", "mobile-simulator-station-lifecycle-e2e",
     "peers-dev-product", "peers-dev-ui-browser-e2e", "proto-build", "station-access-federation-boundary-e2e",
+    "station-access-auth-e2e", "station-access-capability-contract", "station-access-scope-isolation-e2e",
     "station-agent-unit", "station-api-ownership", "station-federation-unit", "station-messaging-unit"
   ]
 }

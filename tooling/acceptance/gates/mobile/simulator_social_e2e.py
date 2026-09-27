@@ -1073,22 +1073,20 @@ return true;
             "messagingIdentityPreserved": True,
         }
 
-    def _run_storage_batch_clear_journey(
+    def _seed_storage_batch(
         self,
-        *,
         session: Any,
-        journey_id: str,
-    ) -> dict[str, Any]:
-        fixture_size = 2 * 1024 * 1024
+        count: int = 2,
+    ) -> tuple[list[str], list[str]]:
         fixtures = [
             self._mapping(
                 session.call_action(
                     "storage.conversation-clear.seed",
-                    {"plaintextBytes": fixture_size},
+                    {"plaintextBytes": 2 * 1024 * 1024},
                 ),
                 "storage batch clear fixture",
             )
-            for _ in range(2)
+            for _ in range(count)
         ]
         conversation_ids = [
             self._required_text(
@@ -1106,8 +1104,265 @@ return true;
             )
             for fixture in fixtures
         ]
-        if len(set(conversation_ids)) != 2:
+        if len(set(conversation_ids)) != count:
             raise GateError("storage batch fixtures are not distinct")
+        return conversation_ids, message_ids
+
+    def _refresh_mobile_storage_rows(
+        self,
+        session: Any,
+        conversation_ids: list[str],
+    ) -> dict[str, Any]:
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const button = document.querySelector('[data-chat-storage-refresh]');
+if (!button) return false;
+button.click();
+return true;
+"""
+            )
+            or None,
+            "Mobile storage refresh",
+        )
+        return self._wait_for_storage_snapshot(
+            session,
+            lambda value: set(conversation_ids).issubset(
+                set(value.get("conversationIds", []))
+            ),
+            "seeded Mobile storage conversations",
+        )
+
+    def _select_mobile_storage_rows(
+        self,
+        session: Any,
+        conversation_ids: list[str],
+    ) -> list[str]:
+        session.execute_script(
+            """
+const button = document.querySelector('[data-chat-storage-batch-manage]');
+if (!button) throw new Error('batch manage action missing');
+button.click();
+"""
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+return Boolean(document.querySelector(
+  '[data-chat-storage-batch-actions]'
+));
+"""
+            )
+            or None,
+            "Mobile batch selection controls",
+        )
+        for conversation_id in conversation_ids:
+            selected = session.execute_script(
+                """
+const row = Array.from(document.querySelectorAll(
+  '[data-chat-storage-conversation]'
+)).find((candidate) => (
+  candidate.getAttribute('data-chat-storage-conversation') === arguments[0]
+));
+const control = row?.querySelector(
+  '[data-chat-storage-conversation-select]'
+);
+const checkbox = control?.matches('input')
+  ? control
+  : control?.querySelector('input');
+if (!checkbox) return false;
+checkbox.click();
+return true;
+""",
+                conversation_id,
+            )
+            if selected is not True:
+                raise GateError(
+                    f"storage batch row is not selectable: {conversation_id}"
+                )
+            self._wait_for_value(
+                lambda conversation_id=conversation_id: (
+                    session.execute_script(
+                        """
+const row = Array.from(document.querySelectorAll(
+  '[data-chat-storage-conversation]'
+)).find((candidate) => (
+  candidate.getAttribute('data-chat-storage-conversation') === arguments[0]
+));
+return row?.getAttribute('data-chat-storage-selected') === 'true';
+""",
+                        conversation_id,
+                    )
+                    or None
+                ),
+                f"selected Mobile storage row {conversation_id}",
+            )
+        return self._wait_for_value(
+            lambda: (
+                value
+                if (
+                    isinstance(
+                        value := session.execute_script(
+                            """
+return Array.from(document.querySelectorAll(
+  '[data-chat-storage-selected="true"]'
+)).map((row) => (
+  row.getAttribute('data-chat-storage-conversation') || ''
+));
+"""
+                        ),
+                        list,
+                    )
+                    and set(value) == set(conversation_ids)
+                )
+                else None
+            ),
+            "selected Mobile storage rows",
+        )
+
+    def _mobile_batch_confirmation(self, session: Any) -> dict[str, Any]:
+        session.execute_script(
+            """
+const button = document.querySelector('[data-chat-storage-batch-clear]');
+if (!button || button.disabled) {
+  throw new Error('batch clear action unavailable');
+}
+button.click();
+"""
+        )
+        return self._mapping(
+            self._wait_for_value(
+                lambda: session.execute_script(
+                    """
+const confirmation = document.querySelector(
+  '[data-chat-storage-batch-confirm]'
+);
+const button = confirmation?.querySelector(
+  '[data-chat-storage-batch-confirm-apply]'
+);
+if (!button || button.disabled) return null;
+return {
+  estimatedBytes: Number(
+    confirmation.getAttribute(
+      'data-chat-storage-batch-estimated-bytes'
+    ) || '0'
+  ),
+  selectedCount: Number(
+    confirmation.getAttribute(
+      'data-chat-storage-batch-selected-count'
+    ) || '0'
+  ),
+  scope: confirmation.getAttribute(
+    'data-chat-storage-batch-scope'
+  ) || '',
+  text: confirmation.innerText || '',
+};
+"""
+                ),
+                "Mobile batch confirmation",
+            ),
+            "Mobile batch confirmation",
+        )
+
+    @staticmethod
+    def _install_mobile_batch_progress_probe(session: Any) -> None:
+        session.execute_script(
+            """
+window.__PT_CHAT_STORAGE_BATCH_PROGRESS__ = [];
+window.__PT_CHAT_STORAGE_BATCH_PROGRESS_OBSERVER__?.disconnect();
+const record = () => {
+  const progress = document.querySelector(
+    '[data-chat-storage-batch-progress]'
+  );
+  if (!progress) return;
+  const value = {
+    completed: Number(progress.getAttribute(
+      'data-chat-storage-batch-completed'
+    ) || '0'),
+    total: Number(progress.getAttribute(
+      'data-chat-storage-batch-total'
+    ) || '0'),
+    text: progress.innerText || '',
+  };
+  const values = window.__PT_CHAT_STORAGE_BATCH_PROGRESS__;
+  const previous = values[values.length - 1];
+  if (!previous
+    || previous.completed !== value.completed
+    || previous.total !== value.total) {
+    values.push(value);
+  }
+};
+const observer = new MutationObserver(record);
+observer.observe(document.body, {
+  attributes: true,
+  childList: true,
+  characterData: true,
+  subtree: true,
+});
+window.__PT_CHAT_STORAGE_BATCH_PROGRESS_OBSERVER__ = observer;
+record();
+"""
+        )
+
+    @staticmethod
+    def _mobile_batch_progress(session: Any) -> list[dict[str, Any]]:
+        value = session.execute_script(
+            """
+window.__PT_CHAT_STORAGE_BATCH_PROGRESS_OBSERVER__?.disconnect();
+return window.__PT_CHAT_STORAGE_BATCH_PROGRESS__ || [];
+"""
+        )
+        return value if isinstance(value, list) else []
+
+    def _wait_mobile_batch_result(
+        self,
+        session: Any,
+        status: str,
+    ) -> dict[str, Any]:
+        return self._mapping(
+            self._wait_for_value(
+                lambda: session.execute_script(
+                    """
+const result = document.querySelector(
+  `[data-chat-storage-batch-result="${arguments[0]}"]`
+);
+if (!result) return null;
+return {
+  succeeded: Number(
+    result.getAttribute('data-chat-storage-batch-succeeded') || '0'
+  ),
+  failed: Number(
+    result.getAttribute('data-chat-storage-batch-failed') || '0'
+  ),
+  releasedBytes: Number(
+    result.getAttribute('data-chat-storage-released-bytes') || '0'
+  ),
+  retryVisible: Boolean(document.querySelector(
+    '[data-chat-storage-batch-retry]'
+  )),
+  selected: Array.from(document.querySelectorAll(
+    '[data-chat-storage-selected="true"]'
+  )).map((row) => (
+    row.getAttribute('data-chat-storage-conversation') || ''
+  )),
+};
+""",
+                    status,
+                ),
+                f"Mobile batch clear {status} result",
+                timeout_seconds=120,
+            ),
+            f"Mobile batch clear {status} result",
+        )
+
+    def _run_storage_batch_clear_journey(
+        self,
+        *,
+        session: Any,
+        journey_id: str,
+    ) -> dict[str, Any]:
+        fixture_size = 2 * 1024 * 1024
+        conversation_ids, message_ids = self._seed_storage_batch(session)
 
         identity_before = self._mapping(
             session.call_action("getRealtimeDevice"),
@@ -1132,76 +1387,13 @@ return true;
                 },
             },
         )
-        self._wait_for_value(
-            lambda: session.execute_script(
-                """
-const button = document.querySelector('[data-chat-storage-refresh]');
-if (!button) return false;
-button.click();
-return true;
-"""
-            )
-            or None,
-            "storage refresh before batch clear",
-        )
-        before = self._wait_for_storage_snapshot(
+        before = self._refresh_mobile_storage_rows(session, conversation_ids)
+        if int(before.get("messageBytes") or 0) < fixture_size * 2:
+            raise GateError("Mobile batch fixture bytes are incomplete")
+        session.call_action("storage.batch.scenario", {"delayMs": 400})
+        selected_ids = self._select_mobile_storage_rows(
             session,
-            lambda value: set(conversation_ids).issubset(
-                set(value.get("conversationIds", []))
-            )
-            and int(value.get("messageBytes") or 0) >= fixture_size * 2,
-            "two seeded Mobile storage conversations",
-        )
-
-        session.execute_script(
-            """
-const button = document.querySelector('[data-chat-storage-batch-manage]');
-if (!button) throw new Error('batch manage action missing');
-button.click();
-"""
-        )
-        for conversation_id in conversation_ids:
-            selected = session.execute_script(
-                """
-const row = Array.from(document.querySelectorAll(
-  '[data-chat-storage-conversation]'
-)).find((candidate) => (
-  candidate.getAttribute('data-chat-storage-conversation') === arguments[0]
-));
-const checkbox = row?.querySelector(
-  '[data-chat-storage-conversation-select] input'
-);
-if (!checkbox) return false;
-checkbox.click();
-return true;
-""",
-                conversation_id,
-            )
-            if selected is not True:
-                raise GateError(
-                    f"storage batch row is not selectable: {conversation_id}"
-                )
-        self._wait_for_value(
-            lambda: (
-                value
-                if (
-                    isinstance(
-                        value := session.execute_script(
-                            """
-return Array.from(document.querySelectorAll(
-  '[data-chat-storage-selected="true"]'
-)).map((row) => (
-  row.getAttribute('data-chat-storage-conversation') || ''
-));
-"""
-                        ),
-                        list,
-                    )
-                    and set(value) == set(conversation_ids)
-                )
-                else None
-            ),
-            "two selected Mobile storage rows",
+            conversation_ids,
         )
         estimated_reclaimable_bytes = sum(
             int(before.get("conversationReclaimableBytes", {}).get(
@@ -1211,39 +1403,16 @@ return Array.from(document.querySelectorAll(
             for conversation_id in conversation_ids
         )
 
-        session.execute_script(
-            """
-const button = document.querySelector('[data-chat-storage-batch-clear]');
-if (!button || button.disabled) {
-  throw new Error('batch clear action unavailable');
-}
-button.click();
-"""
-        )
-        displayed_estimate = self._wait_for_value(
-            lambda: session.execute_script(
-                """
-const confirmation = document.querySelector(
-  '[data-chat-storage-batch-confirm]'
-);
-const button = confirmation?.querySelector(
-  '[data-chat-storage-batch-confirm-apply]'
-);
-if (!button || button.disabled) return null;
-return Number(
-  confirmation.getAttribute(
-    'data-chat-storage-batch-estimated-bytes'
-  ) || '0'
-);
-"""
-            ),
-            "Mobile batch confirmation",
-        )
+        confirmation = self._mobile_batch_confirmation(session)
         if (
             estimated_reclaimable_bytes <= 0
-            or displayed_estimate != estimated_reclaimable_bytes
+            or confirmation.get("estimatedBytes") != estimated_reclaimable_bytes
+            or confirmation.get("selectedCount") != 2
+            or confirmation.get("scope") != "current-device"
+            or not str(confirmation.get("text") or "").strip()
         ):
-            raise GateError("Mobile batch clear estimate is incomplete")
+            raise GateError("Mobile batch clear confirmation is incomplete")
+        self._install_mobile_batch_progress_probe(session)
         session.execute_script(
             """
 document.querySelector(
@@ -1251,40 +1420,252 @@ document.querySelector(
 )?.click();
 """
         )
-        batch_result = self._mapping(
-            self._wait_for_value(
-                lambda: session.execute_script(
-                    """
-const result = document.querySelector(
-  '[data-chat-storage-batch-result="succeeded"]'
-);
-if (!result) return null;
-return {
-  succeeded: Number(
-    result.getAttribute('data-chat-storage-batch-succeeded') || '0'
-  ),
-  failed: Number(
-    result.getAttribute('data-chat-storage-batch-failed') || '0'
-  ),
-  releasedBytes: Number(
-    result.getAttribute('data-chat-storage-released-bytes') || '0'
-  ),
-};
-"""
-                ),
-                "Mobile batch clear result",
-                timeout_seconds=120,
-            ),
-            "Mobile batch clear result",
-        )
+        batch_result = self._wait_mobile_batch_result(session, "succeeded")
+        progress = self._mobile_batch_progress(session)
         if (
-            batch_result.get("succeeded") != 2
+            set(selected_ids) != set(conversation_ids)
+            or batch_result.get("succeeded") != 2
             or batch_result.get("failed") != 0
             or int(batch_result.get("releasedBytes") or 0) <= 0
+            or not isinstance(progress, list)
+            or not any(
+                isinstance(item, Mapping)
+                and item.get("total") == 2
+                and item.get("completed") in {0, 1}
+                and bool(str(item.get("text") or "").strip())
+                for item in progress
+            )
         ):
             raise GateError("Mobile batch clear result is incomplete")
 
-        for conversation_id in conversation_ids:
+        partial_ids, partial_message_ids = self._seed_storage_batch(session)
+        partial_snapshot = self._refresh_mobile_storage_rows(
+            session,
+            partial_ids,
+        )
+        partial_order = [
+            conversation_id
+            for conversation_id in partial_snapshot.get("conversationIds", [])
+            if conversation_id in partial_ids
+        ]
+        if len(partial_order) != 2:
+            raise GateError("Mobile partial-failure batch order is incomplete")
+        session.call_action(
+            "storage.batch.scenario",
+            {
+                "delayMs": 400,
+                "failureConversationId": partial_order[1],
+            },
+        )
+        self._select_mobile_storage_rows(session, partial_ids)
+        partial_confirmation = self._mobile_batch_confirmation(session)
+        self._install_mobile_batch_progress_probe(session)
+        session.execute_script(
+            """
+document.querySelector(
+  '[data-chat-storage-batch-confirm-apply]'
+)?.click();
+"""
+        )
+        partial_result = self._wait_mobile_batch_result(
+            session,
+            "partial_failure",
+        )
+        partial_progress = self._mobile_batch_progress(session)
+        if (
+            partial_confirmation.get("selectedCount") != 2
+            or partial_confirmation.get("scope") != "current-device"
+            or partial_result.get("succeeded") != 1
+            or partial_result.get("failed") != 1
+            or partial_result.get("retryVisible") is not True
+            or set(partial_result.get("selected") or [])
+            != {partial_order[1]}
+            or not any(
+                isinstance(item, Mapping)
+                and item.get("completed") == 1
+                and item.get("total") == 2
+                for item in partial_progress
+            )
+        ):
+            raise GateError("Mobile batch partial-failure UI is incomplete")
+        session.execute_script(
+            """
+const button = document.querySelector('[data-chat-storage-batch-retry]');
+if (!button || button.disabled) {
+  throw new Error('batch retry action unavailable');
+}
+button.click();
+"""
+        )
+        self._wait_for_value(
+            lambda: session.execute_script(
+                """
+const confirmation = document.querySelector(
+  '[data-chat-storage-batch-confirm]'
+);
+return confirmation?.getAttribute(
+  'data-chat-storage-batch-selected-count'
+) === '1';
+"""
+            )
+            or None,
+            "Mobile failed-only batch retry confirmation",
+        )
+        session.execute_script(
+            """
+document.querySelector(
+  '[data-chat-storage-batch-confirm-apply]'
+)?.click();
+"""
+        )
+        retry_result = self._wait_mobile_batch_result(session, "succeeded")
+        if (
+            retry_result.get("succeeded") != 1
+            or retry_result.get("failed") != 0
+        ):
+            raise GateError("Mobile failed-only batch retry did not succeed")
+
+        scope_ids, scope_message_ids = self._seed_storage_batch(session)
+        scope_snapshot_before = self._refresh_mobile_storage_rows(
+            session,
+            scope_ids,
+        )
+        scope_order = [
+            conversation_id
+            for conversation_id in scope_snapshot_before.get(
+                "conversationIds",
+                [],
+            )
+            if conversation_id in scope_ids
+        ]
+        if len(scope_order) != 2:
+            raise GateError("Mobile scope-change batch order is incomplete")
+        session.call_action(
+            "storage.batch.scenario",
+            {
+                "delayMs": 400,
+                "scopeChangeConversationId": scope_order[1],
+            },
+        )
+        self._select_mobile_storage_rows(session, scope_ids)
+        self._mobile_batch_confirmation(session)
+        self._install_mobile_batch_progress_probe(session)
+        session.execute_script(
+            """
+document.querySelector(
+  '[data-chat-storage-batch-confirm-apply]'
+)?.click();
+"""
+        )
+        scope_ui = self._mapping(
+            self._wait_for_value(
+                lambda: (
+                    value
+                    if (
+                        isinstance(
+                            value := session.execute_script(
+                                """
+return {
+  actions: Boolean(document.querySelector(
+    '[data-chat-storage-batch-actions]'
+  )),
+  result: Boolean(document.querySelector(
+    '[data-chat-storage-batch-result]'
+  )),
+  summary: Boolean(document.querySelector(
+    '[data-chat-storage-summary]'
+  )),
+};
+"""
+                            ),
+                            Mapping,
+                        )
+                        and value == {
+                            "actions": False,
+                            "result": False,
+                            "summary": False,
+                        }
+                    )
+                    else None
+                ),
+                "Mobile batch scope-change reset",
+            ),
+            "Mobile batch scope-change reset",
+        )
+        scope_progress = self._mobile_batch_progress(session)
+        scope_completed = max(
+            (
+                int(item.get("completed") or 0)
+                for item in scope_progress
+                if isinstance(item, Mapping) and item.get("total") == 2
+            ),
+            default=0,
+        )
+        restart_after_scope = session.call_action("lifecycle.restart")
+        if restart_after_scope != {"requested": True, "scope": "webview"}:
+            raise GateError("Mobile scope recovery restart was not acknowledged")
+        session.call_action("messaging.reconcile")
+        session.call_action(
+            "navigation.apply",
+            {"kind": "primary", "routeId": "tab:settings"},
+        )
+        session.call_action(
+            "navigation.apply",
+            {
+                "kind": "detail.push",
+                "route": {
+                    "routeId": "detail:setting",
+                    "settingId": "chat-settings",
+                },
+            },
+        )
+        scope_snapshot_after = self._refresh_mobile_storage_rows(
+            session,
+            [],
+        )
+        scope_conversation_ids = set(
+            scope_snapshot_after.get("conversationIds", [])
+        )
+        remaining_scope_ids = [
+            conversation_id
+            for conversation_id in scope_ids
+            if conversation_id in scope_conversation_ids
+        ]
+        if (
+            scope_ui != {
+                "actions": False,
+                "result": False,
+                "summary": False,
+            }
+            or scope_completed not in {0, 1}
+            or len(remaining_scope_ids) != 2 - scope_completed
+        ):
+            raise GateError("Mobile batch scope-change isolation is incomplete")
+        self._select_mobile_storage_rows(session, remaining_scope_ids)
+        self._mobile_batch_confirmation(session)
+        session.execute_script(
+            """
+document.querySelector(
+  '[data-chat-storage-batch-confirm-apply]'
+)?.click();
+"""
+        )
+        scope_cleanup = self._wait_mobile_batch_result(session, "succeeded")
+        if scope_cleanup.get("succeeded") != len(remaining_scope_ids):
+            raise GateError("Mobile scope-change remainder cleanup is incomplete")
+
+        all_conversation_ids = [
+            *conversation_ids,
+            *partial_ids,
+            *scope_ids,
+        ]
+        all_message_ids = [
+            *message_ids,
+            *partial_message_ids,
+            *scope_message_ids,
+        ]
+
+        for conversation_id in all_conversation_ids:
             projection = self._mapping(
                 session.call_action(
                     "messaging.projection.read",
@@ -1313,7 +1694,7 @@ return {
         if restart != {"requested": True, "scope": "webview"}:
             raise GateError("storage batch clear restart was not acknowledged")
         session.call_action("messaging.reconcile")
-        for conversation_id in conversation_ids:
+        for conversation_id in all_conversation_ids:
             projection = self._mapping(
                 session.call_action(
                     "messaging.projection.read",
@@ -1373,15 +1754,24 @@ return true;
         return {
             "scenario": "storage-batch-clear",
             "journeyId": journey_id,
-            "conversationIds": conversation_ids,
-            "messageIds": message_ids,
-            "fixtureBytes": fixture_size * 2,
+            "conversationIds": all_conversation_ids,
+            "messageIds": all_message_ids,
+            "fixtureBytes": fixture_size * len(all_conversation_ids),
             "estimatedReclaimableBytes": estimated_reclaimable_bytes,
             "physicalBytesBefore": int(before["physicalTotalBytes"]),
             "physicalBytesAfter": int(after["physicalTotalBytes"]),
             "releasedBytes": int(batch_result["releasedBytes"]),
             "succeeded": int(batch_result["succeeded"]),
             "failed": int(batch_result["failed"]),
+            "confirmation": confirmation,
+            "progress": progress,
+            "partialFailure": partial_result,
+            "partialRetry": retry_result,
+            "scopeChange": {
+                "completed": scope_completed,
+                "progress": scope_progress,
+                "remainingConversationIds": remaining_scope_ids,
+            },
             "plaintextAbsent": True,
             "searchEntryAbsent": True,
             "restartStable": True,
