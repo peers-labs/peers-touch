@@ -193,6 +193,16 @@ export function digestActiveWork(record) {
 }
 
 export function validateActiveWorkRecord(record, expectedWorkspaceId) {
+  validateActiveWorkRecordShape(record, expectedWorkspaceId);
+  if (
+    digestActiveWork(record) !== record.recordDigest
+  ) {
+    fail('ACTIVE_WORK_INVALID', 'active-work record digest is invalid');
+  }
+  return record;
+}
+
+function validateActiveWorkRecordShape(record, expectedWorkspaceId) {
   if (!isObject(record) || !exactKeys(record, RECORD_KEYS)) {
     fail('ACTIVE_WORK_INVALID', 'active-work record fields are invalid');
   }
@@ -222,10 +232,9 @@ export function validateActiveWorkRecord(record, expectedWorkspaceId) {
   }
   if (
     typeof record.recordDigest !== 'string' ||
-    !/^[0-9a-f]{64}$/.test(record.recordDigest) ||
-    digestActiveWork(record) !== record.recordDigest
+    !/^[0-9a-f]{64}$/.test(record.recordDigest)
   ) {
-    fail('ACTIVE_WORK_INVALID', 'active-work record digest is invalid');
+    fail('ACTIVE_WORK_INVALID', 'active-work record digest field is invalid');
   }
   return record;
 }
@@ -543,6 +552,122 @@ export function updateActiveWorkRecord(input, options = {}) {
       },
       (lifecycleLease) =>
         updateActiveWorkRecordUnderFence(input, {
+          ...options,
+          lifecycleLease,
+        }),
+    );
+  } catch (error) {
+    if (error instanceof WorkspaceLifecycleLockError) {
+      fail(error.code, error.message, error.detail);
+    }
+    throw error;
+  }
+}
+
+function repairActiveWorkRecordUnderFence(input, options) {
+  const expectedRecordSha256 = options.expectedRecordSha256;
+  if (
+    typeof expectedRecordSha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(expectedRecordSha256)
+  ) {
+    fail(
+      'ACTIVE_WORK_INVALID',
+      'expectedRecordSha256 must be a SHA-256 digest',
+    );
+  }
+  const paths = activeWorkStorePaths({
+    ...options,
+    workspaceId: input.workspaceId,
+  });
+  const now = operationDate(options);
+  const release = acquireLock(paths.lock, now, options.lockTimeoutMs);
+  try {
+    if (!existsSync(paths.record)) {
+      fail('ACTIVE_WORK_REPAIR_UNAVAILABLE', 'active-work record is missing');
+    }
+    const raw = readOwnedRegularFile(paths.record);
+    const actualRecordSha256 = createHash('sha256').update(raw).digest('hex');
+    if (actualRecordSha256 !== expectedRecordSha256) {
+      fail(
+        'ACTIVE_WORK_REPAIR_CONFLICT',
+        'active-work record changed after repair was authorized',
+        {
+          expected: expectedRecordSha256,
+          actual: actualRecordSha256,
+        },
+      );
+    }
+    let existing;
+    try {
+      existing = JSON.parse(raw);
+    } catch (error) {
+      fail('ACTIVE_WORK_INVALID', 'active-work record is not valid JSON', {
+        file: paths.record,
+        cause: String(error),
+      });
+    }
+    validateActiveWorkRecordShape(existing, paths.workspaceId);
+    if (digestActiveWork(existing) === existing.recordDigest) {
+      fail(
+        'ACTIVE_WORK_REPAIR_NOT_REQUIRED',
+        'active-work record already has a valid digest',
+      );
+    }
+    for (const field of [
+      'workspaceId',
+      'planId',
+      'planPath',
+      'branch',
+      'initialHead',
+    ]) {
+      if (existing[field] !== input[field]) {
+        fail(
+          'ACTIVE_WORK_OWNER_MISMATCH',
+          'invalid active-work record does not match immutable owners',
+          {
+            field,
+            expected: input[field],
+            actual: existing[field],
+          },
+        );
+      }
+    }
+    expectedRevision(options, existing);
+    const record = {
+      schemaVersion: ACTIVE_WORK_SCHEMA_VERSION,
+      kind: ACTIVE_WORK_KIND,
+      revision: existing.revision + 1,
+      ...input,
+      updatedAt: now.toISOString(),
+    };
+    record.recordDigest = digestActiveWork(record);
+    validateActiveWorkRecord(record, paths.workspaceId);
+    writeRecordAtomic(paths.record, record);
+    return readRecordFile(paths.record, paths.workspaceId);
+  } finally {
+    release();
+  }
+}
+
+export function repairActiveWorkRecord(input, options = {}) {
+  validateInput(input);
+  const paths = activeWorkStorePaths({
+    ...options,
+    workspaceId: input.workspaceId,
+  });
+  try {
+    return withWorkspaceLifecycleLockSync(
+      {
+        home: options.home,
+        workspaceRoot: options.workspaceRoot,
+        workspaceId: paths.workspaceId,
+        lifecycleLease: options.lifecycleLease,
+        lockTimeoutMs:
+          options.lifecycleLockTimeoutMs ?? options.lockTimeoutMs,
+        lifecycleFailpoint: options.lifecycleFailpoint,
+      },
+      (lifecycleLease) =>
+        repairActiveWorkRecordUnderFence(input, {
           ...options,
           lifecycleLease,
         }),

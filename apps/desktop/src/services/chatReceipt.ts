@@ -4,7 +4,7 @@ import {
   MessageReceiptSchema,
   ReceiptType,
 } from '../gen/proto/domain/chat/conversation_pb';
-import { MessageStatus } from '../gen/proto/domain/chat/chat_pb';
+import { FriendMessageStatus } from '../gen/proto/domain/chat/friend_chat_pb';
 
 export type ChatReceiptKind = 'DELIVERED' | 'READ';
 export interface ChatReceiptProjection {
@@ -13,11 +13,11 @@ export interface ChatReceiptProjection {
   kind: ChatReceiptKind;
 }
 
-export function receiptTypeForMessageStatus(status: MessageStatus): ReceiptType | null {
+export function receiptTypeForMessageStatus(status: FriendMessageStatus): ReceiptType | null {
   switch (status) {
-    case MessageStatus.DELIVERED:
+    case FriendMessageStatus.DELIVERED:
       return ReceiptType.DELIVERED;
-    case MessageStatus.READ:
+    case FriendMessageStatus.READ:
       return ReceiptType.READ;
     default:
       return null;

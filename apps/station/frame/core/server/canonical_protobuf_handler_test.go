@@ -15,10 +15,10 @@ func TestCanonicalProtobufHandlerRejectsNonCanonicalWire(t *testing.T) {
 	called := false
 	handler := newCanonicalTestHandler(t, 1024, func(
 		context.Context,
-		*chat.ActorReadCursor,
-	) (*chat.ActorReadCursor, error) {
+		*chat.FriendChatMessage,
+	) (*chat.FriendChatMessage, error) {
 		called = true
-		return &chat.ActorReadCursor{}, nil
+		return &chat.FriendChatMessage{}, nil
 	})
 	body := protowire.AppendTag(nil, 1, protowire.BytesType)
 	body = protowire.AppendString(body, "")
@@ -39,8 +39,8 @@ func TestCanonicalProtobufHandlerRejectsNonCanonicalWire(t *testing.T) {
 func TestCanonicalProtobufHandlerEnforcesRouteBodyLimit(t *testing.T) {
 	handler := newCanonicalTestHandler(t, 1, func(
 		context.Context,
-		*chat.ActorReadCursor,
-	) (*chat.ActorReadCursor, error) {
+		*chat.FriendChatMessage,
+	) (*chat.FriendChatMessage, error) {
 		t.Fatal("oversized request reached handler")
 		return nil, nil
 	})
@@ -56,8 +56,8 @@ func TestCanonicalProtobufHandlerEnforcesRouteBodyLimit(t *testing.T) {
 func TestCanonicalProtobufHandlerRequiresExactContentTypeAndNoQuery(t *testing.T) {
 	handler := newCanonicalTestHandler(t, 1024, func(
 		context.Context,
-		*chat.ActorReadCursor,
-	) (*chat.ActorReadCursor, error) {
+		*chat.FriendChatMessage,
+	) (*chat.FriendChatMessage, error) {
 		t.Fatal("invalid transport request reached handler")
 		return nil, nil
 	})
@@ -115,8 +115,8 @@ func TestCanonicalProtobufHandlerRequiresExactContentTypeAndNoQuery(t *testing.T
 func TestCanonicalProtobufHandlerProjectsStructuredAuthFailure(t *testing.T) {
 	handler := newCanonicalTestHandler(t, 1024, func(
 		context.Context,
-		*chat.ActorReadCursor,
-	) (*chat.ActorReadCursor, error) {
+		*chat.FriendChatMessage,
+	) (*chat.FriendChatMessage, error) {
 		t.Fatal("unauthorized request reached handler")
 		return nil, nil
 	})
@@ -140,8 +140,8 @@ func TestCanonicalProtobufHandlerProjectsStructuredAuthFailure(t *testing.T) {
 func TestCanonicalProtobufHandlerProjectsStreamingReadTimeout(t *testing.T) {
 	handler := newCanonicalTestHandler(t, 1024, func(
 		context.Context,
-		*chat.ActorReadCursor,
-	) (*chat.ActorReadCursor, error) {
+		*chat.FriendChatMessage,
+	) (*chat.FriendChatMessage, error) {
 		t.Fatal("timed out request reached handler")
 		return nil, nil
 	})
@@ -190,8 +190,8 @@ func newCanonicalTestHandler(
 	t *testing.T,
 	limit int64,
 	handle CanonicalProtobufHandler[
-		*chat.ActorReadCursor,
-		*chat.ActorReadCursor,
+		*chat.FriendChatMessage,
+		*chat.FriendChatMessage,
 	],
 ) Handler {
 	t.Helper()
@@ -199,7 +199,7 @@ func newCanonicalTestHandler(
 		"canonical-test",
 		"/test",
 		POST,
-		func() *chat.ActorReadCursor { return &chat.ActorReadCursor{} },
+		func() *chat.FriendChatMessage { return &chat.FriendChatMessage{} },
 		handle,
 		CanonicalProtobufHandlerOptions{
 			MaxBodyBytes: limit,

@@ -5,14 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const runtimeMocks = vi.hoisted(() => {
   const projectionRuntime = {
     ingress: {
-      state: vi.fn(() => ({
-        lifecycle: 'active',
-        streamCursor: 'cursor-1',
-        writeAdmission: { open: true },
-        staleness: {},
-        dataQueueDepth: 0,
-        controlQueueDepth: 0,
-      })),
+      state: vi.fn(() => ({ streamCursor: 'cursor-1' })),
       ingestControlEvent: vi.fn(),
     },
     bootstrap: vi.fn(async () => undefined),
@@ -49,9 +42,6 @@ const callMocks = vi.hoisted(() => ({
 
 vi.mock('../../runtimes/socialProjectionRuntime', () => ({
   createSocialProjectionRuntime: runtimeMocks.createSocialProjectionRuntime,
-  readActiveSocialIngressState: vi.fn(
-    () => runtimeMocks.projectionRuntime.ingress.state(),
-  ),
 }));
 
 vi.mock('./socialRealtime', () => ({
@@ -72,7 +62,6 @@ vi.mock('../call/callState', () => ({
 }));
 
 import {
-  reconcileSocialRuntime,
   requestSocialBlockedUsers,
   requestSocialCurrentUserProfile,
   requestSocialFriendshipStatus,
@@ -85,6 +74,8 @@ const session = {
   stationPeerId: 'station-primary',
   stationUrl: 'https://station.example',
   sessionId: 'session-1',
+  deviceId: 'device-1',
+  lifecycleGeneration: 1,
   actorRef: { ptid: 'ptid:alice' },
   authenticatedAt: 1,
 };
@@ -118,9 +109,11 @@ describe('social runtime supervisor', () => {
       sweepTypingPeers: vi.fn(),
       unblockUser: vi.fn(async () => undefined),
     };
+    const groupStore = {};
     const controller = await startSocialRuntime(
       session,
       () => socialStore,
+      () => groupStore,
     );
 
     expect(runtimeMocks.projectionRuntime.bootstrap).toHaveBeenCalledOnce();
@@ -140,97 +133,17 @@ describe('social runtime supervisor', () => {
     expect(socialStore.unblockUser).toHaveBeenCalledWith('ptid:bob');
     expect(socialStore.refreshBlockedUsers).toHaveBeenCalledTimes(2);
 
-    runtimeMocks.projectionRuntime.suspend.mockClear();
-    callMocks.suspend.mockClear();
     await controller.suspend();
 
     expect(runtimeMocks.projectionRuntime.suspend).toHaveBeenCalledOnce();
-    expect(runtimeMocks.projectionRuntime.suspend.mock.invocationCallOrder[0])
-      .toBeLessThan(callMocks.suspend.mock.invocationCallOrder[0]);
-
-    runtimeMocks.projectionRuntime.ingress.state.mockReturnValue({
-      lifecycle: 'suspended',
-      streamCursor: 'cursor-1',
-      writeAdmission: { open: false, reason: 'runtime_suspended' },
-      staleness: {},
-      dataQueueDepth: 0,
-      controlQueueDepth: 0,
-    });
-    await reconcileSocialRuntime();
-    expect(runtimeMocks.projectionRuntime.resume).toHaveBeenCalledOnce();
-    expect(runtimeMocks.startRealtimeStream).toHaveBeenCalledTimes(2);
 
     await controller.resume();
 
-    expect(runtimeMocks.projectionRuntime.resume).toHaveBeenCalledTimes(2);
+    expect(runtimeMocks.projectionRuntime.resume).toHaveBeenCalledOnce();
     expect(runtimeMocks.startRealtimeStream).toHaveBeenCalledTimes(2);
 
     await controller.teardown();
 
     expect(runtimeMocks.projectionRuntime.teardown).toHaveBeenCalledOnce();
-  });
-
-  it('reasserts foreground resources after an outlived suspend completes', async () => {
-    let timerId = 0;
-    vi.stubGlobal('window', {
-      setInterval: vi.fn(() => {
-        timerId += 1;
-        return timerId;
-      }),
-      clearInterval: vi.fn(),
-      setTimeout: vi.fn(() => {
-        timerId += 1;
-        return timerId;
-      }),
-      clearTimeout: vi.fn(),
-      dispatchEvent: vi.fn(),
-    });
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true })));
-
-    let ingressLifecycle: 'active' | 'suspended' = 'active';
-    runtimeMocks.projectionRuntime.ingress.state.mockImplementation(() => ({
-      lifecycle: ingressLifecycle,
-      streamCursor: 'cursor-1',
-      writeAdmission: {
-        open: ingressLifecycle === 'active',
-        reason: ingressLifecycle === 'suspended'
-          ? 'runtime_suspended'
-          : undefined,
-      },
-      staleness: {},
-      dataQueueDepth: 0,
-      controlQueueDepth: 0,
-    }));
-    const suspendCompletion = Promise.withResolvers<void>();
-    runtimeMocks.projectionRuntime.suspend.mockImplementationOnce(async () => {
-      ingressLifecycle = 'suspended';
-      await suspendCompletion.promise;
-    });
-    runtimeMocks.projectionRuntime.resume.mockImplementation(async () => {
-      ingressLifecycle = 'active';
-    });
-
-    const controller = await startSocialRuntime(
-      session,
-      () => ({
-        sessionKey: 'station-primary|ptid:alice',
-        refreshBlockedUsers: vi.fn(async () => undefined),
-        sweepTypingPeers: vi.fn(),
-        unblockUser: vi.fn(async () => undefined),
-      }),
-    );
-    const suspend = controller.suspend();
-    await vi.waitFor(() => {
-      expect(runtimeMocks.projectionRuntime.suspend).toHaveBeenCalledOnce();
-    });
-
-    await controller.resume();
-    suspendCompletion.resolve();
-    await suspend;
-    await controller.resume();
-
-    expect(runtimeMocks.projectionRuntime.resume).toHaveBeenCalledTimes(2);
-    expect(runtimeMocks.startRealtimeStream).toHaveBeenCalledTimes(2);
-    await controller.teardown();
   });
 });

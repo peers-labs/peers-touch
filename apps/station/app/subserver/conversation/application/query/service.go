@@ -26,17 +26,6 @@ type ConversationView struct {
 	FollowerStatus repository.FollowerStatus
 }
 
-// ConversationRoute identifies the canonical authority/follower route without
-// exposing member or device projections.
-type ConversationRoute struct {
-	ConversationID   valueobject.ConversationID
-	Source           Source
-	FederationID     valueobject.FederationID
-	AuthorityStation valueobject.StationID
-	AuthorityEpoch   valueobject.AuthorityEpoch
-	FollowerStatus   repository.FollowerStatus
-}
-
 type MessagePage struct {
 	Events  []domainevent.Record
 	HasMore bool
@@ -87,31 +76,6 @@ func (s *Service) Get(
 		return nil
 	})
 	return view, err
-}
-
-// ResolveRoute returns only the canonical authority/follower route. Callers
-// must authorize their operation against immutable operation-specific truth.
-func (s *Service) ResolveRoute(
-	ctx context.Context,
-	conversationID valueobject.ConversationID,
-) (ConversationRoute, error) {
-	var route ConversationRoute
-	err := s.unitOfWork.Execute(ctx, func(transaction ports.Transaction) error {
-		view, err := loadConversationView(ctx, transaction.Repositories, conversationID)
-		if err != nil {
-			return err
-		}
-		route = ConversationRoute{
-			ConversationID:   view.Conversation.ID,
-			Source:           view.Source,
-			FederationID:     view.Conversation.FederationID,
-			AuthorityStation: view.Conversation.AuthorityStation,
-			AuthorityEpoch:   view.Conversation.AuthorityEpoch,
-			FollowerStatus:   view.FollowerStatus,
-		}
-		return nil
-	})
-	return route, err
 }
 
 func (s *Service) List(
@@ -386,7 +350,7 @@ func (s *Service) ReadCursor(
 func (s *Service) PendingLeaveIntents(
 	ctx context.Context,
 	conversationID valueobject.ConversationID,
-	actor valueobject.PTID,
+	requester valueobject.PTID,
 	limit int,
 ) ([]repository.LeaveIntent, error) {
 	if limit <= 0 || limit > 100 {
@@ -403,7 +367,7 @@ func (s *Service) PendingLeaveIntents(
 			ctx,
 			transaction.Repositories,
 			conversationID,
-			actor,
+			requester,
 			"application.query_pending_leave_intents",
 		); err != nil {
 			return err
@@ -412,7 +376,7 @@ func (s *Service) PendingLeaveIntents(
 		intents, err = transaction.Repositories.LeaveIntents.ListPending(
 			ctx,
 			conversationID,
-			actor,
+			requester,
 			limit,
 		)
 		return err

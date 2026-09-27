@@ -108,9 +108,7 @@ func newHandlerFixture(t *testing.T) *handlerFixture {
 	if err := gdb.AutoMigrate(
 		&db.Actor{},
 		&db.SocialPublicPost{},
-		&db.SocialPrivatePost{},
 		&db.SocialMomentDelivery{},
-		&db.SocialPrivateAudienceGrant{},
 		&db.SocialComment{},
 		&db.SocialReaction{},
 		&db.SocialCircle{},
@@ -195,6 +193,51 @@ func (f *handlerFixture) withViewer(userID uint64) context.Context {
 	)
 }
 
+func TestCanonicalPrivateContentActorRefRequiresPersistedIdentity(t *testing.T) {
+	t.Parallel()
+
+	const actorPTID = "ptid:v1:actor:peers:p:alice:fingerprint"
+	ref, err := canonicalPrivateContentActorRef(actorPTID, &db.Actor{
+		PTID:            actorPTID,
+		FederatedHandle: " @Alice@Home.Example ",
+		Kind:            "p",
+	})
+	if err != nil {
+		t.Fatalf("canonical ActorRef: %v", err)
+	}
+	if got, want := ref.GetAcct(), "alice@home.example"; got != want {
+		t.Fatalf("acct = %q, want %q", got, want)
+	}
+	if got, want := ref.GetKind(), model.ActorKind_ACTOR_KIND_PERSON; got != want {
+		t.Fatalf("kind = %s, want %s", got, want)
+	}
+
+	for name, record := range map[string]*db.Actor{
+		"missing row": nil,
+		"wrong PTID": {
+			PTID:            "ptid:v1:actor:peers:p:eve:fingerprint",
+			FederatedHandle: "@alice@home.example",
+			Kind:            "p",
+		},
+		"missing persisted handle": {
+			PTID: actorPTID,
+			Kind: "p",
+		},
+		"invalid kind": {
+			PTID:            actorPTID,
+			FederatedHandle: "@alice@home.example",
+			Kind:            "unknown",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := canonicalPrivateContentActorRef(actorPTID, record); err == nil {
+				t.Fatal("canonicalPrivateContentActorRef() error = nil")
+			}
+		})
+	}
+}
+
 func (f *handlerFixture) seedMoment(
 	userID uint64,
 	request *model.CreatePostRequest,
@@ -233,20 +276,17 @@ func TestPublicCreateRoutesRejectPrivateWrites(t *testing.T) {
 		t.Fatalf("private Moment on public route error = %v", err)
 	}
 
-	parent := fixture.seedMoment(
-		1,
-		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
-	)
+	// Private comments must use the Secure Content routes. The public
+	// comment path rejects a target outside the public post store.
 	_, err = fixture.subserver.handleCreateComment(
 		ctx,
 		&model.CreateCommentRequest{
-			PostId:  parent.GetId(),
+			PostId:  "nonexistent-private-post-for-comment-gate",
 			Content: "must use the private route",
 		},
 	)
-	if handlerErr, ok := err.(*server.HandlerError); !ok ||
-		handlerErr.Code != http.StatusBadRequest {
-		t.Fatalf("private Comment on public route error = %v", err)
+	if err == nil {
+		t.Fatal("expected comment outside the public post store to fail")
 	}
 }
 
@@ -1290,18 +1330,12 @@ func TestHandler_CreatePost_AuthorizedUserCreatesPost(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandler_React_NotFoundOnUnreadablePost(t *testing.T) {
-	// Author 1 publishes a SELF post; viewer 2 tries to react on it.
-	// The visibility gate should treat that exactly like "post not
-	// found" — a 404 rather than 403, so we don't leak existence.
+	// The public interaction path must not distinguish an unavailable
+	// post from a post the caller cannot read.
 	f := newHandlerFixture(t)
-	created := f.seedMoment(
-		1,
-		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
-	)
-	postID := created.Id
 
 	_, err := f.subserver.handleReact(f.withViewer(2), &model.ReactToPostRequest{
-		PostId: postID,
+		PostId: "nonexistent-post-id-for-gate-test",
 		Kind:   model.ReactionKind_REACTION_LIKE,
 	})
 	if err == nil {
@@ -1345,14 +1379,10 @@ func TestHandler_React_AcceptsReactionFromAuthor(t *testing.T) {
 
 func TestHandler_GetPostComments_NotFoundOnUnreadablePost(t *testing.T) {
 	f := newHandlerFixture(t)
-	created := f.seedMoment(
-		7,
-		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "secret"),
-	)
 
-	// Viewer 9 (anonymous-ish — distinct from 7) attempts to list comments.
+	// Viewer 9 attempts to list comments for a post outside the public store.
 	_, err := f.subserver.handleGetPostComments(f.withViewer(9), &model.GetCommentsRequest{
-		PostId: created.Id,
+		PostId: "nonexistent-post-id-for-comment-gate",
 		Limit:  10,
 	})
 	if err == nil {
@@ -1394,13 +1424,9 @@ func TestHandler_Repost_AcceptsPublicSource(t *testing.T) {
 
 func TestHandler_Repost_RejectsUnreadableSource(t *testing.T) {
 	f := newHandlerFixture(t)
-	src := f.seedMoment(
-		1,
-		textPostReq(&model.Audience{Kind: model.Audience_SELF}, "private"),
-	)
 	commentText := "nope"
 	resp, err := f.subserver.handleRepostPost(f.withViewer(2), &model.RepostRequest{
-		PostId:  src.Id,
+		PostId:  "nonexistent-post-id-for-repost-gate",
 		Comment: &commentText,
 	})
 	if err == nil {

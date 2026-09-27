@@ -243,8 +243,22 @@ class McpLifecycleDevelopmentTest(unittest.TestCase):
         self.assertIn("runtime_client.restart()", source)
         self.assertIn("inspect_mcp_fixture(", source)
         self.assertIn("MCA_J04_SECRET_CANARY", source)
+        self.assertIn("OPERATION_SCENARIO_ACTOR_ACCOUNT", source)
+        self.assertIn("OPERATION_SCENARIO_IDENTITY_FIXTURE", source)
+        self.assertIn('"providerApiKey": provider_fixture.api_key', source)
         self.assertNotIn("agent_v2_gate.py", source)
+        self.assertNotIn("J02_ACTOR_ACCOUNT", source)
+        self.assertNotIn("J02_IDENTITY_FIXTURE", source)
         self.assertNotIn("reset_fixture", source)
+        enrollment = source.find("confirm_native_actor_identity_enrollment(")
+        persistence = source.find(
+            "persist_native_actor_identity(",
+            enrollment,
+        )
+        journey = source.find('"runMcpLifecycleDevelopment"', persistence)
+        self.assertGreaterEqual(enrollment, 0)
+        self.assertGreater(persistence, enrollment)
+        self.assertGreater(journey, persistence)
 
     def test_native_receiver_expands_terminal_tool_group_before_item_assertion(
         self,
@@ -294,6 +308,49 @@ class McpLifecycleDevelopmentTest(unittest.TestCase):
             "conversationReadback.messages)\n"
             "          .includes(input.expectedResult)",
             journey,
+        )
+
+    def test_operation_evidence_hashes_idempotency_key(self) -> None:
+        source = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/harness.ts"
+        ).read_text(encoding="utf-8")
+        projection = source[
+            source.index("async function mcpOperationEvidence("):
+            source.index("function currentMcpOperation(")
+        ]
+
+        self.assertIn(
+            "idempotencyKeyHash: await sha256Hex(operation.idempotencyKey)",
+            projection,
+        )
+        self.assertNotIn(
+            "idempotencyKey: operation.idempotencyKey",
+            projection,
+        )
+
+    def test_candidate_receipt_preserves_station_fencing_token(self) -> None:
+        source = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/harness.ts"
+        ).read_text(encoding="utf-8")
+        prepared = source[
+            source.index("async function prepareMcpLifecycleDevelopmentJourney("):
+            source.index("async function runMcpDesktopCandidateScenario(")
+        ]
+        candidate = source[
+            source.index("async function runMcpDesktopCandidateScenario("):
+            source.index("async function runMcpLifecycleScenario(")
+        ]
+        tool_call_binding = prepared[
+            prepared.index("toolCallBinding: {"):
+            prepared.index("const assertions =")
+        ]
+
+        self.assertNotIn("fencingToken:", tool_call_binding)
+        self.assertIn(
+            "fencingToken: Number(toolLineage.fencingToken)",
+            candidate,
         )
 
     @staticmethod

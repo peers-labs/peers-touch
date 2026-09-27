@@ -1,80 +1,89 @@
 # Chat Lifecycle - Current Capability Audit
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-16 | **Updated**: 2026-09-24
+> **Version**: v1.1
+> **Created**: 2026-09-16 | **Updated**: 2026-09-18
 > **Owner**: Chat Product Team
-> **Audited source**: active `CCU-20260922` Plan workspace; proof identity is
-> taken from immutable Evidence Store manifests, not this document
+> **Audited HEAD**: `c6d3b79b409013c921fafcb8c735b7f419cc303f`
 
-This audit classifies source feasibility only. No row becomes `PROVEN` without
-current exact-source receiver evidence from its named formal Gate.
+The 2026-09-18 product amendment adds required group live voice/video scope.
+Its source classification is `MISSING`; other rows remain based on the audited
+HEAD above until a new full capability audit is generated.
+
+---
 
 ## 1. Classification
 
 | State | Meaning |
 |---|---|
-| `PROVEN` | Required current-source receiver evidence passed |
-| `IMPLEMENTED_UNPROVEN` | Production loop exists; required Gate has not passed |
-| `PARTIAL` | Some required actions/platforms/recovery states are absent |
-| `MISSING` | No production product loop exists |
+| `PROVEN` | Current exact source passed required receiver-perspective evidence |
+| `IMPLEMENTED_UNPROVEN` | Production path exists, but required current evidence does not |
+| `PARTIAL` | Some layers or states exist, but the user journey is incomplete |
+| `MISSING` | No production product path exists |
 
-## 2. Chat Capability Feasibility
+Historical proof is recorded separately and never upgrades current status.
 
-| ID | Status | Repository-backed foundation | Smallest feasible loop and executable proof |
+## 2. Capability Matrix
+
+| Product area | Current status | Implemented foundation | Missing product closure |
 |---|---|---|---|
-| CHAT-C01 | `PARTIAL` | Desktop/Mobile person search and Federation resolution surfaces exist | Search one actor, render Station/trust context, preserve failed query; `CHAT-G01` |
-| CHAT-C02 | `IMPLEMENTED_UNPROVEN` Desktop; `PARTIAL` Mobile | Social send/list/accept/reject/block projection exists | Alice sends, Bob accepts/rejects, both read one relationship; `CHAT-G02` |
-| CHAT-C03 | `IMPLEMENTED_UNPROVEN` | Canonical Direct create/reuse and peer-bound retry surface exist | Contact-to-one-Direct with retry/readback; `CHAT-G03` |
-| CHAT-C04 | `IMPLEMENTED_UNPROVEN` | Messaging Core durable command, Direct/MLS crypto, ordered Inbox and SQLCipher projection exist | Bidirectional unique text with retry/restart; `CHAT-G04` |
-| CHAT-C05 | `PARTIAL` | Conversation list/history/read/search/settings projections exist | Active transcript + row preview/unread/search survive restart; `CHAT-G05` |
-| CHAT-C06 | `IMPLEMENTED_UNPROVEN` Desktop; `PARTIAL` Mobile | Encrypted resumable transfer, attachment rendering and open/download exist | Byte-identical image/file after interruption and restart; `CHAT-G06` |
-| CHAT-C07 | `PARTIAL` Desktop; `MISSING` Mobile | Desktop WebM capture and audio attachment playback exist | Record, preview, send, receive, seek/retry/restart on both clients; `CHAT-G07` |
-| CHAT-C08 | `IMPLEMENTED_UNPROVEN` | Reply/thread/edit/retract/reaction/pin/read/typing contracts and projections exist | Direct/Group interaction convergence after duplicate/restart; `CHAT-G08` |
-| CHAT-C09 | `PARTIAL` | Conversation Group create, MLS add/remove/send and projection foundations exist | Three actors complete membership, role/owner, leave/dissolve and entitled-history flow; `CHAT-G09` |
-| CHAT-C10 | `PARTIAL` Desktop; `MISSING` Mobile media | Desktop WebRTC, sealed signaling, TURN, audio/video surface and device controls exist | Two native clients complete audio/video direct and TURN calls; `CHAT-G10` |
-| CHAT-C11 | `PARTIAL` | Durable outbox/inbox/replay/recovery and cross-Station foundations exist | Offline, restart, revoke, fresh-device and cross-Station recovery; `CHAT-G11` |
-| CHAT-C12 | `MISSING` in this worktree | Group membership and one-to-one media foundations are reusable | Three-client authorized SFU room after separate SFU architecture; `CHAT-G14` |
-| CHAT-C13 | `PARTIAL` | Sender companion/read cursor contracts, call state models and control-plane prototype exist | Same-actor Desktop+Mobile message/read and call-resolution flow; `CHAT-G18`, `CHAT-G19` |
+| Find people | `PARTIAL` | Desktop/Mobile local and federated search UI and APIs exist | Station-scoped search is inert; federation catalog is local-only; no current native search-to-result proof |
+| Friend request and contact | `IMPLEMENTED_UNPROVEN` on Desktop; `PARTIAL` on Mobile | Send/list/accept/reject and relationship projection exist | Desktop failures can be log-only; Mobile cross-Station materialization is unresolved; no current UI lifecycle proof |
+| Open/create Direct | `IMPLEMENTED_UNPROVEN` | Existing conversation reuse, canonical create, peer-bound inline retry path exist | No current exact-source search/contact-to-conversation proof |
+| Text send/receive | `IMPLEMENTED_UNPROVEN` | Durable Engine command, Direct/MLS encryption, ordered inbox, projection refresh exist | Current-source native proof is absent |
+| Offline/reconnect/restart | `IMPLEMENTED_UNPROVEN` on Desktop; `PARTIAL` on Mobile | Durable outbox, inbox cursor, replay, SQLCipher reopening exist | Required current runtime cells and Mobile recovery are unproven |
+| Visible send/retry state | `PARTIAL` | Engine persists pending/retry/submitted/failed states | Desktop lacks complete message-level failed/retry UI; Mobile can render failed as read |
+| Conversation list/history/read/search | `PARTIAL` | Conversation projection, local history, FTS, settings, receipt paths exist | Desktop preview/unread loaders contain no-op paths; history pagination is incomplete; Group/Mobile receipt parity is absent |
+| Message interactions | `IMPLEMENTED_UNPROVEN` | Reply/thread/edit/retract/reaction/pin/read contracts and projections exist | Repository-local Native interaction report is `FAIL`; no current proof |
+| Typing | `IMPLEMENTED_UNPROVEN` | Authenticated ephemeral Direct/Group paths and TTL projection exist | Stored PASS is stale relative to current source; Mobile proof absent |
+| Image/file attachments | `IMPLEMENTED_UNPROVEN` on Desktop; `PARTIAL` on Mobile | Encrypted resumable transfer, rendering, open/download, recovery foundations exist | Current-source product proof and complete Mobile lifecycle are absent |
+| Recorded voice message | `PARTIAL` on Desktop; `MISSING` on Mobile | Desktop records WebM, stages it as encrypted audio attachment, and plays it inline | Duration is discarded before persistence; no progress/seek/retry contract; no Mobile recorder/player; no Gate |
+| Group lifecycle | `PARTIAL` | Conversation create and MLS add/remove/send paths exist | Rename/roles/owner/dissolve still use legacy Group routes; leave is incomplete; readiness is projected too early |
+| Live one-to-one voice/video | `PARTIAL` on Desktop; `MISSING` on Mobile | Desktop WebRTC manager, sealed signaling, audio/video call surface, camera controls, and TURN discovery exist | Calls require unrelated P2P-connected state; no native audio/video call proof; Mobile implementation is missing |
+| Group live voice/video | `MISSING` | One-to-one signaling, WebRTC, TURN, Group membership, and MLS foundations may be reused after design review | No accepted SFU/room architecture, product surface, multi-participant runtime, or native Gate exists |
+| Cross-Station/multi-device/recovery | `PARTIAL` | Substantial Station/Desktop paths and historical proof exist | Current-source matrix, Mobile, and complete cross-Station product proof are absent |
 
-## 3. CCU Feasibility
+Current product result: **0/12 required Chat capabilities are current-source
+product-proven**.
 
-| ID | Status | Repository-backed foundation | Smallest feasible loop and executable proof |
-|---|---|---|---|
-| CCU-C01 | `PARTIAL` | Canonical Conversation/Message identities and mixed-client fixtures exist | Desktop/Mobile read the same Direct/Group identity; `CHAT-G15`, `CHAT-G16` |
-| CCU-C02 | `IMPLEMENTED_UNPROVEN` | Both clients submit through native Messaging Engine paths | Bidirectional Direct/Group text and state convergence; `CHAT-G16`, `CHAT-G17` |
-| CCU-C03 | `PARTIAL` | Durable replay, dedupe and restart paths exist | Offline/reconnect/restart without duplicate or legacy fallback; `CHAT-G17`, `CHAT-G18` |
-| CCU-C04 | `PARTIAL` | Conversation MLS and mixed-client projection foundations exist | Three-actor mixed Group create/add/remove/rejoin, role/owner, leave/dissolve, epoch and entitled-history convergence; `CHAT-G20` |
-| CCU-C05 | `IMPLEMENTED_UNPROVEN` | Canonical interaction, receipt and typing paths exist | Mixed reply/edit/read/typing convergence after restart; `CHAT-G16`, `CHAT-G17` |
-| CCU-C06 | `PARTIAL` | Shared attachment identity/transfer contracts exist | Mixed-client byte-identical attachment after restart; `CHAT-G16`, `CHAT-G17` |
-| CCU-C07 | `PARTIAL` | Confirmed platform-adapted prototypes and typed state mapping exist | Desktop/Mobile expose equal message and call outcome semantics; `CHAT-G15`, `CHAT-G16`, `CHAT-G19` |
-| CCU-C08 | `PARTIAL` | Sender companion/read cursor prototypes, client call states and Station arbitration foundation exist | One actor on Desktop+Mobile converges message/read/call winner; `CHAT-G18`, `CHAT-G19` |
+## 3. Evidence Integrity Findings
 
-Capability-level global readiness remains `UNPROVEN` while required
-Linux/Windows Desktop, Android Mobile, and physical-device cells remain unrun.
-Current macOS Desktop + iOS Simulator proof is reported per Gate and must not be
-generalized to those unsupported cells.
+1. Repository-local Native PASS reports are bound to older commits such as
+   `5ed85551`, `b4207062`, `638679c0`, `13d867e8`, and `ef89b11`, not the
+   audited HEAD.
+2. `tooling/acceptance/reports/chat-native-interactions-run.json` is an explicit
+   failure: the local authority head is behind the interaction plan.
+3. `docs/architecture/acceptance-framework/coverage-report.md` reports only
+   1/11 Chat features complete and 0/9 Mobile features complete.
+4. The friend-request Gate proves a gateway/API lifecycle, not Native find,
+   request, accept, conversation open, and first-message UI.
+5. Mobile native Chat scenarios are registered but six dispatch paths remain
+   unimplemented. They now emit typed `BLOCKED/PARTIAL/UNPROVEN` evidence
+   instead of crashing during report construction; fake-memory tests still do
+   not prove the product.
+6. Existing attachment evidence does not exercise microphone capture, recorded
+   voice transfer, playback, or live calls.
 
-## 4. Current Evidence Gaps
+## 4. Safety Baseline
 
-1. Mixed same-Station, cross-Station, multi-device and Group MLS Gate runners
-   cover the macOS Desktop + iOS Simulator cells only; every claim still
-   requires current exact-source evidence.
-2. The call-resolution Gate uses one actor on Desktop plus Mobile and a
-   separate caller, but unsupported platform cells remain `UNPROVEN`.
-3. `CHAT-G22` requires canonical Evidence Store authoritative latest manifests
-   for every `CHAT-G15..G21` result. Missing, stale, failed, partial, unproven,
-   optional, or skipped prerequisites block the aggregate.
-4. Full macOS/Linux/Windows/iOS/Android and mixed runtime-cell evidence is not
-   current at this source.
-5. Group live voice/video remains outside CCU implementation and cannot become
-   `PROVEN` without its separate accepted SFU design.
+- Production Station and Mobile source contains no hard-coded collector URL or
+  temporary debug-point block under the audited Chat safety scope.
+- Mobile `social.people.search` accepts only a query and projects
+  `federationId` from the observed production search result. Desktop
+  `federationContext` continues to project the Federation list returned by the
+  production API.
+- Every registered Mobile native scenario has traceability metadata and can
+  emit typed blocked evidence while its physical implementation is absent.
+- Formal Gate `chat-lifecycle-safety-e2e` is the source-bound proof owner for
+  this baseline.
 
-## 5. Safety And Historical Evidence
+This closes the safety baseline only. It does not promote any product
+capability in section 2.
 
-- Production source must contain no undeclared debug egress.
-- Fixture-provided expected values cannot become observed product results.
-- Historical Direct, Group, typing, attachment, multi-device, recovery and
-  cross-Station runs establish feasibility only.
-- Every required but unrun Gate remains `UNPROVEN`; no historical artifact,
-  source scan, build, mock or screenshot upgrades product readiness.
+## 5. Historical Evidence Disposition
+
+Historical Direct, Group MLS, typing, attachment, multi-device, recovery, and
+cross-Station runs demonstrate that portions of the architecture are feasible.
+They are retained as regression references only. The new plan starts every
+capability at its audited current status and requires a fresh exact-source
+result before promotion to `PROVEN`.

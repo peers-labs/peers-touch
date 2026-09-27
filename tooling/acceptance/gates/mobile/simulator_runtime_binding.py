@@ -19,29 +19,11 @@ DEFAULT_TIMEOUT_SECONDS = 60.0
 CALLABLE_HARNESS_ACTIONS = frozenset(
     {
         "cleanup",
-        "federation.context.read",
         "lifecycle.restart",
         "lifecycle.resume",
         "lifecycle.scope.read",
         "lifecycle.snapshot",
         "lifecycle.suspend",
-        "lifecycle.waitReady",
-        "messaging.attachment.open",
-        "messaging.attachment.stage",
-        "messaging.command.read",
-        "messaging.createDirect",
-        "messaging.createGroup",
-        "messaging.interact",
-        "messaging.projection.read",
-        "messaging.read",
-        "messaging.reconcile",
-        "messaging.search",
-        "messaging.send",
-        "messaging.typing",
-        "recovery.snapshot",
-        "social.projection.read",
-        "social.people.search",
-        "social.reconcile",
         "session.logout",
         "settings.device.read",
         "settings.device.update",
@@ -49,11 +31,6 @@ CALLABLE_HARNESS_ACTIONS = frozenset(
         "settings.notifications.update",
         "settings.profile.read",
         "settings.profile.update",
-        "acceptCall",
-        "callResolutionState",
-        "getRealtimeDevice",
-        "initiateCall",
-        "rejectCall",
     }
 )
 
@@ -435,8 +412,8 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "activeStationPeerId",
         "activeActorPtid",
         "runtimeStationPeerId",
-        "deviceIdentityDigest",
         "social",
+        "group",
         "navigation",
     }:
         raise DriverError("Mobile lifecycle scope has an invalid shape")
@@ -453,11 +430,7 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
             raise DriverError(
                 f"Mobile lifecycle scope {field} is invalid"
             )
-    for field in (
-        "activeActorPtid",
-        "runtimeStationPeerId",
-        "deviceIdentityDigest",
-    ):
+    for field in ("activeActorPtid", "runtimeStationPeerId"):
         _optional_text(scope.get(field), field)
 
     social = _mapping(scope.get("social"), "social scope")
@@ -469,14 +442,37 @@ def validate_scope_projection(value: object) -> dict[str, Any]:
         "messageThreadCount",
     }:
         raise DriverError("Mobile social scope has an invalid shape")
-    for field in ("stationPeerId", "actorPtid"):
-        _optional_text(social.get(field), field)
-    for field in ("sessionCount", "requestCount", "messageThreadCount"):
-        item = social.get(field)
-        if isinstance(item, bool) or not isinstance(item, int) or item < 0:
-            raise DriverError(
-                f"Mobile lifecycle scope {field} is invalid"
-            )
+    group = _mapping(scope.get("group"), "group scope")
+    if set(group) != {
+        "stationPeerId",
+        "actorPtid",
+        "groupCount",
+        "messageThreadCount",
+    }:
+        raise DriverError("Mobile group scope has an invalid shape")
+    for owner, fields in (
+        (social, ("stationPeerId", "actorPtid")),
+        (group, ("stationPeerId", "actorPtid")),
+    ):
+        for field in fields:
+            _optional_text(owner.get(field), field)
+    for owner, fields in (
+        (
+            social,
+            ("sessionCount", "requestCount", "messageThreadCount"),
+        ),
+        (group, ("groupCount", "messageThreadCount")),
+    ):
+        for field in fields:
+            item = owner.get(field)
+            if (
+                isinstance(item, bool)
+                or not isinstance(item, int)
+                or item < 0
+            ):
+                raise DriverError(
+                    f"Mobile lifecycle scope {field} is invalid"
+                )
 
     navigation = _mapping(scope.get("navigation"), "navigation scope")
     if set(navigation) != {

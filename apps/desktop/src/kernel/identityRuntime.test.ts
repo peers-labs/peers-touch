@@ -19,11 +19,14 @@ const mocks = vi.hoisted(() => {
     order: [] as string[],
     session,
     accountSwitch: vi.fn(),
+    accountUnlock: vi.fn(),
     authValidateToken: vi.fn(),
     accountListRestorable: vi.fn(),
     accountLoad: vi.fn(),
+    restoreSession: vi.fn(),
     loginWithPassword: vi.fn(),
     logout: vi.fn(),
+    stationBindingComplete: vi.fn(),
     resetSession: vi.fn(),
     runIdentityPipeline: vi.fn(),
     clearLocalIdentityAction: vi.fn(),
@@ -64,8 +67,10 @@ vi.mock('../store/session', () => ({
           email: '',
           loginMethod: 'password',
         };
+        mocks.session.authenticated = true;
       },
       loginWithPassword: mocks.loginWithPassword,
+      restoreSession: mocks.restoreSession,
       updateProfile: vi.fn(),
       logout: mocks.logout,
       reset: mocks.resetSession,
@@ -121,9 +126,11 @@ vi.mock('./global-context', () => ({
 vi.mock('../services/desktop_api', () => ({
   api: {
     accountSwitch: mocks.accountSwitch,
+    accountUnlock: mocks.accountUnlock,
     authValidateToken: mocks.authValidateToken,
     syncUserProfile: vi.fn(async () => ({ name: 'New', email: '', avatar_url: '' })),
     accountListRestorable: mocks.accountListRestorable,
+    stationBindingComplete: mocks.stationBindingComplete,
   },
   AuthCommandException: class AuthCommandException extends Error {},
   onSessionRevoked: vi.fn(),
@@ -133,7 +140,28 @@ vi.mock('../applet/productWindowE2E', () => ({
   setAppletProductWindowLaunchContext: vi.fn(),
 }));
 
-const { identityRuntime } = await import('./identityRuntime');
+const {
+  identityRuntime,
+  resolveAppletProductWindowLaunchContext,
+} = await import('./identityRuntime');
+
+describe('identityRuntime applet launch context', () => {
+  it('preserves a launch context that resolves within the boot budget', async () => {
+    await expect(resolveAppletProductWindowLaunchContext(
+      Promise.resolve({ enabled: true, appletId: 'notes' }),
+      100,
+    )).resolves.toEqual({ enabled: true, appletId: 'notes' });
+  });
+
+  it('rejects a launch context request that exceeds the boot budget', async () => {
+    const neverSettles = new Promise<never>(() => {});
+
+    await expect(resolveAppletProductWindowLaunchContext(
+      neverSettles,
+      1,
+    )).rejects.toThrow('applet product window launch context timed out');
+  });
+});
 
 describe('identityRuntime account switch ordering', () => {
   beforeEach(() => {
@@ -149,6 +177,14 @@ describe('identityRuntime account switch ordering', () => {
     mocks.accountSwitch.mockImplementation(async () => {
       mocks.order.push('switch');
       return { ok: true };
+    });
+    mocks.accountUnlock.mockImplementation(async () => {
+      mocks.order.push('unlock');
+      return {
+        actor_ptid: 'ptid:person:new',
+        session_token: 'token',
+        login_method: 'password',
+      };
     });
     mocks.authValidateToken.mockImplementation(async () => {
       mocks.order.push('validate');
@@ -174,6 +210,27 @@ describe('identityRuntime account switch ordering', () => {
     });
     mocks.logout.mockResolvedValue(undefined);
     mocks.accountListRestorable.mockResolvedValue([]);
+    mocks.restoreSession.mockImplementation(async () => {
+      mocks.order.push('restore');
+      mocks.session.currentUser = {
+        actorPtid: 'ptid:person:restored',
+        name: 'Restored',
+        email: '',
+        loginMethod: 'password',
+      };
+      mocks.session.authenticated = true;
+    });
+    mocks.stationBindingComplete.mockImplementation(async () => {
+      mocks.order.push('station-bound');
+      return {
+        phase: 'bound',
+        selected_url: 'http://station.example',
+        bound_url: 'http://station.example',
+        target_url: null,
+        generation: 1,
+        error: null,
+      };
+    });
     mocks.resetSession.mockImplementation(() => {
       mocks.session.currentUser = null;
       mocks.session.authenticated = false;
@@ -191,8 +248,23 @@ describe('identityRuntime account switch ordering', () => {
 
     await identityRuntime.completeCurrentSession();
 
+    expect(mocks.stationBindingComplete).toHaveBeenCalledOnce();
     expect(identityRuntime.getSnapshot().lifecycle.state).toBe('ready');
     expect(identityRuntime.getSnapshot().lifecycle.authenticated).toBe(true);
+  });
+
+  it('completes the persisted Station binding before accepting a restored session', async () => {
+    mocks.session.currentUser = null;
+    mocks.session.authenticated = false;
+
+    await identityRuntime.resolveSession('disk');
+
+    expect(mocks.order.slice(0, 2)).toEqual(['restore', 'station-bound']);
+    expect(mocks.stationBindingComplete).toHaveBeenCalledOnce();
+    expect(identityRuntime.getSnapshot().lifecycle.state).toBe('ready');
+    expect(identityRuntime.getSnapshot().lifecycle.restoredUser).toEqual(
+      expect.objectContaining({ name: 'New' }),
+    );
   });
 
   it('cleans the old actor projection before activating the restored actor', async () => {
@@ -210,6 +282,49 @@ describe('identityRuntime account switch ordering', () => {
       loginMethod: 'password',
     });
     expect(mocks.session.currentUser?.actorPtid).toBe('ptid:person:new');
+  });
+
+  it('cleans the old actor projection before activating a PIN-unlocked session', async () => {
+    mocks.accountUnlock.mockImplementationOnce(async () => {
+      expect(identityRuntime.getSnapshot().phase.kind).toBe('resolvingSession');
+      mocks.order.push('unlock');
+      return {
+        actor_ptid: 'ptid:person:new',
+        session_token: 'token',
+        login_method: 'password',
+      };
+    });
+
+    await identityRuntime.unlockWithPin('local-account-new', '12345678');
+
+    expect(mocks.order.slice(0, 3)).toEqual([
+      'unlock',
+      'pipeline:ptid:person:old',
+      'activate',
+    ]);
+    expect(mocks.runIdentityPipeline).toHaveBeenCalledWith({
+      reason: 'unlock',
+      actorPtid: 'ptid:person:new',
+      loginMethod: 'password',
+    });
+    expect(mocks.session.currentUser?.actorPtid).toBe('ptid:person:new');
+    expect(mocks.session.authenticated).toBe(true);
+  });
+
+  it('returns to the PIN gate when Native unlock fails', async () => {
+    const unlockError = new Error('incorrect PIN');
+    mocks.accountUnlock.mockRejectedValueOnce(unlockError);
+
+    await expect(
+      identityRuntime.unlockWithPin('local-account-new', '00000000'),
+    ).rejects.toBe(unlockError);
+
+    expect(mocks.clearLocalIdentityAction).toHaveBeenCalledOnce();
+    expect(mocks.runIdentityPipeline).not.toHaveBeenCalled();
+    expect(identityRuntime.getSnapshot().phase).toEqual({
+      kind: 'pinGate',
+      accountId: 'local-account-new',
+    });
   });
 
   it('clears the authenticated projection when native detached before failing', async () => {

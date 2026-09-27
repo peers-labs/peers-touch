@@ -1,5 +1,5 @@
 use crate::contracts::{
-    AccessDecisionInput, AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput,
+    AccessDecisionPayload, AccessSubmitInviteInput, AccessSubmitLoginInput, AuthLoginInput,
     AuthSessionPayload, AuthValidateTokenInput,
 };
 use crate::domain::identity::{ActiveSession, ActorRef};
@@ -192,6 +192,23 @@ fn secure_content_teardown_failure(error: String) -> AppResult<AuthSessionPayloa
     )
 }
 
+#[tauri::command]
+pub fn auth_login(
+    input: AuthLoginInput,
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
+    window: Window,
+) -> AppResult<AuthSessionPayload> {
+    let result = bind_after(
+        state.inner(),
+        &app,
+        &window,
+        auth_service::auth_login(input, state.inner()),
+    );
+    broadcast_identity(&app, IdentityChangeReason::Login, &result);
+    result
+}
+
 /// Open an interactive access attempt and return the Station's initial gate
 /// decision. This is a pre-login step in the gate chain — no session is
 /// produced, so no window binding or identity broadcast is performed.
@@ -210,18 +227,9 @@ pub fn access_submit_invite_code(
     auth_service::access_submit_invite_code(input)
 }
 
-#[tauri::command]
-pub fn access_decision(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
-    auth_service::access_decision(input)
-}
-
-#[tauri::command]
-pub fn access_cancel(input: AccessDecisionInput) -> AppResult<AccessDecisionPayload> {
-    auth_service::access_cancel(input)
-}
-
 /// Submit the login credential gate for a live attempt. On grant this lands
-/// the full desktop session, window binding, and identity broadcast.
+/// the full desktop session, so it reuses the same window binding and identity
+/// broadcast as the one-shot `auth_login`.
 #[tauri::command]
 pub fn access_submit_login(
     input: AccessSubmitLoginInput,

@@ -224,6 +224,10 @@ fn run_cycle(
         engine.resume_membership_intent_once(token)
     );
     run_step!(
+        "delegated leave intent",
+        engine.resume_leave_intent_once(token)
+    );
+    run_step!(
         "attachment upload",
         engine.resume_attachment_upload_once(token, super::engine::now_unix_ms())
     );
@@ -242,6 +246,10 @@ fn run_cycle(
     run_step!(
         "submitted command reconciliation",
         engine.reconcile_submitted_commands_once(token, super::engine::now_unix_ms())
+    );
+    run_step!(
+        "interaction intent",
+        engine.resume_interaction_intent_once(token, super::engine::now_unix_ms())
     );
     run_step!(
         "command dispatch",
@@ -353,6 +361,14 @@ pub(crate) fn hydrate_projections_from_station(
             .map(|member| ConversationMemberProjection {
                 ptid: member.ptid,
                 role: member.role,
+                home_station_peer_id: member.actor_home_station_peer_id,
+                muted: member.muted,
+                muted_until_unix_ms: member.muted_until.as_ref().map(|value| {
+                    value
+                        .seconds
+                        .saturating_mul(1_000)
+                        .saturating_add(i64::from(value.nanos) / 1_000_000)
+                }),
             })
             .collect::<Vec<_>>();
         projections.push(ConversationProjection {
@@ -361,6 +377,8 @@ pub(crate) fn hydrate_projections_from_station(
             federation_id,
             kind: conversation.kind,
             name: conversation.name,
+            description: conversation.description,
+            avatar_object_id: conversation.avatar_cid,
             owner_ptid: conversation.owner_ptid,
             members,
             membership_epoch: conversation.membership_epoch,

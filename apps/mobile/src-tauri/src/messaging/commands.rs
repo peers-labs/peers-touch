@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use messaging_core::contracts::ConversationMessageProjection;
 use messaging_core::mls::membership_transition::MembershipTransitionIntentInput;
 use messaging_core::outbox::{CommandDispatchProgress, MetadataInteraction};
-use messaging_core::proto::chat::{MemberRole, MessagingMembershipAction, VoiceNoteMetadata};
+use messaging_core::proto::chat::{MemberRole, MessagingMembershipAction};
 use messaging_core::proto::social::SocialRelationshipAction;
 use prost::Message;
 use rand::rngs::OsRng;
@@ -164,16 +164,9 @@ pub struct MessagingAttachmentStageBeginInput {
     mime_type: String,
     plaintext_size: u64,
     #[serde(default)]
-    voice_note: Option<MessagingVoiceNoteInput>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MessagingVoiceNoteInput {
-    duration_ms: u32,
-    codec: String,
+    content_kind: i32,
     #[serde(default)]
-    waveform: Vec<u32>,
+    duration_ms: u32,
 }
 
 #[derive(Deserialize)]
@@ -457,16 +450,8 @@ pub struct MessagingAttachmentProjection {
     ciphertext_size: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     availability_state: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    voice_note: Option<MessagingVoiceNoteProjection>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MessagingVoiceNoteProjection {
+    content_kind: i32,
     duration_ms: u32,
-    codec: String,
-    waveform: Vec<u32>,
 }
 
 #[derive(Serialize)]
@@ -607,8 +592,8 @@ pub struct MessagingAttachmentStageProjection {
     filename: String,
     mime_type: String,
     plaintext_size: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    voice_note: Option<MessagingVoiceNoteProjection>,
+    content_kind: i32,
+    duration_ms: u32,
     completed: bool,
     max_chunk_bytes: usize,
 }
@@ -650,13 +635,8 @@ fn message_projection(
                 object_id: object.map(|value| value.object_id.clone()),
                 storage_ref: object.map(|value| value.storage_ref.clone()),
                 ciphertext_size: object.map(|value| value.ciphertext_size),
-                voice_note: attachment
-                    .voice_note
-                    .map(|voice_note| MessagingVoiceNoteProjection {
-                        duration_ms: voice_note.duration_ms,
-                        codec: voice_note.codec,
-                        waveform: voice_note.waveform,
-                    }),
+                content_kind: attachment.content_kind,
+                duration_ms: attachment.duration_ms,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -702,13 +682,8 @@ fn attachment_stage_projection(
         filename: stage.filename,
         mime_type: stage.mime_type,
         plaintext_size: stage.plaintext_size,
-        voice_note: stage
-            .voice_note
-            .map(|voice_note| MessagingVoiceNoteProjection {
-                duration_ms: voice_note.duration_ms,
-                codec: voice_note.codec,
-                waveform: voice_note.waveform,
-            }),
+        content_kind: stage.content_kind,
+        duration_ms: stage.duration_ms,
         completed: stage.completed,
         max_chunk_bytes: ATTACHMENT_STAGE_CHUNK_SIZE,
     }
@@ -2189,11 +2164,8 @@ pub async fn messaging_attachment_stage_begin(
                 &input.filename,
                 &input.mime_type,
                 input.plaintext_size,
-                input.voice_note.map(|voice_note| VoiceNoteMetadata {
-                    duration_ms: voice_note.duration_ms,
-                    codec: voice_note.codec,
-                    waveform: voice_note.waveform,
-                }),
+                input.content_kind,
+                input.duration_ms,
             )
             .map(attachment_stage_projection)
     })
@@ -2752,7 +2724,8 @@ mod tests {
             storage_ref: None,
             ciphertext_size: None,
             availability_state: None,
-            voice_note: None,
+            content_kind: 1,
+            duration_ms: 0,
         };
         let value = serde_json::to_value(projection).unwrap();
         for field in [

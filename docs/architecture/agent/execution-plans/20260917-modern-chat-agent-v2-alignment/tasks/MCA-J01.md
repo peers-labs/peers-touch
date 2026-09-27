@@ -83,4 +83,5 @@ canonical Chat/Task handoff.
   service tests.
 - Exact-source native Chat/Task/restart functional replay passes on Profile
   `two`, Slot `1`, including disposable-work cleanup and pin restoration.
-- Formal Acceptance remains owned by the aggregate MCA-A01 closure.
+- Tuple-complete J01 candidate production is owned by MCA-A02; final proof is
+  owned by MCA-A08.

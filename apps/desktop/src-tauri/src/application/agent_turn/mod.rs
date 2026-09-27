@@ -43,6 +43,7 @@ use tokio::sync::watch;
 const AGENT_TURN_STREAM_EVENT: &str = "agent:turn-stream-event";
 const AGENT_REPLAY_BACKOFF_MS: [u64; 5] = [500, 1_000, 2_000, 4_000, 8_000];
 const AGENT_STREAM_ADMISSION_TIMEOUT: Duration = Duration::from_secs(30);
+const TOOL_DECISION_PATH: &str = "/sub-agent/agent/tool/decision";
 
 // #region debug-point B-D:native-replay-transport
 fn report_native_replay_debug(
@@ -283,12 +284,16 @@ pub fn submit_tool_decision(
         idempotency_key: input.idempotency_key,
         payload_hash,
     };
-    let response = match station_client::request_proto::<_, agent::SubmitToolApprovalDecisionResponse>(
+    let response = match station_client::request_proto_with_policy::<
+        _,
+        agent::SubmitToolApprovalDecisionResponse,
+    >(
         Method::POST,
-        "/sub-agent/agent/tool/decision",
+        TOOL_DECISION_PATH,
         token,
         None,
         Some(&request),
+        tool_decision_transport_policy(),
     ) {
         Ok(response) => response,
         Err(error) => return error.into_app_result("agent.toolDecisionSubmitFailed"),
@@ -327,6 +332,10 @@ pub fn submit_tool_decision(
             "outcome_error": outcome_error,
         }),
     )
+}
+
+fn tool_decision_transport_policy() -> station_client::StationTransportPolicy {
+    station_client::StationTransportPolicy::TurnExecution
 }
 
 fn tool_decision_outcome_json(error: Option<&agent::ErrorPayload>) -> Option<Value> {
@@ -2624,6 +2633,14 @@ mod tests {
         assert_eq!(
             tool_decision_payload_hash("approval-1", "tool-call-1", "decision-1", 0, true,),
             "4d8f48896d7fc4b24b44328c4d59f2938a5cb5a0db8fcea7f5afcdfdbfbca9ef",
+        );
+    }
+
+    #[test]
+    fn tool_decision_uses_turn_execution_transport() {
+        assert_eq!(
+            tool_decision_transport_policy(),
+            station_client::StationTransportPolicy::TurnExecution,
         );
     }
 

@@ -15,6 +15,7 @@ interface BypassEntry {
 }
 
 const BYPASS_ALLOWLIST: BypassEntry[] = [
+  { command: 'auth_login', securityClass: 'auth', bypassReason: 'login flow requires immediate feedback', owner: 'kernel/auth' },
   { command: 'access_start', securityClass: 'auth', bypassReason: 'access gate must respond in click-frame', owner: 'kernel/auth' },
   { command: 'access_submit_invite_code', securityClass: 'auth', bypassReason: 'access gate step', owner: 'kernel/auth' },
   { command: 'access_submit_login', securityClass: 'auth', bypassReason: 'login submission', owner: 'kernel/auth' },

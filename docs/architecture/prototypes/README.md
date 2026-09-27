@@ -1,8 +1,8 @@
 # 原型统一入口（Prototypes Portal & Ledger）
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-06-22 | **Updated**: 2026-09-22
+> **Version**: v1.0
+> **Created**: 2026-06-22 | **Updated**: 2026-06-24
 > **Owner**: Architecture Team
 
 ---
@@ -58,18 +58,13 @@
 | desktop | `applet-lifecycle` | Desktop Applet Box 极简 launcher 原型，不是一级模块 | `packages/prototypes/desktop/features/applet-lifecycle/` | Desktop Applet Box 安装包导入、展示、打开、运行、通知、退出、卸载；原型为 React web 展示 | applet-runtime/official-applet-architecture-contract + applet-launcher-ux-contract | landed | [prototype/README.md](../applet-runtime/prototype/README.md) |
 | desktop | `applet-workspace` | Desktop Applet 多实例容器原型，不是一级模块 | `packages/prototypes/desktop/features/applet-workspace/` | Desktop Applet Workspace：固定 Home tab、多实例小程序 tabs、Pin to System、detach、immersive；原型为 React web 展示 | applet-runtime/browser-like-workspace + applet-launcher-ux-contract + frontend-runtime/AppletContainerShell | drafting | [prototype/README.md](../applet-runtime/prototype/README.md) |
 | desktop | `modern-chat-agent` | Desktop Agent 产品原型，不是一级模块 | `packages/prototypes/desktop/features/modern-chat-agent/` | Peers Touch Modern Chat Agent；由 Desktop Shell 的 Agent 页面承载 | agent/modern-chat-agent | confirmed | [prototype/README.md](../agent/modern-chat-agent/prototype/README.md) |
-| desktop | `call` | Desktop Chat/通话能力原型，不是一级模块 | `packages/prototypes/desktop/features/call/` + Desktop Shell Chat integration | Desktop 好友聊天通话（apps/desktop，CallSurface）；原型为 React web 展示 | voice-video-calls + chat-lifecycle CCU-D06 (2026-09-22) | confirmed | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
-| desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 私聊 / 群聊体验；原型为 React web 展示 | client/chat + social-runtime | pending-review | [prototype/README.md](../social/prototype/README.md) |
-| mobile | `mobile-chat` | Mobile Shell 一级站点基准 | `packages/prototypes/mobile/chat/` | Mobile Shell / Access Gate / Chat / Moments / Contacts / Settings / recovery states；原型为 React web 展示 | apps/mobile MobileShell + client/chat + social-runtime + chat-lifecycle CCU-J07 (2026-09-22) | confirmed | [prototype/README.md](../mobile/prototype/README.md) |
+| desktop | `call` | Desktop Chat/通话能力历史原型，不是一级模块 | `packages/prototypes/desktop/features/call/` | 已由 `social-chat` 中的 Call UX 接替 | voice-video-calls | superseded | [prototype/README.md](../realtime/prototype/README.md)（历史路径，归属 desktop） |
+| desktop | `social-chat` | Desktop Chat 能力原型，不是一级模块 | `packages/prototypes/desktop/features/social-chat/` | Desktop 私聊 / 群聊体验；原型为 React web 展示 | client/chat + social-runtime | confirmed | [prototype/README.md](../social/prototype/README.md) |
+| mobile | `mobile-chat` | Mobile Shell 一级站点基准 | `packages/prototypes/mobile/chat/` | Mobile Shell / Access Gate / Chat / Moments / Contacts / Settings / recovery states；原型为 React web 展示 | apps/mobile MobileShell + client/chat + social-runtime | confirmed | [prototype/README.md](../mobile/prototype/README.md) |
 | dashboard | `station-dashboard` | Station Dashboard 一级站点运维台体验基准 | `packages/prototypes/dashboard/station-dashboard/` | Station Dashboard / 管理台 / 运维台体验；原型为 React web 展示 | station/base | drafting | [base.md](../../station/base.md) |
 
 > 状态取值：`drafting`（搭建中）· `pending-review`（待确认）· `confirmed`（已确认，可落地）· `landed`（已落地）· `superseded`（已废弃）。
 > 登记表的一级维度是原型站点（`desktop` / `mobile` / `dashboard`），不是每个原型工程目录；applet、通话、聊天等都必须挂在所属站点下。
-
-2026-09-22 的 CCU 执行确认重新确认了 `call` 的
-`ringing_all_devices / active_here / handled_elsewhere` 状态和 `mobile-chat` 的
-sender-companion / read-cursor convergence 状态。确认只约束交互目标；生产运行时能力仍
-必须通过 Chat Lifecycle Acceptance。
 
 ---
 

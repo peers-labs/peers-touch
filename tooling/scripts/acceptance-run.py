@@ -21,7 +21,10 @@ from typing import Any, Mapping
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from tooling.acceptance.core import source_identity, workspace_id
+from tooling.scripts.plan.acceptance_admission import (  # noqa: E402
+    AcceptanceAdmissionError,
+    require_acceptance_admission,
+)
 
 RUN_ARTIFACT_KIND = "acceptance-run"
 RESULT_ARTIFACT_KIND = "acceptance-gate-result"
@@ -253,10 +256,20 @@ def environment_provisioner(
     contract_path = ENVIRONMENTS_DIR / f"{environment_id}.yaml"
     if not contract_path.exists():
         return None
+    contract = EnvironmentContract.from_yaml(contract_path)
+    service_ids = set(contract.services)
     return get_provisioner(
-        EnvironmentContract.from_yaml(contract_path),
-        station_profiles=station_profiles,
-        service_profiles=service_profiles,
+        contract,
+        station_profiles={
+            service_id: profile
+            for service_id, profile in (station_profiles or {}).items()
+            if service_id in service_ids
+        },
+        service_profiles={
+            service_id: profile
+            for service_id, profile in (service_profiles or {}).items()
+            if service_id in service_ids
+        },
     )
 
 
@@ -1934,7 +1947,9 @@ def main() -> int:
         EvidenceError,
         EvidenceStore,
         new_run_id,
+        source_identity,
         validate_run_id,
+        workspace_id,
     )
 
     parser = argparse.ArgumentParser()
@@ -1957,6 +1972,7 @@ def main() -> int:
     parser.add_argument("--work-item")
     parser.add_argument("--development-journey-id")
     parser.add_argument("--development-manifest-out")
+    parser.add_argument("--session")
     parser.add_argument(
         "--station-profile",
         action="append",
@@ -1991,6 +2007,7 @@ def main() -> int:
                 args.work_item,
                 args.development_journey_id,
                 args.development_manifest_out,
+                args.session,
             )
         ):
             raise SystemExit("--allocate-run-id cannot be combined with execution options")
@@ -2031,10 +2048,11 @@ def main() -> int:
             or args.dry_run
             or candidate_mode
             or args.run_id
+            or args.session
         ):
             raise SystemExit(
                 "development execution forbids completion/full, dry-run, "
-                "candidate handoff, and formal --run-id"
+                "candidate handoff, formal --run-id, and --session"
             )
         if args.development_manifest_out or args.development_journey_id:
             if (
@@ -2075,6 +2093,25 @@ def main() -> int:
             raise SystemExit(
                 "--run-id requires one explicit formal --gate invocation"
             )
+    broad_acceptance = (
+        args.execution_policy == "acceptance"
+        and not args.gate
+        and not args.dry_run
+    )
+    if args.session and not broad_acceptance:
+        raise SystemExit(
+            "--session is valid only for non-dry-run broad Acceptance"
+        )
+    if broad_acceptance:
+        try:
+            require_acceptance_admission(
+                REPO_ROOT,
+                args.session,
+                "acceptance",
+            )
+        except AcceptanceAdmissionError as error:
+            print(f"Acceptance admission failed: {error}", file=sys.stderr)
+            return 2
 
     try:
         if args.execution_policy == "development":

@@ -21,21 +21,6 @@ type resolverRelayClient struct {
 	token   string
 }
 
-type membershipReaderStub struct {
-	active bool
-	err    error
-	calls  [][2]string
-}
-
-func (s *membershipReaderStub) IsActiveMember(
-	_ context.Context,
-	federationID string,
-	stationPeerID string,
-) (bool, error) {
-	s.calls = append(s.calls, [2]string{federationID, stationPeerID})
-	return s.active, s.err
-}
-
 func (c resolverRelayClient) BaseURL() string {
 	return c.baseURL
 }
@@ -46,63 +31,6 @@ func (c resolverRelayClient) Token() string {
 
 func (resolverRelayClient) Publish(context.Context, string, []byte) error {
 	return nil
-}
-
-func TestRequireActiveMembershipFailsClosed(t *testing.T) {
-	reader := &membershipReaderStub{active: false}
-
-	err := requireActiveMembership(
-		context.Background(),
-		reader,
-		"federation-1",
-		"station-remote",
-	)
-	if !errors.Is(err, ErrStationOutsideFederation) {
-		t.Fatalf("error = %v, want ErrStationOutsideFederation", err)
-	}
-	if len(reader.calls) != 1 ||
-		reader.calls[0] != [2]string{"federation-1", "station-remote"} {
-		t.Fatalf("membership calls = %#v", reader.calls)
-	}
-}
-
-func TestRequireActiveMembershipPropagatesRepositoryFailure(t *testing.T) {
-	repositoryErr := errors.New("membership store unavailable")
-	reader := &membershipReaderStub{err: repositoryErr}
-
-	err := requireActiveMembership(
-		context.Background(),
-		reader,
-		"federation-1",
-		"station-remote",
-	)
-	if !errors.Is(err, repositoryErr) {
-		t.Fatalf("error = %v, want repository failure", err)
-	}
-}
-
-func TestResolveByHandleInFederationRequiresContextAndReader(t *testing.T) {
-	resolver := New(Config{})
-	if _, err := resolver.ResolveByHandleInFederation(
-		context.Background(),
-		"",
-		"@bob@remote.invalid",
-		&membershipReaderStub{active: true},
-		nil,
-		nil,
-	); !errors.Is(err, ErrFederationContextRequired) {
-		t.Fatalf("empty context error = %v", err)
-	}
-	if _, err := resolver.ResolveByHandleInFederation(
-		context.Background(),
-		"federation-1",
-		"@bob@remote.invalid",
-		nil,
-		nil,
-		nil,
-	); !errors.Is(err, ErrMembershipReaderMissing) {
-		t.Fatalf("missing reader error = %v", err)
-	}
 }
 
 func TestRememberRemoteStationKeyPersistsVerifiedLocatorKey(t *testing.T) {

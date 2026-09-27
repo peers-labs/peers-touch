@@ -1,4 +1,4 @@
-# MCA-A01 - Alignment Acceptance And Ledger Closure
+# MCA-A01 - D21 Formal Evidence Contract Hard Cut
 
 ## Task Slice
 
@@ -8,65 +8,67 @@
   "planId": "modern-chat-agent-v2-alignment-20260917",
   "taskId": "MCA-A01",
   "workstreamId": "MCA-A01",
-  "title": "Aggregate Acceptance and parity-ledger closure",
-  "workClass": "product-behavior",
-  "completionClass": "acceptance-aggregate",
+  "title": "Cut over the runtime-truthful formal evidence contract",
+  "workClass": "infrastructure",
+  "completionClass": "functional",
   "executionMode": "build",
-  "closureId": "V2-acceptance",
-  "journeyId": "V2-J01..V2-J06,X3-P4-3",
+  "closureId": "V2-A01-contract",
+  "journeyId": "V2-acceptance",
   "runtimeClass": "source-only",
   "writeSet": [
     "docs/architecture/agent",
-    "tooling/acceptance"
+    "tooling/acceptance",
+    "tooling/scripts/acceptance-validate.py",
+    "tooling/scripts/expand-agent-v2-runtime-matrix.py"
   ],
   "readSet": [
     "apps/desktop",
     "apps/station/app/subserver/agent",
-    "model/domain/agent",
-    "packages/locales"
+    "model/domain/agent"
   ],
   "budgets": {
     "focusedCheckSeconds": 900,
-    "functionalRunSeconds": 21600,
+    "functionalRunSeconds": 900,
     "cleanupSeconds": 300
   },
   "checks": [
     {
-      "id": "agent-domain-structure",
-      "command": "make acceptance-validate DOMAIN=agent && node tooling/scripts/plan/planctl.mjs validate --plan docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
-      "verificationClass": "STRUCTURAL_CHECK"
+      "id": "d21-contract",
+      "command": "python3 -m unittest tooling.acceptance.tests.test_agent_v2_runtime_matrix tooling.acceptance.tests.test_gate_proof_contract tooling.acceptance.gates.agent.agent_v2_candidate_producer_test tooling.acceptance.gates.agent.foundation_candidate_producer_test && make acceptance-validate DOMAIN=agent",
+      "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
-      "id": "alignment-acceptance",
-      "command": "make acceptance-run",
-      "verificationClass": "ACCEPTANCE_PROOF"
+      "id": "alignment-plan",
+      "command": "node tooling/scripts/plan/planctl.mjs validate --plan docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md",
+      "verificationClass": "STRUCTURAL_CHECK"
     }
   ],
   "doneWhen": [
-    "All seven parity Gates and all registry-required regression Gates pass on the final exact source with required receiver, Station, lineage, replay, cleanup, and source-identity artifacts",
-    "The mind-map P3, E1, X3, and mapped V2 overlay rows cite current source and immutable Acceptance evidence",
-    "The SVG and all current navigation/status sources agree with the parseable mind map",
-    "Completion and quality audits report no unowned required scope or false proof claim"
+    "Every Agent V2 matrix row declares one accepted runtime-truthful profile and a complete disjoint role policy",
+    "Schemas, validator, and one shared candidate assembler support MCA-D21 profiles and reject cross-tuple execution identity reuse",
+    "The implicit J01-J06 legacy direct-runtime fallback is removed and registration-only candidates cannot satisfy semantic validation",
+    "The amended Plan Package validates with V2-acceptance as the aggregate Journey identity"
   ],
   "failureBehavior": [
-    "Keep every missing or failed Gate explicitly UNPROVEN",
-    "Do not change a brain-map node to aligned from source or development evidence alone",
-    "Return implementation defects to their owning Journey and rerun only affected proof before the aggregate"
+    "Keep every J01-J06 Gate UNPROVEN",
+    "Reject any profile that requires an entity its production path does not create",
+    "Reject any producer fixture that relabels one execution across tuple keys",
+    "Return matrix/profile semantic gaps to MCA-D21 instead of weakening the validator"
   ],
-  "updatedAt": "2026-09-16T16:36:26Z",
+  "updatedAt": "2026-09-18T08:45:00Z",
   "durableEvidence": []
 }
 ```
 
 ## Objective
 
-Promote the completed functional Journeys to formal proof and make the
-execution plan, Acceptance registry, mind map, SVG, and navigation agree.
+Land the accepted MCA-D21 contract as the single source for J01-J06 formal
+tuple identity, runtime attestation, role applicability, and candidate
+assembly.
 
 ## Current Snapshot
 
-- Six V2 product Gates are registered but remain `UNPROVEN`.
-- The X3 catalog Gate must be implemented and registered by MCA-X3.
-- The aggregate closure includes every additional regression Gate currently
-  required by Acceptance impact analysis for the Plan source surface.
-- No aggregate completion claim exists for the current exact source.
+- MCA-D21 was approved on 2026-09-18.
+- J01-J06 still use an implicit legacy attestation fallback.
+- Existing J06 candidate output passes only the shallow registration check.
+- No J01-J06 Gate may become `PROVEN` in this Task.

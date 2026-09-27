@@ -1,8 +1,8 @@
 # Modern Chat Agent — Architecture Design
 
 > **Status**: accepted
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-09-17
+> **Version**: v1.3
+> **Created**: 2026-07-30 | **Updated**: 2026-09-25
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
 
@@ -27,6 +27,13 @@
 | A new Station-fenced takeover can restore execution authority without broadening the recovery credential | `accepted_decision` | MCA-D19C in `decisions.md` | high | Deterministic takeover race evidence |
 | Provider/model filtering and TurnTrace cannot prove P12/CLI non-advertisement or zero local runtime side effects | `verified_fact` | XR-4 source audit and rejected weak adapter | high | Production snapshot implementation |
 | Production-owned advertisement and monotonic activity snapshots make conditional-runtime absence falsifiable without enabling the runtime | `accepted_decision` | MCA-D19D in `decisions.md` | high | XR-4 Native/Browser evidence |
+| J01-J06 rows currently force legacy client-bound ToolCall facts onto contract, control-plane, unavailable, Station-executor, and Evaluation paths | `verified_fact` | Runtime matrix plus `acceptance-validate.py` profile fallback | high | None |
+| Explicit runtime-truthful profiles and unique execution identity preserve tuple scope without fabricated evidence | `accepted_decision` | MCA-D21 in `decisions.md` | high | Full formal rerun |
+| One run-scoped Acceptance scenario authority can coordinate reviewed capability-operation barriers without becoming product truth | `accepted_decision` | MCA-D23 in `decisions.md` | high | J03-J05 formal candidates |
+| The same scenario authority can coordinate reviewed Evaluation CAS orderings and deadlines while Evaluation services remain canonical | `accepted_decision` | MCA-D24 in `decisions.md` | high | J06 formal candidate |
+| ToolCall tuples that terminate before dispatch cannot truthfully require an executor receipt | `accepted_decision` | MCA-D25 in `decisions.md` | high | J03 formal candidate |
+| Client capability leases expose permission state but not the permission category required by `CLIENT_PERMISSION_DENIED` | `verified_fact` | `agent.proto#ClientCapability`; Desktop executor advertisement; Foundation failure `BASE-PERMISSION_DENIED` | high | None |
+| A client-owned typed permission descriptor lets Station reject before dispatch without fabricating Browser capability evidence | `accepted_decision` | MCA-D27 in `decisions.md` | high | Foundation Desktop/Browser evidence |
 | Desktop Marketplace currently accepts arbitrary unsigned JSON, ignores branch semantics, and trusts source labels | `verified_fact` | `application/skills_market/mod.rs` source parser/store | high | None |
 | Publisher-signed snapshots plus target-authority readback close X3 without a hosted marketplace | `accepted_decision` | MCA-D20 in `decisions.md` | high | X3 native evidence |
 | A working turn alone is insufficient for a dependable Agent | `inference` | Benchmark runtime contracts plus current architecture goals | high | Owner acceptance of target quality |
@@ -775,6 +782,44 @@ Forbidden:
 - using TurnTrace alone as process/runtime-home/session/workspace evidence;
 - promoting P12/CLI because the proof contract exists.
 
+### 22.4 Client Permission Denial Boundary
+
+MCA-D27 makes permission denial a signed capability-lease fact:
+
+```text
+client permission owner
+  -> ClientCapability(permission_kind, permission)
+  -> signed capability advertisement
+  -> Station lease/hash/readiness
+  -> pre-dispatch CLIENT_PERMISSION_DENIED
+  -> receiver recovery action
+  -> Agent Profile capability detail
+```
+
+The client kernel owns permission inspection and the mapping from a local
+capability to the closed proto permission kind. Station validates and persists
+the pair but never infers it from a capability ID. A selected denied
+capability is terminally rejected before ToolCall persistence, provider
+continuation, client pull, or local side effect.
+
+Desktop and Browser render the same Station-owned typed error. Browser keeps
+its own zero-capability session under MCA-D19E and may observe a denial from a
+separately selected Desktop executor. The recovery action opens the in-product
+capability detail; it does not remotely open operating-system settings, grant
+permission, or automatically retry.
+
+Forbidden:
+
+- advertising every capability as granted without consulting its permission
+  owner;
+- deriving permission kind from capability ID in Station or Web;
+- emitting `CLIENT_PERMISSION_DENIED` for an absent capability, promptable
+  permission, unavailable executor, or expired lease;
+- creating a ToolCall, receipt, provider continuation, or local execution for
+  a known denied permission;
+- adding a Browser-local capability solely to satisfy formal evidence;
+- allowing an Acceptance fixture to write the terminal Turn/error directly.
+
 ## 23. Evaluation Authority
 
 Station Evaluation Service owns benchmark, dataset, test case, run, case
@@ -832,6 +877,129 @@ evidence is missing.
 
 Each corresponding Gate must inject both orderings of the race and prove
 Station state, executor side-effect count, cleanup outcome, and replay equality.
+
+### 24.2 Formal Evidence Boundary
+
+MCA-D21 requires J01-J06 formal evidence to describe the production path that
+actually ran:
+
+```text
+matrix tuple
+  -> one profile-specific execution
+  -> one scenarioExecutionId
+  -> matching runtime attestation + applicable role observations
+  -> candidate-only run
+  -> separate validator
+```
+
+The proposal distinguishes Station commands, Station control-plane reads,
+Station turns, client capability turns, Station capability turns,
+contract-only checks, unavailable runtimes, guards, and non-advertised
+runtimes. A profile cannot require an entity its production path does not
+create. A composite Journey cannot be relabelled across tuple keys.
+
+The accepted profile, role applicability, identity, and failure contracts are
+defined in:
+
+`proposals/20260918-mca-d21-runtime-truthful-formal-evidence.md`.
+
+### 24.3 Capability Scenario Control Plane
+
+MCA-D22 adds the missing deterministic setup boundary for the J02 formal
+candidate:
+
+```text
+Acceptance provisioner
+  -> Station scenario setup/barrier/cleanup
+  -> canonical capability API mutation/read
+  -> Desktop or Browser receiver observation
+  -> tuple adapter
+```
+
+The scenario controller is disabled outside an explicitly enabled Acceptance
+environment. It may seed actor-scoped manifests, bindings, source failures,
+runtime facts, and deterministic barriers, but it cannot emit assertions,
+evidence roles, candidate artifacts, or pass status. Product facts always come
+from the canonical Station capability services and normal client projections.
+
+The six catalog/binding errors use the existing Model enums as stable product
+semantics with localized keys and bounded safe details. The six taxonomy cells
+remain independent: `pending` is a client command state, while `known`,
+`degraded`, `unavailable`, `unknown`, and `blocked` are derived from Station
+authority. The AS-10 fixture includes a secondary actor and distinct device
+sessions without changing the candidate's primary actor identity.
+
+No generic production manifest-registration route is added. The complete
+contract is defined in:
+
+`proposals/20260918-mca-d22-capability-scenario-control-plane.md`.
+
+### 24.4 Capability Operation Scenario Control Plane
+
+MCA-D23 extends the same MCA-D22 controller across the reviewed J03-J05
+families. It coordinates only run-scoped setup, allowlisted barriers,
+executor/provider lifecycle actions, deterministic fixture time, and cleanup.
+Canonical ToolDispatch, client executor, MCP manager, Connector, receipt,
+recovery, and Turn services remain the only product-state writers.
+
+The controller supports:
+
+- `CR-00` through `CR-06` at their exact decision, claim/outbox,
+  PREPARED/effect/APPLIED, result, and continuation boundaries;
+- both orderings of `R-01` through `R-07` where assigned to J03-J05;
+- canonical `ERR-O01` through `ERR-O08`, `REPLAY-O07I`, and
+  `ERR-CON01` through `ERR-CON04` outcomes;
+- Desktop-local, Station-executor, Browser-unavailable, Mobile-unavailable,
+  and Mobile-contract profiles without fabricated leases or runtime entities.
+
+Desktop Rust owns local receipt, MCP process, port, secret, Connector resource
+effect, and cleanup facts. Station owns Connector manifest, binding,
+readiness, ToolCall, decision, result, and replay truth. Provider fixture
+control is restricted to reviewed success/reject/timeout classes and never
+accepts or returns credentials. Release builds do not register Desktop
+executor hooks.
+
+The complete contract is defined in:
+
+`proposals/20260919-mca-d23-governed-tool-scenario-control-plane.md`.
+
+MCA-D25 refines the J03 evidence boundary without changing its 86 tuples.
+Rows are split by whether execution reached an executor. Pre-execution
+rejection/cancellation tuples retain canonical Turn and ToolCall readback,
+require zero-execution proof, and mark executor receipts not applicable.
+Executed tuples continue to require real Desktop Rust or Station-owned
+receipts. J03 `ERR-O06` proves ToolCall receipt-recovery credential expiry;
+the CapabilityOperation cleanup-lease interpretation remains exclusive to
+J04.
+
+MCA-D26 applies the same runtime-truth rule to J05. Executed Connector tuples
+use the OAuth-owning client capability session on Desktop and Browser.
+`ERR-CON01` through `ERR-CON04`, `R-06/A`, and `R-07/A` terminate before
+dispatch, use `station_turn`, and require explicit zero-execution evidence.
+Station never receives OAuth credentials, and a client executor is never
+represented as a Station executor.
+
+### 24.5 Evaluation Scenario Control Plane
+
+MCA-D24 extends the same controller to J06. The controller may pause reviewed
+Evaluation scheduler, cancellation, completion, retry, and metrics boundaries,
+deliver reviewed duplicate commands, suppress one scoped cancellation
+acknowledgement, advance a run-scoped fixture clock to a named milestone, and
+request actual runtime restart.
+
+Evaluation Service, worker, repository, and Turn Service remain the only
+owners of runs, attempts, results, events, cancellation, child retries,
+metrics, and typed errors. The controller cannot write those records or choose
+a race winner.
+
+Required deterministic coverage includes both orderings of `R-08`, `R-09`,
+and `R-10`, canonical `ERR-E01` through `ERR-E05`, actual Station restart for
+`AS-14`, distinct Desktop/Browser Station-turn lineages, and one independent
+Mobile contract execution.
+
+The complete contract is defined in:
+
+`proposals/20260919-mca-d24-evaluation-scenario-control-plane.md`.
 
 ## 25. Trusted Package Catalog
 

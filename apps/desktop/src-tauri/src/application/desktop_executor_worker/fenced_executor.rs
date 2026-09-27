@@ -9,6 +9,13 @@ use prost::Message;
 use sha2::{Digest, Sha256};
 
 const INVALID_RESOURCE_REFERENCE_ERROR: &str = "CLIENT_INVALID_RESOURCE_REFERENCE";
+pub(crate) const STATION_TAKEOVER_REQUIRED: &str = "CLIENT_CAPABILITY_STATION_TAKEOVER_REQUIRED";
+pub(crate) const ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT: &str =
+    "executor-prepared-before-effect";
+pub(crate) const ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED: &str = "executor-effect-before-applied";
+pub(crate) const ACCEPTANCE_BARRIER_APPLIED_BEFORE_RESULT: &str = "executor-applied-before-result";
+pub(crate) const ACCEPTANCE_WORKER_INTERRUPTED: &str = "CAPABILITY_ACCEPTANCE_WORKER_INTERRUPTED";
+pub(crate) const ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE: &str = "cancel-result-race";
 
 #[derive(Debug, Clone)]
 pub struct ExecutionLease {
@@ -97,13 +104,30 @@ impl<'a> FencedExecutor<'a> {
     }
 
     pub fn consume(&self, envelope: ClientCapabilityRequest) -> Result<ConsumeOutcome, String> {
-        self.consume_at(envelope, now_unix_ms())
+        self.consume_with_scenario_hook(envelope, &mut |_, _| Ok(false))
+    }
+
+    pub fn consume_with_scenario_hook(
+        &self,
+        envelope: ClientCapabilityRequest,
+        hook: &mut dyn FnMut(&str, &ClientCapabilityRequest) -> Result<bool, String>,
+    ) -> Result<ConsumeOutcome, String> {
+        self.consume_at_with_scenario_hook(envelope, now_unix_ms(), hook)
     }
 
     pub(crate) fn consume_at(
         &self,
         envelope: ClientCapabilityRequest,
         now_ms: i64,
+    ) -> Result<ConsumeOutcome, String> {
+        self.consume_at_with_scenario_hook(envelope, now_ms, &mut |_, _| Ok(false))
+    }
+
+    fn consume_at_with_scenario_hook(
+        &self,
+        envelope: ClientCapabilityRequest,
+        now_ms: i64,
+        hook: &mut dyn FnMut(&str, &ClientCapabilityRequest) -> Result<bool, String>,
     ) -> Result<ConsumeOutcome, String> {
         let contract = self.validate_envelope(&envelope, now_ms)?;
 
@@ -112,7 +136,7 @@ impl<'a> FencedExecutor<'a> {
             .load(&envelope.tool_call_id, envelope.fencing_token)?
         {
             ensure_identical_envelope(&existing, &envelope, &self.lease.station_url)?;
-            return self.resume_existing(&envelope, existing, now_ms);
+            return self.resume_existing(&envelope, existing, now_ms, hook);
         }
 
         if self.lease.revoked || self.lease.expires_at_ms <= now_ms {
@@ -132,6 +156,7 @@ impl<'a> FencedExecutor<'a> {
         self.reporter.submit(&prepared).map_err(|error| {
             format!("submit PREPARED receipt before local side effect: {error}")
         })?;
+        interrupt_at(hook, ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT, &envelope)?;
 
         let resolved_resources = match self.resolve_resources(&envelope, now_ms) {
             Ok(resources) => resources,
@@ -150,12 +175,20 @@ impl<'a> FencedExecutor<'a> {
                     false,
                     false,
                     now_ms,
+                    hook,
                 );
             }
             Err(ResourceResolutionError::Internal(error)) => return Err(error),
         };
 
-        self.execute_after_prepared(&envelope, &resolved_resources, &contract, false, now_ms)
+        self.execute_after_prepared(
+            &envelope,
+            &resolved_resources,
+            &contract,
+            false,
+            now_ms,
+            hook,
+        )
     }
 
     fn resume_existing(
@@ -163,9 +196,11 @@ impl<'a> FencedExecutor<'a> {
         envelope: &ClientCapabilityRequest,
         existing: ReceiptRecord,
         now_ms: i64,
+        hook: &mut dyn FnMut(&str, &ClientCapabilityRequest) -> Result<bool, String>,
     ) -> Result<ConsumeOutcome, String> {
         if existing.receipt.status != ClientCapabilityReceiptStatus::Prepared as i32 {
             let outbound = self.receipt_for_submission(envelope, existing.receipt, now_ms)?;
+            interrupt_at(hook, ACCEPTANCE_BARRIER_APPLIED_BEFORE_RESULT, envelope)?;
             self.reporter.submit(&outbound)?;
             if outbound.error_code != INVALID_RESOURCE_REFERENCE_ERROR {
                 self.cleanup_resources(envelope)?;
@@ -175,6 +210,23 @@ impl<'a> FencedExecutor<'a> {
                 duplicate: true,
                 side_effect_executed: false,
             });
+        }
+        if existing.side_effect_count == 0 {
+            interrupt_at(hook, ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT, envelope)?;
+            let contract = self
+                .executor
+                .contract(&envelope.capability_id)
+                .ok_or_else(|| "CLIENT_CAPABILITY_NOT_REGISTERED".to_string())?;
+            let resources =
+                self.resolve_resources(envelope, now_ms)
+                    .map_err(|error| match error {
+                        ResourceResolutionError::Invalid(_) => {
+                            "CLIENT_CAPABILITY_RESOURCE_REFERENCE_INVALID".to_string()
+                        }
+                        ResourceResolutionError::Internal(error) => error,
+                    })?;
+            return self
+                .execute_after_prepared(envelope, &resources, &contract, true, now_ms, hook);
         }
 
         match ClientExecutionReplayPolicy::try_from(envelope.replay_policy)
@@ -193,10 +245,11 @@ impl<'a> FencedExecutor<'a> {
                 true,
                 false,
                 now_ms,
+                hook,
             ),
             ClientExecutionReplayPolicy::WithExternalIdempotency => {
                 self.ensure_execution_authority(envelope, now_ms)?;
-                Err("CLIENT_CAPABILITY_STATION_TAKEOVER_REQUIRED".to_string())
+                Err(STATION_TAKEOVER_REQUIRED.to_string())
             }
             ClientExecutionReplayPolicy::Unspecified => {
                 Err("CLIENT_CAPABILITY_REPLAY_POLICY_UNSPECIFIED".to_string())
@@ -229,6 +282,7 @@ impl<'a> FencedExecutor<'a> {
         contract: &CapabilityContract,
         duplicate: bool,
         prepared_at_ms: i64,
+        hook: &mut dyn FnMut(&str, &ClientCapabilityRequest) -> Result<bool, String>,
     ) -> Result<ConsumeOutcome, String> {
         let idempotency_key = match ClientExecutionReplayPolicy::try_from(envelope.replay_policy)
             .unwrap_or(ClientExecutionReplayPolicy::Unspecified)
@@ -257,6 +311,13 @@ impl<'a> FencedExecutor<'a> {
             idempotency_key,
             &mut record_side_effect_start,
         );
+        if self
+            .ledger
+            .load(&envelope.tool_call_id, envelope.fencing_token)?
+            .is_some_and(|record| record.side_effect_count > 0)
+        {
+            interrupt_at(hook, ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED, envelope)?;
+        }
         let terminal_at_ms = now_unix_ms().max(prepared_at_ms);
         let receipt = match executed {
             Ok(result) if result.len() <= contract.max_result_bytes => terminal_receipt(
@@ -284,7 +345,7 @@ impl<'a> FencedExecutor<'a> {
                 terminal_at_ms,
             ),
         };
-        self.commit_and_submit_terminal(envelope, receipt, duplicate, true, terminal_at_ms)
+        self.commit_and_submit_terminal(envelope, receipt, duplicate, true, terminal_at_ms, hook)
     }
 
     fn commit_and_submit_terminal(
@@ -294,9 +355,12 @@ impl<'a> FencedExecutor<'a> {
         duplicate: bool,
         side_effect_executed: bool,
         now_ms: i64,
+        hook: &mut dyn FnMut(&str, &ClientCapabilityRequest) -> Result<bool, String>,
     ) -> Result<ConsumeOutcome, String> {
         let stored = self.ledger.commit_terminal(envelope, &receipt)?.receipt;
         let outbound = self.receipt_for_submission(envelope, stored, now_ms)?;
+        interrupt_at(hook, ACCEPTANCE_BARRIER_APPLIED_BEFORE_RESULT, envelope)?;
+        interrupt_at(hook, ACCEPTANCE_BARRIER_CANCEL_RESULT_RACE, envelope)?;
         self.reporter.submit(&outbound)?;
         if outbound.error_code != INVALID_RESOURCE_REFERENCE_ERROR {
             self.cleanup_resources(envelope)?;
@@ -450,6 +514,17 @@ impl<'a> FencedExecutor<'a> {
             .collect::<Vec<_>>();
         self.resources.delete(&opaque_refs)
     }
+}
+
+fn interrupt_at(
+    hook: &mut dyn FnMut(&str, &ClientCapabilityRequest) -> Result<bool, String>,
+    barrier: &str,
+    envelope: &ClientCapabilityRequest,
+) -> Result<(), String> {
+    if hook(barrier, envelope)? {
+        return Err(ACCEPTANCE_WORKER_INTERRUPTED.to_string());
+    }
+    Ok(())
 }
 
 impl InvalidResourceReference {
@@ -735,8 +810,41 @@ mod tests {
             _request: &ClientCapabilityRequest,
             _resources: &[LocalResource],
             _external_idempotency_key: Option<&str>,
-            _record_side_effect_start: &mut dyn FnMut() -> Result<(), String>,
+            record_side_effect_start: &mut dyn FnMut() -> Result<(), String>,
         ) -> Result<Vec<u8>, String> {
+            record_side_effect_start()?;
+            self.execution_count.fetch_add(1, Ordering::SeqCst);
+            Ok(Vec::new())
+        }
+    }
+
+    #[derive(Default)]
+    struct ExternallyIdempotentRecordingExecutor {
+        execution_count: AtomicUsize,
+    }
+
+    impl CapabilityExecutor for ExternallyIdempotentRecordingExecutor {
+        fn contract(&self, capability_id: &str) -> Option<CapabilityContract> {
+            (capability_id == CAPABILITY_ID).then(|| CapabilityContract {
+                capability_id: CAPABILITY_ID.to_string(),
+                schema_version: "1".to_string(),
+                max_argument_bytes: 1024,
+                max_result_bytes: 1024,
+                supports_external_idempotency: true,
+            })
+        }
+
+        fn execute(
+            &self,
+            _request: &ClientCapabilityRequest,
+            _resources: &[LocalResource],
+            external_idempotency_key: Option<&str>,
+            record_side_effect_start: &mut dyn FnMut() -> Result<(), String>,
+        ) -> Result<Vec<u8>, String> {
+            if external_idempotency_key != Some("external-key") {
+                return Err("CLIENT_CAPABILITY_EXTERNAL_IDEMPOTENCY_INVALID".to_string());
+            }
+            record_side_effect_start()?;
             self.execution_count.fetch_add(1, Ordering::SeqCst);
             Ok(Vec::new())
         }
@@ -1088,5 +1196,262 @@ mod tests {
                 .locator,
             "/private/alice/workspace"
         );
+    }
+
+    #[test]
+    fn prepared_before_effect_interruption_restarts_without_duplicate_effect() {
+        let storage = TestStorage::new();
+        let (ledger, resources) = open_stores(&storage);
+        let reference = resource_reference("prepared-restart");
+        resources
+            .register(RegisterResource {
+                opaque_ref: &reference.resource_ref,
+                capability_session_id: &reference.capability_session_id,
+                capability_id: &reference.capability_id,
+                permission_grant_id: &reference.permission_grant_id,
+                integrity_hash: &reference.integrity_hash,
+                locator: "/private/alice/workspace",
+                expires_at_ms: TEST_NOW_MS + 30_000,
+            })
+            .unwrap();
+        let request = envelope(
+            "prepared-restart",
+            vec![reference],
+            br#"{"path":"safe.txt"}"#,
+        );
+        let lease = lease();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+        let capability_executor = RecordingExecutor::default();
+        let reporter = RecordingReporter::default();
+        let fenced = executor(
+            &lease,
+            &ledger,
+            &resources,
+            &signing_key,
+            &capability_executor,
+            &reporter,
+        );
+
+        let first = fenced
+            .consume_with_scenario_hook(request.clone(), &mut |barrier, _| {
+                Ok(barrier == ACCEPTANCE_BARRIER_PREPARED_BEFORE_EFFECT)
+            })
+            .unwrap_err();
+        assert_eq!(first, ACCEPTANCE_WORKER_INTERRUPTED);
+        let prepared = ledger
+            .load(&request.tool_call_id, request.fencing_token)
+            .unwrap()
+            .unwrap();
+        assert_eq!(prepared.side_effect_count, 0);
+
+        let recovered = fenced.consume_at(request, TEST_NOW_MS + 1).unwrap();
+        assert!(recovered.duplicate);
+        assert!(recovered.side_effect_executed);
+        assert_eq!(
+            capability_executor.execution_count.load(Ordering::SeqCst),
+            1
+        );
+    }
+
+    #[test]
+    fn effect_before_applied_interruption_settles_unknown_without_replay() {
+        let storage = TestStorage::new();
+        let (ledger, resources) = open_stores(&storage);
+        let reference = resource_reference("effect-interrupt");
+        resources
+            .register(RegisterResource {
+                opaque_ref: &reference.resource_ref,
+                capability_session_id: &reference.capability_session_id,
+                capability_id: &reference.capability_id,
+                permission_grant_id: &reference.permission_grant_id,
+                integrity_hash: &reference.integrity_hash,
+                locator: "/private/alice/workspace",
+                expires_at_ms: TEST_NOW_MS + 30_000,
+            })
+            .unwrap();
+        let request = envelope(
+            "effect-interrupt",
+            vec![reference],
+            br#"{"path":"safe.txt"}"#,
+        );
+        let lease = lease();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[8; 32]);
+        let capability_executor = RecordingExecutor::default();
+        let reporter = RecordingReporter::default();
+        let fenced = executor(
+            &lease,
+            &ledger,
+            &resources,
+            &signing_key,
+            &capability_executor,
+            &reporter,
+        );
+
+        let first = fenced
+            .consume_with_scenario_hook(request.clone(), &mut |barrier, _| {
+                Ok(barrier == ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED)
+            })
+            .unwrap_err();
+        assert_eq!(first, ACCEPTANCE_WORKER_INTERRUPTED);
+        let prepared = ledger
+            .load(&request.tool_call_id, request.fencing_token)
+            .unwrap()
+            .unwrap();
+        assert_eq!(prepared.side_effect_count, 1);
+
+        let recovered = fenced.consume_at(request, TEST_NOW_MS + 1).unwrap();
+        assert!(recovered.duplicate);
+        assert!(!recovered.side_effect_executed);
+        assert_eq!(
+            recovered.receipt.status,
+            ClientCapabilityReceiptStatus::ReconciledUnknown as i32
+        );
+        assert_eq!(
+            capability_executor.execution_count.load(Ordering::SeqCst),
+            1
+        );
+    }
+
+    #[test]
+    fn effect_before_applied_interruption_requires_station_takeover_for_external_idempotency() {
+        let storage = TestStorage::new();
+        let (ledger, resources) = open_stores(&storage);
+        let reference = resource_reference("effect-idempotent-restart");
+        resources
+            .register(RegisterResource {
+                opaque_ref: &reference.resource_ref,
+                capability_session_id: &reference.capability_session_id,
+                capability_id: &reference.capability_id,
+                permission_grant_id: &reference.permission_grant_id,
+                integrity_hash: &reference.integrity_hash,
+                locator: "/private/alice/workspace",
+                expires_at_ms: TEST_NOW_MS + 30_000,
+            })
+            .unwrap();
+        let mut request = envelope(
+            "effect-idempotent-restart",
+            vec![reference],
+            br#"{"path":"safe.txt"}"#,
+        );
+        request.replay_policy = ClientExecutionReplayPolicy::WithExternalIdempotency as i32;
+        request.external_idempotency_key = "external-key".to_string();
+        request.payload_hash.clear();
+        request.recovery_credential = None;
+        request.payload_hash = hex::encode(Sha256::digest(request.encode_to_vec()));
+        let reconciliation_deadline = request.reconciliation_deadline.clone().unwrap();
+        let mut credential = ReceiptRecoveryCredential {
+            credential_id: "credential-idempotent".to_string(),
+            device_signing_key_id: "signing-key-1".to_string(),
+            nonce: vec![7; 32],
+            scope_hash: String::new(),
+            expires_at: Some(reconciliation_deadline.clone()),
+        };
+        let scope = ReceiptRecoveryScopePayload {
+            actor_ptid: ACTOR_PTID.to_string(),
+            device_id: request.target_device_id.clone(),
+            request_id: request.request_id.clone(),
+            tool_call_id: request.tool_call_id.clone(),
+            execution_claim_id: request.execution_claim_id.clone(),
+            capability_lease_revision: request.capability_lease_revision,
+            fencing_token: request.fencing_token,
+            payload_hash: request.payload_hash.clone(),
+            replay_policy: request.replay_policy,
+            execution_deadline: request.execution_deadline.clone(),
+            reconciliation_deadline: Some(reconciliation_deadline),
+            credential_id: credential.credential_id.clone(),
+            device_signing_key_id: credential.device_signing_key_id.clone(),
+            nonce: credential.nonce.clone(),
+        };
+        credential.scope_hash = hex::encode(Sha256::digest(scope.encode_to_vec()));
+        request.recovery_credential = Some(credential);
+
+        let lease = lease();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[8; 32]);
+        let capability_executor = ExternallyIdempotentRecordingExecutor::default();
+        let reporter = RecordingReporter::default();
+        let fenced = FencedExecutor::new(
+            &lease,
+            &ledger,
+            &resources,
+            "signing-key-1",
+            &signing_key,
+            &capability_executor,
+            &reporter,
+        );
+
+        let first = fenced
+            .consume_with_scenario_hook(request.clone(), &mut |barrier, _| {
+                Ok(barrier == ACCEPTANCE_BARRIER_EFFECT_BEFORE_APPLIED)
+            })
+            .unwrap_err();
+        assert_eq!(first, ACCEPTANCE_WORKER_INTERRUPTED);
+
+        let recovery_error = fenced
+            .consume_at(request, TEST_NOW_MS + 1)
+            .expect_err("the old envelope cannot authorize another execution");
+        assert_eq!(recovery_error, STATION_TAKEOVER_REQUIRED);
+        assert_eq!(
+            capability_executor.execution_count.load(Ordering::SeqCst),
+            1
+        );
+    }
+
+    #[test]
+    fn applied_before_result_interruption_replays_durable_terminal_receipt() {
+        let storage = TestStorage::new();
+        let (ledger, resources) = open_stores(&storage);
+        let reference = resource_reference("applied-interrupt");
+        resources
+            .register(RegisterResource {
+                opaque_ref: &reference.resource_ref,
+                capability_session_id: &reference.capability_session_id,
+                capability_id: &reference.capability_id,
+                permission_grant_id: &reference.permission_grant_id,
+                integrity_hash: &reference.integrity_hash,
+                locator: "/private/alice/workspace",
+                expires_at_ms: TEST_NOW_MS + 30_000,
+            })
+            .unwrap();
+        let request = envelope(
+            "applied-interrupt",
+            vec![reference],
+            br#"{"path":"safe.txt"}"#,
+        );
+        let lease = lease();
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+        let capability_executor = RecordingExecutor::default();
+        let reporter = RecordingReporter::default();
+        let fenced = executor(
+            &lease,
+            &ledger,
+            &resources,
+            &signing_key,
+            &capability_executor,
+            &reporter,
+        );
+
+        let first = fenced
+            .consume_with_scenario_hook(request.clone(), &mut |barrier, _| {
+                Ok(barrier == ACCEPTANCE_BARRIER_APPLIED_BEFORE_RESULT)
+            })
+            .unwrap_err();
+        assert_eq!(first, ACCEPTANCE_WORKER_INTERRUPTED);
+        let terminal = ledger
+            .load(&request.tool_call_id, request.fencing_token)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            terminal.receipt.status,
+            ClientCapabilityReceiptStatus::Applied as i32
+        );
+
+        let recovered = fenced.consume_at(request, TEST_NOW_MS + 1).unwrap();
+        assert!(recovered.duplicate);
+        assert!(!recovered.side_effect_executed);
+        assert_eq!(
+            capability_executor.execution_count.load(Ordering::SeqCst),
+            1
+        );
+        assert_eq!(reporter.receipts().len(), 2);
     }
 }

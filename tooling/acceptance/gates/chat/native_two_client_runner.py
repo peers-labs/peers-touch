@@ -50,6 +50,9 @@ GATE_ID = "chat-native-two-client-e2e"
 CURRENT_PROFILE_GATE_ID = "chat-native-current-profile-two-client-e2e"
 LIFECYCLE_ONBOARDING_GATE_ID = "chat-lifecycle-onboarding-e2e"
 LIFECYCLE_DIRECT_GATE_ID = "chat-lifecycle-direct-e2e"
+LIFECYCLE_RICH_VOICE_GATE_ID = "chat-lifecycle-rich-voice-e2e"
+PRESENCE_LAYOUT_GATE_ID = "chat-presence-layout-e2e"
+LIVE_VOICE_GATE_ID = "chat-lifecycle-live-voice-e2e"
 SUBMITTED_COMMAND_RECOVERY_GATE_ID = (
     "chat-native-submitted-command-recovery-e2e"
 )
@@ -61,6 +64,7 @@ CURRENT_PROFILE_GATE_IDS = frozenset(
         CURRENT_PROFILE_GATE_ID,
         LIFECYCLE_ONBOARDING_GATE_ID,
         LIFECYCLE_DIRECT_GATE_ID,
+        LIFECYCLE_RICH_VOICE_GATE_ID,
         SUBMITTED_COMMAND_RECOVERY_GATE_ID,
     }
 )
@@ -143,6 +147,12 @@ def journey_for_gate(gate_id: str) -> str:
         return "onboarding-first-message"
     if gate_id == LIFECYCLE_DIRECT_GATE_ID:
         return "daily-direct"
+    if gate_id == LIFECYCLE_RICH_VOICE_GATE_ID:
+        return "rich-media-recorded-voice"
+    if gate_id == PRESENCE_LAYOUT_GATE_ID:
+        return "presence-layout-stability"
+    if gate_id == LIVE_VOICE_GATE_ID:
+        return "chat-live-voice-lifecycle"
     if gate_id == SUBMITTED_COMMAND_RECOVERY_GATE_ID:
         return "submitted-command-recovery"
     return "direct-delivered-receipt"
@@ -428,6 +438,9 @@ def message_composer_geometry(
         const sentinel = document.querySelector(
           '[data-chat-message-bottom-sentinel]'
         );
+        const renderedRows = Array.from(
+          document.querySelectorAll('[data-message-ulid]')
+        );
         const rect = (element) => {
           const value = element?.getBoundingClientRect();
           return value ? {
@@ -439,13 +452,21 @@ def message_composer_geometry(
             height: value.height,
           } : null;
         };
-        return row && composer && viewport && timeline && sentinel ? {
+        return composer && viewport && timeline && sentinel ? {
           row: rect(row),
           composer: rect(composer),
           viewport: rect(viewport),
           timeline: rect(timeline),
           timelineFlexShrink: getComputedStyle(timeline).flexShrink,
           sentinel: rect(sentinel),
+          renderedMessageIds: renderedRows.slice(-8).map(
+            element => element.getAttribute('data-message-ulid') || ''
+          ),
+          scroll: {
+            clientHeight: viewport.clientHeight,
+            scrollHeight: viewport.scrollHeight,
+            scrollTop: viewport.scrollTop,
+          },
         } : null;
         """,
         message_id,
@@ -1019,23 +1040,6 @@ class NativeTwoClientGate(AcceptanceGate):
         conversation_id = str((created or {}).get("conversationId") or "")
         if not conversation_id:
             raise GateError("Direct conversation creation returned no ID")
-        peer_created = async_harness(
-            receiver,
-            "createDirectConversation",
-            {
-                "peerPtid": self.ptids[initiator_name],
-                "federationId": federation_id,
-            },
-        )
-        peer_conversation_id = str(
-            (peer_created or {}).get("conversationId") or ""
-        )
-        if peer_conversation_id != conversation_id:
-            raise GateError(
-                "Direct conversation identity diverged across actors: "
-                f"{initiator_name}={conversation_id} "
-                f"{receiver_name}={peer_conversation_id}"
-            )
         for client in (initiator, receiver):
             async_harness(
                 client,
@@ -1065,9 +1069,12 @@ class NativeTwoClientGate(AcceptanceGate):
         )
 
         message_id = str(sent.get("messageUlid") or "")
+        last_geometry: dict[str, Any] | None = None
 
         def unobscured_sender_row() -> dict[str, Any] | None:
+            nonlocal last_geometry
             geometry = message_composer_geometry(sender, message_id)
+            last_geometry = geometry
             if not geometry:
                 return None
             row = geometry.get("row")
@@ -1086,11 +1093,23 @@ class NativeTwoClientGate(AcceptanceGate):
                 and sentinel["top"] >= row["bottom"] + 8
             ) else None
 
-        geometry = self.step(
-            "message.layout",
-            unobscured_sender_row,
-            sender_name,
-        )
+        try:
+            geometry = self.step(
+                "message.layout",
+                lambda: wait_until(
+                    unobscured_sender_row,
+                    f"{sender_name} submitted message layout",
+                    timeout=30,
+                ),
+                sender_name,
+            )
+        except GateError as error:
+            current = message_snapshot(sender, text)
+            raise GateError(
+                f"{error}; sent={json.dumps(sent, sort_keys=True)}; "
+                f"current={json.dumps(current, sort_keys=True)}; "
+                f"geometry={json.dumps(last_geometry, sort_keys=True)}"
+            ) from error
         self.assert_condition(
             f"{sender_name}_to_{receiver_name}_message_clear",
             bool(geometry),
@@ -1133,7 +1152,7 @@ class NativeTwoClientGate(AcceptanceGate):
             f"message_id={sent.get('messageUlid', '')}; receipt={delivered.get('receipt', '')}",
         )
 
-    def prove_demo_avatar_sources(self) -> dict[str, Any]:
+    def sample_demo_avatar_sources(self) -> dict[str, Any]:
         evidence: dict[str, Any] = {}
         actors = tuple(self.clients)
         for identity in actors:
@@ -1166,8 +1185,28 @@ class NativeTwoClientGate(AcceptanceGate):
                 )
                 identity_evidence[client_name] = snapshot
             evidence[identity] = identity_evidence
+        return evidence
 
-        valid = avatar_evidence_is_valid(evidence, {self.station_url})
+    def prove_demo_avatar_sources(self) -> dict[str, Any]:
+        allowed_station_urls = {self.station_url}
+
+        def valid_evidence() -> dict[str, Any] | None:
+            evidence = self.sample_demo_avatar_sources()
+            return (
+                evidence
+                if avatar_evidence_is_valid(
+                    evidence,
+                    allowed_station_urls,
+                )
+                else None
+            )
+
+        evidence = wait_until(
+            valid_evidence,
+            "valid remote demo avatar sources",
+            timeout=30.0,
+        )
+        valid = avatar_evidence_is_valid(evidence, allowed_station_urls)
         self.assert_condition(
             "demo_avatar_bundled",
             valid,

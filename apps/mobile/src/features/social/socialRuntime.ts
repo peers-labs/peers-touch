@@ -3,6 +3,7 @@ import {
   type SocialHostEvent,
   type SocialHostEventKind,
 } from '@peers-touch/client-chat-core';
+import type { GroupState } from '../group/groupStore';
 import { restoreAndRevalidateAccessRuntime } from '../../runtimes/accessRuntime';
 import {
   MOBILE_MESSAGING_RUNTIME_ERROR_EVENT,
@@ -26,10 +27,10 @@ import {
   type ActorSearchResult,
   type PeerProfile,
 } from './socialTypes';
+import { mobileCallManager } from '../call/callState';
 import type {
   FriendRequestMutationResult,
 } from '../../services/gateways/socialGateway';
-import { mobileCallManager } from '../call/callState';
 import type {
   EditableProfileInput,
   ProfileUpdateResult,
@@ -202,18 +203,18 @@ export async function readFederationContexts() {
   requireActiveSocialRuntime();
   const gateway = useSocialStore.getState().profileGateway;
   if (!gateway) throw new Error('mobile.social.runtimeUnavailable');
-  const result = await gateway.listFederationContexts();
+  const result = await gateway.listFederations();
   if (!result.ok) throw new SocialApiError(result.error);
-  return result.data.map((context) => ({
-    federationId: context.federationId,
-    name: context.name,
-    status: context.status,
+  return result.data.map((federation) => ({
+    federationId: federation.federationId,
+    name: federation.name,
+    status: federation.status,
   }));
 }
 
-export async function searchSocialPeople(query: string, federationId: string): Promise<ActorSearchResult[]> {
+export async function searchSocialPeople(query: string): Promise<ActorSearchResult[]> {
   requireActiveSocialRuntime();
-  await useSocialStore.getState().searchPeople(query, federationId);
+  await useSocialStore.getState().searchPeople(query);
   const state = useSocialStore.getState();
   if (state.peopleSearchError) throw state.peopleSearchError;
   return [...state.peopleSearchResults];
@@ -326,6 +327,7 @@ interface ForegroundResources {
 export async function startSocialRuntime(
   session: MobileAuthSession,
   getSocialStore: () => SocialState,
+  getGroupStore: () => GroupState,
 ): Promise<SocialRuntimeController> {
   let torn = false;
   let suspended = false;
@@ -343,6 +345,7 @@ export async function startSocialRuntime(
   const projectionRuntime = createSocialProjectionRuntime(
     session,
     getSocialStore,
+    getGroupStore,
     {
       wakeMessaging,
       revalidateSession: async () => {

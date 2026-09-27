@@ -7,8 +7,6 @@ import json
 from typing import Any, Callable
 
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
 
 from tooling.acceptance.core import AcceptanceGate, GateError
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
@@ -361,28 +359,18 @@ class LifecycleOnboardingGate(NativeTwoClientGate):
 
     @staticmethod
     def _close_find_people(client: TauriSession) -> None:
-        client.find_element(SELECTORS["find_people"], 10)
-        visible_close_buttons = [
-            element
-            for element in client.driver.find_elements(
-                By.CSS_SELECTOR,
-                ".ant-modal-close",
-            )
-            if element.is_displayed()
-        ]
-        if len(visible_close_buttons) != 1:
-            raise GateError(
-                "Find People requires exactly one visible modal close action"
-            )
-        client.execute_script(
-            "arguments[0].click();",
-            visible_close_buttons[0],
+        surface = client.find_element(SELECTORS["find_people"], 10)
+        modal = surface.find_element(
+            By.XPATH,
+            "./ancestor::div[contains("
+            "concat(' ', normalize-space(@class), ' '), "
+            "' ant-modal ')][1]",
         )
-        WebDriverWait(client.driver, 10).until(
-            EC.invisibility_of_element_located(
-                (By.CSS_SELECTOR, SELECTORS["find_people"])
-            )
+        close_button = modal.find_element(
+            By.CSS_SELECTOR,
+            ".ant-modal-close",
         )
+        client.execute_script("arguments[0].click();", close_button)
 
     @staticmethod
     def _search_result_snapshot(

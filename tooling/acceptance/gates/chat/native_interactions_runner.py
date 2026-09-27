@@ -14,6 +14,7 @@ from tooling.acceptance.core import (
     AcceptanceGate,
     ActorRuntime,
     GateError,
+    REPO_ROOT,
 )
 from tooling.acceptance.drivers.native import NativeDesktopRuntimeBinding
 from tooling.acceptance.drivers.native.runtime import NativeLaunchOptions
@@ -50,11 +51,31 @@ from tooling.acceptance.gates.chat.native_support import (
 )
 
 
-GATE_ID = "chat-native-interactions-e2e"
+DEFAULT_GATE_ID = "chat-native-interactions-e2e"
+LIFECYCLE_GATE_ID = "chat-lifecycle-interactions-group-e2e"
+GATE_ID = os.environ.get("PT_CHAT_INTERACTIONS_GATE_ID", DEFAULT_GATE_ID)
 REPORT_PATH = None
 CLIENT_PORTS = {"alice": 4451, "bob": 4452, "charlie": 4453}
 STEP_TIMEOUT = float(os.environ.get("CHAT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 ACTORS = ("alice", "bob", "charlie")
+LEGACY_GROUP_MUTATION_SYMBOLS = (
+    "group_chat_create_group",
+    "group_chat_mark_read",
+    "group_chat_invite_to_group",
+    "group_chat_add_federated_member",
+    "group_chat_join_group",
+    "group_chat_leave_group",
+    "group_chat_remove_member",
+    "group_chat_update_member",
+    "group_chat_transfer_ownership",
+    "group_chat_dissolve_group",
+    "group_chat_recall_message",
+    "group_chat_edit_message",
+    "group_chat_delete_message",
+    "group_chat_update_nickname",
+    "group_chat_update_settings",
+    "group_chat_ack_offline_messages",
+)
 REQUIRED_ASSERTIONS = {
     "native_runtime",
     "actor_isolation",
@@ -84,6 +105,14 @@ REQUIRED_ASSERTIONS = {
     "group_offline_recovery",
     "group_duplicate_queue_replay",
     "group_removed_member_denied",
+    "group_rename_convergence",
+    "group_role_convergence",
+    "group_owner_transfer_convergence",
+    "group_remote_owner_mutation",
+    "group_leave_convergence",
+    "group_dissolve_terminal",
+    "group_terminal_restart_history",
+    "group_legacy_mutation_hard_cut",
     "revoked_device_denied",
     "pending_interaction_timeout_retry",
     "station_restart_convergence",
@@ -202,7 +231,7 @@ def station_readback(
 
 
 class NativeInteractionsGate(AcceptanceGate):
-    gate_id = GATE_ID
+    gate_id = DEFAULT_GATE_ID
     phase = "MP-W12"
     bom = ("MP-G15",)
     spec = (
@@ -506,7 +535,259 @@ class NativeInteractionsGate(AcceptanceGate):
     def sync(self, actor: str, kind: str, conversation_id: str) -> None:
         method = "syncFriendSession" if kind == "friend" else "syncGroup"
         key = "sessionUlid" if kind == "friend" else "groupUlid"
-        async_harness(self.clients[actor], method, {key: conversation_id})
+        if kind == "friend":
+            async_harness(self.clients[actor], method, {key: conversation_id})
+            return
+        wait_until(
+            lambda: async_harness(
+                self.clients[actor],
+                method,
+                {key: conversation_id},
+                timeout=30,
+            ),
+            f"{actor} projected Group {conversation_id}",
+            STEP_TIMEOUT,
+            1,
+        )
+
+    def group_lifecycle_snapshot(
+        self,
+        actor: str,
+        conversation_id: str,
+    ) -> dict[str, Any] | None:
+        value = async_harness(
+            self.clients[actor],
+            "groupLifecycleSnapshot",
+            {"groupUlid": conversation_id},
+        )
+        return value if isinstance(value, dict) else None
+
+    def wait_group_lifecycle(
+        self,
+        actors: tuple[str, ...],
+        conversation_id: str,
+        predicate: Callable[[dict[str, Any]], bool],
+        description: str,
+    ) -> dict[str, dict[str, Any]]:
+        def converged() -> dict[str, dict[str, Any]] | None:
+            snapshots = {
+                actor: self.group_lifecycle_snapshot(actor, conversation_id)
+                for actor in actors
+            }
+            if all(
+                snapshot is not None and predicate(snapshot)
+                for snapshot in snapshots.values()
+            ):
+                return snapshots
+            return None
+
+        return wait_until(
+            converged,
+            description,
+            STEP_TIMEOUT,
+            interval=0.5,
+        )
+
+    def restart_terminal_group_client(
+        self,
+        actor: str,
+        conversation_id: str,
+        expected_message_id: str,
+    ) -> dict[str, Any]:
+        if self.runtime_binding is None:
+            raise GateError("Native Desktop runtime binding is required")
+        predecessor = self.clients[actor]
+        self.client_lifecycles.stop_preserving_session(predecessor)
+        client = self.runtime_binding.create_bound_session(
+            actor,
+            NativeLaunchOptions(
+                window_slot=ACTORS.index(actor),
+                window_count=len(ACTORS),
+                restore_session=True,
+            ),
+        )
+        self.runtime_instances.append(client)
+        self.client_lifecycles.register(client, self.ptids[actor])
+        self.client_lifecycles.transfer_preserved_session(predecessor, client)
+        self.client_lifecycles.mark_live(client)
+        self.client_lifecycles.mark_authenticated(client)
+        self.register_driver(client)
+        self.clients[actor] = client
+        history = wait_until(
+            lambda: (
+                page
+                if isinstance(
+                    page := async_harness(
+                        client,
+                        "messagePage",
+                        {
+                            "conversationId": conversation_id,
+                            "limit": 100,
+                        },
+                    ),
+                    dict,
+                )
+                and expected_message_id in set(page.get("messageIds") or [])
+                else None
+            ),
+            f"{actor} retains dissolved Group history after restart",
+            STEP_TIMEOUT,
+        )
+        return history
+
+    def prove_group_lifecycle(self, group_id: str) -> dict[str, Any]:
+        active = ("alice", "bob")
+        before = self.wait_group_lifecycle(
+            active,
+            group_id,
+            lambda snapshot: snapshot.get("active") is True,
+            "retained Group members observe active lifecycle state",
+        )
+        renamed = f"Lifecycle {time.time_ns()}"
+        async_harness(
+            self.clients["alice"],
+            "updateGroup",
+            {"groupUlid": group_id, "name": renamed},
+        )
+        rename = self.wait_group_lifecycle(
+            active,
+            group_id,
+            lambda snapshot: snapshot.get("name") == renamed,
+            "Group rename convergence",
+        )
+        self.assert_condition("group_rename_convergence", True)
+
+        async_harness(
+            self.clients["alice"],
+            "updateGroupMember",
+            {
+                "groupUlid": group_id,
+                "memberPtid": self.ptids["bob"],
+                "role": 2,
+            },
+        )
+        role = self.wait_group_lifecycle(
+            active,
+            group_id,
+            lambda snapshot: any(
+                member.get("ptid") == self.ptids["bob"]
+                and int(member.get("role") or 0) == 2
+                for member in snapshot.get("members") or []
+            ),
+            "Group role convergence",
+        )
+        self.assert_condition("group_role_convergence", True)
+
+        async_harness(
+            self.clients["alice"],
+            "transferGroupOwnership",
+            {
+                "groupUlid": group_id,
+                "memberPtid": self.ptids["bob"],
+            },
+        )
+        ownership = self.wait_group_lifecycle(
+            active,
+            group_id,
+            lambda snapshot: snapshot.get("ownerPtid") == self.ptids["bob"],
+            "Group ownership convergence",
+        )
+        self.assert_condition("group_owner_transfer_convergence", True)
+
+        async_harness(
+            self.clients["bob"],
+            "updateGroupMember",
+            {
+                "groupUlid": group_id,
+                "memberPtid": self.ptids["alice"],
+                "muted": True,
+            },
+        )
+        remote_owner = self.wait_group_lifecycle(
+            active,
+            group_id,
+            lambda snapshot: any(
+                member.get("ptid") == self.ptids["alice"]
+                and member.get("muted") is True
+                for member in snapshot.get("members") or []
+            ),
+            "new owner later member mutation",
+        )
+        self.assert_condition("group_remote_owner_mutation", True)
+
+        async_harness(
+            self.clients["alice"],
+            "leaveGroup",
+            {"groupUlid": group_id},
+        )
+        left = self.wait_group_lifecycle(
+            ("bob",),
+            group_id,
+            lambda snapshot: (
+                snapshot.get("active") is True
+                and {
+                    member.get("ptid")
+                    for member in snapshot.get("members") or []
+                }
+                == {self.ptids["bob"]}
+            ),
+            "Group leave convergence",
+        )
+        self.assert_condition("group_leave_convergence", True)
+
+        async_harness(
+            self.clients["bob"],
+            "dissolveGroup",
+            {"groupUlid": group_id},
+        )
+        wait_until(
+            lambda: (
+                snapshot
+                if isinstance(
+                    snapshot := self.group_lifecycle_snapshot("bob", group_id),
+                    dict,
+                )
+                and snapshot.get("active") is False
+                else None
+            ),
+            "Group dissolve terminal projection",
+            STEP_TIMEOUT,
+        )
+        self.assert_condition("group_dissolve_terminal", True)
+        history = self.restart_terminal_group_client(
+            "bob",
+            group_id,
+            self.message_ids["group.base"],
+        )
+        self.assert_condition("group_terminal_restart_history", True)
+        active_sources = "\n".join(
+            (REPO_ROOT / path).read_text(encoding="utf-8")
+            for path in (
+                "apps/desktop/src/services/desktop_api.ts",
+                "apps/desktop/src/services/im-service.ts",
+                "apps/desktop/src-tauri/src/main.rs",
+                "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+            )
+        )
+        legacy_references = sorted(
+            symbol
+            for symbol in LEGACY_GROUP_MUTATION_SYMBOLS
+            if symbol in active_sources
+        )
+        self.assert_condition(
+            "group_legacy_mutation_hard_cut",
+            not legacy_references,
+            json.dumps({"legacyReferences": legacy_references}),
+        )
+        return {
+            "before": before,
+            "rename": rename,
+            "role": role,
+            "ownership": ownership,
+            "remoteOwner": remote_owner,
+            "left": left,
+            "history": history,
+        }
 
     def projection(
         self,
@@ -514,6 +795,7 @@ class NativeInteractionsGate(AcceptanceGate):
         kind: str,
         conversation_id: str,
         message_id: str,
+        thread_root_message_id: str = "",
     ) -> dict[str, Any] | None:
         value = async_harness(
             self.clients[actor],
@@ -522,6 +804,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 "conversationId": conversation_id,
                 "kind": kind,
                 "messageId": message_id,
+                "threadRootMessageId": thread_root_message_id,
             },
         )
         return value if isinstance(value, dict) else None
@@ -650,6 +933,7 @@ class NativeInteractionsGate(AcceptanceGate):
                 kind,
                 conversation_id,
                 thread_id,
+                message_id,
             ),
             f"alice {claim_kind} thread authority projection",
             STEP_TIMEOUT,
@@ -687,6 +971,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     kind,
                     conversation_id,
                     thread_id,
+                    message_id,
                 ),
                 f"{actor} {claim_kind} thread projection",
                 STEP_TIMEOUT,
@@ -701,6 +986,7 @@ class NativeInteractionsGate(AcceptanceGate):
                     kind,
                     conversation_id,
                     nested_id,
+                    message_id,
                 ),
                 f"{actor} {claim_kind} nested thread projection",
                 STEP_TIMEOUT,
@@ -1291,6 +1577,23 @@ class NativeInteractionsGate(AcceptanceGate):
         )
         if not edit_command:
             raise GateError(f"{claim_kind} offline edit returned no command ID")
+        wait_until(
+            lambda: (
+                snapshot
+                if (
+                    snapshot := self.engine_snapshot(
+                        "alice",
+                        conversation_id,
+                        message_id,
+                        edit_command,
+                    )
+                )
+                and (snapshot.get("intent") or {}).get("state") == "committed"
+                else None
+            ),
+            f"alice {claim_kind} offline edit commit",
+            STEP_TIMEOUT,
+        )
         reaction = async_harness(
             self.clients["alice"],
             "submitMetadataInteraction",
@@ -1458,11 +1761,27 @@ class NativeInteractionsGate(AcceptanceGate):
         message_id: str,
         actor: str,
     ) -> None:
-        before_station = station_readback(
-            self.station_url,
-            conversation_id,
-            message_id,
-        )
+        delivery_station = runtime_station_service(self.manifest, actor)
+        delivery_station_url = str(
+            delivery_station.get("endpoint") or ""
+        ).rstrip("/")
+        delivery_environment = str(
+            delivery_station.get("deploymentEnvironment") or ""
+        ).strip()
+        if not delivery_station_url or not delivery_environment:
+            raise GateError(
+                f"{actor} duplicate replay requires a bound Station environment"
+            )
+
+        def delivery_station_readback() -> dict[str, Any]:
+            return shared_station_readback(
+                conversation_id,
+                message_id,
+                station_url=delivery_station_url,
+                deployment_environment=delivery_environment,
+            )
+
+        before_station = delivery_station_readback()
         event_ids = {
             str(event.get("eventId") or "")
             for event in before_station.get("authorityEvents") or []
@@ -1493,10 +1812,11 @@ class NativeInteractionsGate(AcceptanceGate):
                 source.get("recipientDeviceId") or self.device_ids[actor]
             )
             injected = duplicate_acceptance_queue_delivery(
-                self.station_url,
+                delivery_station_url,
                 str(source.get("itemId") or ""),
                 self.ptids[actor],
                 source_device,
+                deployment_environment=delivery_environment,
             )
         except RuntimeError as error:
             raise GateError(str(error)) from error
@@ -1508,11 +1828,7 @@ class NativeInteractionsGate(AcceptanceGate):
             )
 
         def acked_duplicate() -> dict[str, Any] | None:
-            evidence = station_readback(
-                self.station_url,
-                conversation_id,
-                message_id,
-            )
+            evidence = delivery_station_readback()
             acknowledged = any(
                 item.get("itemId") == duplicate_item_id
                 and int(item.get("state") or 0) == 5
@@ -2447,6 +2763,11 @@ class NativeInteractionsGate(AcceptanceGate):
             )
             self.assert_condition("station_restart_convergence", True)
             self.prove_removed_group_member(group_id)
+            group_lifecycle = self.step(
+                "group.lifecycle",
+                lambda: self.prove_group_lifecycle(group_id),
+                "alice,bob",
+            )
             self.prove_revoked_device(direct_id)
             self.assert_condition(
                 "station_authority_readback",
@@ -2477,13 +2798,19 @@ class NativeInteractionsGate(AcceptanceGate):
         missing = REQUIRED_ASSERTIONS - names
         if missing:
             raise GateError(f"required assertions are missing: {sorted(missing)}")
+        journey = (
+            "CHAT-J04-interactions-and-group-lifecycle"
+            if self.gate_id == "chat-lifecycle-interactions-group-e2e"
+            else "direct-and-group-message-interactions"
+        )
+        self.report.runtime["journey"] = journey
         return {
             "runtimeCell": (
                 self.runtime_binding.cell_id
                 if self.runtime_binding is not None
                 else "native-tauri-embedded-webdriver"
             ),
-            "journey": "direct-and-group-message-interactions",
+            "journey": journey,
             "testedCommit": self.tested_commit,
             "testedWorkspaceDigest": self.workspace_digest,
             "stationLive": version,
@@ -2496,6 +2823,7 @@ class NativeInteractionsGate(AcceptanceGate):
             "engineReadback": self.engine_evidence,
             "timeoutRetry": self.timeout_retry_evidence,
             "stationRestart": self.restart_evidence,
+            "groupLifecycle": group_lifecycle,
             "cleanup": self.cleanup_evidence,
             "steps": self.steps,
             "clients": {
@@ -2512,15 +2840,31 @@ class NativeInteractionsGate(AcceptanceGate):
         }
 
 
-if __name__ == "__main__":
+class LifecycleInteractionsGroupGate(NativeInteractionsGate):
+    gate_id = LIFECYCLE_GATE_ID
+    phase = "CHAT-W04"
+    bom = ("CHAT-G08", "CHAT-G09", "CHAT-UR05")
+    spec = ("CHAT-J04", "chat-message-interactions", "chat-group-lifecycle")
+
+
+def main() -> int:
     runtime = selected_runtime()
+    gate_type = (
+        LifecycleInteractionsGroupGate
+        if GATE_ID == LIFECYCLE_GATE_ID
+        else NativeInteractionsGate
+    )
     gate = (
-        NativeInteractionsGate()
+        gate_type()
         if runtime is None
-        else NativeInteractionsGate(
+        else gate_type(
             manifest=runtime[0],
             actor_manifest=runtime[1],
             runtime_binding=runtime[2],
         )
     )
-    raise SystemExit(gate.execute())
+    return gate.execute()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

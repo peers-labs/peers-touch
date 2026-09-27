@@ -304,6 +304,26 @@ export function createMobileAcceptanceHarness(): MobileAcceptanceNamespace {
     registry,
   );
   registerMobileAcceptanceAction(
+    'moments.private.publishText',
+    mobileAcceptanceActions['moments.private.publishText'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.readText',
+    mobileAcceptanceActions['moments.private.readText'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.reconcile',
+    mobileAcceptanceActions['moments.private.reconcile'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
+    'moments.private.snapshot',
+    mobileAcceptanceActions['moments.private.snapshot'],
+    registry,
+  );
+  registerMobileAcceptanceAction(
     'moments.feed.read',
     mobileAcceptanceActions['moments.feed.read'],
     registry,

@@ -12,6 +12,7 @@ import {
 } from '../features/auth/authSession';
 import { mobileAuthScopeKey } from '../features/auth/mobileAuthIdentity';
 import { useAuthStore } from '../features/auth/authStore';
+import { useGroupStore } from '../features/group/groupStore';
 import { useSocialStore } from '../features/social/socialStore';
 import {
   messagingActivate,
@@ -19,6 +20,7 @@ import {
   messagingListConversations,
   messagingReconcile,
   type MessagingAccountInput,
+  type MessagingMutationScopeInput,
   type MessagingReconcileResult,
 } from '../services/mobileCommands';
 import { readableErrorMessage } from '../utils/errorMessage';
@@ -96,7 +98,9 @@ export function createMessagingRuntimeDescriptor(): MobileRuntimeDescriptor {
       const update = runtimeContext.beginReadinessUpdate();
       if (!update.isCurrent()) return;
       readinessFailures.add(operation);
-      update.fail(new Error(error ?? 'mobile.lifecycle.runtimeFailed'));
+      update.fail(new Error('mobile.lifecycle.runtimeFailed', {
+        cause: error,
+      }));
     },
     recover(operation): void {
       if (!runtimeContext || !readinessFailures.has(operation)) return;
@@ -330,10 +334,12 @@ function enqueueProjectionDelivery(event: MessagingProjectionEvent): void {
     });
 }
 
-function accountInput(session: MobileAuthSession): MessagingAccountInput {
+function accountInput(session: MobileAuthSession): MessagingMutationScopeInput {
   return {
     stationPeerId: session.stationPeerId,
     actorPtid: session.actorRef.ptid,
+    deviceId: session.deviceId,
+    lifecycleGeneration: session.lifecycleGeneration,
   };
 }
 
@@ -394,18 +400,32 @@ function projectionScopeKey(scope: MessagingProjectionScope | null): string {
 
 async function refreshKnownMessageProjections(): Promise<void> {
   const social = useSocialStore.getState();
+  const group = useGroupStore.getState();
   const socialHistory = new Set(Object.keys(social.messages));
+  const groupHistory = new Set(Object.keys(group.messages));
   if (social.activeSessionUlid) socialHistory.add(social.activeSessionUlid);
-  if (social.authSession) await social.refreshSessions();
+  if (group.activeGroupUlid) groupHistory.add(group.activeGroupUlid);
+  await Promise.all([
+    social.authSession ? social.refreshSessions() : Promise.resolve(),
+    group.authSession
+      ? Promise.all([
+          group.refreshGroups(),
+          group.refreshUnreadCounts(),
+        ])
+      : Promise.resolve(),
+  ]);
   if (social.authSession && useSocialStore.getState().authSession === social.authSession) {
-    const currentIds = new Set(
-      useSocialStore.getState().messagingConversations.map(
-        (conversation) => conversation.conversationId,
-      ),
-    );
+    const currentIds = new Set(useSocialStore.getState().sessions.map((item) => item.ulid));
     for (const id of socialHistory) {
       if (useSocialStore.getState().authSession !== social.authSession) break;
       if (currentIds.has(id)) await social.loadMessages(id);
+    }
+  }
+  if (group.authSession && useGroupStore.getState().authSession === group.authSession) {
+    const currentIds = new Set(useGroupStore.getState().groups.map((item) => item.ulid));
+    for (const id of groupHistory) {
+      if (useGroupStore.getState().authSession !== group.authSession) break;
+      if (currentIds.has(id)) await group.loadMessages(id);
     }
   }
 }
@@ -417,6 +437,20 @@ async function refreshMessageProjection(conversationId: string): Promise<void> {
   const conversation = (await messagingListConversations(scope))
     .find((item) => item.conversationId === conversationId);
   if (!conversation || projectionScopeKey(currentMessagingProjectionScope()) !== projectionKey) return;
+  if (conversation.kind === 2) {
+    const group = useGroupStore.getState();
+    if (!group.authSession || !sameAccount(scope, accountInput(group.authSession))) return;
+    if (group.activeGroupUlid === conversationId || conversationId in group.messages) {
+      await group.loadMessages(conversationId);
+    }
+    if (useGroupStore.getState().authSession === group.authSession) {
+      await Promise.all([
+        group.refreshGroups(),
+        group.refreshUnreadCounts(),
+      ]);
+    }
+    return;
+  }
   const social = useSocialStore.getState();
   if (!social.authSession || !sameAccount(scope, accountInput(social.authSession))) return;
   if (social.activeSessionUlid === conversationId || conversationId in social.messages) {

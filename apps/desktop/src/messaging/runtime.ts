@@ -4,7 +4,7 @@ import type {
   ConversationServiceContract,
   MessagingServiceContract,
 } from '../services/im-service-contract';
-import { STATION_ACTIVE_CHANGED_EVENT } from '../services/stationRegistryEvents';
+import { STATION_ACTIVE_CHANGED_EVENT } from '../components/common/stationRegistryEvents';
 import {
   MessagingProjectionKind,
   type MessagingProjectionInvalidation,
@@ -83,7 +83,7 @@ class DesktopMessagingDomainRuntime {
     }
 
     const accountRequest = api.accountGetActive();
-    const stationRequest = api.profileGet();
+    const stationRequest = api.federationGetSelf();
     const endpointRequest = api.accountGetDeviceId();
     const [account, station, endpoint] = await Promise.all([
       accountRequest,
@@ -91,7 +91,7 @@ class DesktopMessagingDomainRuntime {
       endpointRequest,
     ]);
     const profileId = account?.id?.trim() ?? '';
-    const stationPeerId = station.home_station_peer_id.trim();
+    const stationPeerId = station.homeStationPeerId.trim();
     const endpointId = endpoint.device_id.trim();
     if (!profileId || !stationPeerId || !endpointId) {
       throw new Error('messaging_runtime_scope_incomplete');

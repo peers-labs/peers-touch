@@ -35,14 +35,13 @@ and `model/domain/agent/evaluation.proto`. The canonical route family is
 `/agent/evaluation/*`; benchmark, dataset, case, run, attempt, result, metrics,
 cancellation, retry, and retention share that one authority.
 
-### Custom Plugins
+### Retired Extension Endpoint Product
 
-| Method | Route | Request | Response |
-|--------|-------|---------|----------|
-| POST | `/agent/plugins` | `CreateCustomPluginRequest` | `CreateCustomPluginResponse` |
-| PUT | `/agent/plugins/:id` | `UpdateCustomPluginRequest` | `UpdateCustomPluginResponse` |
-| DELETE | `/agent/plugins/:id` | — | `DeleteCustomPluginResponse` |
-| GET | `/agent/plugins` | — | `ListCustomPluginsResponse` |
+The former Custom HTTP Plugin API and localStorage product are rejected and
+removed by
+`docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment/tasks/MCA-A03.md`.
+No replacement API, fallback cache, or automatic Tool/MCP/Connector import is
+permitted.
 
 ---
 
@@ -80,19 +79,6 @@ async fn agent_topic_comment_list(input: ListTopicCommentsInput, ...) -> AppResu
 
 // Evaluation commands moved to the typed MCA-D18 bridge in
 // apps/desktop/src-tauri/src/application/evaluation.rs.
-
-// ─── Custom Plugins ─────────────────────────────────────
-#[tauri::command]
-async fn agent_plugin_create(input: CreateCustomPluginInput, ...) -> AppResult<Value>
-
-#[tauri::command]
-async fn agent_plugin_update(input: UpdateCustomPluginInput, ...) -> AppResult<Value>
-
-#[tauri::command]
-async fn agent_plugin_delete(input: DeleteCustomPluginInput, ...) -> AppResult<Value>
-
-#[tauri::command]
-async fn agent_plugin_list(...) -> AppResult<Value>
 ```
 
 ---
@@ -146,5 +132,5 @@ const createGroup = async (name: string) => {
 5. Add Rust BFF commands in `apps/desktop/src-tauri/src/interface/tauri_commands/agent_growth.rs`
 6. Register commands in `apps/desktop/src-tauri/src/main.rs`
 7. Add to `desktop_api.ts` API object
-8. Migrate each frontend store (agentGroups → topicComments → evaluation → customPlugins)
+8. Migrate each retained frontend store (agentGroups → topicComments → evaluation)
 9. One-time localStorage→server migration on first load (upload existing local data)

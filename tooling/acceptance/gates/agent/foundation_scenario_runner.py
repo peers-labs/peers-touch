@@ -39,11 +39,15 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import (
+    BlockedError,
     EvidenceStore,
     RunHandle,
     source_identity,
 )
-from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.core.provisioner import (
+    PROFILE_SECRET_ENV_OVERRIDES,
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.core.redaction import (
     is_sensitive_key,
     redact_text_with_values,
@@ -140,6 +144,48 @@ def _report_capability_session_enrollment_debug(
 # #endregion
 
 
+# #region debug-point A-D:as-f06-restart-boundaries
+def _report_as_f06_debug(
+    hypothesis_id: str,
+    message: str,
+    data: Mapping[str, object],
+) -> None:
+    if os.environ.get("DEBUG_SESSION_ID") != "as-f06-browser-restart-timeout":
+        return
+    url = os.environ.get("DEBUG_SERVER_URL", "")
+    if not url:
+        return
+    payload = json.dumps(
+        {
+            "sessionId": "as-f06-browser-restart-timeout",
+            "runId": os.environ.get("DEBUG_RUN_ID", "pre-fix"),
+            "hypothesisId": hypothesis_id,
+            "location": (
+                "tooling/acceptance/gates/agent/"
+                "foundation_scenario_runner.py:FoundationF06Coordinator"
+            ),
+            "msg": f"[DEBUG] {message}",
+            "data": dict(data),
+            "ts": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            ),
+            timeout=0.2,
+        ).read()
+    except Exception:
+        pass
+
+
+# #endregion
+
+
 def _failure_summary(
     error: BaseException | None,
     profile_env: Mapping[str, str],
@@ -171,6 +217,8 @@ DIRECT_PROBE_TIMEOUT_SECONDS = {
     "AS-F04": 900,
     "AS-F07": 900,
     "BASE-APPROVAL_EXPIRED": 1200,
+    "BASE-LOOP_BUDGET_EXHAUSTED": 660,
+    "BASE-MODEL_UNAVAILABLE": 300,
 }
 LEASE_EXPIRED_DISPATCH_WINDOW_MS = 90_000
 LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS = 15_000
@@ -339,32 +387,32 @@ def _load_runtime_manifest() -> dict[str, Any]:
 
 
 def _load_profile_env(manifest: dict[str, Any]) -> dict[str, str]:
-    """Load the same active profile identity recorded by the provisioner."""
+    """Load the canonical machine profile recorded by the provisioner."""
     profile = manifest.get("profile")
     expected_name = (
         str(profile.get("resolvedName") or "")
         if isinstance(profile, Mapping)
         else ""
     )
-    active_profile = (
-        REPO_ROOT
-        / ".local"
-        / "dev"
-        / "active"
-        / f"{REPO_ROOT.name}.env"
-    )
     try:
-        profile_path = active_profile.resolve(strict=True)
-    except (OSError, RuntimeError) as error:
+        actual_name, _, _, values = resolve_machine_profile_environment(
+            REPO_ROOT
+        )
+    except BlockedError as error:
         raise ScenarioRunnerError(
-            f"active profile cannot be resolved: {active_profile}"
+            f"machine control plane profile is unavailable: {error}"
         ) from error
-
-    values = load_env_file(profile_path)
-    actual_name = values.get("PT_DEV_PROFILE", "")
     if not expected_name or actual_name != expected_name:
         raise ScenarioRunnerError(
-            "active profile identity does not match the provisioned runtime"
+            "machine profile identity does not match the provisioned runtime"
+        )
+    for field in FOUNDATION_PROFILE_ENV_OVERRIDES:
+        injected = os.environ.get(field, "")
+        if injected:
+            values[field] = injected
+    if values.get("PT_DEV_PROFILE", "") != expected_name:
+        raise ScenarioRunnerError(
+            "machine profile file identity does not match the provisioned runtime"
         )
     return values
 
@@ -1693,6 +1741,8 @@ def _make_direct_probe(
         "FoundationLeaseExpiredCoordinator | None" = None,
     invalid_resource_reference_coordinator:
         "FoundationInvalidResourceReferenceCoordinator | None" = None,
+    permission_denied_coordinator:
+        "FoundationPermissionDeniedCoordinator | None" = None,
     forbidden_actor_coordinator:
         "FoundationForbiddenActorCoordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
@@ -1727,6 +1777,12 @@ def _make_direct_probe(
                     "BASE-INVALID_RESOURCE_REF requires executor orchestration"
                 )
             return invalid_resource_reference_coordinator.capture(probe_input)
+        if probe_input.cell == "BASE-PERMISSION_DENIED":
+            if permission_denied_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-PERMISSION_DENIED requires executor orchestration"
+                )
+            return permission_denied_coordinator.capture(probe_input)
         if probe_input.cell == "BASE-INTERRUPTED":
             if interrupted_coordinator is None:
                 raise ScenarioRunnerError(
@@ -1764,11 +1820,15 @@ def _make_direct_probe(
             "BASE-PROVIDER_TIMEOUT": "runDevelopmentProviderTimeout",
         }.get(probe_input.cell, "foundationDirectProbe")
         result = client.harness(
-            "foundationDirectProbe",
+            method,
             {
                 "platform": probe_input.platform,
                 "locale": probe_input.locale,
-                "cell": probe_input.cell,
+                **(
+                    {}
+                    if method != "foundationDirectProbe"
+                    else {"cell": probe_input.cell}
+                ),
                 "sampleId": probe_input.sample_id,
             },
             timeout=DIRECT_PROBE_TIMEOUT_SECONDS.get(probe_input.cell, 300),
@@ -2040,6 +2100,26 @@ class FoundationF06Coordinator:
         durable_reload_evidence: Mapping[str, Any] | None = None
         restart_handoff: Mapping[str, Any] | None = None
         transport_restored = False
+        scenario_key = self._scenario_key(probe_input)
+        client = self._client(probe_input.platform)
+        # #region debug-point A:scenario-entry
+        _report_as_f06_debug(
+            "A",
+            "AS-F06 active tuple started",
+            {
+                "scenarioKey": scenario_key,
+                "runtime": probe_input.platform,
+                "restartGeneration": getattr(
+                    client,
+                    "restart_generation",
+                    None,
+                ),
+                "driverSessionPresent": bool(
+                    getattr(getattr(client, "driver", None), "session_id", None)
+                ),
+            },
+        )
+        # #endregion
 
         def observe_recovery_failures(outage_deadline: float) -> None:
             remaining = outage_deadline - time.monotonic()
@@ -2049,11 +2129,36 @@ class FoundationF06Coordinator:
                     "during recovery-failure callback"
                 )
             client = self._client(probe_input.platform)
+            # #region debug-point A-B:outage-callback
+            _report_as_f06_debug(
+                "A-B",
+                "AS-F06 outage callback started",
+                {
+                    "scenarioKey": scenario_key,
+                    "remainingSeconds": remaining,
+                    "restartGeneration": getattr(
+                        client,
+                        "restart_generation",
+                        None,
+                    ),
+                },
+            )
+            # #endregion
             result = client.harness(
                 "foundationF06ObserveFailure",
-                {"scenarioKey": self._scenario_key(probe_input)},
+                {"scenarioKey": scenario_key},
                 timeout=remaining,
             )
+            # #region debug-point A-B:outage-callback-complete
+            _report_as_f06_debug(
+                "A-B",
+                "AS-F06 outage callback completed",
+                {
+                    "scenarioKey": scenario_key,
+                    "remainingSeconds": outage_deadline - time.monotonic(),
+                },
+            )
+            # #endregion
             retry = result.get("retry") if isinstance(result, Mapping) else None
             if (
                 not isinstance(result, Mapping)
@@ -2070,6 +2175,21 @@ class FoundationF06Coordinator:
         def exercise_durable_reloads(operation_deadline: float) -> None:
             nonlocal durable_reload_evidence, restart_handoff, transport_restored
             client = self._client(probe_input.platform)
+            # #region debug-point B-C:post-restart-entry
+            _report_as_f06_debug(
+                "B-C",
+                "AS-F06 post-restart callback started",
+                {
+                    "scenarioKey": scenario_key,
+                    "remainingSeconds": operation_deadline - time.monotonic(),
+                    "restartGeneration": getattr(
+                        client,
+                        "restart_generation",
+                        None,
+                    ),
+                },
+            )
+            # #endregion
             client.restore_station_transport()
             transport_restored = True
             _authenticate_clients(
@@ -2085,6 +2205,23 @@ class FoundationF06Coordinator:
                 probe_input,
                 operation_deadline,
             )
+            # #region debug-point B-C:post-restart-ready
+            _report_as_f06_debug(
+                "B-C",
+                "AS-F06 transport, auth, and capability isolation restored",
+                {
+                    "scenarioKey": scenario_key,
+                    "remainingSeconds": operation_deadline - time.monotonic(),
+                    "driverSessionPresent": bool(
+                        getattr(
+                            getattr(client, "driver", None),
+                            "session_id",
+                            None,
+                        )
+                    ),
+                },
+            )
+            # #endregion
             remaining = operation_deadline - time.monotonic()
             if remaining <= 0:
                 raise ScenarioRunnerError(
@@ -2094,9 +2231,19 @@ class FoundationF06Coordinator:
             client = self._client(probe_input.platform)
             result = client.harness(
                 "foundationF06DurableReload",
-                {"scenarioKey": self._scenario_key(probe_input)},
+                {"scenarioKey": scenario_key},
                 timeout=remaining,
             )
+            # #region debug-point A-B:durable-reload-complete
+            _report_as_f06_debug(
+                "A-B",
+                "AS-F06 durable reload completed",
+                {
+                    "scenarioKey": scenario_key,
+                    "remainingSeconds": operation_deadline - time.monotonic(),
+                },
+            )
+            # #endregion
             durable_reload = (
                 result.get("durableReload")
                 if isinstance(result, Mapping)
@@ -2152,18 +2299,72 @@ class FoundationF06Coordinator:
                 restart_handoff = dict(exported)
             durable_reload_evidence = dict(result)
 
-        client = self._client(probe_input.platform)
         try:
+            # #region debug-point A-C:station-restart
+            _report_as_f06_debug(
+                "A-C",
+                "AS-F06 Station restart started",
+                {
+                    "scenarioKey": scenario_key,
+                    "restartGeneration": getattr(
+                        client,
+                        "restart_generation",
+                        None,
+                    ),
+                },
+            )
+            # #endregion
             station_restart = restart_foundation_station(
                 self._runtime_manifest,
                 repo_root=REPO_ROOT,
                 during_outage=observe_recovery_failures,
                 after_restart=exercise_durable_reloads,
             )
+            # #region debug-point A-C:station-restart-complete
+            _report_as_f06_debug(
+                "A-C",
+                "AS-F06 Station restart completed",
+                {
+                    "scenarioKey": scenario_key,
+                    "transportRestored": transport_restored,
+                },
+            )
+            # #endregion
         finally:
             if not transport_restored:
                 client.restore_station_transport()
+        # #region debug-point D:client-restart
+        _report_as_f06_debug(
+            "D",
+            "AS-F06 client restart started",
+            {
+                "scenarioKey": scenario_key,
+                "restartGeneration": getattr(
+                    client,
+                    "restart_generation",
+                    None,
+                ),
+            },
+        )
+        # #endregion
         client.restart()
+        # #region debug-point D:client-restart-complete
+        _report_as_f06_debug(
+            "D",
+            "AS-F06 client restart completed",
+            {
+                "scenarioKey": scenario_key,
+                "restartGeneration": getattr(
+                    client,
+                    "restart_generation",
+                    None,
+                ),
+                "driverSessionPresent": bool(
+                    getattr(getattr(client, "driver", None), "session_id", None)
+                ),
+            },
+        )
+        # #endregion
         client_reloads = {probe_input.platform: True}
         _authenticate_clients(
             self._runtime_pair,
@@ -3401,6 +3602,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         invalid_resource_reference_coordinator = (
             FoundationInvalidResourceReferenceCoordinator(runtime_pair)
         )
+        permission_denied_coordinator = (
+            FoundationPermissionDeniedCoordinator(runtime_pair)
+        )
         interrupted_coordinator = FoundationInterruptedCoordinator(
             runtime_pair,
             runtime_manifest,
@@ -3425,6 +3629,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 invalid_resource_reference_coordinator=(
                     invalid_resource_reference_coordinator
                 ),
+                permission_denied_coordinator=(
+                    permission_denied_coordinator
+                ),
                 forbidden_actor_coordinator=forbidden_actor_coordinator,
             )
         )
@@ -3442,6 +3649,9 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 lease_expired_coordinator=lease_expired_coordinator,
                 invalid_resource_reference_coordinator=(
                     invalid_resource_reference_coordinator
+                ),
+                permission_denied_coordinator=(
+                    permission_denied_coordinator
                 ),
                 forbidden_actor_coordinator=forbidden_actor_coordinator,
             )

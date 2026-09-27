@@ -2131,7 +2131,7 @@ accepted D-19 architecture with active Infra landing and remaining E2-5 review
 remediation. A bounded adaptive Goal may drain multiple dependency-ready Slices
 from this table, park a blocked Slice, and continue an independent ready Slice
 without crossing the plan's stage or ownership boundaries.
-`pt-trae-goal-orchestrator NEXT` is used only after the current Goal reaches
+`pt-goal-orchestrator NEXT` is used only after the current Goal reaches
 its completion or hard-boundary cut and rereads this table before selecting a
 successor.
 

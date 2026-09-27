@@ -5,22 +5,10 @@ package peers_touch.model.federation.v1;
 option go_package = "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb;federationpb";
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Federation Projection Service — operator governance and ordinary-client context
-// projections exposed by Home Station via standard JWT auth.
+// Federation Projection Service — RPCs exposed by Home Station to its clients.
+// Consumed by Desktop Settings and Dashboard via standard JWT auth.
 // Source of truth: docs/architecture/federation/wire-protocol.md §6.5
 // ═══════════════════════════════════════════════════════════════════════════════
-
-// ─── ListFederationContexts ─────────────────────────────────────────────────
-
-message ListFederationContextsResponse {
-  repeated FederationContext contexts = 1;
-}
-
-message FederationContext {
-  string federation_id = 1;
-  string name = 2;
-  string status = 3;
-}
 
 // ─── ListFederations ────────────────────────────────────────────────────────
 

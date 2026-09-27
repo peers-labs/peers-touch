@@ -64,8 +64,8 @@
     },
     {
       "verificationClass": "FUNCTIONAL_CHECK",
-      "result": "BLOCKED",
-      "ref": "profile:two;error:PROFILE_UNAVAILABLE;source:3549ce0a953db1bcf1f02e46db8c8c3c09c4e74d;diagnostic:<env-repo>/peers-touch/two/profile.env.example"
+      "result": "PASS",
+      "ref": "artifact:~/.peers-touch/dev/workspaces/a534541b87e49abf/workflow/MCA-V2-ALIGNMENT-J06/artifacts/20260918T024801261796Z/result.json;source:dc4664626aa15e501b10cf6ab15933c3b32cb33c;station:dc4664626aa15e501b10cf6ab15933c3b32cb33c;profile:two;runtime:native-tauri-alice+bob;cleanup:clean"
     }
   ]
 }
@@ -92,5 +92,9 @@ Evaluation aggregate and prove V2-J06 end to end.
   contract, and plan validation checks pass.
 - Source checkpoint:
   `3549ce0a953db1bcf1f02e46db8c8c3c09c4e74d`.
-- Exact-source Profile `two` native Journey is `BLOCKED/UNPROVEN` because the
-  canonical environment definition is dirty; no runtime resource was acquired.
+- Exact-source Profile `two` native Journey is `FUNCTIONAL_PASS` at
+  `dc4664626aa15e501b10cf6ab15933c3b32cb33c`; actor isolation, cancellation,
+  retry lineage, TurnTrace lineage, restart recovery, retention, resource
+  deletion, and runtime cleanup all passed.
+- The 57-tuple candidate is owned by MCA-A07; final aggregate proof remains
+  `UNPROVEN` and is owned by MCA-A08.

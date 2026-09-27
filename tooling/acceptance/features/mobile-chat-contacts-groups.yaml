@@ -5,7 +5,7 @@
   "owners": [
     "apps/mobile/src/features/chat/**",
     "apps/mobile/src/features/social/**",
-    "apps/mobile/src/runtimes/messagingRuntime.ts",
+    "apps/mobile/src/features/group/**",
     "apps/mobile/src/components/BoundedList.tsx",
     "apps/mobile/src/components/boundedListRange.ts",
     "apps/mobile/src/runtimes/socialEventIngress.ts",
@@ -23,7 +23,7 @@
     "visible": ["two actors on one Station can complete Chat, contact, and group journeys with authoritative readback"]
   },
   "negative": [
-    "Messaging runtime must not open a second Station event stream",
+    "group runtime must not open a second Station event stream",
     "empty state must not hide an error state",
     "render windows must not permanently hide requests, contacts, groups, members, or message history",
     "message search and thread counts must not depend on mounted rows",

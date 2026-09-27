@@ -1,8 +1,8 @@
 # Modern Chat Agent — Design Decisions
 
 > **Status**: approved
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-09-17
+> **Version**: v1.3
+> **Created**: 2026-07-30 | **Updated**: 2026-09-25
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -39,6 +39,13 @@
 | MCA-D19E | Attest Browser direct execution without fabricated local capabilities | approved |
 | MCA-D20 | Verify publisher-signed package catalogs and read installation state from target authorities | approved |
 | MCA-D20A | Distribute the official signed catalog through Station without moving publisher trust | approved |
+| MCA-D21 | Require runtime-truthful profiles and unique execution identity for formal Agent V2 evidence | approved |
+| MCA-D22 | Add a Station-owned acceptance scenario control plane for capability failure evidence | approved |
+| MCA-D23 | Extend the single scenario control plane across governed ToolCall, MCP, and Connector evidence | approved |
+| MCA-D24 | Extend the single scenario control plane across Evaluation race and failure evidence | approved |
+| MCA-D25 | Make governed ToolCall role applicability follow the executed boundary | approved |
+| MCA-D26 | Make Connector evidence follow OAuth-owner execution | approved |
+| MCA-D27 | Make client permission denial a typed lease fact | approved |
 
 ---
 
@@ -1612,3 +1619,429 @@ Revisit if the official catalog moves to a separately operated public
 distribution service. That service must preserve exact signed bytes, bounded
 transport, rollback protection, and independence from installed-state
 authority.
+
+## MCA-D21: Runtime-Truthful Formal Evidence Profiles
+
+**Status**: approved
+**Date**: 2026-09-18
+
+### Context
+
+The J01-J06 reviewed matrix rows omit explicit attestation profiles and role
+policies. The validator therefore requires legacy direct-runtime fields and
+every Gate role for contract-only, control-plane, unavailable, Station-executor,
+and Evaluation paths. Those paths do not create a client capability lease or a
+client-bound ToolCall. Filling those fields would violate MCA-D19E.
+
+The current Journey runners also execute one composite development flow. They
+do not provide one independently identified execution for every reviewed
+platform/cell/locale/ordering/sample tuple.
+
+### Decision
+
+Every Agent V2 matrix row declares a runtime-truthful attestation
+profile and complete role-policy partition. Every expanded tuple receives one
+unique `scenarioExecutionId`; command, Turn, ToolCall, operation, Evaluation
+run, and contract-run identities cannot be relabelled across tuples.
+
+The profile and role contract is defined in:
+
+`proposals/20260918-mca-d21-runtime-truthful-formal-evidence.md`.
+
+The active Plan Package must incorporate this decision before any matrix,
+schema, validator, runner, or proof-set implementation begins.
+
+### Rationale
+
+Formal evidence must describe the production path that ran. The matrix owns
+scope, Journey adapters own observations, a shared producer owns immutable
+assembly, and the separate validator owns `PROVEN` promotion.
+
+### Alternatives Considered
+
+- Keep legacy direct-runtime shape: rejected because it requires fabricated
+  entities.
+- Relabel one composite Journey across all tuples: rejected because it claims
+  executions that did not occur.
+- Remove Mobile, Browser, negative, or race tuples: rejected because it weakens
+  accepted scope.
+
+### Consequences
+
+- Matrix and schema identity advance and invalidate older
+  candidates.
+- J01 requires a repository-owned exact-source Journey.
+- J02-J06 require tuple-aware adapters and full semantic-validator tests.
+- MCA-A01 remains `UNPROVEN` until final exact-source proof.
+
+### Review Condition
+
+Accept only if tuple scope remains unchanged, every profile maps to real
+production entities, identity reuse is rejected, and the runner/validator
+separation remains intact.
+
+The Owner accepted MCA-D21 on 2026-09-18.
+
+## MCA-D22: Station-Owned Capability Scenario Control Plane
+
+**Status**: approved
+**Date**: 2026-09-18
+
+### Context
+
+MCA-D21 requires every J02 tuple to execute independently. The current product
+surface cannot deterministically create several reviewed catalog, binding,
+taxonomy, and actor-isolation states. Capability error enums are declared but
+unused, manifest registration has no generic product endpoint, and the
+existing composite Native Journey cannot be relabelled as 69 executions.
+
+### Decision
+
+Add a protobuf-defined, Station-owned scenario control plane that is available
+only in an explicitly enabled Acceptance environment. It owns deterministic
+fixture setup, barriers, and cleanup. Canonical capability services continue to
+own every manifest, binding, readiness, revision, and typed failure fact;
+Desktop and Browser continue to own receiver observation.
+
+The accepted contract is defined in:
+
+`proposals/20260918-mca-d22-capability-scenario-control-plane.md`.
+
+### Rationale
+
+The J02 Gate needs reproducible state transitions without adding a production
+generic manifest-registration API or creating browser-local authority. A
+setup-only control plane makes those preconditions deterministic while keeping
+the product action and evidence on canonical paths.
+
+### Alternatives Considered
+
+- Relabel the composite Journey: rejected as fabricated evidence.
+- Downgrade runtime cells to static/unit evidence: rejected because receiver
+  and Station control-plane facts are required.
+- Expose generic manifest registration in production: rejected because source
+  owners own manifest mutation.
+- Remove unsupported tuples: rejected because it weakens accepted scope.
+
+### Consequences
+
+- Model, Station, Desktop, Mobile contract tests, provisioner, and J02 adapter
+  change together.
+- Production must omit or reject every scenario-control route.
+- J02 keeps all 69 tuples and remains `UNPROVEN` until exact-source semantic
+  validation succeeds.
+
+### Review Condition
+
+Accept only if scenario control cannot emit verdicts or evidence, canonical
+services remain the sole product authority, production cannot enable the
+control accidentally, and all tuple identities remain independently executed.
+
+The Owner accepted MCA-D22 on 2026-09-18.
+
+## MCA-D23: Capability Operation Scenario Control Plane
+
+**Status**: approved
+**Date**: 2026-09-19
+
+### Context
+
+MCA-D21 requires 164 independently executed J03-J05 tuples. Existing runners
+execute one Native composite each and cannot deterministically reach the
+reviewed decision/outbox/receipt/effect/cleanup, lease, timeout/reconnect,
+OAuth disconnect, provider revoke, or deletion race boundaries. Relabeling
+those composites would fabricate execution identity.
+
+### Decision
+
+Extend the single MCA-D22 Station-owned scenario controller across governed
+ToolCall, MCP lifecycle, and Connector invocation. It coordinates only
+reviewed setup, barriers, executor/provider lifecycle actions, fixture time,
+and cleanup. Canonical ToolDispatch, receipt, recovery, MCP, Connector, and
+Turn owners remain the only product-state writers.
+
+The accepted contract is defined in:
+
+`proposals/20260919-mca-d23-governed-tool-scenario-control-plane.md`.
+
+### Rationale
+
+J03-J05 need deterministic runtime ordering and real executor/provider effects
+without adding a second authority or general production failpoint API.
+
+### Alternatives Considered
+
+- Relabel existing composites: rejected as fabricated evidence.
+- Add Harness-only state injection: rejected because it bypasses canonical
+  Station and Desktop Rust owners.
+- Create separate Tool/MCP/Connector fixture services: rejected because they
+  duplicate the D22 lifecycle and trust boundary.
+- Downgrade races to unit tests: rejected because required receiver/runtime
+  evidence would remain absent.
+
+### Consequences
+
+- Model, Station, Desktop Rust/Web, Mobile contracts, provisioning, fixtures,
+  and J03-J05 producers change together.
+- Production Station and release Desktop builds cannot activate scenario
+  control.
+- J03-J05 remain `UNPROVEN` until their exact-source candidates pass semantic
+  validation.
+
+### Review Condition
+
+Revisit if a production-safe external fault-injection platform can provide the
+same actor/run/tuple isolation without becoming product truth. It must still
+preserve one controller and the accepted no-verdict boundary.
+
+The Owner delegated approval authority and accepted MCA-D23 on 2026-09-19.
+
+## MCA-D24: Evaluation Scenario Control Plane
+
+**Status**: approved
+**Date**: 2026-09-19
+
+### Context
+
+MCA-D21 requires 57 independently executed J06 tuples. The current runner
+leaves `cell-results` empty, its tests construct synthetic passing tuple rows,
+and no Station runtime controller exists for the reviewed scheduler,
+cancel/completion, retry/metrics, cancellation-ack deadline, or evaluator
+availability boundaries.
+
+### Decision
+
+Extend the same MCA-D22 scenario controller to J06. It may coordinate
+allowlisted Evaluation barriers, reviewed duplicate delivery, a run-scoped
+clock milestone, and actual runtime restart. Evaluation Service, worker,
+repository, and Turn Service remain the only owners of Evaluation product
+truth and race outcomes.
+
+The accepted contract is defined in:
+
+`proposals/20260919-mca-d24-evaluation-scenario-control-plane.md`.
+
+### Rationale
+
+Deterministic CAS orderings and restart evidence are required to prove J06
+without timing races, direct database mutation, or synthetic `cell-results`.
+
+### Alternatives Considered
+
+- Populate tuple rows from the composite Journey: rejected as fabricated
+  execution.
+- Race live workers without barriers: rejected as nondeterministic.
+- Add an Evaluation-only fixture service: rejected as a second scenario
+  authority.
+- Use unit tests as formal product evidence: rejected because receiver,
+  runtime, restart, and cleanup proof would remain absent.
+
+### Consequences
+
+- The shared scenario contract, Station Evaluation services, Desktop/Browser
+  adapters, Mobile contract tests, provisioning, and J06 producer change
+  together.
+- Actual Station restart materially increases formal run time.
+- J06 remains `UNPROVEN` until all 57 unique tuples validate on one exact
+  source.
+
+### Review Condition
+
+Revisit if Evaluation scheduling moves to a different canonical runtime. Any
+replacement must preserve Station-owned truth, deterministic CAS evidence, and
+the no-verdict scenario boundary.
+
+The Owner delegated approval authority and accepted MCA-D24 on 2026-09-19.
+
+## MCA-D25: Tool Zero-Execution Evidence
+
+**Status**: approved
+**Date**: 2026-09-19
+
+### Context
+
+MCA-D23 includes governed ToolCall cells that terminate before dispatch or
+executor receipt creation, while the J03 matrix row requires
+`executor-receipts` for every tuple. J03 also reused the MCP
+`CapabilityOperation` cleanup-lease meaning for `ERR-O06`, even though the
+canonical architecture explicitly keeps turn-time ToolCalls outside
+`CapabilityOperation`.
+
+### Decision
+
+Split J03 matrix rows by executed versus zero-execution semantics while
+preserving all 86 tuples. Zero-execution tuples use `station_turn`, require
+`zero-execution`, and mark `executor-receipts` not applicable. J03 `ERR-O06`
+uses ToolCall receipt-recovery credential expiry; J04 retains
+CapabilityOperation cleanup-lease expiry.
+
+The accepted contract is defined in:
+
+`proposals/20260919-mca-d25-tool-zero-execution-evidence.md`.
+
+### Rationale
+
+Evidence applicability must describe facts that can exist on the production
+path. A missing executor cannot emit a receipt, and a ToolCall cannot own a
+CapabilityOperation cleanup lease.
+
+### Alternatives Considered
+
+- Fabricate executor receipts: rejected.
+- Remove the affected tuples: rejected.
+- Convert ToolCalls into CapabilityOperations: rejected because it collapses
+  two canonical lifecycle authorities.
+
+### Consequences
+
+- Matrix and proof-contract identities advance.
+- J03 producers emit zero-execution evidence for pre-execution outcomes.
+- Existing candidates under the prior matrix identity are stale.
+
+The Owner's delegated authority accepted MCA-D25 on 2026-09-19.
+
+## MCA-D26: Connector Evidence Follows OAuth-Owner Execution
+
+**Status**: approved
+**Date**: 2026-09-21
+
+### Context
+
+MCA-D21 assigned every Desktop and Browser Connector tuple to
+`station_capability_turn`, but the accepted MCA-D17 secret boundary and the
+production manifest both keep Connector effects in the OAuth-owning client
+capability executor. J05 also includes failures and race orderings that reject
+before dispatch and therefore cannot emit an executor receipt.
+
+### Decision
+
+Split J05 matrix rows by executed versus zero-execution semantics while
+preserving all 37 tuples. Executed Connector tuples use
+`client_capability_turn` and bind the real OAuth-owner client session, lease,
+ToolCall, fence, and receipt. `ERR-CON01` through `ERR-CON04`, `R-06/A`, and
+`R-07/A` use `station_turn`, require `zero-execution`, and do not fabricate an
+executor identity.
+
+The accepted contract is defined in:
+
+`proposals/20260921-mca-d26-connector-execution-evidence.md`.
+
+### Rationale
+
+OAuth credentials must remain in their owner, and formal evidence must report
+the executor that actually performed the effect. Pre-dispatch rejection is a
+Station-owned Turn outcome, not an executor receipt.
+
+### Alternatives Considered
+
+- Move OAuth credentials into Station: rejected because it changes the secret
+  boundary and creates a second OAuth owner.
+- Label the client capability executor as Station: rejected as false evidence.
+- Require receipts for zero-dispatch outcomes: rejected because no executor
+  ran.
+
+### Consequences
+
+- Matrix and proof-contract identities advance.
+- Prior candidates under the old matrix identity are stale and must be
+  regenerated by MCA-A08 on the final source.
+- J05 producers emit explicit zero-execution evidence for pre-dispatch
+  outcomes and client-capability evidence for executed Connector effects.
+
+The Owner's delegated authority accepted MCA-D26 on 2026-09-21.
+
+## MCA-D27: Typed Client Capability Permission Authority
+
+**Status**: approved
+**Date**: 2026-09-25
+
+### Context
+
+`ClientCapability` currently carries a permission state but no permission
+category. Desktop also advertises every local capability as granted. Station
+therefore cannot distinguish a denied local permission from an absent,
+incompatible, or unavailable capability and cannot emit the accepted
+`CLIENT_PERMISSION_DENIED` payload with the safe
+`capability_id,permission_kind` detail pair.
+
+The Browser Foundation row must continue to satisfy MCA-D19E: its own
+capability session advertises no local capabilities and creates no ToolCall.
+Browser may nevertheless submit against a separately selected Desktop
+capability session and render the Station-owned denial outcome.
+
+### Decision
+
+Add a closed `CapabilityPermissionKind` enum to the shared Agent proto and add
+`permission_kind` to each advertised `ClientCapability`. The client capability
+kernel is the sole owner of the permission kind and state. Station validates,
+hashes, persists, and reads those values from the signed advertisement; it
+never derives a permission category from `capability_id`.
+
+When a selected lease contains the exact capability/schema with
+`permission == DENIED`, Station rejects before ToolCall persistence, provider
+continuation, or local dispatch and emits:
+
+```text
+CLIENT_PERMISSION_DENIED
+locale_key = agent.errors.clientPermissionDenied
+retryable = false
+terminal = true
+details = { capability_id, permission_kind }
+```
+
+`PROMPT` and `UNAVAILABLE` remain readiness states and do not masquerade as a
+denial. A denied or prompt capability must carry a non-unspecified permission
+kind. Capabilities without an OS/application permission boundary may retain an
+unspecified kind only while granted.
+
+The `Open permission settings` recovery action opens the Agent Profile
+capability detail for the selected executor and permission category. It does
+not grant permission, issue a remote OS command, or automatically resend the
+Turn. Desktop may later offer a platform-specific settings affordance from
+that detail surface. Browser remains an observer/controller and does not
+advertise a local capability to satisfy this error cell.
+
+Acceptance may replace the native executor's signed lease with a denied
+capability advertisement through an acceptance-only local permission adapter.
+The resulting lease, Station rejection, receiver projection, zero execution,
+replay, and restoration remain production-path facts. The fixture cannot
+write Station Turn or error state directly.
+
+### Rationale
+
+Permission state and category originate at the device boundary, while Station
+owns admission and terminal Turn truth. A typed proto field preserves that
+split and makes the accepted safe error payload reproducible on Desktop and
+Browser without fabricating browser-local execution.
+
+### Alternatives Considered
+
+- Derive `permission_kind` from capability IDs in Station: rejected because it
+  duplicates device policy and silently misclassifies new capabilities.
+- Carry an arbitrary string: rejected because cross-platform permission
+  semantics require a closed, versioned contract.
+- Let the client emit the final error after dispatch: rejected because it
+  creates a ToolCall/receipt path despite a known pre-dispatch denial.
+- Advertise a denied Browser capability: rejected because it violates
+  MCA-D19E and would fabricate a Browser executor.
+- Open remote OS settings from Browser: rejected because it introduces a new
+  privileged cross-device command and hidden side effect.
+
+### Consequences
+
+- Proto generators and all capability-advertisement consumers must be updated
+  atomically.
+- Capability-set hashes now include permission kind as well as state.
+- Desktop capability snapshots expose the typed permission kind for
+  diagnostics and Acceptance, without local paths or grant secrets.
+- The Foundation Browser tuple uses the selected native executor's denied
+  lease while retaining the Browser row's empty local session and no ToolCall.
+- Existing evidence produced before this contract change is stale.
+
+### Review Condition
+
+Revisit only when a platform adds a permission category not represented by the
+closed enum or when the product accepts a privileged remote settings command.
+Neither case may fall back to capability-ID parsing.
+
+The agent-led findings-first architecture review passed on 2026-09-25.

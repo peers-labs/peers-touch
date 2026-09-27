@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
@@ -22,20 +22,28 @@ import {
   checkDeclaration,
   startOrUpdateDeclaration,
 } from './dev-work.mjs';
+import { canonicalize } from './dev-work-schema.mjs';
+import { processStartIdentity } from './dev-work-ledger.mjs';
 import {
+  archiveDevelopmentSession,
   commitFunctionalResult,
+  createTransitionEvent,
   DevSessionError,
   readSessionJournal,
   runCli,
-  runtimeIdentitiesMatchDeclaration,
   sessionStorePaths,
   startDevelopmentSession,
   statusDevelopmentSession,
   transitionDevelopmentSession,
   transitionSessionSequenceStore,
+  validateTaskRuntimeSourceProjection,
   validateSessionState,
   writeDurableFileAtomic,
 } from './dev-session.mjs';
+import {
+  inspectSessionJournal,
+  summarizeSessionJournal,
+} from './dev-session-store.mjs';
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -178,6 +186,7 @@ function fixture({
         branch: BRANCH,
         clean: true,
         stable: true,
+        workspaceDigest: 'clean',
       };
     },
   };
@@ -199,9 +208,9 @@ function fixture({
     sessionId,
     task,
     plan,
+    runtimeClaims,
     dependencies,
     baseOptions,
-    runtimeClaims,
     close() {
       rmSync(root, { recursive: true, force: true });
     },
@@ -433,7 +442,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
     cleanupStatus: runtimeEvidence ? 'passed' : 'not-required',
     duration_seconds: 1,
     traceability: {
-      status: emitsEvidenceReport ? 'complete' : 'not-required',
+      status: runtimeEvidence ? 'complete' : 'not-required',
     },
     ...(emitsEvidenceReport
       ? {
@@ -598,7 +607,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
     {
       ...scope.dependencies,
       spawnDevelopmentRunner(_command, arguments_) {
-        assert.equal(_command, overrides.runnerCommand ?? 'python3');
+        assert.equal(_command, 'python3');
         assert.notEqual(arguments_.indexOf('--execution-plan'), -1);
         assert.equal(arguments_.includes('--gate'), false);
         assert.equal(arguments_.includes('--result-file'), false);
@@ -608,7 +617,7 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
           arguments_[outputIndex + 1],
           `${JSON.stringify(aggregateManifestRef)}\n`,
         );
-        overrides.beforeRunnerReturn?.();
+        overrides.beforeRunnerReturn?.(arguments_);
         return { status: 0, stdout: '', stderr: '' };
       },
       ...(overrides.dependencies ?? {}),
@@ -697,6 +706,81 @@ test('legacy Session state without host request history remains readable', () =>
   } finally {
     scope.close();
   }
+});
+
+test('archive preserves a terminal Session and clears the work-item slot', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    await transition(scope, 'CLEANING');
+    await transition(scope, 'CANCELLED');
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+
+    const archived = archiveDevelopmentSession(scope.baseOptions);
+
+    assert.equal(archived.sessionId, scope.sessionId);
+    assert.equal(archived.state, 'CANCELLED');
+    assert.equal(existsSync(paths.session), false);
+    assert.equal(existsSync(paths.events), false);
+    assert.equal(
+      existsSync(path.join(archived.archiveDirectory, 'session.json')),
+      true,
+    );
+    assert.equal(
+      existsSync(path.join(archived.archiveDirectory, 'events.ndjson')),
+      true,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('task result admission revalidates a frozen runtime source projection', () => {
+  const planPath = path.join(
+    REPO_ROOT,
+    'docs/architecture/secure-content/execution-plans/'
+      + '20260913-secure-content-hard-cut/plan.md',
+  );
+  const validation = spawnSync(
+    'python3',
+    [
+      '-m',
+      'tooling.scripts.plan_lifecycle_source',
+      '--repo-root',
+      REPO_ROOT,
+      '--plan',
+      planPath,
+      '--runtime-source',
+      EXPECTED_HEAD,
+      '--control-head',
+      EXPECTED_HEAD,
+    ],
+    { cwd: REPO_ROOT, encoding: 'utf8' },
+  );
+  assert.equal(validation.status, 0, validation.stderr);
+  const projection = JSON.parse(validation.stdout);
+
+  assert.equal(
+    validateTaskRuntimeSourceProjection(
+      {
+        kind: 'secure-content-development-result-aggregate',
+        sourceCommit: EXPECTED_HEAD,
+        runtimeSourceCommit: EXPECTED_HEAD,
+        controlHead: EXPECTED_HEAD,
+        sourceTransitionCount: 0,
+        sourceProjectionDigest: projection.transitionDigest,
+      },
+      { sourceHead: EXPECTED_HEAD },
+      { path: planPath },
+      REPO_ROOT,
+    ),
+    null,
+  );
 });
 
 async function rejectCode(code, operation) {
@@ -972,6 +1056,104 @@ test('source completion terminates at SOURCE_READY without functional proof', as
   }
 });
 
+test('Session journal timing is derived without persistent metrics state', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    completionClass: 'source',
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    const terminal = await transition(scope, 'SOURCE_READY');
+    const journal = readSessionJournal({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workItemId: scope.workItemId,
+      clock: scope.clock,
+    });
+
+    const timing = summarizeSessionJournal(
+      journal.events,
+      terminal.state.updatedAt,
+    );
+
+    assert.equal(timing.completeness, 'complete');
+    assert.equal(timing.observedAt, terminal.state.updatedAt);
+    assert.ok(timing.elapsedMs > 0);
+    assert.ok(timing.phaseMs.implement > 0);
+    assert.ok(timing.phaseMs.test > 0);
+    assert.equal(timing.evidence.SOURCE_CHECK, 'PASS');
+    assert.equal(timing.evidence.STRUCTURAL_CHECK, 'UNPROVEN');
+    assert.equal(timing.evidence.UX_REVIEW, 'UNPROVEN');
+    assert.equal(timing.evidence.FUNCTIONAL_CHECK, 'UNPROVEN');
+    assert.equal(timing.evidence.ACCEPTANCE_PROOF, 'UNPROVEN');
+  } finally {
+    scope.close();
+  }
+});
+
+test('Session timing becomes unknown when event timestamps move backward', async () => {
+  const scope = fixture({
+    workClass: 'product-behavior',
+    completionClass: 'source',
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await transition(scope, 'SOURCE_READY');
+    const journal = readSessionJournal({
+      home: scope.home,
+      workspaceRoot: REPO_ROOT,
+      workItemId: scope.workItemId,
+      clock: scope.clock,
+    });
+    const journalStart = Date.parse(journal.events[0].snapshot.startedAt);
+    const eventTimes = [
+      journalStart,
+      journalStart + 10_000,
+      journalStart + 5_000,
+      journalStart + 12_000,
+      journalStart + 15_000,
+    ];
+    let previousDigest = null;
+    const nonMonotonic = journal.events.map((event, index) => {
+      const at = new Date(eventTimes[index]).toISOString();
+      const rebuilt = createTransitionEvent({
+        kind: event.kind,
+        sequence: event.sequence,
+        sessionId: event.sessionId,
+        at,
+        reason: event.reason,
+        previousDigest,
+        compactedThrough: event.compactedThrough,
+        snapshot: { ...event.snapshot, updatedAt: at },
+      });
+      previousDigest = rebuilt.eventDigest;
+      return rebuilt;
+    });
+
+    const timing = summarizeSessionJournal(
+      nonMonotonic,
+      new Date(journalStart + 15_000),
+    );
+
+    assert.equal(timing.completeness, 'unknown');
+    assert.equal(timing.elapsedMs, null);
+    assert.ok(Object.values(timing.phaseMs).every((value) => value === null));
+    assert.equal(timing.evidence.SOURCE_CHECK, 'PASS');
+  } finally {
+    scope.close();
+  }
+});
+
 test('fix mode requires reproduction evidence and first-failure ownership', async () => {
   const scope = fixture({ executionMode: 'fix' });
   try {
@@ -1149,26 +1331,18 @@ test('functional result commit accepts the standard development policy envelope'
   }
 });
 
-test('functional result uses the workspace Acceptance interpreter', async () => {
+test('functional result forwards authorized and claimed Station profiles', async () => {
   const scope = fixture({
     workClass: 'product-behavior',
     runtimeClass: 'native-desktop',
-    deployProfiles: ['dwf-local'],
+    deployProfiles: ['dwf-local', 'chat-four', 'chat-five'],
+    runtimeClaims: [
+      'shared:profile:chat-four',
+      'shared:profile:chat-five',
+    ].join(';'),
     gates: ['chat-gate'],
   });
-  const runnerPython = path.join(
-    scope.home,
-    '.peers-touch',
-    'dev',
-    'workspaces',
-    WORKSPACE_ID,
-    'runtime',
-    'acceptance-venv',
-    process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python3',
-  );
   try {
-    mkdirSync(path.dirname(runnerPython), { recursive: true });
-    writeFileSync(runnerPython, '');
     await start(scope);
     await transition(scope, 'IMPLEMENTING');
     await transition(scope, 'FOCUSED_CHECKING');
@@ -1177,11 +1351,105 @@ test('functional result uses the workspace Acceptance interpreter', async () => 
     });
     await advanceRuntimeToFunctionalRunning(scope);
     const committed = await commitStandardizedFunctionalPass(scope, {
-      runnerCommand: runnerPython,
+      options: {
+        stationProfiles: [
+          'station-four=chat-four',
+          'station-five=chat-five',
+        ],
+      },
+      beforeRunnerReturn(arguments_) {
+        assert.deepEqual(
+          arguments_.filter(
+            (argument, index) =>
+              argument === '--station-profile' ||
+              arguments_[index - 1] === '--station-profile',
+          ),
+          [
+            '--station-profile',
+            'station-four=chat-four',
+            '--station-profile',
+            'station-five=chat-five',
+          ],
+        );
+      },
     });
     assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
   } finally {
     scope.close();
+  }
+});
+
+test('functional result rejects invalid Station profile handoffs before launch', async () => {
+  for (const candidate of [
+    {
+      stationProfiles: ['station-four =chat-four'],
+      deployProfiles: ['chat-four'],
+      runtimeClaims: 'shared:profile:chat-four',
+      code: 'INVALID_ARGUMENT',
+    },
+    {
+      stationProfiles: [
+        'station-four=chat-four',
+        'station-four=chat-five',
+      ],
+      deployProfiles: ['chat-four', 'chat-five'],
+      runtimeClaims:
+        'shared:profile:chat-four;shared:profile:chat-five',
+      code: 'INVALID_ARGUMENT',
+    },
+    {
+      stationProfiles: ['station-five=chat-five'],
+      deployProfiles: ['chat-four'],
+      runtimeClaims:
+        'shared:profile:chat-four;shared:profile:chat-five',
+      code: 'SESSION_AUTHORIZATION_REQUIRED',
+    },
+    {
+      stationProfiles: ['station-five=chat-five'],
+      deployProfiles: ['chat-four', 'chat-five'],
+      runtimeClaims: 'shared:profile:chat-four',
+      code: 'SESSION_RUNTIME_REQUIRED',
+    },
+  ]) {
+    const scope = fixture({
+      workClass: 'product-behavior',
+      runtimeClass: 'native-desktop',
+      deployProfiles: candidate.deployProfiles,
+      runtimeClaims: candidate.runtimeClaims,
+      gates: ['chat-gate'],
+    });
+    try {
+      await start(scope);
+      await transition(scope, 'IMPLEMENTING');
+      await transition(scope, 'FOCUSED_CHECKING');
+      await transition(scope, 'FOCUSED_PASS', {
+        verification: verification('SOURCE_CHECK', 'PASS'),
+      });
+      await advanceRuntimeToFunctionalRunning(scope);
+      let runnerCalls = 0;
+      await rejectCode(candidate.code, () =>
+        commitFunctionalResult(
+          {
+            ...scope.baseOptions,
+            planPath: undefined,
+            taskId: undefined,
+            journeyId: undefined,
+            reason: 'reject invalid Station profile handoff',
+            stationProfiles: candidate.stationProfiles,
+          },
+          {
+            ...scope.dependencies,
+            spawnDevelopmentRunner() {
+              runnerCalls += 1;
+              return { status: 1, stdout: '', stderr: '' };
+            },
+          },
+        ),
+      );
+      assert.equal(runnerCalls, 0);
+    } finally {
+      scope.close();
+    }
   }
 });
 
@@ -1205,204 +1473,6 @@ test('functional result commit accepts the normal FUNCTIONAL_RUNNING state', asy
     assert.equal(
       committed.state.runtimeBindingRef,
       'runtime/dwf-local/lease-1',
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('functional result accepts a declared composite service runtime', async () => {
-  const scope = fixture({
-    workClass: 'product-behavior',
-    runtimeClass: 'native-mobile',
-    deployProfiles: ['profile-primary', 'profile-secondary'],
-    runtimeClaims:
-      'shared:station.connect:station-primary;' +
-      'shared:station.connect:station-secondary',
-    gates: ['chat-gate'],
-  });
-  try {
-    await start(scope);
-    await transition(scope, 'IMPLEMENTING');
-    await transition(scope, 'FOCUSED_CHECKING');
-    await transition(scope, 'FOCUSED_PASS', {
-      verification: verification('SOURCE_CHECK', 'PASS'),
-    });
-    await advanceRuntimeToFunctionalRunning(scope);
-    const committed = await commitFunctionalPass(scope, {
-      manifest: {
-        profile: { resolvedName: 'composite-mobile-environment' },
-        services: {
-          primary: {
-            kind: 'station',
-            deploymentEnvironment: 'station-primary',
-            liveCommit: EXPECTED_HEAD,
-          },
-          secondary: {
-            kind: 'station',
-            deploymentEnvironment: 'station-secondary',
-            liveCommit: EXPECTED_HEAD,
-          },
-        },
-        clients: [{ runtime: 'tauri-ios-simulator' }],
-      },
-    });
-    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
-  } finally {
-    scope.close();
-  }
-});
-
-test('runtime identity set accepts auxiliary local clients beside a declared service', () => {
-  const runtimeClaims = [
-    {
-      mode: 'exclusive',
-      kind: 'station.deploy',
-      resourceId: 'chat-native-four',
-    },
-  ];
-  assert.equal(
-    runtimeIdentitiesMatchDeclaration(
-      [
-        {
-          profile: 'station-access-native',
-          services: {
-            station: {
-              kind: 'station',
-              deploymentEnvironment: 'chat-native-four',
-            },
-          },
-          clientRuntimes: ['native-tauri', 'tauri-ios-simulator'],
-        },
-        {
-          profile: 'mobile-simulator',
-          services: {},
-          clientRuntimes: ['tauri-ios-simulator'],
-        },
-      ],
-      ['chat-native-four'],
-      runtimeClaims,
-    ),
-    true,
-  );
-  assert.equal(
-    runtimeIdentitiesMatchDeclaration(
-      [
-        {
-          profile: 'mobile-simulator',
-          services: {},
-          clientRuntimes: ['tauri-ios-simulator'],
-        },
-      ],
-      ['chat-native-four'],
-      runtimeClaims,
-    ),
-    false,
-  );
-  assert.equal(
-    runtimeIdentitiesMatchDeclaration(
-      [
-        {
-          profile: 'chat-native-four',
-          services: {},
-          clientRuntimes: ['native-tauri'],
-        },
-        {
-          profile: 'undeclared-composite',
-          services: {
-            station: {
-              kind: 'station',
-              deploymentEnvironment: 'chat-native-five',
-            },
-          },
-          clientRuntimes: ['tauri-ios-simulator'],
-        },
-      ],
-      ['chat-native-four'],
-      runtimeClaims,
-    ),
-    false,
-  );
-});
-
-test('functional result rejects an undeclared composite service runtime', async () => {
-  const scope = fixture({
-    workClass: 'product-behavior',
-    runtimeClass: 'native-mobile',
-    deployProfiles: ['profile-primary', 'profile-secondary'],
-    runtimeClaims: 'shared:station.connect:station-primary',
-    gates: ['chat-gate'],
-  });
-  try {
-    await start(scope);
-    await transition(scope, 'IMPLEMENTING');
-    await transition(scope, 'FOCUSED_CHECKING');
-    await transition(scope, 'FOCUSED_PASS', {
-      verification: verification('SOURCE_CHECK', 'PASS'),
-    });
-    await advanceRuntimeToFunctionalRunning(scope);
-    await rejectCode('SESSION_EVIDENCE_OUT_OF_SEQUENCE', () =>
-      commitFunctionalPass(scope, {
-        manifest: {
-          profile: { resolvedName: 'composite-mobile-environment' },
-          services: {
-            primary: {
-              kind: 'station',
-              deploymentEnvironment: 'station-primary',
-              liveCommit: EXPECTED_HEAD,
-            },
-            secondary: {
-              kind: 'station',
-              deploymentEnvironment: 'station-secondary',
-              liveCommit: EXPECTED_HEAD,
-            },
-          },
-          clients: [{ runtime: 'tauri-ios-simulator' }],
-        },
-      }),
-    );
-  } finally {
-    scope.close();
-  }
-});
-
-test('functional result rejects composite service source drift', async () => {
-  const scope = fixture({
-    workClass: 'product-behavior',
-    runtimeClass: 'native-mobile',
-    deployProfiles: ['profile-primary', 'profile-secondary'],
-    runtimeClaims:
-      'shared:station.connect:station-primary;' +
-      'shared:station.connect:station-secondary',
-    gates: ['chat-gate'],
-  });
-  try {
-    await start(scope);
-    await transition(scope, 'IMPLEMENTING');
-    await transition(scope, 'FOCUSED_CHECKING');
-    await transition(scope, 'FOCUSED_PASS', {
-      verification: verification('SOURCE_CHECK', 'PASS'),
-    });
-    await advanceRuntimeToFunctionalRunning(scope);
-    await rejectCode('SESSION_EVIDENCE_OUT_OF_SEQUENCE', () =>
-      commitFunctionalPass(scope, {
-        manifest: {
-          profile: { resolvedName: 'composite-mobile-environment' },
-          services: {
-            primary: {
-              kind: 'station',
-              deploymentEnvironment: 'station-primary',
-              liveCommit: EXPECTED_HEAD,
-            },
-            secondary: {
-              kind: 'station',
-              deploymentEnvironment: 'station-secondary',
-              liveCommit: '9'.repeat(40),
-            },
-          },
-          clients: [{ runtime: 'tauri-ios-simulator' }],
-        },
-      }),
     );
   } finally {
     scope.close();
@@ -1472,6 +1542,93 @@ test('functional result rejects an illegal Session state before runner launch', 
       ),
     );
     assert.equal(runnerCalls, 0);
+  } finally {
+    scope.close();
+  }
+});
+
+test('functional result seals an owner-validated task aggregate without Gates', async () => {
+  const scope = fixture({
+    workClass: 'infrastructure',
+    runtimeClass: 'service',
+    deployProfiles: ['dwf-local'],
+    gates: [],
+  });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await advanceRuntimeToFunctionalRunning(scope);
+
+    const resultRef = 'secure-content/W12A/source/result.json';
+    const resultPath = path.join(
+      scope.home,
+      '.peers-touch/dev/workspaces',
+      WORKSPACE_ID,
+      'development',
+      resultRef,
+    );
+    mkdirSync(path.dirname(resultPath), { recursive: true });
+    const result = {
+      kind: 'secure-content-schema-activation-aggregate',
+      planId: scope.plan.manifest.planId,
+      taskId: scope.task.taskId,
+      workstreamId: scope.task.workstreamId,
+      workspaceId: WORKSPACE_ID,
+      sourceCommit: EXPECTED_HEAD,
+      completedAt: '2026-09-16T13:00:00.12345Z',
+      verificationClass: 'FUNCTIONAL_CHECK',
+      result: 'PASS',
+    };
+    let runnerCalls = 0;
+    const writeResult = () => {
+      delete result.resultDigest;
+      result.resultDigest = createHash('sha256')
+        .update(JSON.stringify(canonicalize(result)))
+        .digest('hex');
+      writeFileSync(resultPath, `${JSON.stringify(result)}\n`, { mode: 0o600 });
+    };
+    const dependencies = {
+      ...scope.dependencies,
+      spawnDevelopmentRunner() {
+        runnerCalls += 1;
+        return { status: 1, stdout: '', stderr: '' };
+      },
+    };
+    result.taskId = 'OTHER-TASK';
+    writeResult();
+    await rejectCode('SESSION_EVIDENCE_OUT_OF_SEQUENCE', () =>
+      commitFunctionalResult(
+        {
+          ...scope.baseOptions,
+          reason: 'reject mismatched task aggregate',
+          taskResultRef: resultRef,
+        },
+        dependencies,
+      ),
+    );
+
+    result.taskId = scope.task.taskId;
+    writeResult();
+    const committed = await commitFunctionalResult(
+      {
+        ...scope.baseOptions,
+        reason: 'commit task aggregate',
+        taskResultRef: resultRef,
+      },
+      dependencies,
+    );
+
+    assert.equal(runnerCalls, 0);
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
+    assert.equal(
+      committed.state.lastVerification.startedAt,
+      '2026-09-16T13:00:00.123Z',
+    );
+    assert.deepEqual(committed.state.lastVerification.artifactRefs, [resultRef]);
   } finally {
     scope.close();
   }
@@ -2023,6 +2180,120 @@ test('replay repairs a journal-ahead snapshot and rejects snapshot-ahead state',
   }
 });
 
+test('read-only Session inspection reports stale projection without repair', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    rmSync(paths.session);
+
+    expectCode('SESSION_PROJECTION_STALE', () =>
+      inspectSessionJournal({
+        home: scope.home,
+        workspaceRoot: REPO_ROOT,
+        workItemId: scope.workItemId,
+      }),
+    );
+
+    assert.equal(existsSync(paths.session), false);
+    assert.equal(existsSync(paths.lock), false);
+  } finally {
+    scope.close();
+  }
+});
+
+test('read-only Session inspection waits for an in-flight writer', async () => {
+  const scope = fixture();
+  try {
+    await start(scope);
+    const paths = sessionStorePaths({
+      home: scope.home,
+      workspaceId: WORKSPACE_ID,
+      workItemId: scope.workItemId,
+    });
+    const currentSnapshot = readFileSync(paths.session, 'utf8');
+    const staleSnapshot = JSON.parse(currentSnapshot);
+    staleSnapshot.eventCount += 1;
+    writeFileSync(paths.session, `${JSON.stringify(staleSnapshot)}\n`);
+    writeFileSync(
+      paths.lock,
+      `${JSON.stringify({
+        pid: process.pid,
+        processStart: processStartIdentity(),
+        createdAt: new Date().toISOString(),
+      })}\n`,
+    );
+
+    const childScript = `
+      const { inspectSessionJournal } = await import(
+        ${JSON.stringify(new URL('./dev-session-store.mjs', import.meta.url).href)}
+      );
+      try {
+        const result = inspectSessionJournal(JSON.parse(process.argv[1]));
+        process.stdout.write(JSON.stringify({
+          eventDigest: result.session.eventDigest,
+          eventCount: result.session.eventCount,
+        }));
+      } catch (error) {
+        process.stderr.write(JSON.stringify({
+          code: error?.code,
+          message: error?.message,
+        }));
+        process.exitCode = 2;
+      }
+    `;
+    const child = spawn(
+      process.execPath,
+      [
+        '--input-type=module',
+        '--eval',
+        childScript,
+        JSON.stringify({
+          home: scope.home,
+          workspaceRoot: REPO_ROOT,
+          workspaceId: WORKSPACE_ID,
+          workItemId: scope.workItemId,
+          lockTimeoutMs: 2_000,
+        }),
+      ],
+      { cwd: REPO_ROOT, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    const exited = new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code, signal) => resolve({ code, signal }));
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    writeFileSync(paths.session, currentSnapshot);
+    rmSync(paths.lock);
+
+    const exit = await exited;
+    assert.equal(exit.signal, null);
+    assert.equal(exit.code, 0, stderr);
+    const inspected = JSON.parse(stdout);
+    const expected = JSON.parse(currentSnapshot);
+    assert.equal(inspected.eventDigest, expected.eventDigest);
+    assert.equal(inspected.eventCount, expected.eventCount);
+    assert.equal(existsSync(paths.lock), false);
+  } finally {
+    scope.close();
+  }
+});
+
 test('journal corruption is rejected without snapshot replacement', async () => {
   const scope = fixture();
   try {
@@ -2094,6 +2365,14 @@ test('compaction preserves the prior digest and continuing sequence', async () =
       journal.events[1].previousDigest,
       journal.events[0].eventDigest,
     );
+    const timing = summarizeSessionJournal(
+      journal.events,
+      journal.session.state.updatedAt,
+    );
+    assert.equal(timing.completeness, 'partial');
+    assert.equal(timing.evidence.SOURCE_CHECK, 'PASS');
+    assert.equal(timing.evidence.STRUCTURAL_CHECK, 'UNKNOWN');
+    assert.equal(timing.evidence.FUNCTIONAL_CHECK, 'UNKNOWN');
   } finally {
     scope.close();
   }

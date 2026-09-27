@@ -1,3 +1,5 @@
+mod crypto;
+mod private_comment;
 mod private_moment;
 mod projection;
 
@@ -16,13 +18,17 @@ use tauri::{State, Window};
 use crate::application::station_binding::{self, StationBindingPhase, StationBindingState};
 use crate::error::{AppResult, ErrorCode};
 use crate::infrastructure::station_client;
-use crate::model::actor::ActorProfile;
+use crate::model::federation::FederationSelfView;
 use crate::secure_content::adapter::jwt_session_id;
 use crate::secure_content::station_trust::resolve_station_signing_key;
 use crate::secure_content::worker::maintain_content_prekeys;
 use crate::secure_content::{SecureContentLease, SecureContentSession, SecureContentSessionKey};
 use crate::state::AppState;
 
+use self::private_comment::{
+    PrivateCommentFailure, PrivateCommentIntent, PrivateCommentListInput,
+    PrivateCommentOrchestrator, PrivateCommentSubmitInput,
+};
 use self::private_moment::{
     PrivateMomentOrchestrator, PrivateMomentPublishIntent, PrivateRecoveryFailureKind,
 };
@@ -110,6 +116,132 @@ pub struct PrivateMomentMediaOpenInput {
 
 #[derive(Debug, Deserialize)]
 pub struct PrivateMomentsTeardownInput {
+    pub actor_ptid: String,
+    pub renderer_generation: u64,
+}
+
+#[tauri::command]
+pub fn social_private_comments_bootstrap(
+    input: PrivateMomentsBootstrapInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "COMMENT_FAILED"),
+    };
+    match PrivateCommentOrchestrator::new(&state.secure_content, lease)
+        .and_then(|service| service.snapshot())
+    {
+        Ok(snapshot) => AppResult::success(json!(snapshot)),
+        Err(error) => native_failure(error, "COMMENT_FAILED"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_comment_stage(
+    input: PrivateCommentIntent,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "COMMENT_FAILED"),
+    };
+    match PrivateCommentOrchestrator::new(&state.secure_content, lease) {
+        Ok(service) => match service.stage(&input) {
+            Ok(draft) => AppResult::success(json!(draft)),
+            Err(error) => private_comment_failure(error),
+        },
+        Err(error) => native_failure(error, "COMMENT_FAILED"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_comment_prepare(
+    input: PrivateCommentIntent,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "COMMENT_FAILED"),
+    };
+    match PrivateCommentOrchestrator::new(&state.secure_content, lease) {
+        Ok(service) => match service.prepare(&input) {
+            Ok(draft) => AppResult::success(json!(draft)),
+            Err(error) => private_comment_failure(error),
+        },
+        Err(error) => native_failure(error, "COMMENT_FAILED"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_comment_submit(
+    input: PrivateCommentSubmitInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "COMMENT_FAILED"),
+    };
+    match PrivateCommentOrchestrator::new(&state.secure_content, lease) {
+        Ok(service) => match service.submit(&input) {
+            Ok(result) => AppResult::success(json!(result)),
+            Err(error) => private_comment_failure(error),
+        },
+        Err(error) => native_failure(error, "COMMENT_FAILED"),
+    }
+}
+
+#[tauri::command]
+pub fn social_private_comments_list(
+    input: PrivateCommentListInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "COMMENT_FAILED"),
+    };
+    match PrivateCommentOrchestrator::new(&state.secure_content, lease) {
+        Ok(service) => match service.list(&input) {
+            Ok(page) => AppResult::success(json!(page)),
+            Err(error) => private_comment_failure(error),
+        },
+        Err(error) => native_failure(error, "COMMENT_FAILED"),
+    }
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[derive(Debug, Deserialize)]
+pub struct PrivateMomentsAcceptanceRuntimeIdentityInput {
     pub actor_ptid: String,
     pub renderer_generation: u64,
 }
@@ -397,8 +529,27 @@ pub fn social_private_moments_teardown(
 
 #[cfg(feature = "acceptance-webdriver")]
 #[tauri::command]
-pub fn social_private_moments_acceptance_runtime_identity() -> AppResult<Value> {
+pub fn social_private_moments_acceptance_runtime_identity(
+    input: PrivateMomentsAcceptanceRuntimeIdentityInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
+    };
     let boot_id = ACCEPTANCE_RUNTIME_BOOT_ID.get_or_init(|| ulid::Ulid::new().to_string());
+    let boot_identity_sha256 = hex::encode(Sha256::digest(
+        format!("{}:{boot_id}", std::process::id()).as_bytes(),
+    ));
+    let account_storage_identity_sha256 = hex::encode(Sha256::digest(
+        crate::infrastructure::local_scope::user_scope_for_actor_ptid(&input.actor_ptid).as_bytes(),
+    ));
     let executable_sha256 = match ACCEPTANCE_EXECUTABLE_SHA256.get_or_init(|| {
         let executable = std::env::current_exe()
             .map_err(|error| format!("resolve Desktop executable: {error}"))?;
@@ -434,13 +585,55 @@ pub fn social_private_moments_acceptance_runtime_identity() -> AppResult<Value> 
             Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
         };
     AppResult::success(json!({
-        "processId": std::process::id(),
-        "bootId": boot_id,
+        "bootIdentitySha256": boot_identity_sha256,
+        "sessionGeneration": lease.session.key.session_generation,
+        "accountStorageIdentitySha256": account_storage_identity_sha256,
         "sourceCommit": env!("PT_BUILD_SOURCE_COMMIT"),
         "executableSha256": executable_sha256,
         "stationRuntimeIdentitySha256": station_runtime_identity_sha256,
         "stationEndpointSha256": station_endpoint_sha256,
     }))
+}
+
+#[cfg(feature = "acceptance-webdriver")]
+#[tauri::command]
+pub fn social_private_moments_acceptance_maintain_prekeys(
+    input: PrivateMomentsAcceptanceRuntimeIdentityInput,
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+) -> AppResult<Value> {
+    let lease = match lease_for_window(
+        state.inner(),
+        &window,
+        &input.actor_ptid,
+        input.renderer_generation,
+    ) {
+        Ok(lease) => lease,
+        Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
+    };
+    let recovery_epoch = match lease.store.latest_recovery_epoch(&input.actor_ptid) {
+        Ok(Some(epoch)) => epoch,
+        Ok(None) => {
+            return native_failure(
+                "secure content recovery epoch is unavailable".to_string(),
+                "RECOVERY_KEY_UNAVAILABLE",
+            )
+        }
+        Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+    };
+    match maintain_content_prekeys(&state.secure_content, &lease) {
+        Ok(summary) if summary.recovery_available.unwrap_or_default() > 0 => {
+            AppResult::success(json!({
+                "recoveryEpoch": recovery_epoch,
+                "recoveryPreKeyAvailable": summary.recovery_available,
+            }))
+        }
+        Ok(_) => native_failure(
+            "secure content recovery PreKey pool is empty".to_string(),
+            "RECOVERY_KEY_UNAVAILABLE",
+        ),
+        Err(error) => native_failure(error, "RECOVERY_KEY_UNAVAILABLE"),
+    }
 }
 
 fn activate(
@@ -476,10 +669,10 @@ fn activate(
         .ok_or_else(|| "secure content active Station peer ID is unavailable".to_string())?;
     let station_url = station_client::station_base_url();
     let federation_self =
-        station_client::request_peers_proto_no_body_for_device_at::<ActorProfile>(
+        station_client::request_peers_proto_no_body_for_device_at::<FederationSelfView>(
             &station_url,
             reqwest::Method::GET,
-            "/actor/profile",
+            "/actor/federation/me",
             &active.jwt,
             None,
             &engine.endpoint().device_id,
@@ -487,7 +680,7 @@ fn activate(
         .map_err(|error| format!("load Secure Content Station identity: {error}"))?;
     if federation_self.home_station_peer_id != station_peer_id
         || federation_self
-            .r#ref
+            .actor_ref
             .as_ref()
             .map(|actor| actor.ptid.as_str())
             != Some(actor_ptid)
@@ -595,6 +788,24 @@ fn native_failure(message: String, state: &str) -> AppResult<Value> {
         Some(json!({
             "state": state,
             "native_error_code": code,
+        })),
+    )
+}
+
+fn private_comment_failure(error: PrivateCommentFailure) -> AppResult<Value> {
+    let app_code = match error.state {
+        crate::secure_content::store::CommentState::ParentUnavailable => ErrorCode::NotFound,
+        crate::secure_content::store::CommentState::RateLimited => ErrorCode::InvalidArgument,
+        _ => ErrorCode::InternalError,
+    };
+    AppResult::fail(
+        app_code,
+        error.message,
+        Some(json!({
+            "state": error.state.as_str(),
+            "native_error_code": error.code,
+            "retry_after_seconds": error.retry_after_seconds,
+            "retry_not_before_unix_ms": error.retry_not_before_unix_ms,
         })),
     )
 }

@@ -1,5 +1,5 @@
 id: modern-chat-agent-v2-runtime-matrix
-version: 2026-08-25.1
+version: 2026-09-21.2
 status: plan-review
 tuple_expansion:
   mode: cartesian
@@ -225,7 +225,7 @@ cell_sets:
     - ERR-B01
     - ERR-B02
     - ERR-B03
-  tool:
+  tool_executed:
     - AS-05A
     - AS-05
     - CR-00
@@ -237,17 +237,19 @@ cell_sets:
     - CR-05
     - CR-06
     - R-03
-    - R-05
-    - R-07
-    - ERR-O01
     - ERR-O02
     - ERR-O03
     - ERR-O04
-    - ERR-O05
     - ERR-O06
     - ERR-O07
     - ERR-O08
     - REPLAY-O07I
+  tool_zero_execution:
+    - ERR-O01
+    - ERR-O05
+  tool_ordered_execution:
+    - R-05
+    - R-07
   mcp:
     - AS-04
     - R-01
@@ -262,25 +264,28 @@ cell_sets:
     - ERR-O06
     - ERR-O07
     - ERR-O08
-  connector:
+  connector_executed:
     - AS-06
+  connector_ordered_execution:
     - R-06
     - R-07
+  connector_zero_execution:
     - ERR-CON01
     - ERR-CON02
     - ERR-CON03
     - ERR-CON04
-  evaluation:
+  evaluation_turn_backed:
     - AS-07
     - AS-08
     - AS-14
     - R-08
     - R-09
     - R-10
-    - ERR-E01
-    - ERR-E02
     - ERR-E03
     - ERR-E04
+  evaluation_control_plane_rejection:
+    - ERR-E01
+    - ERR-E02
     - ERR-E05
 
 rows:
@@ -370,32 +375,62 @@ rows:
     gate: agent-v2-home-command-center-e2e
     platform: desktop_app
     runtime: direct_model
+    runtime_attestation_profile: station_command
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, command-ids, projection-revisions, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence]
     cell_sets: [home]
   - id: home-browser-direct
     gate: agent-v2-home-command-center-e2e
     platform: browser
     runtime: direct_model
+    runtime_attestation_profile: station_command
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, command-ids, projection-revisions, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence]
     cell_sets: [home]
   - id: home-mobile-contract
     gate: agent-v2-home-command-center-e2e
     platform: mobile_contract
     runtime: contract_only
+    runtime_attestation_profile: contract_only
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [contract-evidence]
+      not_applicable: [receiver-dom, station-readback, command-ids, projection-revisions, measurement-report, side-effect-count, replay]
     locales: [contract]
     cells: [AS-15-V2-H01]
   - id: binding-desktop-direct-local
     gate: agent-v2-capability-binding-e2e
     platform: desktop_app
     runtime: direct_model_local_session
+    runtime_attestation_profile: station_control_plane
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, readiness-snapshots, zero-execution, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, guard-report]
     cell_sets: [binding, taxonomy]
   - id: binding-browser-direct-remote
     gate: agent-v2-capability-binding-e2e
     platform: browser
     runtime: direct_model_remote_session
+    runtime_attestation_profile: station_control_plane
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, readiness-snapshots, zero-execution, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, guard-report]
     cell_sets: [binding, taxonomy]
   - id: binding-mobile-contract
     gate: agent-v2-capability-binding-e2e
     platform: mobile_contract
     runtime: contract_only
+    runtime_attestation_profile: contract_only
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [contract-evidence, zero-execution]
+      not_applicable: [receiver-dom, station-readback, readiness-snapshots, measurement-report, side-effect-count, replay, guard-report]
     locales: [contract]
     cell_sets: [taxonomy]
     cells: [AS-10, AS-15-V2-T01-T03]
@@ -403,69 +438,282 @@ rows:
     gate: agent-v2-capability-binding-e2e
     platform: desktop_station
     runtime: retired_custom_http_plugin
+    runtime_attestation_profile: orchestration_guard
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [zero-execution, guard-report]
+      not_applicable: [receiver-dom, station-readback, readiness-snapshots, measurement-report, side-effect-count, replay, contract-evidence]
     locales: [neutral]
     cells: [AS-16-CUSTOM-PLUGIN-RETIREMENT]
   - id: tool-desktop-local
     gate: agent-v2-governed-tool-loop-e2e
     platform: desktop_app
     runtime: direct_model_local_executor
-    cell_sets: [tool]
+    runtime_attestation_profile: client_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, executor-receipts, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
+    cell_sets: [tool_executed]
+  - id: tool-desktop-local-race-executed
+    gate: agent-v2-governed-tool-loop-e2e
+    platform: desktop_app
+    runtime: direct_model_local_executor
+    runtime_attestation_profile: client_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, executor-receipts, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
+    cell_sets: [tool_ordered_execution]
+    ordering_filter: [B]
+  - id: tool-desktop-zero-execution
+    gate: agent-v2-governed-tool-loop-e2e
+    platform: desktop_app
+    runtime: direct_model_local_executor
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, measurement-report, side-effect-count, zero-execution, replay]
+      not_applicable: [executor-receipts, contract-evidence]
+    cell_sets: [tool_zero_execution]
+  - id: tool-desktop-race-zero-execution
+    gate: agent-v2-governed-tool-loop-e2e
+    platform: desktop_app
+    runtime: direct_model_local_executor
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, measurement-report, side-effect-count, zero-execution, replay]
+      not_applicable: [executor-receipts, contract-evidence]
+    cell_sets: [tool_ordered_execution]
+    ordering_filter: [A]
   - id: tool-browser-station
     gate: agent-v2-governed-tool-loop-e2e
     platform: browser
     runtime: direct_model_station_executor
-    cell_sets: [tool]
+    runtime_attestation_profile: station_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, executor-receipts, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
+    cell_sets: [tool_executed]
+  - id: tool-browser-station-race-executed
+    gate: agent-v2-governed-tool-loop-e2e
+    platform: browser
+    runtime: direct_model_station_executor
+    runtime_attestation_profile: station_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, executor-receipts, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
+    cell_sets: [tool_ordered_execution]
+    ordering_filter: [B]
+  - id: tool-browser-zero-execution
+    gate: agent-v2-governed-tool-loop-e2e
+    platform: browser
+    runtime: direct_model_station_executor
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, measurement-report, side-effect-count, zero-execution, replay]
+      not_applicable: [executor-receipts, contract-evidence]
+    cell_sets: [tool_zero_execution]
+  - id: tool-browser-race-zero-execution
+    gate: agent-v2-governed-tool-loop-e2e
+    platform: browser
+    runtime: direct_model_station_executor
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, measurement-report, side-effect-count, zero-execution, replay]
+      not_applicable: [executor-receipts, contract-evidence]
+    cell_sets: [tool_ordered_execution]
+    ordering_filter: [A]
   - id: tool-mobile-contract
     gate: agent-v2-governed-tool-loop-e2e
     platform: mobile_contract
     runtime: contract_only
+    runtime_attestation_profile: contract_only
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [contract-evidence]
+      not_applicable: [receiver-dom, station-readback, executor-receipts, measurement-report, side-effect-count, zero-execution, replay]
     locales: [contract]
     cells: [AS-15-V2-T04, AS-15-V2-O01]
   - id: mcp-desktop-local
     gate: agent-v2-mcp-lifecycle-e2e
     platform: desktop_app
     runtime: local_mcp
+    runtime_attestation_profile: client_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, executor-receipts, process-port-secret-canary, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
     cell_sets: [mcp]
   - id: mcp-browser-unavailable
     gate: agent-v2-mcp-lifecycle-e2e
     platform: browser
     runtime: local_mcp_unavailable
+    runtime_attestation_profile: unavailable_runtime
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, process-port-secret-canary, side-effect-count, zero-execution]
+      not_applicable: [executor-receipts, measurement-report, replay, contract-evidence]
     cells: [AS-04-UNAVAILABLE, TAX-04]
   - id: mcp-mobile-unavailable
     gate: agent-v2-mcp-lifecycle-e2e
     platform: mobile_contract
     runtime: local_mcp_unavailable
+    runtime_attestation_profile: contract_only
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [contract-evidence, zero-execution]
+      not_applicable: [receiver-dom, station-readback, executor-receipts, process-port-secret-canary, measurement-report, side-effect-count, replay]
     locales: [contract]
     cells: [AS-04-UNAVAILABLE, AS-15-V2-M01, TAX-04]
-  - id: connector-desktop-direct
+  - id: connector-desktop-client-executed
     gate: agent-v2-connector-invocation-e2e
     platform: desktop_app
-    runtime: direct_model
-    cell_sets: [connector]
-  - id: connector-browser-direct
+    runtime: direct_model_client_connector
+    runtime_attestation_profile: client_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
+    cell_sets: [connector_executed]
+  - id: connector-desktop-client-race-executed
+    gate: agent-v2-connector-invocation-e2e
+    platform: desktop_app
+    runtime: direct_model_client_connector
+    runtime_attestation_profile: client_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
+    cell_sets: [connector_ordered_execution]
+    ordering_filter: [B]
+  - id: connector-desktop-zero-execution
+    gate: agent-v2-connector-invocation-e2e
+    platform: desktop_app
+    runtime: direct_model_connector_rejected
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, zero-execution, replay]
+      not_applicable: [contract-evidence]
+    cell_sets: [connector_zero_execution]
+  - id: connector-desktop-race-zero-execution
+    gate: agent-v2-connector-invocation-e2e
+    platform: desktop_app
+    runtime: direct_model_connector_rejected
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, zero-execution, replay]
+      not_applicable: [contract-evidence]
+    cell_sets: [connector_ordered_execution]
+    ordering_filter: [A]
+  - id: connector-browser-client-executed
     gate: agent-v2-connector-invocation-e2e
     platform: browser
-    runtime: direct_model
-    cell_sets: [connector]
+    runtime: direct_model_client_connector
+    runtime_attestation_profile: client_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
+    cell_sets: [connector_executed]
+  - id: connector-browser-client-race-executed
+    gate: agent-v2-connector-invocation-e2e
+    platform: browser
+    runtime: direct_model_client_connector
+    runtime_attestation_profile: client_capability_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence, zero-execution]
+    cell_sets: [connector_ordered_execution]
+    ordering_filter: [B]
+  - id: connector-browser-zero-execution
+    gate: agent-v2-connector-invocation-e2e
+    platform: browser
+    runtime: direct_model_connector_rejected
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, zero-execution, replay]
+      not_applicable: [contract-evidence]
+    cell_sets: [connector_zero_execution]
+  - id: connector-browser-race-zero-execution
+    gate: agent-v2-connector-invocation-e2e
+    platform: browser
+    runtime: direct_model_connector_rejected
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, zero-execution, replay]
+      not_applicable: [contract-evidence]
+    cell_sets: [connector_ordered_execution]
+    ordering_filter: [A]
   - id: connector-mobile-contract
     gate: agent-v2-connector-invocation-e2e
     platform: mobile_contract
     runtime: contract_only
+    runtime_attestation_profile: contract_only
+    role_policy:
+      always: [runtime-attestation-set, cleanup]
+      required: [contract-evidence]
+      not_applicable: [receiver-dom, station-readback, oauth-resource-manifest, provider-revoke, measurement-report, side-effect-count, zero-execution, replay]
     locales: [contract]
     cells: [AS-15-V2-C01]
   - id: evaluation-desktop-direct
     gate: agent-v2-evaluation-lab-e2e
     platform: desktop_app
     runtime: direct_model
-    cell_sets: [evaluation]
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, runtime-events, turn-trace, metrics-lineage, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence]
+    cell_sets: [evaluation_turn_backed]
+  - id: evaluation-desktop-control-plane-rejection
+    gate: agent-v2-evaluation-lab-e2e
+    platform: desktop_app
+    runtime: evaluation_control_plane_rejection
+    runtime_attestation_profile: station_control_plane
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, measurement-report, side-effect-count, replay]
+      not_applicable: [runtime-events, turn-trace, metrics-lineage, contract-evidence]
+    cell_sets: [evaluation_control_plane_rejection]
   - id: evaluation-browser-direct
     gate: agent-v2-evaluation-lab-e2e
     platform: browser
     runtime: direct_model
-    cell_sets: [evaluation]
+    runtime_attestation_profile: station_turn
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, runtime-events, turn-trace, metrics-lineage, measurement-report, side-effect-count, replay]
+      not_applicable: [contract-evidence]
+    cell_sets: [evaluation_turn_backed]
+  - id: evaluation-browser-control-plane-rejection
+    gate: agent-v2-evaluation-lab-e2e
+    platform: browser
+    runtime: evaluation_control_plane_rejection
+    runtime_attestation_profile: station_control_plane
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [receiver-dom, station-readback, measurement-report, side-effect-count, replay]
+      not_applicable: [runtime-events, turn-trace, metrics-lineage, contract-evidence]
+    cell_sets: [evaluation_control_plane_rejection]
   - id: evaluation-mobile-contract
     gate: agent-v2-evaluation-lab-e2e
     platform: mobile_contract
     runtime: contract_only
+    runtime_attestation_profile: contract_only
+    role_policy:
+      always: [cell-results, runtime-attestation-set, cleanup]
+      required: [contract-evidence]
+      not_applicable: [receiver-dom, station-readback, runtime-events, turn-trace, metrics-lineage, measurement-report, side-effect-count, replay]
     locales: [contract]
     cells: [AS-15-V2-E01]

@@ -27,12 +27,20 @@
             "enum": [
               "direct_runtime",
               "direct_runtime_no_local_capability",
+              "station_command",
+              "station_control_plane",
+              "station_turn",
+              "client_capability_turn",
+              "station_capability_turn",
               "contract_only",
+              "unavailable_runtime",
               "orchestration_guard",
               "non_advertised"
             ]
           },
+          "scenarioExecutionId": {"type": "string", "minLength": 1},
           "actorIdentityHash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "oauthProviderId": {"type": "string", "minLength": 1},
           "conversationRuntimeBinding": {
             "type": "object",
             "required": [
@@ -79,6 +87,15 @@
               "sideEffectReceiptId"
             ]
           },
+          "stationToolCallBinding": {
+            "type": "object",
+            "required": [
+              "toolCallId", "turnId", "attemptId",
+              "capabilityId", "capabilityVersion", "bindingId",
+              "bindingRevision", "readinessSnapshotId",
+              "sideEffectReceiptId"
+            ]
+          },
           "clientSession": {
             "type": "object",
             "required": [
@@ -108,12 +125,43 @@
               }
             }
           },
+          "commandAttestation": {
+            "type": "object",
+            "required": [
+              "commandId", "commandKind", "idempotencyKeyHash",
+              "objectIds", "projectionRevision"
+            ]
+          },
+          "controlPlaneAttestation": {
+            "type": "object",
+            "required": [
+              "authority", "entityIdHash", "readinessSnapshotId", "revision",
+              "stateHash", "zeroExecutionCount"
+            ]
+          },
+          "stationExecutorAttestation": {
+            "type": "object",
+            "required": [
+              "executorId", "executorKind", "executorRevision"
+            ]
+          },
+          "unavailableAttestation": {
+            "type": "object",
+            "required": [
+              "readinessSnapshotId", "state", "reasonCode",
+              "activityBeforeHash", "activityAfterHash",
+              "zeroExecutionCount"
+            ]
+          },
           "contractAttestation": {
             "type": "object",
             "required": [
               "contractId", "contractHash", "platform",
               "toolchain", "roundTripStatus"
-            ]
+            ],
+            "properties": {
+              "contractRunId": {"type": "string", "minLength": 1}
+            }
           },
           "guardAttestation": {
             "type": "object",
@@ -172,9 +220,81 @@
           },
           {
             "properties": {
+              "attestationProfile": {"const": "station_command"}
+            },
+            "required": [
+              "scenarioExecutionId", "actorIdentityHash",
+              "commandAttestation", "desktopMode"
+            ]
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "station_control_plane"}
+            },
+            "required": [
+              "scenarioExecutionId", "actorIdentityHash",
+              "controlPlaneAttestation", "desktopMode"
+            ]
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "station_turn"}
+            },
+            "required": [
+              "scenarioExecutionId", "actorIdentityHash",
+              "conversationRuntimeBinding", "runtimeSnapshot",
+              "turnAttempt", "desktopMode"
+            ]
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "client_capability_turn"},
+              "clientSession": {
+                "properties": {
+                  "capabilities": {"minItems": 1}
+                }
+              }
+            },
+            "required": [
+              "scenarioExecutionId", "actorIdentityHash",
+              "conversationRuntimeBinding", "runtimeSnapshot",
+              "turnAttempt", "toolCallBinding", "clientSession",
+              "desktopMode"
+            ]
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "station_capability_turn"}
+            },
+            "required": [
+              "scenarioExecutionId", "actorIdentityHash",
+              "conversationRuntimeBinding", "runtimeSnapshot",
+              "turnAttempt", "stationToolCallBinding",
+              "stationExecutorAttestation", "desktopMode"
+            ]
+          },
+          {
+            "properties": {
               "attestationProfile": {"const": "contract_only"}
             },
             "required": ["contractAttestation"],
+            "not": {
+              "anyOf": [
+                {"required": ["conversationRuntimeBinding"]},
+                {"required": ["turnAttempt"]},
+                {"required": ["toolCallBinding"]},
+                {"required": ["clientSession"]}
+              ]
+            }
+          },
+          {
+            "properties": {
+              "attestationProfile": {"const": "unavailable_runtime"}
+            },
+            "required": [
+              "scenarioExecutionId", "actorIdentityHash",
+              "unavailableAttestation", "desktopMode"
+            ],
             "not": {
               "anyOf": [
                 {"required": ["conversationRuntimeBinding"]},

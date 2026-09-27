@@ -26,7 +26,6 @@ from tooling.acceptance.fixtures.chat_native_reset import (
     FixtureActorRecord,
     acceptance_station_environment,
     read_fixture_actor,
-    refresh_fixture_actor_locator,
     seed_bound_contact,
     verify_disposable_station_runtime,
 )
@@ -338,13 +337,6 @@ def prepare_bound_friendships(
                 resource=f"fixture-actor:{role}",
             )
         records[role] = record
-
-    for role, (station_url, environment) in role_targets.items():
-        records[role] = refresh_fixture_actor_locator(
-            station_url,
-            environment,
-            records[role],
-        )
 
     federation_members = tuple(records.values())
     for actor_role, (station_url, environment) in role_targets.items():

@@ -3,7 +3,6 @@ package touch
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/peers-labs/peers-touch/station/frame/core/server"
 	"github.com/peers-labs/peers-touch/station/frame/core/types"
 	"github.com/peers-labs/peers-touch/station/frame/touch/model"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
@@ -122,27 +120,10 @@ func shouldUseProto(ctx *app.RequestContext) bool {
 }
 
 func bindProtoOrJSON(ctx *app.RequestContext, msg proto.Message) error {
-	ct := string(ctx.Request.Header.ContentType())
-	if strings.Contains(ct, model.ContentTypeProtobuf) || strings.Contains(ct, model.ContentTypeXProtobuf) {
-		return proto.Unmarshal(ctx.Request.Body(), msg)
-	}
-	opts := protojson.UnmarshalOptions{DiscardUnknown: true}
-	return opts.Unmarshal(ctx.Request.Body(), msg)
-}
-
-func bindAccessProto(ctx *app.RequestContext, msg proto.Message) error {
-	contentType := strings.TrimSpace(strings.Split(
+	serializer := server.NewContentNegotiator().GetRequestSerializer(
 		string(ctx.Request.Header.ContentType()),
-		";",
-	)[0])
-	accept := strings.TrimSpace(strings.Split(
-		string(ctx.GetHeader("Accept")),
-		";",
-	)[0])
-	if contentType != model.ContentTypeProtobuf || accept != model.AcceptProtobuf {
-		return fmt.Errorf("access gate requires %s request and response", model.ContentTypeProtobuf)
-	}
-	return proto.Unmarshal(ctx.Request.Body(), msg)
+	)
+	return serializer.Unmarshal(ctx.Request.Body(), msg)
 }
 
 // SuccessResponse sends a success response in proto or JSON format based on Accept header

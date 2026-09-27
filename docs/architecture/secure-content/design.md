@@ -1,8 +1,8 @@
 # Secure Content - Architecture Design
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-15
+> **Version**: v1.9
+> **Created**: 2026-09-13 | **Updated**: 2026-09-21
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -20,6 +20,7 @@
 | `SC-A06` | Public-readable routes use strict optional authentication: absent is anonymous; supplied invalid is `401`. |
 | `SC-A07` | No partial recipient set, plaintext/public fallback, dual write, alias, or legacy read is legal. |
 | `SC-A08` | Recovery and key-unavailable states are explicit, bounded, and independently verifiable. |
+| `SC-A09` | Product evidence observes production-owned commit points and runtime identities; it never infers completion from time, duplicates business logic, or controls another owner's process. |
 
 ## 2. Evidence Ledger
 
@@ -32,6 +33,19 @@
 | Conversation object ownership and `/conversation/attachments/*` are accepted | `accepted_decision` | `MP-D23`, `AO-D02` | high | none |
 | Social GROUP membership is not wired in production | `verified_fact` | `NewNoopGroupMembershipChecker` | high | owner adapter |
 | A shared stateless kernel avoids duplicate algorithms without moving domain authority | `proposal` | topology below | high | review and implementation proof |
+| W7S source checks pass but the Desktop lifecycle cannot execute without invented observation and fixture semantics | `verified_fact` | W7S checkpoint `6590d0997` and hard-cut plan execution discovery | high | runtime implementation and product evidence |
+| The machine control plane already assigns deploy/restart authority to an exclusive runtime owner and resolves immutable runtime manifests | `accepted_decision` | `LDCP-D05`, local-dev-control-plane design sections 4.6 and 5 | high | W7 runtime evidence |
+| Long-lived WebSocket/SSE connections cannot use socket closure or a quiet period as a deterministic capture boundary | `inference` | Desktop runtime owns persistent event streams and periodic reconciliation | high | acceptance observer implementation proof |
+| Deterministic lifecycle barriers, restart continuation, stream watermarks, and provisioned fixture handles can close the W7S evidence gap without moving production authority | `accepted_decision` | accepted `SC-D21` | high | implementation and product evidence |
+| The hard-cut plan's `one`/slot `0` commands conflict with the live `four`/slot `5` binding and machine-shaped work items | `verified_fact` | plan sections 4/8/12, work-item YAML, `make dev-check WORK_ITEM=secure-content-w11` | high | plan correction after decision acceptance |
+| W7 runtime admission conflates the ephemeral client connection endpoint with the canonical endpoint bound by W12A schema activation | `verified_fact` | W7 checkpoint `15c0a7858`; `runtime_owner.py::_resolve_canonical_private_schema_attestation`; `runtime_manifest.py::_validate_services` | high | none |
+| One owner-published service entry can carry separate connection and schema-attestation endpoints without creating another topology owner | `accepted_decision` | accepted `SC-D28` | high | implementation proof |
+| Development runtime-manifest validation supports Desktop and Browser clients but has no Mobile client kind and requires one top-level profile | `verified_fact` | `tooling/development/secure_content/run.py::RUNTIME_CLIENT_KINDS` and `_load_runtime_manifest` | high | accepted `SC-D22` implementation |
+| Mobile has generated Secure Content contracts but no private Social Native runtime or attachable product actions | `verified_fact` | `apps/mobile/src/gen/proto/domain/{secure_content,social}`, `apps/mobile/src-tauri/src/secure_content`, Mobile Moments/runtime inventory | high | W9 implementation and product evidence |
+| `social_private_posts` is a mixed historical/canonical table name; the current migrator adds encrypted columns beside a possible plaintext-era schema | `verified_fact` | `migratePrivateContentPost`, `SocialPrivateContentPost`, W11 deletion commit `b8171e1f5` | high | accepted `SC-D23` and profile pre-audit |
+| An allowlisted full private Development reset plus owner-mediated object deletion can remove mixed private state without touching public or Conversation truth | `accepted_decision` | accepted `SC-D23` | high | implementation and two-profile post-audit |
+| Recovery admission verifies the predecessor journal digest before terminalizing the predecessor, but the terminal row cannot reproduce that old digest after its state or failure projection changes | `verified_fact` | W12A FIVEARM reset chain and `GORMSecureContentResetStore` | high | accepted `SC-D27` receipt implementation |
+| `OBJECTS_DELETED` proves database commit and owner-mediated object deletion completed before deployment handoff begins | `verified_fact` | `SecureContentResetOwner.executeLocked` transition order | high | accepted `SC-D27` eligibility tests |
 
 ## 3. Scope
 
@@ -191,9 +205,9 @@ PreKey claims are irreversible when exposed. Replaying the same prepare command
 returns the same claim; abandoned plans consume capacity and are replenished through
 Key Exchange policy. No partial recipient publish is allowed.
 
-### 8.1 Proposed Content PreKey Client Boundary
+### 8.1 Accepted Content PreKey Client Boundary
 
-Proposed `SC-D20` makes the existing Key Exchange publication/inventory
+Accepted `SC-D20` makes the existing Key Exchange publication/inventory
 capability usable by authenticated Native clients without creating a Secure
 Content service:
 
@@ -261,6 +275,75 @@ recovered active endpoint fetch ciphertext without creating a server-side key
 transfer; the recovery secret is still required to decrypt. Missing and
 unauthorized IDs share one not-found response. Generic storage has no actor,
 audience, resource or grant authority.
+
+### 8.3 Proposed Deterministic Product-Evidence Boundary
+
+Accepted `SC-D21` defines a Development/Acceptance observation boundary around
+the existing production path. It adds no alternate publish, read,
+authorization, crypto, persistence, or runtime lifecycle implementation.
+
+```text
+External scenario
+  -> attach through immutable runtime manifest
+  -> invoke production Desktop/Browser intent
+  -> wait on acceptance-only observation barrier
+       -> production Native store/transport/store boundary
+       -> production Browser network observer event loop
+  -> request runtime-owner action when restart is required
+       -> runtime owner acquires lease and restarts
+       -> fresh immutable child manifest
+  -> continue through the new manifest
+```
+
+The lifecycle observer exposes exactly three named barriers:
+
+| Barrier | Production-owned fact observed | Required ordering |
+|---|---|---|
+| `persisted-before-send` | encrypted private material, proof-free command bytes/hash, command state, and the session-generation send lease committed through the production store | before the production transport is invoked |
+| `sent-before-response` | the production transport accepted the exact request for dispatch and the response has not yet been projected | after dispatch acceptance and before response handling |
+| `response-before-local-commit` | a validated production response exists while the corresponding command/root-key projection has not yet committed | before the production store transaction that advances local state |
+
+Each barrier is acceptance-build-only, one-shot, operation-scoped, and keyed by
+runtime boot identity plus session generation. It delegates observation to the
+production owner, returns only bounded state names and opaque digests, and may
+pause the production path until the external controller releases the same
+barrier token. Missing, duplicate, out-of-order, stale-generation, or
+wrong-boot tokens fail closed. Production builds expose no controller.
+
+Forced restart is a request/acknowledgement protocol, not a scenario command.
+The scenario persists a source-bound resume artifact and requests an action
+from the W7 runtime owner. The owner alone acquires the required lease, stops
+and starts the selected process while preserving the declared client storage,
+then publishes a fresh immutable runtime manifest. Continuation requires:
+
+- the child manifest names the parent manifest digest and restart request ID;
+- source, profile, client identity, and retained-storage identity still match;
+- Native boot identity changed and session generation did not regress;
+- the old manifest is never reused for post-restart commands.
+
+The Browser network observer assigns a monotonic sequence to every observed
+HTTP request and WebSocket/SSE open, frame, error, and close event. A capture
+ends only when an explicit terminal marker is enqueued on the same observer
+event loop after the production action resolves. Persisting that marker proves
+that every earlier queued event belongs to the closed capture interval.
+Socket closure, sleep, polling silence, and timeout expiry are not terminal
+evidence.
+
+Account switch, Station switch, publisher-device revocation, and historical
+recovery epoch enter a scenario only as immutable, digest-bound fixture handles:
+
+| Fixture | Truth owner | Scenario-visible input |
+|---|---|---|
+| account switch | Actor/session provisioner | two provisioned account/session handles and expected storage identities |
+| Station switch | environment/runtime provisioner | two approved Station binding handles and expected Station identities |
+| publisher-device revocation | Actor Identity provisioner | device handle plus typed revoke action and committed profile/revocation acknowledgement |
+| historical recovery epoch | Recovery + Key Exchange provisioner | actor/recovery fixture handle, historical epoch, and secret-channel reference |
+
+Scenarios cannot create actors, PTIDs, device keys, Station profiles, recovery
+epochs, or revocation state. Secret fixture material is injected directly into
+the owning Native runtime and is never returned in scenario output or evidence.
+Unavailable handles produce a typed fixture blocker; they never authorize
+database mutation or synthetic in-memory state.
 
 ## 9. Private Read And Recovery
 
@@ -438,7 +521,173 @@ Forbidden:
 - legacy Social cipher/signaling envelope/public private-media fallback;
 - parallel generic object crypto or state-machine implementations.
 
-## 13. Architecture Gates
+## 13. Accepted Remaining-Hard-Cut Control Plane
+
+Accepted `SC-D22` and `SC-D23` close the remaining evidence and destructive
+execution boundaries. Implementation and reset remain subject to the formal
+plan, exact declarations, authorization, runtime leases, and evidence gates.
+
+### 13.1 Runtime topology and ownership
+
+```text
+Local Dev Control Plane
+  workspace 9eb2cb904c9ae460
+  canonical binding: profile four / slot 5
+                 |
+                 v
+Platform runtime owner
+  -> deploy/attest station-four
+  -> deploy/attest station-five-arm when the Journey requires it
+  -> launch isolated Desktop/Browser/iOS-Simulator/Android-Emulator clients
+  -> publish one immutable Development Runtime Manifest v3
+                 |
+                 v
+Secure Content Development runner
+  -> validate exact source + service/client closure
+  -> attach only
+  -> invoke production Harness actions
+  -> write per-variant Development results
+```
+
+The manifest's `services` map and each client's `service_bindings` are the only
+topology truth. Under accepted SC-D28, each Station service carries both the
+runtime connection `endpoint` and the profile-owned
+`schema_attestation_endpoint`. The former binds live client routing, service
+attestation, and Harness identity; the latter binds only the canonical
+deployment identity already committed by W12A schema activation. Neither
+endpoint may be inferred from the other or from profile names, service IDs, or
+CLI order. The runtime owner may select an already approved secondary profile
+while holding the declared resources, but it restores the canonical
+`four`/slot `5` workspace binding before manifest publication. The business
+runner cannot create a profile, deploy a service, launch a client, allocate
+storage, or infer a Station from CLI order.
+
+Development client kinds are `native-tauri`, `browser`,
+`tauri-ios-simulator`, and `tauri-android-emulator`. Physical Mobile devices
+remain formal Acceptance resources. Missing platform support, source equality,
+service attestation, client isolation, live identity, or Fixture capability
+fails before the first product action.
+
+### 13.2 Product evidence partition
+
+Evidence identities remain domain-specific:
+
+- `SOC-SEC-AS01..AS16` keep the meanings in the Social acceptance matrix;
+- `MP-G13` and `MP-J11` identify unchanged Chat attachment behavior;
+- `sc-dj-social-uow-atomicity`, `sc-dj-hardcut-regression`, and
+  `sc-dj-authorized-reset` remain Development infrastructure/Journey IDs.
+
+No API response, static check, source scan, deployment health result, old
+checkpoint, or one-platform result can be promoted into a receiver-visible
+product pass. W7, W8, W9, W10, W11, and W12 each aggregate only current child
+results from their exact required runtime/platform variants.
+
+### 13.3 Reset ownership
+
+SC-D23 defines one full purge of private Social Development state on only
+`four` and `fiveArm`, followed by canonical schema rebuild. It preserves public
+Social and every non-Social authority.
+
+```text
+immutable pre-audit + object target manifest
+  -> quiesce Station under station.reset lease
+  -> one allowlisted database/schema transaction
+  -> owner-mediated idempotent object deletion
+  -> canonical Station deploy + health
+  -> byte-equal public post/comment/reaction/object audit
+  -> COMPLETE
+```
+
+Accepted SC-D24 reuses this exact owner path for two separately authorized
+intents:
+
+```text
+SCHEMA_ACTIVATION
+  -> complete SC-D23 reset on four and fiveArm
+  -> publish canonical schema attestations
+  -> admit W7-W11 private product Journeys
+
+FINAL_CUT
+  -> fresh complete SC-D23 reset on four and fiveArm
+  -> repopulate only through the complete product matrix
+  -> admit final formal proof
+```
+
+SC-D24 supersedes only SC-D23's W12-exclusive task timing. It does not widen
+the accepted target profiles, scopes, tables, predicates, columns, object
+owners, public snapshot, journal, or failure contract.
+
+Local Dev Control Plane owns declaration and `station.reset` lease truth. The
+Secure Content Development reset owner owns manifest, quiescence, journal, and
+orchestration. Social and OSS remain the only database/object mutation owners
+behind a non-public Station maintenance entrypoint. Product scenarios remain
+attach-only and cannot invoke DDL, SQL, or object deletion.
+
+The maintenance entrypoint is an OS-authenticated remote CLI, not an API. It
+accepts one bounded invocation over the reviewed deploy transport;
+the local SSH transport is a child of the generic Local Dev lease wrapper,
+which retains the inherited advisory lock. Replay, expiry, source/scope
+mismatch, cancellation, disconnect, or lease loss fails closed at the last
+durable journal boundary.
+
+SC-D25 closes the source-invalidation boundary without another reset owner. A
+fresh authorized invocation may atomically supersede an older journal only
+while that journal is still `PREPARED`, only for the same workspace, profile,
+environment, scope, and intent, and only when the source commit differs. The
+old immutable manifest and history remain durable under terminal
+`SUPERSEDED`; any post-commit journal must resume from its original manifest.
+The old scope is never released outside the transaction that creates the new
+`PREPARED` journal.
+
+SC-D26 closes two narrow post-commit source-defect boundaries. The canonical
+`SocialPrivateContentPlan` model becomes the only schema owner for its table,
+including the four durable audience/subtype prepare-binding columns. When an
+older reset is either unfailed at `OBJECTS_DELETED` or exactly
+`STATION_DEPLOYED` with `RESET_SCHEMA_TARGET_UNREVIEWED`, the corrected source
+may create a fresh manifest containing an immutable predecessor link. Fresh
+invocation admission must revalidate the old manifest and pre-transition
+journal digests, equal scope/database/public identities, and different
+source/reset identities under the same advisory lock.
+
+The Station transaction then terminalizes the old journal as
+`RECOVERY_REPLACED` while creating the fresh `PREPARED` journal. It never
+deletes or relabels old evidence, never treats old mutation as fresh success,
+and never allows another post-commit failure class through this path. The
+fresh reset repeats the complete SC-D23 operation and walks the bounded,
+cycle-free predecessor chain to re-verify every inherited object target through
+its original owner before post-audit passes. It is the only reset that can emit
+the new source's schema attestation.
+
+SC-D27 separates the immutable predecessor link used to authorize
+admission from an append-only replacement receipt proving execution. The
+receipt is Station-owned and commits with the predecessor
+`RECOVERY_REPLACED` transition, fresh `PREPARED` journal, and first successor
+invocation. It preserves the predecessor's original failure while recording a
+separate replacement reason.
+
+The closed matrix additionally admits:
+
+- `OBJECTS_DELETED + RESET_PARTIAL_FAILURE`, because this state is reachable
+  only after the database transaction and every owner-mediated object deletion
+  completed and before deployment was accepted; and
+- `STATION_DEPLOYED + RESET_JOURNAL_STATE_CONFLICT` only for a recovery
+  successor whose complete predecessor chain validates under the admission
+  transaction.
+
+The pre-transition journal digest remains an admission-time compare-and-swap
+token. Terminal validation verifies the immutable link, replacement receipt,
+terminal transition, identities, bounded ancestry, and target ledgers; it does
+not attempt to synthesize the old digest from a terminal row.
+
+The reused `social_private_posts` table is cleared and rebuilt; it is never
+dropped by prefix. The only retired table that may be dropped is
+`social_private_audience_grants`. Legacy shared rows are selected by exact
+predicates, and object deletion uses an immutable owner/reference/digest
+allowlist. Unknown data shape, cross-domain reference, lease loss, manifest
+change, or public hash drift is a typed partial failure. Station does not start
+from a partial reset.
+
+## 14. Architecture Gates
 
 The DESIGN gate requires:
 
@@ -454,8 +703,19 @@ The DESIGN gate requires:
 9. Hard-cut inventory covers every source, generated, migration, dashboard,
    stats, test, Gate, and documentation consumer.
 10. Security and operational evidence requirements are executable.
+11. Product evidence uses the `SC-D21` barriers, manifest lineage, stream
+    terminal watermark, and owner-provisioned fixture handles without
+    timing-based completion or scenario-owned runtime mutation.
+12. Accepted `SC-D22` governs every Mobile/multi-profile Development manifest
+    implementation and product pass.
+13. Accepted `SC-D23` governs W12 reset capability and every database/object
+    mutation.
+14. W7-W12 results bind current immutable manifest digests and keep Social,
+    Chat, infrastructure, Development, and formal Acceptance evidence distinct.
+15. `SC-D28` keeps canonical schema-attestation identity separate from live
+    connection routing, with both endpoints owner-published and fail-closed.
 
-## 14. Non-Claims
+## 15. Non-Claims
 
 - Current private Moments are not claimed secure.
 - Chat and Social do not share business authorization.
@@ -463,3 +723,5 @@ The DESIGN gate requires:
   secret compromise.
 - Cross-Station private Social delivery remains unsupported.
 - This design authorizes no reset, deployment, commit, or implementation.
+- `SC-D22` and `SC-D23` authorize only the accepted Development topology and
+  reset semantics; they do not establish functional or formal evidence.

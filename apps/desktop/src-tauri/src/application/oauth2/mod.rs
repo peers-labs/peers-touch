@@ -170,21 +170,20 @@ fn update_loopback_session(
 
 fn parse_query_params(raw_path: &str) -> HashMap<String, String> {
     let query = raw_path.split_once('?').map(|(_, q)| q).unwrap_or("");
-    let mut params: HashMap<String, String> = HashMap::new();
-    for pair in query.split('&') {
-        if pair.is_empty() {
-            continue;
-        }
-        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
-        let key = urlencoding::decode(k)
-            .map(|s| s.to_string())
-            .unwrap_or_else(|_| k.to_string());
-        let val = urlencoding::decode(v)
-            .map(|s| s.to_string())
-            .unwrap_or_else(|_| v.to_string());
-        params.insert(key, val);
-    }
-    params
+    let decode_component = |component: &str| {
+        let form_value = component.replace('+', " ");
+        urlencoding::decode(&form_value)
+            .map(|value| value.into_owned())
+            .unwrap_or(form_value)
+    };
+    query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .map(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            (decode_component(key), decode_component(value))
+        })
+        .collect()
 }
 
 fn save_oauth_callback(
@@ -1070,7 +1069,9 @@ fn reconcile_connector_station_head(
     }) {
         return Err("CONNECTOR_STATION_HEAD_INCONSISTENT".to_string());
     }
-    if current_connection_id != connection.connection_id && current_revision >= connection.revision
+    if current_revision >= connection.revision
+        && (current_connection_id != connection.connection_id
+            || connection.projected_revision != current_revision)
     {
         connection.projected_revision = current_revision;
         connection.revision = current_revision
@@ -1883,6 +1884,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn loopback_query_parser_decodes_form_encoded_spaces_bits_ut() {
+        let params = parse_query_params(
+            "/callback?scope=read%3Auser+user%3Aemail&display_name=Connector+Fixture",
+        );
+
+        assert_eq!(
+            params.get("scope").map(String::as_str),
+            Some("read:user user:email"),
+        );
+        assert_eq!(
+            params.get("display_name").map(String::as_str),
+            Some("Connector Fixture"),
+        );
+    }
+
+    #[test]
     fn oauth_connector_redacts_secret_like_arguments_bits_ut() {
         let redacted = redact_json_value(&json!({
             "provider_id": "github",
@@ -2039,6 +2056,28 @@ mod tests {
 
         assert_eq!(connection.projected_revision, 7);
         assert_eq!(connection.revision, 8);
+    }
+
+    #[test]
+    fn connector_same_connection_advances_external_station_head_bits_ut() {
+        let mut connection = OAuthConnectionState {
+            connection_id: "oauth-connection-1".to_string(),
+            revision: 3,
+            projected_revision: 3,
+            provider_id: "github".to_string(),
+            ..Default::default()
+        };
+        let current = vec![ConnectorResourceManifest {
+            oauth_connection_id: "oauth-connection-1".to_string(),
+            connection_revision: 4,
+            ..Default::default()
+        }];
+
+        reconcile_connector_station_head(&mut connection, &current)
+            .expect("external Station revision must advance local projection");
+
+        assert_eq!(connection.projected_revision, 4);
+        assert_eq!(connection.revision, 5);
     }
 
     #[test]

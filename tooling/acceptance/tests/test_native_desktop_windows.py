@@ -89,12 +89,12 @@ class _DigestTransport:
 class WindowsCellProfileTest(unittest.TestCase):
     def test_windows_path_ownership_accepts_verbatim_descendant(self) -> None:
         root = (
-            r"C:\Users\Administrator\AppData\Local\PeersTouch"
+            r"C:\Users\developer\AppData\Local\PeersTouch"
             r"\AcceptanceCells\desktop-windows-native\actors"
             r"\run-1\bob"
         )
         candidate = (
-            r"\\?\C:\Users\Administrator\AppData\Local\PeersTouch"
+            r"\\?\C:\Users\developer\AppData\Local\PeersTouch"
             r"\AcceptanceCells\desktop-windows-native\actors"
             r"\run-1\bob\storage\attachment-cache\attachment-1"
         )

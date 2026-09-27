@@ -14,7 +14,6 @@ import {
 } from './desktop_api'
 import { eventBus } from '../kernel/events/bus'
 import { EVENT } from '../kernel/events/catalog'
-
 const mockFetch = vi.fn()
 const { mockListen } = vi.hoisted(() => ({ mockListen: vi.fn() }))
 const hadWindow = typeof window !== 'undefined'

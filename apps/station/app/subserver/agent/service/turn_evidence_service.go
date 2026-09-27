@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -345,40 +346,79 @@ func loadDiagnosticToolCalls(
 	facts := make([]*model.TurnDiagnosticToolFact, 0, len(records))
 	for index := range records {
 		record := &records[index]
+		terminalReceiptPayloadHash := record.StationReceiptPayloadHash
+		if record.ExecutionOwner == persistence.ToolOwnerClientCapability &&
+			db.Migrator().HasTable(&persistence.ToolReceiptAttempt{}) {
+			var receipt persistence.ToolReceiptAttempt
+			err := db.WithContext(ctx).
+				Where(
+					"tool_call_id = ? AND status IN ?",
+					record.ToolCallID,
+					[]string{
+						model.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_APPLIED.String(),
+						model.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_FAILED.String(),
+						model.ClientCapabilityReceiptStatus_CLIENT_CAPABILITY_RECEIPT_STATUS_RECONCILED_UNKNOWN.String(),
+					},
+				).
+				Order("accepted DESC, sequence DESC").
+				First(&receipt).Error
+			if err == nil {
+				terminalReceiptPayloadHash = receipt.ReceiptHash
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errcode.New(
+					errcode.AgentInternal,
+					http.StatusInternalServerError,
+					"load diagnostic terminal receipt",
+					err,
+				)
+			}
+		}
 		fact := &model.TurnDiagnosticToolFact{
-			ToolCallId:             record.ToolCallID,
-			AttemptId:              record.AttemptID,
-			ToolName:               record.ToolName,
-			Status:                 diagnosticToolCallStatus(record.Status),
-			ExecutionOwner:         diagnosticToolExecutionOwner(record.ExecutionOwner),
-			ArgumentsHash:          record.ArgumentsHash,
-			RedactedArguments:      redactDiagnosticText(record.RedactedArguments),
-			ResultId:               record.ResultID,
-			ErrorCode:              redactDiagnosticText(record.ErrorCode),
-			FencingToken:           record.FencingToken,
-			ApprovalPolicy:         record.ApprovalPolicy,
-			ManifestId:             record.ManifestID,
-			ManifestVersion:        record.ManifestVersion,
-			BindingId:              record.BindingID,
-			BindingRevision:        record.BindingRevision,
-			ReadinessSnapshotId:    record.ReadinessSnapID,
-			ApprovalId:             record.ApprovalID,
-			DecisionId:             record.DecisionID,
-			DecisionRevision:       record.DecisionRevision,
-			ExecutionClaimId:       record.ExecutionClaimID,
-			ExecutorLeaseId:        record.ExecutorLeaseID,
-			SideEffectReceiptId:    record.SideEffectReceipt,
-			ToolBatchId:            record.ToolBatchID,
-			CapabilitySessionId:    record.CapabilitySessionID,
-			TargetDeviceId:         record.TargetDeviceID,
-			DispatchSequence:       record.DispatchSequence,
-			ExecutionAttemptCount:  record.ExecutionAttemptCount,
-			DuplicateDeliveryCount: record.DuplicateDeliveryCount,
-			ContinuationId:         continuationByBatch[record.ToolBatchID],
-			Approved:               record.Approved,
+			ToolCallId:                 record.ToolCallID,
+			AttemptId:                  record.AttemptID,
+			ToolName:                   record.ToolName,
+			Status:                     diagnosticToolCallStatus(record.Status),
+			ExecutionOwner:             diagnosticToolExecutionOwner(record.ExecutionOwner),
+			ArgumentsHash:              record.ArgumentsHash,
+			RedactedArguments:          redactDiagnosticText(record.RedactedArguments),
+			ResultId:                   record.ResultID,
+			ErrorCode:                  redactDiagnosticText(record.ErrorCode),
+			FencingToken:               record.FencingToken,
+			ApprovalPolicy:             record.ApprovalPolicy,
+			ManifestId:                 record.ManifestID,
+			ManifestVersion:            record.ManifestVersion,
+			BindingId:                  record.BindingID,
+			BindingRevision:            record.BindingRevision,
+			ReadinessSnapshotId:        record.ReadinessSnapID,
+			ApprovalId:                 record.ApprovalID,
+			DecisionId:                 record.DecisionID,
+			DecisionRevision:           record.DecisionRevision,
+			ExecutionClaimId:           record.ExecutionClaimID,
+			ExecutorLeaseId:            record.ExecutorLeaseID,
+			SideEffectReceiptId:        record.SideEffectReceipt,
+			ToolBatchId:                record.ToolBatchID,
+			CapabilitySessionId:        record.CapabilitySessionID,
+			TargetDeviceId:             record.TargetDeviceID,
+			DispatchSequence:           record.DispatchSequence,
+			ExecutionAttemptCount:      record.ExecutionAttemptCount,
+			DuplicateDeliveryCount:     record.DuplicateDeliveryCount,
+			ContinuationId:             continuationByBatch[record.ToolBatchID],
+			Approved:                   record.Approved,
+			TerminalReceiptPayloadHash: terminalReceiptPayloadHash,
 		}
 		if record.DispatchCommittedAt != nil {
 			fact.DispatchCommittedAt = timestamppb.New(*record.DispatchCommittedAt)
+		}
+		if record.StationEffectStartedAt != nil {
+			fact.StationEffectStartedAt = timestamppb.New(
+				*record.StationEffectStartedAt,
+			)
+		}
+		fact.StationReceiptStatus = record.StationReceiptStatus
+		if record.StationReceiptCommittedAt != nil {
+			fact.StationReceiptCommittedAt = timestamppb.New(
+				*record.StationReceiptCommittedAt,
+			)
 		}
 		if record.StartedAt != nil {
 			fact.StartedAt = timestamppb.New(*record.StartedAt)

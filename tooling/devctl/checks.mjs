@@ -75,20 +75,21 @@ export function checkSocialWire(root) {
   );
 
   const eventStream = path.join(desktopSource, 'services', 'eventStream.ts');
-  const messagingRealtime = path.join(desktopSource, 'services', 'messagingRealtime.ts');
+  const socialRealtime = path.join(desktopSource, 'services', 'socialRealtime.ts');
   requireText(eventStream, 'StreamEventSchema', violations, 'event-stream-schema');
   requireText(eventStream, 'fromBinary', violations, 'event-stream-generated-decoder');
   requireText(
-    messagingRealtime,
-    'ChatMessageSchema',
+    socialRealtime,
+    'FriendChatMessageSchema',
     violations,
-    'chat-message-schema',
+    'friend-chat-schema',
   );
+  requireText(socialRealtime, 'GroupMessageSchema', violations, 'group-message-schema');
   requireText(
-    messagingRealtime,
+    socialRealtime,
     'fromBinary',
     violations,
-    'messaging-realtime-generated-decoder',
+    'social-realtime-generated-decoder',
   );
   return violations;
 }
@@ -142,23 +143,27 @@ export function checkSocialRuntimeBoundaries(root) {
 export function checkMobileSocialWire(root) {
   const mobileRoot = path.join(root, 'apps', 'mobile');
   const socialRoot = path.join(mobileRoot, 'src', 'features', 'social');
+  const groupRoot = path.join(mobileRoot, 'src', 'features', 'group');
   const forbiddenDecoder =
     /ProtoReader|STREAM_EVENT_[A-Z_]+_FIELD|reader\.varint|reader\.bytes|field-number/u;
-  const violations = walkSourceFiles(socialRoot).flatMap((filePath) =>
-    sourceMatches(filePath, forbiddenDecoder).map((match) => ({
-      rule: 'mobile-social-wire-generated-proto-only',
-      ...match,
-    })),
+  const violations = [socialRoot, groupRoot].flatMap((scanRoot) =>
+    walkSourceFiles(scanRoot).flatMap((filePath) =>
+      sourceMatches(filePath, forbiddenDecoder).map((match) => ({
+        rule: 'mobile-social-wire-generated-proto-only',
+        ...match,
+      })),
+    ),
   );
 
   const socialWire = path.join(socialRoot, 'socialWire.ts');
   requireText(socialWire, 'StreamEventSchema', violations, 'mobile-event-stream-schema');
   requireText(
     socialWire,
-    'ChatMessageSchema',
+    'FriendChatMessageSchema',
     violations,
-    'mobile-chat-message-schema',
+    'mobile-friend-chat-schema',
   );
+  requireText(socialWire, 'GroupMessageSchema', violations, 'mobile-group-message-schema');
 
   const legacyOwnership =
     /groupE2ee|GROUP_SKDM|SENDER_KEY_DISTRIBUTION|crypto\.sender-key-ledger|signaling_envelope_(open|seal)|messaging_send_text/u;

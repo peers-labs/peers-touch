@@ -55,8 +55,8 @@ vi.mock('./commandRuntime', () => ({
   suspendReliabilityRuntime: vi.fn(async () => undefined),
 }));
 
+import { ACCESS_DECISION_GRANTED } from '../features/auth/authSession';
 import { useAuthStore } from '../features/auth/authStore';
-import { useSocialStore } from '../features/social/socialStore';
 import {
   createMobileRuntimeDescriptors,
   resolveMobileLaunchStateFromState,
@@ -180,7 +180,7 @@ describe('mobile runtime registry', () => {
     expect(teardown).toHaveBeenCalledOnce();
   });
 
-  it('keeps Group on the canonical Messaging and Social runtimes', () => {
+  it('keeps Group subordinate to the single Social supervisor', () => {
     const descriptors = createMobileRuntimeDescriptors();
     const ids = descriptors.map((descriptor) => descriptor.id);
     const deviceSettings = descriptors.find(
@@ -192,10 +192,8 @@ describe('mobile runtime registry', () => {
     const auth = descriptors.find((descriptor) => descriptor.id === 'auth');
     const access = descriptors.find((descriptor) => descriptor.id === 'access');
     const session = descriptors.find((descriptor) => descriptor.id === 'session');
-    const messaging = descriptors.find(
-      (descriptor) => descriptor.id === 'messaging',
-    );
     const social = descriptors.find((descriptor) => descriptor.id === 'social');
+    const group = descriptors.find((descriptor) => descriptor.id === 'group');
     const recovery = descriptors.find(
       (descriptor) => descriptor.id === 'recovery-projection',
     );
@@ -212,83 +210,13 @@ describe('mobile runtime registry', () => {
     expect(ids).not.toContain('social-projection');
     expect(ids).not.toContain('moments-projection');
     expect(ids).not.toContain('profile-projection');
-    expect(ids).not.toContain('group');
-    expect(messaging?.responsibility).toContain('Messaging Engine');
     expect(social?.responsibility).toContain('single session-scoped Social ingress');
     expect(social?.dependsOn).toContain('session');
+    expect(group?.dependsOn).toContain('social');
+    expect(group?.responsibility).toContain('single Social event ingress');
     expect(recovery?.dependsOn).toEqual(
-      expect.arrayContaining(['social']),
+      expect.arrayContaining(['social', 'group']),
     );
-  });
-
-  it('restores the active Social controller after a stale suspend resolves', async () => {
-    const suspendCompletion = Promise.withResolvers<void>();
-    let lifecycle: 'active' | 'suspended' = 'active';
-    const controller = {
-      suspend: vi.fn(async () => {
-        await suspendCompletion.promise;
-        lifecycle = 'suspended';
-      }),
-      resume: vi.fn(async () => {
-        lifecycle = 'active';
-      }),
-      teardown: vi.fn(async () => undefined),
-      drain: vi.fn(async () => undefined),
-    };
-    socialRuntimeMocks.startSocialRuntime.mockResolvedValue(controller);
-    useAuthStore.setState({
-      session: mobileSession('ptid:alice', 'session-alice'),
-      accessDecision: grantedDecision(),
-    });
-    const social = createMobileRuntimeDescriptors().find(
-      (descriptor) => descriptor.id === 'social',
-    );
-    expect(social).toBeDefined();
-    await social!.bootstrap(runtimeContext());
-
-    const suspend = social!.suspend();
-    await vi.waitFor(() => {
-      expect(controller.suspend).toHaveBeenCalledOnce();
-    });
-    await social!.resume(runtimeContext());
-    expect(lifecycle).toBe('active');
-
-    suspendCompletion.resolve();
-    await suspend;
-
-    expect(lifecycle).toBe('active');
-    expect(controller.resume).toHaveBeenCalledTimes(2);
-    await social!.teardown({ reason: 'app-unmount' });
-  });
-
-  it('rebinds the admitted Social session after generation fencing', async () => {
-    const session = mobileSession('ptid:alice', 'session-alice');
-    const controller = {
-      suspend: vi.fn(async () => undefined),
-      resume: vi.fn(async () => undefined),
-      teardown: vi.fn(async () => undefined),
-      drain: vi.fn(async () => undefined),
-    };
-    socialRuntimeMocks.startSocialRuntime.mockResolvedValue(controller);
-    useAuthStore.setState({
-      session,
-      accessDecision: grantedDecision(),
-    });
-    const social = createMobileRuntimeDescriptors().find(
-      (descriptor) => descriptor.id === 'social',
-    );
-    expect(social).toBeDefined();
-    await social!.bootstrap(runtimeContext());
-    await social!.suspend();
-
-    useSocialStore.getState().bindSession(null);
-    expect(useSocialStore.getState().authSession).toBeNull();
-
-    await social!.resume(runtimeContext());
-
-    expect(useSocialStore.getState().authSession).toBe(session);
-    expect(controller.resume).toHaveBeenCalledOnce();
-    await social!.teardown({ reason: 'app-unmount' });
   });
 
   it('owns persisted Friend Request retry wakeups in the command runtime', () => {
@@ -400,16 +328,16 @@ function mobileSession(ptid: string, sessionId: string) {
     stationPeerId: 'station-primary',
     stationUrl: 'https://station.example',
     sessionId,
+    deviceId: 'device-1',
+    lifecycleGeneration: 1,
     actorRef: { ptid },
     authenticatedAt: 1,
-    deviceId: `device:${ptid}`,
-    lifecycleGeneration: 1,
   };
 }
 
 function grantedDecision() {
   return {
-    state: "ACCESS_DECISION_STATE_GRANTED",
+    state: ACCESS_DECISION_GRANTED,
     attemptId: 'attempt-1',
     gates: [],
   };

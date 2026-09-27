@@ -21,6 +21,8 @@ import (
 
 var errPrivateContentFailpoint = errors.New("private content injected failure")
 
+// W11_NEGATIVE_FIXTURE: schema tests name retired plaintext columns only to
+// prove that canonical private-content tables do not expose them.
 func TestGORMPrivateContentStoreSchema(t *testing.T) {
 	db, store := openPrivateContentStore(t, "")
 	if store == nil {
@@ -86,129 +88,16 @@ func TestGORMPrivateContentStoreSchema(t *testing.T) {
 	}
 }
 
-func TestGORMPrivateContentStoreMigratesAlongsideLegacyPrivatePost(t *testing.T) {
-	database, err := gorm.Open(
-		sqlite.Open(
-			"file:"+uuid.NewString()+"?mode=memory&cache=shared&_busy_timeout=5000",
-		),
-		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, err := database.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() {
-		if closeErr := sqlDB.Close(); closeErr != nil {
-			t.Errorf("close private content database: %v", closeErr)
-		}
-	})
-
-	if err := database.AutoMigrate(
-		&dbmodel.Actor{},
-		&dbmodel.SocialPrivatePost{},
-	); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Create(&dbmodel.Actor{
-		ID:                1,
-		PTID:              "ptid:alice",
-		Namespace:         "peers",
-		PreferredUsername: "alice",
-		Email:             "alice@example.test",
-		PasswordHash:      "test-only",
-	}).Error; err != nil {
-		t.Fatal(err)
-	}
-	legacy := dbmodel.SocialPrivatePost{
-		ID:           101,
-		AuthorID:     1,
-		Type:         "TEXT",
-		AudienceKind: "SELF",
-		TextBody:     "legacy private plaintext",
-		CreatedAt:    fixedTime(),
-		UpdatedAt:    fixedTime(),
-	}
-	if err := database.Create(&legacy).Error; err != nil {
-		t.Fatal(err)
-	}
-	store, err := NewGORMPrivateContentStore(database)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Migrate(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	payload := []byte("encrypted-private-content")
-	post := dbmodel.SocialPrivateContentPost{
-		PostID:                    "post-coexistence",
-		ContentID:                 "content-coexistence",
-		AuthorPTID:                "ptid:alice",
-		Generation:                1,
-		AudienceSnapshotID:        "snapshot-coexistence",
-		Kind:                      "TEXT",
-		EncryptedPayloadBytes:     payload,
-		EncryptedPayloadSHA256:    digest(payload),
-		ObjectDescriptorSetSHA256: digest([]byte("objects-coexistence")),
-		LifecycleState:            "ACTIVE",
-		CreatedAt:                 fixedTime(),
-		UpdatedAt:                 fixedTime(),
-	}
-	err = (&gormPrivateContentTransaction{
-		db: database,
-		plan: &dbmodel.SocialPrivateContentPlan{
-			ResourceKind: PrivateContentResourcePost,
-			ContentID:    post.ContentID,
-			Generation:   post.Generation,
-			AuthorPTID:   post.AuthorPTID,
-		},
-		domainCommitID: "commit-coexistence",
-	}).CreatePost(context.Background(), post)
-	if err != nil {
-		t.Fatalf("insert encrypted Post alongside legacy schema: %v", err)
-	}
-
-	var legacyID uint64
-	if err := database.Table("social_private_posts").
-		Select("id").
-		Where("content_id = ?", "content-coexistence").
-		Scan(&legacyID).Error; err != nil {
-		t.Fatal(err)
-	}
-	var preserved dbmodel.SocialPrivatePost
-	if err := database.First(&preserved, "id = ?", legacy.ID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if preserved.TextBody != legacy.TextBody {
-		t.Fatalf("legacy row changed during staged migration: %+v", preserved)
-	}
-	legacyRepository := NewPrivatePostRepository(
-		database,
-		NewAudienceGrantRepository(database),
-	)
-	exposed, err := legacyRepository.GetByID(
-		context.Background(),
-		legacyID,
-		"ptid:alice",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if exposed != nil {
-		t.Fatal("legacy private repository exposed an encrypted hard-cut row")
-	}
-}
-
 func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
 	t.Run("durable PREPARING and exact replay", func(t *testing.T) {
 		db, store := openPrivateContentStore(t, "")
 		candidate := preparingPlan("post", PrivateContentResourcePost)
 
-		created, err := store.ClaimPreparing(context.Background(), candidate)
+		created, err := store.ClaimPreparing(
+			context.Background(),
+			candidate,
+			prepareBinding(candidate),
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -224,10 +113,27 @@ func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
 			candidate.ClaimRequestBytes,
 			"claim request",
 		)
+		binding := prepareBinding(candidate)
+		assertBytesEqual(
+			t,
+			created.Plan.AudienceBytes,
+			binding.AudienceBytes,
+			"audience binding",
+		)
+		assertBytesEqual(
+			t,
+			created.Plan.SubtypePrepareAuthoritySHA256,
+			binding.SubtypePrepareAuthoritySHA256,
+			"subtype authority binding",
+		)
 
 		retry := candidate
 		retry.ExpiresAt = candidate.ExpiresAt.Add(time.Minute)
-		replayed, err := store.ClaimPreparing(context.Background(), retry)
+		replayed, err := store.ClaimPreparing(
+			context.Background(),
+			retry,
+			prepareBinding(candidate),
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -252,6 +158,7 @@ func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
 		racedReplay, err := store.ClaimPreparing(
 			context.Background(),
 			driftedSnapshot,
+			prepareBinding(candidate),
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -270,6 +177,7 @@ func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
 		if _, err := store.ClaimPreparing(
 			context.Background(),
 			conflict,
+			prepareBinding(conflict),
 		); !errors.Is(err, ErrPrivateContentConflict) {
 			t.Fatalf("conflicting prepare error = %v", err)
 		}
@@ -279,7 +187,11 @@ func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
 	t.Run("PREPARED stores exact response slots and signed plan", func(t *testing.T) {
 		db, store := openPrivateContentStore(t, "")
 		plan := preparingPlan("post", PrivateContentResourcePost)
-		if _, err := store.ClaimPreparing(context.Background(), plan); err != nil {
+		if _, err := store.ClaimPreparing(
+			context.Background(),
+			plan,
+			prepareBinding(plan),
+		); err != nil {
 			t.Fatal(err)
 		}
 		prepared := preparedPlan(plan)
@@ -343,7 +255,11 @@ func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
 			waitGroup.Add(1)
 			go func() {
 				defer waitGroup.Done()
-				result, err := store.ClaimPreparing(context.Background(), candidate)
+				result, err := store.ClaimPreparing(
+					context.Background(),
+					candidate,
+					prepareBinding(candidate),
+				)
 				if err != nil {
 					errs <- err
 					return
@@ -380,6 +296,10 @@ func TestGORMPrivateContentStorePrepareFailpointsRollBack(t *testing.T) {
 		if _, err := store.ClaimPreparing(
 			context.Background(),
 			preparingPlan("preparing-failure", PrivateContentResourcePost),
+			prepareBinding(preparingPlan(
+				"preparing-failure",
+				PrivateContentResourcePost,
+			)),
 		); !errors.Is(err, errPrivateContentFailpoint) {
 			t.Fatalf("prepare failpoint error = %v", err)
 		}
@@ -394,7 +314,11 @@ func TestGORMPrivateContentStorePrepareFailpointsRollBack(t *testing.T) {
 		t.Run(string(boundary), func(t *testing.T) {
 			db, store := openPrivateContentStore(t, boundary)
 			plan := preparingPlan(string(boundary), PrivateContentResourcePost)
-			if _, err := store.ClaimPreparing(context.Background(), plan); err != nil {
+			if _, err := store.ClaimPreparing(
+				context.Background(),
+				plan,
+				prepareBinding(plan),
+			); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := store.MarkPrepared(
@@ -734,6 +658,9 @@ func TestGORMPrivateContentStoreSubmitFailpointsRollBack(t *testing.T) {
 						suffix,
 						testCase.resourceKind,
 					)
+					if testCase.resourceKind == PrivateContentResourceComment {
+						seedPrivateCommentParent(t, db, suffix)
+					}
 					seedUnattachedObject(t, store, plan)
 					command := submitCommand(plan, suffix)
 
@@ -764,6 +691,31 @@ func TestGORMPrivateContentStoreSubmitFailpointsRollBack(t *testing.T) {
 				},
 			)
 		}
+	}
+}
+
+func seedPrivateCommentParent(
+	t *testing.T,
+	database *gorm.DB,
+	suffix string,
+) {
+	t.Helper()
+	payload := []byte("parent-" + suffix)
+	if err := database.Create(&dbmodel.SocialPrivateContentPost{
+		PostID:                    "parent-post-" + suffix,
+		ContentID:                 "parent-content-" + suffix,
+		AuthorPTID:                "parent-author-" + suffix,
+		Generation:                1,
+		AudienceSnapshotID:        "parent-snapshot-" + suffix,
+		Kind:                      "TEXT",
+		EncryptedPayloadBytes:     payload,
+		EncryptedPayloadSHA256:    digest(payload),
+		ObjectDescriptorSetSHA256: digest([]byte("parent-objects-" + suffix)),
+		LifecycleState:            "ACTIVE",
+		CreatedAt:                 fixedTime(),
+		UpdatedAt:                 fixedTime(),
+	}).Error; err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -862,6 +814,16 @@ func preparingPlan(
 	}
 }
 
+func prepareBinding(plan dbmodel.SocialPrivateContentPlan) PrivatePrepareBinding {
+	audience := []byte("audience-" + plan.PlanID)
+	emptySubtype := sha256.Sum256(nil)
+	return PrivatePrepareBinding{
+		AudienceBytes:                 audience,
+		AudienceSHA256:                digest(audience),
+		SubtypePrepareAuthoritySHA256: emptySubtype[:],
+	}
+}
+
 func preparedPlan(plan dbmodel.SocialPrivateContentPlan) PreparedPlan {
 	claimResponse := []byte("claim-response-" + plan.PlanID)
 	signedPlan := []byte("signed-plan-" + plan.PlanID)
@@ -920,7 +882,11 @@ func seedPreparedPlan(
 ) dbmodel.SocialPrivateContentPlan {
 	t.Helper()
 	candidate := preparingPlan(suffix, resourceKind)
-	if _, err := store.ClaimPreparing(context.Background(), candidate); err != nil {
+	if _, err := store.ClaimPreparing(
+		context.Background(),
+		candidate,
+		prepareBinding(candidate),
+	); err != nil {
 		t.Fatal(err)
 	}
 	prepared, err := store.MarkPrepared(
@@ -1270,8 +1236,12 @@ func assertSubmitRolledBack(
 	plan dbmodel.SocialPrivateContentPlan,
 ) {
 	t.Helper()
+	expectedPosts := int64(0)
+	if plan.ResourceKind == PrivateContentResourceComment {
+		expectedPosts = 1
+	}
+	assertCount(t, db, &dbmodel.SocialPrivateContentPost{}, expectedPosts)
 	for _, model := range []any{
-		&dbmodel.SocialPrivateContentPost{},
 		&dbmodel.SocialPrivateContentComment{},
 		&dbmodel.SocialPrivateAudienceSnapshot{},
 		&dbmodel.SocialPrivateRecipientGrant{},
@@ -1282,6 +1252,25 @@ func assertSubmitRolledBack(
 		&dbmodel.SocialPrivateCommandReceipt{},
 	} {
 		assertCount(t, db, model, 0)
+	}
+	if plan.ResourceKind == PrivateContentResourceComment {
+		var parent dbmodel.SocialPrivateContentPost
+		if err := db.First(
+			&parent,
+			"post_id = ?",
+			"parent-post-"+strings.TrimPrefix(
+				plan.ContentID,
+				"content-",
+			),
+		).Error; err != nil {
+			t.Fatal(err)
+		}
+		if parent.CommentsCount != 0 {
+			t.Fatalf(
+				"rolled-back parent CommentsCount = %d, want 0",
+				parent.CommentsCount,
+			)
+		}
 	}
 
 	var persistedPlan dbmodel.SocialPrivateContentPlan

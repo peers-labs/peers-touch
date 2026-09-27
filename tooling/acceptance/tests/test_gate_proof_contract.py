@@ -102,6 +102,7 @@ ROLE_OBSERVATIONS = {
         "selector": "[data-testid=agent-v2]",
         "locale": "en",
         "textHash": HASH,
+        "expectedVisible": True,
         "visible": True,
     },
     "replay": {
@@ -180,22 +181,41 @@ class GateProofContractTest(unittest.TestCase):
         for value in sorted(self.tuples[gate_id]):
             item = dict(zip(self.validator.TUPLE_FIELDS, json.loads(value)))
             attestation_profile = self.attestation_profiles[gate_id][value]
+            suffix = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+            common = {
+                "attestationProfile": attestation_profile,
+                "stationProfile": "fixture",
+                "networkPath": "local",
+                "machine": "fixture-machine",
+                "coldWarmState": (
+                    "cold"
+                    if item["sample_id"].startswith("cold-")
+                    else "warm"
+                    if item["sample_id"].startswith("warm-")
+                    else "contract"
+                    if item["locale"] == "contract"
+                    else "neutral"
+                ),
+                "observedAt": "2026-08-18T00:00:00+00:00",
+            }
+            if gate_id != self.validator.FOUNDATION_GATE_ID:
+                common["scenarioExecutionId"] = f"execution-{suffix}"
             if attestation_profile == "contract_only":
                 item.update(
                     {
-                        "attestationProfile": attestation_profile,
+                        **common,
                         "contractAttestation": {
                             "contractId": "mobile-agent-v2",
+                            **(
+                                {"contractRunId": f"contract-run-{suffix}"}
+                                if gate_id != self.validator.FOUNDATION_GATE_ID
+                                else {}
+                            ),
                             "contractHash": HASH,
                             "platform": item["platform"],
                             "toolchain": "typescript",
                             "roundTripStatus": "passed",
                         },
-                        "stationProfile": "fixture",
-                        "networkPath": "local",
-                        "machine": "fixture-machine",
-                        "coldWarmState": "contract",
-                        "observedAt": "2026-08-18T00:00:00+00:00",
                     }
                 )
                 tuples.append(item)
@@ -203,17 +223,12 @@ class GateProofContractTest(unittest.TestCase):
             if attestation_profile == "orchestration_guard":
                 item.update(
                     {
-                        "attestationProfile": attestation_profile,
+                        **common,
                         "guardAttestation": {
                             "guardId": "agent-d11-entrypoints",
                             "sourceInventoryHash": HASH,
                             "violationCount": 0,
                         },
-                        "stationProfile": "fixture",
-                        "networkPath": "local",
-                        "machine": "fixture-machine",
-                        "coldWarmState": "neutral",
-                        "observedAt": "2026-08-18T00:00:00+00:00",
                     }
                 )
                 tuples.append(item)
@@ -221,26 +236,85 @@ class GateProofContractTest(unittest.TestCase):
             if attestation_profile == "non_advertised":
                 item.update(
                     {
-                        "attestationProfile": attestation_profile,
+                        **common,
                         "capabilityInventoryAttestation": {
                             "inventoryHash": HASH,
                             "surfaceId": item["runtime"],
                             "zeroExecutionCount": 0,
                         },
-                        "stationProfile": "fixture",
-                        "networkPath": "local",
-                        "machine": "fixture-machine",
-                        "coldWarmState": "neutral",
-                        "observedAt": "2026-08-18T00:00:00+00:00",
                     }
                 )
                 tuples.append(item)
                 continue
+            if attestation_profile == "station_command":
+                item.update(
+                    {
+                        **common,
+                        "actorIdentityHash": HASH,
+                        "desktopMode": "test",
+                        "commandAttestation": {
+                            "commandId": f"command-{suffix}",
+                            "commandKind": "home",
+                            "idempotencyKeyHash": hashlib.sha256(
+                                f"idempotency-{suffix}".encode("utf-8")
+                            ).hexdigest(),
+                            "objectIds": [f"object-{suffix}"],
+                            "projectionRevision": 1,
+                        },
+                    }
+                )
+                tuples.append(item)
+                continue
+            if attestation_profile == "station_control_plane":
+                item.update(
+                    {
+                        **common,
+                        "actorIdentityHash": HASH,
+                        "desktopMode": "test",
+                        "controlPlaneAttestation": {
+                            "authority": "station",
+                            "entityIdHash": hashlib.sha256(
+                                f"entity-{suffix}".encode("utf-8")
+                            ).hexdigest(),
+                            "readinessSnapshotId": f"readiness-{suffix}",
+                            "revision": 1,
+                            "stateHash": hashlib.sha256(
+                                f"state-{suffix}".encode("utf-8")
+                            ).hexdigest(),
+                            "zeroExecutionCount": 0,
+                        },
+                    }
+                )
+                tuples.append(item)
+                continue
+            if attestation_profile == "unavailable_runtime":
+                activity_hash = hashlib.sha256(
+                    f"activity-{suffix}".encode("utf-8")
+                ).hexdigest()
+                item.update(
+                    {
+                        **common,
+                        "actorIdentityHash": HASH,
+                        "desktopMode": "test",
+                        "unavailableAttestation": {
+                            "readinessSnapshotId": f"readiness-{suffix}",
+                            "state": "unavailable",
+                            "reasonCode": "runtime-unavailable",
+                            "activityBeforeHash": activity_hash,
+                            "activityAfterHash": activity_hash,
+                            "zeroExecutionCount": 0,
+                        },
+                    }
+                )
+                tuples.append(item)
+                continue
+            if gate_id == "agent-v2-connector-invocation-e2e":
+                common["oauthProviderId"] = f"oauth-provider-{suffix}"
             runtime_snapshot = {
                 "runtimeKind": item["runtime"],
-                "providerId": "provider-1",
-                "modelId": "model-1",
-                "runtimeProfileId": "profile-1",
+                "providerId": f"provider-{suffix}",
+                "modelId": f"model-{suffix}",
+                "runtimeProfileId": f"profile-{suffix}",
                 "capabilities": {
                     "input": {"text": True},
                     "output": {"text": True},
@@ -252,8 +326,8 @@ class GateProofContractTest(unittest.TestCase):
                 },
                 "providerConfigVersion": "1",
                 "agentConfigVersion": "1",
-                "externalSessionId": "",
-                "externalSessionEpoch": 0,
+                "externalSessionId": f"external-{suffix}",
+                "externalSessionEpoch": 1,
                 "thinkingMode": "auto",
             }
             runtime_snapshot_hash = hashlib.sha256(
@@ -286,14 +360,21 @@ class GateProofContractTest(unittest.TestCase):
             ).hexdigest()
             item.update(
                 {
+                    **common,
                     "actorIdentityHash": HASH,
                     "conversationRuntimeBinding": {
                         "runtimeKind": item["runtime"],
-                        "providerId": "provider-1",
-                        "modelId": "model-1",
-                        "runtimeProfileId": "profile-1",
-                        "externalSessionId": "",
-                        "externalSessionEpoch": 0,
+                        "providerId": runtime_snapshot["providerId"],
+                        "modelId": runtime_snapshot["modelId"],
+                        "runtimeProfileId": runtime_snapshot[
+                            "runtimeProfileId"
+                        ],
+                        "externalSessionId": runtime_snapshot[
+                            "externalSessionId"
+                        ],
+                        "externalSessionEpoch": runtime_snapshot[
+                            "externalSessionEpoch"
+                        ],
                         "runtimeHomeRefHash": HASH,
                         "capabilitySnapshotHash": capability_snapshot_hash,
                         "configSnapshotHash": config_snapshot_hash,
@@ -301,35 +382,37 @@ class GateProofContractTest(unittest.TestCase):
                     },
                     "runtimeSnapshot": runtime_snapshot,
                     "turnAttempt": {
-                        "attemptId": "attempt-1",
-                        "turnId": "turn-1",
+                        "attemptId": f"attempt-{suffix}",
+                        "turnId": f"turn-{suffix}",
                         "index": 1,
-                        "contextLedgerId": "context-1",
-                        "capabilityReadinessSnapshotId": "readiness-1",
+                        "contextLedgerId": f"context-{suffix}",
+                        "capabilityReadinessSnapshotId": f"readiness-{suffix}",
                         "status": "running",
                         "runtimeSnapshotHash": runtime_snapshot_hash,
                     },
-                    "toolCallBinding": {
-                        "toolCallId": "tool-call-1",
-                        "turnId": "turn-1",
-                        "attemptId": "attempt-1",
-                        "capabilityId": "capability-1",
-                        "capabilityVersion": "1",
-                        "bindingId": "binding-1",
-                        "bindingRevision": 1,
-                        "readinessSnapshotId": "readiness-1",
-                        "selectedDeviceId": "device-1",
-                        "selectedLeaseId": "lease-1",
-                        "sideEffectReceiptId": "receipt-1",
-                    },
-                    "clientSession": {
-                        "capabilitySessionId": "session-1",
-                        "actorIdHash": HASH,
-                        "deviceId": "device-1",
-                        "platform": item["platform"],
-                        "capabilities": [
+                    "desktopMode": "test",
+                }
+            )
+            if attestation_profile in {
+                "direct_runtime",
+                "direct_runtime_no_local_capability",
+                "client_capability_turn",
+            }:
+                capability_id = f"capability-{suffix}"
+                device_id = f"device-{suffix}"
+                lease_id = f"lease-{suffix}"
+                item["clientSession"] = {
+                    "capabilitySessionId": f"session-{suffix}",
+                    "actorIdHash": HASH,
+                    "deviceId": device_id,
+                    "platform": item["platform"],
+                    "capabilities": (
+                        []
+                        if attestation_profile
+                        == "direct_runtime_no_local_capability"
+                        else [
                             {
-                                "capabilityId": "capability-1",
+                                "capabilityId": capability_id,
                                 "schemaVersion": "1",
                                 "permission": "granted",
                                 "constraints": {
@@ -338,28 +421,43 @@ class GateProofContractTest(unittest.TestCase):
                                     "allowedResourceKinds": ["text"],
                                 },
                             }
-                        ],
-                        "expiresAt": "2026-08-18T01:00:00+00:00",
-                        "connectionId": "connection-1",
-                        "leaseId": "lease-1",
-                    },
-                    "stationProfile": "fixture",
-                    "desktopMode": "test",
-                    "networkPath": "local",
-                    "machine": "fixture-machine",
-                    "coldWarmState": "neutral",
-                    "observedAt": "2026-08-18T00:00:00+00:00",
+                        ]
+                    ),
+                    "expiresAt": "2026-08-18T01:00:00+00:00",
+                    "connectionId": f"connection-{suffix}",
+                    "leaseId": lease_id,
                 }
-            )
-            if attestation_profile == "direct_runtime":
-                item["attestationProfile"] = attestation_profile
-            elif (
-                attestation_profile
-                == "direct_runtime_no_local_capability"
-            ):
-                item["attestationProfile"] = attestation_profile
-                del item["toolCallBinding"]
-                item["clientSession"]["capabilities"] = []
+                if attestation_profile != "direct_runtime_no_local_capability":
+                    item["toolCallBinding"] = {
+                        "toolCallId": f"tool-call-{suffix}",
+                        "turnId": f"turn-{suffix}",
+                        "attemptId": f"attempt-{suffix}",
+                        "capabilityId": capability_id,
+                        "capabilityVersion": "1",
+                        "bindingId": f"binding-{suffix}",
+                        "bindingRevision": 1,
+                        "readinessSnapshotId": f"readiness-{suffix}",
+                        "selectedDeviceId": device_id,
+                        "selectedLeaseId": lease_id,
+                        "sideEffectReceiptId": f"receipt-{suffix}",
+                    }
+            elif attestation_profile == "station_capability_turn":
+                item["stationToolCallBinding"] = {
+                    "toolCallId": f"tool-call-{suffix}",
+                    "turnId": f"turn-{suffix}",
+                    "attemptId": f"attempt-{suffix}",
+                    "capabilityId": f"capability-{suffix}",
+                    "capabilityVersion": "1",
+                    "bindingId": f"binding-{suffix}",
+                    "bindingRevision": 1,
+                    "readinessSnapshotId": f"readiness-{suffix}",
+                    "sideEffectReceiptId": f"receipt-{suffix}",
+                }
+                item["stationExecutorAttestation"] = {
+                    "executorId": f"station-executor-{suffix}",
+                    "executorKind": "station",
+                    "executorRevision": 1,
+                }
             tuples.append(item)
         return tuples
 
@@ -369,6 +467,8 @@ class GateProofContractTest(unittest.TestCase):
         *,
         omit_role: str = "",
         duplicate_tuple: bool = False,
+        duplicate_execution_id: bool = False,
+        duplicate_primary_execution_id: bool = False,
         source_override: dict[str, str] | None = None,
         missing_semantic_field: tuple[str, str] | None = None,
         runtime_missing_path: str = "",
@@ -384,6 +484,21 @@ class GateProofContractTest(unittest.TestCase):
         role_schemas: dict[str, Any] = {}
         candidate_source = source_override or self.source
         runtime_tuples = self.tuple_objects(gate_id)
+
+        def runtime_target(path: str) -> tuple[dict[str, Any], str]:
+            components = path.split(".")
+            for candidate in runtime_tuples:
+                target = candidate
+                for component in components[:-1]:
+                    nested = target.get(component)
+                    if not isinstance(nested, dict):
+                        break
+                    target = nested
+                else:
+                    if components[-1] in target:
+                        return target, components[-1]
+            raise AssertionError(f"invalid runtime mutation path: {path}")
+
         for role in required_roles:
             schema_name = (
                 role if role in self.contract["schemas"] else "evidence-role"
@@ -419,30 +534,29 @@ class GateProofContractTest(unittest.TestCase):
                 tuples = copy.deepcopy(runtime_tuples)
                 if duplicate_tuple:
                     tuples[-1] = dict(tuples[0])
+                if duplicate_execution_id:
+                    runtime_truthful = [
+                        item for item in tuples if "scenarioExecutionId" in item
+                    ]
+                    runtime_truthful[-1]["scenarioExecutionId"] = (
+                        runtime_truthful[0]["scenarioExecutionId"]
+                    )
+                if duplicate_primary_execution_id:
+                    commands = [
+                        item["commandAttestation"]
+                        for item in tuples
+                        if "commandAttestation" in item
+                    ]
+                    commands[-1]["commandId"] = commands[0]["commandId"]
                 if runtime_missing_path:
-                    target: dict[str, Any] = tuples[0]
-                    components = runtime_missing_path.split(".")
-                    for component in components[:-1]:
-                        nested = target.get(component)
-                        if not isinstance(nested, dict):
-                            raise AssertionError(
-                                f"invalid runtime mutation path: "
-                                f"{runtime_missing_path}"
-                            )
-                        target = nested
-                    target.pop(components[-1])
+                    runtime_tuples = tuples
+                    target, field = runtime_target(runtime_missing_path)
+                    target.pop(field)
                 if runtime_value_override is not None:
                     path, replacement = runtime_value_override
-                    target = tuples[0]
-                    components = path.split(".")
-                    for component in components[:-1]:
-                        nested = target.get(component)
-                        if not isinstance(nested, dict):
-                            raise AssertionError(
-                                f"invalid runtime override path: {path}"
-                            )
-                        target = nested
-                    target[components[-1]] = replacement
+                    runtime_tuples = tuples
+                    target, field = runtime_target(path)
+                    target[field] = replacement
                 if profile_value_override is not None:
                     profile, path, replacement = profile_value_override
                     target = next(
@@ -537,12 +651,56 @@ class GateProofContractTest(unittest.TestCase):
                             "oracleAssertionId": oracle_id,
                         }
                     )
+                    if gate_id != self.validator.FOUNDATION_GATE_ID:
+                        observation["scenarioExecutionId"] = tuple_item[
+                            "scenarioExecutionId"
+                        ]
                     if (
                         role == "receiver-dom"
                         and tuple_item.get("attestationProfile")
                         == "non_advertised"
                     ):
+                        observation["expectedVisible"] = False
                         observation["visible"] = False
+                    if role == "receiver-dom":
+                        observation["locale"] = tuple_item["locale"]
+                    if role == "measurement-report":
+                        observation["sampleIds"] = [tuple_item["sample_id"]]
+                    if role == "contract-evidence":
+                        observation["contractId"] = tuple_item["cell"]
+                        observation["platform"] = tuple_item["platform"]
+                    command = tuple_item.get("commandAttestation")
+                    if role == "command-ids" and isinstance(command, dict):
+                        observation["commandId"] = command["commandId"]
+                        observation["idempotencyKeyHash"] = command[
+                            "idempotencyKeyHash"
+                        ]
+                        observation["objectIds"] = command["objectIds"]
+                    control = tuple_item.get("controlPlaneAttestation")
+                    if role == "readiness-snapshots" and isinstance(
+                        control, dict
+                    ):
+                        observation["snapshotId"] = control[
+                            "readinessSnapshotId"
+                        ]
+                    tool_binding = (
+                        tuple_item.get("toolCallBinding")
+                        or tuple_item.get("stationToolCallBinding")
+                    )
+                    if role == "executor-receipts" and isinstance(
+                        tool_binding, dict
+                    ):
+                        observation["toolCallId"] = tool_binding["toolCallId"]
+                        observation["receiptId"] = tool_binding[
+                            "sideEffectReceiptId"
+                        ]
+                    turn_attempt = tuple_item.get("turnAttempt")
+                    if role == "turn-trace" and isinstance(turn_attempt, dict):
+                        observation["turnId"] = turn_attempt["turnId"]
+                    if role == "provider-revoke":
+                        observation["providerId"] = tuple_item[
+                            "oauthProviderId"
+                        ]
                     if "cellId" in observation:
                         observation["cellId"] = tuple_item["cell"]
                     observations.append(observation)
@@ -570,17 +728,23 @@ class GateProofContractTest(unittest.TestCase):
                     observations[0]["oracleAssertionId"] = "other-oracle"
                 elif role_binding_mutation == "scenario-permute":
                     first = next(
-                        index
-                        for index, observation in enumerate(observations)
-                        if observation["scenarioId"]
-                        != observations[0]["scenarioId"]
+                        (
+                            index
+                            for index, observation in enumerate(observations)
+                            if observation["scenarioId"]
+                            != observations[0]["scenarioId"]
+                        ),
+                        None,
                     )
-                    observations[0]["scenarioId"], observations[first][
-                        "scenarioId"
-                    ] = (
-                        observations[first]["scenarioId"],
-                        observations[0]["scenarioId"],
-                    )
+                    if first is None:
+                        observations[0]["scenarioId"] = "other-scenario"
+                    else:
+                        observations[0]["scenarioId"], observations[first][
+                            "scenarioId"
+                        ] = (
+                            observations[first]["scenarioId"],
+                            observations[0]["scenarioId"],
+                        )
                 actual_hash = hashlib.sha256(
                     json.dumps(
                         observations,
@@ -706,6 +870,38 @@ class GateProofContractTest(unittest.TestCase):
                         stale.sha256,
                     )
 
+    def test_candidate_rejects_duplicate_scenario_execution_identity(self) -> None:
+        gate_id = "agent-v2-home-command-center-e2e"
+        candidate = self.create_candidate(
+            gate_id,
+            duplicate_execution_id=True,
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "duplicate scenario execution identity",
+        ):
+            self.validator.validate_candidate(
+                self.store,
+                candidate,
+                candidate.sha256,
+            )
+
+    def test_candidate_rejects_duplicate_primary_execution_identity(self) -> None:
+        gate_id = "agent-v2-home-command-center-e2e"
+        candidate = self.create_candidate(
+            gate_id,
+            duplicate_primary_execution_id=True,
+        )
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "duplicate primary execution identity",
+        ):
+            self.validator.validate_candidate(
+                self.store,
+                candidate,
+                candidate.sha256,
+            )
+
     def test_candidate_rejects_every_role_semantic_omission(self) -> None:
         for role, observation in ROLE_OBSERVATIONS.items():
             gate_id = min(
@@ -792,7 +988,7 @@ class GateProofContractTest(unittest.TestCase):
         )
 
     def test_candidate_rejects_observation_for_not_applicable_row(self) -> None:
-        gate_id = "agent-v2-kernel-foundation-e2e"
+        gate_id = "agent-v2-governed-tool-loop-e2e"
         candidate = self.create_candidate(
             gate_id,
             unexpected_role_tuple="contract-evidence",
@@ -829,7 +1025,7 @@ class GateProofContractTest(unittest.TestCase):
             ("projection-revisions", "afterRevision", 0),
             ("provider-revoke", "status", "pending"),
             ("readiness-snapshots", "revision", 0),
-            ("readiness-snapshots", "state", "unknown"),
+            ("readiness-snapshots", "state", "invalid"),
             ("readiness-snapshots", "authority", "client"),
             ("receiver-dom", "visible", False),
             ("replay", "equal", False),
@@ -907,6 +1103,39 @@ class GateProofContractTest(unittest.TestCase):
                     candidate,
                     candidate.sha256,
                 )
+
+    def test_client_capability_allows_empty_resource_kind_constraints(
+        self,
+    ) -> None:
+        attestation = next(
+            item
+            for item in self.tuple_objects(
+                "agent-v2-governed-tool-loop-e2e"
+            )
+            if item["attestationProfile"] == "client_capability_turn"
+        )
+        constraints = attestation["clientSession"]["capabilities"][0][
+            "constraints"
+        ]
+        constraints["allowedResourceKinds"] = []
+        self.validator.validate_runtime_attestation(
+            attestation,
+            label="client capability fixture",
+            expected_profile="client_capability_turn",
+        )
+
+        for invalid in ([""], ["workspace", "workspace"], [1]):
+            with self.subTest(invalid=invalid):
+                constraints["allowedResourceKinds"] = invalid
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "constraints mismatch",
+                ):
+                    self.validator.validate_runtime_attestation(
+                        attestation,
+                        label="client capability fixture",
+                        expected_profile="client_capability_turn",
+                    )
 
     def test_candidate_rejects_wrong_or_fabricated_attestation_profile(self) -> None:
         gate_id = "agent-v2-kernel-foundation-e2e"
@@ -1003,7 +1232,7 @@ class GateProofContractTest(unittest.TestCase):
                     )
 
     def test_candidate_rejects_every_runtime_binding_omission(self) -> None:
-        gate_id = "agent-v2-home-command-center-e2e"
+        gate_id = "agent-v2-governed-tool-loop-e2e"
         paths = [
             "actorIdentityHash",
             "stationProfile",
@@ -1110,7 +1339,7 @@ class GateProofContractTest(unittest.TestCase):
                     )
 
     def test_candidate_rejects_runtime_cross_binding_mutations(self) -> None:
-        gate_id = "agent-v2-home-command-center-e2e"
+        gate_id = "agent-v2-governed-tool-loop-e2e"
         mutations = (
             ("actorIdentityHash", "b" * 64),
             ("clientSession.actorIdHash", "b" * 64),

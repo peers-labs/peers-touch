@@ -291,11 +291,12 @@ func (s *CapabilityBackfillService) scan(
 	manifests = append(manifests, clientManifests...)
 	rejections = append(rejections, clientRejects...)
 
-	pluginRejects, err := s.scanRejectedCustomPlugins(ctx, reports)
+	retiredExtensionRejects, err :=
+		s.scanRetiredExtensionEndpoints(reports)
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-	rejections = append(rejections, pluginRejects...)
+	rejections = append(rejections, retiredExtensionRejects...)
 
 	manifests = deduplicateManifestSeeds(manifests, &rejections)
 	bindings = deduplicateBindingSeeds(bindings, &rejections)
@@ -851,19 +852,20 @@ func (s *CapabilityBackfillService) scanClientCapabilities(
 	return manifests, rejections, nil
 }
 
-func (s *CapabilityBackfillService) scanRejectedCustomPlugins(
-	ctx context.Context,
+func (s *CapabilityBackfillService) scanRetiredExtensionEndpoints(
 	reports []CapabilityBackfillSourceReport,
 ) ([]CapabilityBackfillRejection, error) {
-	var rows []persistence.EcosystemCustomPlugin
-	if err := s.db.WithContext(ctx).Order("id").Find(&rows).Error; err != nil {
+	audits, err := persistence.ReadRetiredExtensionEndpointAudits(s.db)
+	if err != nil {
 		return nil, err
 	}
-	result := make([]CapabilityBackfillRejection, 0, len(rows))
-	for _, row := range rows {
-		incrementBackfillScanned(reports, "custom_http_plugin")
+	result := make([]CapabilityBackfillRejection, 0, len(audits))
+	for _, audit := range audits {
+		incrementBackfillScanned(reports, "retired_extension_endpoint")
 		result = append(result, backfillRejection(
-			"custom_http_plugin", row.ID, "source_kind_not_accepted",
+			"retired_extension_endpoint",
+			audit.ActorScopeHash+":"+audit.MetadataHash,
+			"source_kind_not_accepted",
 		))
 	}
 	return result, nil

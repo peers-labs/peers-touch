@@ -23,6 +23,9 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_invalid_reference,
     evaluate_base_invalid_resource_reference,
     evaluate_base_lease_expired,
+    evaluate_base_loop_budget_exhausted,
+    evaluate_base_model_unavailable,
+    evaluate_base_permission_denied,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -1694,6 +1697,154 @@ def valid_invalid_resource_reference_capture() -> dict[str, object]:
             "bindingRestored": True,
             "localProjectionCleared": True,
             "conversationDeleted": True,
+        },
+    }
+
+
+def valid_permission_denied_capture(
+    platform: str = "browser",
+) -> dict[str, object]:
+    conversation_id = "conversation-permission-denied"
+    turn_id = "turn-permission-denied"
+    stream_id = "stream-permission-denied"
+    stream_generation = 1
+    source_sequence = 4
+    source_session_hash = "1" * 64
+    denied_session_hash = "2" * 64
+    restored_session_hash = "3" * 64
+    outcome = {
+        "error": "agent.errors.clientPermissionDenied",
+        "error_type": "CLIENT_PERMISSION_DENIED",
+        "locale_key": "agent.errors.clientPermissionDenied",
+        "retryable": False,
+        "terminal": True,
+        "details": {
+            "capability_id": "filesystem.read",
+            "permission_kind": "filesystem",
+        },
+    }
+    runtime_payload = {
+        "eventType": "error",
+        "data": {
+            "error": "CLIENT_PERMISSION_DENIED",
+            "outcome_error": outcome,
+        },
+    }
+    payload_hash = canonical_payload_hash(runtime_payload)
+    return {
+        "runtimeEvent": {
+            "eventId": canonical_payload_hash(
+                {
+                    "streamId": stream_id,
+                    "streamGeneration": stream_generation,
+                    "conversationId": conversation_id,
+                    "turnId": turn_id,
+                    "sequence": source_sequence,
+                    "payloadHash": payload_hash,
+                }
+            ),
+            "sequence": source_sequence,
+            "eventType": "error",
+            "observedAt": "2026-09-25T10:00:00Z",
+            "streamGeneration": stream_generation,
+            "streamIdHash": hashlib.sha256(
+                stream_id.encode("utf-8")
+            ).hexdigest(),
+            "conversationIdHash": hashlib.sha256(
+                conversation_id.encode("utf-8")
+            ).hexdigest(),
+            "payloadHash": payload_hash,
+            "errorType": "CLIENT_PERMISSION_DENIED",
+            "sourceTransport": "station-sse",
+            "sourcePtidHash": "a" * 64,
+            "sourceConversationId": conversation_id,
+            "sourceTurnId": turn_id,
+            "sourceSequence": source_sequence,
+            "sourceEventType": "error",
+        },
+        "outcome": outcome,
+        "receiver": {
+            "errorVisible": True,
+            "errorText": "Permission is denied for this client capability.",
+            "expectedErrorText": (
+                "Permission is denied for this client capability."
+            ),
+            "recoveryVisible": True,
+            "recoveryText": "Open permission settings",
+            "expectedRecoveryText": "Open permission settings",
+            "recoveryExecuted": True,
+            "profileVisible": True,
+            "capabilitiesTabVisible": True,
+            "capabilityDetailVisible": True,
+            "capabilityId": "filesystem.read",
+            "permissionKind": "filesystem",
+        },
+        "station": {
+            "conversationId": conversation_id,
+            "turnId": turn_id,
+            "turnStatus": "failed",
+            "messageCount": 2,
+            "toolCallCount": 0,
+            "toolResultCount": 0,
+            "providerCallCount": 1,
+            "providerContinuationCount": 0,
+            "streamId": stream_id,
+            "streamGeneration": stream_generation,
+            "payloadHash": payload_hash,
+            "sourceSequence": source_sequence,
+            "runtimePayload": runtime_payload,
+        },
+        "executor": {
+            "evidenceSource": "native-executor-coordinator",
+            "capabilitySessionIdHash": denied_session_hash,
+            "targetDeviceIdHash": "4" * 64,
+            "targetCapabilityId": "filesystem.read",
+            "targetPlatform": "desktop",
+            "before": {
+                "executionAttemptCount": 3,
+                "sideEffectCount": 2,
+            },
+            "after": {
+                "executionAttemptCount": 3,
+                "sideEffectCount": 2,
+            },
+        },
+        "lease": {
+            "denied": {
+                "sourceCapabilitySessionIdHash": source_session_hash,
+                "capabilitySessionIdHash": denied_session_hash,
+                "permission": "CAPABILITY_PERMISSION_STATE_DENIED",
+                "permissionKind": "CAPABILITY_PERMISSION_KIND_FILESYSTEM",
+            },
+            "restored": {
+                "sourceCapabilitySessionIdHash": denied_session_hash,
+                "capabilitySessionIdHash": restored_session_hash,
+                "permission": "CAPABILITY_PERMISSION_STATE_GRANTED",
+                "permissionKind": "CAPABILITY_PERMISSION_KIND_FILESYSTEM",
+            },
+        },
+        "browser": {
+            "receiverPlatform": platform,
+            "localCapabilityCount": 0 if platform == "browser" else 6,
+        },
+        "recovery": {
+            "turnCountBefore": 1,
+            "turnCountAfter": 1,
+            "messageCountBefore": 2,
+            "messageCountAfter": 2,
+            "providerCallCountBefore": 1,
+            "providerCallCountAfter": 1,
+        },
+        "replay": {
+            "sourceHash": payload_hash,
+            "replayHash": payload_hash,
+            "equal": True,
+        },
+        "cleanup": {
+            "bindingRestored": True,
+            "localProjectionCleared": True,
+            "conversationDeleted": True,
+            "permissionRestored": True,
         },
     }
 
@@ -4735,6 +4886,76 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "zeroSideEffect",
         ):
             evaluate_base_executor_unavailable(capture)
+
+    def test_loop_budget_exhausted_accepts_exact_product_facts(self) -> None:
+        assertions = evaluate_base_loop_budget_exhausted(
+            valid_loop_budget_exhausted_capture()
+        )
+
+        self.assertEqual(len(assertions), 7)
+        self.assertTrue(all(assertions.values()))
+
+    def test_loop_budget_exhausted_rejects_budget_drift(self) -> None:
+        capture = valid_loop_budget_exhausted_capture()
+        capture["loopBudget"]["effectiveLimit"] = 3
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "terminalAtExactLimit",
+        ):
+            evaluate_base_loop_budget_exhausted(capture)
+
+    def test_loop_budget_exhausted_rejects_automatic_retry(self) -> None:
+        capture = valid_loop_budget_exhausted_capture()
+        capture["providerCallsAfterAction"] = 4
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "inspectBudgetHasNoAutomaticRetry",
+        ):
+            evaluate_base_loop_budget_exhausted(capture)
+
+    def test_model_unavailable_accepts_exact_product_facts(self) -> None:
+        assertions = evaluate_base_model_unavailable(
+            valid_model_unavailable_capture()
+        )
+
+        self.assertEqual(len(assertions), 8)
+        self.assertTrue(all(assertions.values()))
+
+    def test_model_unavailable_rejects_typed_contract_drift(self) -> None:
+        capture = valid_model_unavailable_capture()
+        capture["outcome"]["details"]["model_id"] = "forged-model"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "typedModelUnavailable",
+        ):
+            evaluate_base_model_unavailable(capture)
+
+    def test_model_unavailable_rejects_hidden_retry_or_completion(self) -> None:
+        for field, value, assertion in (
+            ("providerCallCount", 2, "oneTerminalProviderAttempt"),
+            ("completedAssistantCount", 1, "zeroSuccessfulCompletion"),
+        ):
+            with self.subTest(field=field):
+                capture = valid_model_unavailable_capture()
+                capture["station"][field] = value
+                with self.assertRaisesRegex(
+                    GroupOneScenarioError,
+                    assertion,
+                ):
+                    evaluate_base_model_unavailable(capture)
+
+    def test_model_unavailable_requires_cleanup(self) -> None:
+        capture = valid_model_unavailable_capture()
+        capture["cleanup"]["modelRemoved"] = False
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_model_unavailable(capture)
 
     def test_approval_expired_accepts_exact_production_facts(self) -> None:
         assertions = evaluate_base_approval_expired(

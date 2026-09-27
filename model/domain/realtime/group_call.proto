@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package peers_touch.model.realtime.v1;
+
+option go_package = "github.com/peers-labs/peers-touch/station/frame/touch/model/realtime;realtime";
+
+// GroupCallAuthorityJoinRequest carries one authenticated Home Station request
+// to the Conversation Authority Station.
+message GroupCallAuthorityJoinRequest {
+  string conversation_id = 1;
+  string actor_ptid = 2;
+  string source_home_station_peer_id = 3;
+  string federation_id = 4;
+  uint64 authority_epoch = 5;
+}
+
+enum GroupCallAuthorityJoinDecision {
+  GROUP_CALL_AUTHORITY_JOIN_DECISION_UNSPECIFIED = 0;
+  GROUP_CALL_AUTHORITY_JOIN_DECISION_AUTHORIZED = 1;
+  GROUP_CALL_AUTHORITY_JOIN_DECISION_NOT_MEMBER = 2;
+}
+
+message GroupCallAuthorityJoinResponse {
+  GroupCallAuthorityJoinDecision decision = 1;
+  string url = 2;
+  string token = 3;
+  string room_name = 4;
+}

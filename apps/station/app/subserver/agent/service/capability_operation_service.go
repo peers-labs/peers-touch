@@ -25,15 +25,22 @@ const (
 )
 
 type CapabilityOperationService struct {
-	db              *gorm.DB
-	now             func() time.Time
-	capabilityProof *ClientCapabilityProofService
+	db                  *gorm.DB
+	now                 func() time.Time
+	capabilityProof     *ClientCapabilityProofService
+	acceptanceScenarios *CapabilityAcceptanceScenarioService
 }
 
 func (s *CapabilityOperationService) SetCapabilityProofService(
 	proof *ClientCapabilityProofService,
 ) {
 	s.capabilityProof = proof
+}
+
+func (s *CapabilityOperationService) SetAcceptanceScenarioService(
+	scenarios *CapabilityAcceptanceScenarioService,
+) {
+	s.acceptanceScenarios = scenarios
 }
 
 func NewCapabilityOperationService(db *gorm.DB) *CapabilityOperationService {
@@ -117,6 +124,537 @@ func (s *CapabilityOperationService) SweepExecutorLeaseDisconnects(
 	return transitioned, nil
 }
 
+func (s *CapabilityOperationService) disconnectAcceptanceScenarioExecutor(
+	ctx context.Context,
+	ptid string,
+	operationID string,
+	deviceID string,
+	sessionID string,
+	markOperationDisconnected bool,
+) error {
+	ptid = strings.TrimSpace(ptid)
+	operationID = strings.TrimSpace(operationID)
+	deviceID = strings.TrimSpace(deviceID)
+	sessionID = strings.TrimSpace(sessionID)
+	if ptid == "" || deviceID == "" || sessionID == "" {
+		return capabilityInvalid(
+			"capability acceptance executor scope is incomplete",
+		)
+	}
+	now := s.now()
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&persistence.ClientCapabilityLease{}).
+			Where(
+				"actor_id = ? AND device_id = ? AND session_id = ? AND revoked_at IS NULL",
+				ptid,
+				deviceID,
+				sessionID,
+			).
+			Updates(map[string]interface{}{
+				"lease_revision": gorm.Expr("lease_revision + ?", 1),
+				"revoked_at":     now,
+				"revoke_reason": int32(
+					model.ClientCapabilityLeaseRevokeReason_CLIENT_CAPABILITY_LEASE_REVOKE_REASON_WORKER_SHUTDOWN,
+				),
+				"updated_at": now,
+			})
+		if result.Error != nil {
+			return capabilityInternal(
+				"revoke capability acceptance operation executor",
+				result.Error,
+			)
+		}
+		if result.RowsAffected != 1 {
+			return capabilityConflict(
+				"capability acceptance operation executor changed",
+			)
+		}
+		if !markOperationDisconnected {
+			return nil
+		}
+		record, err := loadAcceptanceScenarioOperationTx(
+			tx,
+			ptid,
+			operationID,
+			deviceID,
+			sessionID,
+		)
+		if err != nil {
+			return err
+		}
+		return expireCapabilityOperationLeaseTx(tx, record, now)
+	}); err != nil {
+		return err
+	}
+	if markOperationDisconnected {
+		_, err := s.SweepExecutorLeaseDisconnects(ctx)
+		return err
+	}
+	return nil
+}
+
+func (s *CapabilityOperationService) fenceAcceptanceScenarioBusinessLease(
+	ctx context.Context,
+	ptid string,
+	operationID string,
+	deviceID string,
+	sessionID string,
+) error {
+	var revision uint64
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		record, err := loadAcceptanceScenarioOperationTx(
+			tx,
+			ptid,
+			operationID,
+			deviceID,
+			sessionID,
+		)
+		if err != nil {
+			return err
+		}
+		revision = record.Revision
+		return expireCapabilityOperationLeaseTx(tx, record, s.now())
+	}); err != nil {
+		return err
+	}
+	_, err := s.takeOver(
+		ctx,
+		ptid,
+		&model.TakeOverCapabilityOperationRequest{
+			OperationId:         operationID,
+			ExpectedRevision:    revision,
+			TargetDeviceId:      deviceID,
+			CapabilitySessionId: sessionID,
+			CleanupOnly:         true,
+		},
+		nil,
+		false,
+	)
+	return err
+}
+
+func (s *CapabilityOperationService) takeOverAcceptanceScenarioBeforeEffect(
+	ctx context.Context,
+	ptid string,
+	operationID string,
+	deviceID string,
+	sessionID string,
+) error {
+	var revision uint64
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		record, err := loadAcceptanceScenarioOperationTx(
+			tx,
+			ptid,
+			operationID,
+			deviceID,
+			sessionID,
+		)
+		if err != nil {
+			return err
+		}
+		revision = record.Revision
+		return expireCapabilityOperationLeaseTx(tx, record, s.now())
+	}); err != nil {
+		return err
+	}
+	_, err := s.takeOver(
+		ctx,
+		ptid,
+		&model.TakeOverCapabilityOperationRequest{
+			OperationId:         operationID,
+			ExpectedRevision:    revision,
+			TargetDeviceId:      deviceID,
+			CapabilitySessionId: sessionID,
+		},
+		nil,
+		true,
+	)
+	return err
+}
+
+func (s *CapabilityOperationService) takeOverAcceptanceScenarioCleanup(
+	ctx context.Context,
+	ptid string,
+	operationID string,
+	deviceID string,
+	sessionID string,
+) error {
+	var cleanupEpoch uint64
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		record, err := loadAcceptanceScenarioOperationTx(
+			tx,
+			ptid,
+			operationID,
+			deviceID,
+			sessionID,
+		)
+		if err != nil {
+			return err
+		}
+		if model.CapabilityOperationStatus(record.Status) !=
+			model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_SETTLING_CLEANUP ||
+			record.CleanupLeaseID == "" || record.CleanupEpoch == 0 {
+			return capabilityConflict(
+				"capability acceptance operation is not settling cleanup",
+			)
+		}
+		cleanupEpoch = record.CleanupEpoch
+		return expireCapabilityCleanupLeaseTx(tx, record, s.now())
+	}); err != nil {
+		return err
+	}
+	_, err := s.takeOverCleanup(
+		ctx,
+		ptid,
+		&model.TakeOverCapabilityCleanupRequest{
+			OperationId:          operationID,
+			ExpectedCleanupEpoch: cleanupEpoch,
+			TargetDeviceId:       deviceID,
+			CapabilitySessionId:  sessionID,
+		},
+		nil,
+	)
+	return err
+}
+
+func (s *CapabilityOperationService) expireAcceptanceScenarioExecutionDeadline(
+	ctx context.Context,
+	ptid string,
+	operationID string,
+) error {
+	expiredAt := s.now().Add(-time.Microsecond)
+	result := s.db.WithContext(ctx).
+		Model(&persistence.CapabilityOperation{}).
+		Where(
+			"operation_id = ? AND ptid = ? AND status IN ?",
+			strings.TrimSpace(operationID),
+			strings.TrimSpace(ptid),
+			[]int32{
+				int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_PENDING),
+				int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_DISPATCHED),
+				int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_RUNNING),
+				int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_DISCONNECTED),
+				int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_RECONNECTING),
+				int32(model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_CANCELLING),
+			},
+		).
+		Updates(map[string]interface{}{
+			"deadline":   expiredAt,
+			"updated_at": s.now(),
+		})
+	if result.Error != nil {
+		return capabilityInternal(
+			"expire capability acceptance operation deadline",
+			result.Error,
+		)
+	}
+	if result.RowsAffected != 1 {
+		return capabilityConflict(
+			"capability acceptance operation deadline changed",
+		)
+	}
+	_, err := s.SweepExecutionDeadlines(ctx)
+	return err
+}
+
+func (s *CapabilityOperationService) settleAcceptanceScenarioUnknownSideEffect(
+	ctx context.Context,
+	ptid string,
+	operationID string,
+	deviceID string,
+	sessionID string,
+) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		record, err := loadAcceptanceScenarioOperationTx(
+			tx, ptid, operationID, deviceID, sessionID,
+		)
+		if err != nil {
+			return err
+		}
+		if model.CapabilityOperationStatus(record.Status) !=
+			model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_RUNNING {
+			return capabilityConflict(
+				"capability acceptance operation is not running",
+			)
+		}
+		now := s.now()
+		nextRevision := record.Revision + 1
+		update := tx.Model(&persistence.CapabilityOperation{}).
+			Where("operation_id = ? AND ptid = ? AND revision = ?",
+				record.OperationID, ptid, record.Revision).
+			Updates(map[string]interface{}{
+				"status": int32(
+					model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_UNKNOWN_SIDE_EFFECT,
+				),
+				"error_code": int32(
+					model.CapabilityOperationErrorCode_CAPABILITY_OPERATION_ERROR_CODE_UNKNOWN_SIDE_EFFECT,
+				),
+				"error_retryable":       false,
+				"error_recovery_action": "cleanup_only",
+				"terminal_at":           now,
+				"revision":              nextRevision,
+				"updated_at":            now,
+			})
+		if update.Error != nil {
+			return capabilityInternal(
+				"settle acceptance scenario unknown side effect", update.Error,
+			)
+		}
+		if update.RowsAffected != 1 {
+			return capabilityConflict(
+				"capability acceptance operation changed during settlement",
+			)
+		}
+		if err := tx.Model(&persistence.CapabilityOperationLease{}).
+			Where("lease_id = ? AND released_at IS NULL", record.ExecutorLeaseID).
+			Update("released_at", now).Error; err != nil {
+			return capabilityInternal(
+				"release acceptance scenario operation lease", err,
+			)
+		}
+		return nil
+	})
+}
+
+func (s *CapabilityOperationService) expireAcceptanceScenarioCleanupLease(
+	ctx context.Context,
+	ptid string,
+	operationID string,
+) error {
+	now := s.now()
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		record, err := loadAcceptanceScenarioOperationTx(
+			tx,
+			ptid,
+			operationID,
+			"",
+			"",
+		)
+		if err != nil {
+			return err
+		}
+		if model.CapabilityOperationStatus(record.Status) !=
+			model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_SETTLING_CLEANUP ||
+			record.CleanupDeadline == nil {
+			return capabilityConflict(
+				"capability acceptance operation is not settling cleanup",
+			)
+		}
+		if err := expireCapabilityCleanupLeaseTx(tx, record, now); err != nil {
+			return err
+		}
+		result := tx.Model(&persistence.CapabilityOperation{}).
+			Where(
+				"operation_id = ? AND ptid = ? AND revision = ?",
+				record.OperationID,
+				record.Ptid,
+				record.Revision,
+			).
+			Updates(map[string]interface{}{
+				"cleanup_deadline": now.Add(-time.Microsecond),
+				"updated_at":       now,
+			})
+		if result.Error != nil {
+			return capabilityInternal(
+				"expire capability acceptance cleanup deadline",
+				result.Error,
+			)
+		}
+		if result.RowsAffected != 1 {
+			return capabilityConflict(
+				"capability acceptance cleanup deadline changed",
+			)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	_, err := s.SweepCleanupDeadlines(ctx)
+	return err
+}
+
+func (s *CapabilityOperationService) advanceAcceptanceScenarioOperationFence(
+	ctx context.Context,
+	ptid string,
+	operationID string,
+) error {
+	now := s.now()
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		record, err := loadAcceptanceScenarioOperationTx(
+			tx,
+			ptid,
+			operationID,
+			"",
+			"",
+		)
+		if err != nil {
+			return err
+		}
+		if !capabilityOperationTakeoverEligible(
+			model.CapabilityOperationStatus(record.Status),
+		) {
+			return capabilityConflict(
+				"capability acceptance operation is not fence-advance eligible",
+			)
+		}
+		var prior persistence.CapabilityOperationLease
+		if err := tx.Where(
+			"lease_id = ? AND operation_id = ?",
+			record.ExecutorLeaseID,
+			record.OperationID,
+		).First(&prior).Error; err != nil {
+			return capabilityRecordError("capability operation lease", err)
+		}
+		nextEpoch := record.AttemptEpoch + 1
+		nextFence := record.FencingToken + 1
+		nextRevision := record.Revision + 1
+		newLeaseID := generateID("operation-lease")
+		if err := tx.Model(&persistence.CapabilityOperationLease{}).
+			Where("lease_id = ? AND released_at IS NULL", prior.LeaseID).
+			Update("released_at", now).Error; err != nil {
+			return capabilityInternal(
+				"release prior capability acceptance operation lease",
+				err,
+			)
+		}
+		if err := tx.Create(&persistence.CapabilityOperationLease{
+			LeaseID: newLeaseID, OperationID: record.OperationID,
+			AttemptEpoch: nextEpoch, FencingToken: nextFence,
+			Ptid: record.Ptid, DeviceID: record.TargetDeviceID,
+			SessionID: record.CapabilitySessionID,
+			ExpiresAt: minTime(record.Deadline, now.Add(defaultOperationLeaseTTL)),
+			CreatedAt: now,
+		}).Error; err != nil {
+			return capabilityInternal(
+				"create capability acceptance operation lease",
+				err,
+			)
+		}
+		result := tx.Model(&persistence.CapabilityOperation{}).
+			Where(
+				"operation_id = ? AND ptid = ? AND revision = ?",
+				record.OperationID,
+				record.Ptid,
+				record.Revision,
+			).
+			Updates(map[string]interface{}{
+				"executor_lease_id": newLeaseID,
+				"status": int32(
+					model.CapabilityOperationStatus_CAPABILITY_OPERATION_STATUS_DISCONNECTED,
+				),
+				"attempt":       record.Attempt + 1,
+				"attempt_epoch": nextEpoch,
+				"fencing_token": nextFence,
+				"revision":      nextRevision,
+				"error_code": int32(
+					model.CapabilityOperationErrorCode_CAPABILITY_OPERATION_ERROR_CODE_DISCONNECTED,
+				),
+				"error_retryable":       true,
+				"error_recovery_action": "cleanup_only",
+				"updated_at":            now,
+			})
+		if result.Error != nil {
+			return capabilityInternal(
+				"advance capability acceptance operation fence",
+				result.Error,
+			)
+		}
+		if result.RowsAffected != 1 {
+			return capabilityConflict(
+				"capability acceptance operation changed during fence advance",
+			)
+		}
+		return nil
+	})
+}
+
+func loadAcceptanceScenarioOperationTx(
+	tx *gorm.DB,
+	ptid string,
+	operationID string,
+	deviceID string,
+	sessionID string,
+) (*persistence.CapabilityOperation, error) {
+	if strings.TrimSpace(operationID) == "" {
+		return nil, capabilityInvalid(
+			"capability acceptance operation identity is missing",
+		)
+	}
+	var record persistence.CapabilityOperation
+	if err := tx.Where(
+		"operation_id = ? AND ptid = ?",
+		strings.TrimSpace(operationID),
+		strings.TrimSpace(ptid),
+	).First(&record).Error; err != nil {
+		return nil, capabilityRecordError("capability operation", err)
+	}
+	if strings.TrimSpace(deviceID) != "" &&
+		record.TargetDeviceID != strings.TrimSpace(deviceID) {
+		return nil, capabilityConflict(
+			"capability acceptance operation device changed",
+		)
+	}
+	if strings.TrimSpace(sessionID) != "" &&
+		record.CapabilitySessionID != strings.TrimSpace(sessionID) {
+		return nil, capabilityConflict(
+			"capability acceptance operation session changed",
+		)
+	}
+	return &record, nil
+}
+
+func expireCapabilityOperationLeaseTx(
+	tx *gorm.DB,
+	record *persistence.CapabilityOperation,
+	now time.Time,
+) error {
+	result := tx.Model(&persistence.CapabilityOperationLease{}).
+		Where(
+			"lease_id = ? AND operation_id = ? AND released_at IS NULL",
+			record.ExecutorLeaseID,
+			record.OperationID,
+		).
+		Update("expires_at", now.Add(-time.Microsecond))
+	if result.Error != nil {
+		return capabilityInternal(
+			"expire capability acceptance operation lease",
+			result.Error,
+		)
+	}
+	if result.RowsAffected != 1 {
+		return capabilityConflict(
+			"capability acceptance operation lease changed",
+		)
+	}
+	return nil
+}
+
+func expireCapabilityCleanupLeaseTx(
+	tx *gorm.DB,
+	record *persistence.CapabilityOperation,
+	now time.Time,
+) error {
+	result := tx.Model(&persistence.CapabilityCleanupLease{}).
+		Where(
+			"lease_id = ? AND operation_id = ? AND released_at IS NULL",
+			record.CleanupLeaseID,
+			record.OperationID,
+		).
+		Update("expires_at", now.Add(-time.Microsecond))
+	if result.Error != nil {
+		return capabilityInternal(
+			"expire capability acceptance cleanup lease",
+			result.Error,
+		)
+	}
+	if result.RowsAffected != 1 {
+		return capabilityConflict(
+			"capability acceptance cleanup lease changed",
+		)
+	}
+	return nil
+}
+
 func (s *CapabilityOperationService) Start(
 	ctx context.Context,
 	ptid string,
@@ -145,6 +683,35 @@ func (s *CapabilityOperationService) Start(
 	}
 	if len(req.GetBoundedArguments()) > maxCapabilityOperationArguments {
 		return nil, capabilityInvalid("capability operation arguments exceed limit")
+	}
+	if s.acceptanceScenarios != nil &&
+		s.acceptanceScenarios.MatchesStationTuple(
+			ptid,
+			model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_MCP_J04,
+			"ERR-O01",
+			"single",
+		) {
+		if err := s.acceptanceScenarios.BindCapabilityOperation(
+			ptid,
+			"",
+			req.GetTargetDeviceId(),
+			req.GetCapabilitySessionId(),
+		); err != nil {
+			return nil, err
+		}
+		interrupted, err := s.acceptanceScenarios.ReachStationTupleBarrier(
+			ctx,
+			ptid,
+			model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_MCP_J04,
+			"ERR-O01",
+			"single",
+		)
+		if err != nil {
+			return nil, err
+		}
+		if interrupted {
+			return nil, errCapabilityAcceptanceWorkerInterrupted
+		}
 	}
 	payloadHash, err := capabilityProtoHash(req)
 	if err != nil {
@@ -256,7 +823,18 @@ func (s *CapabilityOperationService) Start(
 		operation = capabilityOperationModel(record)
 		return nil
 	})
-	return operation, err
+	if err != nil || operation == nil || s.acceptanceScenarios == nil {
+		return operation, err
+	}
+	if err := s.acceptanceScenarios.BindCapabilityOperation(
+		ptid,
+		operation.GetOperationId(),
+		operation.GetTargetDeviceId(),
+		operation.GetCapabilitySessionId(),
+	); err != nil {
+		return nil, err
+	}
+	return operation, nil
 }
 
 func capabilityOperationKindAllowed(kind string) bool {
@@ -595,6 +1173,46 @@ func (s *CapabilityOperationService) Pull(
 		}
 		return nil
 	})
+	if err != nil || s.acceptanceScenarios == nil {
+		return response, err
+	}
+	deliverable := response.Operations[:0]
+	for _, operation := range response.GetOperations() {
+		if err := s.acceptanceScenarios.BindCapabilityOperation(
+			ptid,
+			operation.GetOperationId(),
+			operation.GetTargetDeviceId(),
+			operation.GetCapabilitySessionId(),
+		); err != nil {
+			return nil, err
+		}
+		if s.acceptanceScenarios.MatchesStationTuple(
+			ptid,
+			model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_MCP_J04,
+			"ERR-O05",
+			"single",
+		) {
+			interrupted, err := s.acceptanceScenarios.ReachStationTupleBarrier(
+				ctx,
+				ptid,
+				model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_MCP_J04,
+				"ERR-O05",
+				"single",
+			)
+			if err != nil {
+				return nil, err
+			}
+			if interrupted {
+				return nil, errCapabilityAcceptanceWorkerInterrupted
+			}
+			continue
+		}
+		deliverable = append(deliverable, operation)
+	}
+	response.Operations = deliverable
+	if len(deliverable) == 0 {
+		response.LastSequence = req.GetAfterSequence()
+	}
 	return response, err
 }
 
@@ -633,7 +1251,7 @@ func (s *CapabilityOperationService) TakeOver(
 	ptid string,
 	req *model.TakeOverCapabilityOperationRequest,
 ) (*model.CapabilityOperation, error) {
-	return s.takeOver(ctx, ptid, req, nil)
+	return s.takeOver(ctx, ptid, req, nil, false)
 }
 
 func (s *CapabilityOperationService) TakeOverVerified(
@@ -659,7 +1277,7 @@ func (s *CapabilityOperationService) TakeOverVerified(
 	if err != nil {
 		return nil, err
 	}
-	return s.takeOver(ctx, ptid, req, verified)
+	return s.takeOver(ctx, ptid, req, verified, false)
 }
 
 func (s *CapabilityOperationService) takeOver(
@@ -667,6 +1285,7 @@ func (s *CapabilityOperationService) takeOver(
 	ptid string,
 	req *model.TakeOverCapabilityOperationRequest,
 	verified *VerifiedCapabilityCommand,
+	knownPreEffect bool,
 ) (*model.CapabilityOperation, error) {
 	ptid = strings.TrimSpace(ptid)
 	if ptid == "" || req == nil ||
@@ -677,6 +1296,31 @@ func (s *CapabilityOperationService) takeOver(
 		return nil, capabilityInvalid(
 			"ptid, operation_id, expected_revision, target device and session are required",
 		)
+	}
+	if s.acceptanceScenarios != nil &&
+		s.acceptanceScenarios.MatchesCapabilityOperation(
+			ptid,
+			req.GetOperationId(),
+		) &&
+		s.acceptanceScenarios.MatchesStationTuple(
+			ptid,
+			model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_MCP_J04,
+			"R-04",
+			"A",
+		) {
+		interrupted, err := s.acceptanceScenarios.ReachStationTupleBarrier(
+			ctx,
+			ptid,
+			model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_MCP_J04,
+			"R-04",
+			"A",
+		)
+		if err != nil {
+			return nil, err
+		}
+		if interrupted {
+			return nil, errCapabilityAcceptanceWorkerInterrupted
+		}
 	}
 	var operation *model.CapabilityOperation
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -745,7 +1389,7 @@ func (s *CapabilityOperationService) takeOver(
 		if err != nil {
 			return err
 		}
-		if record.SideEffectStartedAt != nil &&
+		if record.SideEffectStartedAt != nil && !knownPreEffect &&
 			!capabilityOperationAllowsExternalReplay(&record, req.GetExternalIdempotencyKey()) {
 			if err := transitionOperationToUnknownCleanupTx(tx, &record, lease, now); err != nil {
 				return err
@@ -843,7 +1487,23 @@ func (s *CapabilityOperationService) takeOver(
 		operation = capabilityOperationModel(&record)
 		return nil
 	})
-	return operation, err
+	if err != nil || operation == nil || s.acceptanceScenarios == nil {
+		return operation, err
+	}
+	interrupted, err := s.acceptanceScenarios.ReachStationTupleBarrier(
+		ctx,
+		ptid,
+		model.CapabilityAcceptanceScenarioFamily_CAPABILITY_ACCEPTANCE_SCENARIO_FAMILY_MCP_J04,
+		"R-04",
+		"B",
+	)
+	if err != nil {
+		return nil, err
+	}
+	if interrupted {
+		return nil, errCapabilityAcceptanceWorkerInterrupted
+	}
+	return operation, nil
 }
 
 func (s *CapabilityOperationService) TakeOverCleanup(

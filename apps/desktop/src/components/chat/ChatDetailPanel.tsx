@@ -37,8 +37,12 @@ import {
 } from '../../store/socialProjection';
 import { api, type AccountProfile } from '../../services/desktop_api';
 import { log } from '../../utils/logger';
-import type { FriendChatSession, Group, GroupMember } from '../../store/socialProjection';
-import { MemberRole } from '../../gen/proto/domain/chat/conversation_pb';
+import type { FriendChatSession } from '../../gen/proto/domain/chat/friend_chat_pb';
+import {
+  GroupRole,
+  type Group,
+  type GroupMember,
+} from '../../gen/proto/domain/chat/group_chat_pb';
 import { ChatStorageOperationState } from '../../gen/proto/domain/chat/storage_pb';
 import { SafetyVerificationPanel } from './SafetyVerificationPanel';
 import { useMessagingAttachmentUrl } from './AttachmentItem';
@@ -94,8 +98,8 @@ function getInitial(name: string): string {
 }
 
 function groupRoleLabel(role: number, t: (key: string) => string): string {
-  if (role >= MemberRole.OWNER) return t('chat.social.detail.roleOwner');
-  if (role >= MemberRole.ADMIN) return t('chat.social.detail.roleAdmin');
+  if (role >= GroupRole.OWNER) return t('chat.social.detail.roleOwner');
+  if (role >= GroupRole.ADMIN) return t('chat.social.detail.roleAdmin');
   return t('chat.social.detail.roleMember');
 }
 
@@ -172,21 +176,21 @@ function MemberAvatar({ member, size = 32 }: { member: GroupMemberDisplay; size?
 function MemberPreviewCard({ member }: { member: GroupMemberDisplay }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const role = Number(member.role ?? MemberRole.MEMBER);
+  const role = Number(member.role ?? GroupRole.MEMBER);
   return (
     <Flexbox data-chat-group-member={member.ptid} align="center" gap={6} style={{ width: 66, minWidth: 0 }}>
       <MemberAvatar member={member} size={42} />
       <Text ellipsis style={{ width: '100%', textAlign: 'center', fontSize: 12, fontWeight: 600 }}>
         {member.displayName}
       </Text>
-      {role >= MemberRole.ADMIN || member.muted ? (
+      {role >= GroupRole.ADMIN || member.muted ? (
         <Text
           ellipsis
           style={{
             width: '100%',
             textAlign: 'center',
             fontSize: 10,
-            color: role >= MemberRole.OWNER ? token.colorWarning : role >= MemberRole.ADMIN ? token.colorPrimary : token.colorTextTertiary,
+            color: role >= GroupRole.OWNER ? token.colorWarning : role >= GroupRole.ADMIN ? token.colorPrimary : token.colorTextTertiary,
           }}
         >
           {member.muted ? t('chat.social.detail.memberMuted') : groupRoleLabel(role, t)}
@@ -199,7 +203,7 @@ function MemberPreviewCard({ member }: { member: GroupMemberDisplay }) {
 function MemberItem({ member, action, lockedReason }: { member: GroupMemberDisplay; action?: ReactNode; lockedReason?: string }) {
   const { token } = theme.useToken();
   const { t } = useTranslation('chat');
-  const role = Number(member.role ?? MemberRole.MEMBER);
+  const role = Number(member.role ?? GroupRole.MEMBER);
   return (
     <Flexbox horizontal align="center" gap={10} style={{ padding: '8px 0', minWidth: 0 }}>
       <MemberAvatar member={member} />
@@ -213,7 +217,7 @@ function MemberItem({ member, action, lockedReason }: { member: GroupMemberDispl
           ) : null}
           <Tag
             bordered={false}
-            color={role >= MemberRole.OWNER ? 'gold' : role >= MemberRole.ADMIN ? 'blue' : 'default'}
+            color={role >= GroupRole.OWNER ? 'gold' : role >= GroupRole.ADMIN ? 'blue' : 'default'}
             style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: '18px' }}
           >
             {groupRoleLabel(role, t)}
@@ -651,9 +655,11 @@ export function ChatDetailPanel() {
     loadPeerProfile: s.loadPeerProfile,
     setGroupSecurityState: s.setGroupSecurityState,
   }));
-  const actorStationEntries = useActiveChatFederationSlice(
-    (state) => state.actorStationEntries,
-  );
+  const { actorStationEntries, memberStationsByFederation } =
+    useActiveChatFederationSlice((state) => ({
+      actorStationEntries: state.actorStationEntries,
+      memberStationsByFederation: state.memberStationsByFederation,
+    }));
 
   const activeUlid = activeTab === 'friend' ? activeSessionUlid : activeGroupUlid;
   const isGroup = activeTab === 'group';
@@ -671,8 +677,10 @@ export function ChatDetailPanel() {
   const authorityStationId = activeConversation?.authorityStationId?.trim() || '';
   const authorityStationName = resolveFederationStationName({
     actorPtid: activeConversation?.peerPtid,
+    federationId: activeConversation?.federationId,
     stationPeerId: authorityStationId,
     actorStationEntries,
+    memberStationsByFederation,
   });
 
   const [verifyOpen, setVerifyOpen] = useState(false);
@@ -726,7 +734,7 @@ export function ChatDetailPanel() {
         ? [{
             ptid: activeGroup.ownerPtid,
             nickname: '',
-            role: MemberRole.OWNER,
+            role: GroupRole.OWNER,
             muted: false,
           }]
         : [];
@@ -764,21 +772,21 @@ export function ChatDetailPanel() {
     [currentUserPtid, memberPtidSet, sessions],
   );
   const groupMemberCount = isGroup ? (activeConversation?.memberCount || activeGroup?.memberCount || members.length) : 0;
-  const myMemberRole = activeGroup?.ownerPtid === currentUserPtid ? MemberRole.OWNER : Number(myGroupMember?.role ?? 0);
+  const myMemberRole = activeGroup?.ownerPtid === currentUserPtid ? GroupRole.OWNER : Number(myGroupMember?.role ?? 0);
   const canManageGroupMembers = Boolean(
     activeGroup?.ownerPtid === currentUserPtid ||
-    myMemberRole >= MemberRole.ADMIN,
+    myMemberRole >= GroupRole.ADMIN,
   );
-  const isGroupOwner = isGroup && myMemberRole === MemberRole.OWNER;
+  const isGroupOwner = isGroup && myMemberRole === GroupRole.OWNER;
   const myMemberRoleLabel = groupRoleLabel(myMemberRole, t);
   const groupPermissionTitle = isGroupOwner
     ? t('chat.social.detail.permissionOwnerTitle')
-    : myMemberRole >= MemberRole.ADMIN
+    : myMemberRole >= GroupRole.ADMIN
       ? t('chat.social.detail.permissionAdminTitle')
       : t('chat.social.detail.permissionMemberTitle');
   const groupPermissionBody = isGroupOwner
     ? t('chat.social.detail.permissionOwnerBody')
-    : myMemberRole >= MemberRole.ADMIN
+    : myMemberRole >= GroupRole.ADMIN
       ? t('chat.social.detail.permissionAdminBody')
       : t('chat.social.detail.permissionMemberBody');
   const currentName = isGroup
@@ -1006,11 +1014,11 @@ export function ChatDetailPanel() {
   const confirmUpdateGroupMemberRole = (member: GroupMember, role: number) => {
     const memberName = getMemberDisplayName(member);
     Modal.confirm({
-      title: role === MemberRole.ADMIN ? t('chat.social.detail.promoteAdminConfirmTitle') : t('chat.social.detail.demoteAdminConfirmTitle'),
-      content: role === MemberRole.ADMIN
+      title: role === GroupRole.ADMIN ? t('chat.social.detail.promoteAdminConfirmTitle') : t('chat.social.detail.demoteAdminConfirmTitle'),
+      content: role === GroupRole.ADMIN
         ? t('chat.social.detail.promoteAdminConfirmBody', { name: memberName })
         : t('chat.social.detail.demoteAdminConfirmBody', { name: memberName }),
-      okText: role === MemberRole.ADMIN ? t('chat.social.detail.promoteAdmin') : t('chat.social.detail.demoteAdmin'),
+      okText: role === GroupRole.ADMIN ? t('chat.social.detail.promoteAdmin') : t('chat.social.detail.demoteAdmin'),
       cancelText: t('chat.social.messageArea.cancel'),
       onOk: () => updateGroupMember(member, { role }),
     });
@@ -1036,13 +1044,13 @@ export function ChatDetailPanel() {
         try {
           const [conversation, federationSelf] = await Promise.all([
             messagingConversations.getConversation(activeUlid),
-            api.profileGet(),
+            api.federationGetSelf(),
           ]);
           await messagingCommands.requestLeaveIntent({
             federationId: conversation.federationId,
             authorityStationPeerId: conversation.authorityStationPeerId,
             authorityEpoch: Number(conversation.authorityEpoch),
-            homeStationPeerId: federationSelf.home_station_peer_id,
+            homeStationPeerId: federationSelf.homeStationPeerId,
             conversationId: activeUlid,
             observedMembershipEpoch: Number(conversation.membershipEpoch),
             observedMlsEpoch: Number(conversation.mlsEpoch),
@@ -1360,7 +1368,7 @@ export function ChatDetailPanel() {
               </Flexbox>
               <Tag
                 bordered={false}
-                color={isGroupOwner ? 'gold' : myMemberRole >= MemberRole.ADMIN ? 'blue' : 'default'}
+                color={isGroupOwner ? 'gold' : myMemberRole >= GroupRole.ADMIN ? 'blue' : 'default'}
                 style={{ marginInlineEnd: 0, flexShrink: 0 }}
               >
                 {myMemberRoleLabel}
@@ -1633,13 +1641,13 @@ export function ChatDetailPanel() {
       >
         <Flexbox gap={10} style={{ maxHeight: 'min(520px, 70vh)', overflowY: 'auto', overflowX: 'hidden', paddingRight: 4 }}>
           {displayMembers.map((member) => {
-            const memberRole = Number(member.role ?? MemberRole.MEMBER);
+            const memberRole = Number(member.role ?? GroupRole.MEMBER);
             const targetIsSelf = member.ptid === currentUserPtid;
             const controlState = getGroupMemberControlState({
               canManageGroupMembers,
               isSelf: targetIsSelf,
               membersLoaded: members.length > 0,
-              myMemberRole,
+              myGroupRole: myMemberRole,
               targetRole: memberRole,
             });
             const managedMember = members.find((groupMember) => groupMember.ptid === member.ptid);
@@ -1651,17 +1659,17 @@ export function ChatDetailPanel() {
                 lockedReason={lockedReason}
                 action={controlState.canManageTarget && managedMember ? (
                   <>
-                    {myMemberRole === MemberRole.OWNER ? (
+                    {myMemberRole === GroupRole.OWNER ? (
                       <>
                         <Button
                           type="text"
                           size="small"
                           onClick={() => confirmUpdateGroupMemberRole(
                             managedMember,
-                            memberRole === MemberRole.ADMIN ? MemberRole.MEMBER : MemberRole.ADMIN,
+                            memberRole === GroupRole.ADMIN ? GroupRole.MEMBER : GroupRole.ADMIN,
                           )}
                         >
-                          {memberRole === MemberRole.ADMIN
+                          {memberRole === GroupRole.ADMIN
                             ? t('chat.social.detail.demoteAdmin')
                             : t('chat.social.detail.promoteAdmin')}
                         </Button>

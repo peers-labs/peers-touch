@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -21,25 +19,6 @@ def load_mirror_module():
 
 
 class DesktopTelemetryMirrorTest(unittest.TestCase):
-    def test_reads_gateway_query_source_without_credentials(self) -> None:
-        module = load_mirror_module()
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "source.json"
-            source.write_text(
-                json.dumps({
-                    "filters": {"interactionId": "sample-1"},
-                    "events": [{"id": "event-1"}],
-                    "rollups": [{"module": "desktop"}],
-                }),
-                encoding="utf-8",
-            )
-
-            filters, events, rollups = module.read_source_input(source)
-
-        self.assertEqual(filters, {"interactionId": "sample-1"})
-        self.assertEqual(events, [{"id": "event-1"}])
-        self.assertEqual(rollups, [{"module": "desktop"}])
-
     def test_build_report_carries_traceability_metadata(self) -> None:
         module = load_mirror_module()
         report = module.build_report(

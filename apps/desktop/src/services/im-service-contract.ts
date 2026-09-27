@@ -55,7 +55,7 @@ export interface KeyPackageFetchResult {
 
 export interface DeviceServiceContract {
   list(): Promise<DeviceInfo[]>
-  revoke(deviceId: string, observedProfileVersion: bigint): Promise<void>
+  revoke(deviceId: string, observedProfileVersion: bigint): Promise<DeviceInfo>
 }
 
 export interface MlsLeaveIntentView {
@@ -123,26 +123,22 @@ export interface MessagingAttachmentProjection {
   attachmentId: string
   filename: string
   mimeType: string
+  contentKind: 'file' | 'voice_note'
+  durationMs: number
   plaintextSize: number
   objectId: string
   storageRef: string
   ciphertextSize: number
   availabilityState: 'uploading' | 'remote' | 'local' | 'failed'
-  voiceNote?: MessagingVoiceNoteMetadata
-}
-
-export interface MessagingVoiceNoteMetadata {
-  durationMs: number
-  codec: string
-  waveform: number[]
 }
 
 export interface MessagingLocalAttachmentIntent {
   filePath: string
   filename: string
   mimeType: string
+  contentKind: 'file' | 'voice_note'
+  durationMs: number
   size?: number
-  voiceNote?: MessagingVoiceNoteMetadata
 }
 
 export type MessagingSendState = 'draft' | 'pending' | 'attachment_failed'
@@ -171,6 +167,8 @@ export interface MessagingConversationProjection {
   federationId: string
   kind: 1 | 2
   name: string
+  description: string
+  avatarObjectId: string
   ownerPtid: string
   members: ConversationMember[]
   membershipEpoch: number
@@ -221,6 +219,25 @@ export interface MessagingServiceContract {
   submitMembershipIntent(
     intent: MessagingActorMembershipIntent,
   ): Promise<{ commandId: string; state: 'pending' }>
+  updateConversation(
+    conversationId: string,
+    update: { name?: string; description?: string; avatarObjectId?: string },
+  ): Promise<{ commandId: string; state: string }>
+  updateMemberAuthority(
+    conversationId: string,
+    targetPtid: string,
+    update: { role?: number; muted?: boolean; mutedUntilUnixMs?: number },
+  ): Promise<{ commandId: string; state: string }>
+  transferOwnership(
+    conversationId: string,
+    targetPtid: string,
+  ): Promise<{ commandId: string; state: string }>
+  dissolveConversation(
+    conversationId: string,
+  ): Promise<{ commandId: string; state: string }>
+  leaveConversation(
+    conversationId: string,
+  ): Promise<{ intentId: string; state: 'pending' }>
   requestLeaveIntent(input: RequestMlsLeaveIntentInput): Promise<MlsLeaveIntentView>
   listLeaveIntents(conversationId: string): Promise<MlsLeaveIntentView[]>
   commitAuthorizedLeave(

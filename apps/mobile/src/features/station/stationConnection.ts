@@ -73,8 +73,8 @@ export async function verifyStationIdentity(url: string): Promise<StationIdentit
     redirect: 'error',
     cache: 'no-store',
     headers: {
-      Accept: 'application/protobuf',
-      'Content-Type': 'application/protobuf',
+      Accept: 'application/x-protobuf',
+      'Content-Type': 'application/x-protobuf',
     },
     body: toBinary(StationIdentityRequestSchema, request),
   });

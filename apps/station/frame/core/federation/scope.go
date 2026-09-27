@@ -16,6 +16,8 @@ const (
 	ConversationFollowerEventsScope = "conversation-follower-events"
 	// ActorEndpointManifestScope authenticates Actor endpoint-manifest reads.
 	ActorEndpointManifestScope = "actor-endpoint-manifest-read"
+	// PresenceQueryScope authenticates Home Station presence snapshot reads.
+	PresenceQueryScope = "presence-query-read"
 	// ConversationCommandPrepareScope authenticates authority command preparation.
 	ConversationCommandPrepareScope = "conversation-command-prepare"
 	// ConversationLeaveIntentScope authenticates MLS leave-intent operations.
@@ -30,8 +32,12 @@ const (
 	KeyExchangeMLSFetchScope = "key-exchange-mls-key-package-fetch"
 	// KeyExchangeMLSClaimScope authenticates irreversible MLS KeyPackage claims.
 	KeyExchangeMLSClaimScope = "key-exchange-mls-key-package-claim"
+	// RealtimeSignalScope authenticates cross-Station realtime signal forwarding.
+	RealtimeSignalScope = "realtime-signal-forward"
 	// RealtimeCallResolutionScope authenticates caller readback at the callee Home Station.
 	RealtimeCallResolutionScope = "realtime-call-resolution-read"
+	// GroupCallAuthorityJoinScope authenticates Conversation Authority token issuance.
+	GroupCallAuthorityJoinScope = "group-call-authority-join"
 
 	ClaimFrameID               = "frame_id"
 	ClaimIdempotencyKey        = "idempotency_key"
@@ -52,6 +58,10 @@ const (
 	ClaimRequesterDeviceID     = "requester_device_id"
 	ClaimAuthorityPlanID       = "authority_plan_id"
 	ClaimPlanExpiresAt         = "plan_expires_at"
+	ClaimPresenceRequestSHA256 = "presence_request_sha256"
+	ClaimSenderPTID            = "sender_ptid"
+	ClaimRecipientPTID         = "recipient_ptid"
+	ClaimSessionULID           = "session_ulid"
 	ClaimCallID                = "call_id"
 )
 
@@ -98,15 +108,31 @@ var peerScopes = []scope.Scope{
 		},
 	},
 	{
+		Name:        PresenceQueryScope,
+		Description: "read authoritative actor presence from a Home Station",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimRequesterPTID,
+				ClaimPresenceRequestSHA256,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
 		Name:        ConversationCommandPrepareScope,
 		Description: "prepare a Conversation command at its authority Station",
 		Policy: scope.Policy{
 			TTLMax:           time.Minute,
 			AudienceRequired: true,
 			AllowedClaimKeys: []string{
+				ClaimFederationID,
 				ClaimConversationID,
 				ClaimActorPTID,
 				ClaimDeviceID,
+				ClaimAuthorityEpoch,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,
 			},
@@ -208,6 +234,21 @@ var peerScopes = []scope.Scope{
 		},
 	},
 	{
+		Name:        RealtimeSignalScope,
+		Description: "forward a realtime call signal to a recipient's Home Station",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimSenderPTID,
+				ClaimRecipientPTID,
+				ClaimSessionULID,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
 		Name:        RealtimeCallResolutionScope,
 		Description: "read one call resolution from the callee Home Station",
 		Policy: scope.Policy{
@@ -216,6 +257,22 @@ var peerScopes = []scope.Scope{
 			AllowedClaimKeys: []string{
 				ClaimActorPTID,
 				ClaimCallID,
+				ClaimSourceStationPeerID,
+				ClaimTargetStationPeerID,
+			},
+		},
+	},
+	{
+		Name:        GroupCallAuthorityJoinScope,
+		Description: "request a group-call grant from Conversation Authority",
+		Policy: scope.Policy{
+			TTLMax:           time.Minute,
+			AudienceRequired: true,
+			AllowedClaimKeys: []string{
+				ClaimFederationID,
+				ClaimConversationID,
+				ClaimActorPTID,
+				ClaimAuthorityEpoch,
 				ClaimSourceStationPeerID,
 				ClaimTargetStationPeerID,
 			},

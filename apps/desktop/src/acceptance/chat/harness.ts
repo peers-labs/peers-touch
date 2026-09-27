@@ -6,7 +6,6 @@ import {
 } from '../../runtimes/chatStorageRuntime';
 import { installAuthenticatedCriticalRuntimes } from '../../services/appRuntime';
 import { api } from '../../services/desktop_api';
-import type { GroupChatFederatedActorInput } from '../../services/desktop_api';
 import { dispatchRealtimeFrameForAcceptance } from '../../services/eventStream';
 import { imServiceV1 } from '../../services/im-service';
 import {
@@ -61,6 +60,16 @@ interface CreateGroupInput {
   description?: string;
   memberPtids?: string[];
   initialFederatedMembers?: GroupChatFederatedActorInput[];
+}
+
+interface GroupChatFederatedActorInput {
+  ptid: string;
+  homeStationPeerId: string;
+  homeStationDomain?: string;
+  federatedHandle?: string;
+  actorIdentityPublicKey?: Uint8Array | number[];
+  profileVersion?: number | bigint;
+  federationId?: string;
 }
 
 interface SyncGroupInput {
@@ -421,9 +430,9 @@ export function installAcceptanceHarness(): void {
     },
 
     async federationContext() {
-      const response = await api.federationListContexts();
+      const response = await api.federationListFederations();
       return {
-        federations: response.contexts.map((federation) => ({
+        federations: response.federations.map((federation) => ({
           federationId: federation.federationId,
           name: federation.name,
           status: federation.status,
@@ -447,13 +456,16 @@ export function installAcceptanceHarness(): void {
     },
 
     async onboardingIdentity() {
-      const identity = await api.profileGet();
+      const [identity, federationSelf] = await Promise.all([
+        api.profileGet(),
+        api.federationGetSelf(),
+      ]);
       return {
         actorPtid: activeActorPtid(),
         preferredUsername: identity.username,
-        federatedHandle: identity.federated_handle,
-        homeStationPeerId: identity.home_station_peer_id,
-        homeStationDomain: identity.home_station_domain,
+        federatedHandle: federationSelf.federatedHandle,
+        homeStationPeerId: federationSelf.homeStationPeerId,
+        homeStationDomain: federationSelf.homeStationDomain,
       };
     },
 
