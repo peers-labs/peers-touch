@@ -27,6 +27,7 @@ from tooling.acceptance.core import (
     EvidenceStore,
     GateError,
     REPO_ROOT,
+    call_async_harness,
 )
 from tooling.acceptance.core.provisioning import load_runtime_manifest
 from tooling.acceptance.core.evidence_store import workspace_id
@@ -530,6 +531,7 @@ class NativeTwoClientGate(AcceptanceGate):
         self.client_lifecycles = NativeClientLifecycleLedger()
         self.ptids: dict[str, str] = {}
         self.device_ids: dict[str, str] = {}
+        self.station_access: dict[str, dict[str, Any]] = {}
         self._reconciliation_target: dict[str, str] | None = None
         self.report.station_url = self.station_url
         self.report.manifest = self.manifest
@@ -538,6 +540,7 @@ class NativeTwoClientGate(AcceptanceGate):
                 "runtimeCell": self.runtime_binding.cell_id,
                 "journey": journey_for_gate(self.gate_id),
                 "steps": self.steps,
+                "stationAccess": self.station_access,
                 "cleanup": {},
             }
         )
@@ -674,6 +677,34 @@ class NativeTwoClientGate(AcceptanceGate):
         )
         return identity
 
+    def configure_station_access(
+        self,
+        client: TauriSession,
+        actor: str,
+    ) -> dict[str, Any]:
+        station = runtime_station_service(self.manifest, actor)
+        station_url = str(station.get("endpoint") or "").rstrip("/")
+        station_peer_id = str(station.get("runtimeIdentity") or "")
+        if not station_url or not station_peer_id:
+            raise GateError(f"{actor} Station binding identity is incomplete")
+        binding = call_async_harness(
+            client,
+            "configureStation",
+            {"stationUrl": station_url},
+            namespace="stationAccess",
+            script_timeout=30,
+        )
+        if (
+            not isinstance(binding, dict)
+            or binding.get("configured") is not True
+            or binding.get("activeUrl") != station_url
+            or binding.get("boundUrl") != station_url
+            or binding.get("bindingPhase") != "access_gate"
+            or binding.get("activeStationPeerId") != station_peer_id
+        ):
+            raise GateError(f"{actor} did not verify the configured Station")
+        return binding
+
     def start_client(self, actor: str) -> None:
         client = self.runtime_binding.create_bound_session(
             actor,
@@ -689,6 +720,9 @@ class NativeTwoClientGate(AcceptanceGate):
         self.client_lifecycles.register(client, expected_ptid)
         self.client_lifecycles.mark_live(client)
         self.register_driver(client)
+        self.station_access[actor] = {
+            "preAuthentication": self.configure_station_access(client, actor),
+        }
         account_ref = str(
             self.actor_specs[actor].get("accountRef") or ""
         )
@@ -704,6 +738,29 @@ class NativeTwoClientGate(AcceptanceGate):
         )
         if not (login or {}).get("authenticated"):
             raise GateError(f"{actor} login did not authenticate")
+        bound_station = call_async_harness(
+            client,
+            "bindingState",
+            {},
+            namespace="stationAccess",
+            script_timeout=10,
+        )
+        if (
+            not isinstance(bound_station, dict)
+            or bound_station.get("phase") != "bound"
+            or str(bound_station.get("bound_url") or "").rstrip("/")
+            != str(
+                runtime_station_service(
+                    self.manifest,
+                    actor,
+                ).get("endpoint")
+                or ""
+            ).rstrip("/")
+        ):
+            raise GateError(
+                f"{actor} Station binding did not complete after access grant"
+            )
+        self.station_access[actor]["postAuthentication"] = bound_station
         self.client_lifecycles.mark_authenticated(client)
         hydration = async_harness(
             client,
