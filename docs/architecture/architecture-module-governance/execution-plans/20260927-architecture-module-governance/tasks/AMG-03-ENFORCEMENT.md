@@ -16,7 +16,11 @@
   "journeyId": "AMG-J03",
   "runtimeClass": "source-only",
   "writeSet": [
+    "docs/architecture/architecture-module-governance",
+    "docs/knowledge",
+    "tooling/acceptance/gates.yaml",
     "tooling/plugins/pt-ew-plugin",
+    "tooling/scripts/architecture",
     "tooling/scripts/local-dev",
     "tooling/scripts/plan",
     "tooling/scripts/review",
@@ -26,11 +30,9 @@
     "tooling/skills/pt-architecture-design-methodology",
     "tooling/skills/pt-plan-and-document",
     "tooling/skills/pt-github-review",
-    "tooling/make/review.mk",
-    "docs/knowledge"
+    "tooling/make/review.mk"
   ],
   "readSet": [
-    "docs/architecture/architecture-module-governance",
     "docs/architecture/development-workflow",
     "AGENTS.md"
   ],
