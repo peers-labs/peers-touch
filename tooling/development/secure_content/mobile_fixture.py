@@ -63,7 +63,12 @@ class MobileProductionFixture:
         if operation in PLATFORM_OPERATIONS or operation == (
             "cross-platform-receivers"
         ):
-            return self._mobile_matrix_operation(operation, payload)
+            return self._mobile_matrix_operation(
+                operation,
+                payload,
+                deadline_monotonic,
+                cancellation,
+            )
         if operation == "prepare-corpus":
             return self._prepare_corpus(payload)
         if operation in {"direct-exact-bytes", "group-exact-bytes"}:
@@ -94,12 +99,14 @@ class MobileProductionFixture:
         self,
         operation: str,
         payload: Mapping[str, object],
+        deadline_monotonic: float,
+        cancellation: threading.Event,
     ) -> Mapping[str, object]:
         clients = self._selected_clients(payload)
         variant = str(payload.get("variant") or "")
         if operation == "publish-states":
             sender = self._sender(payload)
-            published = self._call(
+            post_id, _published = self._publish_post(
                 sender,
                 "moments.private.publishText",
                 {
@@ -108,15 +115,10 @@ class MobileProductionFixture:
                     "text": f"secure-content-{variant}-private",
                     "audience": {"kind": "FRIENDS"},
                 },
+                deadline_monotonic=deadline_monotonic,
+                cancellation=cancellation,
+                label="private post",
             )
-            post_id = self._required_text(
-                published.get("postId"),
-                "private post ID",
-            )
-            if published.get("state") != "PUBLISHED":
-                raise MobileFixtureError(
-                    "Mobile private publish did not complete"
-                )
             self._posts[variant] = post_id
         elif operation == "read-states":
             post_id = self._required_text(
@@ -202,18 +204,19 @@ class MobileProductionFixture:
                             "private post ID",
                         )
                     }
-                published = self._call(
+                post_id, _published = self._publish_post(
                     sender,
                     "moments.private.publish",
                     intent,
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                    label=f"{kind} private post",
                 )
-                post_id = published.get("postId")
-                if isinstance(post_id, str) and post_id:
-                    self._call(
-                        self._receiver(payload),
-                        "moments.private.read",
-                        {"postId": post_id},
-                    )
+                self._call(
+                    self._receiver(payload),
+                    "moments.private.read",
+                    {"postId": post_id},
+                )
         elif operation == "media-states":
             post_id = self._required_text(
                 self._posts.get(variant),
@@ -284,7 +287,7 @@ class MobileProductionFixture:
                 ("android-to-ios", android_sender, ios_receiver),
             ):
                 text = f"secure-content-{direction}"
-                published = self._call(
+                post_id, published = self._publish_post(
                     sender,
                     "moments.private.publishText",
                     {
@@ -293,10 +296,9 @@ class MobileProductionFixture:
                         "text": text,
                         "audience": {"kind": "FRIENDS"},
                     },
-                )
-                post_id = self._required_text(
-                    published.get("postId"),
-                    f"{direction} post ID",
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                    label=f"{direction} post",
                 )
                 read = self._call(
                     receiver,
@@ -403,6 +405,72 @@ class MobileProductionFixture:
             "publicFallbackUsed": False,
             "receiverObservationDigests": self._digests(observations),
         }
+
+    def _publish_post(
+        self,
+        client_id: str,
+        action: str,
+        intent: Mapping[str, Any],
+        *,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+        label: str,
+    ) -> tuple[str, Mapping[str, Any]]:
+        published = self._call(client_id, action, intent)
+        while published.get("state") in {
+            "PREPARING",
+            "PUBLISHING",
+            "UNKNOWN_OUTCOME",
+        }:
+            self._require_active(deadline_monotonic, cancellation)
+            reconciled = self._call(
+                client_id,
+                "moments.private.reconcile",
+            )
+            published = self._matching_publish_projection(
+                reconciled,
+                intent,
+            ) or published
+            if published.get("state") in {
+                "PREPARING",
+                "PUBLISHING",
+                "UNKNOWN_OUTCOME",
+            }:
+                time.sleep(0.25)
+        if published.get("state") != "PUBLISHED":
+            raise MobileFixtureError(
+                f"Mobile {label} publish did not complete"
+            )
+        return (
+            self._required_text(
+                published.get("postId"),
+                f"{label} ID",
+            ),
+            published,
+        )
+
+    def _matching_publish_projection(
+        self,
+        snapshot: Mapping[str, Any],
+        intent: Mapping[str, Any],
+    ) -> Mapping[str, Any] | None:
+        draft_id = self._required_text(intent.get("draftId"), "draft ID")
+        draft_revision = self._required_integer(
+            intent.get("draftRevision"),
+            "draft revision",
+        )
+        return next(
+            (
+                projection
+                for projection in self._mapping_items(
+                    snapshot.get("publish"),
+                    "private publish projections",
+                )
+                if projection.get("draftId") == draft_id
+                and projection.get("draftRevision") == draft_revision
+            ),
+            None,
+        )
 
     def _prepare_corpus(
         self,
