@@ -2,7 +2,12 @@ import { createDesktopStore } from './createDesktopStore';
 import { api, AuthCommandException, type AuthSessionResponse } from '../services/desktop_api';
 import { markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
-import { normalizeDecision, type AccessDecision } from '../services/accessGate';
+import {
+  currentGate,
+  isLoginGate,
+  normalizeDecision,
+  type AccessDecision,
+} from '../services/accessGate';
 
 // ── Types ──
 
@@ -83,14 +88,10 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   },
 
   loginWithPassword: async (account, password) => {
-    markLocalIdentityAction();
-    const resp = await api.authLogin({ account, password });
-    get().activateAuthenticatedSession(resp);
-    await runIdentityPipeline({
-      reason: 'login',
-      actorPtid: resp.actor_ptid ?? null,
-      loginMethod: 'password',
-    });
+    const decision = await get().accessStart();
+    const gate = currentGate(decision);
+    if (!gate || !isLoginGate(gate)) throw new Error('auth.gate.unsupported');
+    await get().accessSubmitLogin(decision.attemptId, account, password);
   },
 
   accessStart: async () => {

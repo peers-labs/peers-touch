@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  authLogin: vi.fn(),
+  accessStart: vi.fn(),
   accessSubmitLogin: vi.fn(),
   ensureStationSession: vi.fn(),
   authLogout: vi.fn(),
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../services/desktop_api', () => ({
   api: {
-    authLogin: mocks.authLogin,
+    accessStart: mocks.accessStart,
     accessSubmitLogin: mocks.accessSubmitLogin,
     ensureStationSession: mocks.ensureStationSession,
     authLogout: mocks.authLogout,
@@ -30,12 +30,27 @@ vi.mock('../services/identityPipeline', () => ({
 const { useSessionStore } = await import('./session');
 
 const authenticatedResponse = {
-  command: 'auth_login',
+  command: 'access_submit_login',
   status: 'authenticated',
   actor_ptid: 'ptid:person:new',
   name: 'New',
   email: '',
   login_method: 'password',
+};
+
+const loginGate = {
+  gateId: 'auth.login',
+  gateType: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+  state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+  title: '',
+  description: '',
+  blockingReason: '',
+  submitAction: 'submit_login',
+  inputSchemaJson: '',
+  alternativeActions: [],
+  actionId: 'auth.password',
+  schemaRevision: 1,
+  schemaDigest: 'a'.repeat(64),
 };
 
 describe('session authentication convergence', () => {
@@ -55,7 +70,29 @@ describe('session authentication convergence', () => {
       useSessionStore.getState().reset();
       return { ok: true, failures: [] };
     });
-    mocks.authLogin.mockResolvedValue(authenticatedResponse);
+    mocks.accessStart.mockResolvedValue({
+      decision: {
+        state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+        attempt_id: 'attempt-1',
+        current_gate_id: loginGate.gateId,
+        gates: [{
+          gate_id: loginGate.gateId,
+          gate_type: loginGate.gateType,
+          state: loginGate.state,
+          title: loginGate.title,
+          description: loginGate.description,
+          blocking_reason: loginGate.blockingReason,
+          submit_action: loginGate.submitAction,
+          input_schema_json: loginGate.inputSchemaJson,
+          alternative_actions: loginGate.alternativeActions,
+          action_id: loginGate.actionId,
+          schema_revision: loginGate.schemaRevision,
+          schema_digest: loginGate.schemaDigest,
+        }],
+        access_grant_id: '',
+        message: '',
+      },
+    });
     mocks.accessSubmitLogin.mockResolvedValue(authenticatedResponse);
     mocks.ensureStationSession.mockResolvedValue({
       ...authenticatedResponse,
@@ -80,6 +117,19 @@ describe('session authentication convergence', () => {
     expect(authenticatedDuringPipeline).toBe(true);
     expect(useSessionStore.getState().authenticated).toBe(true);
     expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:new');
+  });
+
+  it('routes password login through the Station access attempt', async () => {
+    await useSessionStore.getState().loginWithPassword('alice@p.t', 'password');
+
+    expect(mocks.accessStart).toHaveBeenCalledOnce();
+    expect(mocks.accessSubmitLogin).toHaveBeenCalledWith(
+      {
+        attempt_id: 'attempt-1',
+        account: 'alice@p.t',
+        password: 'password',
+      },
+    );
   });
 
   it('runs the identity pipeline before propagating native cleanup failure', async () => {

@@ -17,6 +17,8 @@
   "runtimeClass": "source-only",
   "writeSet": [
     "docs/architecture/chat-storage-governance",
+    "apps/desktop/src/store/session.ts",
+    "apps/desktop/src/store/session.test.ts",
     "apps/mobile/src/features/social",
     "apps/mobile/src/runtimes",
     "apps/station/app/subserver/conversation",
