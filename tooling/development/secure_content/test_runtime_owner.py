@@ -57,6 +57,7 @@ from tooling.development.secure_content.runtime_owner import (
     _publish_canonical_private_schema_attestation,
     _provision_runtime_accounts,
     _register_runtime_account,
+    _require_mobile_private_runtime,
     _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
     _restart_lease,
@@ -1463,6 +1464,139 @@ class RuntimeOwnerTest(unittest.TestCase):
             calls[0],
         )
         self.assertNotIn(endpoint.transport_url, json.dumps(calls))
+
+    def test_mobile_private_runtime_retries_transient_inactive_snapshot(
+        self,
+    ) -> None:
+        session = MagicMock()
+        session.call_action.side_effect = (
+            {
+                "active": False,
+                "stationPeerId": None,
+                "actorPtid": None,
+                "errorMessage": None,
+            },
+            {
+                "active": True,
+                "stationPeerId": "station-peer",
+                "actorPtid": "ptid:alice",
+                "errorMessage": None,
+            },
+        )
+        now = [0.0]
+        sleeps: list[float] = []
+
+        def sleep(duration: float) -> None:
+            sleeps.append(duration)
+            now[0] += duration
+
+        snapshot = _require_mobile_private_runtime(
+            session,
+            client_id="ios-alice",
+            station_runtime_identity="station-peer",
+            actor_ptid="ptid:alice",
+            timeout_seconds=1.0,
+            poll_interval_seconds=0.25,
+            monotonic=lambda: now[0],
+            sleep=sleep,
+        )
+
+        self.assertTrue(snapshot["active"])
+        self.assertEqual([0.25], sleeps)
+        self.assertEqual(
+            [
+                call("moments.private.snapshot", {}),
+                call("moments.private.snapshot", {}),
+            ],
+            session.call_action.call_args_list,
+        )
+
+    def test_mobile_private_runtime_fails_immediately_on_explicit_error(
+        self,
+    ) -> None:
+        session = MagicMock()
+        session.call_action.return_value = {
+            "active": False,
+            "stationPeerId": None,
+            "actorPtid": None,
+            "errorMessage": "private Social activation failed",
+        }
+        sleep = MagicMock()
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _require_mobile_private_runtime(
+                session,
+                client_id="ios-alice",
+                station_runtime_identity="station-peer",
+                actor_ptid="ptid:alice",
+                timeout_seconds=60.0,
+                monotonic=lambda: 0.0,
+                sleep=sleep,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn("private Social activation failed", str(raised.exception))
+        session.call_action.assert_called_once_with(
+            "moments.private.snapshot",
+            {},
+        )
+        sleep.assert_not_called()
+
+    def test_mobile_private_runtime_rejects_active_stale_identity(self) -> None:
+        session = MagicMock()
+        session.call_action.return_value = {
+            "active": True,
+            "stationPeerId": "stale-station-peer",
+            "actorPtid": "ptid:alice",
+            "errorMessage": None,
+        }
+        sleep = MagicMock()
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _require_mobile_private_runtime(
+                session,
+                client_id="ios-alice",
+                station_runtime_identity="station-peer",
+                actor_ptid="ptid:alice",
+                monotonic=lambda: 0.0,
+                sleep=sleep,
+            )
+
+        self.assertEqual("STALE_CLIENT_IDENTITY", raised.exception.code)
+        sleep.assert_not_called()
+
+    def test_mobile_private_runtime_timeout_is_typed(self) -> None:
+        session = MagicMock()
+        session.call_action.return_value = {
+            "active": False,
+            "stationPeerId": None,
+            "actorPtid": None,
+            "errorMessage": None,
+        }
+        now = [0.0]
+        sleeps: list[float] = []
+
+        def sleep(duration: float) -> None:
+            sleeps.append(duration)
+            now[0] += duration
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _require_mobile_private_runtime(
+                session,
+                client_id="ios-alice",
+                station_runtime_identity="station-peer",
+                actor_ptid="ptid:alice",
+                timeout_seconds=0.5,
+                poll_interval_seconds=0.25,
+                monotonic=lambda: now[0],
+                sleep=sleep,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertEqual("client:ios-alice", raised.exception.resource)
+        self.assertIn("did not become active", str(raised.exception))
+        self.assertEqual([0.25, 0.25], sleeps)
+        self.assertEqual(3, session.call_action.call_count)
 
     def test_mobile_start_rejects_inactive_private_runtime_with_cause(
         self,

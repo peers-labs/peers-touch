@@ -1186,34 +1186,54 @@ def _require_mobile_private_runtime(
     client_id: str,
     station_runtime_identity: str,
     actor_ptid: str,
+    timeout_seconds: float = 60.0,
+    poll_interval_seconds: float = 0.25,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> Mapping[str, Any]:
-    snapshot = _mobile_mapping(
-        _mobile_call(session, "moments.private.snapshot"),
-        "Private Social runtime snapshot",
-        client_id=client_id,
-    )
-    if snapshot.get("active") is not True:
+    deadline = monotonic() + timeout_seconds
+    while True:
+        snapshot = _mobile_mapping(
+            _mobile_call(session, "moments.private.snapshot"),
+            "Private Social runtime snapshot",
+            client_id=client_id,
+        )
+        if snapshot.get("active") is True:
+            if (
+                snapshot.get("stationPeerId") != station_runtime_identity
+                or snapshot.get("actorPtid") != actor_ptid
+            ):
+                raise RuntimeOwnerBlocked(
+                    "STALE_CLIENT_IDENTITY",
+                    (
+                        f"Mobile client {client_id!r} Private Social runtime "
+                        "identity is stale"
+                    ),
+                    resource=f"client:{client_id}",
+                )
+            return snapshot
         detail = snapshot.get("errorMessage")
-        suffix = (
-            f": {redact_text(detail)}"
-            if isinstance(detail, str) and detail.strip()
-            else ""
-        )
-        raise RuntimeOwnerBlocked(
-            "CLIENT_RUNTIME_UNAVAILABLE",
-            f"Mobile client {client_id!r} Private Social runtime is inactive{suffix}",
-            resource=f"client:{client_id}",
-        )
-    if (
-        snapshot.get("stationPeerId") != station_runtime_identity
-        or snapshot.get("actorPtid") != actor_ptid
-    ):
-        raise RuntimeOwnerBlocked(
-            "STALE_CLIENT_IDENTITY",
-            f"Mobile client {client_id!r} Private Social runtime identity is stale",
-            resource=f"client:{client_id}",
-        )
-    return snapshot
+        if isinstance(detail, str) and detail.strip():
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE",
+                (
+                    f"Mobile client {client_id!r} Private Social runtime is "
+                    f"inactive: {redact_text(detail)}"
+                ),
+                resource=f"client:{client_id}",
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_interval_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "CLIENT_RUNTIME_UNAVAILABLE",
+        (
+            f"Mobile client {client_id!r} Private Social runtime did not "
+            "become active"
+        ),
+        resource=f"client:{client_id}",
+    )
 
 
 def _mobile_service_for_client(
