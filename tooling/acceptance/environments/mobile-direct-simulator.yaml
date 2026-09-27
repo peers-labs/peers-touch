@@ -113,7 +113,8 @@
       "same-Station Direct and Group production-action journeys",
       "receiver projection, typing, receipt, interaction, search, attachment, and WebView restart readback",
       "same-Station unknown-outcome command and exact-scope draft recovery",
-      "same-Station Moments publish, feed, reaction, comment, reply, rollback, and draft readback"
+      "same-Station Moments publish, feed, reaction, comment, reply, rollback, and draft readback",
+      "explicit multi-conversation selection, serial device-local clear, physical reclamation, and restart-stable absence"
     ],
     "does_not_prove": [
       "cross-Station or Relay delivery",

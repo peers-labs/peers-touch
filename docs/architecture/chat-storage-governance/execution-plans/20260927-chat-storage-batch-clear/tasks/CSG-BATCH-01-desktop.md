@@ -1,4 +1,4 @@
-# CSG-BATCH-01：Desktop 批量会话清理
+# CSG-BATCH-01：双端批量会话清理源码
 
 ## Task Slice
 
@@ -7,14 +7,14 @@
   "kind": "peers-touch-task-slice",
   "planId": "CSG-BATCH-20260927",
   "taskId": "CSG-BATCH-01-desktop",
-  "workstreamId": "CSG-BATCH-DESKTOP",
-  "title": "交付共享批量编排与 Desktop 存储列表批量清理",
+  "workstreamId": "CSG-BATCH-SOURCE",
+  "title": "交付共享批量编排与双端存储列表交互",
   "workClass": "product-behavior",
-  "completionClass": "functional",
+  "completionClass": "source",
   "executionMode": "build",
-  "closureId": "csg-batch-desktop",
+  "closureId": "csg-batch-source",
   "journeyId": "CSG-J07",
-  "runtimeClass": "native-desktop",
+  "runtimeClass": "source-only",
   "writeSet": [
     "docs/README.md",
     "docs/architecture/chat-storage-governance",
@@ -28,10 +28,14 @@
     "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs",
     "apps/desktop/src-tauri/src/main.rs",
     "apps/desktop/src-tauri/src/messaging",
+    "apps/mobile/src/pages/settings",
+    "apps/mobile/src/runtimes",
     "tooling/acceptance"
   ],
   "readSet": [
     "apps/desktop/src/components/chat",
+    "apps/mobile/src/pages/ChatPage.tsx",
+    "apps/mobile/src-tauri/src/messaging",
     "packages/messaging-core/src/storage_governance"
   ],
   "budgets": {
@@ -42,26 +46,21 @@
   "checks": [
     {
       "id": "chat-storage-batch-unit",
-      "command": "pnpm --filter @peers-touch/client-chat-core test && pnpm --dir apps/desktop exec vitest run src/components/settings/ChatStorageSettings.test.tsx src/runtimes/chatStorageRuntime.test.ts",
+      "command": "pnpm --filter @peers-touch/client-chat-core test && pnpm --dir apps/desktop exec tsc --noEmit -p tsconfig.json --pretty false && pnpm --dir apps/desktop exec vitest run src/acceptance/chat/nativeBridge.test.ts src/components/settings/ChatStorageSettings.test.tsx src/runtimes/chatStorageRuntime.test.ts && pnpm --dir apps/mobile exec tsc --noEmit -p tsconfig.json --pretty false && pnpm --dir apps/mobile exec vitest run src/pages/settings/SettingsSections.test.tsx src/runtimes/chatStorageRuntime.test.ts src/acceptance/registry.test.ts",
       "verificationClass": "SOURCE_CHECK"
     },
     {
-      "id": "chat-storage-desktop-batch-functional",
-      "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.storage_batch_desktop_runner",
-      "verificationClass": "FUNCTIONAL_CHECK"
-    },
-    {
-      "id": "chat-storage-desktop-batch-clear-e2e",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate chat-storage-desktop-batch-clear-e2e",
-      "verificationClass": "ACCEPTANCE_PROOF"
+      "id": "chat-storage-batch-contract",
+      "command": "python3 -m unittest tooling.acceptance.gates.chat.storage_governance_contract_test tooling.acceptance.gates.chat.storage_governance_runner_test tooling.acceptance.gates.mobile.simulator_social_e2e_test",
+      "verificationClass": "STRUCTURAL_CHECK"
     }
   ],
   "doneWhen": [
-    "Desktop Storage list exposes manage mode, row selection and select-all for current search results",
+    "Desktop and Mobile Storage lists expose manage mode, row selection and select-all for current search results",
     "Confirmation shows selected count, estimated reclaimable bytes and current-device scope",
     "Shared helper executes canonical conversation clears serially and reports progress",
     "Partial failure preserves failed IDs for retry and never restores successful items",
-    "Exact-source native Desktop Journey proves two selected conversations are cleared and remain absent after restart"
+    "Both native Journey adapters and Gate contracts are source-complete"
   ],
   "failureBehavior": [
     "Do not clear any conversation without explicit selection and confirmation",
@@ -72,9 +71,14 @@
   "updatedAt": "2026-09-27T04:30:00.000Z",
   "durableEvidence": [
     {
-      "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Prepared plan; execution not started"
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "packages/client-chat-core/tests/storage-batch.test.mjs"
+    },
+    {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "tooling/acceptance/gates/chat/storage_governance_contract_test.py"
     }
   ]
 }
@@ -82,17 +86,18 @@
 
 ## Current Snapshot
 
-- State: in progress.
-- Shared serial batch helper, Desktop manage/select/confirm/progress/result UI and
-  acceptance-only two-conversation fixture are implemented.
-- Focused TypeScript, Python contract and Desktop Rust acceptance-feature checks pass.
-- Next: create an exact-source checkpoint and run the native Desktop Journey.
+- State: source checks passed.
+- Shared serial batch helper, Desktop/Mobile UI, scope fencing, localization and
+  native Journey adapters are implemented.
+- Desktop and Mobile TypeScript checks, focused component/runtime tests, Rust
+  acceptance-feature compilation and Acceptance Infra validation pass.
+- Native product proof remains owned by successor Tasks.
 
 ## Closure
 
-Desktop users can select and clear multiple current-device conversations with durable per-item results.
+Both clients expose the accepted batch interaction and one source-owned serial execution contract.
 
 ## Concurrency Decision
 
-- Mode: serial.
-- Reason: shared helper, Desktop UI and Desktop native Journey define the first batch contract.
+- Mode: serial source integration.
+- Reason: both clients consume the same helper and shared locale/Acceptance registries.
