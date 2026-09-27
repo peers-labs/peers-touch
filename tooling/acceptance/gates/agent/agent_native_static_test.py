@@ -1587,12 +1587,20 @@ class AgentHarnessStaticTest(unittest.TestCase):
     def test_provider_fixture_requires_station_model_and_readiness(self) -> None:
         ensure_provider = self.source.index("async ensureProvider")
         model_readback = self.source.index(
-            "const availableModels = await api.listAvailableModels()",
+            "let availableModels = await api.listAvailableModels()",
             ensure_provider,
+        )
+        model_persistence = self.source.index(
+            "await api.addModel(providerId",
+            model_readback,
+        )
+        model_verification = self.source.index(
+            "agent.acceptance.providerModelCapabilityMismatch",
+            model_persistence,
         )
         profile_update = self.source.index(
             "await agentStore.updateAgentProfile",
-            ensure_provider,
+            model_verification,
         )
         readiness_readback = self.source.index(
             "await api.getAgentCapabilityReadiness",
@@ -1604,6 +1612,8 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
 
         self.assertLess(model_readback, profile_update)
+        self.assertLess(model_persistence, model_verification)
+        self.assertLess(model_verification, profile_update)
         self.assertLess(profile_update, readiness_readback)
         self.assertLess(readiness_readback, configured_result)
         self.assertIn("model.provider_id === providerId", self.source)

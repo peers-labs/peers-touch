@@ -26679,7 +26679,27 @@ export function installAcceptanceHarness(): void {
       return { navigated: true };
     },
 
-    async ensureProvider({ providerId, apiKey, modelId, baseUrl }: { providerId: string; apiKey: string; modelId: string; baseUrl?: string }) {
+    async ensureProvider({
+      providerId,
+      apiKey,
+      modelId,
+      baseUrl,
+      modelConfig,
+    }: {
+      providerId: string;
+      apiKey: string;
+      modelId: string;
+      baseUrl?: string;
+      modelConfig?: {
+        displayName: string;
+        contextWindow: number;
+        streaming: boolean;
+        functionCall: boolean;
+        vision: boolean;
+        reasoning: boolean;
+        imageOutput: boolean;
+      };
+    }) {
       // #region debug-point F-I:ensure-provider-stage
       const reportEnsureProviderStage = (
         stage: string,
@@ -26729,16 +26749,58 @@ export function installAcceptanceHarness(): void {
         reportEnsureProviderStage('provider-persisted');
 
         stage = 'list-models';
-        const availableModels = await api.listAvailableModels();
-        const providerModel = availableModels.models.find(
+        let availableModels = await api.listAvailableModels();
+        let providerModel = availableModels.models.find(
           (model) => model.provider_id === providerId && model.id === modelId && model.enabled,
         );
+        if (!providerModel && modelConfig) {
+          stage = 'persist-model';
+          const existingModel = existingDetail?.models.find(
+            (model) => model.id === modelId,
+          );
+          const modelInput = {
+            display_name: modelConfig.displayName,
+            type: 'chat',
+            context_window: modelConfig.contextWindow,
+            enabled: true,
+            streaming: modelConfig.streaming,
+            function_call: modelConfig.functionCall,
+            vision: modelConfig.vision,
+            reasoning: modelConfig.reasoning,
+            image_output: modelConfig.imageOutput,
+          };
+          if (existingModel) {
+            await api.updateModel(providerId, modelId, modelInput);
+          } else {
+            await api.addModel(providerId, { id: modelId, ...modelInput });
+          }
+          availableModels = await api.listAvailableModels();
+          providerModel = availableModels.models.find(
+            (model) =>
+              model.provider_id === providerId
+              && model.id === modelId
+              && model.enabled,
+          );
+        }
         reportEnsureProviderStage('models-loaded', {
           modelCount: availableModels.models.length,
           requestedModelAvailable: providerModel !== undefined,
         });
         if (!providerModel) {
           throw new Error('agent.acceptance.providerModelUnavailable');
+        }
+        if (
+          modelConfig
+          && (
+            providerModel.context_window !== modelConfig.contextWindow
+            || providerModel.streaming !== modelConfig.streaming
+            || providerModel.function_call !== modelConfig.functionCall
+            || providerModel.vision !== modelConfig.vision
+            || providerModel.reasoning !== modelConfig.reasoning
+            || providerModel.image_output !== modelConfig.imageOutput
+          )
+        ) {
+          throw new Error('agent.acceptance.providerModelCapabilityMismatch');
         }
 
         stage = 'load-agents';
