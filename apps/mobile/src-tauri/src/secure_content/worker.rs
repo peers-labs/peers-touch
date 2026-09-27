@@ -20,7 +20,8 @@ use crate::secure_content::store::{
     DurableState, PrivateSocialStore, StoredPreKeyPublication, StoredSubmission,
 };
 use crate::secure_content::transport::{
-    publication_command_id, NativeSocialTransport, TransportDisposition, TransportError,
+    canonical_publication_bytes, publication_command_id, NativeSocialTransport,
+    TransportDisposition, TransportError,
 };
 use crate::secure_content::NativeSocialSession;
 
@@ -273,8 +274,8 @@ impl PrivateSocialWorker {
             command_id: String::new(),
             proof: None,
         };
-        request.command_id = publication_command_id(&request);
-        let request_bytes = request.encode_to_vec();
+        request.command_id = publication_command_id(&request)?;
+        let request_bytes = canonical_publication_bytes(&request)?;
         let command = StoredPreKeyPublication {
             command_id: request.command_id.clone(),
             key_kind: wire::ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,

@@ -9,6 +9,7 @@ use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RANGE, RETRY_AFTER};
+use secure_content_core::prekey::canonicalize_publish_content_prekeys_request;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -144,17 +145,25 @@ impl NativeSocialTransport {
         &self,
         proof_free_request: &[u8],
     ) -> Result<wire::PublishContentPreKeysResponse, TransportError> {
-        let mut request = wire::PublishContentPreKeysRequest::decode(proof_free_request)
-            .map_err(|_| local_error(20005))?;
+        let canonical_proof_free = canonicalize_publish_content_prekeys_request(proof_free_request)
+            .map_err(|_| local_error(20002))?;
+        if canonical_proof_free != proof_free_request {
+            return Err(local_error(20002));
+        }
+        let mut request =
+            wire::PublishContentPreKeysRequest::decode(canonical_proof_free.as_slice())
+                .map_err(|_| local_error(20005))?;
         if request.command_id.trim().is_empty() || request.proof.is_some() {
             return Err(local_error(20002));
         }
-        let request_sha256 = Sha256::digest(proof_free_request).into();
+        let request_sha256 = Sha256::digest(&canonical_proof_free).into();
         request.proof =
             Some(self.client_proof(PUBLISH_CAPABILITY, &request.command_id, request_sha256)?);
-        self.post_proto(
+        let request_bytes =
+            canonical_publication_bytes(&request).map_err(|_| local_error(20002))?;
+        self.post_proto_bytes(
             "/key-exchange/content-prekeys/publish",
-            &request,
+            &request_bytes,
             CommitSemantics::MayCommit,
         )
     }
@@ -459,11 +468,23 @@ impl NativeSocialTransport {
         Req: Message,
         Resp: Message + Default,
     {
+        self.post_proto_bytes(path, &request.encode_to_vec(), semantics)
+    }
+
+    fn post_proto_bytes<Resp>(
+        &self,
+        path: &str,
+        request: &[u8],
+        semantics: CommitSemantics,
+    ) -> Result<Resp, TransportError>
+    where
+        Resp: Message + Default,
+    {
         decode_proto_response(
             self.request(reqwest::Method::POST, path)
                 .header(CONTENT_TYPE, "application/protobuf")
                 .header(ACCEPT, "application/protobuf")
-                .body(request.encode_to_vec())
+                .body(request.to_vec())
                 .send()
                 .map_err(network_error)?,
             semantics,
@@ -590,14 +611,23 @@ pub fn jwt_session_id(token: &str) -> Result<String, String> {
         .ok_or_else(|| "private Social session token has no validated session ID".to_string())
 }
 
-pub fn publication_command_id(request: &wire::PublishContentPreKeysRequest) -> String {
+pub fn canonical_publication_bytes(
+    request: &wire::PublishContentPreKeysRequest,
+) -> Result<Vec<u8>, String> {
+    canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
+        .map_err(|error| format!("canonicalize Content PreKey publication: {error}"))
+}
+
+pub fn publication_command_id(
+    request: &wire::PublishContentPreKeysRequest,
+) -> Result<String, String> {
     let mut request = request.clone();
     request.command_id.clear();
     request.proof = None;
-    format!(
-        "mobile-cpk-publish-{}",
-        hex(&Sha256::digest(request.encode_to_vec()))
-    )
+    Ok(format!(
+        "cpk-pub-v1-{}",
+        hex(&Sha256::digest(canonical_publication_bytes(&request)?))
+    ))
 }
 
 fn content_prekey_target(
@@ -1262,6 +1292,67 @@ mod tests {
             StationOriginPolicy::Development,
         )
         .is_err());
+    }
+
+    #[test]
+    fn content_prekey_publication_matches_the_shared_canonical_vector() {
+        let publisher = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:test".to_string(),
+                ..Default::default()
+            }),
+            device_id: "device-test".to_string(),
+        };
+        let request = wire::PublishContentPreKeysRequest {
+            publisher: Some(publisher.clone()),
+            publisher_signing_key_id: "signing-test".to_string(),
+            publisher_profile_version: 1,
+            expected_pool_epoch: 0,
+            prekeys: vec![wire::ContentOneTimePreKey {
+                kind: wire::ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+                key_id: "key-test".to_string(),
+                x25519_public_key: vec![1; 32],
+                principal: Some(wire::content_one_time_pre_key::Principal::Endpoint(
+                    publisher.clone(),
+                )),
+                profile_or_recovery_epoch: 1,
+                issuer_signature: vec![2; 64],
+            }],
+            command_id: "command-test".to_string(),
+            proof: Some(wire::ContentPreKeyClientProof {
+                input: Some(wire::ContentPreKeyClientSigningInput {
+                    format_version: 1,
+                    capability_id: PUBLISH_CAPABILITY.to_string(),
+                    station_peer_id: "station-test".to_string(),
+                    session_id: "session-test".to_string(),
+                    publisher: Some(publisher),
+                    publisher_signing_key_id: "signing-test".to_string(),
+                    publisher_profile_version: 1,
+                    request_id: "command-test".to_string(),
+                    request_sha256: vec![3; 32],
+                    nonce: vec![4; 32],
+                    issued_at: Some(prost_types::Timestamp {
+                        seconds: 1,
+                        nanos: 0,
+                    }),
+                }),
+                signature: vec![5; 64],
+            }),
+        };
+        let canonical = canonical_publication_bytes(&request).unwrap();
+        assert_ne!(request.encode_to_vec(), canonical);
+        assert_eq!(
+            hex(&canonical),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../model/domain/secure_content/testdata/content_prekey_publication.hex"
+            ))
+            .trim()
+        );
+        assert_eq!(
+            publication_command_id(&request).unwrap(),
+            "cpk-pub-v1-5ca0fee4658c8956feeca6d8a9272e70ce8c6127e41cd81a2961dbf1a4dd0d8c"
+        );
     }
 
     #[test]
