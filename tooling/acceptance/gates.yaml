@@ -410,6 +410,13 @@
       "tier": "env-evidence",
       "description": "Select and clear two conversations through the native Mobile Storage UI, prove canonical serial execution, physical reclamation, and restart-stable absence."
     },
+    "chat-storage-batch-clear-aggregate-e2e": {
+      "command": "python3 -m unittest tooling.acceptance.gates.chat_storage.batch_clear_aggregate_test && python3 -m tooling.acceptance.gates.chat_storage.batch_clear_aggregate",
+      "timeout_seconds": 180,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Require exact-source Desktop and Mobile batch-clear journeys, regression journeys, release builds, and Acceptance infrastructure evidence."
+    },
     "chat-storage-dead-contract-zero-e2e": {
       "command": "python3 -m unittest tooling.acceptance.gates.chat_storage.zero_legacy_test && python3 -m tooling.acceptance.gates.chat_storage.zero_legacy --owner-task CSG-05-local-clear-hard-cut",
       "timeout_seconds": 180,
