@@ -1,8 +1,8 @@
 # Chat 本机存储治理
 
-> **Status**: draft
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Status**: active
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-27
 > **Owner**: Device Messaging Engine
 > **Module**: `packages/messaging-core/`, `apps/desktop/`, `apps/mobile/`
 
@@ -16,6 +16,7 @@
 - 可再生成缓存清理；
 - 永久、1 年、90 天、30 天四档保留周期；
 - 按会话清理与真实物理回收；
+- 从存储列表显式多选会话并批量清理；
 - “为我删除”“撤回”与 Recovery 的一致结果；
 - 旧 clear/restore、Desktop 本地删除 overlay、未落地 disappear timer 和伪统计清理。
 
@@ -42,6 +43,7 @@ Desktop 与 Mobile 的单条删除终态也不一致。
 4. Retention 与清理不破坏投递、去重、crypto、草稿或活跃传输。
 5. 普通同步和分页不恢复已跨过 sequence/hash floor 的旧明文。
 6. 完成必须证明实际物理字节下降。
+7. 批量清理复用单会话 owner，显式报告部分成功并保留失败项重试。
 
 ## 4. 文档导航
 
@@ -57,9 +59,11 @@ Desktop 与 Mobile 的单条删除终态也不一致。
 | [data-model.md](./data-model.md) | Proto、policy、floor、journal 与 tombstone |
 | [integration.md](./integration.md) | 双端接入与旧行为硬切 |
 | [legacy-inventory.json](./legacy-inventory.json) | Chat 存储遗产 matcher 与 owner |
-| [execution-plans/20260926-chat-storage-governance/plan.md](./execution-plans/20260926-chat-storage-governance/plan.md) | 待 Owner 审核的 prepared Plan |
+| [execution-plans/20260926-chat-storage-governance/plan.md](./execution-plans/20260926-chat-storage-governance/plan.md) | 已完成的初始治理 Plan |
+| [execution-plans/20260927-chat-storage-batch-clear/plan.md](./execution-plans/20260927-chat-storage-batch-clear/plan.md) | 批量清理后续 Plan |
 | [reviews/review-01-product-architecture.md](./reviews/review-01-product-architecture.md) | 第一轮产品与架构审查 |
 | [reviews/review-02-plan-readiness.md](./reviews/review-02-plan-readiness.md) | 第二轮计划与验收审查 |
+| [reviews/review-03-batch-clear.md](./reviews/review-03-batch-clear.md) | 批量清理产品、架构与计划复审 |
 
 ## 5. 上游真源
 
@@ -70,7 +74,7 @@ Desktop 与 Mobile 的单条删除终态也不一致。
 
 ## 6. 当前状态
 
-- Product：`PRODUCT_READY_FOR_OWNER_REVIEW`
-- Architecture：`DESIGN_READY_FOR_OWNER_REVIEW`
-- Plan：`prepared`，无 current Task，不授权执行
+- Product：`PRODUCT_READY_FOR_ARCHITECTURE`
+- Architecture：`DESIGN_READY_FOR_EXECUTION`
+- Plan：批量清理后续 Plan 待持久化与绑定
 - `CCU-20260922`：保持 `completed`

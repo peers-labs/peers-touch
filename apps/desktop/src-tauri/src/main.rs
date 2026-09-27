@@ -1019,6 +1019,8 @@ fn main() {
             messaging_commands::chat_storage_clear_conversation,
             messaging_commands::chat_storage_set_retention,
             #[cfg(feature = "acceptance-webdriver")]
+            messaging_commands::chat_storage_acceptance_seed_conversation_clear,
+            #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_current_endpoint,
             #[cfg(feature = "acceptance-webdriver")]
             messaging_commands::messaging_acceptance_create_restorable_command,

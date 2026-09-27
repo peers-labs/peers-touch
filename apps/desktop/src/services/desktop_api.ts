@@ -2214,6 +2214,12 @@ export interface MessagingAcceptanceRestorableCommand
   commandId: string;
 }
 
+export interface ChatStorageAcceptanceConversationClearFixture {
+  actorPtid: string;
+  conversationId: string;
+  messageId: string;
+}
+
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
 export interface AccessDecisionResponse extends TauriStubPayload {
@@ -7392,6 +7398,24 @@ export const api = {
       { actor_ptid: string; device_id: string }
     >('messaging_acceptance_current_endpoint', {
       expected_actor_ptid: expectedActorPtid,
+    }),
+
+  chatStorageAcceptanceSeedConversationClear: (input: {
+    actorPtid: string;
+    stationPeerId: string;
+    plaintextBytes: number;
+  }) =>
+    invokeRustData<
+      {
+        expected_actor_ptid: string;
+        station_peer_id: string;
+        plaintext_bytes: number;
+      },
+      ChatStorageAcceptanceConversationClearFixture
+    >('chat_storage_acceptance_seed_conversation_clear', {
+      expected_actor_ptid: input.actorPtid,
+      station_peer_id: input.stationPeerId,
+      plaintext_bytes: input.plaintextBytes,
     }),
 
   /**

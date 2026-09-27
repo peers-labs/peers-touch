@@ -398,6 +398,73 @@ class StorageGovernanceContractTest(unittest.TestCase):
         ):
             self.assertIn(selector, desktop_storage)
 
+    def test_batch_clear_is_shared_and_registered_for_both_native_clients(
+        self,
+    ) -> None:
+        gates = json.loads(
+            (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")
+        )["gates"]
+        registry = json.loads(
+            (ROOT / "tooling/acceptance/registry.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["rules"]
+        domain = json.loads(
+            (ROOT / "tooling/acceptance/domains/chat.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        capabilities = json.loads(
+            (ROOT / "tooling/acceptance/capabilities/chat.yaml").read_text(
+                encoding="utf-8"
+            )
+        )["capabilities"]
+        shared = (
+            ROOT / "packages/client-chat-core/src/storageBatch.ts"
+        ).read_text(encoding="utf-8")
+        desktop = (
+            ROOT / "apps/desktop/src/components/settings/ChatStorageSettings.tsx"
+        ).read_text(encoding="utf-8")
+        desktop_command = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/messaging.rs"
+        ).read_text(encoding="utf-8")
+        desktop_main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        desktop_harness = (
+            ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
+        ).read_text(encoding="utf-8")
+        required_gates = {
+            "chat-storage-desktop-batch-clear-e2e",
+            "chat-storage-mobile-batch-clear-e2e",
+        }
+        rule = next(item for item in registry if item["id"] == "chat-storage-batch-clear")
+        capability = next(
+            item for item in capabilities if item["id"] == "chat-storage-batch-clear"
+        )
+        self.assertTrue(required_gates.issubset(gates))
+        self.assertEqual(set(rule["require"]), required_gates)
+        self.assertEqual(set(capability["required_gates"]), required_gates)
+        self.assertIn("chat-storage-batch-clear", domain["capabilities"])
+        self.assertIn("runConversationClearBatch", shared)
+        self.assertIn(
+            "pub fn chat_storage_acceptance_seed_conversation_clear(",
+            desktop_command,
+        )
+        self.assertIn(
+            "messaging_commands::chat_storage_acceptance_seed_conversation_clear",
+            desktop_main,
+        )
+        self.assertIn("seedConversationClear:", desktop_harness)
+        for selector in (
+            "data-chat-storage-batch-manage",
+            "data-chat-storage-batch-select-all",
+            "data-chat-storage-batch-confirm-apply",
+            "data-chat-storage-batch-result",
+        ):
+            self.assertIn(selector, desktop)
+
     def test_redaction_recovery_gate_is_connected_to_chat_domain(self) -> None:
         gates = json.loads(
             (ROOT / "tooling/acceptance/gates.yaml").read_text(encoding="utf-8")

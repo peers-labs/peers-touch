@@ -409,6 +409,29 @@
       ]
     },
     {
+      "id": "chat-storage-batch-clear",
+      "features": [
+        "chat-storage-batch-clear"
+      ],
+      "when": {
+        "paths": [
+          "packages/client-chat-core/src/storageBatch.ts",
+          "apps/desktop/src/runtimes/chatStorageRuntime.ts",
+          "apps/desktop/src/components/settings/ChatStorageSettings.tsx",
+          "apps/mobile/src/runtimes/chatStorageRuntime.ts",
+          "apps/mobile/src/pages/settings/SettingsSections.tsx",
+          "packages/locales/**",
+          "tooling/acceptance/features/chat-storage-batch-clear.yaml",
+          "tooling/acceptance/gates/chat/storage_batch_desktop_*.py",
+          "tooling/acceptance/gates/mobile/simulator_social_e2e.py"
+        ]
+      },
+      "require": [
+        "chat-storage-desktop-batch-clear-e2e",
+        "chat-storage-mobile-batch-clear-e2e"
+      ]
+    },
+    {
       "id": "chat-storage-governance-integrity",
       "features": [
         "chat-storage-governance-integrity"

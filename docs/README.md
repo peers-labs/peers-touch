@@ -215,8 +215,8 @@
   （draft；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
   Federation context 与 Relay 客户端边界，独立 prepared Plan 待 Owner 审核）
 - Chat 本机存储治理：`architecture/chat-storage-governance/README.md`
-  （draft；定义当前设备 Chat 空间统计、缓存、保留周期、消息 redaction、会话清理
-  与物理回收，独立 prepared Plan 待 Owner 审核）
+  （active；定义当前设备 Chat 空间统计、缓存、保留周期、消息 redaction、单会话及
+  显式批量清理与物理回收）
 - Messaging Platform：`architecture/messaging-platform/README.md`（active；Device
   Messaging Engine、Conversation authority、ordered device delivery 与 recovery；
   Conversation 是唯一 Chat 入口，Device、Inbox、Recovery、Key Exchange 与
