@@ -65,6 +65,21 @@ func TestParseOllamaStreamDeltaText(t *testing.T) {
 	}
 }
 
+func TestParseOllamaStreamDeltaThinking(t *testing.T) {
+	delta, _, _, _, _, ok := parseOllamaStreamDelta(`{
+		"model": "qwen-test",
+		"message": {"thinking": "inspect the request"},
+		"done": false
+	}`)
+
+	if !ok {
+		t.Fatal("expected ollama thinking delta to parse")
+	}
+	if delta.Type != "thinking" || delta.Content != "inspect the request" {
+		t.Fatalf("unexpected ollama thinking delta: %#v", delta)
+	}
+}
+
 func TestParseOllamaStreamDeltaDoneMetadata(t *testing.T) {
 	delta, model, finishReason, inputTokens, outputTokens, ok := parseOllamaStreamDelta(`{
                 "model": "llama-test",
@@ -82,6 +97,31 @@ func TestParseOllamaStreamDeltaDoneMetadata(t *testing.T) {
 	}
 	if inputTokens != 7 || outputTokens != 11 {
 		t.Fatalf("unexpected token counts: input=%d output=%d", inputTokens, outputTokens)
+	}
+}
+
+func TestParseOllamaStreamToolCall(t *testing.T) {
+	calls, err := parseOllamaStreamToolCalls(`{
+		"message": {
+			"tool_calls": [{
+				"id": "provider-call-1",
+				"function": {
+					"index": 0,
+					"name": "skills_list",
+					"arguments": {"category": "installed"}
+				}
+			}]
+		},
+		"done": false
+	}`)
+	if err != nil {
+		t.Fatalf("parse ollama ToolCall: %v", err)
+	}
+	if len(calls) != 1 ||
+		calls[0].ID != "provider-call-1" ||
+		calls[0].Name != "skills_list" ||
+		calls[0].Arguments != `{"category":"installed"}` {
+		t.Fatalf("unexpected ollama ToolCalls: %+v", calls)
 	}
 }
 
