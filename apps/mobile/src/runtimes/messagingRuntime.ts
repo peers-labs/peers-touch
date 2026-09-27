@@ -377,6 +377,15 @@ export function subscribeMessagingProjectionScope(
   return () => projectionScopeListeners.delete(listener);
 }
 
+export async function invalidateMessagingProjectionScopeForAcceptance(): Promise<void> {
+  if (import.meta.env.VITE_ACCEPTANCE_HARNESS !== '1') {
+    throw new Error('mobile.messaging.acceptanceScopeInvalidationUnavailable');
+  }
+  const scope = activeScope;
+  clearActiveProjectionScope();
+  if (scope) await messagingDeactivate(scope);
+}
+
 function projectionScopeKey(scope: MessagingProjectionScope | null): string {
   return scope
     ? `${scope.stationPeerId}\u001f${scope.actorPtid}\u001f${scope.profileId}\u001f${scope.deviceId}\u001f${scope.activationGeneration}`
