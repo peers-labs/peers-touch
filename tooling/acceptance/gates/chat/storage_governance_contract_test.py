@@ -461,6 +461,9 @@ class StorageGovernanceContractTest(unittest.TestCase):
         desktop = (
             ROOT / "apps/desktop/src/components/settings/ChatStorageSettings.tsx"
         ).read_text(encoding="utf-8")
+        desktop_runtime = (
+            ROOT / "apps/desktop/src/runtimes/chatStorageRuntime.ts"
+        ).read_text(encoding="utf-8")
         mobile = (
             ROOT / "apps/mobile/src/pages/settings/SettingsSections.tsx"
         ).read_text(encoding="utf-8")
@@ -498,6 +501,8 @@ class StorageGovernanceContractTest(unittest.TestCase):
         self.assertIn("seedConversationClear:", desktop_harness)
         self.assertIn("configureStorageBatchScenario", desktop_harness)
         self.assertIn("restoreStorageScope", desktop_harness)
+        self.assertIn("messagingDomainRuntime.teardown()", desktop_runtime)
+        self.assertIn("messagingDomainRuntime.install()", desktop_harness)
         for selector in (
             "data-chat-storage-batch-selected-count",
             "data-chat-storage-batch-scope",
