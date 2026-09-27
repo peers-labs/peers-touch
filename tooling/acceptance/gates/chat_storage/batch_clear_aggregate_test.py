@@ -52,14 +52,13 @@ class ChatStorageBatchClearAggregateTest(unittest.TestCase):
             for spec in batch_clear_aggregate.PRECEDING_GATES
         }
 
-    def test_requires_both_native_clients_builds_and_regression_gates(self) -> None:
+    def test_requires_both_batch_clients_builds_and_mobile_regression(self) -> None:
         self.assertEqual(
             [spec.gate_id for spec in batch_clear_aggregate.PRECEDING_GATES],
             [
                 "chat-storage-contract",
                 "chat-storage-desktop-batch-clear-e2e",
                 "chat-storage-mobile-batch-clear-e2e",
-                "chat-native-current-profile-two-client-e2e",
                 "mobile-simulator-chat-contacts-e2e",
                 "desktop-release-build",
                 "mobile-native-build",
