@@ -94,6 +94,7 @@ beforeEach(() => {
   });
   commandMocks.reconcile.mockResolvedValue({
     endpointPrekeysAvailable: 8,
+    recoveryPrekeysAvailable: null,
     submissionsProcessed: 0,
     submissionsUnknown: 0,
     submissionsTerminal: 0,
@@ -271,6 +272,7 @@ describe('privateMomentsRuntime projection', () => {
     commandMocks.publish.mockResolvedValue(projection('draft-a', 1, 'PUBLISHED'));
     commandMocks.reconcile.mockResolvedValue({
       endpointPrekeysAvailable: 8,
+      recoveryPrekeysAvailable: 8,
       submissionsProcessed: 1,
       submissionsUnknown: 0,
       submissionsTerminal: 0,
@@ -393,7 +395,7 @@ describe('privateMomentsRuntime projection', () => {
     }));
   });
 
-  it('publishes readiness only after endpoint PreKey reconciliation', async () => {
+  it('publishes readiness only after Content PreKey reconciliation', async () => {
     const readinessError = new Error('private Social PreKey publication failed');
     const fail = vi.fn();
     const ready = vi.fn();
@@ -436,6 +438,51 @@ describe('privateMomentsRuntime projection', () => {
       active: false,
       errorMessage: 'private Social PreKey publication failed',
     }));
+  });
+
+  it('rejects readiness when a configured recovery pool is empty', async () => {
+    const fail = vi.fn();
+    const ready = vi.fn();
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    commandMocks.reconcile.mockResolvedValueOnce({
+      endpointPrekeysAvailable: 8,
+      recoveryPrekeysAvailable: 0,
+      submissionsProcessed: 0,
+      submissionsUnknown: 0,
+      submissionsTerminal: 0,
+    });
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+
+    await expect(activeDescriptor.bootstrap({
+      generation: 1,
+      beginReadinessUpdate: () => ({
+        isCurrent: () => true,
+        waitForDependencies: async () => true,
+        ready,
+        fail,
+      }),
+    })).rejects.toThrow('mobile.privateSocial.recoveryPrekeysUnavailable');
+
+    expect(commandMocks.snapshot).not.toHaveBeenCalled();
+    expect(commandMocks.teardown).toHaveBeenCalledWith({
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      activationGeneration: 7,
+    });
+    expect(fail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'mobile.privateSocial.recoveryPrekeysUnavailable',
+      }),
+    );
+    expect(ready).not.toHaveBeenCalled();
   });
 
   it('restarts independently of failed degradable messaging and social runtimes', async () => {
@@ -654,6 +701,7 @@ describe('privateMomentsRuntime projection', () => {
       .mockResolvedValueOnce(activeStatus(2));
     let resolveReconcile: ((report: {
       endpointPrekeysAvailable: number;
+      recoveryPrekeysAvailable: number | null;
       submissionsProcessed: number;
       submissionsUnknown: number;
       submissionsTerminal: number;
@@ -680,13 +728,20 @@ describe('privateMomentsRuntime projection', () => {
     });
     resolveReconcile?.({
       endpointPrekeysAvailable: 9,
+      recoveryPrekeysAvailable: 7,
       submissionsProcessed: 3,
       submissionsUnknown: 0,
       submissionsTerminal: 0,
     });
 
     await expect(completion).resolves.toBeNull();
-    expect(readPrivateMomentsSnapshot().lastReport).toBeNull();
+    expect(readPrivateMomentsSnapshot().lastReport).toEqual({
+      endpointPrekeysAvailable: 8,
+      recoveryPrekeysAvailable: null,
+      submissionsProcessed: 0,
+      submissionsUnknown: 0,
+      submissionsTerminal: 0,
+    });
     expect(readPrivateMomentsSnapshot().errorMessage).toBeNull();
   });
 
