@@ -80,6 +80,20 @@ class StorageGovernanceContractTest(unittest.TestCase):
         self.assertEqual(mobile_registry.count("chat_storage_snapshot"), 2)
         self.assertIn("isChatStorageSnapshotForScope", mobile_runtime)
 
+    def test_desktop_boots_storage_after_its_messaging_scope_owner(self) -> None:
+        app_runtime = (
+            ROOT / "apps/desktop/src/services/appRuntime.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("registerRuntime(messagingRuntime)", app_runtime)
+        self.assertIn("registerRuntime(chatStorageRuntime)", app_runtime)
+        self.assertIn("messagingRuntime.id", app_runtime)
+        self.assertIn("teardownRuntime(messagingRuntime.id)", app_runtime)
+        self.assertLess(
+            app_runtime.index("messagingRuntime.id"),
+            app_runtime.index("chatRuntime.id"),
+        )
+
     def test_storage_ui_uses_runtime_projection_and_fixed_zero_api_is_gone(self) -> None:
         desktop_settings = (
             ROOT / "apps/desktop/src/pages/SettingsPage.tsx"
