@@ -92,6 +92,12 @@ beforeEach(() => {
     commentDrafts: [],
     comments: [],
   });
+  commandMocks.reconcile.mockResolvedValue({
+    endpointPrekeysAvailable: 8,
+    submissionsProcessed: 0,
+    submissionsUnknown: 0,
+    submissionsTerminal: 0,
+  });
   commandMocks.teardown.mockResolvedValue({
     active: false,
     activationGeneration: 0,
@@ -387,6 +393,51 @@ describe('privateMomentsRuntime projection', () => {
     }));
   });
 
+  it('publishes readiness only after endpoint PreKey reconciliation', async () => {
+    const readinessError = new Error('private Social PreKey publication failed');
+    const fail = vi.fn();
+    const ready = vi.fn();
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    commandMocks.reconcile.mockRejectedValueOnce(readinessError);
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+
+    await expect(activeDescriptor.bootstrap({
+      generation: 1,
+      beginReadinessUpdate: () => ({
+        isCurrent: () => true,
+        waitForDependencies: async () => true,
+        ready,
+        fail,
+      }),
+    })).rejects.toThrow('private Social PreKey publication failed');
+
+    expect(commandMocks.reconcile).toHaveBeenCalledWith({
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      activationGeneration: 7,
+    });
+    expect(commandMocks.snapshot).not.toHaveBeenCalled();
+    expect(commandMocks.teardown).toHaveBeenCalledWith({
+      stationPeerId: 'station-1',
+      actorPtid: 'ptid:alice',
+      activationGeneration: 7,
+    });
+    expect(fail).toHaveBeenCalledWith(readinessError);
+    expect(ready).not.toHaveBeenCalled();
+    expect(readPrivateMomentsSnapshot()).toEqual(expect.objectContaining({
+      active: false,
+      errorMessage: 'private Social PreKey publication failed',
+    }));
+  });
+
   it('restarts independently of failed degradable messaging and social runtimes', async () => {
     commandMocks.activate
       .mockResolvedValueOnce(activeStatus(1))
@@ -607,9 +658,6 @@ describe('privateMomentsRuntime projection', () => {
       submissionsUnknown: number;
       submissionsTerminal: number;
     }) => void) | undefined;
-    commandMocks.reconcile.mockReturnValueOnce(new Promise((resolve) => {
-      resolveReconcile = resolve;
-    }));
     useAuthStore.setState({
       session: authSession('session-1'),
       accessDecision: {
@@ -621,6 +669,9 @@ describe('privateMomentsRuntime projection', () => {
     activeDescriptor = createPrivateMomentsRuntimeDescriptor();
     await activeDescriptor.bootstrap(runtimeContext);
 
+    commandMocks.reconcile.mockReturnValueOnce(new Promise((resolve) => {
+      resolveReconcile = resolve;
+    }));
     const completion = reconcilePrivateMoments();
     useAuthStore.setState({ session: authSession('session-2') });
     await vi.waitFor(() => {
