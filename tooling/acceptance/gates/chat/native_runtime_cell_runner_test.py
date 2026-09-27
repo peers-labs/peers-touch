@@ -359,6 +359,16 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(f"federation::{command}", main)
 
+    def test_account_device_identity_comes_from_the_active_engine(self) -> None:
+        source = (
+            ROOT
+            / "apps/desktop/src-tauri/src/interface/tauri_commands/account.rs"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("state.messaging_engines.get(&session.account_id)", source)
+        self.assertIn("engine.endpoint().device_id.clone()", source)
+        self.assertNotIn("device_install::get_or_create_device_id", source)
+
     def test_acceptance_window_is_positioned_before_it_is_shown(self) -> None:
         main = (
             ROOT / "apps/desktop/src-tauri/src/main.rs"
