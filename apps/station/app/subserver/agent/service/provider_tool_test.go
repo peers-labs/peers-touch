@@ -72,6 +72,107 @@ func TestOpenAINativeToolRequestAndResponse(t *testing.T) {
 	}
 }
 
+func TestOllamaNativeToolRequestAndResponse(t *testing.T) {
+	var payload map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode provider request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"message": {
+				"role": "assistant",
+				"content": "",
+				"tool_calls": [{
+					"id": "provider-call-1",
+					"function": {"name": "skills_list", "arguments": {}}
+				}]
+			},
+			"done": true,
+			"done_reason": "stop",
+			"model": "test-model"
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewProviderService(nil)
+	response, err := provider.callOllama(
+		context.Background(),
+		server.URL,
+		"test-model",
+		"",
+		[]domain.Message{{Role: domain.MessageRoleUser, Content: "list skills"}},
+		domain.ThinkingModeDisabled,
+		64,
+		[]*domain.ToolDefinition{{
+			Name:        "skills_list",
+			Description: "List skills",
+			JSONSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
+		}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("call provider: %v", err)
+	}
+	if payload["think"] != false {
+		t.Fatalf("think = %#v, want false", payload["think"])
+	}
+	tools, ok := payload["tools"].([]interface{})
+	if !ok || len(tools) != 1 {
+		t.Fatalf("tools payload = %#v", payload["tools"])
+	}
+	if len(response.ToolCalls) != 1 ||
+		response.ToolCalls[0].ID != "provider-call-1" ||
+		response.ToolCalls[0].Name != "skills_list" ||
+		response.ToolCalls[0].Arguments != "{}" {
+		t.Fatalf("provider ToolCalls = %+v", response.ToolCalls)
+	}
+}
+
+func TestOllamaStreamReturnsNativeToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(`{"model":"test-model","message":{"role":"assistant","content":"","tool_calls":[{"id":"provider-call-1","function":{"index":0,"name":"skills_list","arguments":{}}}]},"done":false}` + "\n"))
+		_, _ = w.Write([]byte(`{"model":"test-model","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","prompt_eval_count":7,"eval_count":11}` + "\n"))
+	}))
+	defer server.Close()
+
+	provider := NewProviderService(nil)
+	response, err := provider.callOllama(
+		context.Background(),
+		server.URL,
+		"test-model",
+		"",
+		[]domain.Message{{Role: domain.MessageRoleUser, Content: "list skills"}},
+		domain.ThinkingModeDisabled,
+		64,
+		[]*domain.ToolDefinition{{
+			Name:        "skills_list",
+			Description: "List skills",
+			JSONSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
+		}},
+		func(context.Context, ProviderDelta) error {
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("call provider stream: %v", err)
+	}
+	if len(response.ToolCalls) != 1 ||
+		response.ToolCalls[0].ID != "provider-call-1" ||
+		response.ToolCalls[0].Name != "skills_list" ||
+		response.ToolCalls[0].Arguments != "{}" {
+		t.Fatalf("stream ToolCalls = %+v", response.ToolCalls)
+	}
+	if response.InputTokens != 7 || response.OutputTokens != 11 {
+		t.Fatalf(
+			"stream token counts = %d/%d, want 7/11",
+			response.InputTokens,
+			response.OutputTokens,
+		)
+	}
+}
+
 func TestOpenAIStreamAssemblesNativeToolCallFragments(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -168,6 +269,35 @@ func TestOpenAIContinuationPreservesToolCallLinkage(t *testing.T) {
 		len(messages[0].ToolCalls) != 1 ||
 		messages[0].ToolCalls[0].ID != "tool-call-1" ||
 		messages[1].ToolCallID != "tool-call-1" {
+		t.Fatalf("continuation messages = %+v", messages)
+	}
+}
+
+func TestOllamaContinuationPreservesToolNameAndObjectArguments(t *testing.T) {
+	messages, err := toOllamaMessages([]domain.Message{
+		{
+			Role:    domain.MessageRoleAssistant,
+			Content: "",
+			ToolCallsJSON: json.RawMessage(`[{
+				"id":"tool-call-1",
+				"type":"function",
+				"function":{"name":"skills_list","arguments":"{}"}
+			}]`),
+		},
+		{
+			Role:         domain.MessageRoleTool,
+			Content:      "[skills_list] No skills installed.",
+			MetadataJSON: json.RawMessage(`{"tool_call_id":"tool-call-1"}`),
+		},
+	})
+	if err != nil {
+		t.Fatalf("convert continuation messages: %v", err)
+	}
+	if len(messages) != 2 ||
+		len(messages[0].ToolCalls) != 1 ||
+		messages[0].ToolCalls[0].ID != "tool-call-1" ||
+		string(messages[0].ToolCalls[0].Function.Arguments) != "{}" ||
+		messages[1].ToolName != "skills_list" {
 		t.Fatalf("continuation messages = %+v", messages)
 	}
 }
