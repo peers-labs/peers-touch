@@ -587,6 +587,11 @@ async function synchronizeSession(
       await privateSocialTeardown(operationScope(scope));
       return;
     }
+    await privateSocialReconcile(operationScope(scope));
+    if (!matchesAuthSession(scope, admittedSession(useAuthStore.getState()))) {
+      await privateSocialTeardown(operationScope(scope));
+      return;
+    }
     const nativeSnapshot = await privateSocialSnapshot(operationScope(scope));
     if (!matchesAuthSession(scope, admittedSession(useAuthStore.getState()))) {
       await privateSocialTeardown(operationScope(scope));

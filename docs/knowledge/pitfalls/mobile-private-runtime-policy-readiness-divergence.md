@@ -39,6 +39,12 @@ restart while `private-social` remained inactive with no local error.
 A direct Native activation probe then returned HTTP `200` with stable code
 `20005` while loading `/actor/federation/me`.
 
+After the wire contract was repaired, the runtime could report `active=true`
+while its endpoint Content PreKeys were still absent. The first private publish
+then reached `/api/v1/social/moments/prepare-private` without any preceding
+Content PreKey inventory or publish request and failed with HTTP `500`, stable
+code `20008`.
+
 ## Root cause
 
 Private Social implemented its own Station-origin policy instead of consuming
@@ -60,6 +66,11 @@ Desktop client use the canonical `PeersResponse` envelope with an exact
 `google.protobuf.Any` type URL, so the successful HTTP response failed local
 protobuf decoding before Private Social could pin the Station signing key.
 
+Native activation creates and binds the Private Social engine, but endpoint
+Content PreKey provisioning belongs to Native reconciliation. The mobile
+lifecycle published readiness immediately after activation and snapshot
+loading, so a caller could publish before the first reconciliation.
+
 ## Mitigation
 
 ### What was done in code
@@ -76,6 +87,9 @@ protobuf decoding before Private Social could pin the Station signing key.
 - The Federation self trust request decodes the canonical `PeersResponse`
   envelope and requires the exact `FederationSelfView` type URL. The separate
   Federation profile route retains its raw protobuf response contract.
+- Private Social lifecycle bootstrap now completes Native reconciliation before
+  publishing the runtime as active. Reconciliation failure fails lifecycle
+  readiness and tears down the exact Native generation.
 - Focused Rust and TypeScript regressions cover both policy modes and failed
   activation readiness.
 
@@ -91,6 +105,9 @@ protobuf decoding before Private Social could pin the Station signing key.
 - `federation_self_request_decodes_peers_response_envelope` verifies the real
   HTTP request path, Bearer/device headers, canonical envelope, and exact
   Federation self payload type.
+- `publishes readiness only after endpoint PreKey reconciliation` verifies that
+  activation cannot become ready before the Native worker provisions endpoint
+  PreKeys, and that a provisioning failure tears down the generation.
 
 ## How to detect a recurrence
 
@@ -116,6 +133,9 @@ rg -n "StationOriginPolicy|runRuntimeSessionTransition|FEDERATION_SELF_TYPE_URL"
 Private Social must not add a parallel transport policy or swallow a
 current-scope activation failure outside lifecycle readiness. Station routes
 that return `PeersResponse` must not be decoded as their raw payload type.
+An `active=true` lifecycle projection without an initial
+`privateSocialReconcile` is also invalid because private prepare depends on
+endpoint Content PreKeys for every recipient.
 
 ## Crosswalks
 
