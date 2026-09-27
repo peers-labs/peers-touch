@@ -19,6 +19,7 @@
     "docs/architecture/chat-storage-governance",
     "packages/client-chat-core",
     "packages/locales",
+    "apps/mobile/src/acceptance",
     "apps/mobile/src/pages/settings",
     "apps/mobile/src/runtimes",
     "tooling/acceptance"
@@ -63,12 +64,17 @@
     "Do not clear filtered-out or unselected conversations",
     "Do not carry selection or result across a scope change"
   ],
-  "updatedAt": "2026-09-27T04:30:00.000Z",
+  "updatedAt": "2026-09-27T13:16:00.000Z",
   "durableEvidence": [
     {
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "Development Session CSG-BATCH-02-mobile-R2 / functional run 20260927T130706556822Z-fcc4998b02a04ba29783b6a47362cebd"
+    },
+    {
       "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Prepared plan; execution not started"
+      "result": "PASS",
+      "ref": "acceptance-run 20260927T131219875885Z-7b8c0ef01f3a195b0ce49ce6274faf9b; gap detector PROVEN"
     }
   ]
 }
@@ -76,8 +82,9 @@
 
 ## Current Snapshot
 
-- State: pending.
-- Dependency: `CSG-BATCH-01-desktop`.
+- State: acceptance-ready; completion is controlled by the current Development
+  Session and independent review.
+- Dependency: `CSG-BATCH-01-desktop` done.
 - Foundation: Mobile Storage list and canonical single-conversation clear already exist.
 
 ## Closure
