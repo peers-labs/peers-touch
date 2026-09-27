@@ -338,6 +338,27 @@ class NativeRuntimeCellRunnerContractTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command, main)
 
+    def test_federation_commands_are_registered_with_tauri(self) -> None:
+        main = (
+            ROOT / "apps/desktop/src-tauri/src/main.rs"
+        ).read_text(encoding="utf-8")
+        commands = (
+            "federation_get_self",
+            "federation_update_visibility",
+            "federation_resolve",
+            "federation_health",
+            "federation_catalog_search",
+            "federation_list_federations",
+            "federation_create",
+            "federation_join",
+            "federation_leave",
+            "federation_delete",
+            "federation_list_member_stations",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertIn(f"federation::{command}", main)
+
     def test_acceptance_window_is_positioned_before_it_is_shown(self) -> None:
         main = (
             ROOT / "apps/desktop/src-tauri/src/main.rs"
