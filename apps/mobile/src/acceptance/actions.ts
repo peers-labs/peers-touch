@@ -2075,6 +2075,7 @@ function sanitizePrivateMomentSnapshot(
     report: value.lastReport
       ? {
         endpointPrekeysAvailable: value.lastReport.endpointPrekeysAvailable,
+        recoveryPrekeysAvailable: value.lastReport.recoveryPrekeysAvailable,
         submissionsProcessed: value.lastReport.submissionsProcessed,
         submissionsUnknown: value.lastReport.submissionsUnknown,
         submissionsTerminal: value.lastReport.submissionsTerminal,

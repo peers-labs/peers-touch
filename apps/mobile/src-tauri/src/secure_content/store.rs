@@ -10,6 +10,7 @@ use zeroize::Zeroize;
 use crate::secure_content::proto::secure_content::v1::ContentPreKeyKind;
 
 const ENDPOINT_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindEndpoint as i32 as i64;
+const RECOVERY_PREKEY_KIND: i64 = ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32 as i64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i64)]
@@ -812,10 +813,16 @@ impl PrivateSocialStore {
         command: &StoredPreKeyPublication,
         keys: &[(String, [u8; 32], [u8; 32])],
     ) -> Result<(), String> {
+        let key_kind = i64::from(command.key_kind);
+        let key_material_matches_kind = match key_kind {
+            ENDPOINT_PREKEY_KIND => !keys.is_empty(),
+            RECOVERY_PREKEY_KIND => keys.is_empty(),
+            _ => false,
+        };
         if command.command_id.trim().is_empty()
             || command.request_bytes.is_empty()
-            || keys.is_empty()
             || keys.len() > 100
+            || !key_material_matches_kind
             || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
         {
             return Err("private Social PreKey publication is invalid".to_string());
@@ -1814,6 +1821,53 @@ mod tests {
             store.submission("draft-1", 1).unwrap().unwrap().state,
             DurableState::UnknownOutcome
         );
+    }
+
+    #[test]
+    fn recovery_publication_persists_only_the_command() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        let request_bytes = vec![1, 2, 3];
+        let command = StoredPreKeyPublication {
+            command_id: "recovery-publication-1".to_string(),
+            key_kind: ContentPreKeyKind::ContentPrekeyKindActorRecovery as i32,
+            pool_epoch: 1,
+            request_sha256: Sha256::digest(&request_bytes).into(),
+            request_bytes,
+            state: DurableState::Pending,
+            lease_generation: 0,
+            session_generation: 0,
+        };
+
+        assert!(store
+            .persist_prekey_publication(
+                &command,
+                &[("recovery-key-1".to_string(), [7; 32], [8; 32])],
+            )
+            .is_err());
+        store.persist_prekey_publication(&command, &[]).unwrap();
+
+        let pending = store.pending_prekey_publications().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].command_id, command.command_id);
+        assert!(store.endpoint_prekey("recovery-key-1").unwrap().is_none());
+    }
+
+    #[test]
+    fn endpoint_publication_requires_durable_private_material() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        let request_bytes = vec![1, 2, 3];
+        let command = StoredPreKeyPublication {
+            command_id: "endpoint-publication-1".to_string(),
+            key_kind: ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+            pool_epoch: 1,
+            request_sha256: Sha256::digest(&request_bytes).into(),
+            request_bytes,
+            state: DurableState::Pending,
+            lease_generation: 0,
+            session_generation: 0,
+        };
+
+        assert!(store.persist_prekey_publication(&command, &[]).is_err());
     }
 
     #[test]

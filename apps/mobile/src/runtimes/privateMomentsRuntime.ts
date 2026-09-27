@@ -422,6 +422,7 @@ export async function reconcilePrivateMoments(): Promise<PrivateSocialWorkerRepo
   try {
     const operation = operationScope(scope);
     const report = await privateSocialReconcile(operation);
+    requirePrivateSocialPreKeyReadiness(report);
     const nativeSnapshot = await privateSocialSnapshot(operation);
     if (!isCurrentScope(scope)) return null;
     setSnapshot({
@@ -587,7 +588,8 @@ async function synchronizeSession(
       await privateSocialTeardown(operationScope(scope));
       return;
     }
-    await privateSocialReconcile(operationScope(scope));
+    const report = await privateSocialReconcile(operationScope(scope));
+    requirePrivateSocialPreKeyReadiness(report);
     if (!matchesAuthSession(scope, admittedSession(useAuthStore.getState()))) {
       await privateSocialTeardown(operationScope(scope));
       return;
@@ -609,7 +611,7 @@ async function synchronizeSession(
       postsById: mergeReadProjectionMap({}, nativeSnapshot.readProjections),
       publishStateHistory: ['AUDIENCE_REQUIRED'],
       readStateHistoryByPostId: {},
-      lastReport: null,
+      lastReport: report,
       errorMessage: null,
     });
   } catch (error) {
@@ -622,6 +624,24 @@ async function synchronizeSession(
       );
     }
     throw error;
+  }
+}
+
+function requirePrivateSocialPreKeyReadiness(report: PrivateSocialWorkerReport): void {
+  if (
+    !Number.isSafeInteger(report.endpointPrekeysAvailable)
+    || report.endpointPrekeysAvailable <= 0
+  ) {
+    throw new Error('mobile.privateSocial.endpointPrekeysUnavailable');
+  }
+  if (
+    report.recoveryPrekeysAvailable !== null
+    && (
+      !Number.isSafeInteger(report.recoveryPrekeysAvailable)
+      || report.recoveryPrekeysAvailable <= 0
+    )
+  ) {
+    throw new Error('mobile.privateSocial.recoveryPrekeysUnavailable');
   }
 }
 

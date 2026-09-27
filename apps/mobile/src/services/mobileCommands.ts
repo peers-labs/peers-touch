@@ -721,6 +721,7 @@ export interface PrivateSocialRuntimeStatus {
 
 export interface PrivateSocialWorkerReport {
   endpointPrekeysAvailable: number;
+  recoveryPrekeysAvailable: number | null;
   submissionsProcessed: number;
   submissionsUnknown: number;
   submissionsTerminal: number;

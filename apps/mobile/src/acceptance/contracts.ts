@@ -998,6 +998,7 @@ export interface PrivateMomentSnapshotActionOutput {
   readStateHistoryByPostId: Record<string, PrivateSocialVisibleReadState[]>;
   report: {
     endpointPrekeysAvailable: number;
+    recoveryPrekeysAvailable: number | null;
     submissionsProcessed: number;
     submissionsUnknown: number;
     submissionsTerminal: number;
