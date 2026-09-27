@@ -176,7 +176,7 @@
       "dependsOn": [
         "AMG-02-MODULE-REGISTRY"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -186,7 +186,7 @@
       "dependsOn": [
         "AMG-03-ENFORCEMENT"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     }
   ],
