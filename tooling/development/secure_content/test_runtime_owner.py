@@ -48,10 +48,12 @@ from tooling.development.secure_content.runtime_owner import (
     _continuation_services,
     _copy_immutable,
     _error_message_with_cleanup,
+    _generate_mobile_recovery_phrase,
     _make_client,
     _manifest_payload,
     _open_station_tunnels,
     _prepare_accepted_friendship,
+    _prepare_mobile_private_content_keys,
     _prepare_private_content_keys,
     _parse_args,
     _publish_canonical_private_schema_attestation,
@@ -83,6 +85,7 @@ IDENTITY = {
     "head": COMMIT,
     "worktreeSetDigest": "7" * 64,
 }
+RECOVERY_PHRASE = " ".join((*("abandon",) * 23, "art"))
 
 
 def fixture_payload() -> dict[str, object]:
@@ -1401,7 +1404,13 @@ class RuntimeOwnerTest(unittest.TestCase):
             _session: object,
             action: str,
             payload: Mapping[str, object] | None = None,
+            *,
+            sensitive_values: tuple[str, ...] = (),
         ) -> Mapping[str, object]:
+            self.assertTrue(
+                not sensitive_values
+                or sensitive_values == (RECOVERY_PHRASE,)
+            )
             request = dict(payload or {})
             calls.append((action, request))
             if action == "station.add":
@@ -1430,6 +1439,16 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "actorPtid": "ptid:alice",
                     "errorMessage": None,
                 }
+            if action == "moments.private.storeRecoveryPhrase":
+                return {"stored": True, "recoveryEpoch": 1}
+            if action == "moments.private.reconcile":
+                return {
+                    "active": True,
+                    "report": {
+                        "endpointPrekeysAvailable": 100,
+                        "recoveryPrekeysAvailable": 100,
+                    },
+                }
             if action == "build.identity":
                 return {
                     "identity": {
@@ -1443,9 +1462,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             transport_url="http://127.0.0.1:4101",
             canonical_origin="https://four.example",
         )
-        with patch(
-            "tooling.development.secure_content.runtime_owner._mobile_call",
-            side_effect=mobile_call,
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._mobile_call",
+                side_effect=mobile_call,
+            ),
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_generate_mobile_recovery_phrase",
+                return_value=RECOVERY_PHRASE,
+            ),
         ):
             actor_ptid, _scope, _build = _start_mobile_client(
                 session,
@@ -1463,7 +1489,87 @@ class RuntimeOwnerTest(unittest.TestCase):
             ("station.add", {"url": "https://four.example"}),
             calls[0],
         )
+        self.assertEqual(
+            [
+                "moments.private.snapshot",
+                "moments.private.storeRecoveryPhrase",
+                "moments.private.reconcile",
+                "build.identity",
+            ],
+            [action for action, _payload in calls[-4:]],
+        )
+        self.assertEqual(
+            {
+                "recoveryPhrase": RECOVERY_PHRASE,
+                "recoveryEpoch": 1,
+            },
+            calls[-3][1],
+        )
+        self.assertNotIn(
+            RECOVERY_PHRASE,
+            json.dumps((actor_ptid, _scope, _build)),
+        )
         self.assertNotIn(endpoint.transport_url, json.dumps(calls))
+
+    def test_mobile_recovery_phrase_matches_bip39_256_bit_vector(self) -> None:
+        phrase = _generate_mobile_recovery_phrase(bytes(32))
+
+        self.assertEqual(RECOVERY_PHRASE, phrase)
+        self.assertEqual(24, len(phrase.split()))
+
+    def test_mobile_private_content_keys_require_both_pools(self) -> None:
+        session = MagicMock()
+        session.call_action.side_effect = (
+            {"stored": True, "recoveryEpoch": 1},
+            {
+                "active": True,
+                "report": {
+                    "endpointPrekeysAvailable": 100,
+                    "recoveryPrekeysAvailable": 0,
+                },
+            },
+        )
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _prepare_mobile_private_content_keys(
+                session,
+                client_id="ios-alice",
+                recovery_phrase=RECOVERY_PHRASE,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn("recoveryPrekeysAvailable", str(raised.exception))
+        self.assertEqual(
+            [
+                call(
+                    "moments.private.storeRecoveryPhrase",
+                    {
+                        "recoveryPhrase": RECOVERY_PHRASE,
+                        "recoveryEpoch": 1,
+                    },
+                ),
+                call("moments.private.reconcile", {}),
+            ],
+            session.call_action.call_args_list,
+        )
+
+    def test_mobile_recovery_phrase_is_redacted_from_action_failure(
+        self,
+    ) -> None:
+        session = MagicMock(client_id="ios-alice")
+        session.call_action.side_effect = RuntimeError(
+            f"rejected {RECOVERY_PHRASE}"
+        )
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _prepare_mobile_private_content_keys(
+                session,
+                client_id="ios-alice",
+                recovery_phrase=RECOVERY_PHRASE,
+            )
+
+        self.assertNotIn(RECOVERY_PHRASE, str(raised.exception))
+        self.assertIn("[REDACTED]", str(raised.exception))
 
     def test_mobile_private_runtime_retries_transient_inactive_snapshot(
         self,
