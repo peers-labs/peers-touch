@@ -106,6 +106,14 @@ class MobileProductionFixture:
         variant = str(payload.get("variant") or "")
         if operation == "publish-states":
             sender = self._sender(payload)
+            self._call(
+                sender,
+                "moments.publish",
+                {
+                    "text": f"secure-content-{variant}-public",
+                    "audienceKind": 1,
+                },
+            )
             post_id, _published = self._publish_post(
                 sender,
                 "moments.private.publishText",
@@ -120,6 +128,60 @@ class MobileProductionFixture:
                 label="private post",
             )
             self._posts[variant] = post_id
+            for suffix, audience, expected_error in (
+                (
+                    "unsupported",
+                    {
+                        "kind": "CUSTOM_DENY",
+                        "actorPtids": [
+                            self.actor_ptids[self._receiver(payload)]
+                        ],
+                        "baseKind": "PUBLIC",
+                    },
+                    "SOCIAL_PRIVATE_UNSUPPORTED",
+                ),
+                (
+                    "too-large",
+                    {
+                        "kind": "CUSTOM_ALLOW",
+                        "actorPtids": [
+                            f"ptid:fixture-recipient-{index}"
+                            for index in range(257)
+                        ],
+                    },
+                    "AUDIENCE_TOO_LARGE",
+                ),
+            ):
+                self._expect_action_failure(
+                    sender,
+                    "moments.private.publishText",
+                    {
+                        "draftId": f"mobile-{variant}-{suffix}",
+                        "draftRevision": 1,
+                        "text": f"secure-content-{variant}-{suffix}",
+                        "audience": audience,
+                    },
+                    expected_error,
+                )
+            self._exhaust_content_prekeys(
+                sender,
+                variant,
+                deadline_monotonic,
+                cancellation,
+            )
+            for client_id in clients:
+                self._call(client_id, "moments.private.reconcile")
+            self._expect_action_failure(
+                sender,
+                "moments.private.publishText",
+                {
+                    "draftId": f"mobile-{variant}-publish",
+                    "draftRevision": 1,
+                    "text": f"secure-content-{variant}-conflicting-replay",
+                    "audience": {"kind": "FRIENDS"},
+                },
+                "draft replay conflict",
+            )
         elif operation == "read-states":
             post_id = self._required_text(
                 self._posts.get(variant),
@@ -447,6 +509,41 @@ class MobileProductionFixture:
                 f"{label} ID",
             ),
             published,
+        )
+
+    def _exhaust_content_prekeys(
+        self,
+        client_id: str,
+        variant: str,
+        deadline_monotonic: float,
+        cancellation: threading.Event,
+    ) -> None:
+        for index in range(1, 33):
+            self._require_active(deadline_monotonic, cancellation)
+            try:
+                self._publish_post(
+                    client_id,
+                    "moments.private.publishText",
+                    {
+                        "draftId": (
+                            f"mobile-{variant}-prekey-drain-{index}"
+                        ),
+                        "draftRevision": 1,
+                        "text": (
+                            f"secure-content-{variant}-prekey-drain-{index}"
+                        ),
+                        "audience": {"kind": "FRIENDS"},
+                    },
+                    deadline_monotonic=deadline_monotonic,
+                    cancellation=cancellation,
+                    label="private PreKey drain post",
+                )
+            except MobileFixtureError as error:
+                if "SOCIAL_PRIVATE_DEPENDENCY_FAILURE" not in str(error):
+                    raise
+                return
+        raise MobileFixtureError(
+            "Mobile private publish did not exhaust the bounded Content PreKey pool"
         )
 
     def _matching_publish_projection(
@@ -861,6 +958,27 @@ class MobileProductionFixture:
         ).hexdigest()
         self._observation_digests.append(digest)
         return value
+
+    def _expect_action_failure(
+        self,
+        client_id: str,
+        action: str,
+        payload: Mapping[str, Any],
+        expected_marker: str,
+    ) -> None:
+        try:
+            self._call(client_id, action, payload)
+        except MobileFixtureError as error:
+            if expected_marker not in str(error):
+                raise MobileFixtureError(
+                    f"Mobile production action {action!r} failed without "
+                    f"{expected_marker}"
+                ) from error
+            return
+        raise MobileFixtureError(
+            f"Mobile production action {action!r} unexpectedly succeeded; "
+            f"expected {expected_marker}"
+        )
 
     def _selected_clients(
         self,

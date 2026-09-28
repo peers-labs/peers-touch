@@ -15,8 +15,16 @@ from tooling.development.secure_content.scenarios.mobile_matrix import (
 
 
 class _Session:
-    def __init__(self) -> None:
+    def __init__(self, *, record_publish_states: bool = True) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
+        self.publish_state_history = ["AUDIENCE_REQUIRED"]
+        self.record_publish_states = record_publish_states
+        self.published_drafts: dict[tuple[str, int], str] = {}
+        self.remaining_content_prekeys = 8
+
+    def append_publish_states(self, *states: str) -> None:
+        if self.record_publish_states:
+            self.publish_state_history.extend(states)
 
     def call_action(
         self,
@@ -28,9 +36,7 @@ class _Session:
         if action == "moments.private.snapshot":
             return {
                 "active": True,
-                "publishStateHistory": sorted(
-                    PLATFORM_OPERATIONS["publish-states"]
-                ),
+                "publishStateHistory": list(self.publish_state_history),
                 "readStateHistoryByPostId": {
                     "post-1": sorted(PLATFORM_OPERATIONS["read-states"]),
                 },
@@ -49,8 +55,65 @@ class _Session:
                     for kind in PLATFORM_OPERATIONS["subtypes"]
                 ],
             }
+        if action == "moments.publish":
+            self.append_publish_states(
+                "READY_PUBLIC",
+                "PUBLISHING",
+                "PUBLISHED",
+            )
+            return {"postId": "public-post-1"}
         if action == "moments.private.publishText":
+            audience = body.get("audience")
+            if (
+                isinstance(audience, dict)
+                and audience.get("kind") == "CUSTOM_DENY"
+                and audience.get("baseKind") == "PUBLIC"
+            ):
+                self.append_publish_states(
+                    "CHECKING_PRIVATE_READINESS",
+                    "PRIVATE_UNSUPPORTED",
+                )
+                raise RuntimeError("SOCIAL_PRIVATE_UNSUPPORTED")
+            actor_ptids = (
+                audience.get("actorPtids")
+                if isinstance(audience, dict)
+                else None
+            )
+            if isinstance(actor_ptids, list) and len(actor_ptids) > 256:
+                self.append_publish_states(
+                    "CHECKING_PRIVATE_READINESS",
+                    "AUDIENCE_TOO_LARGE",
+                )
+                raise RuntimeError("AUDIENCE_TOO_LARGE")
+            if self.remaining_content_prekeys == 0:
+                self.append_publish_states(
+                    "CHECKING_PRIVATE_READINESS",
+                    "RECIPIENT_KEY_UNAVAILABLE",
+                )
+                raise RuntimeError("SOCIAL_PRIVATE_DEPENDENCY_FAILURE")
+            draft_key = (str(body.get("draftId")), int(body.get("draftRevision", 0)))
+            text = str(body.get("text"))
+            if (
+                draft_key in self.published_drafts
+                and self.published_drafts[draft_key] != text
+            ):
+                self.append_publish_states(
+                    "CHECKING_PRIVATE_READINESS",
+                    "PUBLISH_FAILED",
+                )
+                raise RuntimeError("private Social draft replay conflict")
+            self.published_drafts[draft_key] = text
+            self.remaining_content_prekeys -= 1
+            self.append_publish_states(
+                "CHECKING_PRIVATE_READINESS",
+                "READY_PRIVATE",
+                "PUBLISHING",
+                "PUBLISHED",
+            )
             return {"state": "PUBLISHED", "postId": "post-1"}
+        if action == "moments.private.reconcile":
+            self.remaining_content_prekeys = 8
+            return {"active": True, "publish": []}
         if action == "moments.private.readText":
             text = (
                 "secure-content-ios-to-android"
@@ -92,7 +155,6 @@ class _Session:
             "moments.private.comment.submit",
             "moments.private.read",
             "moments.private.publish",
-            "moments.private.reconcile",
             "lifecycle.snapshot",
             "recovery.snapshot",
             "messaging.reconcile",
@@ -109,8 +171,19 @@ class _UnknownOutcomeSession(_Session):
         payload: dict[str, Any] | None = None,
     ) -> Any:
         body = dict(payload or {})
-        if action == "moments.private.publishText":
+        if (
+            action == "moments.private.publishText"
+            and str(body.get("draftId", "")).endswith("-publish")
+            and str(body.get("text", "")).endswith("-private")
+        ):
             self.calls.append((action, body))
+            draft_key = (str(body.get("draftId")), int(body.get("draftRevision", 0)))
+            self.published_drafts[draft_key] = str(body.get("text"))
+            self.append_publish_states(
+                "CHECKING_PRIVATE_READINESS",
+                "READY_PRIVATE",
+                "PUBLISHING",
+            )
             return {
                 "draftId": body["draftId"],
                 "draftRevision": body["draftRevision"],
@@ -119,6 +192,8 @@ class _UnknownOutcomeSession(_Session):
             }
         if action == "moments.private.reconcile":
             self.calls.append((action, body))
+            self.remaining_content_prekeys = 8
+            self.append_publish_states("PUBLISHED")
             return {
                 "active": True,
                 "publish": [
@@ -176,6 +251,33 @@ class MobileProductionFixtureTest(unittest.TestCase):
             "moments.private.publishText",
             [action for action, _ in self.sessions["ios_alice"].calls],
         )
+        self.assertIn(
+            "moments.publish",
+            [action for action, _ in self.sessions["ios_alice"].calls],
+        )
+
+    def test_one_successful_publish_cannot_satisfy_the_state_matrix(self) -> None:
+        self.sessions["ios_alice"] = _Session(record_publish_states=False)
+        self.fixture = MobileProductionFixture(
+            sessions=self.sessions,
+            actor_ptids={
+                "ios_alice": "ptid:alice",
+                "ios_bob": "ptid:bob",
+            },
+            federation_id="federation-1",
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "production action coverage for publish-states is incomplete",
+        ):
+            self.invoke(
+                "publish-states",
+                {
+                    "variant": "ios",
+                    "clients": ["ios_alice", "ios_bob"],
+                },
+            )
 
     def test_publish_reconciles_unknown_outcome_before_requiring_post_id(
         self,
