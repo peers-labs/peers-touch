@@ -278,6 +278,33 @@ export function planFoundationCapabilityBindingRestoration(
   });
 }
 
+export function resolveFoundationCapabilityBindingForCleanup(
+  expected: AgentCapabilityBinding,
+  currentBindings: readonly AgentCapabilityBinding[],
+): AgentCapabilityBinding | null {
+  const current = currentBindings.find(
+    (binding) => binding.bindingId === expected.bindingId
+      && !binding.tombstonedAt,
+  );
+  if (!current) return null;
+  assertFoundationCapabilityBindingIdentity(expected, current);
+  const revisionDelta = current.revision - expected.revision;
+  const agentVersionDelta =
+    current.expectedAgentVersion - expected.expectedAgentVersion;
+  if (
+    current.enabled !== expected.enabled
+    || current.approvalPolicy !== expected.approvalPolicy
+    || revisionDelta < 0n
+    || agentVersionDelta < 0n
+    || revisionDelta !== agentVersionDelta
+  ) {
+    throw new Error(
+      'agent.acceptance.foundationCapabilityBindingStateChanged',
+    );
+  }
+  return current;
+}
+
 export async function restoreFoundationCapabilityBindings(
   originals: readonly FoundationCapabilityIsolationBinding[],
   listBindings: () => Promise<AgentCapabilityBinding[]>,
