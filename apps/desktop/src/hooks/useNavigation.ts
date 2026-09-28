@@ -4,7 +4,13 @@ import { useAgentStore } from '../store/agent';
 import { EVENT, eventBus } from '../kernel/events';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import type { ParsedDeepLink } from '../utils/deeplink';
-import type { HashRouter, Navigation, SettingsNavState, Page } from '../types/navigation';
+import {
+  DEFAULT_READY_PAGE,
+  type HashRouter,
+  type Navigation,
+  type SettingsNavState,
+  type Page,
+} from '../types/navigation';
 
 // #region debug-point A-D:as-f06-page-switch
 function navigationDebugSnapshot(): Record<string, unknown> {
@@ -89,11 +95,7 @@ export function useNavigation(router: HashRouter): Navigation {
       const agentName = decodeURIComponent(url.split('/agent-profile/')[1] || '');
       if (agentName) router.setProfilePage(agentName);
     } else if (url.startsWith('/notes/') || url.startsWith('/pages/')) {
-      const docId = url.split(/\/(?:notes|pages)\//)[1];
-      if (docId) {
-        window.history.pushState(null, '', `#/notes/${docId}`);
-      }
-      router.setPage('notes');
+      router.setPage(DEFAULT_READY_PAGE);
     } else if (url.startsWith('/settings')) {
       const params = new URLSearchParams(url.split('?')[1] || '');
       setSettingsNav({
@@ -122,7 +124,8 @@ export function useNavigation(router: HashRouter): Navigation {
       }
       switch (nav.resource) {
         case 'cron':
-          router.setPage('cron');
+          setSettingsNav({ tab: 'cron' });
+          router.setPage('settings');
           break;
         case 'sessions':
           if (nav.id) {
@@ -147,7 +150,8 @@ export function useNavigation(router: HashRouter): Navigation {
           });
           break;
         case 'channels':
-          router.setPage('channels');
+          setSettingsNav({ tab: 'channels' });
+          router.setPage('settings');
           break;
         case 'marketplace':
           router.setPage('marketplace');
@@ -156,7 +160,7 @@ export function useNavigation(router: HashRouter): Navigation {
           router.setPage('evaluation');
           break;
         case 'documents':
-          router.setPage('notes');
+          router.setPage(DEFAULT_READY_PAGE);
           break;
       }
     });

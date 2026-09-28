@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-27
-covered_docs_hash: 94d008d7fc5c6ea7df358daafe7e2018d712d171cfce45b9883efcfbca120221
+last_verified_at: 2026-09-28
+covered_docs_hash: 3531a2f88629f40dddbdc7028a666085d9ae6ce2d4cb943305e674c72110f074
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,15 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-09-28 Review
+
+Desktop navigation ownership now removes the standalone Notes host page and
+makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
+Palette access. The dedicated browser Gate has an exact-source Runtime Manifest
+and cleanup contract, while the official Note applet remains unchanged.
+Existing Desktop, locale, source-of-truth, and Acceptance evidence rules already
+cover this change, so no `SKILL.md` or review fixture update is required.
 
 ## 2026-09-27 Review
 

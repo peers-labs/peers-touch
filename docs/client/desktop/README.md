@@ -13,6 +13,7 @@
 5. [runtime-projections.md](./runtime-projections.md) — `desktop-web` 内部 Page / Runtime / Boot 三组契约的**单点真源**
 6. [global-context-kernel.md](./global-context-kernel.md) — 全局上下文内核（与 Page/Runtime/Boot 正交）
 7. [chat-layout-contract.md](./chat-layout-contract.md) — Desktop Chat 布局、pane、hover、右键菜单、Composer 边界契约
+8. [navigation-and-settings-ownership.md](./navigation-and-settings-ownership.md) — 主导航与 Settings 工具入口的单一归属
 
 ## 架构层真源（跨进程）
 
@@ -30,6 +31,7 @@ Desktop 与 `station / desktop-rust / desktop-web / desktop-app` 的跨进程关
 - [provider-model-target-architecture.md](./provider-model-target-architecture.md)
 - [execution-plans/global-context-kernel-migration.md](./execution-plans/global-context-kernel-migration.md)
 - [execution-plans/20260701-page-runtime-lifecycle-contract.md](./execution-plans/20260701-page-runtime-lifecycle-contract.md)
+- [execution-plans/20260928-primary-navigation-cleanup/plan.md](./execution-plans/20260928-primary-navigation-cleanup/plan.md) — 主导航收敛与 Settings 单一归属执行计划
 
 ## 跨端 Chat 体验
 

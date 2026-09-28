@@ -60,6 +60,8 @@ import {
   ChevronRight,
   RotateCcw,
   Copy,
+  Command,
+  FolderOpen,
   type LucideIcon,
 } from 'lucide-react';
 import { T } from './theme';
@@ -1438,12 +1440,56 @@ function HelpSection() {
   );
 }
 
+function CronJobsSection() {
+  return (
+    <SettingsContainer>
+      <SettingsSection icon={Clock} title="Cron Jobs">
+        <SettingsRow label="Daily workspace summary" desc="Every day at 09:00">
+          <span style={{ color: T.success, fontSize: 12 }}>Active</span>
+        </SettingsRow>
+        <SettingsRow label="Weekly backup" desc="Every Sunday at 02:00">
+          <span style={{ color: T.textTertiary, fontSize: 12 }}>Paused</span>
+        </SettingsRow>
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
+
+function CommandPaletteSection({ onOpen }: { onOpen: () => void }) {
+  return (
+    <SettingsContainer>
+      <SettingsSection
+        icon={Command}
+        title="Command Palette"
+        action={<PrimaryButton label="Open Command Palette" icon={Command} onClick={onOpen} />}
+      >
+        <span />
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
+
+function MyFilesSection() {
+  return (
+    <SettingsContainer>
+      <SettingsSection icon={FolderOpen} title="My Files">
+        <SettingsRow label="product-brief.pdf" desc="2.4 MB · Private">
+          <span style={{ color: T.textTertiary, fontSize: 12 }}>PDF</span>
+        </SettingsRow>
+        <SettingsRow label="team-photo.jpg" desc="1.8 MB · Shared in Chat">
+          <span style={{ color: T.textTertiary, fontSize: 12 }}>Image</span>
+        </SettingsRow>
+      </SettingsSection>
+    </SettingsContainer>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // PAGE SHELL: Three-level navigation
 // ═══════════════════════════════════════════════════════════════════════════════
 
-type GroupId = 'general' | 'federation' | 'ai' | 'channels' | 'applets' | 'data' | 'help';
-type SectionId = 'account' | 'federation' | 'general' | 'providers' | 'models' | 'memory' | 'skills' | 'mcp' | 'channels' | 'applets' | 'statistics' | 'logs' | 'help';
+type GroupId = 'general' | 'federation' | 'ai' | 'tools' | 'channels' | 'applets' | 'data' | 'help';
+type SectionId = 'account' | 'federation' | 'general' | 'providers' | 'models' | 'memory' | 'skills' | 'mcp' | 'cron' | 'command-menu' | 'channels' | 'applets' | 'statistics' | 'oss' | 'logs' | 'help';
 
 interface SectionDef { id: SectionId; label: string; icon: LucideIcon; }
 interface GroupDef { id: GroupId; label: string; icon: LucideIcon; sections: SectionDef[]; }
@@ -1473,6 +1519,13 @@ const GROUPS: GroupDef[] = [
     ],
   },
   {
+    id: 'tools', label: 'Tools', icon: Sliders,
+    sections: [
+      { id: 'cron', label: 'Cron Jobs', icon: Clock },
+      { id: 'command-menu', label: 'Command Palette', icon: Command },
+    ],
+  },
+  {
     id: 'channels', label: 'Channels', icon: Send,
     sections: [
       { id: 'channels', label: 'Channels', icon: Send },
@@ -1488,6 +1541,7 @@ const GROUPS: GroupDef[] = [
     id: 'data', label: 'Data', icon: Database,
     sections: [
       { id: 'statistics', label: 'Statistics', icon: BarChart3 },
+      { id: 'oss', label: 'My Files', icon: FolderOpen },
       { id: 'logs', label: 'Logs', icon: ScrollText },
     ],
   },
@@ -1499,7 +1553,7 @@ const GROUPS: GroupDef[] = [
   },
 ];
 
-function renderSection(sectionId: SectionId) {
+function renderSection(sectionId: SectionId, onOpenCommandPalette: () => void) {
   switch (sectionId) {
     case 'account': return <AccountSection />;
     case 'federation': return <FederationSection />;
@@ -1509,16 +1563,19 @@ function renderSection(sectionId: SectionId) {
     case 'memory': return <MemorySection />;
     case 'skills': return <SkillsSection />;
     case 'mcp': return <MCPSection />;
+    case 'cron': return <CronJobsSection />;
+    case 'command-menu': return <CommandPaletteSection onOpen={onOpenCommandPalette} />;
     case 'channels': return <ChannelsSection />;
     case 'applets': return <AppletsSection />;
     case 'statistics': return <StatisticsSection />;
+    case 'oss': return <MyFilesSection />;
     case 'logs': return <LogsSection />;
     case 'help': return <HelpSection />;
     default: return null;
   }
 }
 
-export function SettingsPage() {
+export function SettingsPage({ onOpenCommandPalette }: { onOpenCommandPalette: () => void }) {
   const [activeGroup, setActiveGroup] = useState<GroupId>('general');
   const [activeSection, setActiveSection] = useState<SectionId>('account');
 
@@ -1608,7 +1665,7 @@ export function SettingsPage() {
 
         {/* Level 3: Section Content */}
         <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
-          {renderSection(current.id)}
+          {renderSection(current.id, onOpenCommandPalette)}
         </div>
       </div>
     </div>
