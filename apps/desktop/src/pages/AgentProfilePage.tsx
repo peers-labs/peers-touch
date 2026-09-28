@@ -66,6 +66,7 @@ import { AgentSettingsModal } from '../components/AgentSettingsModal';
 import { BuilderPanel } from '../components/BuilderPanel';
 import { AgentIconTile } from '../components/agent/AgentIconTile';
 import { AgentConnectorsPanel } from '../components/agent/AgentConnectorsPanel';
+import { openAgentCreateFlow } from '../components/agent/create';
 import {
   selectAgentCapabilityBindingsBySource,
   selectAgentCapabilityReadinessBySource,
@@ -76,6 +77,7 @@ import {
 } from '../store/agentCapabilities';
 import { AgentCapabilityInventoryPanel } from '../components/agent/AgentCapabilityInventoryPanel';
 import { EVENT, eventBus } from '../kernel/events';
+import { usePageContext } from '../kernel/usePageContext';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import type { AgentTurnStreamEventPayload } from '../kernel/events/types';
 import {
@@ -299,6 +301,7 @@ function AgentWorkbenchHero({
     >
       <Flexbox horizontal align="center" justify="space-between" gap={16} style={{ minWidth: 0 }}>
         <input
+          data-pt-agent-profile-title={agent.id}
           value={title}
           onChange={(event) => {
             titleRef.current = event.target.value;
@@ -1263,12 +1266,12 @@ export function AgentProfilePage({
 }: AgentProfilePageProps) {
   const { t } = useTranslation('agent');
   const { token } = theme.useToken();
+  const { navigation } = usePageContext();
   const agents = useAgentStore(s => s.agents);
   const availableModels = useAgentStore(s => s.availableModels);
   const loadAgents = useAgentStore(s => s.loadAgents);
   const updateAgentProfile = useAgentStore(s => s.updateAgentProfile);
   const reloadAgentProfile = useAgentStore(s => s.reloadAgentProfile);
-  const createAgent = useAgentStore(s => s.createAgent);
   const setSelectedAgent = useAgentStore(s => s.setSelectedAgent);
   const agentRosterOpen = useAgentStore(s => s.agentRosterOpen);
   const setAgentRosterOpen = useAgentStore(s => s.setAgentRosterOpen);
@@ -1653,34 +1656,11 @@ export function AgentProfilePage({
     [loadAgents],
   );
 
-  const handleCreateAgent = useCallback(async () => {
-    const suffix = Date.now().toString(36);
-    try {
-      // First-class store createAgent (C5): persists + merges roster + selects +
-      // sets profile surface. Profile-local editing state is seeded from result.
-      const created = await createAgent({
-        name: `agent-${suffix}`,
-        title: t('agent.profile.identityTitlePlaceholder'),
-        description: '',
-        avatar: '',
-        soulMd: '# SOUL.md\n\n## Identity\n',
-        agentsMd: '# AGENTS.md\n\n## Workflow\n',
-        effort: 'medium',
-        visibility: 'private',
-        workspaceMode: 'agent',
-      });
-      setProfileAgentName(created.name);
-      setAgent(created);
-      setSoulMd(created.soulMd || '');
-      setSoulMdDirty(false);
-      setAgentsMd(created.agentsMd || '');
-      setAgentsMdDirty(false);
-      window.history.pushState(null, '', `#/agent-profile/${encodeURIComponent(created.name)}`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('agent.profile.failedToSave');
-      antMessage.error(message);
-    }
-  }, [createAgent, t]);
+  const handleCreateAgent = useCallback(() => {
+    openAgentCreateFlow((createdName) =>
+      navigation.navigateToAgentSurface(createdName, 'profile'),
+    );
+  }, [navigation]);
 
   const knowledgeCapabilityProjections = useMemo(
     () => boundKnowledgeProjections(
@@ -2094,6 +2074,7 @@ export function AgentProfilePage({
                 </button>
               )}
               <button
+                data-pt-agent-create
                 type="button"
                 onClick={handleCreateAgent}
                 title={t('agent.sidebar.createAgent')}
@@ -2210,6 +2191,7 @@ export function AgentProfilePage({
         ) : (
           <>
             <button
+              data-pt-agent-create
               type="button"
               onClick={handleCreateAgent}
               title={t('agent.sidebar.createAgent')}
@@ -2428,6 +2410,7 @@ export function AgentProfilePage({
               />
             </div>
             <Flexbox
+              data-pt-agent-id={agent.id}
               data-pt-agent-profile-conflict={
                 saveState === 'conflict' ? agent.id : undefined
               }

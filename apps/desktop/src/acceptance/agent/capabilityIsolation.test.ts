@@ -9,6 +9,7 @@ import {
   parseFoundationCapabilityIsolationJournal,
   planFoundationCapabilityBindingRestoration,
   resolveFoundationCapabilityBindingForCleanup,
+  resolveFoundationCapabilityIsolationAgent,
   restoreFoundationCapabilityBindings,
 } from './capabilityIsolation';
 import { CapabilityApprovalPolicy } from '../../gen/proto/domain/agent/capability_pb';
@@ -273,6 +274,42 @@ describe('resolveFoundationCapabilityBindingForCleanup', () => {
     expect(
       resolveFoundationCapabilityBindingForCleanup(expected, []),
     ).toBeNull();
+  });
+});
+
+describe('resolveFoundationCapabilityIsolationAgent', () => {
+  const journal = {
+    agentId: 'agent-1',
+    agentVersion: 2,
+  };
+  const agent = {
+    id: 'agent-1',
+    name: 'assistant',
+    version: 2,
+  };
+
+  it('returns null only when the authoritative Agent no longer exists', () => {
+    expect(resolveFoundationCapabilityIsolationAgent(journal, [])).toBeNull();
+  });
+
+  it('preserves the strict Agent version fence for a live Agent', () => {
+    expect(resolveFoundationCapabilityIsolationAgent(journal, [agent]))
+      .toEqual(agent);
+    expect(() => resolveFoundationCapabilityIsolationAgent(journal, [{
+      ...agent,
+      version: 3,
+    }])).toThrow(
+      'agent.acceptance.foundationCapabilityIsolationAgentChanged',
+    );
+  });
+
+  it('rejects ambiguous identity matches', () => {
+    expect(() => resolveFoundationCapabilityIsolationAgent(journal, [
+      agent,
+      { id: '', name: 'agent-1', version: 2 },
+    ])).toThrow(
+      'agent.acceptance.foundationCapabilityIsolationAgentIdentityAmbiguous',
+    );
   });
 });
 

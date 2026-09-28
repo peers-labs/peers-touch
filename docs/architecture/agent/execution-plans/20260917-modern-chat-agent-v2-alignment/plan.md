@@ -8,182 +8,13 @@
 ## Plan Package
 
 ```json
-{"kind":"peers-touch-plan-package","planId":"modern-chat-agent-v2-alignment-20260917","status":"active","binding":{"branch":"feat/p0-streaming-runtime-message-actions","workspaceId":"65e7b6da4dc9be85","initialHead":"dcf0813ea23d73256cf21173d75516b6c36f68b4"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/agent/modern-chat-agent/product-definition.md","docs/architecture/agent/modern-chat-agent/experience-contract.md","docs/architecture/agent/modern-chat-agent/product-state-model.md","docs/architecture/agent/modern-chat-agent/design.md","docs/architecture/agent/modern-chat-agent/decisions.md","docs/architecture/agent/modern-chat-agent/data-model.md","docs/architecture/agent/agent-lobehub-blueprint.md","docs/architecture/agent/lobehub-parity-mindmap.source.md","docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md","docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2.md","docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md","docs/architecture/agent/modern-chat-agent/proposals/20260918-mca-d21-runtime-truthful-formal-evidence.md","docs/architecture/agent/modern-chat-agent/proposals/20260918-mca-d21-runtime-truthful-formal-evidence-review.md","docs/architecture/agent/modern-chat-agent/proposals/20260918-mca-d22-capability-scenario-control-plane.md","docs/architecture/agent/modern-chat-agent/proposals/20260918-mca-d22-capability-scenario-control-plane-review.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d23-governed-tool-scenario-control-plane.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d23-governed-tool-scenario-control-plane-review.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d24-evaluation-scenario-control-plane.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d24-evaluation-scenario-control-plane-review.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d25-tool-zero-execution-evidence.md","docs/architecture/agent/modern-chat-agent/proposals/20260921-mca-d26-connector-execution-evidence.md","docs/architecture/access-gates/station-access-gate-architecture.md","docs/architecture/access-gates/station-access-gate-implementation-plan.md"],"decisions":["MCA-D14","MCA-D15","MCA-D16","MCA-D17","MCA-D18","MCA-D20","MCA-D20A","P4-3","V2-D03","V2-D04","V2-D07","V2-D08","DWF-D13","DWF-D14","MCA-D21","MCA-D22","MCA-D23","MCA-D24","MCA-D25","MCA-D26","MCA-D27"]},"scope":{"sourceClaims":[{"pathPrefix":"apps/desktop","mode":"exclusive-write"},{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/agent","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/conversation","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/social","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/agent","mode":"exclusive-write"},{"pathPrefix":"docs/client","mode":"exclusive-write"},{"pathPrefix":"go.work.sum","mode":"exclusive-write"},{"pathPrefix":"model/domain/agent","mode":"exclusive-write"},{"pathPrefix":"packages/agent-catalog","mode":"exclusive-write"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"packages/messaging-core","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/docker/compose.yml","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/deploy/deploy.sh","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/acceptance-prove.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/acceptance-validate.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/check-agent-v2-locales.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/check-agent-v2-locales.test.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/expand-agent-v2-runtime-matrix.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/check-agent-v2-proto-coverage.py","mode":"exclusive-write"}],"nonGoals":["Clone LobeHub navigation, branding, hosted commercial marketplace, Community, subscription, or Cloud Gateway","Implement unsupported image or video generation or deferred server-side audio generation","Create a standalone Custom HTTP Plugin credential authority","Claim Mobile UI parity beyond accepted contract compatibility","Use mocks, static checks, or model-selected behavior as product-functional proof"]},"tasks":[{"id":"MCA-J01","workstreamId":"MCA-J01","path":"tasks/MCA-J01.md","dependsOn":[],"status":"done","blocker":null},{"id":"MCA-J02","workstreamId":"MCA-J02","path":"tasks/MCA-J02.md","dependsOn":[],"status":"done","blocker":null},{"id":"MCA-J03","workstreamId":"MCA-J03","path":"tasks/MCA-J03.md","dependsOn":["MCA-J02"],"status":"done","blocker":null},{"id":"MCA-J04","workstreamId":"MCA-J04","path":"tasks/MCA-J04.md","dependsOn":["MCA-J03"],"status":"done","blocker":null},{"id":"MCA-J05","workstreamId":"MCA-J05","path":"tasks/MCA-J05.md","dependsOn":["MCA-J03"],"status":"done","blocker":null},{"id":"MCA-J06","workstreamId":"MCA-J06","path":"tasks/MCA-J06.md","dependsOn":["MCA-J02"],"status":"done","blocker":null},{"id":"MCA-X3","workstreamId":"MCA-X3","path":"tasks/MCA-X3.md","dependsOn":["MCA-J02"],"status":"done","blocker":null},{"id":"MCA-A01","workstreamId":"MCA-A01","path":"tasks/MCA-A01.md","dependsOn":["MCA-J01","MCA-J02","MCA-J03","MCA-J04","MCA-J05","MCA-J06","MCA-X3"],"status":"done","blocker":null},{"id":"MCA-A02","workstreamId":"MCA-A02","path":"tasks/MCA-A02.md","dependsOn":["MCA-A01"],"status":"done","blocker":null},{"id":"MCA-A03","workstreamId":"MCA-A03","path":"tasks/MCA-A03.md","dependsOn":["MCA-A01"],"status":"done","blocker":null},{"id":"MCA-A04","workstreamId":"MCA-A04","path":"tasks/MCA-A04.md","dependsOn":["MCA-A03"],"status":"done","blocker":null},{"id":"MCA-A05","workstreamId":"MCA-A05","path":"tasks/MCA-A05.md","dependsOn":["MCA-A04"],"status":"done","blocker":null},{"id":"MCA-A06","workstreamId":"MCA-A06","path":"tasks/MCA-A06.md","dependsOn":["MCA-A04"],"status":"done","blocker":null},{"id":"MCA-A07","workstreamId":"MCA-A07","path":"tasks/MCA-A07.md","dependsOn":["MCA-A03"],"status":"done","blocker":null},{"id":"MCA-R01","workstreamId":"MCA-R01","path":"tasks/MCA-R01.md","dependsOn":["MCA-A02","MCA-A03","MCA-A04","MCA-A05","MCA-A06","MCA-A07","MCA-X3"],"status":"in_progress","blocker":null},{"id":"MCA-R02","workstreamId":"MCA-R02","path":"tasks/MCA-R02.md","dependsOn":["MCA-R01"],"status":"pending","blocker":null},{"id":"MCA-A08","workstreamId":"MCA-A08","path":"tasks/MCA-A08.md","dependsOn":["MCA-A02","MCA-A03","MCA-A04","MCA-A05","MCA-A06","MCA-A07","MCA-X3","MCA-R02"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"allowed","pullRequest":"allowed"},"runtime":{"deployProfiles":["two"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
+{"kind":"peers-touch-plan-package","planId":"modern-chat-agent-v2-alignment-20260917","status":"active","binding":{"branch":"feat/p0-streaming-runtime-message-actions","workspaceId":"65e7b6da4dc9be85","initialHead":"dcf0813ea23d73256cf21173d75516b6c36f68b4"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/agent/modern-chat-agent/product-definition.md","docs/architecture/agent/modern-chat-agent/experience-contract.md","docs/architecture/agent/modern-chat-agent/product-state-model.md","docs/architecture/agent/modern-chat-agent/design.md","docs/architecture/agent/modern-chat-agent/decisions.md","docs/architecture/agent/modern-chat-agent/data-model.md","docs/architecture/agent/agent-lobehub-blueprint.md","docs/architecture/agent/lobehub-parity-mindmap.source.md","docs/architecture/agent/execution-plans/20260816-lobehub-parity-full-landing.md","docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2.md","docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-execution.md","docs/architecture/agent/modern-chat-agent/proposals/20260918-mca-d21-runtime-truthful-formal-evidence.md","docs/architecture/agent/modern-chat-agent/proposals/20260918-mca-d21-runtime-truthful-formal-evidence-review.md","docs/architecture/agent/modern-chat-agent/proposals/20260918-mca-d22-capability-scenario-control-plane.md","docs/architecture/agent/modern-chat-agent/proposals/20260918-mca-d22-capability-scenario-control-plane-review.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d23-governed-tool-scenario-control-plane.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d23-governed-tool-scenario-control-plane-review.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d24-evaluation-scenario-control-plane.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d24-evaluation-scenario-control-plane-review.md","docs/architecture/agent/modern-chat-agent/proposals/20260919-mca-d25-tool-zero-execution-evidence.md","docs/architecture/agent/modern-chat-agent/proposals/20260921-mca-d26-connector-execution-evidence.md","docs/architecture/access-gates/station-access-gate-architecture.md","docs/architecture/access-gates/station-access-gate-implementation-plan.md"],"decisions":["MCA-D14","MCA-D15","MCA-D16","MCA-D17","MCA-D18","MCA-D20","MCA-D20A","P4-3","V2-D03","V2-D04","V2-D07","V2-D08","DWF-D13","DWF-D14","MCA-D21","MCA-D22","MCA-D23","MCA-D24","MCA-D25","MCA-D26","MCA-D27"]},"scope":{"sourceClaims":[{"pathPrefix":"apps/desktop","mode":"exclusive-write"},{"pathPrefix":"apps/mobile","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/agent","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/conversation","mode":"exclusive-write"},{"pathPrefix":"apps/station/app/subserver/social","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/agent","mode":"exclusive-write"},{"pathPrefix":"docs/client","mode":"exclusive-write"},{"pathPrefix":"go.work.sum","mode":"exclusive-write"},{"pathPrefix":"model/domain/agent","mode":"exclusive-write"},{"pathPrefix":"packages/agent-catalog","mode":"exclusive-write"},{"pathPrefix":"packages/locales","mode":"exclusive-write"},{"pathPrefix":"packages/messaging-core","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance","mode":"exclusive-write"},{"pathPrefix":"tooling/docker/compose.yml","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/deploy/deploy.sh","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/acceptance-prove.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/acceptance-validate.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/check-agent-v2-locales.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/check-agent-v2-locales.test.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/expand-agent-v2-runtime-matrix.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/check-agent-v2-proto-coverage.py","mode":"exclusive-write"}],"nonGoals":["Clone LobeHub navigation, branding, hosted commercial marketplace, Community, subscription, or Cloud Gateway","Implement unsupported image or video generation or deferred server-side audio generation","Create a standalone Custom HTTP Plugin credential authority","Claim Mobile UI parity beyond accepted contract compatibility","Use mocks, static checks, or model-selected behavior as product-functional proof"]},"tasks":[{"id":"MCA-J01","workstreamId":"MCA-J01","path":"tasks/MCA-J01.md","dependsOn":[],"status":"done","blocker":null},{"id":"MCA-J02","workstreamId":"MCA-J02","path":"tasks/MCA-J02.md","dependsOn":[],"status":"done","blocker":null},{"id":"MCA-J03","workstreamId":"MCA-J03","path":"tasks/MCA-J03.md","dependsOn":["MCA-J02"],"status":"done","blocker":null},{"id":"MCA-J04","workstreamId":"MCA-J04","path":"tasks/MCA-J04.md","dependsOn":["MCA-J03"],"status":"done","blocker":null},{"id":"MCA-J05","workstreamId":"MCA-J05","path":"tasks/MCA-J05.md","dependsOn":["MCA-J03"],"status":"done","blocker":null},{"id":"MCA-J06","workstreamId":"MCA-J06","path":"tasks/MCA-J06.md","dependsOn":["MCA-J02"],"status":"done","blocker":null},{"id":"MCA-X3","workstreamId":"MCA-X3","path":"tasks/MCA-X3.md","dependsOn":["MCA-J02"],"status":"done","blocker":null},{"id":"MCA-A01","workstreamId":"MCA-A01","path":"tasks/MCA-A01.md","dependsOn":["MCA-J01","MCA-J02","MCA-J03","MCA-J04","MCA-J05","MCA-J06","MCA-X3"],"status":"done","blocker":null},{"id":"MCA-A02","workstreamId":"MCA-A02","path":"tasks/MCA-A02.md","dependsOn":["MCA-A01"],"status":"done","blocker":null},{"id":"MCA-A03","workstreamId":"MCA-A03","path":"tasks/MCA-A03.md","dependsOn":["MCA-A01"],"status":"done","blocker":null},{"id":"MCA-A04","workstreamId":"MCA-A04","path":"tasks/MCA-A04.md","dependsOn":["MCA-A03"],"status":"done","blocker":null},{"id":"MCA-A05","workstreamId":"MCA-A05","path":"tasks/MCA-A05.md","dependsOn":["MCA-A04"],"status":"done","blocker":null},{"id":"MCA-A06","workstreamId":"MCA-A06","path":"tasks/MCA-A06.md","dependsOn":["MCA-A04"],"status":"done","blocker":null},{"id":"MCA-A07","workstreamId":"MCA-A07","path":"tasks/MCA-A07.md","dependsOn":["MCA-A03"],"status":"done","blocker":null},{"id":"MCA-R01","workstreamId":"MCA-R01","path":"tasks/MCA-R01.md","dependsOn":["MCA-A02","MCA-A03","MCA-A04","MCA-A05","MCA-A06","MCA-A07","MCA-X3"],"status":"in_progress","blocker":null},{"id":"MCA-P01","workstreamId":"MCA-P01","path":"tasks/MCA-P01.md","dependsOn":["MCA-A01"],"status":"pending","blocker":null},{"id":"MCA-P02","workstreamId":"MCA-P02","path":"tasks/MCA-P02.md","dependsOn":["MCA-P01"],"status":"pending","blocker":null},{"id":"MCA-P03","workstreamId":"MCA-P03","path":"tasks/MCA-P03.md","dependsOn":["MCA-A01"],"status":"pending","blocker":null},{"id":"MCA-R02","workstreamId":"MCA-R02","path":"tasks/MCA-R02.md","dependsOn":["MCA-R01"],"status":"pending","blocker":null},{"id":"MCA-A08","workstreamId":"MCA-A08","path":"tasks/MCA-A08.md","dependsOn":["MCA-A02","MCA-A03","MCA-A04","MCA-A05","MCA-A06","MCA-A07","MCA-X3","MCA-R02","MCA-P01","MCA-P02","MCA-P03"],"status":"pending","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"allowed","pullRequest":"allowed"},"runtime":{"deployProfiles":["two"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
 ```
 
 ## Acceptance Execution
 
 ```json
-{
-  "closures": {
-    "V2-foundation-diagnostic-cleanup": [],
-    "V2-foundation-restart-remediation": [],
-    "V2-J01-functional": [],
-    "V2-J02-functional": [],
-    "V2-J03-functional": [],
-    "V2-J04-functional": [],
-    "V2-J05-functional": [],
-    "V2-J06-functional": [],
-    "X3-functional": [],
-    "V2-A01-contract": [],
-    "V2-J01-formal-candidate": [],
-    "V2-J02-formal-candidate": [],
-    "V2-J03-formal-candidate": [],
-    "V2-J04-formal-candidate": [],
-    "V2-J05-formal-candidate": [],
-    "V2-J06-formal-candidate": [],
-    "V2-acceptance": [
-      "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "desktop-dev-runtime-isolation-static", "chat-desktop-gateway-e2e", "chat-native-visible-static", "chat-native-interactions-e2e", "chat-native-group-mls-e2e", "messaging-platform-contract", "station-messaging-unit",
-      "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
-      "agent-v2-kernel-foundation-e2e", "agent-event-stream-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
-      "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-native-portal-navigation-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-translation-e2e", "agent-follow-up-e2e", "agent-ecosystem-e2e", "agent-topic-comments-e2e",
-      "agent-v2-home-command-center-e2e",
-      "agent-v2-capability-binding-e2e",
-      "agent-v2-governed-tool-loop-e2e",
-      "agent-v2-mcp-lifecycle-e2e",
-      "agent-native-connector-lifecycle-e2e",
-      "agent-v2-connector-invocation-e2e",
-      "agent-v2-evaluation-lab-e2e",
-      "agent-marketplace-catalog-e2e",
-      "chat-contact-message-resilience-e2e",
-      "chat-friend-request-gateway-e2e",
-      "chat-lifecycle-direct-e2e", "chat-lifecycle-group-live-e2e",
-      "chat-lifecycle-interactions-group-e2e",
-      "chat-lifecycle-live-voice-e2e",
-      "chat-lifecycle-onboarding-e2e",
-      "chat-lifecycle-rich-voice-e2e",
-      "chat-presence-layout-e2e",
-      "chat-native-current-profile-two-client-e2e",
-      "chat-native-multi-device-e2e",
-      "chat-native-recovery-e2e",
-      "chat-native-submitted-command-recovery-e2e",
-      "chat-native-two-client-e2e",
-      "chat-native-typing-e2e",
-      "federation-desktop-gateway-smoke",
-      "federation-surface-smoke",
-      "federation-three-node-e2e",
-      "mobile-contract-static",
-      "mobile-identity-contract",
-      "mobile-native-access-e2e",
-      "mobile-native-chat-contacts-e2e",
-      "mobile-native-lifecycle-e2e",
-      "mobile-native-moments-e2e",
-      "mobile-native-recovery-ui-e2e",
-      "mobile-native-recovery-e2e",
-      "mobile-native-settings-e2e",
-      "mobile-native-social-convergence-e2e",
-      "mobile-simulator-access-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-platform-e2e", "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-settings-e2e",
-      "mobile-simulator-chat-contacts-e2e",
-      "mobile-simulator-runtime-lifecycle-e2e",
-      "mobile-simulator-social-convergence-e2e",
-      "mobile-simulator-station-lifecycle-e2e",
-      "development-workflow-control-plane", "station-api-ownership",
-      "station-dashboard-unit",
-      "station-dashboard-web-check",
-      "station-federation-unit"
-    ]
-  },
-  "completion": [
-    "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "desktop-dev-runtime-isolation-static", "chat-desktop-gateway-e2e", "chat-native-visible-static", "chat-native-interactions-e2e", "chat-native-group-mls-e2e", "messaging-platform-contract", "station-messaging-unit",
-    "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
-    "agent-v2-kernel-foundation-e2e", "agent-event-stream-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
-    "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-native-portal-navigation-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-quick-completion-e2e", "agent-translation-e2e", "agent-follow-up-e2e", "agent-ecosystem-e2e", "agent-topic-comments-e2e",
-    "agent-v2-home-command-center-e2e",
-    "agent-v2-capability-binding-e2e",
-    "agent-v2-governed-tool-loop-e2e",
-    "agent-v2-mcp-lifecycle-e2e",
-    "agent-native-connector-lifecycle-e2e",
-    "agent-v2-connector-invocation-e2e",
-    "agent-v2-evaluation-lab-e2e",
-    "agent-marketplace-catalog-e2e",
-    "chat-contact-message-resilience-e2e",
-    "chat-friend-request-gateway-e2e",
-    "chat-lifecycle-direct-e2e", "chat-lifecycle-group-live-e2e",
-    "chat-lifecycle-interactions-group-e2e",
-    "chat-lifecycle-live-voice-e2e",
-    "chat-lifecycle-onboarding-e2e",
-    "chat-lifecycle-rich-voice-e2e",
-    "chat-presence-layout-e2e",
-    "chat-native-current-profile-two-client-e2e",
-    "chat-native-multi-device-e2e",
-    "chat-native-recovery-e2e",
-    "chat-native-submitted-command-recovery-e2e",
-    "chat-native-two-client-e2e",
-    "chat-native-typing-e2e",
-    "federation-desktop-gateway-smoke",
-    "federation-surface-smoke",
-    "federation-three-node-e2e",
-    "mobile-contract-static",
-    "mobile-identity-contract",
-    "mobile-native-access-e2e",
-    "mobile-native-chat-contacts-e2e",
-    "mobile-native-lifecycle-e2e",
-    "mobile-native-moments-e2e",
-    "mobile-native-recovery-ui-e2e",
-    "mobile-native-recovery-e2e",
-    "mobile-native-settings-e2e",
-    "mobile-native-social-convergence-e2e",
-    "mobile-simulator-access-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-platform-e2e", "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-settings-e2e",
-    "mobile-simulator-chat-contacts-e2e",
-    "mobile-simulator-runtime-lifecycle-e2e",
-    "mobile-simulator-social-convergence-e2e",
-    "mobile-simulator-station-lifecycle-e2e",
-    "development-workflow-control-plane", "station-api-ownership",
-    "station-dashboard-unit",
-    "station-dashboard-web-check",
-    "station-federation-unit"
-  ],
-  "full": [
-    "acceptance-infra-validation", "acceptance-plan-self", "acceptance-runtime-provisioning-self", "acceptance-workflow-contract", "proto-build", "desktop-check", "desktop-dev-runtime-isolation-static", "chat-desktop-gateway-e2e", "chat-native-visible-static", "chat-native-interactions-e2e", "chat-native-group-mls-e2e", "messaging-platform-contract", "station-messaging-unit",
-    "mobile-ios-simulator-layout-accessibility-e2e", "mobile-native-platform-e2e", "mobile-hard-cut-static",
-    "agent-v2-kernel-foundation-e2e", "agent-event-stream-e2e", "station-agent-unit", "agent-stream-resilience-e2e", "agent-core-lifecycle-native-e2e",
-    "agent-native-knowledge-binding-e2e", "agent-native-message-forward-e2e", "agent-native-mention-e2e", "agent-native-portal-navigation-e2e", "agent-attachment-e2e", "agent-capability-transparency-e2e", "agent-provider-credential-e2e", "agent-quick-completion-e2e", "agent-translation-e2e", "agent-follow-up-e2e", "agent-ecosystem-e2e", "agent-topic-comments-e2e",
-    "agent-v2-home-command-center-e2e",
-    "agent-v2-capability-binding-e2e",
-    "agent-v2-governed-tool-loop-e2e",
-    "agent-v2-mcp-lifecycle-e2e",
-    "agent-native-connector-lifecycle-e2e",
-    "agent-v2-connector-invocation-e2e",
-    "agent-v2-evaluation-lab-e2e",
-    "agent-marketplace-catalog-e2e",
-    "chat-contact-message-resilience-e2e",
-    "chat-friend-request-gateway-e2e",
-    "chat-lifecycle-direct-e2e", "chat-lifecycle-group-live-e2e",
-    "chat-lifecycle-interactions-group-e2e",
-    "chat-lifecycle-live-voice-e2e",
-    "chat-lifecycle-onboarding-e2e",
-    "chat-lifecycle-rich-voice-e2e",
-    "chat-presence-layout-e2e",
-    "chat-native-current-profile-two-client-e2e",
-    "chat-native-multi-device-e2e",
-    "chat-native-recovery-e2e",
-    "chat-native-submitted-command-recovery-e2e",
-    "chat-native-two-client-e2e",
-    "chat-native-typing-e2e",
-    "federation-desktop-gateway-smoke",
-    "federation-surface-smoke",
-    "federation-three-node-e2e",
-    "mobile-contract-static",
-    "mobile-identity-contract",
-    "mobile-native-access-e2e",
-    "mobile-native-chat-contacts-e2e",
-    "mobile-native-lifecycle-e2e",
-    "mobile-native-moments-e2e",
-    "mobile-native-recovery-ui-e2e",
-    "mobile-native-recovery-e2e",
-    "mobile-native-settings-e2e",
-    "mobile-native-social-convergence-e2e",
-    "mobile-simulator-access-e2e", "mobile-simulator-moments-e2e", "mobile-simulator-platform-e2e", "mobile-simulator-recovery-e2e", "mobile-simulator-recovery-ui-e2e", "mobile-simulator-settings-e2e",
-    "mobile-simulator-chat-contacts-e2e",
-    "mobile-simulator-runtime-lifecycle-e2e",
-    "mobile-simulator-social-convergence-e2e",
-    "mobile-simulator-station-lifecycle-e2e",
-    "development-workflow-control-plane", "station-api-ownership",
-    "station-dashboard-unit",
-    "station-dashboard-web-check",
-    "station-federation-unit"
-  ]
-}
+{"closures":{"V2-foundation-diagnostic-cleanup":[],"V2-foundation-restart-remediation":[],"V2-J01-functional":[],"V2-J02-functional":[],"V2-J03-functional":[],"V2-J04-functional":[],"V2-J05-functional":[],"V2-J06-functional":[],"X3-functional":[],"V2-A01-contract":[],"V2-J01-formal-candidate":[],"V2-J02-formal-candidate":[],"V2-J03-formal-candidate":[],"V2-J04-formal-candidate":[],"V2-J05-formal-candidate":[],"V2-J06-formal-candidate":[],"V2-acceptance":["acceptance-infra-validation","acceptance-plan-self","acceptance-runtime-provisioning-self","acceptance-workflow-contract","proto-build","desktop-check","desktop-dev-runtime-isolation-static","chat-desktop-gateway-e2e","chat-native-visible-static","chat-native-interactions-e2e","chat-native-group-mls-e2e","messaging-platform-contract","station-messaging-unit","mobile-ios-simulator-layout-accessibility-e2e","mobile-native-platform-e2e","mobile-hard-cut-static","agent-v2-kernel-foundation-e2e","agent-event-stream-e2e","station-agent-unit","agent-stream-resilience-e2e","agent-core-lifecycle-native-e2e","agent-native-knowledge-binding-e2e","agent-native-message-forward-e2e","agent-native-mention-e2e","agent-native-portal-navigation-e2e","agent-attachment-e2e","agent-capability-transparency-e2e","agent-provider-credential-e2e","agent-translation-e2e","agent-follow-up-e2e","agent-ecosystem-e2e","agent-topic-comments-e2e","agent-v2-home-command-center-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e","agent-native-connector-lifecycle-e2e","agent-v2-connector-invocation-e2e","agent-v2-evaluation-lab-e2e","agent-marketplace-catalog-e2e","chat-contact-message-resilience-e2e","chat-friend-request-gateway-e2e","chat-lifecycle-direct-e2e","chat-lifecycle-group-live-e2e","chat-lifecycle-interactions-group-e2e","chat-lifecycle-live-voice-e2e","chat-lifecycle-onboarding-e2e","chat-lifecycle-rich-voice-e2e","chat-presence-layout-e2e","chat-native-current-profile-two-client-e2e","chat-native-multi-device-e2e","chat-native-recovery-e2e","chat-native-submitted-command-recovery-e2e","chat-native-two-client-e2e","chat-native-typing-e2e","federation-desktop-gateway-smoke","federation-surface-smoke","federation-three-node-e2e","mobile-contract-static","mobile-identity-contract","mobile-native-access-e2e","mobile-native-chat-contacts-e2e","mobile-native-lifecycle-e2e","mobile-native-moments-e2e","mobile-native-recovery-ui-e2e","mobile-native-recovery-e2e","mobile-native-settings-e2e","mobile-native-social-convergence-e2e","mobile-simulator-access-e2e","mobile-simulator-moments-e2e","mobile-simulator-platform-e2e","mobile-simulator-recovery-e2e","mobile-simulator-recovery-ui-e2e","mobile-simulator-settings-e2e","mobile-simulator-chat-contacts-e2e","mobile-simulator-runtime-lifecycle-e2e","mobile-simulator-social-convergence-e2e","mobile-simulator-station-lifecycle-e2e","development-workflow-control-plane","station-api-ownership","station-dashboard-unit","station-dashboard-web-check","station-federation-unit"],"V2-agent-core-lifecycle":[],"V2-agent-topic-recovery":[],"V2-agent-debug-telemetry-cleanup":[]},"completion":["acceptance-infra-validation","acceptance-plan-self","acceptance-runtime-provisioning-self","acceptance-workflow-contract","proto-build","desktop-check","desktop-dev-runtime-isolation-static","chat-desktop-gateway-e2e","chat-native-visible-static","chat-native-interactions-e2e","chat-native-group-mls-e2e","messaging-platform-contract","station-messaging-unit","mobile-ios-simulator-layout-accessibility-e2e","mobile-native-platform-e2e","mobile-hard-cut-static","agent-v2-kernel-foundation-e2e","agent-event-stream-e2e","station-agent-unit","agent-stream-resilience-e2e","agent-core-lifecycle-native-e2e","agent-native-knowledge-binding-e2e","agent-native-message-forward-e2e","agent-native-mention-e2e","agent-native-portal-navigation-e2e","agent-attachment-e2e","agent-capability-transparency-e2e","agent-provider-credential-e2e","agent-quick-completion-e2e","agent-translation-e2e","agent-follow-up-e2e","agent-ecosystem-e2e","agent-topic-comments-e2e","agent-v2-home-command-center-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e","agent-native-connector-lifecycle-e2e","agent-v2-connector-invocation-e2e","agent-v2-evaluation-lab-e2e","agent-marketplace-catalog-e2e","chat-contact-message-resilience-e2e","chat-friend-request-gateway-e2e","chat-lifecycle-direct-e2e","chat-lifecycle-group-live-e2e","chat-lifecycle-interactions-group-e2e","chat-lifecycle-live-voice-e2e","chat-lifecycle-onboarding-e2e","chat-lifecycle-rich-voice-e2e","chat-presence-layout-e2e","chat-native-current-profile-two-client-e2e","chat-native-multi-device-e2e","chat-native-recovery-e2e","chat-native-submitted-command-recovery-e2e","chat-native-two-client-e2e","chat-native-typing-e2e","federation-desktop-gateway-smoke","federation-surface-smoke","federation-three-node-e2e","mobile-contract-static","mobile-identity-contract","mobile-native-access-e2e","mobile-native-chat-contacts-e2e","mobile-native-lifecycle-e2e","mobile-native-moments-e2e","mobile-native-recovery-ui-e2e","mobile-native-recovery-e2e","mobile-native-settings-e2e","mobile-native-social-convergence-e2e","mobile-simulator-access-e2e","mobile-simulator-moments-e2e","mobile-simulator-platform-e2e","mobile-simulator-recovery-e2e","mobile-simulator-recovery-ui-e2e","mobile-simulator-settings-e2e","mobile-simulator-chat-contacts-e2e","mobile-simulator-runtime-lifecycle-e2e","mobile-simulator-social-convergence-e2e","mobile-simulator-station-lifecycle-e2e","development-workflow-control-plane","station-api-ownership","station-dashboard-unit","station-dashboard-web-check","station-federation-unit"],"full":["acceptance-infra-validation","acceptance-plan-self","acceptance-runtime-provisioning-self","acceptance-workflow-contract","proto-build","desktop-check","desktop-dev-runtime-isolation-static","chat-desktop-gateway-e2e","chat-native-visible-static","chat-native-interactions-e2e","chat-native-group-mls-e2e","messaging-platform-contract","station-messaging-unit","mobile-ios-simulator-layout-accessibility-e2e","mobile-native-platform-e2e","mobile-hard-cut-static","agent-v2-kernel-foundation-e2e","agent-event-stream-e2e","station-agent-unit","agent-stream-resilience-e2e","agent-core-lifecycle-native-e2e","agent-native-knowledge-binding-e2e","agent-native-message-forward-e2e","agent-native-mention-e2e","agent-native-portal-navigation-e2e","agent-attachment-e2e","agent-capability-transparency-e2e","agent-provider-credential-e2e","agent-quick-completion-e2e","agent-translation-e2e","agent-follow-up-e2e","agent-ecosystem-e2e","agent-topic-comments-e2e","agent-v2-home-command-center-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e","agent-native-connector-lifecycle-e2e","agent-v2-connector-invocation-e2e","agent-v2-evaluation-lab-e2e","agent-marketplace-catalog-e2e","chat-contact-message-resilience-e2e","chat-friend-request-gateway-e2e","chat-lifecycle-direct-e2e","chat-lifecycle-group-live-e2e","chat-lifecycle-interactions-group-e2e","chat-lifecycle-live-voice-e2e","chat-lifecycle-onboarding-e2e","chat-lifecycle-rich-voice-e2e","chat-presence-layout-e2e","chat-native-current-profile-two-client-e2e","chat-native-multi-device-e2e","chat-native-recovery-e2e","chat-native-submitted-command-recovery-e2e","chat-native-two-client-e2e","chat-native-typing-e2e","federation-desktop-gateway-smoke","federation-surface-smoke","federation-three-node-e2e","mobile-contract-static","mobile-identity-contract","mobile-native-access-e2e","mobile-native-chat-contacts-e2e","mobile-native-lifecycle-e2e","mobile-native-moments-e2e","mobile-native-recovery-ui-e2e","mobile-native-recovery-e2e","mobile-native-settings-e2e","mobile-native-social-convergence-e2e","mobile-simulator-access-e2e","mobile-simulator-moments-e2e","mobile-simulator-platform-e2e","mobile-simulator-recovery-e2e","mobile-simulator-recovery-ui-e2e","mobile-simulator-settings-e2e","mobile-simulator-chat-contacts-e2e","mobile-simulator-runtime-lifecycle-e2e","mobile-simulator-social-convergence-e2e","mobile-simulator-station-lifecycle-e2e","development-workflow-control-plane","station-api-ownership","station-dashboard-unit","station-dashboard-web-check","station-federation-unit"]}
 ```
 
 ## Goal
@@ -210,6 +41,9 @@ gap.
 | MCA-A06 | 37-tuple Connector candidate | Connector lineage |
 | MCA-A07 | 57-tuple Evaluation candidate | Evaluation/Turn |
 | MCA-R01 | Close Foundation first-failure regressions, including typed client permission denial | Chat recovery + capability permission authority |
+| MCA-P01 | Real Agent creation and roster CRUD closure | Desktop Agent UI/store + Station Agent authority |
+| MCA-P02 | Honest topic-load failure and retry closure | Desktop Agent topic runtime/store |
+| MCA-P03 | Production Agent debug telemetry cleanup | Desktop Shell / Agent UI |
 | MCA-R02 | Remove diagnostics and reprove | Acceptance Harness |
 | MCA-A08 | Seven-Gate proof and ledger closure | Acceptance Core |
 
@@ -220,6 +54,8 @@ gap.
   readback without creating a second authority.
 - MCA-A01 lands MCA-D21. MCA-A03 incorporates MCA-D22 with Station-owned,
   Acceptance-only J02 controls and no production manifest-registration path.
+- MCA-P01 -> MCA-P02 is the mandatory core Agent creation/roster and topic-recovery chain.
+- MCA-P03 may execute independently, but MCA-A08 waits for MCA-P01, MCA-P02, and MCA-P03.
 - MCA-R01 -> MCA-R02 -> MCA-A08 is the mandatory remediation, diagnostic
   cleanup, and final-proof chain.
 - MCA-A08 waits for all six Journey candidates and re-runs every formal Gate on

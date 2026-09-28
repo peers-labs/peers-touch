@@ -18,24 +18,24 @@
       "evidence": {
         "truth_sources": [
           "Station agent CRUD API",
+          "Station Agent conversation list",
           "Desktop agent store"
         ],
         "surfaces": [
-          "Native Tauri Agent page"
+          "Native Tauri Agent roster, profile, actions, and composer"
         ],
         "proven_by": [
           "agent-core-lifecycle-native-e2e"
         ],
         "proven_scope": [
-          "PENDING: Auto-create default agent"
+          "Native create, Station-backed list, select, edit, duplicate, default, empty session start, and delete lifecycle",
+          "Repeated-duplicate unique naming, no phantom Station conversation, and deleted-Agent selection absence",
+          "Receiver DOM, Station readback, and cleanup evidence for one isolated approved-profile native client"
         ],
         "unproven_scope": [
-          "Auto-create default agent",
-          "Create via + button",
-          "Select \u2192 chat",
-          "Send \u2192 receive",
-          "Session CRUD",
-          "Update profile"
+          "Automatic first-login Agent creation from an initially empty Station account",
+          "Cross-Station and multi-client concurrent Agent lifecycle",
+          "Message send/receive behavior, which is owned by the Agent turn Gates"
         ]
       }
     },

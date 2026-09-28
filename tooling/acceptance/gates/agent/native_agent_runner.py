@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Native Tauri Agent acceptance runner.
 
-Each journey consumes the provisioned One-profile runtime and writes evidence
+Each journey consumes the provisioned approved-profile runtime and writes evidence
 through the external Acceptance Evidence Store. Stream resilience additionally
 injects a real transport fault between Desktop and Station.
 """
@@ -35,7 +35,10 @@ from tooling.acceptance.core import (
     require_runtime_service,
 )
 from tooling.acceptance.core.harness import call_async_harness
-from tooling.acceptance.core.provisioner import load_env_file
+from tooling.acceptance.core.provisioner import (
+    load_env_file,
+    resolve_machine_profile_environment,
+)
 from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeProbeInput,
@@ -48,8 +51,42 @@ from tooling.acceptance.gates.agent.tcp_fault_proxy import TcpFaultProxy
 
 GATE_BY_JOURNEY = {
     "turn": "agent-native-turn-e2e",
+    "core-lifecycle": "agent-core-lifecycle-native-e2e",
     "stream-resilience": "agent-stream-resilience-e2e",
     "attachment": "agent-attachment-e2e",
+}
+# These selectors are the integration contract with the Agent workbench UI.
+# Keep lifecycle-specific selectors here so a parallel UI lane can bind them
+# without changing journey semantics or scattering fallback selectors.
+CORE_LIFECYCLE_SELECTORS = {
+    "create": "[data-pt-agent-create]",
+    "create_dialog": "[data-pt-agent-create-dialog]",
+    "create_name": "[data-pt-agent-create-name]",
+    "create_submit": "[data-pt-agent-create-submit]",
+    "create_title": "[data-pt-agent-create-title]",
+    "row": '[data-pt-agent-row][data-pt-agent-id="{agent_id}"]',
+    "menu": '[data-pt-agent-menu][data-pt-agent-id="{agent_id}"]',
+    "menu_action": (
+        '[data-pt-agent-menu-action="{action}"]'
+        '[data-pt-agent-id="{agent_id}"]'
+    ),
+    "profile": '[data-pt-agent-profile="{agent_id}"]',
+    "profile_any": "[data-pt-agent-profile]",
+    "profile_back": "[data-pt-agent-profile-back]",
+    "profile_title": '[data-pt-agent-profile-title="{agent_id}"]',
+    "profile_saved": (
+        '[data-pt-agent-profile-save-state="saved"]'
+        '[data-pt-agent-id="{agent_id}"]'
+    ),
+    "default": (
+        '[data-pt-agent-row][data-pt-agent-id="{agent_id}"]'
+        '[data-pt-agent-default="true"]'
+    ),
+    "session_start": "[data-pt-agent-session-start]",
+    "topic_error": "[data-pt-agent-topic-load-error]",
+    "topic_retry": "[data-pt-agent-topic-load-retry]",
+    "composer": "[data-pt-agent-composer]",
+    "confirm_delete": "[data-pt-agent-delete-confirm]",
 }
 APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 WAIT_TICK = threading.Event()
@@ -202,20 +239,12 @@ class AgentNativeJourney:
             "actor manifest requires the approved profile credential reference",
         )
 
-        active_profile = (
-            REPO_ROOT
-            / ".local"
-            / "dev"
-            / "active"
-            / f"{REPO_ROOT.name}.env"
+        profile_name, _, _, self.profile_env = (
+            resolve_machine_profile_environment(REPO_ROOT)
         )
         require(
-            active_profile.exists() or active_profile.is_symlink(),
-            "active One profile is missing",
-        )
-        self.profile_env = load_env_file(active_profile.resolve(strict=True))
-        require(
-            self.profile_env.get("PT_DEV_PROFILE") == APPROVED_PROFILE,
+            profile_name == APPROVED_PROFILE
+            and self.profile_env.get("PT_DEV_PROFILE") == APPROVED_PROFILE,
             "active profile identity changed after provisioning",
         )
         self.password = self.profile_env.get(
@@ -224,7 +253,7 @@ class AgentNativeJourney:
         )
         require(
             bool(self.password),
-            "One profile is missing CHAT_NATIVE_DEMO_PASSWORD",
+            "approved profile is missing CHAT_NATIVE_DEMO_PASSWORD",
         )
         self.provider_id = self.profile_env.get("PT_AGENT_PROVIDER_ID", "").strip()
         self.provider_key = self.profile_env.get(
@@ -239,15 +268,21 @@ class AgentNativeJourney:
             "PT_AGENT_PROVIDER_BASE_URL",
             "",
         ).strip()
-        require(bool(self.provider_id), "One profile is missing PT_AGENT_PROVIDER_ID")
-        require(bool(self.model_id), "One profile is missing PT_AGENT_DEFAULT_MODEL_ID")
+        require(
+            bool(self.provider_id),
+            "approved profile is missing PT_AGENT_PROVIDER_ID",
+        )
+        require(
+            bool(self.model_id),
+            "approved profile is missing PT_AGENT_DEFAULT_MODEL_ID",
+        )
         require(
             bool(self.provider_base_url),
-            "One profile is missing PT_AGENT_PROVIDER_BASE_URL",
+            "approved profile is missing PT_AGENT_PROVIDER_BASE_URL",
         )
         require(
             bool(self.provider_key),
-            "One profile is missing PT_AGENT_PROVIDER_API_KEY",
+            "approved profile is missing PT_AGENT_PROVIDER_API_KEY",
         )
 
         self.gateway_port = int(self.client.get("gateway_port") or 0)
@@ -264,7 +299,7 @@ class AgentNativeJourney:
         self.desktop_log = self.run_root / "desktop.log"
         self.proxy = (
             TcpFaultProxy.from_url(self.station_url)
-            if journey == "stream-resilience"
+            if journey in {"stream-resilience", "core-lifecycle"}
             else None
         )
         self.station_transport_url = (
@@ -293,6 +328,7 @@ class AgentNativeJourney:
         self.dom_evidence: dict[str, Any] = {}
         self.journey_evidence: dict[str, Any] = {}
         self.cleanup_evidence: dict[str, Any] = {"status": "not-run"}
+        self.lifecycle_fixture_ids: list[str] = []
 
     def step(self, name: str, operation: Callable[[], Any]) -> Any:
         started = time.monotonic()
@@ -494,8 +530,7 @@ class AgentNativeJourney:
         )
         return dict(result)
 
-    def navigate_and_configure(self) -> None:
-        self.harness("navigateToAgent", timeout=60)
+    def configure_provider(self) -> None:
         configured = self.harness(
             "ensureProvider",
             {
@@ -510,6 +545,10 @@ class AgentNativeJourney:
             isinstance(configured, dict) and configured.get("configured") is True,
             "Agent provider setup failed",
         )
+
+    def navigate_and_configure(self) -> None:
+        self.harness("navigateToAgent", timeout=60)
+        self.configure_provider()
 
     def runtime_snapshot(self) -> dict[str, Any]:
         snapshot = self.harness("getRuntimeSnapshot")
@@ -605,6 +644,851 @@ class AgentNativeJourney:
             f"selector {selector} visible={state.get('visible')}, expected={expected}",
         )
         return state
+
+    def lifecycle_selector(self, name: str, **values: str) -> str:
+        template = CORE_LIFECYCLE_SELECTORS[name]
+        return template.format(**values)
+
+    def visible_element_state(
+        self,
+        selector: str,
+        attributes: tuple[str, ...] = (),
+    ) -> dict[str, Any] | None:
+        state = self.driver.execute_script(
+            """
+            const [selector, attributes] = arguments;
+            const element = Array.from(document.querySelectorAll(selector))
+              .find((candidate) => candidate.getClientRects().length > 0);
+            if (!element) return null;
+            return {
+              selector,
+              text: (element.textContent || '').trim(),
+              attributes: Object.fromEntries(
+                attributes.map((name) => [name, element.getAttribute(name)]),
+              ),
+            };
+            """,
+            selector,
+            list(attributes),
+        )
+        require(
+            state is None or isinstance(state, dict),
+            f"selector {selector} returned invalid element state",
+        )
+        return state
+
+    def wait_visible_element(
+        self,
+        selector: str,
+        description: str,
+        *,
+        attributes: tuple[str, ...] = (),
+        timeout: float = DEFAULT_TIMEOUT,
+    ) -> dict[str, Any]:
+        return wait_until(
+            lambda: self.visible_element_state(selector, attributes),
+            description,
+            timeout,
+        )
+
+    def click_visible(self, selector: str, description: str) -> dict[str, Any]:
+        self.wait_visible_element(selector, description)
+        result = self.driver.execute_script(
+            """
+            const selector = arguments[0];
+            const element = Array.from(document.querySelectorAll(selector))
+              .find((candidate) => candidate.getClientRects().length > 0);
+            if (!element) return null;
+            const result = {
+              selector,
+              text: (element.textContent || '').trim(),
+            };
+            element.click();
+            return result;
+            """,
+            selector,
+        )
+        require(isinstance(result, dict), f"{description} is not visible")
+        return result
+
+    def set_input_value(
+        self,
+        selector: str,
+        value: str,
+        description: str,
+    ) -> dict[str, Any]:
+        result = self.driver.execute_script(
+            """
+            const [selector, value] = arguments;
+            const input = Array.from(document.querySelectorAll(selector))
+              .find((candidate) => candidate.getClientRects().length > 0);
+            if (!(input instanceof HTMLInputElement)
+              && !(input instanceof HTMLTextAreaElement)) return null;
+            const prototype = input instanceof HTMLTextAreaElement
+              ? HTMLTextAreaElement.prototype
+              : HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
+            if (!setter) return null;
+            input.focus();
+            setter.call(input, value);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            input.blur();
+            return { selector, value: input.value };
+            """,
+            selector,
+            value,
+        )
+        require(
+            isinstance(result, dict) and result.get("value") == value,
+            f"{description} could not be edited",
+        )
+        return result
+
+    def click_agent_action(self, agent_id: str, action: str) -> None:
+        self.click_visible(
+            self.lifecycle_selector("menu", agent_id=agent_id),
+            f"Agent {agent_id} action menu",
+        )
+        action_selector = self.lifecycle_selector(
+            "menu_action",
+            action=action,
+            agent_id=agent_id,
+        )
+        self.wait_visible_element(
+            action_selector,
+            f"Agent {agent_id} {action} menu item",
+        )
+        self.click_visible(
+            action_selector,
+            f"Agent {agent_id} {action} action",
+        )
+
+    def select_agent_chat(self, agent_id: str) -> dict[str, Any]:
+        self.click_visible(
+            self.lifecycle_selector("row", agent_id=agent_id),
+            f"Agent {agent_id} list row",
+        )
+        profile = self.visible_element_state(
+            self.lifecycle_selector("profile", agent_id=agent_id),
+        )
+        if profile is not None:
+            self.click_visible(
+                self.lifecycle_selector("profile_back"),
+                "Agent profile back control",
+            )
+        return self.wait_visible_element(
+            self.lifecycle_selector("composer"),
+            f"Agent {agent_id} composer",
+        )
+
+    def lifecycle_station_state(
+        self,
+        *,
+        expected_agent_id: str,
+        expected_name: str | None = None,
+        expected_title: str | None = None,
+        expected_default: bool | None = None,
+    ) -> dict[str, Any]:
+        state = self.harness("getFoundationAgentState", timeout=60)
+        require(isinstance(state, Mapping), "Agent Station readback is invalid")
+        agent = state.get("agent")
+        conversations = state.get("conversations")
+        require(isinstance(agent, Mapping), "Agent Station readback has no agent")
+        require(
+            str(agent.get("id") or "") == expected_agent_id,
+            "Agent Station readback selected a different Agent",
+        )
+        if expected_name is not None:
+            require(
+                str(agent.get("name") or "") == expected_name,
+                "Agent Station readback did not persist the expected name",
+            )
+        if expected_title is not None:
+            require(
+                str(agent.get("title") or "") == expected_title,
+                "Agent Station readback did not persist the expected title",
+            )
+        if expected_default is not None:
+            require(
+                agent.get("isDefault") is expected_default,
+                "Agent Station readback did not persist the expected default",
+            )
+        require(
+            isinstance(conversations, list),
+            "Agent Station conversation readback is invalid",
+        )
+        return dict(state)
+
+    def invoke_readback_command(
+        self,
+        command: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        expect_error: bool = False,
+    ) -> dict[str, Any]:
+        result = self.driver.execute_async_script(
+            """
+            const [command, payload, done] = arguments;
+            const invoke = window.__TAURI_INTERNALS__?.invoke;
+            if (typeof invoke !== 'function') {
+              done({ transportOk: false, error: 'Tauri invoke unavailable' });
+              return;
+            }
+            Promise.resolve(invoke(
+              command,
+              payload === null ? undefined : { input: payload },
+            ))
+              .then((value) => done({ transportOk: true, value }))
+              .catch((error) => done({
+                transportOk: false,
+                error: String(error?.message || error),
+              }));
+            """,
+            command,
+            payload,
+        )
+        require(
+            isinstance(result, Mapping),
+            f"{command} returned an invalid native readback envelope",
+        )
+        if result.get("transportOk") is not True:
+            require(
+                expect_error,
+                f"{command} native readback failed: {result.get('error')}",
+            )
+            return {"rejected": True, "error": str(result.get("error") or "")}
+        value = result.get("value")
+        require(
+            isinstance(value, Mapping),
+            f"{command} returned an invalid command result",
+        )
+        if value.get("ok") is not True:
+            require(expect_error, f"{command} Station readback was rejected")
+            return {"rejected": True, "error": value.get("error")}
+        require(not expect_error, f"{command} unexpectedly succeeded")
+        data = value.get("data")
+        if isinstance(data, Mapping) and isinstance(data.get("status"), str):
+            try:
+                parsed = json.loads(data["status"])
+            except json.JSONDecodeError as error:
+                raise JourneyError(
+                    f"{command} returned malformed Station readback"
+                ) from error
+            require(
+                isinstance(parsed, dict),
+                f"{command} Station readback must be an object",
+            )
+            return parsed
+        require(
+            isinstance(data, dict),
+            f"{command} Station readback data must be an object",
+        )
+        return data
+
+    def station_agent_roster(self) -> dict[str, Any]:
+        roster = self.invoke_readback_command("agents_list")
+        agents = roster.get("agents")
+        require(isinstance(agents, list), "Station Agent roster is invalid")
+        return roster
+
+    def station_agent(self, agent_id: str) -> dict[str, Any]:
+        agent = self.invoke_readback_command("agents_get", {"id": agent_id})
+        require(
+            str(agent.get("id") or "") == agent_id,
+            "Station returned a different Agent",
+        )
+        return agent
+
+    def station_agent_absent(self, agent_id: str) -> dict[str, Any] | None:
+        roster = self.station_agent_roster()
+        return (
+            roster
+            if all(
+                not isinstance(agent, Mapping)
+                or str(agent.get("id") or "") != agent_id
+                for agent in roster["agents"]
+            )
+            else None
+        )
+
+    def selected_profile(self) -> dict[str, str] | None:
+        state = self.visible_element_state(
+            self.lifecycle_selector("profile_any"),
+            ("data-pt-agent-profile",),
+        )
+        if state is None:
+            return None
+        attributes = state.get("attributes")
+        if not isinstance(attributes, Mapping):
+            return None
+        agent_id = str(attributes.get("data-pt-agent-profile") or "")
+        return {"agentId": agent_id} if agent_id else None
+
+    def delete_lifecycle_agent(self, agent_id: str) -> None:
+        self.click_agent_action(agent_id, "delete")
+        self.wait_visible_element(
+            self.lifecycle_selector("confirm_delete"),
+            f"Agent {agent_id} delete confirmation",
+        )
+        self.click_visible(
+            self.lifecycle_selector("confirm_delete"),
+            f"Agent {agent_id} delete confirmation",
+        )
+        wait_until(
+            lambda: self.station_agent_absent(agent_id),
+            f"Agent {agent_id} Station roster removal",
+        )
+        if agent_id in self.lifecycle_fixture_ids:
+            self.lifecycle_fixture_ids.remove(agent_id)
+
+    def run_core_lifecycle(self) -> None:
+        self.step("login", self.login)
+        self.step("navigate_and_configure", self.navigate_and_configure)
+        baseline = self.step(
+            "station_baseline_readback",
+            lambda: self.harness("getFoundationAgentState", timeout=60),
+        )
+        require(isinstance(baseline, Mapping), "baseline Agent state is invalid")
+        baseline_agent = baseline.get("agent")
+        require(isinstance(baseline_agent, Mapping), "baseline Agent is missing")
+        baseline_id = str(baseline_agent.get("id") or "")
+        baseline_name = str(baseline_agent.get("name") or "")
+        require(bool(baseline_id and baseline_name), "baseline Agent identity is invalid")
+        baseline_conversations = baseline.get("conversations")
+        require(
+            isinstance(baseline_conversations, list),
+            "baseline Station conversations are missing",
+        )
+        baseline_roster = self.step(
+            "station_baseline_roster",
+            self.station_agent_roster,
+        )
+        baseline_roster_count = len(baseline_roster["agents"])
+        created_name = f"lifecycle-{int(time.time() * 1000)}"
+        created_title = f"Lifecycle {created_name.removeprefix('lifecycle-')}"
+        self.step(
+            "create_agent_native_ui",
+            lambda: self.click_visible(
+                self.lifecycle_selector("create"),
+                "Agent create control",
+            ),
+        )
+        self.step(
+            "create_dialog_visible",
+            lambda: self.wait_visible_element(
+                self.lifecycle_selector("create_dialog"),
+                "Agent create dialog",
+            ),
+        )
+        unopened_roster = self.step(
+            "create_dialog_zero_persistence",
+            self.station_agent_roster,
+        )
+        require(
+            len(unopened_roster["agents"]) == baseline_roster_count,
+            "opening Agent creation persisted a placeholder Agent",
+        )
+        self.step(
+            "enter_created_agent_name",
+            lambda: self.set_input_value(
+                self.lifecycle_selector("create_name"),
+                created_name,
+                "Agent create name",
+            ),
+        )
+        self.step(
+            "enter_created_agent_title",
+            lambda: self.set_input_value(
+                self.lifecycle_selector("create_title"),
+                created_title,
+                "Agent create title",
+            ),
+        )
+        self.step(
+            "submit_agent_creation",
+            lambda: self.click_visible(
+                self.lifecycle_selector("create_submit"),
+                "Agent create submit control",
+            ),
+        )
+        created_profile = self.step(
+            "created_profile_visible",
+            lambda: wait_until(
+                lambda: (
+                    profile
+                    if (
+                        (profile := self.selected_profile()) is not None
+                        and profile["agentId"] != baseline_id
+                    )
+                    else None
+                ),
+                "new Agent profile",
+            ),
+        )
+        created_id = created_profile["agentId"]
+        self.lifecycle_fixture_ids.append(created_id)
+        self.step(
+            "configure_created_agent",
+            self.configure_provider,
+        )
+        created_station = self.step(
+            "created_agent_station_readback",
+            lambda: self.lifecycle_station_state(
+                expected_agent_id=created_id,
+                expected_name=created_name,
+                expected_title=created_title,
+            ),
+        )
+        created_agent = created_station["agent"]
+        created_name = str(created_agent.get("name") or "")
+        require(bool(created_name), "created Agent has no Station-owned name")
+        created_authority = self.step(
+            "created_agent_station_authority",
+            lambda: self.station_agent(created_id),
+        )
+        created_roster = self.step(
+            "created_agent_station_list",
+            self.station_agent_roster,
+        )
+        require(
+            sum(
+                1
+                for agent in created_roster["agents"]
+                if isinstance(agent, Mapping) and agent.get("id") == created_id
+            )
+            == 1,
+            "Station Agent roster does not contain exactly one created Agent",
+        )
+
+        self.step(
+            "return_to_agent_chat",
+            lambda: self.click_visible(
+                self.lifecycle_selector("profile_back"),
+                "Agent profile back control",
+            ),
+        )
+        created_row = self.step(
+            "created_agent_listed",
+            lambda: self.wait_visible_element(
+                self.lifecycle_selector("row", agent_id=created_id),
+                "created Agent list row",
+                attributes=("data-pt-agent-id",),
+            ),
+        )
+        self.step(
+            "select_baseline_agent",
+            lambda: self.select_agent_chat(baseline_id),
+        )
+        self.step(
+            "baseline_station_selection_readback",
+            lambda: self.lifecycle_station_state(
+                expected_agent_id=baseline_id,
+                expected_name=baseline_name,
+            ),
+        )
+        self.step(
+            "select_created_agent",
+            lambda: self.select_agent_chat(created_id),
+        )
+
+        self.step(
+            "open_created_agent_profile",
+            lambda: self.click_agent_action(created_id, "edit"),
+        )
+        self.step(
+            "created_profile_reopened",
+            lambda: self.wait_visible_element(
+                self.lifecycle_selector("profile", agent_id=created_id),
+                "created Agent profile",
+            ),
+        )
+        edited_title = f"{created_name}-edited"
+        self.step(
+            "edit_agent_name_native_ui",
+            lambda: self.set_input_value(
+                self.lifecycle_selector("profile_title", agent_id=created_id),
+                edited_title,
+                "Agent profile title",
+            ),
+        )
+        self.step(
+            "agent_profile_saved",
+            lambda: self.wait_visible_element(
+                self.lifecycle_selector("profile_saved", agent_id=created_id),
+                "saved Agent profile state",
+            ),
+        )
+        edited_station = self.step(
+            "edited_agent_station_readback",
+            lambda: self.lifecycle_station_state(
+                expected_agent_id=created_id,
+                expected_name=created_name,
+                expected_title=edited_title,
+            ),
+        )
+        require(
+            int(edited_station["agent"].get("version") or 0)
+            > int(created_agent.get("version") or 0),
+            "Agent Station version did not advance after edit",
+        )
+        edited_authority = self.step(
+            "edited_agent_station_authority",
+            lambda: self.station_agent(created_id),
+        )
+        require(
+            edited_authority.get("title") == edited_title
+            and int(edited_authority.get("version") or 0)
+            > int(created_authority.get("version") or 0),
+            "Station Agent authority did not persist the profile edit",
+        )
+        self.step(
+            "return_after_agent_edit",
+            lambda: self.click_visible(
+                self.lifecycle_selector("profile_back"),
+                "Agent profile back control",
+            ),
+        )
+
+        self.step(
+            "duplicate_agent_native_ui",
+            lambda: self.click_agent_action(created_id, "clone"),
+        )
+        duplicate_name = f"{created_name}-copy"
+        duplicate_row = self.step(
+            "duplicated_agent_listed",
+            lambda: wait_until(
+                lambda: self.driver.execute_script(
+                    """
+                    const expectedName = arguments[0];
+                    const row = Array.from(
+                      document.querySelectorAll('[data-pt-agent-row]')
+                    ).find((candidate) =>
+                      candidate.getClientRects().length > 0
+                      && candidate.getAttribute('data-pt-agent-name') === expectedName
+                    );
+                    return row ? {
+                      agentId: row.getAttribute('data-pt-agent-id'),
+                      name: row.getAttribute('data-pt-agent-name'),
+                      text: (row.textContent || '').trim(),
+                    } : null;
+                    """,
+                    duplicate_name,
+                ),
+                "duplicated Agent list row",
+            ),
+        )
+        require(
+            isinstance(duplicate_row, Mapping)
+            and bool(duplicate_row.get("agentId")),
+            "duplicated Agent row has no identity",
+        )
+        duplicate_id = str(duplicate_row["agentId"])
+        require(duplicate_id != created_id, "duplicate reused the source Agent ID")
+        self.lifecycle_fixture_ids.append(duplicate_id)
+        self.step(
+            "select_duplicated_agent",
+            lambda: self.select_agent_chat(duplicate_id),
+        )
+        duplicate_station = self.step(
+            "duplicated_agent_station_readback",
+            lambda: self.lifecycle_station_state(
+                expected_agent_id=duplicate_id,
+                expected_name=duplicate_name,
+            ),
+        )
+        duplicate_authority = self.step(
+            "duplicated_agent_station_authority",
+            lambda: self.station_agent(duplicate_id),
+        )
+        require(
+            duplicate_authority.get("name") == duplicate_name,
+            "Station Agent authority did not persist the duplicate",
+        )
+        duplicate_conversation_count = len(duplicate_station["conversations"])
+
+        self.step(
+            "set_default_agent_native_ui",
+            lambda: self.click_agent_action(duplicate_id, "default"),
+        )
+        default_dom = self.step(
+            "default_agent_visible",
+            lambda: self.wait_visible_element(
+                self.lifecycle_selector("default", agent_id=duplicate_id),
+                "default Agent marker",
+            ),
+        )
+        default_station = self.step(
+            "default_agent_station_readback",
+            lambda: self.lifecycle_station_state(
+                expected_agent_id=duplicate_id,
+                expected_name=duplicate_name,
+                expected_default=True,
+            ),
+        )
+        default_authority = self.step(
+            "default_agent_station_authority",
+            lambda: self.invoke_readback_command("agents_get_default"),
+        )
+        require(
+            default_authority.get("defaultAgent") == duplicate_name
+            and isinstance(default_authority.get("agent"), Mapping)
+            and default_authority["agent"].get("id") == duplicate_id,
+            "Station default Agent readback did not match the native action",
+        )
+
+        before_session = self.runtime_snapshot()
+        self.step(
+            "start_session_native_ui",
+            lambda: self.click_visible(
+                self.lifecycle_selector("session_start"),
+                "new Agent session control",
+            ),
+        )
+        started_session = self.step(
+            "new_session_visible",
+            lambda: wait_until(
+                lambda: (
+                    snapshot
+                    if (
+                        (snapshot := self.runtime_snapshot()).get(
+                            "currentSessionKey"
+                        )
+                        != before_session.get("currentSessionKey")
+                        and snapshot.get("messageCount") == 0
+                        and self.dom_state(
+                            self.lifecycle_selector("composer")
+                        ).get("visible")
+                    )
+                    else None
+                ),
+                "fresh Agent session",
+            ),
+        )
+        session_station = self.step(
+            "session_start_station_readback",
+            lambda: self.lifecycle_station_state(
+                expected_agent_id=duplicate_id,
+                expected_name=duplicate_name,
+            ),
+        )
+        session_conversations = session_station["conversations"]
+        require(
+            len(session_conversations) == duplicate_conversation_count,
+            "empty session start persisted a phantom Station conversation",
+        )
+
+        proxy = self.proxy
+        require(proxy is not None, "topic recovery requires a fault proxy")
+        proxy.cut()
+        try:
+            topic_failure = self.step(
+                "topic_load_failure_visible",
+                lambda: self.harness(
+                    "prepareAgentTopicLoadFailure",
+                    {"agentId": duplicate_id},
+                    timeout=60,
+                ),
+            )
+        finally:
+            proxy.restore()
+        require(
+            topic_failure.get("rejected") is True
+            and topic_failure.get("errorVisible") is True
+            and topic_failure.get("beforeKeys") == topic_failure.get("afterKeys")
+            and topic_failure.get("draftCountBefore")
+            == topic_failure.get("draftCountAfter"),
+            "topic load failure replaced accepted state or hid recovery",
+        )
+        self.step(
+            "retry_topic_load_native_ui",
+            lambda: self.click_visible(
+                self.lifecycle_selector("topic_retry"),
+                "topic load retry",
+            ),
+        )
+        recovered_topics = self.step(
+            "topic_load_recovered",
+            lambda: wait_until(
+                lambda: (
+                    state
+                    if (
+                        isinstance(
+                            (
+                                state := self.harness(
+                                    "getAgentTopicLoadState",
+                                    {"agentId": duplicate_id},
+                                    timeout=30,
+                                )
+                            ),
+                            Mapping,
+                        )
+                        and state.get("loading") is False
+                        and state.get("errorVisible") is False
+                    )
+                    else None
+                ),
+                "Agent topic load recovery",
+                90,
+            ),
+        )
+
+        self.step(
+            "repeat_duplicate_native_ui",
+            lambda: self.click_agent_action(created_id, "clone"),
+        )
+        repeated_duplicate_name = f"{created_name}-copy-2"
+        repeated_duplicate_row = self.step(
+            "repeat_duplicate_unique_name_visible",
+            lambda: wait_until(
+                lambda: self.driver.execute_script(
+                    """
+                    const expectedName = arguments[0];
+                    const row = Array.from(
+                      document.querySelectorAll('[data-pt-agent-row]')
+                    ).find((candidate) =>
+                      candidate.getClientRects().length > 0
+                      && candidate.getAttribute('data-pt-agent-name') === expectedName
+                    );
+                    return row ? {
+                      agentId: row.getAttribute('data-pt-agent-id'),
+                      name: row.getAttribute('data-pt-agent-name'),
+                    } : null;
+                    """,
+                    repeated_duplicate_name,
+                ),
+                "repeated duplicate Agent list row",
+            ),
+        )
+        require(
+            isinstance(repeated_duplicate_row, Mapping)
+            and bool(repeated_duplicate_row.get("agentId")),
+            "repeated duplicate Agent row has no identity",
+        )
+        repeated_duplicate_id = str(repeated_duplicate_row["agentId"])
+        require(
+            repeated_duplicate_id not in {created_id, duplicate_id},
+            "repeated duplicate reused an existing Agent ID",
+        )
+        self.lifecycle_fixture_ids.append(repeated_duplicate_id)
+        repeated_duplicate_authority = self.step(
+            "repeat_duplicate_station_authority",
+            lambda: self.station_agent(repeated_duplicate_id),
+        )
+        require(
+            repeated_duplicate_authority.get("name") == repeated_duplicate_name,
+            "repeated duplicate did not persist a unique Agent name",
+        )
+
+        self.step(
+            "delete_repeated_duplicate_agent_native_ui",
+            lambda: self.delete_lifecycle_agent(repeated_duplicate_id),
+        )
+        self.step(
+            "delete_duplicated_agent_native_ui",
+            lambda: self.delete_lifecycle_agent(duplicate_id),
+        )
+        deleted_duplicate = self.assert_visible(
+            self.lifecycle_selector("row", agent_id=duplicate_id),
+            False,
+        )
+        self.step(
+            "delete_created_agent_native_ui",
+            lambda: self.delete_lifecycle_agent(created_id),
+        )
+        deleted_created = self.assert_visible(
+            self.lifecycle_selector("row", agent_id=created_id),
+            False,
+        )
+        restored_station = self.step(
+            "post_delete_station_readback",
+            lambda: self.lifecycle_station_state(
+                expected_agent_id=baseline_id,
+                expected_name=baseline_name,
+            ),
+        )
+        post_delete_roster = self.step(
+            "post_delete_station_roster",
+            self.station_agent_roster,
+        )
+        post_delete_ids = {
+            str(agent.get("id") or "")
+            for agent in post_delete_roster["agents"]
+            if isinstance(agent, Mapping)
+        }
+        require(
+            created_id not in post_delete_ids and duplicate_id not in post_delete_ids,
+            "deleted Agents remain in the Station Agent roster",
+        )
+        deleted_created_readback = self.step(
+            "deleted_agent_station_rejection",
+            lambda: self.invoke_readback_command(
+                "agents_get",
+                {"id": created_id},
+                expect_error=True,
+            ),
+        )
+        selected_authority = self.step(
+            "post_delete_selected_agent_readback",
+            lambda: self.invoke_readback_command("agents_get_selected"),
+        )
+        require(
+            selected_authority.get("selectedAgent") == baseline_name,
+            "Station selected Agent was not restored after cleanup",
+        )
+
+        self.dom_evidence["coreLifecycle"] = {
+            "createdRow": created_row,
+            "duplicateRow": dict(duplicate_row),
+            "repeatedDuplicateRow": dict(repeated_duplicate_row),
+            "defaultMarker": default_dom,
+            "deletedDuplicate": deleted_duplicate,
+            "deletedCreated": deleted_created,
+            "session": {
+                "before": before_session.get("currentSessionKey"),
+                "after": started_session.get("currentSessionKey"),
+                "messageCount": started_session.get("messageCount"),
+            },
+            "topicRecovery": {
+                "failure": dict(topic_failure),
+                "recovered": dict(recovered_topics),
+            },
+        }
+        self.station_readback["coreLifecycle"] = {
+            "baseline": baseline,
+            "baselineRoster": baseline_roster,
+            "created": created_station,
+            "createdAuthority": created_authority,
+            "createdRoster": created_roster,
+            "edited": edited_station,
+            "editedAuthority": edited_authority,
+            "duplicated": duplicate_station,
+            "duplicatedAuthority": duplicate_authority,
+            "repeatedDuplicateAuthority": repeated_duplicate_authority,
+            "default": default_station,
+            "defaultAuthority": default_authority,
+            "sessionStart": session_station,
+            "postDelete": restored_station,
+            "postDeleteRoster": post_delete_roster,
+            "deletedAgentReadback": deleted_created_readback,
+            "selectedAfterDelete": selected_authority,
+        }
+        self.journey_evidence["selectors"] = dict(CORE_LIFECYCLE_SELECTORS)
+        for assertion_id in (
+            "agent.lifecycle.create.persisted",
+            "agent.lifecycle.list.visible",
+            "agent.lifecycle.select.chat-ready",
+            "agent.lifecycle.edit.persisted",
+            "agent.lifecycle.duplicate.persisted",
+            "agent.lifecycle.default.visible-and-readable",
+            "agent.lifecycle.session-start.no-phantom-persistence",
+            "agent.lifecycle.topic-load.failure-preserves-state",
+            "agent.lifecycle.topic-load.retry-recovers",
+            "agent.lifecycle.repeat-duplicate.unique",
+            "agent.lifecycle.delete.removed",
+            "agent.lifecycle.deleted-selection.unavailable",
+        ):
+            self.assertions.append({"id": assertion_id, "status": "pass"})
 
     def conversation_readback(self, conversation_id: str) -> dict[str, Any]:
         result = self.harness(
@@ -996,8 +1880,39 @@ class AgentNativeJourney:
         except Exception:  # noqa: BLE001 - cleanup result records failures separately.
             pass
 
-    def cleanup(self) -> dict[str, Any]:
+    def cleanup_lifecycle_fixtures(self) -> list[str]:
         failures: list[str] = []
+        if self.driver is None:
+            return failures
+        if self.visible_element_state(
+            self.lifecycle_selector("profile_back")
+        ) is not None:
+            try:
+                self.click_visible(
+                    self.lifecycle_selector("profile_back"),
+                    "Agent profile back control",
+                )
+            except Exception as error:  # noqa: BLE001 - continue residue cleanup.
+                failures.append(f"Agent profile exit: {error}")
+        for agent_id in reversed(tuple(self.lifecycle_fixture_ids)):
+            try:
+                self.delete_lifecycle_agent(agent_id)
+            except Exception as ui_error:  # noqa: BLE001 - cleanup must remove residue.
+                try:
+                    self.invoke_readback_command(
+                        "agents_delete",
+                        {"id": agent_id},
+                    )
+                    self.lifecycle_fixture_ids.remove(agent_id)
+                except Exception as command_error:  # noqa: BLE001
+                    failures.append(
+                        f"Agent fixture {agent_id}: ui={ui_error}; "
+                        f"command={command_error}"
+                    )
+        return failures
+
+    def cleanup(self) -> dict[str, Any]:
+        failures = self.cleanup_lifecycle_fixtures()
         self.best_effort_logout()
         if self.tauri_driver is not None:
             try:
@@ -1064,6 +1979,8 @@ def run_journey(journey_name: str) -> int:
                 runner.run_stream_resilience()
             elif journey_name == "attachment":
                 runner.run_attachment()
+            elif journey_name == "core-lifecycle":
+                runner.run_core_lifecycle()
             else:
                 runner.run_turn()
             status = "passed"
@@ -1085,6 +2002,45 @@ def run_journey(journey_name: str) -> int:
                 )
 
         attachment_journey = journey_name == "attachment"
+        lifecycle_journey = journey_name == "core-lifecycle"
+        if attachment_journey:
+            phase = "F3 Context And Resource Intelligence"
+            bom = ["C08"]
+            spec = [
+                "tooling/acceptance/features/agent-attachment-reference.yaml",
+                "docs/architecture/agent/execution-plans/"
+                "20260817-modern-chat-agent-v2-execution.md",
+            ]
+            gate_claim = (
+                "C08 requires opaque authorized refs, admission before provider "
+                "execution, persisted attribution, visible attachment projection, "
+                "authorized download, and cleanup."
+            )
+        elif lifecycle_journey:
+            phase = "Agent Core Lifecycle"
+            bom = ["agent-core-lifecycle"]
+            spec = [
+                "tooling/acceptance/features/agent-core-lifecycle.yaml",
+                "tooling/acceptance/matrices/agent-core-lifecycle-native.yaml",
+            ]
+            gate_claim = (
+                "Agent core lifecycle requires native create, list, select, edit, "
+                "duplicate, default, session-start, delete, negative state, "
+                "Station readback, and cleanup evidence."
+            )
+        else:
+            phase = "Residual Product Closure"
+            bom = ["R6"]
+            spec = [
+                "tooling/acceptance/features/agent-stream-resilience.yaml",
+                "docs/architecture/agent/execution-plans/"
+                "20260816-lobehub-parity-full-landing.md",
+            ]
+            gate_claim = (
+                "R6 requires visible reconnecting state, monotonic cursor replay "
+                "equal to Station readback, identity-boundary teardown, and "
+                "resource cleanup."
+            )
         report = {
             "artifactKind": "acceptance-gate-evidence-report",
             "gateId": gate_id,
@@ -1092,34 +2048,10 @@ def run_journey(journey_name: str) -> int:
             "status": status,
             "completionStatus": "DONE" if status == "passed" else "FAILED",
             "proofStatus": "PROVEN" if status == "passed" else "UNPROVEN",
-            "phase": "F3 Context And Resource Intelligence"
-            if attachment_journey
-            else "Residual Product Closure",
-            "bom": ["C08"] if attachment_journey else ["R6"],
-            "spec": (
-                [
-                    "tooling/acceptance/features/agent-attachment-reference.yaml",
-                    "docs/architecture/agent/execution-plans/"
-                    "20260817-modern-chat-agent-v2-execution.md",
-                ]
-                if attachment_journey
-                else [
-                    "tooling/acceptance/features/agent-stream-resilience.yaml",
-                    "docs/architecture/agent/execution-plans/"
-                    "20260816-lobehub-parity-full-landing.md",
-                ]
-            ),
-            "gate": (
-                "C08 requires opaque authorized refs, admission before provider "
-                "execution, persisted attribution, visible attachment projection, "
-                "authorized download, and cleanup."
-                if attachment_journey
-                else (
-                    "R6 requires visible reconnecting state, monotonic cursor "
-                    "replay equal to Station readback, identity-boundary teardown, "
-                    "and resource cleanup."
-                )
-            ),
+            "phase": phase,
+            "bom": bom,
+            "spec": spec,
+            "gate": gate_claim,
             "sampleEmissionAllowed": status == "passed",
             "startedAt": started_at,
             "completedAt": now_iso(),

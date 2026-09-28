@@ -42,6 +42,66 @@ func (b *recordingAgentEventBus) snapshot() []domain.DomainEvent {
 	return append([]domain.DomainEvent(nil), b.events...)
 }
 
+func TestAgentNameIsUniqueWithinOneActor(t *testing.T) {
+	db := openAgentServiceTestDB(t, "agent_name_unique")
+	service := NewAgentService()
+	existing := seedAgentServiceTestAgent(t, db)
+
+	_, err := service.createAgentTx(
+		context.Background(),
+		db,
+		domain.AgentUpsertOptions{
+			ActorPTID: existing.OwnerActorPTID,
+			Name:      existing.Name,
+		},
+	)
+	if !isAgentServiceError(err, errcode.AgentNameConflict) {
+		t.Fatalf("same-actor duplicate name error = %v", err)
+	}
+
+	created, err := service.createAgentTx(
+		context.Background(),
+		db,
+		domain.AgentUpsertOptions{
+			ActorPTID: "ptid:person:other",
+			Name:      existing.Name,
+		},
+	)
+	if err != nil {
+		t.Fatalf("different actor should reuse name: %v", err)
+	}
+	if created.Name != existing.Name {
+		t.Fatalf("created name = %q, want %q", created.Name, existing.Name)
+	}
+}
+
+func TestAgentRenameRejectsSameActorNameConflict(t *testing.T) {
+	db := openAgentServiceTestDB(t, "agent_rename_name_unique")
+	service := NewAgentService()
+	existing := seedAgentServiceTestAgent(t, db)
+	second, err := service.createAgentTx(
+		context.Background(),
+		db,
+		domain.AgentUpsertOptions{
+			ActorPTID: existing.OwnerActorPTID,
+			Name:      "Second Agent",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create second agent: %v", err)
+	}
+
+	_, err = service.UpdateAgent(context.Background(), domain.AgentUpsertOptions{
+		ActorPTID: existing.OwnerActorPTID,
+		AgentID:   second.AgentID,
+		Name:      existing.Name,
+		Version:   second.Version,
+	})
+	if !isAgentServiceError(err, errcode.AgentNameConflict) {
+		t.Fatalf("rename conflict error = %v", err)
+	}
+}
+
 func TestAgentUpdateRebasesLiveBindingsAndPublishesInvalidation(t *testing.T) {
 	db := openAgentServiceTestDB(t, "agent_update_binding_rebase")
 	service := NewAgentService()

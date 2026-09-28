@@ -40,6 +40,8 @@ import {
 } from '../../runtimes/evaluationRuntime';
 import { toolRuntime } from '../../runtimes/toolRuntime';
 import { useAgentStore } from '../../store/agent';
+import { useAgentTopicStore } from '../../store/agentTopics';
+import { isAgentDraftKey } from '../../store/agentDraft';
 import { useAgentTurnRecoveryStore } from '../../store/agentTurnRecovery';
 import { useChatStore } from '../../store/chat';
 import { terminalReasonFromStreamData } from '../../store/streaming/handler';
@@ -131,6 +133,7 @@ import {
   parseFoundationCapabilityIsolationJournal,
   planFoundationCapabilityBindingRestoration,
   resolveFoundationCapabilityBindingForCleanup,
+  resolveFoundationCapabilityIsolationAgent,
   restoreFoundationCapabilityBindings,
   type FoundationCapabilityFixtureJournal,
   type FoundationCapabilityIsolationJournal,
@@ -1426,6 +1429,13 @@ function selectedAgent() {
     ?? null;
 }
 
+async function refreshFoundationSelectedAgent() {
+  await useAgentStore.getState().loadAgents();
+  const agent = selectedAgent();
+  if (!agent) throw new Error('agent.acceptance.agentMissing');
+  return api.getAgent(agent.id || agent.name);
+}
+
 function evidenceValue(value: unknown): unknown {
   if (typeof value === 'bigint') return value.toString();
   if (Array.isArray(value)) return value.map(evidenceValue);
@@ -2425,11 +2435,16 @@ async function restorePersistedFoundationCapabilityIsolation(
 ): Promise<FoundationCapabilityIsolation | null> {
   const journal = readFoundationCapabilityIsolationJournal();
   if (!journal) return null;
-  const agent = await api.getAgent(journal.agentId);
-  assertFoundationCapabilityIsolationAgentVersion(
-    journal.agentVersion,
-    agent.version,
+  const agent = resolveFoundationCapabilityIsolationAgent(
+    journal,
+    await api.listAgents(),
   );
+  if (!agent) {
+    // The owning Agent was authoritatively deleted, so its child bindings no
+    // longer have a restoration target. Do not carry that journal forward.
+    window.localStorage.removeItem(FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY);
+    return null;
+  }
 
   await restoreFoundationCapabilityBindings(
     journal.bindings,
@@ -2523,11 +2538,15 @@ async function prepareFoundationCapabilityFixture(
 async function restorePersistedFoundationCapabilityFixture(): Promise<boolean> {
   const journal = readFoundationCapabilityFixtureJournal();
   if (!journal) return false;
-  const agent = await api.getAgent(journal.agentId);
-  assertFoundationCapabilityIsolationAgentVersion(
-    journal.agentVersion,
-    agent.version,
+  const agent = resolveFoundationCapabilityIsolationAgent(
+    journal,
+    await api.listAgents(),
   );
+  if (!agent) {
+    // Agent deletion also removes the fixture binding's restoration scope.
+    window.localStorage.removeItem(FOUNDATION_CAPABILITY_FIXTURE_STORAGE_KEY);
+    return false;
+  }
   const original = journal.originalBinding;
   const prepared = await prepareFoundationCapabilityFixture(journal);
   let cleanupExpectedRevision = journal.cleanupExpectedRevision;
@@ -34666,8 +34685,10 @@ export function installAcceptanceHarness(): void {
         agent: {
           id: agentId,
           name: agent.name,
+          title: agent.title,
           provider: agent.provider ?? null,
           model: agent.model ?? null,
+          isDefault: agent.isDefault,
           version: agent.version ?? 0,
         },
         profile,
@@ -34675,6 +34696,56 @@ export function installAcceptanceHarness(): void {
         capabilitySessions,
         conversations,
         selectedConversationKey: useChatStore.getState().currentSessionKey,
+      };
+    },
+
+    async prepareAgentTopicLoadFailure({ agentId }: { agentId: string }) {
+      const topicStore = useAgentTopicStore.getState();
+      const before = topicStore.getTopicsForAgent(agentId);
+      let rejected = false;
+      try {
+        await topicStore.loadTopicsForAgent(
+          agentId,
+          'acceptance-topic-load-failure',
+        );
+      } catch {
+        rejected = true;
+      }
+      const after = useAgentTopicStore.getState().getTopicsForAgent(agentId);
+      const error = useAgentTopicStore.getState().loadErrorsByAgentId[agentId];
+      await waitFor(
+        () => Array.from(
+          document.querySelectorAll<HTMLElement>(
+            '[data-pt-agent-topic-load-error]',
+          ),
+        ).some((element) => (
+          element.dataset.ptAgentTopicLoadError === agentId
+          && element.getClientRects().length > 0
+        )),
+        'Agent topic load recovery surface',
+        10_000,
+      );
+      return {
+        rejected,
+        beforeKeys: before.map((topic) => topic.key),
+        afterKeys: after.map((topic) => topic.key),
+        draftCountBefore: before.filter((topic) =>
+          isAgentDraftKey(topic.key)).length,
+        draftCountAfter: after.filter((topic) =>
+          isAgentDraftKey(topic.key)).length,
+        errorVisible: Boolean(error),
+      };
+    },
+
+    async getAgentTopicLoadState({ agentId }: { agentId: string }) {
+      const topicStore = useAgentTopicStore.getState();
+      const topics = topicStore.getTopicsForAgent(agentId);
+      return {
+        topicKeys: topics.map((topic) => topic.key),
+        draftCount: topics.filter((topic) =>
+          isAgentDraftKey(topic.key)).length,
+        loading: Boolean(topicStore.loadingAgentIds[agentId]),
+        errorVisible: Boolean(topicStore.loadErrorsByAgentId[agentId]),
       };
     },
 
@@ -35767,8 +35838,9 @@ export function installAcceptanceHarness(): void {
       faultBoundary?: 'text-prefix' | 'provider-started';
     }) {
       try {
-        const agent = selectedAgent();
-        if (!agent) throw new Error('agent.acceptance.agentMissing');
+        await restorePersistedFoundationCapabilityIsolation();
+        await restorePersistedFoundationCapabilityFixture();
+        const agent = await refreshFoundationSelectedAgent();
         const capabilitySessions = await waitForCapabilitySessionEvidence();
         const capabilitySessionId =
           capabilitySessions.selectedStationSession?.session_id;

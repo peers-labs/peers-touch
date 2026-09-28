@@ -236,6 +236,8 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self,
     ) -> None:
         self.assertIn("require_runtime_service(", self.source)
+        self.assertIn("resolve_machine_profile_environment(REPO_ROOT)", self.source)
+        self.assertNotIn("active_profile = (", self.source)
         self.assertNotIn('self.runtime_manifest.get("station")', self.source)
         self.assertIn('"CHAT_NATIVE_DEMO_PASSWORD"', self.source)
         self.assertIn('"PT_AGENT_PROVIDER_API_KEY"', self.source)
@@ -283,8 +285,11 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         self.assertNotIn("stationSetActive", self.source)
         self.assertNotIn("stationAdd(", self.source)
 
-    def test_only_stream_resilience_uses_the_fault_proxy(self) -> None:
-        self.assertIn('if journey == "stream-resilience"', self.source)
+    def test_only_transport_fault_journeys_use_the_fault_proxy(self) -> None:
+        self.assertIn(
+            'if journey in {"stream-resilience", "core-lifecycle"}',
+            self.source,
+        )
         self.assertIn(
             "self.proxy.url if self.proxy is not None else self.station_url",
             self.source,
@@ -299,6 +304,7 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
         source = HOME_STATION_PROVISIONER.read_text(encoding="utf-8")
         for gate_id in (
             "agent-attachment-e2e",
+            "agent-core-lifecycle-native-e2e",
             "agent-stream-resilience-e2e",
         ):
             with self.subTest(gate_id=gate_id):
@@ -1634,10 +1640,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "planFoundationCapabilityBindingRestoration(",
             restore,
         )
-        self.assertEqual(restore.count("await api.getAgent(journal.agentId)"), 2)
+        self.assertIn("await api.listAgents()", restore)
+        self.assertEqual(restore.count("await api.getAgent(journal.agentId)"), 1)
         self.assertLess(
             restore.rindex("await api.getAgent(journal.agentId)"),
-            restore.index(
+            restore.rindex(
                 "window.localStorage.removeItem("
                 "FOUNDATION_CAPABILITY_ISOLATION_STORAGE_KEY"
             ),

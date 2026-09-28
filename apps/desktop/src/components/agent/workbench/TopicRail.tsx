@@ -3,13 +3,13 @@ import { theme } from 'antd';
 import { MessageSquarePlus, UserRound } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAgentStore } from '../../../store/agent';
 import { useChatStore } from '../../../store/chat';
 import {
   useActiveAgentSlice,
   useActiveAgentTopicSlice,
   useActiveChatSlice,
 } from '../useActiveAgentStores';
+import { openAgentCreateFlow } from '../create';
 import { AgentSidebar } from '../../AgentSidebar';
 import { PanelToggleDock } from './PanelToggleDock';
 
@@ -36,7 +36,6 @@ export function TopicRail({
   }));
   const newSession = useActiveChatSlice((state) => state.newSession);
   const upsertTopics = useActiveAgentTopicSlice((state) => state.upsertTopics);
-  const createAgent = useAgentStore((s) => s.createAgent);
 
   const startNewTopic = () => {
     newSession();
@@ -48,10 +47,9 @@ export function TopicRail({
     onOpenChat(selectedAgent);
   };
 
-  const handleCreateAgent = useCallback(async () => {
-    const created = await createAgent({ name: `agent-${Date.now()}`, description: '' });
-    onOpenProfile(created.name);
-  }, [createAgent, onOpenProfile]);
+  const handleCreateAgent = useCallback(() => {
+    openAgentCreateFlow(onOpenProfile);
+  }, [onOpenProfile]);
 
   if (collapsed) {
     return (
@@ -73,6 +71,7 @@ export function TopicRail({
         }}
       >
         <ActionIcon
+          data-pt-agent-session-start
           icon={MessageSquarePlus}
           title={t('agent.sidebar.startNewTopic')}
           onClick={startNewTopic}
