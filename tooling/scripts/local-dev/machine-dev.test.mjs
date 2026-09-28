@@ -143,7 +143,12 @@ function fixture() {
     workspaceB,
     envRepo,
     close() {
-      rmSync(root, { recursive: true, force: true });
+      rmSync(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 5,
+        retryDelay: 100,
+      });
     },
   };
   addProfile(scope, {
@@ -392,41 +397,48 @@ test('current Git HEAD is source state, not durable registration identity', () =
   }
 });
 
-test('schema v1 registration migrates once and removes persisted HEAD', () => {
+test('schema v1 remains headless and rejects incompatible registry shapes', () => {
   const scope = fixture();
   try {
     const registryFile = machineRegistryPath(scope.home);
-    const registered = registerWorkspace(registrationOptions(scope));
+    registerWorkspace(registrationOptions(scope));
     const current = JSON.parse(readFileSync(registryFile, 'utf8'));
+    assert.equal(current.schemaVersion, 1);
+    assert.equal('head' in current.registrations[0], false);
+
+    const headBearing = `${JSON.stringify({
+      ...current,
+      registrations: current.registrations.map((registration) => ({
+        ...registration,
+        head: git(scope.workspaceA, 'rev-parse', 'HEAD'),
+      })),
+    })}\n`;
     writeFileSync(
       registryFile,
-      `${JSON.stringify({
-        ...current,
-        schemaVersion: 1,
-        registrations: current.registrations.map((registration) => ({
-          ...registration,
-          head: git(scope.workspaceA, 'rev-parse', 'HEAD'),
-        })),
-      })}\n`,
+      headBearing,
     );
-
-    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
-    git(scope.workspaceA, 'add', 'next.txt');
-    git(scope.workspaceA, 'commit', '-m', 'test: advance before migration');
-    const checked = checkWorkspace({
-      home: scope.home,
-      workspaceRoot: scope.workspaceA,
-      envRepo: scope.envRepo,
-    });
-    const migrated = JSON.parse(readFileSync(registryFile, 'utf8'));
-
-    assert.equal(checked.binding.workspaceId, registered.workspaceId);
-    assert.equal(
-      checked.source.head,
-      git(scope.workspaceA, 'rev-parse', 'HEAD'),
+    expectCode('MACHINE_REGISTRY_INVALID', () =>
+      checkWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        envRepo: scope.envRepo,
+      }),
     );
-    assert.equal(migrated.schemaVersion, 2);
-    assert.equal('head' in migrated.registrations[0], false);
+    assert.equal(readFileSync(registryFile, 'utf8'), headBearing);
+
+    const unsupportedVersion = `${JSON.stringify({
+      ...current,
+      schemaVersion: current.schemaVersion + 1,
+    })}\n`;
+    writeFileSync(registryFile, unsupportedVersion);
+    expectCode('MACHINE_REGISTRY_INVALID', () =>
+      checkWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        envRepo: scope.envRepo,
+      }),
+    );
+    assert.equal(readFileSync(registryFile, 'utf8'), unsupportedVersion);
   } finally {
     scope.close();
   }

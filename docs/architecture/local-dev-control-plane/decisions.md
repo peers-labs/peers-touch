@@ -1,7 +1,7 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.4
+> **Version**: v1.3
 > **Created**: 2026-09-13 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
@@ -705,7 +705,7 @@ lockfiles remain their owner.
 
 ### Context
 
-The schema-v1 registry persisted Git HEAD inside a durable workspace
+The machine registry persisted Git HEAD inside a durable workspace
 registration. A normal commit, merge, rebase, or pull then made every command
 that resolved the binding fail with `WORKTREE_IDENTITY_MISMATCH`. A later
 runtime-only reconciliation made selected start commands work, but left
@@ -713,9 +713,10 @@ runtime-only reconciliation made selected start commands work, but left
 
 ### Decision
 
-Schema v2 removes `head` from the authoritative registration. The stable
-binding contains canonical root, derived `workspaceId`, registered branch,
-Profile, slot, capabilities, and Owner metadata.
+The registry remains schema v1 and removes `head` from the authoritative
+registration. This is a development-stage contract correction, not a versioned
+migration. The stable binding contains canonical root, derived `workspaceId`,
+registered branch, Profile, slot, capabilities, and Owner metadata.
 
 Every operation captures current Git branch and HEAD directly from the
 worktree. Root, workspace ID, and registered branch remain fail-closed binding
@@ -723,16 +724,20 @@ checks. Development declarations, Plan/Session records, and deployment
 `build_commit` remain the source-version authorities for Agent mutation and
 exact-source runtime verification.
 
-A schema-v1 authoritative registry is validated and atomically rewritten under
-the registry lock on first use. The old `head` field is deleted; runtime code
-never exposes or refreshes it.
+Runtime accepts only the corrected schema-v1 shape and does not migrate or
+silently normalize incompatible registrations. Machine-local files produced by
+the superseded development code must be explicitly rewritten before using the
+corrected runtime.
 
 ### Alternatives Considered
 
 - Refresh registry HEAD before selected runtime commands: rejected because it
   leaves other binding consumers stale and keeps two owners for current source.
-- Ignore a mismatched stored HEAD without changing the schema: rejected because
-  dead authority would remain persisted and invite future readers.
+- Bump the schema version and add a compatibility reader: rejected because this
+  development-stage correction has no supported mixed-version deployment and a
+  second schema would add lifecycle machinery without a product requirement.
+- Ignore a mismatched stored HEAD: rejected because dead authority would remain
+  persisted and invite future readers.
 - Remove the branch guard too: rejected because changing a worktree's intended
   branch remains an explicit binding update, unlike advancing that branch.
 
