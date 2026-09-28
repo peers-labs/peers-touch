@@ -10,6 +10,9 @@ from tooling.acceptance.core import (
 )
 
 from .chat_storage_native import ChatStorageNativeProvisioner
+from .desktop_primary_navigation_browser import (
+    DesktopPrimaryNavigationBrowserProvisioner,
+)
 from .dev_ui_local_browser import DevUiLocalBrowserProvisioner
 from .home_station import HomeStationProvisioner
 from .local_desktop_gateway import LocalDesktopGatewayProvisioner
@@ -37,6 +40,9 @@ from .native_tauri_current_profile import (
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ChatMixedNativeProvisioner.environment_id: ChatMixedNativeProvisioner,
     ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
+    DesktopPrimaryNavigationBrowserProvisioner.environment_id: (
+        DesktopPrimaryNavigationBrowserProvisioner
+    ),
     DevUiLocalBrowserProvisioner.environment_id: DevUiLocalBrowserProvisioner,
     HomeStationProvisioner.environment_id: HomeStationProvisioner,
     LocalDesktopGatewayProvisioner.environment_id: LocalDesktopGatewayProvisioner,
@@ -124,6 +130,7 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "ChatMixedNativeProvisioner",
     "ChatStorageNativeProvisioner",
+    "DesktopPrimaryNavigationBrowserProvisioner",
     "DevUiLocalBrowserProvisioner",
     "HomeStationProvisioner",
     "LocalDesktopGatewayProvisioner",

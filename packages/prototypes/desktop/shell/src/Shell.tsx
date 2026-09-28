@@ -3,11 +3,11 @@
  *
  * Faithful web-stack mock of the real desktop chrome (apps/desktop):
  *   - global SideNav (LobeUI `<SideNav>` form): avatar + topActions
- *     (Search / chat / agent / notes + applet pins) + bottomActions
- *     (notifications / command palette / settings)
+ *     (Search / chat / agent + applet pins) + bottomActions
+ *     (notifications / settings)
  *   - a content area that swaps pages by `page` (kernel-style pages render
  *     a lightweight placeholder; applets render their own surface)
- *   - command palette (Cmd/Ctrl + Shift + P)
+ *   - command palette (Cmd/Ctrl + K), also opened from Settings
  *
  * Atelier is NOT a standalone full-screen app — it is an *applet*. The rail
  * `▦` icon opens the **applets center** (`page === 'applets'`), which lists all
@@ -25,10 +25,8 @@ import {
   Search,
   MessageCircle,
   Bot,
-  FileText,
   Blocks,
   Bell,
-  Keyboard,
   Settings,
   Plus,
   PanelRightOpen,
@@ -109,12 +107,11 @@ const APPLETS: AppletInfo[] = [
   },
 ];
 
-/** Kernel-style top nav entries (Search/chat/agent/notes) — placeholders. */
+/** Kernel-style top nav entries — placeholders. */
 const NAV_ITEMS: { id: string; icon: LucideIcon; title: string }[] = [
   { id: 'search', icon: Search, title: '搜索' },
   { id: 'chat', icon: MessageCircle, title: '聊天' },
   { id: 'agent', icon: Bot, title: 'Agent' },
-  { id: 'notes', icon: FileText, title: 'Notes' },
 ];
 
 const COMMANDS: { id: string; label: string; desc: string; shortcut: string; target: string }[] = [
@@ -125,7 +122,6 @@ const COMMANDS: { id: string; label: string; desc: string; shortcut: string; tar
   { id: 'agent-orchestration', label: 'Agent 编排', desc: '从 Agent 页进入编排画板', shortcut: '⌘⇧J', target: 'agent-orchestration' },
   { id: 'applets', label: 'Applets', desc: '打开 Applets 中心', shortcut: '⌘⇧E', target: 'applets' },
   { id: 'atelier', label: '打开 Atelier', desc: '进入 Atelier applet', shortcut: '⌘⇧A', target: 'applet:atelier' },
-  { id: 'notes', label: 'Notes', desc: '打开笔记', shortcut: '⌘⇧N', target: 'notes' },
   { id: 'settings', label: '设置', desc: '打开设置', shortcut: '⌘,', target: 'settings' },
 ];
 
@@ -174,13 +170,9 @@ function RailIcon({
 function SideNav({
   page,
   onNavigate,
-  onOpenPalette,
-  paletteOpen,
 }: {
   page: string;
   onNavigate: (p: string) => void;
-  onOpenPalette: () => void;
-  paletteOpen: boolean;
 }) {
   return (
     <div
@@ -244,7 +236,6 @@ function SideNav({
       {/* bottomActions */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <RailIcon icon={Bell} title="通知" onClick={() => {}} />
-        <RailIcon icon={Keyboard} title="命令面板 (⌘⇧P)" active={paletteOpen} onClick={onOpenPalette} />
         <RailIcon icon={Settings} title="设置" active={page === 'settings'} onClick={() => onNavigate('settings')} />
       </div>
     </div>
@@ -256,7 +247,6 @@ function PagePlaceholder({ page }: { page: string }) {
   const meta: Record<string, { title: string; desc: string; icon: LucideIcon }> = {
     search: { title: '搜索', desc: '全局搜索页（peers-touch 容器壳页，原型未细化）', icon: Search },
     chat: { title: '聊天', desc: '社交聊天页（含 Chat / Contacts 与会话内 stream call）', icon: MessageCircle },
-    notes: { title: 'Notes', desc: '笔记页（peers-touch 容器壳页，原型未细化）', icon: FileText },
     settings: { title: '设置', desc: '设置页（peers-touch 容器壳页，原型未细化）', icon: Settings },
   };
   const m = meta[page] ?? { title: page, desc: '占位页', icon: Blocks };
@@ -569,7 +559,7 @@ function CommandPalette({
               }}
             >
               <span style={{ color: T.textTertiary }}>
-                {c.id === 'atelier' ? <Blocks size={16} /> : c.id === 'agent' ? <UserRoundCog size={16} /> : c.id === 'chat' ? <PanelRightOpen size={16} /> : c.id === 'search' ? <Search size={16} /> : c.id === 'notes' ? <Plus size={16} /> : <Settings size={16} />}
+                {c.id === 'atelier' ? <Blocks size={16} /> : c.id === 'agent' ? <UserRoundCog size={16} /> : c.id === 'chat' ? <PanelRightOpen size={16} /> : c.id === 'search' ? <Search size={16} /> : <Settings size={16} />}
               </span>
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: T.text }}>{c.label}</span>
@@ -621,7 +611,7 @@ function getAgentSurfaceId(page: string): AgentSurfaceId | null {
 }
 
 export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
-  // page mirrors the real router: kernel ids (search/chat/agent/notes/settings),
+  // page mirrors the real router: kernel ids (search/chat/agent/settings),
   // `applets` for the applets center, or `applet:<id>` for an applet surface.
   // Default lands on the applets center to show: rail ▦ → list → enter applet.
   const modernChatState = typeof window === 'undefined'
@@ -653,7 +643,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.shiftKey && e.key.toLowerCase() === 'p') {
+      if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen((v) => !v);
       } else if (e.key === 'Escape') {
@@ -701,7 +691,7 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
   } else if (page === 'agent-orchestration') {
     body = <AgentCanvasPage embedded onBack={() => navigate('agent')} />;
   } else if (page === 'settings') {
-    body = <SettingsPage />;
+    body = <SettingsPage onOpenCommandPalette={() => setPaletteOpen(true)} />;
   } else {
     body = <PagePlaceholder page={page} />;
   }
@@ -711,8 +701,6 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
       <SideNav
         page={page}
         onNavigate={navigate}
-        onOpenPalette={() => setPaletteOpen(true)}
-        paletteOpen={paletteOpen}
       />
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, position: 'relative', overflow: 'hidden' }}>
         {visitedAgentSurfaces.size > 0 && (

@@ -341,23 +341,23 @@ function SettingsPage() {
 
 ### 实际模块示例
 
-**完整模块（页面 + 侧边栏 + 设置面板）**:
+**设置页专属模块**:
 
 ```typescript
 // modules/channels.ts
 import { Send } from 'lucide-react';
 import { registerModule } from './registry';
-import { ChannelsTab } from '../components/ChannelsTab';
-import { ChannelsPage } from '../pages/ChannelsPage';
+import { ChannelsSettings } from '../components/settings/ChannelsSettings';
 
 registerModule({
   id: 'channels',
   name: 'Channels',
   icon: Send,
-  page: ChannelsPage,
-  settingsPanel: ChannelsTab,
-  sidebarEntry: { position: 'top', order: 50, title: 'Channels' },
-  settingsEntry: { order: 40 },
+  settingsPanel: ChannelsSettings,
+  settingsEntry: {
+    order: 40,
+    sectionHostPolicy: { cache: 'selected-only' },
+  },
 });
 ```
 
@@ -439,7 +439,8 @@ export function useNavigation(router: HashRouter): Navigation {
       if (!nav?.resource) return;
       switch (nav.resource) {
         case 'cron':
-          router.setPage('cron');
+          setSettingsNav({ tab: 'cron' });
+          router.setPage('settings');
           break;
         case 'sessions':
           if (nav.id) useChatStore.getState().selectSession(nav.id);
@@ -450,21 +451,12 @@ export function useNavigation(router: HashRouter): Navigation {
           router.setPage('settings');
           break;
         case 'channels':
-          router.setPage('channels');
+          setSettingsNav({ tab: 'channels' });
+          router.setPage('settings');
           break;
         case 'documents':
-          router.setPage('notes');
+          router.setPage(DEFAULT_READY_PAGE);
           break;
-      }
-    });
-  }, [router.setPage]);
-
-  // Cmd+K 快捷键打开搜索
-  useEffect(() => {
-    return onWindowKeydown((e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        router.setPage('search');
       }
     });
   }, [router.setPage]);
@@ -473,10 +465,14 @@ export function useNavigation(router: HashRouter): Navigation {
 }
 ```
 
+全局 `Cmd/Ctrl+K` 由 `useCommandMenuShortcut()` 打开唯一的
+`CommandMenu` overlay；设置页中的 Command Palette section 只调用同一个
+store 的 `openMenu()`，不创建第二套命令面板。
+
 页面类型定义:
 
 ```typescript
-const CORE_PAGES = ['chat', 'agent', 'settings', 'search', 'notes', 'agent-profile'] as const;
+const CORE_PAGES = ['home', 'chat', 'agent', 'evaluation', 'settings', 'search', 'agent-profile', 'agent-orchestration', 'agent-groups', 'marketplace', 'custom-plugins', 'tasks'] as const;
 type CorePage = (typeof CORE_PAGES)[number];
 type Page = CorePage | `applet:${string}` | (string & {});
 ```
@@ -498,9 +494,10 @@ HashRouter 接口:
 interface HashRouter {
   page: Page;
   setPage: (page: Page) => void;
+  setProfilePage: (agentName: string) => void;
+  resetToDefaultPage: () => void;
   profileAgentName: string;
   setProfileAgentName: (name: string) => void;
-  getDocIdFromHash: () => string | undefined;
 }
 ```
 
