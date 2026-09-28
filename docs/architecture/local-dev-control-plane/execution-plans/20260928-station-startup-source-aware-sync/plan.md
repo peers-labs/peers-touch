@@ -17,7 +17,7 @@
     "workspaceId": "5f50d8bb381b0123",
     "initialHead": "63289d4d3b1aebe6fe2ec8372e682ae0253b2f4a"
   },
-  "workClass": "product-behavior",
+  "workClass": "infrastructure",
   "architecture": {
     "sources": [
       "docs/architecture/local-dev-control-plane/README.md",
