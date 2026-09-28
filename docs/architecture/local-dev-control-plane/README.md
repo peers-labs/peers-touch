@@ -81,19 +81,22 @@ machine-local authority at:
 ```
 
 An existing `authority: observed-snapshot` file remains diagnostic until an
-Owner explicitly runs `make env-register`. That one operation promotes the
-registry to `authority: machine-control-plane` and adds the verified current
-workspace binding atomically. Discovery and legacy profile pointers never
-perform promotion or registration.
+Owner explicitly runs `make profile <name>` or `make env-register`. Either
+operation promotes the registry to `authority: machine-control-plane` and adds
+the verified current workspace binding atomically. `make profile` allocates the
+lowest free slot and the Profile's minimum operational capabilities, never
+`station.reset`; `make env-register` remains available for explicit allocation.
+Discovery and legacy profile pointers never perform promotion or registration.
 
 Git worktree discovery does not create a registration. The initial registered
 cohort is owner-declared; until that list is provided, the machine registry may
 record observations but must keep `registrations` empty.
 
-Normal `make profile`, `make config`, `make station`, Desktop, and Mobile
-resolution now requires the authoritative binding. OS-held leases under
-`leases/` are the only live owners for `local.slot`, `station.deploy`, and
-`station.reset`; JSON in a lock file is diagnostic metadata only.
+Normal `make config`, `make station`, Desktop, and Mobile resolution requires
+the authoritative binding. `make profile` creates that binding on first
+selection and updates it thereafter. OS-held leases under `leases/` are the
+only live owners for `local.slot`, `station.deploy`, and `station.reset`; JSON
+in a lock file is diagnostic metadata only.
 
 ## 5. 文档导航
 
