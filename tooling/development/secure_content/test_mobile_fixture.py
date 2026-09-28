@@ -15,12 +15,23 @@ from tooling.development.secure_content.scenarios.mobile_matrix import (
 
 
 class _Session:
-    def __init__(self, *, record_publish_states: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        record_publish_states: bool = True,
+        endpoint_prekeys: int = 8,
+        recovery_prekeys: int | None = 8,
+        recipient_prekey_owner: _Session | None = None,
+    ) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.publish_state_history = ["AUDIENCE_REQUIRED"]
         self.record_publish_states = record_publish_states
         self.published_drafts: dict[tuple[str, int], str] = {}
-        self.remaining_content_prekeys = 8
+        self.endpoint_prekey_capacity = endpoint_prekeys
+        self.recovery_prekey_capacity = recovery_prekeys
+        self.remaining_content_prekeys = endpoint_prekeys
+        self.remaining_recovery_prekeys = recovery_prekeys
+        self.recipient_prekey_owner = recipient_prekey_owner
 
     def append_publish_states(self, *states: str) -> None:
         if self.record_publish_states:
@@ -54,6 +65,14 @@ class _Session:
                     }
                     for kind in PLATFORM_OPERATIONS["subtypes"]
                 ],
+                "report": {
+                    "endpointPrekeysAvailable": (
+                        self.remaining_content_prekeys
+                    ),
+                    "recoveryPrekeysAvailable": (
+                        self.remaining_recovery_prekeys
+                    ),
+                },
             }
         if action == "moments.publish":
             self.append_publish_states(
@@ -85,7 +104,11 @@ class _Session:
                     "AUDIENCE_TOO_LARGE",
                 )
                 raise RuntimeError("AUDIENCE_TOO_LARGE")
-            if self.remaining_content_prekeys == 0:
+            prekey_owner = self.recipient_prekey_owner or self
+            if (
+                prekey_owner.remaining_content_prekeys == 0
+                or prekey_owner.remaining_recovery_prekeys == 0
+            ):
                 self.append_publish_states(
                     "CHECKING_PRIVATE_READINESS",
                     "RECIPIENT_KEY_UNAVAILABLE",
@@ -103,7 +126,9 @@ class _Session:
                 )
                 raise RuntimeError("private Social draft replay conflict")
             self.published_drafts[draft_key] = text
-            self.remaining_content_prekeys -= 1
+            prekey_owner.remaining_content_prekeys -= 1
+            if prekey_owner.remaining_recovery_prekeys is not None:
+                prekey_owner.remaining_recovery_prekeys -= 1
             self.append_publish_states(
                 "CHECKING_PRIVATE_READINESS",
                 "READY_PRIVATE",
@@ -112,7 +137,8 @@ class _Session:
             )
             return {"state": "PUBLISHED", "postId": "post-1"}
         if action == "moments.private.reconcile":
-            self.remaining_content_prekeys = 8
+            self.remaining_content_prekeys = self.endpoint_prekey_capacity
+            self.remaining_recovery_prekeys = self.recovery_prekey_capacity
             return {"active": True, "publish": []}
         if action == "moments.private.readText":
             text = (
@@ -210,9 +236,10 @@ class _UnknownOutcomeSession(_Session):
 
 class MobileProductionFixtureTest(unittest.TestCase):
     def setUp(self) -> None:
+        bob = _Session()
         self.sessions = {
-            "ios_alice": _Session(),
-            "ios_bob": _Session(),
+            "ios_alice": _Session(recipient_prekey_owner=bob),
+            "ios_bob": bob,
         }
         self.fixture = MobileProductionFixture(
             sessions=self.sessions,
@@ -256,8 +283,74 @@ class MobileProductionFixtureTest(unittest.TestCase):
             [action for action, _ in self.sessions["ios_alice"].calls],
         )
 
+    def test_publish_drain_uses_receiver_pool_larger_than_32(self) -> None:
+        bob = _Session(endpoint_prekeys=40, recovery_prekeys=40)
+        self.sessions = {
+            "ios_alice": _Session(recipient_prekey_owner=bob),
+            "ios_bob": bob,
+        }
+        self.fixture = MobileProductionFixture(
+            sessions=self.sessions,
+            actor_ptids={
+                "ios_alice": "ptid:alice",
+                "ios_bob": "ptid:bob",
+            },
+            federation_id="federation-1",
+        )
+
+        result = self.invoke(
+            "publish-states",
+            {
+                "variant": "ios",
+                "clients": ["ios_alice", "ios_bob"],
+            },
+        )
+
+        drain_calls = [
+            body
+            for action, body in self.sessions["ios_alice"].calls
+            if action == "moments.private.publishText"
+            and "-prekey-drain-" in str(body.get("draftId"))
+        ]
+        self.assertTrue(result["completed"])
+        self.assertEqual(len(drain_calls), 40)
+
+    def test_publish_drain_uses_smaller_recovery_pool(self) -> None:
+        bob = _Session(endpoint_prekeys=40, recovery_prekeys=5)
+        self.sessions = {
+            "ios_alice": _Session(recipient_prekey_owner=bob),
+            "ios_bob": bob,
+        }
+        self.fixture = MobileProductionFixture(
+            sessions=self.sessions,
+            actor_ptids={
+                "ios_alice": "ptid:alice",
+                "ios_bob": "ptid:bob",
+            },
+            federation_id="federation-1",
+        )
+
+        self.invoke(
+            "publish-states",
+            {
+                "variant": "ios",
+                "clients": ["ios_alice", "ios_bob"],
+            },
+        )
+
+        drain_calls = [
+            body
+            for action, body in self.sessions["ios_alice"].calls
+            if action == "moments.private.publishText"
+            and "-prekey-drain-" in str(body.get("draftId"))
+        ]
+        self.assertEqual(len(drain_calls), 5)
+
     def test_one_successful_publish_cannot_satisfy_the_state_matrix(self) -> None:
-        self.sessions["ios_alice"] = _Session(record_publish_states=False)
+        self.sessions["ios_alice"] = _Session(
+            record_publish_states=False,
+            recipient_prekey_owner=self.sessions["ios_bob"],
+        )
         self.fixture = MobileProductionFixture(
             sessions=self.sessions,
             actor_ptids={
@@ -282,7 +375,9 @@ class MobileProductionFixtureTest(unittest.TestCase):
     def test_publish_reconciles_unknown_outcome_before_requiring_post_id(
         self,
     ) -> None:
-        self.sessions["ios_alice"] = _UnknownOutcomeSession()
+        self.sessions["ios_alice"] = _UnknownOutcomeSession(
+            recipient_prekey_owner=self.sessions["ios_bob"],
+        )
         self.fixture = MobileProductionFixture(
             sessions=self.sessions,
             actor_ptids={
