@@ -26,6 +26,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_loop_budget_exhausted,
     evaluate_base_model_unavailable,
     evaluate_base_permission_denied,
+    evaluate_base_queue_full,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -124,6 +125,17 @@ def valid_capture() -> dict[str, object]:
             "deletedAfterSettlement": True,
         },
     }
+
+
+def valid_base_queue_full_capture() -> dict[str, object]:
+    capture = valid_capture()
+    queue = capture["queueSubmission"]
+    assert isinstance(queue, dict)
+    overflow = queue["overflow"]
+    assert isinstance(overflow, dict)
+    overflow["providerCallDelta"] = 0
+    capture["cleanup"] = {"status": "clean"}
+    return capture
 
 
 def valid_as_f07_capture() -> dict[str, object]:
@@ -3105,6 +3117,52 @@ class FoundationGroupOneScenariosTest(unittest.TestCase):
             "historyAttachmentActionVisible",
         ):
             evaluate_as_f05(capture)
+
+    def test_base_queue_full_accepts_development_slice_facts(self) -> None:
+        assertions = evaluate_base_queue_full(valid_base_queue_full_capture())
+
+        self.assertEqual(len(assertions), 7)
+        self.assertTrue(all(assertions.values()))
+
+    def test_base_queue_full_rejects_queue_or_version_mutation(self) -> None:
+        capture = valid_base_queue_full_capture()
+        queue = capture["queueSubmission"]
+        assert isinstance(queue, dict)
+        overflow = queue["overflow"]
+        assert isinstance(overflow, dict)
+        overflow["conversationVersionAfterAction"] = 11
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "queueStateUnchanged",
+        ):
+            evaluate_base_queue_full(capture)
+
+    def test_base_queue_full_rejects_incomplete_cleanup(self) -> None:
+        capture = valid_base_queue_full_capture()
+        cleanup = capture["cleanup"]
+        assert isinstance(cleanup, dict)
+        cleanup["status"] = "failed"
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "cleanupComplete",
+        ):
+            evaluate_base_queue_full(capture)
+
+    def test_base_queue_full_rejects_provider_dispatch(self) -> None:
+        capture = valid_base_queue_full_capture()
+        queue = capture["queueSubmission"]
+        assert isinstance(queue, dict)
+        overflow = queue["overflow"]
+        assert isinstance(overflow, dict)
+        overflow["providerCallDelta"] = 1
+
+        with self.assertRaisesRegex(
+            GroupOneScenarioError,
+            "zeroAutomaticResend",
+        ):
+            evaluate_base_queue_full(capture)
 
     def test_as_f02_accepts_complete_production_facts(self) -> None:
         assertions = evaluate_as_f02(valid_capture())

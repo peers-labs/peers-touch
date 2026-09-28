@@ -191,6 +191,133 @@ def evaluate_as_f02(capture: Mapping[str, Any]) -> dict[str, bool]:
     return assertions
 
 
+def evaluate_base_queue_full(capture: Mapping[str, Any]) -> dict[str, bool]:
+    queue = _mapping(capture, "queueSubmission", scenario="BASE-QUEUE_FULL")
+    overflow = _mapping(queue, "overflow", scenario="BASE-QUEUE_FULL")
+    typed_error = _mapping(
+        overflow,
+        "typedError",
+        scenario="BASE-QUEUE_FULL",
+    )
+    details = _mapping(
+        typed_error,
+        "details",
+        scenario="BASE-QUEUE_FULL",
+    )
+    resolution = _mapping(
+        overflow,
+        "resolution",
+        scenario="BASE-QUEUE_FULL",
+    )
+    receiver = _mapping(
+        overflow,
+        "recovery",
+        scenario="BASE-QUEUE_FULL",
+    )
+    cleanup = _mapping(
+        capture,
+        "cleanup",
+        scenario="BASE-QUEUE_FULL",
+    )
+    queue_capacity = _positive_int(
+        queue,
+        "queueCapacity",
+        scenario="BASE-QUEUE_FULL",
+    )
+    entries = _list(queue, "entries", scenario="BASE-QUEUE_FULL")
+    positions = [
+        _positive_int(entry, "queue_position", scenario="BASE-QUEUE_FULL")
+        for entry in entries
+    ]
+    assertions = {
+        "queueAtCapacity": (
+            len(entries) == queue_capacity
+            and positions == list(range(1, queue_capacity + 1))
+            and _positive_int(
+                overflow,
+                "queueSize",
+                scenario="BASE-QUEUE_FULL",
+            ) == queue_capacity
+        ),
+        "typedQueueFull": (
+            overflow.get("errorCode") == "ADMISSION_QUEUE_FULL"
+            and typed_error.get("errorType") == "ADMISSION_QUEUE_FULL"
+            and typed_error.get("localeKey") == "agent.errors.queueFull"
+            and typed_error.get("retryable") is True
+            and typed_error.get("terminal") is True
+            and set(details) == {"conversation_id", "capacity"}
+            and _nonempty_string(
+                details,
+                "conversation_id",
+                scenario="BASE-QUEUE_FULL",
+            )
+            == _nonempty_string(
+                resolution,
+                "conversationId",
+                scenario="BASE-QUEUE_FULL",
+            )
+            and int(
+                _nonempty_string(
+                    details,
+                    "capacity",
+                    scenario="BASE-QUEUE_FULL",
+                )
+            )
+            == queue_capacity
+            and resolution.get("type") == "editQueue"
+            and _positive_int(
+                resolution,
+                "capacity",
+                scenario="BASE-QUEUE_FULL",
+            )
+            == queue_capacity
+        ),
+        "localizedRecoveryVisible": (
+            receiver.get("visible") is True
+            and typed_error.get("localeKey") == "agent.errors.queueFull"
+        ),
+        "editQueueFocused": receiver.get("queueFocused") is True,
+        "queueStateUnchanged": (
+            _positive_int(
+                overflow,
+                "queueSizeAfterAction",
+                scenario="BASE-QUEUE_FULL",
+            )
+            == queue_capacity
+            and _positive_int(
+                overflow,
+                "conversationVersionBeforeAction",
+                scenario="BASE-QUEUE_FULL",
+            )
+            == _positive_int(
+                overflow,
+                "conversationVersionAfterAction",
+                scenario="BASE-QUEUE_FULL",
+            )
+        ),
+        "zeroAutomaticResend": (
+            _nonnegative_int(
+                overflow,
+                "stationMessageDelta",
+                scenario="BASE-QUEUE_FULL",
+            ) == 0
+            and _nonnegative_int(
+                overflow,
+                "providerCallDelta",
+                scenario="BASE-QUEUE_FULL",
+            ) == 0
+        ),
+        "cleanupComplete": cleanup.get("status") == "clean",
+    }
+    failed = sorted(key for key, passed in assertions.items() if not passed)
+    if failed:
+        raise GroupOneScenarioError(
+            "BASE-QUEUE_FULL production facts failed assertions: "
+            f"{failed}"
+        )
+    return assertions
+
+
 def evaluate_as_f03(capture: Mapping[str, Any]) -> dict[str, bool | None]:
     tool_isolation = _mapping(
         capture,

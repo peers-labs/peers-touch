@@ -227,6 +227,20 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
     def adapter(self, probe=capture) -> DirectRuntimeFoundationAdapter:
         return DirectRuntimeFoundationAdapter(probe)
 
+    def test_queue_full_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-QUEUE_FULL"],
+            {
+                "queueAtCapacity",
+                "typedQueueFull",
+                "localizedRecoveryVisible",
+                "editQueueFocused",
+                "queueStateUnchanged",
+                "zeroAutomaticResend",
+                "cleanupComplete",
+            },
+        )
+
     def test_forbidden_actor_requires_exact_assertion_contract(self) -> None:
         self.assertEqual(
             REQUIRED_ASSERTIONS["BASE-FORBIDDEN_ACTOR"],
@@ -448,7 +462,7 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
         ):
             self.adapter().observe_browser(
                 runtime_tuple(
-                    "BASE-QUEUE_FULL",
+                    "BASE-RATE_LIMIT",
                     row="foundation-browser-direct",
                     platform="browser",
                 )

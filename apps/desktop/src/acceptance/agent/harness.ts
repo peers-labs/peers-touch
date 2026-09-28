@@ -36986,6 +36986,10 @@ export function installAcceptanceHarness(): void {
           for (const queued of queuedTurns) queued.controller.abort();
           throw new Error('agent.acceptance.queueCapacitySnapshotMismatch');
         }
+        const executionBeforeOverflow = await foundationExecutionSnapshot(
+          agentId,
+          conversation.conversation_id,
+        );
         const overflow = startObservedFoundationTurn({
           conversationId: conversation.conversation_id,
           agentId,
@@ -37151,6 +37155,10 @@ export function installAcceptanceHarness(): void {
         const readbackAfterEditAction = await foundationConversationReadback(
           conversation.conversation_id,
         );
+        const executionAfterEditAction = await foundationExecutionSnapshot(
+          agentId,
+          conversation.conversation_id,
+        );
         const queueFullTypedError = queueFullMessage.typedError;
         const queueFullResolution = queueFullMessage.resolution;
         if (developmentSlice === 'queue-full') {
@@ -37200,7 +37208,9 @@ export function installAcceptanceHarness(): void {
                 === queueBeforeEditAction.conversation_version,
             zeroAutomaticResend:
               readbackAfterEditAction.messages.length
-                === readbackBeforeEditAction.messages.length,
+                === readbackBeforeEditAction.messages.length
+              && executionAfterEditAction.providerCallCount
+                === executionBeforeOverflow.providerCallCount,
             cleanupComplete,
           };
           return evidenceValue({
@@ -37216,6 +37226,10 @@ export function installAcceptanceHarness(): void {
                 queueFocused: queueFocusedAfterAction,
               },
               activeCancellationStatus: activeCancellation.status,
+              providerCallCountBeforeOverflow:
+                executionBeforeOverflow.providerCallCount,
+              providerCallCountAfterAction:
+                executionAfterEditAction.providerCallCount,
               deletionErrorCodeHash: await sha256Hex(deletionErrorCode),
             },
             cleanup: {
@@ -37578,6 +37592,9 @@ export function installAcceptanceHarness(): void {
               stationMessageDelta:
                 readbackAfterEditAction.messages.length
                 - readbackBeforeEditAction.messages.length,
+              providerCallDelta:
+                executionAfterEditAction.providerCallCount
+                - executionBeforeOverflow.providerCallCount,
             },
             cancellation: {
               queueEntryId: cancellation?.entry.queue_entry_id ?? '',

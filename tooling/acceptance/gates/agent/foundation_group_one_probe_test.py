@@ -33,6 +33,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_loop_budget_exhausted,
     evaluate_base_model_unavailable,
     evaluate_base_permission_denied,
+    evaluate_base_queue_full,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -61,6 +62,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_loop_budget_exhausted_capture,
     valid_model_unavailable_capture,
     valid_permission_denied_capture,
+    valid_base_queue_full_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -456,6 +458,47 @@ def scenario_capture(_client: RecordingHarnessClient, probe: Any) -> dict[str, A
 
 
 class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
+    def test_base_queue_full_routes_to_independent_oracle(self) -> None:
+        facts = valid_base_queue_full_capture()
+        runtime_event = {
+            "eventId": "event-queue-full",
+            "sequence": 10,
+            "eventType": "error",
+            "occurredAt": "2026-09-28T00:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "a" * 64,
+            "conversationIdHash": "b" * 64,
+            "payloadHash": "c" * 64,
+            "errorType": "ADMISSION_QUEUE_FULL",
+        }
+        facts["runtimeEvent"] = {
+            **runtime_event,
+            "observedAt": runtime_event["occurredAt"],
+        }
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_queue_full(facts),
+            "runtime-events": runtime_event,
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-QUEUE_FULL",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "queueStateUnchanged": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-QUEUE_FULL assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
     def test_forbidden_actor_routes_to_independent_oracle(self) -> None:
         facts = valid_forbidden_actor_capture()
         capture_value = {
