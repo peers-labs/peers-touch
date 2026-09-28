@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -20,7 +20,7 @@ Bootstrap audit state may use:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "peers-touch-machine-dev-registry",
   "authority": "observed-snapshot"
 }
@@ -32,7 +32,7 @@ does not read those registrations as authority. The first explicit
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "peers-touch-machine-dev-registry",
   "authority": "machine-control-plane",
   "updatedAt": "2026-09-13T00:00:00.000Z",
@@ -72,7 +72,6 @@ interface WorkspaceRecord {
   canonicalRoot: string;
   name: string;
   branch: string;
-  head: string;
   profile: string;
   slot: number;
   allowedCapabilities: StationCapability[];
@@ -86,8 +85,15 @@ interface WorkspaceRecord {
 
 An `observed-snapshot` may contain additional diagnostic projections. An
 authoritative registration persists and re-verifies canonical root, workspace
-ID, branch, and HEAD before every resolved command. Source movement or Git
-identity drift makes the registration `stale` until `env-update` refreshes it.
+ID, and registered branch before every resolved command. Current Git HEAD is
+captured from the worktree at operation time and is never persisted in the
+registration. A root or branch mismatch makes the registration `stale`;
+ordinary commits, merges, rebases, and pulls do not.
+
+Schema v2 removes `WorkspaceRecord.head`. On first use, a schema-v1
+authoritative registry is validated under the registry lock, rewritten
+atomically to schema v2, and never returned to runtime callers in the legacy
+shape.
 
 ## 3. Profile Definition
 
@@ -178,8 +184,9 @@ Development Workflow owns a separate create-once record:
 
 It contains the canonical root, `workspaceId`, `planId`, repository-relative
 `planPath`, and binding audit fields. It is not part of `WorkspaceRecord`:
-Profile, slot, capabilities, branch and HEAD may change under their existing
-guards, while Plan ownership cannot be rebound.
+Profile, slot, capabilities, and branch may change under their existing guards,
+while current HEAD belongs to Development intent and Plan/Session source
+records. Plan ownership cannot be rebound.
 
 Activity is derived and not manually asserted:
 
@@ -190,7 +197,7 @@ type WorkspaceActivity = 'active' | 'idle' | 'stale';
 - `active`: at least one live runtime process/listener or lease matches
   `workspaceId`, PID, and process-start identity.
 - `idle`: registration is valid but no runtime resource is live.
-- `stale`: the registered canonical root or source identity no longer matches.
+- `stale`: the registered canonical root or branch no longer matches.
 
 An unregistered discovered worktree has no `WorkspaceActivity`; it is simply
 outside the managed cohort.
@@ -259,8 +266,9 @@ and clears metadata before unlocking on success, command failure, signal, or
 timeout. The mutation child inherits the locked descriptor, so supervisor
 `SIGKILL` cannot release exclusivity while the child continues. After acquiring
 the resource lock and before launching the mutation, the holder revalidates the
-registry, source identity, capability and Development intent under the registry
-lock; binding updates inspect leases under the same lock order.
+registry binding, current Git source identity, capability, and Development
+intent under the registry lock; binding updates inspect leases under the same
+lock order.
 
 JSON metadata is diagnostic and cannot establish a held lease without the live
 OS lock and matching PID/process-start identity. Metadata left by `SIGKILL` or

@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Integration
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -68,8 +68,8 @@ Target command behavior:
 | Command | Control-plane action |
 |---------|----------------------|
 | `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
-| `make env-update` | Atomically refresh the registered Git identity or replace requested binding fields while no lease is held |
-| `make env-check` | Verify current root/ID/branch/HEAD, selected definition, slot, capabilities, target host, and budget |
+| `make env-update` | Atomically replace requested binding fields and the registered branch while no lease is held |
+| `make env-check` | Verify current root/ID/branch, live Git source, selected definition, slot, capabilities, target host, and budget |
 | `make dev-start` | Publish and confirm source/runtime intent before mutation |
 | `make dev-update` | Atomically replace the current work item's intent |
 | `make dev-status-all` | Show all worktree declarations beside observed leases |
@@ -277,7 +277,9 @@ Migration remains incomplete until every condition below holds:
   insufficient.
 - An idle registration retains its allocation but is reported as `idle`, not
   active.
-- A stale registration blocks mutation until repaired or explicitly removed.
+- A registration with root or branch drift blocks mutation until repaired or
+  explicitly removed. Advancing HEAD on the registered branch does not make
+  the binding stale.
 
 The implementation must provide a stable completion Gate:
 

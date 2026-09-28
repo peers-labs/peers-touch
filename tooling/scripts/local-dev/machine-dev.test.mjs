@@ -287,6 +287,7 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
   try {
     const registered = registerWorkspace(registrationOptions(scope));
     assert.equal(registered.slot, 5);
+    assert.equal('head' in registered, false);
     assert.deepEqual(registered.allowedCapabilities, [
       'station.connect',
       'station.deploy',
@@ -334,6 +335,93 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(status.registrations[0].activity, 'idle');
     assert.equal(status.registrations[0].profileState, 'available');
     assert.equal(status.registrations[0].resetPolicy, 'agent-resettable');
+  } finally {
+    scope.close();
+  }
+});
+
+test('current Git HEAD is source state, not durable registration identity', () => {
+  const scope = fixture();
+  try {
+    const registered = registerWorkspace(registrationOptions(scope));
+    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
+    git(scope.workspaceA, 'add', 'next.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance source');
+    const advancedHead = git(scope.workspaceA, 'rev-parse', 'HEAD');
+
+    const checked = checkWorkspace({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      envRepo: scope.envRepo,
+    });
+    assert.equal(checked.source.head, advancedHead);
+    assert.equal(checked.source.branch, registered.branch);
+    assert.equal('head' in checked.binding, false);
+    assert.equal(
+      statusAll({ home: scope.home, envRepo: scope.envRepo })
+        .registrations[0].activity,
+      'idle',
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('schema v1 registration migrates once and removes persisted HEAD', () => {
+  const scope = fixture();
+  try {
+    const registryFile = machineRegistryPath(scope.home);
+    const registered = registerWorkspace(registrationOptions(scope));
+    const current = JSON.parse(readFileSync(registryFile, 'utf8'));
+    writeFileSync(
+      registryFile,
+      `${JSON.stringify({
+        ...current,
+        schemaVersion: 1,
+        registrations: current.registrations.map((registration) => ({
+          ...registration,
+          head: git(scope.workspaceA, 'rev-parse', 'HEAD'),
+        })),
+      })}\n`,
+    );
+
+    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
+    git(scope.workspaceA, 'add', 'next.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance before migration');
+    const checked = checkWorkspace({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      envRepo: scope.envRepo,
+    });
+    const migrated = JSON.parse(readFileSync(registryFile, 'utf8'));
+
+    assert.equal(checked.binding.workspaceId, registered.workspaceId);
+    assert.equal(checked.source.head, git(scope.workspaceA, 'rev-parse', 'HEAD'));
+    assert.equal(migrated.schemaVersion, 2);
+    assert.equal('head' in migrated.registrations[0], false);
+  } finally {
+    scope.close();
+  }
+});
+
+test('runtime intent remains fenced to the current Git HEAD', () => {
+  const scope = fixture();
+  try {
+    registerWorkspace(registrationOptions(scope));
+    declareLeaseIntent(scope);
+    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
+    git(scope.workspaceA, 'add', 'next.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance declared source');
+
+    expectCode('RUNTIME_INTENT_MISSING', () =>
+      buildLeaseCommand({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
+        command: [process.execPath, '-e', 'process.exit(0)'],
+      }),
+    );
   } finally {
     scope.close();
   }
