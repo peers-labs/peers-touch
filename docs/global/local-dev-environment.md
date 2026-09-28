@@ -330,6 +330,19 @@ make env-check \
   BUDGET_SECONDS=1200
 ```
 
+For an explicit human `make station`, the command owns one bounded
+`make.station` deployment intent and acquires the exact `station.deploy` lease
+it needs. No separate `make dev-start` is required. Agent-driven tracked work
+still declares runtime intent through Dev Workflow, and no direct owner action
+can acquire `station.reset`.
+
+`make desktop` and `make desktop-web` are self-preparing. They resolve ports,
+Station topology, and runtime settings from the selected Profile; resolve
+package requirements from the repository manifests and `pnpm-lock.yaml`;
+install missing packages with `pnpm install --frozen-lockfile`; and run the
+source-aware Station ready closure before starting Desktop. A separate
+`pnpm install` or `make station` is not required.
+
 Registration does not create or edit an environment definition. A later
 destructive wrapper uses the generic lease API after deriving Profile reset
 policy and declaring the exact reset scope:
