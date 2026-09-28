@@ -61,6 +61,67 @@ function stationValues(resolved) {
   };
 }
 
+function localCommit(root) {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  const commit = result.stdout?.trim();
+  if (result.status !== 0 || !/^[0-9a-f]{40,64}$/u.test(commit ?? '')) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      'Current Git commit is unavailable',
+      { status: result.status },
+    );
+  }
+  return commit;
+}
+
+async function probeStationBuild(stationUrl, timeoutMs = 3_000) {
+  const url = `${stationUrl.replace(/\/+$/u, '')}/app-meta/version`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      redirect: 'error',
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return { ok: false, status: response.status, url };
+    }
+    const payload = await response.json();
+    const version =
+      payload?.data && typeof payload.data === 'object'
+        ? payload.data
+        : payload;
+    const commit = version?.build_commit;
+    if (
+      version?.service !== 'peers-touch-station'
+      || typeof commit !== 'string'
+      || !/^[0-9a-f]{7,64}$/u.test(commit)
+    ) {
+      return { ok: false, status: response.status, url, error: 'invalid build identity' };
+    }
+    return { ok: true, status: response.status, url, commit };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      url,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function commitsMatch(expected, actual) {
+  return expected.startsWith(actual) || actual.startsWith(expected);
+}
+
 export function prepareStationConfig(root, resolved) {
   const values = stationValues(resolved);
   const slot = Number(resolved.profile.PT_DEV_SLOT);
@@ -159,6 +220,72 @@ function runCompose(root, resolved, action, environment) {
   }
 }
 
+function parseStructuredRemoteFailure(output) {
+  const lines = output.trim().split(/\r?\n/u);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (!lines[index].trimStart().startsWith('{')) continue;
+    try {
+      const payload = JSON.parse(lines.slice(index).join('\n'));
+      if (
+        payload?.status === 'BLOCKED'
+        && typeof payload.code === 'string'
+        && typeof payload.message === 'string'
+      ) {
+        return payload;
+      }
+    } catch {
+      // Continue searching for the start of a trailing JSON error payload.
+    }
+  }
+  return null;
+}
+
+function remoteDeployError(result, output, values, resolved) {
+  const details = {
+    profile: resolved.reference.profileName,
+    deployEnvironment: resolved.profile.PT_STATION_DEPLOY_ENV,
+    status: result.status,
+    cause: result.error?.message,
+    deployLogPath: values.remoteDeployLogPath,
+  };
+  const structured = parseStructuredRemoteFailure(output);
+  if (structured) {
+    return new DevctlError(
+      structured.code,
+      structured.message,
+      {
+        ...details,
+        upstream: structured.detail ?? {},
+      },
+    );
+  }
+  if (output.includes('BLOCKED:dirty-remote-worktree')) {
+    return new DevctlError(
+      ERROR_CODES.REMOTE_SOURCE_DIRTY,
+      `Remote deployment worktree is dirty; see ${values.remoteDeployLogPath}`,
+      details,
+    );
+  }
+  const missingEnvironment = output.match(/Couldn't find env file:\s*(.+)/u);
+  if (missingEnvironment) {
+    return new DevctlError(
+      ERROR_CODES.REMOTE_ENV_REQUIRED,
+      `Remote Station environment is missing: ${missingEnvironment[1].trim()}`,
+      details,
+    );
+  }
+  const timedOut =
+    result.error?.code === 'ETIMEDOUT'
+    || (result.status === null && result.signal === 'SIGTERM');
+  return new DevctlError(
+    timedOut ? ERROR_CODES.START_TIMEOUT : ERROR_CODES.REMOTE_DEPLOY_FAILED,
+    timedOut
+      ? `Remote Station deployment timed out; see ${values.remoteDeployLogPath}`
+      : `Remote Station deployment failed; see ${values.remoteDeployLogPath}`,
+    details,
+  );
+}
+
 function runRemoteStationBridge(root, resolved, environment) {
   if (process.platform === 'win32') {
     throw new DevctlError(
@@ -202,22 +329,10 @@ function runRemoteStationBridge(root, resolved, environment) {
     timeout: 1_800_000,
     windowsHide: true,
   });
-  fs.writeFileSync(
-    values.remoteDeployLogPath,
-    `${result.stdout ?? ''}${result.stderr ?? ''}`,
-  );
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  fs.writeFileSync(values.remoteDeployLogPath, output);
   if (result.error || result.status !== 0) {
-    throw new DevctlError(
-      ERROR_CODES.START_TIMEOUT,
-      `Remote Station deployment failed; see ${values.remoteDeployLogPath}`,
-      {
-        profile: resolved.reference.profileName,
-        deployEnvironment: resolved.profile.PT_STATION_DEPLOY_ENV,
-        status: result.status,
-        cause: result.error?.message,
-        deployLogPath: values.remoteDeployLogPath,
-      },
-    );
+    throw remoteDeployError(result, output, values, resolved);
   }
 }
 
@@ -225,12 +340,18 @@ export async function stationStatus(root, environment = process.env) {
   const resolved = resolveProfile(root, environment);
   const values = stationValues(resolved);
   const managed = inspectManagedProcess(resolved.paths.profileState, SERVICE);
-  const health = await probeHttp(values.healthUrl);
+  const [health, build] = await Promise.all([
+    probeHttp(values.healthUrl),
+    values.mode === 'remote'
+      ? probeStationBuild(values.stationUrl)
+      : Promise.resolve(null),
+  ]);
   return {
     profile: resolved.reference.profileName,
     mode: values.mode,
     url: values.stationUrl,
     health,
+    build,
     process: managed,
   };
 }
@@ -239,10 +360,39 @@ export async function startStation(root, environment = process.env) {
   const resolved = resolveProfile(root, environment);
   const values = stationValues(resolved);
   if (values.mode === 'remote') {
+    const expectedCommit = localCommit(root);
+    const existing = await stationStatus(root, environment);
+    if (
+      existing.health.ok
+      && existing.build?.ok
+      && commitsMatch(expectedCommit, existing.build.commit)
+    ) {
+      return {
+        ...existing,
+        deployed: false,
+        delegated: true,
+        reused: true,
+      };
+    }
     runRemoteStationBridge(root, resolved, environment);
     await waitForHttp(values.healthUrl, { label: 'Remote Station' });
+    const deployed = await stationStatus(root, environment);
+    if (
+      !deployed.build?.ok
+      || !commitsMatch(expectedCommit, deployed.build.commit)
+    ) {
+      throw new DevctlError(
+        ERROR_CODES.REMOTE_SOURCE_MISMATCH,
+        'Remote Station build identity does not match the current Git commit',
+        {
+          expectedCommit,
+          observedCommit: deployed.build?.commit ?? null,
+          versionUrl: deployed.build?.url ?? null,
+        },
+      );
+    }
     return {
-      ...await stationStatus(root, environment),
+      ...deployed,
       deployed: true,
       delegated: true,
       deployLogPath: values.remoteDeployLogPath,

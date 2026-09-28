@@ -32,6 +32,7 @@ import {
   checkWorkspace,
   observeLeases,
   registerWorkspace,
+  selectWorkspaceProfile,
   statusAll,
   unregisterWorkspace,
   updateWorkspace,
@@ -338,6 +339,63 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(status.registrations[0].activity, 'idle');
     assert.equal(status.registrations[0].profileState, 'available');
     assert.equal(status.registrations[0].resetPolicy, 'agent-resettable');
+  } finally {
+    scope.close();
+  }
+});
+
+test('profile selection registers once with an available slot and minimum remote capabilities', () => {
+  const scope = fixture();
+  try {
+    registerWorkspace(registrationOptions(scope, { slot: 0 }));
+    const selected = selectWorkspaceProfile({
+      home: scope.home,
+      workspaceRoot: scope.workspaceB,
+      envRepo: scope.envRepo,
+      profile: 'fiveArm',
+      owner: 'machine-dev-test@example.invalid',
+    });
+
+    assert.equal(selected.slot, 1);
+    assert.deepEqual(selected.allowedCapabilities, [
+      'station.connect',
+      'station.deploy',
+    ]);
+    assert.equal(
+      selected.purpose,
+      'Interactive profile selection: fiveArm',
+    );
+
+    updateWorkspace({
+      home: scope.home,
+      workspaceRoot: scope.workspaceB,
+      envRepo: scope.envRepo,
+      capabilities: 'station.connect',
+    });
+    const switched = selectWorkspaceProfile({
+      home: scope.home,
+      workspaceRoot: scope.workspaceB,
+      envRepo: scope.envRepo,
+      profile: 'four',
+      owner: 'machine-dev-test@example.invalid',
+    });
+    assert.equal(switched.slot, 1);
+    assert.deepEqual(switched.allowedCapabilities, selected.allowedCapabilities);
+    assert.equal(switched.registeredAt, selected.registeredAt);
+
+    addProfile(scope, {
+      name: 'local-dev',
+      mode: 'local',
+      stationUrl: 'http://127.0.0.1:18080',
+    });
+    const narrowed = selectWorkspaceProfile({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      envRepo: scope.envRepo,
+      profile: 'local-dev',
+      owner: 'machine-dev-test@example.invalid',
+    });
+    assert.deepEqual(narrowed.allowedCapabilities, ['station.connect']);
   } finally {
     scope.close();
   }

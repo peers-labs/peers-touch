@@ -110,9 +110,12 @@ held. Profile creation and renaming remain human-reviewed.
 
 One profile is bound per registered worktree in
 `~/.peers-touch/dev/registry.json`, keyed by canonical `workspaceId`.
-`make profile PROFILE=<name>` updates only that authoritative binding. Legacy
-`.local/dev/active/` symlinks are observations only and are never runtime
-selection authority.
+`make profile PROFILE=<name>` explicitly creates a minimum binding on first
+selection and updates that authoritative binding thereafter. First selection
+atomically allocates the lowest free slot and grants `station.connect`, plus
+`station.deploy` for a reviewed remote Profile. It never grants
+`station.reset`. Legacy `.local/dev/active/` symlinks are observations only and
+are never runtime selection authority.
 
 ### Slot
 
@@ -128,9 +131,11 @@ port conflicts:
 | Desktop Web vite | `3211 + slot * 100` |
 | Mobile web | `5173 + slot * 100` |
 
-There is no default slot. An unregistered workspace or missing slot binding
-fails closed. Profile `PT_DEV_SLOT` and local client port fields are legacy
-metadata; the machine binding supplies the runtime values.
+There is no implicit slot from Profile metadata. First explicit
+`make profile <name>` selection allocates the lowest free machine slot under
+the registry lock; an explicit `env-register` may choose another slot. Profile
+`PT_DEV_SLOT` and local client port fields are legacy metadata; the machine
+binding supplies the runtime values.
 
 ### Station Mode
 
@@ -160,7 +165,7 @@ make env-update [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<csv>']
 make env-check [WORKSPACE_ID=<id>] [PROFILE=<name>] [SLOT=<n>] [CAPABILITIES='<csv>'] [BUDGET_SECONDS=<n>]
 make env-status-all                         # Bindings plus observed OS-held leases
 make profiles                               # List approved canonical profiles
-make profile <name>                         # Update this registered workspace binding
+make profile <name>                         # Register on first use, then update this workspace binding
 make profile-authorize <name> SLOT=<n>      # Human-only interactive grant
 make profile-init <name> SLOT=<n>           # Consume a pre-existing exact grant
 make config                                 # Show authoritative binding and config
@@ -489,7 +494,9 @@ Source modes:
   canonical OS-held lease plus matching PID/process-start metadata.
 - A live Development declaration is required before lease acquisition but
   never substitutes for the lease.
-- `make station` is idempotent — if Station is already running, it just confirms
+- `make station` is idempotent — it reuses an already healthy Station only when
+  `/app-meta/version` reports a build commit matching the current local HEAD;
+  stale or missing build identity triggers exact-source deployment
 - `make station` holds `station.deploy` through source sync, build, restart,
   deploy health, and final profile health readback.
 - Agent use of `make station` is remote-only and requires the safety preflight

@@ -166,7 +166,10 @@ plan-reopen:
 
 profile:
 	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile <name>  or  make profile PROFILE=<name>"; exit 1; fi
-	@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"
+	@node $(MACHINE_DEV_SCRIPT) select \
+		--profile "$(PROFILE_ARG)" \
+		$(if $(SLOT),--slot "$(SLOT)",) \
+		--owner "$(ENV_OWNER_ARG)"
 
 profile-authorize:
 	@if [ -z "$(PROFILE_ARG)" ]; then echo "Usage: make profile-authorize <name> [SLOT=0]  or  make profile-authorize PROFILE=<name> [SLOT=0]"; exit 1; fi
