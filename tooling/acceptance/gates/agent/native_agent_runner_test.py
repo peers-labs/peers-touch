@@ -33,6 +33,11 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
             self.source,
         )
         self.assertIn("runner.run_core_lifecycle()", self.source)
+        self.assertIn('CORE_LIFECYCLE_PROFILE = "two"', self.source)
+        self.assertIn(
+            "self.approved_profile = approved_profile_for_journey(journey)",
+            self.source,
+        )
 
     def test_lifecycle_selectors_are_isolated_as_an_integration_contract(
         self,

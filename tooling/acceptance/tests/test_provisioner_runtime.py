@@ -32,6 +32,7 @@ from tooling.acceptance.provisioners import (
     NativeTauriEmbeddedWebDriverProvisioner,
     get_provisioner,
 )
+from tooling.acceptance.provisioners.home_station import agent_profile_for_gate
 
 
 class ProvisionerBaseClassTests(unittest.TestCase):
@@ -732,6 +733,38 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(client.renderer_port, 13511)
         self.assertEqual(client.webdriver_port, 14449)
         self.assertIn("pt-agent-stream-run-stream-resilience", client.storage_root)
+
+    def test_agent_core_lifecycle_uses_reviewed_two_profile(self):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        profile_env = {
+            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+            "PT_DESKTOP_APP_WEB_PORT": "13511",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_AGENT_STREAM_WEBDRIVER_PORT": "14449"},
+            clear=True,
+        ), patch.object(provisioner, "_assert_client_ports_available"):
+            client = provisioner._agent_stream_client(
+                "run-core-lifecycle",
+                1,
+                profile_env,
+                profile=agent_profile_for_gate(
+                    "agent-core-lifecycle-native-e2e"
+                ),
+            )
+
+        self.assertEqual(client.profile, "two")
+        provisioner._validate_agent_profile(
+            "agent-core-lifecycle-native-e2e",
+            "two",
+            {
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_DEPLOY_ENV": "station-two",
+            },
+        )
 
     def test_agent_stream_credentials_must_come_from_one_profile(self):
         provisioner = HomeStationProvisioner(

@@ -59,6 +59,7 @@ AGENT_V2_MCP_GATE = "agent-v2-mcp-lifecycle-e2e"
 AGENT_V2_CONNECTOR_GATE = "agent-v2-connector-invocation-e2e"
 AGENT_V2_EVALUATION_GATE = "agent-v2-evaluation-lab-e2e"
 AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
+AGENT_CORE_LIFECYCLE_GATE = "agent-core-lifecycle-native-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
@@ -68,6 +69,18 @@ AGENT_NATIVE_GATES = frozenset(
 )
 AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 AGENT_V2_BINDING_PROFILE = "two"
+AGENT_V2_BINDING_GATES = frozenset(
+    {
+        AGENT_CORE_LIFECYCLE_GATE,
+        AGENT_V2_HOME_GATE,
+        AGENT_V2_BINDING_GATE,
+        AGENT_V2_GOVERNED_TOOL_GATE,
+        AGENT_V2_MCP_GATE,
+        AGENT_V2_CONNECTOR_GATE,
+        AGENT_V2_EVALUATION_GATE,
+        AGENT_MARKETPLACE_GATE,
+    }
+)
 AGENT_V2_CREDENTIAL_REFS = (
     "profile:CHAT_NATIVE_DEMO_PASSWORD",
     "profile:PT_AGENT_PROVIDER_API_KEY",
@@ -87,6 +100,12 @@ CLIENT_ROLES = {
     "chat-native-product-closure-e2e": ("alice", "bob", "alice2"),
     "chat-contact-message-resilience-e2e": ("alice",),
 }
+
+
+def agent_profile_for_gate(gate_id: str) -> str:
+    if gate_id in AGENT_V2_BINDING_GATES:
+        return AGENT_V2_BINDING_PROFILE
+    return AGENT_V2_PROFILE
 
 
 class HomeStationProvisioner(EnvironmentProvisioner):
@@ -548,6 +567,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         profile_env: dict[str, str],
         *,
         journey: str,
+        profile: str,
         worktree_variable: str,
         gateway_port_variable: str,
         renderer_port_variable: str,
@@ -584,7 +604,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     str(4445 + slot * 10),
                 )
             ),
-            profile=AGENT_V2_PROFILE,
+            profile=profile,
             storage_root=f"/tmp/pt-agent-{journey}-{run_id}/storage",
         )
         self._assert_client_ports_available(client)
@@ -595,12 +615,15 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         run_id: str,
         slot: int,
         profile_env: dict[str, str],
+        *,
+        profile: str = AGENT_V2_PROFILE,
     ) -> ClientRuntime:
         return self._agent_native_client(
             run_id,
             slot,
             profile_env,
             journey="stream",
+            profile=profile,
             worktree_variable="PT_AGENT_STREAM_WORKTREE",
             gateway_port_variable="PT_AGENT_STREAM_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_STREAM_RENDERER_PORT",
@@ -618,6 +641,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             slot,
             profile_env,
             journey="attachment",
+            profile=AGENT_V2_PROFILE,
             worktree_variable="PT_AGENT_ATTACHMENT_WORKTREE",
             gateway_port_variable="PT_AGENT_ATTACHMENT_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_ATTACHMENT_RENDERER_PORT",
@@ -960,6 +984,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 manifest.run_id,
                 manifest.profile_slot,
                 profile_env,
+                profile=agent_profile_for_gate(gate_id),
             )
         )
         return dataclasses.replace(
@@ -976,19 +1001,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         profile_name: str,
         profile_env: dict[str, str],
     ) -> None:
-        required_profile = (
-            AGENT_V2_BINDING_PROFILE
-            if gate_id in {
-                AGENT_V2_HOME_GATE,
-                AGENT_V2_BINDING_GATE,
-                AGENT_V2_GOVERNED_TOOL_GATE,
-                AGENT_V2_MCP_GATE,
-                AGENT_V2_CONNECTOR_GATE,
-                AGENT_V2_EVALUATION_GATE,
-                AGENT_MARKETPLACE_GATE,
-            }
-            else AGENT_V2_PROFILE
-        )
+        required_profile = agent_profile_for_gate(gate_id)
         if profile_name != required_profile:
             raise BlockedError(
                 reason=(
