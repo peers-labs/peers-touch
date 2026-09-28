@@ -1,6 +1,6 @@
 # Desktop Primary Navigation Cleanup
 
-> **Status**: active
+> **Status**: completed
 > **Branch**: work/station-access-lifecycle
 > **Workspace ID**: 95620934d3348d95
 > **Initial HEAD**: 3fb8a5428b8c8c60727d1460a271adfd920b0bfa
@@ -22,7 +22,7 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "DPNC-20260928",
-  "status": "active",
+  "status": "completed",
   "binding": {
     "branch": "work/station-access-lifecycle",
     "workspaceId": "95620934d3348d95",
@@ -153,7 +153,7 @@
       "workstreamId": "DPNC-DESKTOP",
       "path": "tasks/DPNC-01-DESKTOP-CUTOVER.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     }
   ],
