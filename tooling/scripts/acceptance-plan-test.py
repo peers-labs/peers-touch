@@ -407,6 +407,7 @@ class BehaviorRuleTests(unittest.TestCase):
         self.assertEqual(
             selected,
             {
+                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-chat-contacts-e2e",
             },
@@ -414,6 +415,7 @@ class BehaviorRuleTests(unittest.TestCase):
 
     def test_mobile_shared_projection_owners_select_all_social_gates(self) -> None:
         expected = {
+            "chat-lifecycle-tree-zero-reference-e2e",
             "mobile-simulator-social-convergence-e2e",
             "mobile-simulator-chat-contacts-e2e",
             "mobile-simulator-moments-e2e",
@@ -436,6 +438,7 @@ class BehaviorRuleTests(unittest.TestCase):
     ) -> None:
         self.assertEqual(
             {
+                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-moments-e2e",
             },
@@ -445,6 +448,7 @@ class BehaviorRuleTests(unittest.TestCase):
         )
         self.assertEqual(
             {
+                "chat-lifecycle-tree-zero-reference-e2e",
                 "mobile-simulator-social-convergence-e2e",
                 "mobile-simulator-settings-e2e",
             },
