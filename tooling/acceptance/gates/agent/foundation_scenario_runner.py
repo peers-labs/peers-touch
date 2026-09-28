@@ -3474,6 +3474,8 @@ def _capability_isolation_restoration_error(
 def _restore_capability_isolation_for_cleanup(
     runtime_pair: FoundationRuntimePair,
     profile_env: Mapping[str, str],
+    *,
+    clients: tuple[FoundationRuntimeClient, ...] | None = None,
 ) -> list[str]:
     def validate_result(runtime: str, result: Any) -> str | None:
         if not isinstance(result, Mapping):
@@ -3509,7 +3511,8 @@ def _restore_capability_isolation_for_cleanup(
         )
 
     errors: list[str] = []
-    for client in (runtime_pair.browser, runtime_pair.native):
+    selected_clients = clients or (runtime_pair.browser, runtime_pair.native)
+    for client in selected_clients:
         if getattr(client, "driver", None) is None:
             storage_root = getattr(client.spec, "storage_root", None)
             if storage_root is None or not Path(storage_root).exists():
@@ -3614,6 +3617,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
     )
     candidate_path: Path | None = None
     primary_error: BaseException | None = None
+    cleanup_clients: tuple[FoundationRuntimeClient, ...] | None = None
     try:
         runtime_pair.start()
 
@@ -3764,6 +3768,11 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 if runtime_tuple.platform == "desktop_app"
                 else browser_adapter
             )
+            cleanup_clients = (
+                (runtime_pair.native,)
+                if runtime_tuple.platform == "desktop_app"
+                else (runtime_pair.browser,)
+            )
             observation = (
                 adapter.observe_desktop_native(runtime_tuple)
                 if runtime_tuple.platform == "desktop_app"
@@ -3796,6 +3805,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         restoration_errors = _restore_capability_isolation_for_cleanup(
             runtime_pair,
             profile_env,
+            clients=cleanup_clients,
         )
         cleanup_result = runtime_pair.stop(
             remove_storage=not restoration_errors,
