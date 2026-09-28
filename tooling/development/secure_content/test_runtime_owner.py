@@ -1201,6 +1201,36 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(snapshot, result)
         self.assertEqual("agent", client.harness_namespace)
 
+    def test_start_client_converts_exhausted_driver_startup_to_typed_blocker(
+        self,
+    ) -> None:
+        client = MagicMock()
+        client.spec = SimpleNamespace(
+            profile="secure-content-desktop-alice",
+            runtime="native-tauri",
+        )
+        client.start.side_effect = FoundationClientError(
+            "timed out waiting for Native embedded WebDriver session"
+        )
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _start_client(
+                client,
+                account="alice@p.t",
+                password="1",
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertEqual(
+            "client:secure-content-desktop-alice",
+            raised.exception.resource,
+        )
+        self.assertIn(
+            "Native embedded WebDriver session",
+            str(raised.exception),
+        )
+        client.configure_station.assert_not_called()
+
     def test_start_browser_client_completes_station_binding_after_authentication(
         self,
     ) -> None:

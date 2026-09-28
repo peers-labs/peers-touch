@@ -2484,7 +2484,16 @@ def _start_client(
     password: str,
     anonymous_binding_account: str | None = None,
 ) -> Mapping[str, Any]:
-    client.start()
+    try:
+        client.start()
+    except FoundationClientError as error:
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            redact_text(
+                f"client {client.spec.profile} failed to start: {error}"
+            ),
+            resource=f"client:{client.spec.profile}",
+        ) from error
     client.configure_station()
     if account is None:
         if client.spec.runtime == "browser":

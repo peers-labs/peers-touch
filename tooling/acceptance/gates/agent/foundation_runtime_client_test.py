@@ -426,6 +426,46 @@ class FoundationClientSpecTest(unittest.TestCase):
             client._managed_runtime_started = False
             client.stop()
 
+    def test_native_driver_retries_session_handshake_after_port_is_ready(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+                startup_timeout=1,
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            driver = Mock()
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=True,
+                ),
+                patch.object(
+                    foundation_runtime_client.WAIT_TICK,
+                    "wait",
+                ) as wait,
+                patch.object(
+                    foundation_runtime_client.webdriver,
+                    "Remote",
+                    side_effect=[
+                        ConnectionError("connection closed"),
+                        driver,
+                    ],
+                ) as remote,
+            ):
+                client._connect_driver()
+
+            self.assertIs(driver, client.driver)
+            self.assertEqual(2, remote.call_count)
+            wait.assert_called_once()
+            client.process = None
+            client.stop()
+
     def test_unmanaged_launcher_clean_exit_still_fails_fast(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
