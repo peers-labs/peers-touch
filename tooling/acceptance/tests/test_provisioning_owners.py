@@ -977,9 +977,10 @@ class ProfileActivationContractTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("profile:", source)
         self.assertIn(
-            '@node $(MACHINE_DEV_SCRIPT) update --profile "$(PROFILE_ARG)"',
+            "@node $(MACHINE_DEV_SCRIPT) select \\",
             source,
         )
+        self.assertIn('--profile "$(PROFILE_ARG)"', source)
 
     def test_profile_activation_checks_declared_identity(self) -> None:
         root = Path(__file__).resolve().parents[3]
