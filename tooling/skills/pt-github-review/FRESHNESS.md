@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-21
-covered_docs_hash: 2f4c3d8154185f700706127324763f35801b5d23511937bfaa2ed2478e68ecee
+last_verified_at: 2026-09-28
+covered_docs_hash: 2ab6002609051e008a4b484d2f865f642a9104ab20299f2933da35739bb54df9
 
 covered_docs:
   - AGENTS.md
@@ -36,6 +36,50 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-09-28 Review
+
+Local Dev Control Plane schema v1 excludes mutable Git HEAD from machine
+registration authority without a development-stage version bump or compatibility
+reader. Review rejects persisted HEAD and command-specific reconciliation while
+preserving declaration/Session source fencing, exact runtime build readback, and
+fail-closed root/branch identity.
+
+Desktop navigation ownership now removes the standalone Notes host page and
+makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
+Palette access. The dedicated browser Gate has an exact-source Runtime Manifest
+and cleanup contract, while the official Note applet remains unchanged.
+Existing Desktop, locale, source-of-truth, and Acceptance evidence rules already
+cover this change, so no `SKILL.md` or review fixture update is required.
+
+## 2026-09-27 Review
+
+LDCP-D15 remains the governing profile reset-policy contract. The control
+plane, Peers Dev projection, local environment skill, and fixtures now derive
+reset protection from the canonical Profile ID and no longer read the
+superseded control-mode field. The existing review rule already enforces this
+contract, so no GitHub Review `SKILL.md` or fixture change is required.
+
+Architecture Module Governance adds a positive module registry and shared
+changed-path validation to review. `pt-github-review/SKILL.md` now treats
+unregistered, incomplete, overlapping, or capability-inconsistent active
+modules as blocking architecture findings. Parser, Hook, Plan, Review and
+integration-audit regressions provide executable coverage; no generic golden
+review fixture is needed.
+
+The `peers-touch-git` integration adds the reviewed Worktree Governance product,
+state, experience, Acceptance and execution contracts under the existing Local
+Dev Control Plane. Existing review rules already cover owner-state isolation,
+worktree identity, destructive-operation authorization and evidence freshness,
+so no `SKILL.md`, fixture or knowledge change is required.
+
+## 2026-09-26 Review
+
+The current upstream source set retains the existing review behavior for
+runtime identity, profile authorization, Development Session evidence, and
+continuous Plan execution. No `SKILL.md`, fixture, or knowledge change is
+required; this refresh records the post-history-migration source bytes and the
+Station Access coverage projection after its completion proof.
 
 The 2026-08-29 refresh covers execution-status and evidence updates under the
 Acceptance framework. It does not change review behavior, so no `SKILL.md`

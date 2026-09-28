@@ -1,7 +1,7 @@
 # Local Development Environment
 
 > **Status**: active
-> **Version**: v1.4
+> **Version**: v1.3
 > **Created**: 2026-07-23 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 
@@ -110,8 +110,9 @@ Runtime commands load the sibling `env` repository source directly.
 
 The registration stores the canonical root and registered branch, but not Git
 HEAD. Current HEAD is read directly from the worktree for each command.
-Schema-v1 registries are atomically migrated on first use and their persisted
-`head` fields are removed.
+The registry remains schema v1. Runtime does not migrate or accept
+head-bearing registrations; machine-local files produced by superseded
+development code must be corrected explicitly.
 
 Local slot and Desktop/Mobile ports come from the machine binding. A profile's
 `PT_DEV_SLOT` and local client port fields are legacy topology observations and
