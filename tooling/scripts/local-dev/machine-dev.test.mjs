@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   machineLeasePath,
@@ -31,6 +31,7 @@ import {
   MachineDevError,
   checkWorkspace,
   observeLeases,
+  refreshWorkspaceSourceIdentity,
   registerWorkspace,
   selectWorkspaceProfile,
   statusAll,
@@ -349,6 +350,75 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(status.registrations[0].activity, 'idle');
     assert.equal(status.registrations[0].profileState, 'available');
     assert.equal(status.registrations[0].resetPolicy, 'agent-resettable');
+  } finally {
+    scope.close();
+  }
+});
+
+test('runtime startup refreshes only same-branch source identity', () => {
+  const scope = fixture();
+  try {
+    const registered = registerWorkspace(registrationOptions(scope));
+    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
+    git(scope.workspaceA, 'add', 'next.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance source');
+    const advancedHead = git(scope.workspaceA, 'rev-parse', 'HEAD');
+
+    expectCode('WORKTREE_IDENTITY_MISMATCH', () =>
+      checkWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        envRepo: scope.envRepo,
+      }),
+    );
+    const refreshed = refreshWorkspaceSourceIdentity({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      updatedBy: 'devctl-runtime-start',
+    });
+    assert.equal(refreshed.head, advancedHead);
+    assert.equal(refreshed.branch, registered.branch);
+    assert.equal(refreshed.profile, registered.profile);
+    assert.equal(refreshed.slot, registered.slot);
+    assert.deepEqual(
+      refreshed.allowedCapabilities,
+      registered.allowedCapabilities,
+    );
+    assert.equal(refreshed.updatedBy, 'devctl-runtime-start');
+    assert.equal(
+      checkWorkspace({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        envRepo: scope.envRepo,
+      }).binding.head,
+      advancedHead,
+    );
+
+    writeFileSync(path.join(scope.workspaceA, 'leased.txt'), 'leased\n');
+    git(scope.workspaceA, 'add', 'leased.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance while leased');
+    expectCode('STATION_CAPABILITY_CONFLICT', () =>
+      refreshWorkspaceSourceIdentity({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+        observeLeases: () => ({
+          activeLeases: [{
+            workspaceId: registered.workspaceId,
+            resourceKind: 'station.deploy',
+            resourceId: 'station-four',
+          }],
+          staleMetadata: [],
+        }),
+      }),
+    );
+
+    git(scope.workspaceA, 'switch', '-c', 'feat/different');
+    expectCode('WORKTREE_IDENTITY_MISMATCH', () =>
+      refreshWorkspaceSourceIdentity({
+        home: scope.home,
+        workspaceRoot: scope.workspaceA,
+      }),
+    );
   } finally {
     scope.close();
   }
@@ -950,6 +1020,9 @@ test('make.station owner action acquires only the bounded deploy lease', () => {
       }),
     );
     const marker = path.join(scope.root, 'owner-action-station-deploy');
+    const registryModule = pathToFileURL(
+      fileURLToPath(new URL('./machine-dev-registry.mjs', import.meta.url)),
+    ).href;
     const allowed = spawnSync(
       process.execPath,
       leaseArguments(
@@ -959,8 +1032,20 @@ test('make.station owner action acquires only the bounded deploy lease', () => {
         5,
         [
           process.execPath,
+          '--input-type=module',
           '-e',
-          `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ready')`,
+          [
+            `const { verifyHeldLease } = await import(${JSON.stringify(registryModule)});`,
+            `verifyHeldLease(${JSON.stringify({
+              home: scope.home,
+              workspaceRoot: scope.workspaceA,
+              envRepo: scope.envRepo,
+              resourceKind: 'station.deploy',
+              resourceId: 'station-four',
+            })});`,
+            `const { writeFileSync } = await import('node:fs');`,
+            `writeFileSync(${JSON.stringify(marker)}, 'ready');`,
+          ].join('\n'),
         ],
         { ownerAction: 'make.station' },
       ),
