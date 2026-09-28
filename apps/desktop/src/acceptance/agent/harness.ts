@@ -16824,10 +16824,12 @@ async function createGovernedToolRuntimeFixture(
     api_key: apiKey,
   });
   const providerId = String(created.provider?.id || '');
-  if (providerId !== requestedProviderId) {
-    throw new Error('agent.acceptance.governedToolProviderIdentityMismatch');
-  }
   try {
+    if (providerId !== requestedProviderId) {
+      throw new Error(
+        'agent.acceptance.governedToolProviderIdentityMismatch',
+      );
+    }
     await api.addModel(providerId, {
       id: modelId,
       display_name: `Governed Tool ${purpose}`,
@@ -16855,7 +16857,18 @@ async function createGovernedToolRuntimeFixture(
     }
     return { providerId, modelId };
   } catch (error) {
-    await api.deleteProvider(providerId).catch(() => undefined);
+    try {
+      await api.deleteProvider(providerId);
+    } catch (cleanupError) {
+      if (!isFoundationResourceNotFound(cleanupError)) {
+        throw Object.assign(
+          new Error(
+            'agent.acceptance.governedToolRuntimeFixtureCleanupFailed',
+          ),
+          { primaryError: error, cleanupError },
+        );
+      }
+    }
     throw error;
   }
 }
@@ -21122,6 +21135,121 @@ function evaluateBaseProviderModelUnavailable(
     ctx.scenarioFacts,
     'foundationProviderModelUnavailableFacts',
   ));
+}
+
+function evaluateBaseProviderRateLimitFacts(
+  facts: Record<string, unknown>,
+): Record<string, boolean> {
+  const outcome = evidenceRecord(
+    facts.outcome,
+    'foundationProviderRateLimitOutcome',
+  );
+  const typedError = evidenceRecord(
+    facts.typedError,
+    'foundationProviderRateLimitTypedError',
+  );
+  const details = evidenceRecord(
+    outcome.details,
+    'foundationProviderRateLimitDetails',
+  );
+  const receiver = evidenceRecord(
+    facts.receiver,
+    'foundationProviderRateLimitReceiver',
+  );
+  const station = evidenceRecord(
+    facts.station,
+    'foundationProviderRateLimitStation',
+  );
+  const resolution = evidenceRecord(
+    facts.resolution,
+    'foundationProviderRateLimitResolution',
+  );
+  const replay = evidenceRecord(
+    facts.replay,
+    'foundationProviderRateLimitReplay',
+  );
+  const cleanup = evidenceRecord(
+    facts.cleanup,
+    'foundationProviderRateLimitCleanup',
+  );
+  const runtimeEvent = evidenceRecord(
+    facts.runtimeEvent,
+    'foundationProviderRateLimitRuntimeEvent',
+  );
+  const retryAfterMs = Number(details.retry_after_ms);
+
+  return {
+    typedProviderRateLimit: (
+      outcome.error === 'agent.errors.providerRateLimit'
+      && outcome.error_type === 'PROVIDER_RATE_LIMIT'
+      && outcome.locale_key === 'agent.errors.providerRateLimit'
+      && outcome.retryable === true
+      && outcome.terminal === true
+      && stableJson(typedError) === stableJson(outcome)
+      && stableJson(Object.keys(details).sort())
+        === stableJson(['provider_id', 'retry_after_ms'])
+      && details.provider_id === station.providerId
+      && Number.isInteger(retryAfterMs)
+      && retryAfterMs >= 0
+      && runtimeEvent.eventType === 'error'
+      && runtimeEvent.errorType === 'PROVIDER_RATE_LIMIT'
+      && Number(runtimeEvent.sequence) > 0
+      && Number(runtimeEvent.streamGeneration) > 0
+      && String(runtimeEvent.eventId).length === 64
+      && String(runtimeEvent.streamIdHash).length === 64
+      && String(runtimeEvent.conversationIdHash).length === 64
+      && String(runtimeEvent.payloadHash).length === 64
+      && runtimeEvent.sourceTransport === 'station-sse'
+      && String(runtimeEvent.sourcePtidHash).length === 64
+      && runtimeEvent.sourceConversationId === station.conversationId
+      && runtimeEvent.sourceTurnId === station.turnId
+      && Number(runtimeEvent.sourceSequence) > 0
+      && runtimeEvent.sourceEventType === 'error'
+    ),
+    localizedRetryLaterVisible: (
+      receiver.errorVisible === true
+      && receiver.errorText === receiver.expectedErrorText
+      && receiver.recoveryVisible === true
+      && receiver.recoveryText === receiver.expectedRecoveryText
+    ),
+    retryAfterProjected: (
+      retryAfterMs === 2_000
+      && Number(receiver.projectedRetryAfterMs) === retryAfterMs
+      && resolution.type === 'retryLater'
+      && resolution.providerId === station.providerId
+      && Number(resolution.retryAfterMs) === retryAfterMs
+    ),
+    oneTerminalProviderAttempt: (
+      Number(station.traceDelta) === 1
+      && Number(station.providerCallCount) === 1
+      && Number(station.classifiedErrorCount) === 1
+      && station.classifiedRateLimit === true
+      && Number(station.messageDelta) === 2
+    ),
+    zeroSuccessfulCompletion:
+      Number(station.completedAssistantCount) === 0,
+    queueUnchanged: (
+      Number(station.queueDelta) === 0
+      && String(station.queueStateBeforeHash).length === 64
+      && station.queueStateAfterHash === station.queueStateBeforeHash
+      && Number(station.conversationVersionAfter)
+        >= Number(station.conversationVersionBefore)
+    ),
+    replayEqual: (
+      replay.equal === true
+      && replay.sourceHash === replay.replayHash
+      && replay.sourceHash === station.stateHash
+    ),
+    cleanupComplete: (
+      cleanup.status === 'clean'
+      && cleanup.fixtureModelDeleted === true
+      && cleanup.fixtureProviderDeleted === true
+      && cleanup.agentRestored === true
+      && cleanup.disposableAgentDeleted === true
+      && cleanup.conversationDeleted === true
+      && cleanup.localProjectionCleared === true
+    ),
+  };
 }
 
 function evaluateBaseAttachmentRejected(
@@ -32446,6 +32574,747 @@ export function installAcceptanceHarness(): void {
       return evidenceValue({
         ...capture,
         assertions: evaluateBaseProviderModelUnavailableFacts(scenarioFacts),
+        facts: scenarioFacts,
+        scenarioFacts,
+        cleanup,
+      });
+    },
+
+    async runDevelopmentProviderRateLimit({
+      sampleId,
+      providerBaseUrl,
+      providerApiKey,
+      platform = 'desktop_app',
+      locale = i18n.language,
+    }: {
+      sampleId: string;
+      providerBaseUrl: string;
+      providerApiKey: string;
+      platform?: 'desktop_app' | 'browser';
+      locale?: string;
+    }) {
+      if (!providerApiKey) {
+        throw new Error(
+          'agent.acceptance.providerRateLimitCredentialMissing',
+        );
+      }
+      const providerUrl = new URL(providerBaseUrl);
+      if (
+        providerUrl.protocol !== 'http:'
+        || !providerUrl.hostname
+        || !providerUrl.port
+      ) {
+        throw new Error('agent.acceptance.providerRateLimitUrlInvalid');
+      }
+      await useAgentStore.getState().loadAgents();
+      const agentStore = useAgentStore.getState();
+      const priorSelection = agentStore.selectedAgent;
+      const priorSurface = agentStore.getAgentSurface(priorSelection);
+      let runtimeFixture: FoundationDisposableRuntimeFixture | null = null;
+      let disposableAgentDeleted = false;
+      let disposableAgentId = '';
+      let fixtureModelDeleted = false;
+      let fixtureProviderDeleted = false;
+      let conversationId = '';
+      let turnId = '';
+      let conversationDeleted = false;
+      let localProjectionCleared = false;
+      let agentRestored = priorSelection === '';
+      let capture: Record<string, unknown> | null = null;
+      let providerConfiguration: Record<string, unknown> | null = null;
+      const providerCleanupFailures: string[] = [];
+      try {
+        runtimeFixture = await createGovernedToolRuntimeFixture(
+          'provider-rate-limit',
+          providerUrl.toString(),
+          providerApiKey,
+        );
+        const configuredProvider = await api.getProvider(
+          runtimeFixture.providerId,
+        );
+        providerConfiguration = {
+          idMatches: configuredProvider.id === runtimeFixture.providerId,
+          baseUrlMatches:
+            configuredProvider.base_url === providerUrl.toString(),
+          enabled: configuredProvider.enabled,
+          hasApiKey: configuredProvider.has_api_key,
+          modelPresent: configuredProvider.models.some(
+            (model) => model.id === runtimeFixture?.modelId && model.enabled,
+          ),
+          runtimeKind: configuredProvider.runtime_kind,
+        };
+        const agent = await agentStore.createAgent({
+          name:
+            `foundation-provider-rate-limit-${sampleId}-`
+            + crypto.randomUUID(),
+          title: `Foundation provider rate limit ${sampleId}`,
+          description: 'Foundation provider rate limit fixture',
+          provider: runtimeFixture.providerId,
+          model: runtimeFixture.modelId,
+          thinkingMode: 'auto',
+          chatConfig: JSON.stringify({ tools: [] }),
+        });
+        const agentId = agent.id || agent.name;
+        disposableAgentId = agentId;
+        await api.setSelectedAgent(agent.name);
+        useAgentStore.getState().setSelectedAgent(agent.name);
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+          resource: 'sessions',
+        });
+        const capabilitySessions =
+          await waitForCapabilitySessionEvidence();
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const readiness = await api.getAgentCapabilityReadiness({
+          agent_id: agentId,
+          client_capability_session_id: capabilitySessionId,
+        });
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Provider rate limit ${sampleId}`,
+          provider_id: runtimeFixture.providerId,
+          model_name: runtimeFixture.modelId,
+        });
+        conversationId = conversation.conversation_id;
+        await useChatStore.getState().selectSession(conversationId);
+        const [readbackBefore, tracesBefore, queueBefore] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+
+        let observationSequence = 0;
+        const errorEventRef: {
+          current: FoundationPreAdmissionErrorEvent | null;
+        } = { current: null };
+        const unsubscribe = eventBus.subscribe(
+          EVENT.AGENT_TURN_STREAM_EVENT,
+          (payload) => {
+            const sourceDelivery = (
+              payload as typeof payload & {
+                sourceDelivery?: AgentTurnSourceDelivery;
+              }
+            ).sourceDelivery;
+            if (payload.conversationId !== conversationId) return;
+            observationSequence += 1;
+            if (
+              payload.event !== 'error'
+              || payload.data.error_type !== 'PROVIDER_RATE_LIMIT'
+            ) return;
+            errorEventRef.current = {
+              data: evidenceValue(payload.data) as Record<string, unknown>,
+              eventType: payload.event,
+              observedAt: new Date(payload.timestampMs).toISOString(),
+              streamId: payload.streamId,
+              streamGeneration: payload.streamGeneration,
+              conversationId: payload.conversationId,
+              observationSequence,
+              timestampMs: payload.timestampMs,
+              sourceDelivery,
+            };
+          },
+        );
+        const messageCountBefore = useChatStore.getState().messages.length;
+        const submittedAtMs = Date.now();
+        let errorMessage = useChatStore.getState().messages
+          .slice(messageCountBefore)
+          .find((message) => (
+            message.role === 'assistant'
+            && message.typedError?.error_type === 'PROVIDER_RATE_LIMIT'
+          ));
+        try {
+          const sent = useChatStore.getState().sendMessage(
+            `Provider rate limit ${sampleId}`,
+            [],
+            {
+              clientIdempotencyKey: crypto.randomUUID(),
+            },
+          );
+          if (!sent) {
+            throw new Error(
+              'agent.acceptance.providerRateLimitSendRejected',
+            );
+          }
+          await waitFor(
+            () => {
+              errorMessage = useChatStore.getState().messages
+                .slice(messageCountBefore)
+                .find((message) => (
+                  message.role === 'assistant'
+                  && message.typedError?.error_type
+                    === 'PROVIDER_RATE_LIMIT'
+                  && message.resolution?.type === 'retryLater'
+                ));
+              const recovery = document.querySelector<HTMLButtonElement>(
+                '[data-pt-agent-message-error-recovery="retry-later"]',
+              );
+              const errorSurface = document.querySelector<HTMLElement>(
+                '[data-pt-agent-error-type="PROVIDER_RATE_LIMIT"]',
+              );
+              return Boolean(
+                errorEventRef.current
+                && errorMessage
+                && recovery
+                && recovery.getClientRects().length > 0
+                && errorSurface
+                && errorSurface.getClientRects().length > 0,
+              );
+            },
+            'provider-rate-limit recovery surface',
+            30_000,
+          );
+          await new Promise((resolve) => window.setTimeout(resolve, 2_500));
+        } catch (error) {
+          const activeAgent = selectedAgent();
+          const diagnosticTraces = await api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }).catch(() => ({ entries: [] }));
+          const latestDiagnosticTrace =
+            diagnosticTraces.entries[diagnosticTraces.entries.length - 1];
+          const diagnosticTrace = latestDiagnosticTrace?.trace
+            ? evidenceRecord(
+                evidenceValue(latestDiagnosticTrace.trace),
+                'providerRateLimitDiagnosticTrace',
+              )
+            : {};
+          const diagnosticClassifiedErrors = optionalEvidenceArray(
+            evidenceField(
+              diagnosticTrace,
+              'errorsClassified',
+              'errors_classified',
+            ),
+            'providerRateLimitDiagnosticClassifiedErrors',
+          ).map((value) => {
+            const entry = evidenceRecord(
+              value,
+              'providerRateLimitDiagnosticClassifiedError',
+            );
+            return {
+              reason: evidenceField(entry, 'reason', 'reason') ?? null,
+              httpStatus:
+                evidenceField(entry, 'httpStatus', 'http_status') ?? null,
+              errorCode:
+                evidenceField(entry, 'errorCode', 'error_code') ?? null,
+              errorMessage: String(
+                evidenceField(entry, 'errorMessage', 'error_message') ?? '',
+              ).split(providerUrl.toString()).join('<provider-base-url>'),
+            };
+          });
+          const observedMessages = useChatStore.getState().messages
+            .slice(messageCountBefore)
+            .map((message) => ({
+              role: message.role,
+              loading: message.loading === true,
+              cancelled: message.cancelled === true,
+              terminalStatus: message.terminalStatus ?? null,
+              error: message.error ?? null,
+              errorType: message.typedError?.error_type ?? null,
+              resolution: message.resolution?.type ?? null,
+            }));
+          const operation = useChatStore.getState().operations[conversationId];
+          throw Object.assign(
+            new Error(
+              'agent.acceptance.providerRateLimitRecoveryTimeout:'
+              + stableJson({
+                providerConfiguration,
+                activeAgent: activeAgent
+                  ? {
+                      id: activeAgent.id,
+                      provider: activeAgent.provider,
+                      model: activeAgent.model,
+                    }
+                  : null,
+                conversation: {
+                  agentId: readbackBefore.conversation.agent_id,
+                  providerId: readbackBefore.conversation.provider_id ?? null,
+                  modelName: readbackBefore.conversation.model_name ?? null,
+                },
+                classifiedErrors: diagnosticClassifiedErrors,
+                messages: observedMessages,
+                operation: operation
+                  ? {
+                      status: operation.status,
+                      runState: operation.runState,
+                      error: operation.error
+                        ? {
+                            message: operation.error.message,
+                            detail: operation.error.detail ?? null,
+                            resolution:
+                              operation.error.resolution?.type ?? null,
+                            providerId:
+                              operation.error.providerId ?? null,
+                          }
+                        : null,
+                    }
+                  : null,
+              }),
+            ),
+            { cause: error },
+          );
+        } finally {
+          unsubscribe();
+        }
+        const terminalObservedAtMs = Date.now();
+        const recovery = document.querySelector<HTMLButtonElement>(
+          '[data-pt-agent-message-error-recovery="retry-later"]',
+        );
+        const errorSurface = document.querySelector<HTMLElement>(
+          '[data-pt-agent-error-type="PROVIDER_RATE_LIMIT"]',
+        );
+        const errorText = errorSurface?.querySelector<HTMLElement>(
+          '[data-pt-agent-message-error-text="agent.errors.providerRateLimit"]',
+        );
+        const errorEvent =
+          errorEventRef.current as FoundationPreAdmissionErrorEvent | null;
+        if (
+          !errorMessage
+          || !recovery
+          || !errorSurface
+          || !errorText
+          || !errorEvent
+        ) {
+          throw new Error(
+            'agent.acceptance.providerRateLimitRecoveryMissing',
+          );
+        }
+        const sourceDelivery = errorEvent.sourceDelivery;
+        turnId = String(
+          errorMessage.turnId
+          ?? errorEvent.data.turnId
+          ?? errorEvent.data.turn_id
+          ?? sourceDelivery?.turnId
+          ?? '',
+        );
+        if (
+          !turnId
+          || !sourceDelivery
+          || sourceDelivery.transport !== 'station-sse'
+          || sourceDelivery.ptid !== authenticatedFoundationActorPtid()
+          || sourceDelivery.conversationId !== conversationId
+          || sourceDelivery.turnId !== turnId
+          || sourceDelivery.sequence <= 0
+          || sourceDelivery.rawPayload.eventType !== 'error'
+          || stableJson(
+            normalizeProjectedStationPayload(sourceDelivery.rawPayload.data),
+          ) !== stableJson(
+            normalizeProjectedStationPayload(errorEvent.data),
+          )
+        ) {
+          throw new Error(
+            'agent.acceptance.providerRateLimitRuntimeIdentityMismatch',
+          );
+        }
+        const recoveryVisible = recovery.getClientRects().length > 0;
+        const recoveryLabel = recovery.textContent?.trim() ?? '';
+        const errorVisible = errorText.getClientRects().length > 0;
+        const errorLabel = errorText.textContent?.trim() ?? '';
+        const projectedRetryAfterMs = Number(
+          errorSurface.dataset.ptAgentErrorRetryAfterMs ?? '-1',
+        );
+
+        const [readbackAfter, tracesAfter, queueAfter] = await Promise.all([
+          foundationConversationReadback(conversationId),
+          api.listAgentTurnTraces(agentId, {
+            conversationId,
+            page: 1,
+            pageSize: 200,
+          }),
+          api.listAgentTurnQueue(conversationId),
+        ]);
+        const typedError = errorMessage.typedError;
+        if (!typedError) {
+          throw new Error(
+            'agent.acceptance.providerRateLimitTypedErrorMissing',
+          );
+        }
+        const resolution = errorMessage.resolution;
+        const latestTrace =
+          tracesAfter.entries[tracesAfter.entries.length - 1];
+        const latestTraceRecord = latestTrace?.trace
+          ? evidenceRecord(
+              evidenceValue(latestTrace.trace),
+              'providerRateLimitTrace',
+            )
+          : {};
+        const latestProviderCalls = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'providerCalls',
+            'provider_calls',
+          ),
+          'providerRateLimitProviderCalls',
+        ).map((value) => (
+          evidenceRecord(value, 'providerRateLimitProviderCall')
+        ));
+        const classifiedErrors = optionalEvidenceArray(
+          evidenceField(
+            latestTraceRecord,
+            'errorsClassified',
+            'errors_classified',
+          ),
+          'providerRateLimitClassifiedErrors',
+        ).map((value) => (
+          evidenceRecord(value, 'providerRateLimitClassifiedError')
+        ));
+        const classifiedReason = evidenceField(
+          classifiedErrors[0] ?? {},
+          'reason',
+          'reason',
+        );
+        const classifiedRateLimit =
+          classifiedReason === FailoverReason.RATE_LIMIT
+          || classifiedReason === 'FAILOVER_REASON_RATE_LIMIT';
+        const completedAssistantMessages = readbackAfter.messages.filter(
+          (message) => (
+            String(message.role).toLowerCase() === 'assistant'
+            && String(message.status).toLowerCase() === 'completed'
+          ),
+        );
+        const replayReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const queueStateBeforeHash = await sha256Hex(
+          stableJson(queueBefore.entries),
+        );
+        const queueStateAfterHash = await sha256Hex(
+          stableJson(queueAfter.entries),
+        );
+        const sourceReadbackHash = await sha256Hex(stableJson(readbackAfter));
+        const replayReadbackHash = await sha256Hex(stableJson(replayReadback));
+        const typedOutcome = evidenceRecord(
+          evidenceValue(typedError),
+          'providerRateLimitOutcome',
+        );
+        const payloadHash = await sha256Hex(
+          stableJson(sourceDelivery.rawPayload),
+        );
+        const runtimeEvent: FoundationRuntimeEventObservation = {
+          eventId: await sha256Hex(stableJson({
+            conversationId,
+            turnId,
+            sequence: sourceDelivery.sequence,
+            payloadHash,
+          })),
+          eventType: errorEvent.eventType,
+          sequence: sourceDelivery.sequence,
+          observedAt: errorEvent.observedAt,
+          streamGeneration: errorEvent.streamGeneration,
+          streamIdHash: await sha256Hex(errorEvent.streamId),
+          conversationIdHash: await sha256Hex(conversationId),
+          payloadHash,
+          errorType: String(typedOutcome.error_type ?? ''),
+          sourceTransport: sourceDelivery.transport,
+          sourcePtidHash: await sha256Hex(sourceDelivery.ptid),
+          sourceConversationId: sourceDelivery.conversationId,
+          sourceTurnId: sourceDelivery.turnId,
+          sourceSequence: sourceDelivery.sequence,
+          sourceEventType: sourceDelivery.rawPayload.eventType,
+        };
+        const [profile, conversations, turnEvidence] = await Promise.all([
+          api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
+          api.listAgentConversations(agentId, {
+            page: 1,
+            pageSize: 200,
+          }),
+          foundationTurnEvidence(conversationId, turnId),
+        ]);
+        const replay = {
+          sourceHash: sourceReadbackHash,
+          replayHash: replayReadbackHash,
+          equal: sourceReadbackHash === replayReadbackHash,
+        };
+        const scenarioFacts = {
+          outcome: typedOutcome,
+          typedError,
+          resolution,
+          receiver: {
+            errorVisible,
+            errorText: errorLabel,
+            expectedErrorText: i18n.t(
+              'agent.errors.providerRateLimit',
+              { ns: 'agent' },
+            ),
+            recoveryVisible,
+            recoveryText: recoveryLabel,
+            expectedRecoveryText: i18n.t(
+              'agent.recovery.retryLater',
+              { ns: 'agent' },
+            ),
+            projectedRetryAfterMs,
+          },
+          station: {
+            conversationId,
+            turnId,
+            providerId: runtimeFixture.providerId,
+            modelId: runtimeFixture.modelId,
+            conversationVersion: readbackAfter.conversation.version,
+            stateHash: sourceReadbackHash,
+            messageDelta:
+              readbackAfter.messages.length - readbackBefore.messages.length,
+            traceDelta:
+              tracesAfter.entries.length - tracesBefore.entries.length,
+            queueDelta:
+              queueAfter.entries.length - queueBefore.entries.length,
+            queueStateBeforeHash,
+            queueStateAfterHash,
+            conversationVersionBefore: queueBefore.conversation_version,
+            conversationVersionAfter: queueAfter.conversation_version,
+            providerCallCount: latestProviderCalls.length,
+            classifiedErrorCount: classifiedErrors.length,
+            classifiedRateLimit,
+            completedAssistantCount: completedAssistantMessages.length,
+          },
+          submittedAt: new Date(submittedAtMs).toISOString(),
+          terminalObservedAt: new Date(terminalObservedAtMs).toISOString(),
+          runtimeEvent,
+          replay,
+          cleanup: {
+            fixtureModelDeleted: false,
+            fixtureProviderDeleted: false,
+            agentRestored: false,
+            disposableAgentDeleted: false,
+            conversationDeleted: false,
+            localProjectionCleared: false,
+          },
+        };
+        const assertions = evaluateBaseProviderRateLimitFacts(scenarioFacts);
+        const runtimeAttestation = await buildDirectRuntimeAttestation(
+          {
+            cell: 'BASE-RATE_LIMIT',
+            agent,
+            agentId,
+            profile,
+            readiness,
+            capabilitySessions,
+            conversations,
+            conversationReadback: readbackAfter,
+            turnQueue: queueAfter,
+            turnEvidence,
+            chatState: useChatStore.getState(),
+            sessionState: useSessionStore.getState(),
+            providerState: useProviderStore.getState(),
+            operation: useChatStore.getState().operations[conversationId],
+            lastAssistant: errorMessage,
+            scenarioFacts,
+            platform,
+            locale,
+            sampleId,
+          },
+          sampleId,
+        );
+        capture = {
+          assertions,
+          facts: scenarioFacts,
+          scenarioFacts,
+          runtimeAttestation,
+          'receiver-dom': {
+            scenarioId: 'BASE-RATE_LIMIT',
+            cellId: 'BASE-RATE_LIMIT',
+            selector:
+              '[data-pt-agent-error-type="PROVIDER_RATE_LIMIT"],'
+              + '[data-pt-agent-message-error-recovery="retry-later"]',
+            locale,
+            textHash: await sha256Hex(stableJson({
+              errorLabel,
+              recoveryLabel,
+            })),
+            visible: errorVisible && recoveryVisible,
+          },
+          'station-readback': {
+            entityKind: 'agent-provider-rate-limit',
+            entityIdHash: await sha256Hex(stableJson({
+              conversationId,
+              turnId,
+            })),
+            revision: Number(readbackAfter.conversation.version),
+            stateHash: sourceReadbackHash,
+          },
+          'runtime-events': {
+            eventId: runtimeEvent.eventId,
+            sequence: runtimeEvent.sequence,
+            eventType: runtimeEvent.eventType,
+            occurredAt: runtimeEvent.observedAt,
+            streamGeneration: runtimeEvent.streamGeneration,
+            streamIdHash: runtimeEvent.streamIdHash,
+            conversationIdHash: runtimeEvent.conversationIdHash,
+            payloadHash: runtimeEvent.payloadHash,
+            errorType: runtimeEvent.errorType,
+            sourceTransport: runtimeEvent.sourceTransport,
+            sourcePtidHash: runtimeEvent.sourcePtidHash,
+            sourceConversationId: runtimeEvent.sourceConversationId,
+            sourceTurnId: runtimeEvent.sourceTurnId,
+            sourceSequence: runtimeEvent.sourceSequence,
+            sourceEventType: runtimeEvent.sourceEventType,
+          },
+          'measurement-report': {
+            metric: 'foundation-provider-rate-limit-duration-ms',
+            sampleIds: [sampleId],
+            threshold: 'single-terminal-provider-attempt',
+            passed: (
+              assertions.typedProviderRateLimit
+              && assertions.oneTerminalProviderAttempt
+            ),
+            latencyMs: terminalObservedAtMs - submittedAtMs,
+          },
+          'side-effect-count': {
+            counterId: await sha256Hex(stableJson({
+              cell: 'BASE-RATE_LIMIT',
+              conversationId,
+              turnId,
+            })),
+            count: completedAssistantMessages.length,
+            maximum: 0,
+          },
+          replay,
+        };
+      } finally {
+        try {
+          if (conversationId) {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          }
+        } finally {
+          try {
+            if (disposableAgentId) {
+              await api.deleteAgent(disposableAgentId);
+              await useAgentStore.getState().loadAgents();
+              disposableAgentDeleted =
+                !useAgentStore.getState().agents.some(
+                  (candidate) => (
+                    (candidate.id || candidate.name) === disposableAgentId
+                  ),
+                );
+            }
+          } finally {
+            try {
+              if (runtimeFixture) {
+                let modelDeletionFailed = false;
+                await api.deleteModel(
+                  runtimeFixture.providerId,
+                  runtimeFixture.modelId,
+                ).catch((error: unknown) => {
+                  if (!isFoundationResourceNotFound(error)) {
+                    modelDeletionFailed = true;
+                    providerCleanupFailures.push(
+                      `model:${observedErrorCode(error)}`,
+                    );
+                  }
+                });
+                fixtureModelDeleted = !modelDeletionFailed;
+                await api.deleteProvider(
+                  runtimeFixture.providerId,
+                ).catch((error: unknown) => {
+                  if (!isFoundationResourceNotFound(error)) {
+                    providerCleanupFailures.push(
+                      `provider:${observedErrorCode(error)}`,
+                    );
+                  }
+                });
+                const providerReadback = await api
+                  .getProvider(runtimeFixture.providerId)
+                  .catch((error: unknown) => {
+                    if (isFoundationResourceNotFound(error)) return null;
+                    providerCleanupFailures.push(
+                      `provider-readback:${observedErrorCode(error)}`,
+                    );
+                    return undefined;
+                  });
+                fixtureProviderDeleted =
+                  providerReadback === null
+                  || (
+                    providerReadback !== undefined
+                    &&
+                    providerReadback.version === 0
+                    && providerReadback.has_api_key === false
+                  );
+                fixtureModelDeleted =
+                  fixtureModelDeleted
+                  && (
+                    providerReadback === null
+                    || (
+                      providerReadback !== undefined
+                      && !providerReadback.models.some(
+                        (model) => model.id === runtimeFixture?.modelId,
+                      )
+                    )
+                  );
+                await useProviderStore.getState().loadProviders().catch(
+                  (error: unknown) => {
+                    providerCleanupFailures.push(
+                      `provider-projection:${observedErrorCode(error)}`,
+                    );
+                  },
+                );
+              }
+            } finally {
+              if (priorSelection) {
+                useAgentStore.getState().setSelectedAgent(priorSelection);
+                useAgentStore.getState().setAgentSurface(
+                  priorSelection,
+                  priorSurface,
+                );
+                await api.setSelectedAgent(priorSelection);
+              }
+              agentRestored =
+                useAgentStore.getState().selectedAgent === priorSelection;
+            }
+          }
+        }
+      }
+      if (!capture) {
+        throw new Error(
+          'agent.acceptance.providerRateLimitCaptureMissing',
+        );
+      }
+      const cleanup = {
+        resourceKind: 'provider-rate-limit-fixture',
+        resourceIdHash: await sha256Hex(stableJson({
+          conversationId,
+          platform,
+          providerId: runtimeFixture?.providerId ?? '',
+        })),
+        fixtureModelDeleted,
+        fixtureProviderDeleted,
+        agentRestored,
+        conversationDeleted,
+        disposableAgentDeleted,
+        localProjectionCleared,
+        failures: providerCleanupFailures,
+        status:
+          fixtureModelDeleted
+            && fixtureProviderDeleted
+            && agentRestored
+            && conversationDeleted
+            && disposableAgentDeleted
+            && localProjectionCleared
+            && providerCleanupFailures.length === 0
+            ? 'clean'
+            : 'failed',
+      };
+      const scenarioFacts = evidenceRecord(
+        capture.scenarioFacts,
+        'foundationProviderRateLimitFacts',
+      );
+      scenarioFacts.cleanup = cleanup;
+      const assertions = evaluateBaseProviderRateLimitFacts(scenarioFacts);
+      return evidenceValue({
+        ...capture,
+        assertions,
         facts: scenarioFacts,
         scenarioFacts,
         cleanup,

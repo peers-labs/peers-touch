@@ -371,6 +371,20 @@ REQUIRED_ASSERTIONS = {
             "queueUnchanged",
         }
     ),
+    "BASE-RATE_LIMIT": frozenset(
+        {
+            "typedProviderRateLimit",
+            "localizedRetryLaterVisible",
+            "retryAfterProjected",
+            "realProvider429Observed",
+            "oneTerminalProviderAttempt",
+            "noHiddenRetry",
+            "zeroSuccessfulCompletion",
+            "queueUnchanged",
+            "replayEqual",
+            "cleanupComplete",
+        }
+    ),
     "BASE-APPROVAL_DENIED": frozenset(
         {
             "typedDenialProjected",

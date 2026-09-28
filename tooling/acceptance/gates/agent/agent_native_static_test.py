@@ -1041,7 +1041,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_model_unavailable_development_journey_uses_real_provider(self) -> None:
         start = self.source.index("async runDevelopmentProviderModelUnavailable")
-        end = self.source.index("async runDevelopmentProviderTimeout", start)
+        end = self.source.index("async runDevelopmentProviderRateLimit", start)
         scenario = self.source[start:end]
 
         self.assertIn("await api.addModel(sourceAgent.provider", scenario)
@@ -1139,6 +1139,81 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn(
             "resourceIdHash: await sha256Hex(stableJson({",
             scenario,
+        )
+
+    def test_provider_rate_limit_journey_uses_real_provider_path(self) -> None:
+        start = self.source.index("async runDevelopmentProviderRateLimit")
+        end = self.source.index("async runDevelopmentProviderTimeout", start)
+        scenario = self.source[start:end]
+
+        self.assertIn("new URL(providerBaseUrl)", scenario)
+        self.assertIn(
+            "createGovernedToolRuntimeFixture(\n"
+            "          'provider-rate-limit',",
+            scenario,
+        )
+        self.assertIn(
+            "foundation-provider-rate-limit-${sampleId}-",
+            scenario,
+        )
+        self.assertIn("thinkingMode: 'auto'", scenario)
+        self.assertIn("chatConfig: JSON.stringify({ tools: [] })", scenario)
+        self.assertIn("useChatStore.getState().sendMessage(", scenario)
+        self.assertIn("=== 'PROVIDER_RATE_LIMIT'", scenario)
+        self.assertIn(
+            '[data-pt-agent-message-error-recovery="retry-later"]',
+            scenario,
+        )
+        self.assertIn(
+            "classifiedReason === FailoverReason.RATE_LIMIT",
+            scenario,
+        )
+        self.assertIn(
+            "classifiedReason === 'FAILOVER_REASON_RATE_LIMIT'",
+            scenario,
+        )
+        self.assertIn("providerCallCount: latestProviderCalls.length", scenario)
+        self.assertIn("classifiedErrorCount: classifiedErrors.length", scenario)
+        self.assertIn("completedAssistantCount:", scenario)
+        self.assertIn("queueStateBeforeHash", scenario)
+        self.assertIn("queueStateAfterHash", scenario)
+        self.assertIn("conversationVersionBefore:", scenario)
+        self.assertIn("conversationVersionAfter:", scenario)
+        self.assertIn("buildDirectRuntimeAttestation(", scenario)
+        self.assertIn("evaluateBaseProviderRateLimitFacts(", scenario)
+        self.assertIn("scenarioFacts.cleanup = cleanup", scenario)
+        for role in (
+            "'receiver-dom':",
+            "'station-readback':",
+            "'runtime-events':",
+            "'measurement-report':",
+            "'side-effect-count':",
+            "replay,",
+        ):
+            self.assertIn(role, scenario)
+        self.assertIn(
+            "resourceKind: 'provider-rate-limit-fixture'",
+            scenario,
+        )
+        self.assertIn(
+            "clearFoundationLocalConversationProjection(conversationId)",
+            scenario,
+        )
+        self.assertIn(
+            "await deleteFoundationConversation(",
+            scenario,
+        )
+        self.assertIn("await api.deleteAgent(disposableAgentId)", scenario)
+        self.assertIn("await api.deleteModel(", scenario)
+        self.assertIn("await api.deleteProvider(", scenario)
+        self.assertNotIn("recovery.click()", scenario)
+        self.assertIn(
+            "agent.acceptance.governedToolRuntimeFixtureCleanupFailed",
+            self.source,
+        )
+        self.assertNotIn(
+            "await api.deleteProvider(providerId).catch(() => undefined)",
+            self.source,
         )
 
     def test_provider_timeout_development_journey_uses_real_provider(self) -> None:
