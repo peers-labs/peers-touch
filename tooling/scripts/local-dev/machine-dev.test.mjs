@@ -31,12 +31,12 @@ import {
   MachineDevError,
   checkWorkspace,
   observeLeases,
-  refreshWorkspaceSourceIdentity,
   registerWorkspace,
   selectWorkspaceProfile,
   statusAll,
   unregisterWorkspace,
   updateWorkspace,
+  validateLeaseRequest,
 } from './machine-dev-registry.mjs';
 import { acquireWorkspaceLifecycleLockSync } from './workspace-lifecycle-lock.mjs';
 
@@ -355,15 +355,31 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
   }
 });
 
-test('runtime startup refreshes only same-branch source identity', () => {
+test('current Git HEAD is source state, not durable registration identity', () => {
   const scope = fixture();
   try {
     const registered = registerWorkspace(registrationOptions(scope));
+    assert.equal('head' in registered, false);
     writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
     git(scope.workspaceA, 'add', 'next.txt');
     git(scope.workspaceA, 'commit', '-m', 'test: advance source');
     const advancedHead = git(scope.workspaceA, 'rev-parse', 'HEAD');
 
+    const checked = checkWorkspace({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      envRepo: scope.envRepo,
+    });
+    assert.equal(checked.source.head, advancedHead);
+    assert.equal(checked.source.branch, registered.branch);
+    assert.equal('head' in checked.binding, false);
+    assert.equal(
+      statusAll({ home: scope.home, envRepo: scope.envRepo })
+        .registrations[0].activity,
+      'idle',
+    );
+
+    git(scope.workspaceA, 'switch', '-c', 'feat/different');
     expectCode('WORKTREE_IDENTITY_MISMATCH', () =>
       checkWorkspace({
         home: scope.home,
@@ -371,53 +387,86 @@ test('runtime startup refreshes only same-branch source identity', () => {
         envRepo: scope.envRepo,
       }),
     );
-    const refreshed = refreshWorkspaceSourceIdentity({
+  } finally {
+    scope.close();
+  }
+});
+
+test('schema v1 registration migrates once and removes persisted HEAD', () => {
+  const scope = fixture();
+  try {
+    const registryFile = machineRegistryPath(scope.home);
+    const registered = registerWorkspace(registrationOptions(scope));
+    const current = JSON.parse(readFileSync(registryFile, 'utf8'));
+    writeFileSync(
+      registryFile,
+      `${JSON.stringify({
+        ...current,
+        schemaVersion: 1,
+        registrations: current.registrations.map((registration) => ({
+          ...registration,
+          head: git(scope.workspaceA, 'rev-parse', 'HEAD'),
+        })),
+      })}\n`,
+    );
+
+    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
+    git(scope.workspaceA, 'add', 'next.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance before migration');
+    const checked = checkWorkspace({
       home: scope.home,
       workspaceRoot: scope.workspaceA,
-      updatedBy: 'devctl-runtime-start',
+      envRepo: scope.envRepo,
     });
-    assert.equal(refreshed.head, advancedHead);
-    assert.equal(refreshed.branch, registered.branch);
-    assert.equal(refreshed.profile, registered.profile);
-    assert.equal(refreshed.slot, registered.slot);
-    assert.deepEqual(
-      refreshed.allowedCapabilities,
-      registered.allowedCapabilities,
+    const migrated = JSON.parse(readFileSync(registryFile, 'utf8'));
+
+    assert.equal(checked.binding.workspaceId, registered.workspaceId);
+    assert.equal(
+      checked.source.head,
+      git(scope.workspaceA, 'rev-parse', 'HEAD'),
     );
-    assert.equal(refreshed.updatedBy, 'devctl-runtime-start');
+    assert.equal(migrated.schemaVersion, 2);
+    assert.equal('head' in migrated.registrations[0], false);
+  } finally {
+    scope.close();
+  }
+});
+
+test('runtime intent remains fenced to the current Git HEAD', () => {
+  const scope = fixture();
+  try {
+    registerWorkspace(registrationOptions(scope));
+    declareLeaseIntent(scope);
+    writeFileSync(path.join(scope.workspaceA, 'next.txt'), 'next\n');
+    git(scope.workspaceA, 'add', 'next.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance declared source');
+
     assert.equal(
       checkWorkspace({
         home: scope.home,
         workspaceRoot: scope.workspaceA,
         envRepo: scope.envRepo,
-      }).binding.head,
-      advancedHead,
+      }).source.head,
+      git(scope.workspaceA, 'rev-parse', 'HEAD'),
     );
-
-    writeFileSync(path.join(scope.workspaceA, 'leased.txt'), 'leased\n');
-    git(scope.workspaceA, 'add', 'leased.txt');
-    git(scope.workspaceA, 'commit', '-m', 'test: advance while leased');
-    expectCode('STATION_CAPABILITY_CONFLICT', () =>
-      refreshWorkspaceSourceIdentity({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-        observeLeases: () => ({
-          activeLeases: [{
-            workspaceId: registered.workspaceId,
-            resourceKind: 'station.deploy',
-            resourceId: 'station-four',
-          }],
-          staleMetadata: [],
-        }),
+    expectCode('RUNTIME_INTENT_MISSING', () =>
+      validateLeaseRequest({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
       }),
     );
 
-    git(scope.workspaceA, 'switch', '-c', 'feat/different');
-    expectCode('WORKTREE_IDENTITY_MISMATCH', () =>
-      refreshWorkspaceSourceIdentity({
-        home: scope.home,
-        workspaceRoot: scope.workspaceA,
-      }),
+    const refreshed = declareLeaseIntent(scope);
+    assert.equal(
+      validateLeaseRequest({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
+      }).declarationId,
+      refreshed.declarationId,
     );
   } finally {
     scope.close();
@@ -538,8 +587,8 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
         journeyId: 'MACHINE-DEV-J01',
         devState: null,
         branch: registered.branch,
-        initialHead: registered.head,
-        expectedHead: registered.head,
+        initialHead: git(scope.workspaceA, 'rev-parse', 'HEAD'),
+        expectedHead: git(scope.workspaceA, 'rev-parse', 'HEAD'),
       },
       {
         home: scope.home,

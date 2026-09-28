@@ -194,6 +194,9 @@ test(
     const root = temporaryRoot(t);
     const markerPath = path.join(root, 'remote-stale-deployed');
     const environment = machineEnvironment(t, root);
+    fs.writeFileSync(path.join(root, 'source-update.txt'), 'advanced\n');
+    git(root, 'add', 'source-update.txt');
+    git(root, 'commit', '-m', 'test: advance source after registration');
     const currentCommit = git(root, 'rev-parse', 'HEAD');
     const port = await startHealthServer(
       t,
