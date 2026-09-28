@@ -650,7 +650,8 @@ The architecture is implemented only when:
 - tracked Development declarations publish the exact Plan Package and current
   Task locator; Peers Dev never infers progress from a work item or branch;
 - Dev Workflow heartbeats long-running declarations before expiry and refreshes
-  both the declaration and workspace registration after source HEAD changes;
+  the declaration after source HEAD changes; the machine registration does not
+  persist source HEAD;
 - unrelated sibling worktree add/remove/prune operations do not invalidate the
   selected worktree's binding;
 - multiple active Plans may coexist in one repository/PR while each workspace
