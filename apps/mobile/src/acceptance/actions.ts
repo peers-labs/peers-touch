@@ -775,21 +775,23 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
     federations: await readFederationContexts(),
   }),
 
-  'social.people.search': async ({ query }) => {
+  'social.people.search': async ({ query, federationId }) => {
+    const contextId = requireString(
+      federationId,
+      'social.people.search.federationId',
+    );
     const results = await searchSocialPeople(
       requireString(query, 'social.people.search.query'),
     );
-    return results.map((searchResult) => {
-      const result = {
-        ...searchResult,
-        federationId: searchResult.federation?.handle ?? '',
-      };
-      return {
-        ptid: result.ptid,
-        federationId: result.federationId,
-        homeStationPeerId: result.homeStationPeerId,
-      };
-    });
+    const contexts = await readFederationContexts();
+    if (!contexts.some((context) => context.federationId === contextId)) {
+      throw new Error('acceptance.mobile.federationContextUnavailable');
+    }
+    return results.map((result) => ({
+      ptid: result.ptid,
+      federationId: contextId,
+      homeStationPeerId: result.homeStationPeerId,
+    }));
   },
 
   'reliability.fixture.configure': async (input) => (
