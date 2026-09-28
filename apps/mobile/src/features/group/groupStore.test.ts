@@ -107,7 +107,6 @@ beforeEach(() => {
       showMemberNickname: false,
       alertEnabled: true,
       background: '',
-      clearedAt: 0,
     },
   });
   useGroupStore.getState().bindSession(null);

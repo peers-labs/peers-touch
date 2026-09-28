@@ -57,6 +57,7 @@ class ChatStorageBatchClearAggregateTest(unittest.TestCase):
             [spec.gate_id for spec in batch_clear_aggregate.PRECEDING_GATES],
             [
                 "chat-storage-contract",
+                "chat-storage-zero-legacy-e2e",
                 "chat-storage-desktop-batch-clear-e2e",
                 "chat-storage-mobile-batch-clear-e2e",
                 "mobile-simulator-chat-contacts-e2e",

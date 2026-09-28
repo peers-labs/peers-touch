@@ -22,6 +22,7 @@ from tooling.acceptance.gates.chat_storage.governance_aggregate import (
 GATE_ID = "chat-storage-batch-clear-aggregate-e2e"
 PRECEDING_GATES: tuple[GateSpec, ...] = (
     GateSpec("CSG-G00", "chat-storage-contract"),
+    GateSpec("CSG-G06", "chat-storage-zero-legacy-e2e"),
     GateSpec("CSG-G07", "chat-storage-desktop-batch-clear-e2e"),
     GateSpec("CSG-G07", "chat-storage-mobile-batch-clear-e2e"),
     GateSpec("CSG-G07-regression", "mobile-simulator-chat-contacts-e2e"),

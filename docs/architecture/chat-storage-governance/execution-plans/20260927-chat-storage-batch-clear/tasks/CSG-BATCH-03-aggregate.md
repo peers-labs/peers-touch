@@ -69,6 +69,11 @@
       "verificationClass": "ACCEPTANCE_PROOF"
     },
     {
+      "id": "chat-storage-zero-legacy-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate chat-storage-zero-legacy-e2e",
+      "verificationClass": "ACCEPTANCE_PROOF"
+    },
+    {
       "id": "chat-storage-batch-clear-aggregate-e2e",
       "command": "python3 tooling/scripts/acceptance-run.py --gate chat-storage-batch-clear-aggregate-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
@@ -78,6 +83,7 @@
     "Desktop and Mobile batch-clear Gates are DONE and PROVEN on one exact source",
     "Desktop release and Mobile native builds pass on the same source",
     "Acceptance infrastructure validation passes",
+    "The nine-dimension Chat storage legacy inventory has zero live references",
     "No batch path bypasses canonical single-conversation cleanup",
     "Final aggregate rejects stale evidence and the worktree is clean"
   ],
@@ -87,17 +93,12 @@
     "Do not mark partial batch success as complete",
     "Do not run a Tauri release build with less than 20 GiB free disk"
   ],
-  "updatedAt": "2026-09-27T18:00:00.000Z",
+  "updatedAt": "2026-09-28T02:10:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "SOURCE_CHECK",
       "result": "PASS",
-      "ref": "39 Python tests, 66 focused Mobile Vitest cases, Mobile check, Chat domain validation, and forbidden-path contract checks"
-    },
-    {
-      "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "PASS",
-      "ref": "acceptance://acceptance-run/latest/reports/run.json and acceptance://acceptance-gap-detect/latest/reports/gap-report.json; exact-source closure and zero-gap proof"
+      "ref": "R3 regenerated Proto outputs; 76 focused Mobile tests, Desktop/Mobile checks, Go generated-model compile, 22 Python contract tests, Plan validation, and 2,564 legacy scan assignments with zero violations passed"
     }
   ]
 }
@@ -105,11 +106,13 @@
 
 ## Current Snapshot
 
-- State: implementing final integrated-source remediation after the branch
-  advanced beyond the previously proven source.
-- Dependencies: `CSG-BATCH-01-desktop`, `CSG-BATCH-02-mobile` are done.
-- Review: final exact-source Acceptance, Gap Detector and independent
-  plan-scope completion review must be rerun after remediation.
+- Lifecycle truth is owned by the Plan Package, the active Development Session,
+  and the machine-owned completion review.
+- R2 review detected reintroduced `CSG-L01` compatibility state and mutable
+  evidence aliases; R3 removes the old path and binds zero-legacy proof into
+  completion.
+- This Task advances only after current exact-source completion Acceptance,
+  zero-gap detection, and independent plan-scope review all pass.
 
 ## Closure
 
