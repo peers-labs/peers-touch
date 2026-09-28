@@ -1223,7 +1223,7 @@ test('rejects metadata and task/Acceptance crosswalk mismatches', async (t) => {
   await t.test('acceptance aggregate owns proof without functional checks', async (t) => {
     const fixture = await makeFixture(t, {
       mutateTaskSlices(taskSlices) {
-        const task = taskSlices.get('task-a');
+        const task = taskSlices.get('task-b');
         task.completionClass = 'acceptance-aggregate';
         task.checks = task.checks.filter(
           (check) => check.verificationClass !== 'FUNCTIONAL_CHECK',
@@ -1234,7 +1234,7 @@ test('rejects metadata and task/Acceptance crosswalk mismatches', async (t) => {
       repoRoot: fixture.root,
     });
     assert.equal(
-      planPackage.taskSlices.get('task-a').completionClass,
+      planPackage.taskSlices.get('task-b').completionClass,
       'acceptance-aggregate',
     );
   });
