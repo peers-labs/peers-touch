@@ -18,10 +18,12 @@ modules/
   mcp.ts
   channels.ts
   cron.ts
+  command-menu.ts
   memory.ts
+  oss.ts
+  moments/index.ts
   applets.ts
   logs.ts
-  connections.ts
 ```
 
 `main.tsx` 中只需一行：
@@ -45,6 +47,7 @@ export interface SidebarEntry {
 export interface SettingsEntry {
   order: number;                 // 设置页 Tab 的排序权重
   label?: string;                // Tab 显示文字，缺省取 name
+  sectionHostPolicy?: SectionHostPolicy; // 设置页 section 的挂载/缓存策略
   tooltip?: string;              // 额外提示信息
 }
 
@@ -135,7 +138,7 @@ const pageModules = getModulesWithPages();
 ```
 
 
-## 现有 12 个模块
+## 现有 14 个模块
 
 | id | 文件 | name | icon | page | settings | sidebar |
 |----|------|------|------|------|----------|---------|
@@ -143,35 +146,21 @@ const pageModules = getModulesWithPages();
 | `models` | model-service.ts | Model Service | Cpu | - | order: 15 | - |
 | `account` | account.ts | OAuth Sign-In | User | - | order: 20 | - |
 | `memory` | memory.ts | Memory | Brain | MemoryPage | order: 25 | top, order: 35 |
-| `connections` | connections.ts | OAuth Client Connections | KeyRound | - | order: 26 (条件注册) | - |
 | `skills` | skills.ts | Skills | BookMarked | - | order: 30 | - |
 | `tts` | tts/index.tsx | Voice | Volume2 | - | order: 35 | - |
 | `mcp` | mcp.ts | MCP | Cable | - | order: 35 | - |
 | `applets` | applets.ts | Applets | Blocks | AppletsPage | - | top, order: 30 |
-| `channels` | channels.ts | Channels | Send | ChannelsPage | order: 40 | top, order: 50 |
-| `cron` | cron.ts | Cron Jobs | Clock | CronPage | - | top, order: 40 |
+| `channels` | channels.ts | Channels | Send | - | order: 40, selected-only | - |
+| `cron` | cron.ts | Cron Jobs | Clock | - | order: 45, selected-only | - |
+| `command-menu` | command-menu.ts | Command Palette | Command | - | order: 46, selected-only | - |
+| `oss` | oss.ts | My Files | FolderOpen | - | order: 52, selected-only | - |
+| `moments` | moments/index.ts | Moments | Sparkles | MomentsApp | - | top, order: 25 |
 | `logs` | logs.ts | Logs | FileText | - | order: 80 | - |
 
-`connections` 模块是条件注册的示例：
-
-```typescript
-const isAdvancedConnectionsEnabled = (() => {
-  const envEnabled = import.meta.env.VITE_ENABLE_ADVANCED_OAUTH_CONNECTIONS === 'true';
-  const runtimeEnabled = (() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      return window.localStorage.getItem('pt.settings.advanced_oauth_connections') === '1';
-    } catch {
-      return false;
-    }
-  })();
-  return envEnabled || runtimeEnabled;
-})();
-
-if (isAdvancedConnectionsEnabled) {
-  registerModule({ ... });
-}
-```
+My Files、Cron Jobs、Channels 和 Command Palette 是设置页专属模块，不注册
+`page` 或 `sidebarEntry`。前三者包含网络请求或轮询，因此通过
+`sectionHostPolicy: { cache: 'selected-only' }` 在离开 section 时卸载；Command
+Palette 设置项调用全局唯一的 `CommandMenu` overlay。
 
 
 ## 如何新增一个模块

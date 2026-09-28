@@ -1,20 +1,15 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ActionIcon, SideNav } from '@lobehub/ui';
-import { Badge, Input, Modal, theme } from 'antd';
+import { Badge, theme } from 'antd';
 import {
   Bot,
   MessageCircle,
   Settings,
   Search,
-  FileText,
   FlaskConical,
   Blocks,
-  Keyboard,
-  NotebookTabs,
-  Plus,
   Sparkles,
-  UserRoundCog,
 } from 'lucide-react';
 import { NotificationBell } from './NotificationBell';
 import { UserProfilePopover, useUserAvatar } from './UserProfilePopover';
@@ -27,23 +22,13 @@ import { useChatStore } from '../store/chat';
 import { useNavigationBadgeStore } from '../store/navigationBadges';
 import { openAgentChatSession } from '../utils/openAgentChatSession';
 import { useAppletsStore } from '../store/applets';
-import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
+import type { Page, Navigation, AppletPins } from '../types/navigation';
 import { markInteractionStarted } from '../kernel/frontendRuntimeProfiler';
 
 interface AppSideNavProps {
   page: Page;
-  router: HashRouter;
   navigation: Navigation;
   appletPins: AppletPins;
-}
-
-interface CommandPaletteItem {
-  id: string;
-  label: string;
-  description: string;
-  shortcut: string;
-  icon: ReactNode;
-  run: () => void;
 }
 
 function PrimaryNavAnchor({ pageId, children }: { readonly pageId: string; readonly children: ReactNode }) {
@@ -58,11 +43,6 @@ function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tagName = target.tagName.toLowerCase();
   return target.isContentEditable || tagName === 'input' || tagName === 'textarea' || tagName === 'select';
-}
-
-function shortcut(keys: string): string {
-  const mod = navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl';
-  return keys.replace('Mod', mod).replace('Shift', '⇧');
 }
 
 export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
@@ -81,9 +61,6 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
     [installedApplets],
   );
   const pinnedAgents = useMemo(() => agents.filter((agent) => agent.pinned), [agents]);
-
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [commandQuery, setCommandQuery] = useState('');
 
   const navigatePrimary = useCallback((pageId: string) => {
     markInteractionStarted('shell', `primary-nav:${pageId}`, { pageId });
@@ -150,63 +127,6 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
     navigation.navigateTo('agent');
   }, [agents, navigation, selectedAgent, t]);
 
-  const commandItems = useMemo<CommandPaletteItem[]>(() => [
-    {
-      id: 'search',
-      label: t('layout.command.search'),
-      description: t('layout.command.searchDesc'),
-      shortcut: shortcut('Mod K'),
-      icon: <Search size={16} />,
-      run: () => navigatePrimary('search'),
-    },
-    {
-      id: 'new-chat',
-      label: t('layout.command.newChat'),
-      description: t('layout.command.newChatDesc'),
-      shortcut: shortcut('Mod N'),
-      icon: <Plus size={16} />,
-      run: handleNewChat,
-    },
-    {
-      id: 'next-agent',
-      label: t('layout.command.nextAgent'),
-      description: t('layout.command.nextAgentDesc'),
-      shortcut: shortcut('Mod J'),
-      icon: <UserRoundCog size={16} />,
-      run: handleNextAgent,
-    },
-    {
-      id: 'notes',
-      label: t('layout.command.notes'),
-      description: t('layout.command.notesDesc'),
-      shortcut: shortcut('Mod Shift N'),
-      icon: <NotebookTabs size={16} />,
-      run: () => navigatePrimary('notes'),
-    },
-    {
-      id: 'settings',
-      label: t('layout.command.settings'),
-      description: t('layout.command.settingsDesc'),
-      shortcut: shortcut('Mod ,'),
-      icon: <Settings size={16} />,
-      run: () => navigatePrimary('settings'),
-    },
-  ], [handleNewChat, handleNextAgent, navigatePrimary, t]);
-
-  const filteredCommands = useMemo(() => {
-    const query = commandQuery.trim().toLowerCase();
-    if (!query) return commandItems;
-    return commandItems.filter((item) =>
-      `${item.label} ${item.description} ${item.shortcut}`.toLowerCase().includes(query),
-    );
-  }, [commandItems, commandQuery]);
-
-  const runCommand = useCallback((item: CommandPaletteItem) => {
-    item.run();
-    setCommandPaletteOpen(false);
-    setCommandQuery('');
-  }, []);
-
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -214,19 +134,7 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
       if (isEditableTarget(event.target)) return;
 
       const key = event.key.toLowerCase();
-      if (event.shiftKey && key === 'p') {
-        event.preventDefault();
-        setCommandPaletteOpen((open) => !open);
-        return;
-      }
-
-      if (key === 'k') {
-        event.preventDefault();
-        navigatePrimary('search');
-      } else if (key === 'n' && event.shiftKey) {
-        event.preventDefault();
-        navigatePrimary('notes');
-      } else if (key === 'n') {
+      if (key === 'n' && !event.shiftKey) {
         event.preventDefault();
         handleNewChat();
       } else if (key === 'j') {
@@ -336,15 +244,6 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
                 title={t('agent.eval.title', { ns: 'agent' })}
               />
             </PrimaryNavAnchor>
-            <PrimaryNavAnchor pageId="notes">
-              <ActionIcon
-                icon={FileText}
-                size="large"
-                active={page === 'notes'}
-                onClick={() => navigatePrimary('notes')}
-                title={t('layout.nav.notes')}
-              />
-            </PrimaryNavAnchor>
             <PrimaryNavAnchor pageId="marketplace">
               <ActionIcon
                 icon={Sparkles}
@@ -387,13 +286,6 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
         bottomActions={
           <>
             <NotificationBell />
-            <ActionIcon
-              icon={Keyboard}
-              size="large"
-              active={commandPaletteOpen}
-              onClick={() => setCommandPaletteOpen(true)}
-              title={t('layout.command.openPaletteWithShortcut', { shortcut: shortcut('Mod Shift P') })}
-            />
             <PrimaryNavAnchor pageId="settings">
               <ActionIcon
                 icon={Settings}
@@ -406,73 +298,6 @@ export function AppSideNav({ page, navigation, appletPins }: AppSideNavProps) {
           </>
         }
       />
-
-      <Modal
-        open={commandPaletteOpen}
-        title={t('layout.command.title')}
-        footer={null}
-        width={520}
-        onCancel={() => setCommandPaletteOpen(false)}
-      >
-        <Input
-          autoFocus
-          value={commandQuery}
-          onChange={(event) => setCommandQuery(event.target.value)}
-          onPressEnter={() => {
-            const first = filteredCommands[0];
-            if (first) runCommand(first);
-          }}
-          placeholder={t('layout.command.placeholder')}
-          style={{ marginBottom: 12 }}
-        />
-        <div style={{ display: 'grid', gap: 6 }}>
-          {filteredCommands.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => runCommand(item)}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '24px 1fr auto',
-                alignItems: 'center',
-                gap: 10,
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: `1px solid ${token.colorBorderSecondary}`,
-                background: token.colorBgContainer,
-                color: token.colorText,
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <span style={{ color: token.colorTextSecondary }}>{item.icon}</span>
-              <span style={{ minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>{item.label}</span>
-                <span style={{ display: 'block', fontSize: 12, color: token.colorTextTertiary }}>{item.description}</span>
-              </span>
-              <kbd
-                style={{
-                  padding: '2px 6px',
-                  borderRadius: 6,
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  background: token.colorFillQuaternary,
-                  color: token.colorTextSecondary,
-                  fontSize: 11,
-                  fontFamily: 'inherit',
-                }}
-              >
-                {item.shortcut}
-              </kbd>
-            </button>
-          ))}
-          {filteredCommands.length === 0 && (
-            <div style={{ padding: '18px 0', color: token.colorTextTertiary, textAlign: 'center' }}>
-              {t('layout.command.empty')}
-            </div>
-          )}
-        </div>
-      </Modal>
     </>
   );
 }

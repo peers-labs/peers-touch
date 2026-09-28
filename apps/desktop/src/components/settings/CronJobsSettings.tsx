@@ -28,9 +28,9 @@ import {
   Zap,
   History,
 } from 'lucide-react';
-import { api, type CronJob, type CronRun } from '../services/desktop_api';
-import { CronJobDrawer } from '../components/CronJobDrawer';
-import { PageHeader } from '../components/PageHeader';
+import { api, type CronJob, type CronRun } from '../../services/desktop_api';
+import { CronJobDrawer } from '../CronJobDrawer';
+import { SettingsContainer, SettingsPanelHeader } from './SettingsLayout';
 
 const { Text, Paragraph } = Typography;
 
@@ -92,7 +92,7 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge status="default" text="—" />;
 }
 
-export function CronPage() {
+export function CronJobsSettings() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -178,8 +178,8 @@ export function CronPage() {
   const pausedCount = jobs.length - activeCount;
 
   return (
-    <Flexbox style={{ height: '100%', overflow: 'hidden' }}>
-      <PageHeader
+    <SettingsContainer fullHeight maxWidth={1000}>
+      <SettingsPanelHeader
         title={t('cron.header.title')}
         icon={<Clock size={20} />}
         extra={<>
@@ -203,7 +203,7 @@ export function CronPage() {
         </>}
       />
 
-      <Flexbox style={{ flex: 1, overflow: 'auto', padding: '24px 32px' }}>
+      <Flexbox style={{ minHeight: 0 }}>
       {/* Search */}
       <Input
         placeholder={t('cron.search.placeholder')}
@@ -424,6 +424,6 @@ export function CronPage() {
           />
         )}
       </Drawer>
-    </Flexbox>
+    </SettingsContainer>
   );
 }
