@@ -30,7 +30,7 @@ import re
 import sys
 import time
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -223,6 +223,8 @@ DIRECT_PROBE_TIMEOUT_SECONDS = {
 LEASE_EXPIRED_DISPATCH_WINDOW_MS = 90_000
 LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS = 15_000
 F12_PREPARE_TIMEOUT_SECONDS = 900
+# AS-F12 emits six provider turns; clear a full quota window before the next tuple.
+F12_PROVIDER_COOLDOWN_SECONDS = 65
 
 RESTORE_IDENTITY_STATES = frozenset(
     {
@@ -2721,10 +2723,15 @@ class FoundationF12Coordinator:
         runtime_pair: FoundationRuntimePair,
         runtime_manifest: Mapping[str, Any],
         profile_env: Mapping[str, str],
+        *,
+        provider_cooldown_seconds: float = 0,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._runtime_pair = runtime_pair
         self._runtime_manifest = runtime_manifest
         self._profile_env = dict(profile_env)
+        self._provider_cooldown_seconds = provider_cooldown_seconds
+        self._sleep = sleep
         self._captures: dict[tuple[str, str, str, str], Mapping[str, Any]] = {}
 
     @staticmethod
@@ -2891,6 +2898,8 @@ class FoundationF12Coordinator:
                 )
             result = dict(candidate_result)
             assert_group_one_capture(probe_input, result)
+            if self._provider_cooldown_seconds > 0:
+                self._sleep(self._provider_cooldown_seconds)
             return result
         except BaseException as error:
             primary_error = error
@@ -3592,6 +3601,11 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             runtime_pair,
             runtime_manifest,
             profile_env,
+            provider_cooldown_seconds=(
+                0
+                if os.environ.get("PT_FOUNDATION_DEBUG_TUPLE", "").strip()
+                else F12_PROVIDER_COOLDOWN_SECONDS
+            ),
         )
         executor_unavailable_coordinator = (
             FoundationExecutorUnavailableCoordinator(runtime_pair)

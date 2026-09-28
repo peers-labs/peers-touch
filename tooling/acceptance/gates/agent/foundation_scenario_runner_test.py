@@ -2929,6 +2929,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self,
     ) -> None:
         call_log: list[str] = []
+        cooldowns: list[float] = []
         native = F12HarnessClient("desktop_app", call_log=call_log)
         browser = F12HarnessClient("browser", call_log=call_log)
         runtime_pair = SimpleNamespace(native=native, browser=browser)
@@ -2936,6 +2937,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             runtime_pair,
             {"profile": {"resolvedName": "two"}},
             {},
+            provider_cooldown_seconds=65,
+            sleep=cooldowns.append,
         )
         probe = foundation_scenario_runner._make_direct_probe(
             browser,
@@ -3016,6 +3019,7 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(browser.cleanup_calls, [])
         self.assertEqual(result["cleanup"]["status"], "clean")
         self.assertEqual(replay, result)
+        self.assertEqual(cooldowns, [65])
         for client in (native, browser):
             for request in client.direct_calls:
                 self.assertEqual(request["cell"], "AS-F12")
