@@ -71,7 +71,7 @@ export type TaskStartInput<TInput = unknown> =
   | GenericTaskInput<TInput>;
 
 export type AppletRoute = `applet:${string}`;
-export type HostPageRoute = 'applets' | 'search' | 'chat' | 'agent' | 'notes' | 'settings';
+export type HostPageRoute = 'applets' | 'search' | 'chat' | 'agent' | 'settings';
 export type NavigationTarget = AppletRoute | HostPageRoute;
 
 export type AppletLaunchOptions = Record<string, unknown>;

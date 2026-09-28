@@ -314,6 +314,14 @@
       "tier": "local-evidence",
       "description": "Build the Desktop Tauri application in release mode from the current clean source without packaging an installer."
     },
+    "desktop-primary-navigation-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.desktop.primary_navigation_e2e",
+      "timeout_seconds": 180,
+      "environment": "desktop-primary-navigation-browser",
+      "provisioner": "desktop-primary-navigation-browser",
+      "tier": "local-evidence",
+      "description": "Render the exact-source Desktop in Chromium and prove primary-nav cleanup, Settings ownership, selected-only Cron lifecycle, canonical Command Palette access, and legacy Notes fallback."
+    },
     "mobile-native-build": {
       "argv": [
         "python3",
