@@ -204,10 +204,6 @@ class MobileProductionFixture:
                 },
                 "draft replay conflict",
             )
-            self._capture_publish_observation(
-                sender,
-                milestone_observations,
-            )
         elif operation == "read-states":
             post_id = self._required_text(
                 self._posts.get(variant),
@@ -337,7 +333,11 @@ class MobileProductionFixture:
                     )
                 self._call(client_id, "moments.private.reconcile")
         observations = [
-            self._call(client_id, "moments.private.snapshot")
+            (
+                self._publish_observation(client_id)
+                if operation == "publish-states"
+                else self._call(client_id, "moments.private.snapshot")
+            )
             for client_id in clients
         ]
         observations = [*milestone_observations, *observations]
@@ -500,9 +500,17 @@ class MobileProductionFixture:
         client_id: str,
         observations: list[Mapping[str, Any]],
     ) -> None:
-        observations.append(
+        observations.append(self._publish_observation(client_id))
+
+    def _publish_observation(
+        self,
+        client_id: str,
+    ) -> Mapping[str, Any]:
+        snapshot = dict(
             self._call(client_id, "moments.private.snapshot")
         )
+        snapshot["fixtureClientId"] = client_id
+        return snapshot
 
     def _publish_post(
         self,
