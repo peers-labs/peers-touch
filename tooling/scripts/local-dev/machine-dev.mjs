@@ -10,6 +10,7 @@ import {
   canonicalize,
   checkWorkspace,
   registerWorkspace,
+  selectWorkspaceProfile,
   statusAll,
   unregisterWorkspace,
   updateWorkspace,
@@ -186,6 +187,12 @@ export async function runCli(argv) {
       }
       output(registerWorkspace(options));
       return 0;
+    case 'select':
+      for (const key of ['profile', 'owner']) {
+        requireOption(options, key);
+      }
+      output(selectWorkspaceProfile(options));
+      return 0;
     case 'update':
       output(updateWorkspace(options));
       return 0;
@@ -224,7 +231,7 @@ export async function runCli(argv) {
     default:
       throw new MachineDevError(
         'INVALID_ARGUMENT',
-        'action must be register, update, unregister, check, resolve, status-all, validate-lease, verify-held, or lease',
+        'action must be register, select, update, unregister, check, resolve, status-all, validate-lease, verify-held, or lease',
       );
   }
 }

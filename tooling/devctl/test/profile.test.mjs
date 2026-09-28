@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   readRegistry,
   registerWorkspace,
+  unregisterWorkspace,
 } from '../../scripts/local-dev/machine-dev-registry.mjs';
 import { machineRegistryPath } from '../../scripts/lib/machine-dev-paths.mjs';
 import { DevctlError, ERROR_CODES } from '../errors.mjs';
@@ -76,6 +77,7 @@ function machineWorkspace(t, { name = 'local-test', slot = 5 } = {}) {
   registerWorkspace({
     workspaceRoot: root,
     envRepo,
+    home,
     registryPath: machineRegistryPath(home),
     profile: name,
     slot,
@@ -152,6 +154,7 @@ function registeredFixture(t) {
   registerWorkspace({
     workspaceRoot: root,
     envRepo,
+    home,
     registryPath,
     profile: 'two',
     slot: 1,
@@ -200,6 +203,29 @@ test('activates and resolves a profile by worktree identity', (t) => {
     resolved.paths.profileData,
     /workspaces[\\/][0-9a-f]{16}[\\/]runtime[\\/]local-test[\\/]data$/u,
   );
+});
+
+test('first profile activation explicitly registers the current worktree', (t) => {
+  const fixture = machineWorkspace(t);
+  const registryPath = machineRegistryPath(fixture.home);
+  const current = readRegistry(registryPath).registrations[0];
+  unregisterWorkspace({
+    workspaceRoot: fixture.root,
+    home: fixture.home,
+    owner: current.owner,
+  });
+
+  const activated = activateProfile(
+    fixture.root,
+    'local-test',
+    fixture.environment,
+  );
+  const registration = readRegistry(registryPath).registrations[0];
+
+  assert.equal(activated.reference.profileName, 'local-test');
+  assert.equal(registration.slot, 0);
+  assert.deepEqual(registration.allowedCapabilities, ['station.connect']);
+  assert.equal(registration.purpose, 'Interactive profile selection: local-test');
 });
 
 test('resolves the machine binding instead of a stale legacy pointer', (t) => {
