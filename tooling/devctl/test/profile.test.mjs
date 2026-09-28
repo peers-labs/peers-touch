@@ -16,6 +16,7 @@ import {
   initializeProfile,
   normalizeConfiguredPath,
   parseEnvText,
+  prepareRuntimeWorkspace,
   redactProfile,
   resolveProfile,
 } from '../profile.mjs';
@@ -203,6 +204,37 @@ test('activates and resolves a profile by worktree identity', (t) => {
     resolved.paths.profileData,
     /workspaces[\\/][0-9a-f]{16}[\\/]runtime[\\/]local-test[\\/]data$/u,
   );
+});
+
+test('runtime preparation refreshes a same-branch Git HEAD advance', (t) => {
+  const fixture = machineWorkspace(t);
+  const previous = readRegistry(
+    machineRegistryPath(fixture.home),
+  ).registrations[0];
+  fs.writeFileSync(path.join(fixture.root, 'next.txt'), 'next\n');
+  git(fixture.root, 'add', 'next.txt');
+  git(fixture.root, 'commit', '-m', 'test: advance runtime source');
+
+  assert.throws(
+    () => resolveProfile(fixture.root, fixture.environment),
+    (error) =>
+      error instanceof DevctlError
+      && error.code === ERROR_CODES.CHECK_FAILED
+      && error.details.machineCode === 'WORKTREE_IDENTITY_MISMATCH',
+  );
+
+  const refreshed = prepareRuntimeWorkspace(
+    fixture.root,
+    fixture.environment,
+  );
+  const resolved = resolveProfile(fixture.root, fixture.environment);
+
+  assert.equal(refreshed.head, git(fixture.root, 'rev-parse', 'HEAD'));
+  assert.equal(refreshed.branch, previous.branch);
+  assert.equal(refreshed.profile, previous.profile);
+  assert.equal(refreshed.slot, previous.slot);
+  assert.equal(refreshed.updatedBy, 'devctl-runtime-start');
+  assert.equal(resolved.reference.profileName, previous.profile);
 });
 
 test('first profile activation explicitly registers the current worktree', (t) => {

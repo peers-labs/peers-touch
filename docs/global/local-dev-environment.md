@@ -336,6 +336,13 @@ it needs. No separate `make dev-start` is required. Agent-driven tracked work
 still declares runtime intent through Dev Workflow, and no direct owner action
 can acquire `station.reset`.
 
+After a normal commit, merge, rebase, or pull on the same branch,
+`make station`, `make station-restart`, `make desktop`, and
+`make desktop-restart` automatically advance the registered source HEAD before
+runtime resolution. This does not permit root or branch changes, does not run
+while a runtime lease is held, and does not replace Development declaration
+updates required by Agent workflow.
+
 `make desktop` and `make desktop-web` are self-preparing. They resolve ports,
 Station topology, and runtime settings from the selected Profile; resolve
 package requirements from the repository manifests and `pnpm-lock.yaml`;
