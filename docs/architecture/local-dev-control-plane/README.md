@@ -1,8 +1,8 @@
 # Local Dev Control Plane
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -97,6 +97,10 @@ the authoritative binding. `make profile` creates that binding on first
 selection and updates it thereafter. OS-held leases under `leases/` are the
 only live owners for `local.slot`, `station.deploy`, and `station.reset`; JSON
 in a lock file is diagnostic metadata only.
+
+The authoritative binding deliberately excludes Git HEAD. Commands capture
+current source from Git at operation time; Development declarations and
+runtime build identity fence source-sensitive mutation.
 
 ## 5. 文档导航
 

@@ -1,8 +1,8 @@
 # Local Development Environment
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-07-23 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-07-23 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 
 ---
@@ -108,6 +108,11 @@ by canonical `workspaceId`. `make profile PROFILE=<name>` creates a minimum
 registration on first explicit selection and updates it thereafter; it never
 writes a legacy active-profile pointer. Runtime commands load the sibling `env`
 repository source directly.
+
+The registration stores the canonical root and registered branch, but not Git
+HEAD. Current HEAD is read directly from the worktree for each command.
+Schema-v1 registries are atomically migrated on first use and their persisted
+`head` fields are removed.
 
 Local slot and Desktop/Mobile ports come from the machine binding. A profile's
 `PT_DEV_SLOT` and local client port fields are legacy topology observations and
@@ -291,8 +296,8 @@ registered and its binding must resolve.
 |--------|-------------|
 | `make profile <name>` | Explicitly select a reviewed Profile; on first use, register with the lowest free slot and minimum operational capabilities without reset |
 | `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
-| `make env-update ...` | Update requested binding fields and refresh current branch/HEAD while no lease is held |
-| `make env-check ...` | Verify workspace binding, tracked-clean topology, slot, capabilities, target match, and budget |
+| `make env-update ...` | Update requested binding fields and current registered branch while no lease is held |
+| `make env-check ...` | Verify stable workspace binding, current Git source, tracked-clean topology, slot, capabilities, target match, and budget |
 | `make env-status-all` | Report all registrations and observed OS-held leases |
 | `make dev-start ...` | Publish and conflict-check this task's source/runtime intent |
 | `make dev-update WORK_ITEM=<id>` | Replace supplied scope or refresh the declared branch/HEAD |
@@ -336,12 +341,11 @@ it needs. No separate `make dev-start` is required. Agent-driven tracked work
 still declares runtime intent through Dev Workflow, and no direct owner action
 can acquire `station.reset`.
 
-After a normal commit, merge, rebase, or pull on the same branch,
-`make station`, `make station-restart`, `make desktop`, and
-`make desktop-restart` automatically advance the registered source HEAD before
-runtime resolution. This does not permit root or branch changes, does not run
-while a runtime lease is held, and does not replace Development declaration
-updates required by Agent workflow.
+After a normal commit, merge, rebase, or pull on the same branch, every command
+immediately uses the new Git HEAD without mutating the machine registration.
+Root or branch changes remain explicit binding changes. Agent workflow must
+still update its Development declaration before another mutation or runtime
+acquisition so the declared `sourceHead` equals the live worktree HEAD.
 
 `make desktop` and `make desktop-web` are self-preparing. They resolve ports,
 Station topology, and runtime settings from the selected Profile; resolve

@@ -5,7 +5,6 @@ import { DevctlError, ERROR_CODES, fail } from './errors.mjs';
 import {
   MachineDevError,
   checkWorkspace,
-  refreshWorkspaceSourceIdentity,
   selectWorkspaceProfile,
 } from '../scripts/local-dev/machine-dev-registry.mjs';
 
@@ -313,20 +312,6 @@ export function resolveProfile(
       profileState: runtimeRoot,
     },
   };
-}
-
-export function prepareRuntimeWorkspace(
-  root,
-  environment = process.env,
-  sourceRefresher = refreshWorkspaceSourceIdentity,
-) {
-  return machineOperation(() =>
-    sourceRefresher({
-      workspaceRoot: root,
-      home: environment.HOME,
-      updatedBy: 'devctl-runtime-start',
-    }),
-  );
 }
 
 export function listProfiles(root, environment = process.env) {

@@ -382,9 +382,8 @@ When the user says "set up environment for X" or "I want to debug against Y":
 7. **Fail-closed preflight**: run `make env-check` and `make config`; verify
    canonical workspace identity, tracked-clean definition, allocated slot,
    allowed capabilities, remote mode, non-loopback URL, and exact deploy-host
-   match. Runtime `start` and `restart` commands may reconcile only a
-   same-root, same-branch Git HEAD advance; every other identity mismatch
-   remains fail-closed.
+   match. Current Git HEAD is read from the worktree and is not part of the
+   durable registration; root or registered-branch drift remains fail-closed.
 8. **Declare runtime intent**: the active Development declaration must contain
    the exact profile and exclusive runtime resource before an Agent acquires
    the lease. A human invoking `make station` directly uses its bounded
@@ -504,10 +503,10 @@ Source modes:
   action. Neither path substitutes for the OS-held lease, and no owner action
   bypass exists for `station.reset`. The owner action remains attached to the
   inherited lease and its post-lock `verify-held` validation.
-- Runtime `start` and `restart` commands atomically refresh a stale registry
-  HEAD only when the canonical root and branch still match and no runtime lease
-  is held. Normal same-branch Git updates therefore need no manual
-  `make env-update`; branch or root drift still fails closed.
+- The machine registration never stores Git HEAD. Normal same-branch Git
+  updates therefore need no `make env-update`; branch or root drift still
+  fails closed. Agent runtime acquisition independently requires its
+  declaration `sourceHead` to equal the live worktree HEAD.
 - `make station` is idempotent — it reuses an already healthy Station only when
   `/app-meta/version` reports a build commit matching the current local HEAD;
   stale or missing build identity triggers exact-source deployment

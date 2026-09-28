@@ -79,9 +79,10 @@ Heartbeat runs periodically before expiry and preserves the locator. During
 cleanup and delivery, a blocked/completed Plan retains its exact blocked/done
 Task locator until the declaration is released.
 
-After commit, merge, or rebase, Dev Workflow runs both `make env-update` and
-`make dev-update` so registration and declaration source identities advance
-together. Task handoff also updates the declaration's `TASK`.
+After commit, merge, or rebase, Dev Workflow runs `make dev-update` so the
+declaration source identity advances before the next mutation or runtime
+acquisition. The machine registration does not store Git HEAD and therefore
+requires no source refresh. Task handoff also updates the declaration's `TASK`.
 
 The declaration schema rolls out as a hard compatibility boundary. Repository
 source must be synchronized to every active worktree before the first writer

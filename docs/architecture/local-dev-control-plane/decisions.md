@@ -1,7 +1,7 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.3
+> **Version**: v1.4
 > **Created**: 2026-09-13 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
@@ -28,6 +28,7 @@
 | LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | accepted |
 | LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
 | LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
+| LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -534,8 +535,8 @@ worktree's commits are synchronized into the same repository or PR branch.
 Development Workflow owns one immutable
 `workspaces/<workspaceId>/workflow/plan-binding.json` record under the machine
 Dev root. Local Dev supplies the workspace-scoped namespace but does not infer,
-replace, or mutate the Plan binding. Profile, slot, capability, branch and HEAD
-refreshes leave it unchanged.
+replace, or mutate the Plan binding. Profile, slot, capability, and branch
+updates leave it unchanged.
 
 ### Rationale
 
@@ -545,8 +546,8 @@ mutable environment registry preserves both concerns' lifecycle.
 
 ### Alternatives Considered
 
-- Add Plan fields to the environment registration: rejected because profile and
-  source refreshes are mutable and must not gain Plan-rebind semantics.
+- Add Plan fields to the environment registration: rejected because allocation
+  and branch updates are mutable and must not gain Plan-rebind semantics.
 - Store the binding in the repository: rejected because synchronized files are
   shared content, not machine workspace identity.
 
@@ -675,13 +676,6 @@ post-lock source validation, and OS lease exclusion remain mandatory. This
 exception never applies to `station.reset`; Agent-driven Plan work still
 declares runtime intent before invoking the command.
 
-Before a runtime `start` or `restart`, Devctl reconciles a stale registration
-HEAD to the current Git HEAD only when `workspaceId`, canonical root, and
-branch are unchanged and the workspace holds no runtime lease. Root or branch
-drift remains `WORKTREE_IDENTITY_MISMATCH`. The bounded owner action is carried
-through the lease holder into inherited `verify-held` validation, so the
-post-lock check enforces the same policy as initial acquisition.
-
 `make desktop` and `make desktop-web` are complete developer entrypoints. They
 resolve runtime values from the selected Profile, prepare missing workspace
 packages from the committed `pnpm-lock.yaml` with frozen-lockfile semantics,
@@ -697,11 +691,57 @@ lockfiles remain their owner.
 - Profile selection cannot create topology or grant destructive reset.
 - Repeated `make station` is an idempotent health and source-identity
   confirmation.
-- Normal same-branch commit, merge, rebase, or pull no longer requires a
-  separate `make env-update` before runtime startup.
 - An operator can ready the selected Station with one command without learning
   internal Development declaration commands.
 - An operator can start Desktop from a fresh checkout without a separate
   dependency-install or Station-preparation command.
 - Operators receive the real failure code and remediation boundary instead of
   a misleading timeout.
+
+## LDCP-D17: Stable Workspace Binding And Live Source Identity
+
+**Status**: accepted
+**Date**: 2026-09-28
+
+### Context
+
+The schema-v1 registry persisted Git HEAD inside a durable workspace
+registration. A normal commit, merge, rebase, or pull then made every command
+that resolved the binding fail with `WORKTREE_IDENTITY_MISMATCH`. A later
+runtime-only reconciliation made selected start commands work, but left
+`config`, `env-check`, status, and other consumers on a contradictory model.
+
+### Decision
+
+Schema v2 removes `head` from the authoritative registration. The stable
+binding contains canonical root, derived `workspaceId`, registered branch,
+Profile, slot, capabilities, and Owner metadata.
+
+Every operation captures current Git branch and HEAD directly from the
+worktree. Root, workspace ID, and registered branch remain fail-closed binding
+checks. Development declarations, Plan/Session records, and deployment
+`build_commit` remain the source-version authorities for Agent mutation and
+exact-source runtime verification.
+
+A schema-v1 authoritative registry is validated and atomically rewritten under
+the registry lock on first use. The old `head` field is deleted; runtime code
+never exposes or refreshes it.
+
+### Alternatives Considered
+
+- Refresh registry HEAD before selected runtime commands: rejected because it
+  leaves other binding consumers stale and keeps two owners for current source.
+- Ignore a mismatched stored HEAD without changing the schema: rejected because
+  dead authority would remain persisted and invite future readers.
+- Remove the branch guard too: rejected because changing a worktree's intended
+  branch remains an explicit binding update, unlike advancing that branch.
+
+### Consequences
+
+- Same-branch Git updates require no machine-registry write and immediately work
+  across config, check, status, Station, Desktop, and Mobile entrypoints.
+- Agent runtime acquisition still fails when its declaration `sourceHead` does
+  not equal the current worktree HEAD.
+- Root or branch drift still returns `WORKTREE_IDENTITY_MISMATCH`.
+- `env-update` changes explicit binding fields; it no longer refreshes source
+  commit identity.
