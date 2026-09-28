@@ -17,6 +17,18 @@ MANIFEST = (
     / "docs/architecture/secure-content/execution-plans/"
     "20260913-secure-content-work-items.yaml"
 )
+W12D_TASK = (
+    REPO_ROOT
+    / "docs/architecture/secure-content/execution-plans/"
+    "20260913-secure-content-hard-cut/tasks/W12D.md"
+)
+
+
+def _load_task_slice(path: Path) -> dict[str, object]:
+    document = path.read_text(encoding="utf-8")
+    start = document.index("```json\n") + len("```json\n")
+    end = document.index("\n```", start)
+    return json.loads(document[start:end])
 
 
 class WorkItemProjectionTest(unittest.TestCase):
@@ -149,6 +161,41 @@ class WorkItemProjectionTest(unittest.TestCase):
             "allowed",
             projection.authorization["checkpoint"]["amend"],
         )
+
+    def test_w12d_activation_children_cover_parent_task_source_scope(self) -> None:
+        task = _load_task_slice(W12D_TASK)
+        for workstream in ("W12A-FOUR", "W12A-FIVEARM"):
+            with self.subTest(workstream=workstream):
+                projection = work_item.load_projection(
+                    MANIFEST,
+                    workstream=workstream,
+                    journey="sc-dj-canonical-schema-activation",
+                    repo_root=REPO_ROOT,
+                )
+                claims = tuple(
+                    (mode, path)
+                    for mode, path in (
+                        claim.split(":", 1)
+                        for claim in projection.source_claim_arguments
+                    )
+                )
+                for path in task["writeSet"]:
+                    self.assertTrue(
+                        any(
+                            mode == "exclusive-write"
+                            and (path == prefix or path.startswith(f"{prefix}/"))
+                            for mode, prefix in claims
+                        ),
+                        f"{workstream} does not cover W12D write path {path}",
+                    )
+                for path in task["readSet"]:
+                    self.assertTrue(
+                        any(
+                            path == prefix or path.startswith(f"{prefix}/")
+                            for _, prefix in claims
+                        ),
+                        f"{workstream} does not cover W12D read path {path}",
+                    )
 
     def test_w7_projection_covers_its_task_level_read_roots(self) -> None:
         projection = work_item.load_projection(
