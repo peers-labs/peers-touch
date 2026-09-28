@@ -1,8 +1,8 @@
 # W12D Source Owner Amendment Review
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Version**: v1.1
+> **Created**: 2026-09-26 | **Updated**: 2026-09-28
 > **Owner**: Architecture Team
 
 ## Review Scope
@@ -59,6 +59,8 @@ Resolved findings:
   activation profiles and both reset intents.
 - Replaced the over-broad `apps` declaration with the four exact app roots
   admitted by the Plan.
+- Aligned the W12D parent and activation-child scope roots and copied the
+  accepted registry-v2 owner paths into both activation child declarations.
 
 Evidence:
 

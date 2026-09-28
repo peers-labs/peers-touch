@@ -659,7 +659,7 @@ items:
     architectureRefs: [SC-D23, SC-D24, SC-D28, SC-D29, LDCP-D01, LDCP-D02, LDCP-D03, LDCP-D04, LDCP-D05, LDCP-D06, LDCP-D07, LDCP-D08, LDCP-D09, LDCP-D16]
     journeyIds: [sc-dj-canonical-schema-activation]
     scope:
-      include: [docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml, apps/desktop, apps/dev, apps/mobile, apps/station, model, packages, tooling]
+      include: [.gitignore, AGENTS.md, Makefile, apps/desktop, apps/dev, apps/mobile, apps/station, docs/architecture, docs/global, docs/knowledge, model, packages, tooling]
       exclude: [source mutation outside Plan lifecycle, W12 FINAL_CUT, product Journeys, formal Acceptance]
     resources:
       sourceClaims:
@@ -709,7 +709,7 @@ items:
     architectureRefs: [SC-D23, SC-D24, LDCP-D01, LDCP-D02, LDCP-D03, LDCP-D04, LDCP-D05, LDCP-D06, LDCP-D07, LDCP-D08, LDCP-D09]
     journeyIds: [sc-dj-canonical-schema-activation]
     scope:
-      include: [docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml, apps/desktop, apps/dev, apps/mobile, apps/station, model, packages, tooling]
+      include: [.gitignore, AGENTS.md, Makefile, apps/desktop, apps/dev, apps/mobile, apps/station, docs/architecture, docs/global, docs/knowledge, model, packages, tooling]
       exclude: [source mutation, fiveArm reset, FINAL_CUT, product Journeys, formal Acceptance]
     resources:
       sourceClaims:
@@ -732,6 +732,10 @@ items:
         - { pathPrefix: tooling/development/secure_content/schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/machine-dev-registry.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/machine-dev.test.mjs, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/local-dev-control-plane, mode: exclusive-write }
+        - { pathPrefix: docs/global/local-dev-environment.md, mode: exclusive-write }
         - { pathPrefix: .gitignore, mode: shared-read }
         - { pathPrefix: AGENTS.md, mode: shared-read }
         - { pathPrefix: Makefile, mode: shared-read }
@@ -763,7 +767,7 @@ items:
     architectureRefs: [SC-D23, SC-D24, LDCP-D01, LDCP-D02, LDCP-D03, LDCP-D04, LDCP-D05, LDCP-D06, LDCP-D07, LDCP-D08, LDCP-D09]
     journeyIds: [sc-dj-canonical-schema-activation]
     scope:
-      include: [docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml, apps/desktop, apps/dev, apps/mobile, apps/station, model, packages, tooling]
+      include: [.gitignore, AGENTS.md, Makefile, apps/desktop, apps/dev, apps/mobile, apps/station, docs/architecture, docs/global, docs/knowledge, model, packages, tooling]
       exclude: [source mutation, four reset, FINAL_CUT, product Journeys, formal Acceptance]
     resources:
       sourceClaims:
@@ -786,6 +790,10 @@ items:
         - { pathPrefix: tooling/development/secure_content/schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/machine-dev-registry.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/machine-dev.test.mjs, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/local-dev-control-plane, mode: exclusive-write }
+        - { pathPrefix: docs/global/local-dev-environment.md, mode: exclusive-write }
         - { pathPrefix: .gitignore, mode: shared-read }
         - { pathPrefix: AGENTS.md, mode: shared-read }
         - { pathPrefix: Makefile, mode: shared-read }
