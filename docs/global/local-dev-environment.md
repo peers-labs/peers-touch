@@ -40,10 +40,10 @@ The authoritative machine-global registry path is:
 ~/.peers-touch/dev/registry.json
 ```
 
-It becomes runtime authority only through explicit `make env-register`.
-An existing `authority: observed-snapshot` remains diagnostic and makes normal
-runtime resolution fail closed. Legacy `.local/dev/active/` pointers have no
-runtime authority.
+It becomes runtime authority only through explicit `make profile <name>` or
+`make env-register`. An existing `authority: observed-snapshot` remains
+diagnostic and makes normal runtime resolution fail closed. Legacy
+`.local/dev/active/` pointers have no runtime authority.
 
 Do not interpret discovered worktrees or profile pointers as active usage:
 
@@ -104,9 +104,10 @@ for a same-named deployable profile. The only local-authority exception is a
 human-authorized compose profile whose bytes match its consumed machine receipt.
 
 Each Git worktree selects its profile through the machine registry binding keyed
-by canonical `workspaceId`. `make profile PROFILE=<name>` updates only an
-already registered workspace and never writes a legacy active-profile pointer.
-Runtime commands load the sibling `env` repository source directly.
+by canonical `workspaceId`. `make profile PROFILE=<name>` creates a minimum
+registration on first explicit selection and updates it thereafter; it never
+writes a legacy active-profile pointer. Runtime commands load the sibling `env`
+repository source directly.
 
 Local slot and Desktop/Mobile ports come from the machine binding. A profile's
 `PT_DEV_SLOT` and local client port fields are legacy topology observations and
@@ -288,6 +289,7 @@ registered and its binding must resolve.
 
 | Target | What it does |
 |--------|-------------|
+| `make profile <name>` | Explicitly select a reviewed Profile; on first use, register with the lowest free slot and minimum operational capabilities without reset |
 | `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
 | `make env-update ...` | Update requested binding fields and refresh current branch/HEAD while no lease is held |
 | `make env-check ...` | Verify workspace binding, tracked-clean topology, slot, capabilities, target match, and budget |
@@ -301,12 +303,19 @@ registered and its binding must resolve.
 | `make dev-release WORK_ITEM=<id>` | Release declaration after runtime cleanup |
 | `make plan-bind PLAN=<path>` | Bind this workspace once to one Plan Package |
 | `make plan-binding` | Resolve and validate the workspace's bound Plan |
-| `make station` | Ready Station (local start or remote deploy, per mode) |
+| `make station` | Reuse a healthy source-matched Station, otherwise deploy the current commit and verify its live build identity |
 | `make desktop` | Start Desktop Tauri app |
 | `make desktop-web` | Start Desktop in browser |
 | `make mobile` | Start Mobile iOS simulator |
 
-Initial registration is explicit:
+Normal initial registration is explicit and one-step:
+
+```bash
+make profile <name>
+```
+
+Use the advanced form only when the Owner needs an exact slot, purpose, or
+capability set:
 
 ```bash
 make env-register \
