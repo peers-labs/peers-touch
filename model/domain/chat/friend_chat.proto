@@ -204,12 +204,13 @@ message GetSessionsResponse {
 }
 
 message FriendConversationSettings {
+  reserved 6;
+
   string session_ulid = 1;
   bool is_muted = 2;
   bool is_pinned = 3;
   bool alert_enabled = 4;
   string background = 5;
-  int64 cleared_at_unix_ms = 6;
 }
 
 message GetFriendConversationSettingsRequest {
@@ -221,12 +222,13 @@ message GetFriendConversationSettingsResponse {
 }
 
 message UpdateFriendConversationSettingsRequest {
+  reserved 6;
+
   string session_ulid = 1;
   optional bool is_muted = 2;
   optional bool is_pinned = 3;
   optional bool alert_enabled = 4;
   optional string background = 5;
-  optional int64 cleared_at_unix_ms = 6;
 }
 
 message UpdateFriendConversationSettingsResponse {

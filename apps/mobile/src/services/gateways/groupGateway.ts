@@ -48,8 +48,6 @@ interface GroupSettingsRaw {
   alertEnabled?: boolean;
   alert_enabled?: boolean;
   background?: unknown;
-  clearedAtUnixMs?: number;
-  cleared_at_unix_ms?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +71,6 @@ export interface GroupSettings {
   readonly showMemberNickname: boolean;
   readonly alertEnabled: boolean;
   readonly background: ChatBackgroundId;
-  readonly clearedAt: number;
 }
 
 export interface CreateGroupInput {
@@ -101,7 +98,6 @@ export interface UpdateGroupSettingsInput {
   readonly showMemberNickname?: boolean;
   readonly alertEnabled?: boolean;
   readonly background?: ChatBackgroundId;
-  readonly clearedAt?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,7 +211,6 @@ export function createGroupGateway(session: MobileAuthSession): GroupGateway {
             ...(input.isPinned !== undefined ? { pinned: input.isPinned } : {}),
             ...(input.alertEnabled !== undefined ? { alert_enabled: input.alertEnabled } : {}),
             ...(input.background !== undefined ? { background: input.background } : {}),
-            ...(input.clearedAt !== undefined ? { cleared_at_ms: input.clearedAt } : {}),
           },
         },
       }),
@@ -438,13 +433,6 @@ function normalizeGroupSettings(payload: unknown): GroupSettings {
     showMemberNickname: Boolean(record.showMemberNickname ?? record.show_member_nickname),
     alertEnabled: (record.alertEnabled ?? record.alert_enabled) !== false,
     background: normalizeChatBackgroundId(record.background),
-    clearedAt: Number(
-      record.clearedAtMs
-      ?? record.cleared_at_ms
-      ?? record.clearedAtUnixMs
-      ?? record.cleared_at_unix_ms
-      ?? 0,
-    ),
   };
 }
 

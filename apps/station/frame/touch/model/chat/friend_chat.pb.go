@@ -1447,15 +1447,14 @@ func (x *GetSessionsResponse) GetTotal() int32 {
 }
 
 type FriendConversationSettings struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	SessionUlid     string                 `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
-	IsMuted         bool                   `protobuf:"varint,2,opt,name=is_muted,json=isMuted,proto3" json:"is_muted,omitempty"`
-	IsPinned        bool                   `protobuf:"varint,3,opt,name=is_pinned,json=isPinned,proto3" json:"is_pinned,omitempty"`
-	AlertEnabled    bool                   `protobuf:"varint,4,opt,name=alert_enabled,json=alertEnabled,proto3" json:"alert_enabled,omitempty"`
-	Background      string                 `protobuf:"bytes,5,opt,name=background,proto3" json:"background,omitempty"`
-	ClearedAtUnixMs int64                  `protobuf:"varint,6,opt,name=cleared_at_unix_ms,json=clearedAtUnixMs,proto3" json:"cleared_at_unix_ms,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionUlid   string                 `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	IsMuted       bool                   `protobuf:"varint,2,opt,name=is_muted,json=isMuted,proto3" json:"is_muted,omitempty"`
+	IsPinned      bool                   `protobuf:"varint,3,opt,name=is_pinned,json=isPinned,proto3" json:"is_pinned,omitempty"`
+	AlertEnabled  bool                   `protobuf:"varint,4,opt,name=alert_enabled,json=alertEnabled,proto3" json:"alert_enabled,omitempty"`
+	Background    string                 `protobuf:"bytes,5,opt,name=background,proto3" json:"background,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FriendConversationSettings) Reset() {
@@ -1521,13 +1520,6 @@ func (x *FriendConversationSettings) GetBackground() string {
 		return x.Background
 	}
 	return ""
-}
-
-func (x *FriendConversationSettings) GetClearedAtUnixMs() int64 {
-	if x != nil {
-		return x.ClearedAtUnixMs
-	}
-	return 0
 }
 
 type GetFriendConversationSettingsRequest struct {
@@ -1619,15 +1611,14 @@ func (x *GetFriendConversationSettingsResponse) GetSettings() *FriendConversatio
 }
 
 type UpdateFriendConversationSettingsRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	SessionUlid     string                 `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
-	IsMuted         *bool                  `protobuf:"varint,2,opt,name=is_muted,json=isMuted,proto3,oneof" json:"is_muted,omitempty"`
-	IsPinned        *bool                  `protobuf:"varint,3,opt,name=is_pinned,json=isPinned,proto3,oneof" json:"is_pinned,omitempty"`
-	AlertEnabled    *bool                  `protobuf:"varint,4,opt,name=alert_enabled,json=alertEnabled,proto3,oneof" json:"alert_enabled,omitempty"`
-	Background      *string                `protobuf:"bytes,5,opt,name=background,proto3,oneof" json:"background,omitempty"`
-	ClearedAtUnixMs *int64                 `protobuf:"varint,6,opt,name=cleared_at_unix_ms,json=clearedAtUnixMs,proto3,oneof" json:"cleared_at_unix_ms,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionUlid   string                 `protobuf:"bytes,1,opt,name=session_ulid,json=sessionUlid,proto3" json:"session_ulid,omitempty"`
+	IsMuted       *bool                  `protobuf:"varint,2,opt,name=is_muted,json=isMuted,proto3,oneof" json:"is_muted,omitempty"`
+	IsPinned      *bool                  `protobuf:"varint,3,opt,name=is_pinned,json=isPinned,proto3,oneof" json:"is_pinned,omitempty"`
+	AlertEnabled  *bool                  `protobuf:"varint,4,opt,name=alert_enabled,json=alertEnabled,proto3,oneof" json:"alert_enabled,omitempty"`
+	Background    *string                `protobuf:"bytes,5,opt,name=background,proto3,oneof" json:"background,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateFriendConversationSettingsRequest) Reset() {
@@ -1693,13 +1684,6 @@ func (x *UpdateFriendConversationSettingsRequest) GetBackground() string {
 		return *x.Background
 	}
 	return ""
-}
-
-func (x *UpdateFriendConversationSettingsRequest) GetClearedAtUnixMs() int64 {
-	if x != nil && x.ClearedAtUnixMs != nil {
-		return *x.ClearedAtUnixMs
-	}
-	return 0
 }
 
 type UpdateFriendConversationSettingsResponse struct {
@@ -3375,7 +3359,7 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\x06offset\x18\x02 \x01(\x05R\x06offset\"u\n" +
 	"\x13GetSessionsResponse\x12H\n" +
 	"\bsessions\x18\x01 \x03(\v2,.peers_touch.model.chat.v1.FriendChatSessionR\bsessions\x12\x14\n" +
-	"\x05total\x18\x02 \x01(\x05R\x05total\"\xe9\x01\n" +
+	"\x05total\x18\x02 \x01(\x05R\x05total\"\xc2\x01\n" +
 	"\x1aFriendConversationSettings\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12\x19\n" +
 	"\bis_muted\x18\x02 \x01(\bR\aisMuted\x12\x1b\n" +
@@ -3383,12 +3367,11 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\ralert_enabled\x18\x04 \x01(\bR\falertEnabled\x12\x1e\n" +
 	"\n" +
 	"background\x18\x05 \x01(\tR\n" +
-	"background\x12+\n" +
-	"\x12cleared_at_unix_ms\x18\x06 \x01(\x03R\x0fclearedAtUnixMs\"I\n" +
+	"backgroundJ\x04\b\x06\x10\a\"I\n" +
 	"$GetFriendConversationSettingsRequest\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\"z\n" +
 	"%GetFriendConversationSettingsResponse\x12Q\n" +
-	"\bsettings\x18\x01 \x01(\v25.peers_touch.model.chat.v1.FriendConversationSettingsR\bsettings\"\xe2\x02\n" +
+	"\bsettings\x18\x01 \x01(\v25.peers_touch.model.chat.v1.FriendConversationSettingsR\bsettings\"\x9f\x02\n" +
 	"'UpdateFriendConversationSettingsRequest\x12!\n" +
 	"\fsession_ulid\x18\x01 \x01(\tR\vsessionUlid\x12\x1e\n" +
 	"\bis_muted\x18\x02 \x01(\bH\x00R\aisMuted\x88\x01\x01\x12 \n" +
@@ -3396,14 +3379,12 @@ const file_domain_chat_friend_chat_proto_rawDesc = "" +
 	"\ralert_enabled\x18\x04 \x01(\bH\x02R\falertEnabled\x88\x01\x01\x12#\n" +
 	"\n" +
 	"background\x18\x05 \x01(\tH\x03R\n" +
-	"background\x88\x01\x01\x120\n" +
-	"\x12cleared_at_unix_ms\x18\x06 \x01(\x03H\x04R\x0fclearedAtUnixMs\x88\x01\x01B\v\n" +
+	"background\x88\x01\x01B\v\n" +
 	"\t_is_mutedB\f\n" +
 	"\n" +
 	"_is_pinnedB\x10\n" +
 	"\x0e_alert_enabledB\r\n" +
-	"\v_backgroundB\x15\n" +
-	"\x13_cleared_at_unix_ms\"}\n" +
+	"\v_backgroundJ\x04\b\x06\x10\a\"}\n" +
 	"(UpdateFriendConversationSettingsResponse\x12Q\n" +
 	"\bsettings\x18\x01 \x01(\v25.peers_touch.model.chat.v1.FriendConversationSettingsR\bsettings\"Z\n" +
 	"\x0fMarkReadRequest\x12!\n" +

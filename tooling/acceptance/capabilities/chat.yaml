@@ -740,6 +740,7 @@
       "direction": "acceptance_validates_product",
       "features": ["chat-storage-batch-clear"],
       "required_gates": [
+        "chat-storage-zero-legacy-e2e",
         "chat-storage-desktop-batch-clear-e2e",
         "chat-storage-mobile-batch-clear-e2e"
       ],
@@ -763,6 +764,7 @@
           "Mobile Me > Chat settings > Storage > Select conversations"
         ],
         "proven_by": [
+          "chat-storage-zero-legacy-e2e",
           "chat-storage-desktop-batch-clear-e2e",
           "chat-storage-mobile-batch-clear-e2e"
         ],

@@ -24,6 +24,7 @@
       "chat-storage-mobile-batch-clear-e2e"
     ],
     "csg-batch-aggregate": [
+      "chat-storage-zero-legacy-e2e",
       "chat-storage-batch-clear-aggregate-e2e",
       "desktop-release-build",
       "mobile-native-build",
@@ -33,6 +34,7 @@
   "completion": [
     "chat-storage-desktop-batch-clear-e2e",
     "chat-storage-mobile-batch-clear-e2e",
+    "chat-storage-zero-legacy-e2e",
     "chat-storage-batch-clear-aggregate-e2e",
     "desktop-release-build",
     "mobile-native-build",

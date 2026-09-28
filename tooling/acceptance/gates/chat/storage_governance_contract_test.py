@@ -492,6 +492,7 @@ class StorageGovernanceContractTest(unittest.TestCase):
             ROOT / "apps/desktop/src/acceptance/chat/harness.ts"
         ).read_text(encoding="utf-8")
         required_gates = {
+            "chat-storage-zero-legacy-e2e",
             "chat-storage-desktop-batch-clear-e2e",
             "chat-storage-mobile-batch-clear-e2e",
         }

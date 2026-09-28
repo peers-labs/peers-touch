@@ -71,7 +71,6 @@ describe('createGroupGateway canonical Conversation routes', () => {
             pinned: false,
             alert_enabled: false,
             background: 'mint',
-            cleared_at_ms: 42,
           },
         },
       })
@@ -86,7 +85,6 @@ describe('createGroupGateway canonical Conversation routes', () => {
       isPinned: true,
       alertEnabled: true,
       background: 'paper',
-      clearedAt: 84,
     });
 
     expect(members).toEqual({
@@ -116,7 +114,6 @@ describe('createGroupGateway canonical Conversation routes', () => {
         showMemberNickname: false,
         alertEnabled: false,
         background: 'mint',
-        clearedAt: 42,
       },
     });
     expect(commandMock.mock.calls.map(([request]) => request)).toEqual([
@@ -148,7 +145,6 @@ describe('createGroupGateway canonical Conversation routes', () => {
             pinned: true,
             alert_enabled: true,
             background: 'paper',
-            cleared_at_ms: 84,
           },
         },
       },
