@@ -14,7 +14,6 @@ export interface ChatActionState {
   sticky: boolean;
   alertEnabled: boolean;
   background: ChatBackgroundId;
-  clearedAt?: number;
 }
 
 const DEFAULT_CHAT_ACTION_STATE: ChatActionState = {
@@ -60,7 +59,6 @@ export function normalizeChatActionState(value: Partial<ChatActionState> | undef
     sticky: Boolean(value?.sticky),
     alertEnabled: value?.alertEnabled !== false,
     background: normalizeChatBackgroundId(value?.background),
-    ...(Number.isFinite(value?.clearedAt) ? { clearedAt: value?.clearedAt } : {}),
   };
 }
 

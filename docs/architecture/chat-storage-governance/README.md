@@ -77,5 +77,5 @@ Desktop 与 Mobile 的单条删除终态也不一致。
 
 - Product：`PRODUCT_READY_FOR_ARCHITECTURE`
 - Architecture：`DESIGN_READY_FOR_EXECUTION`
-- Plan：批量清理后续 Plan 待持久化与绑定
+- Plan：批量清理 Plan 已持久化并绑定；实时 lifecycle 以对应 `plan.md` 为准
 - `CCU-20260922`：保持 `completed`

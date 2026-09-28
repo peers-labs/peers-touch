@@ -30,6 +30,7 @@
     }
   ],
   "required_gates": [
+    "chat-storage-zero-legacy-e2e",
     "chat-storage-desktop-batch-clear-e2e",
     "chat-storage-mobile-batch-clear-e2e"
   ],
