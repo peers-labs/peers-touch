@@ -225,6 +225,10 @@ LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS = 15_000
 F12_PREPARE_TIMEOUT_SECONDS = 900
 # AS-F12 emits six provider turns; clear a full quota window before the next tuple.
 F12_PROVIDER_COOLDOWN_SECONDS = 65
+PROVIDER_RATE_LIMIT_MARKERS = (
+    "agent.errors.providerRateLimit",
+    "PROVIDER_RATE_LIMIT",
+)
 
 RESTORE_IDENTITY_STATES = frozenset(
     {
@@ -249,6 +253,31 @@ RESTORE_IDENTITY_PHASES = frozenset(
         "revoked",
     }
 )
+
+
+def _with_provider_rate_limit_retry(
+    probe: Callable[[DirectRuntimeProbeInput], Mapping[str, Any]],
+    *,
+    cooldown_seconds: float,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]:
+    def retrying_probe(
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        try:
+            return probe(probe_input)
+        except Exception as error:
+            message = str(error)
+            if (
+                cooldown_seconds <= 0
+                or "CLEANUP_FAILED" in message
+                or not any(marker in message for marker in PROVIDER_RATE_LIMIT_MARKERS)
+            ):
+                raise
+            sleep(cooldown_seconds)
+            return probe(probe_input)
+
+    return retrying_probe
 RESTORE_IDENTITY_REASONS = frozenset(
     {
         "cold_launch",
@@ -3592,6 +3621,11 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         _authenticate_clients(runtime_pair, profile_env)
 
         # --- Build adapters ---
+        provider_cooldown_seconds = (
+            0
+            if os.environ.get("PT_FOUNDATION_DEBUG_TUPLE", "").strip()
+            else F12_PROVIDER_COOLDOWN_SECONDS
+        )
         f06_coordinator = FoundationF06Coordinator(
             runtime_pair,
             runtime_manifest,
@@ -3601,11 +3635,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             runtime_pair,
             runtime_manifest,
             profile_env,
-            provider_cooldown_seconds=(
-                0
-                if os.environ.get("PT_FOUNDATION_DEBUG_TUPLE", "").strip()
-                else F12_PROVIDER_COOLDOWN_SECONDS
-            ),
+            provider_cooldown_seconds=provider_cooldown_seconds,
         )
         executor_unavailable_coordinator = (
             FoundationExecutorUnavailableCoordinator(runtime_pair)
@@ -3631,44 +3661,50 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
-            _make_direct_probe(
-                runtime_pair.native,
-                f06_coordinator=f06_coordinator,
-                f12_coordinator=f12_coordinator,
-                interrupted_coordinator=interrupted_coordinator,
-                executor_unavailable_coordinator=(
-                    executor_unavailable_coordinator
+            _with_provider_rate_limit_retry(
+                _make_direct_probe(
+                    runtime_pair.native,
+                    f06_coordinator=f06_coordinator,
+                    f12_coordinator=f12_coordinator,
+                    interrupted_coordinator=interrupted_coordinator,
+                    executor_unavailable_coordinator=(
+                        executor_unavailable_coordinator
+                    ),
+                    lease_expired_coordinator=lease_expired_coordinator,
+                    invalid_resource_reference_coordinator=(
+                        invalid_resource_reference_coordinator
+                    ),
+                    permission_denied_coordinator=(
+                        permission_denied_coordinator
+                    ),
+                    forbidden_actor_coordinator=forbidden_actor_coordinator,
                 ),
-                lease_expired_coordinator=lease_expired_coordinator,
-                invalid_resource_reference_coordinator=(
-                    invalid_resource_reference_coordinator
-                ),
-                permission_denied_coordinator=(
-                    permission_denied_coordinator
-                ),
-                forbidden_actor_coordinator=forbidden_actor_coordinator,
-            )
+                cooldown_seconds=provider_cooldown_seconds,
+            ),
         )
 
         # 2. Browser adapter: real WebDriver probe through browser client.
         browser_adapter = DirectRuntimeFoundationAdapter(
-            _make_direct_probe(
-                runtime_pair.browser,
-                f06_coordinator=f06_coordinator,
-                f12_coordinator=f12_coordinator,
-                interrupted_coordinator=interrupted_coordinator,
-                executor_unavailable_coordinator=(
-                    executor_unavailable_coordinator
+            _with_provider_rate_limit_retry(
+                _make_direct_probe(
+                    runtime_pair.browser,
+                    f06_coordinator=f06_coordinator,
+                    f12_coordinator=f12_coordinator,
+                    interrupted_coordinator=interrupted_coordinator,
+                    executor_unavailable_coordinator=(
+                        executor_unavailable_coordinator
+                    ),
+                    lease_expired_coordinator=lease_expired_coordinator,
+                    invalid_resource_reference_coordinator=(
+                        invalid_resource_reference_coordinator
+                    ),
+                    permission_denied_coordinator=(
+                        permission_denied_coordinator
+                    ),
+                    forbidden_actor_coordinator=forbidden_actor_coordinator,
                 ),
-                lease_expired_coordinator=lease_expired_coordinator,
-                invalid_resource_reference_coordinator=(
-                    invalid_resource_reference_coordinator
-                ),
-                permission_denied_coordinator=(
-                    permission_denied_coordinator
-                ),
-                forbidden_actor_coordinator=forbidden_actor_coordinator,
-            )
+                cooldown_seconds=provider_cooldown_seconds,
+            ),
         )
 
         # 3. Mobile contract adapter: runs contract test suite (no runtime).

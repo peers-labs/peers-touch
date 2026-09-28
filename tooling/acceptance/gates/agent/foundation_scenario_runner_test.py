@@ -1446,6 +1446,92 @@ class FoundationScenarioRunnerDryRunTest(unittest.TestCase):
 
 
 class FoundationScenarioRunnerProfileTest(unittest.TestCase):
+    def test_provider_rate_limit_retry_is_bounded(self) -> None:
+        calls = 0
+        cooldowns: list[float] = []
+
+        def probe(_input: DirectRuntimeProbeInput) -> dict[str, bool]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("agent.errors.providerRateLimit")
+            return {"passed": True}
+
+        retrying = foundation_scenario_runner._with_provider_rate_limit_retry(
+            probe,
+            cooldown_seconds=65,
+            sleep=cooldowns.append,
+        )
+        result = retrying(
+            DirectRuntimeProbeInput(
+                platform="browser",
+                locale="en",
+                cell="AS-F01",
+                sample_id="sample-001",
+            )
+        )
+
+        self.assertEqual(result, {"passed": True})
+        self.assertEqual(calls, 2)
+        self.assertEqual(cooldowns, [65])
+
+    def test_provider_rate_limit_retry_fails_closed_after_second_attempt(
+        self,
+    ) -> None:
+        calls = 0
+        cooldowns: list[float] = []
+
+        def probe(_input: DirectRuntimeProbeInput) -> dict[str, bool]:
+            nonlocal calls
+            calls += 1
+            raise RuntimeError("PROVIDER_RATE_LIMIT")
+
+        retrying = foundation_scenario_runner._with_provider_rate_limit_retry(
+            probe,
+            cooldown_seconds=65,
+            sleep=cooldowns.append,
+        )
+        with self.assertRaisesRegex(RuntimeError, "PROVIDER_RATE_LIMIT"):
+            retrying(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="AS-F01",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(calls, 2)
+        self.assertEqual(cooldowns, [65])
+
+    def test_provider_rate_limit_retry_does_not_mask_cleanup_failure(
+        self,
+    ) -> None:
+        calls = 0
+
+        def probe(_input: DirectRuntimeProbeInput) -> dict[str, bool]:
+            nonlocal calls
+            calls += 1
+            raise RuntimeError(
+                "agent.errors.providerRateLimit; CLEANUP_FAILED: leaked fixture"
+            )
+
+        retrying = foundation_scenario_runner._with_provider_rate_limit_retry(
+            probe,
+            cooldown_seconds=65,
+        )
+        with self.assertRaisesRegex(RuntimeError, "CLEANUP_FAILED"):
+            retrying(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="AS-F01",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertEqual(calls, 1)
+
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.repo_root = Path(self.temporary_directory.name) / "two"
