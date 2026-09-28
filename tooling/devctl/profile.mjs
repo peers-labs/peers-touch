@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { DevctlError, ERROR_CODES, fail } from './errors.mjs';
 import {
   MachineDevError,
   checkWorkspace,
-  updateWorkspace,
+  selectWorkspaceProfile,
 } from '../scripts/local-dev/machine-dev-registry.mjs';
 
 const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
@@ -356,11 +357,30 @@ export function activateProfile(root, name, environment = process.env) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(name)) {
     fail(ERROR_CODES.PROFILE_INVALID, `Invalid profile name: ${name}`, { name });
   }
-  machineOperation(() => updateWorkspace({
+  let owner = environment.PT_MACHINE_DEV_OWNER?.trim();
+  if (!owner) {
+    try {
+      owner = execFileSync('git', ['config', 'user.email'], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim();
+    } catch {
+      owner = '';
+    }
+  }
+  if (!owner) {
+    fail(
+      ERROR_CODES.PROFILE_INVALID,
+      'Profile selection requires git user.email or PT_MACHINE_DEV_OWNER',
+    );
+  }
+  machineOperation(() => selectWorkspaceProfile({
     workspaceRoot: root,
     envRepo: environment.PT_ENV_REPO,
     home: environment.HOME,
     profile: name,
+    owner,
   }));
   return resolveProfile(root, environment);
 }
