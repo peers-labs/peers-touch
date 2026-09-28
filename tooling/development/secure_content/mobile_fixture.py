@@ -165,6 +165,7 @@ class MobileProductionFixture:
                 )
             self._exhaust_content_prekeys(
                 sender,
+                self._receiver(payload),
                 variant,
                 deadline_monotonic,
                 cancellation,
@@ -513,16 +514,43 @@ class MobileProductionFixture:
 
     def _exhaust_content_prekeys(
         self,
-        client_id: str,
+        sender_client_id: str,
+        receiver_client_id: str,
         variant: str,
         deadline_monotonic: float,
         cancellation: threading.Event,
     ) -> None:
-        for index in range(1, 33):
+        snapshot = self._call(
+            receiver_client_id,
+            "moments.private.snapshot",
+        )
+        report = self._mapping(
+            snapshot.get("report"),
+            "private Social worker report",
+        )
+        endpoint_available = self._required_nonnegative_integer(
+            report.get("endpointPrekeysAvailable"),
+            "endpoint Content PreKey availability",
+        )
+        if "recoveryPrekeysAvailable" not in report:
+            raise MobileFixtureError(
+                "actor-recovery Content PreKey availability is missing"
+            )
+        recovery_value = report["recoveryPrekeysAvailable"]
+        drainable = endpoint_available
+        if recovery_value is not None:
+            drainable = min(
+                drainable,
+                self._required_nonnegative_integer(
+                    recovery_value,
+                    "actor-recovery Content PreKey availability",
+                ),
+            )
+        for index in range(1, drainable + 2):
             self._require_active(deadline_monotonic, cancellation)
             try:
                 self._publish_post(
-                    client_id,
+                    sender_client_id,
                     "moments.private.publishText",
                     {
                         "draftId": (
@@ -543,7 +571,8 @@ class MobileProductionFixture:
                     raise
                 return
         raise MobileFixtureError(
-            "Mobile private publish did not exhaust the bounded Content PreKey pool"
+            "Mobile private publish exceeded the receiver-reported Content "
+            "PreKey pool without a dependency failure"
         )
 
     def _matching_publish_projection(
@@ -1084,6 +1113,16 @@ class MobileProductionFixture:
             not isinstance(value, int)
             or isinstance(value, bool)
             or value < 1
+        ):
+            raise MobileFixtureError(f"{field} is invalid")
+        return value
+
+    @staticmethod
+    def _required_nonnegative_integer(value: Any, field: str) -> int:
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
         ):
             raise MobileFixtureError(f"{field} is invalid")
         return value
