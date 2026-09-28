@@ -66,6 +66,9 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     assert_group_one_capture,
     group_one_tuples,
 )
+from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+    evaluate_base_queue_full,
+)
 from tooling.acceptance.gates.agent.foundation_station_restart import (
     restart_foundation_station,
 )
@@ -1847,6 +1850,11 @@ def _make_direct_probe(
             "BASE-MODEL_UNAVAILABLE": "runDevelopmentProviderModelUnavailable",
             "BASE-PROVIDER_TIMEOUT": "runDevelopmentProviderTimeout",
         }.get(probe_input.cell, "foundationDirectProbe")
+        harness_cell = (
+            "AS-F02"
+            if probe_input.cell == "BASE-QUEUE_FULL"
+            else probe_input.cell
+        )
         result = client.harness(
             method,
             {
@@ -1855,7 +1863,7 @@ def _make_direct_probe(
                 **(
                     {}
                     if method != "foundationDirectProbe"
-                    else {"cell": probe_input.cell}
+                    else {"cell": harness_cell}
                 ),
                 "sampleId": probe_input.sample_id,
             },
@@ -1866,10 +1874,78 @@ def _make_direct_probe(
                 f"direct probe returned invalid result for "
                 f"{probe_input.cell}/{probe_input.sample_id}"
             )
+        if probe_input.cell == "BASE-QUEUE_FULL":
+            result = _project_queue_full_capture(result)
         assert_group_one_capture(probe_input, result)
         return result
 
     return probe
+
+
+def _project_queue_full_capture(
+    capture: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    def require_mapping(
+        source: Mapping[str, Any],
+        key: str,
+    ) -> dict[str, Any]:
+        value = source.get(key)
+        if not isinstance(value, Mapping):
+            raise ScenarioRunnerError(
+                f"BASE-QUEUE_FULL {key} evidence is missing"
+            )
+        return dict(value)
+
+    projected = dict(capture)
+    scenario_facts = require_mapping(projected, "scenarioFacts")
+    cleanup = require_mapping(projected, "cleanup")
+    scenario_facts["cleanup"] = cleanup
+    assertions = evaluate_base_queue_full(scenario_facts)
+    queue = require_mapping(scenario_facts, "queueSubmission")
+    overflow = require_mapping(queue, "overflow")
+    recovery = require_mapping(overflow, "recovery")
+
+    receiver = require_mapping(projected, "receiver-dom")
+    receiver.update(
+        {
+            "scenarioId": "BASE-QUEUE_FULL",
+            "cellId": "BASE-QUEUE_FULL",
+            "selector": (
+                '[data-pt-agent-message-error-recovery="edit-queue"],'
+                "[data-pt-agent-turn-queue]"
+            ),
+            "visible": (
+                recovery.get("visible") is True
+                and recovery.get("queueFocused") is True
+            ),
+        }
+    )
+    provider_call_delta = int(overflow.get("providerCallDelta", -1))
+    station_message_delta = int(overflow.get("stationMessageDelta", -1))
+    side_effects = require_mapping(projected, "side-effect-count")
+    side_effects.update(
+        {
+            "count": provider_call_delta + station_message_delta,
+            "maximum": 0,
+            "measurements": {
+                "providerCallDelta": provider_call_delta,
+                "stationMessageDelta": station_message_delta,
+            },
+        }
+    )
+    measurement = require_mapping(projected, "measurement-report")
+    measurement["metric"] = "foundation-queue-full-recovery-duration-ms"
+
+    projected.update(
+        {
+            "assertions": assertions,
+            "scenarioFacts": scenario_facts,
+            "receiver-dom": receiver,
+            "measurement-report": measurement,
+            "side-effect-count": side_effects,
+        }
+    )
+    return projected
 
 
 class FoundationF06Coordinator:

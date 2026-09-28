@@ -34,6 +34,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_loop_budget_exhausted,
     evaluate_base_model_unavailable,
     evaluate_base_permission_denied,
+    evaluate_base_queue_full,
     evaluate_as_f04,
     evaluate_as_f06,
     evaluate_as_f12,
@@ -47,6 +48,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_loop_budget_exhausted_capture,
     valid_model_unavailable_capture,
     valid_permission_denied_capture,
+    valid_base_queue_full_capture,
     valid_as_f04_capture,
     valid_as_f06_capture,
     valid_as_f12_capture,
@@ -722,6 +724,53 @@ class DirectProbeHarnessClient:
         )
         if self.mismatch:
             result["assertions"]["denialExecutedZero"] = False
+        return result
+
+
+class QueueFullHarnessClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object], float]] = []
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        request = payload or {}
+        self.calls.append((method, request, timeout))
+        if method == "setFoundationLocale":
+            return {"locale": request["locale"]}
+        if method != "foundationDirectProbe":
+            raise AssertionError(f"unexpected method: {method}")
+        if request.get("cell") != "AS-F02":
+            raise AssertionError("queue-full probe did not reuse AS-F02")
+        probe = DirectRuntimeProbeInput(
+            platform=str(request["platform"]),
+            locale=str(request["locale"]),
+            cell=str(request["cell"]),
+            sample_id=str(request["sampleId"]),
+        )
+        result = capture(probe)
+        facts = valid_base_queue_full_capture()
+        runtime_event = {
+            "eventId": "event-queue-full",
+            "sequence": 10,
+            "eventType": "error",
+            "occurredAt": "2026-09-28T00:00:00Z",
+            "streamGeneration": 1,
+            "streamIdHash": "a" * 64,
+            "conversationIdHash": "b" * 64,
+            "payloadHash": "c" * 64,
+            "errorType": "ADMISSION_QUEUE_FULL",
+        }
+        facts["runtimeEvent"] = {
+            **runtime_event,
+            "observedAt": runtime_event["occurredAt"],
+        }
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_queue_full(facts)
+        result["runtime-events"] = runtime_event
         return result
 
 
@@ -2290,6 +2339,44 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             foundation_scenario_runner._make_direct_probe(
                 DirectProbeHarnessClient(mismatch=True)
             )(probe_input)
+
+    def test_queue_full_direct_probe_reuses_as_f02_capture(self) -> None:
+        client = QueueFullHarnessClient()
+        probe_input = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="zh-CN",
+            cell="BASE-QUEUE_FULL",
+            sample_id="sample-001",
+        )
+
+        result = foundation_scenario_runner._make_direct_probe(client)(
+            probe_input
+        )
+
+        self.assertTrue(result["assertions"]["typedQueueFull"])
+        self.assertEqual(
+            result["receiver-dom"]["cellId"],
+            "BASE-QUEUE_FULL",
+        )
+        self.assertEqual(result["side-effect-count"]["count"], 0)
+        self.assertEqual(result["side-effect-count"]["maximum"], 0)
+        self.assertTrue(result["replay"]["equal"])
+        self.assertEqual(
+            client.calls,
+            [
+                ("setFoundationLocale", {"locale": "zh-CN"}, 30),
+                (
+                    "foundationDirectProbe",
+                    {
+                        "platform": "browser",
+                        "locale": "zh-CN",
+                        "cell": "AS-F02",
+                        "sampleId": "sample-001",
+                    },
+                    300,
+                ),
+            ],
+        )
 
     def test_as_f07_direct_probe_budget_covers_revision_commands(self) -> None:
         client = TimeoutCaptureHarnessClient()

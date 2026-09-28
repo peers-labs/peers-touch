@@ -194,6 +194,17 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-QUEUE_FULL": frozenset(
+        {
+            "queueAtCapacity",
+            "typedQueueFull",
+            "localizedRecoveryVisible",
+            "editQueueFocused",
+            "queueStateUnchanged",
+            "zeroAutomaticResend",
+            "cleanupComplete",
+        }
+    ),
     "BASE-CANCELLED": frozenset(
         {
             "typedCancellationProjected",
