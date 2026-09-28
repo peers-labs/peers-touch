@@ -132,7 +132,12 @@
   "full": [
     "machine-dev-registry-self",
     "acceptance-plan-self",
-    "acceptance-infra-validation"
+    "acceptance-infra-validation",
+    "acceptance-runtime-provisioning-self",
+    "acceptance-workflow-contract",
+    "dev-ui-browser-e2e",
+    "development-workflow-control-plane",
+    "peers-dev-product"
   ]
 }
 ```
