@@ -156,7 +156,7 @@ describe.each(['friend', 'group'] as const)('%s conversation summaries', (kind) 
     vi.spyOn(gateway, 'getMySettings').mockResolvedValue({
       ok: true, data: {
         isMuted: false, isPinned: false, myNickname: '', showMemberNickname: false,
-        alertEnabled: true, background: 'default', clearedAt: 0,
+        alertEnabled: true, background: 'default',
       },
     });
     vi.spyOn(gateway, 'leaveGroup').mockResolvedValue({ ok: true, data: {} });

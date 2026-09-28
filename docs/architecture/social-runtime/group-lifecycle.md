@@ -301,12 +301,14 @@ Current implementation:
 
 Contract:
 
-- Read state, pinned, muted, alert, nickname, background, and cleared history cursor are per-actor projection settings.
-- `cleared_at_unix_ms` hides local visible history for that actor but does not delete Station truth.
+- Read state, pinned, muted, alert, nickname, and background are per-actor
+  projection settings.
+- Device-local history cleanup is owned by the Device Messaging Engine's
+  sequence/hash floor and is not a Station member setting.
 
 Current implementation:
 
-- Per-user group settings exist, including `cleared_at_unix_ms`.
+- Per-user group settings exist for nickname, mute, pin, alert, and background.
 - Settings change emits `ConversationSettingsChanged`.
 
 ## 7. History Visibility Contract
@@ -315,7 +317,7 @@ Target product semantics:
 
 | Actor State | Group List | History Rows | Decryption | New Events |
 | --- | --- | --- | --- | --- |
-| Current member | Visible | Visible subject to clear cursor | Entitled epochs decrypt | Receives |
+| Current member | Visible | Visible subject to the device-local cleanup floor | Entitled epochs decrypt | Receives |
 | Newly joined member | Visible from join | Product-defined; recommended no pre-join plaintext | Only join epoch and later | Receives after join |
 | Left member | Hidden or archived | Recommended local/archive history until leave | Existing local keys may decrypt old history | No new messages |
 | Removed member | Hidden or archived | Recommended history until removal unless policy revokes | Existing local keys may decrypt old history | No new messages |

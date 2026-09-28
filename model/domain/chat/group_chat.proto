@@ -636,24 +636,26 @@ message GetGroupSettingsRequest {
 }
 
 message GetGroupSettingsResponse {
+  reserved 7;
+
   bool is_muted = 1;                          // 是否静音
   bool is_pinned = 2;                         // 是否置顶
   string my_nickname = 3;                     // 我的群昵称
   bool show_member_nickname = 4;              // 是否显示成员昵称
   bool alert_enabled = 5;                     // 是否参与提醒/角标
   string background = 6;                      // 聊天背景标识
-  int64 cleared_at_unix_ms = 7;               // 本人清空可见历史的游标
 }
 
 // 更新群设置（用户个人设置）
 message UpdateGroupSettingsRequest {
+  reserved 7;
+
   string group_ulid = 1;
   optional bool is_muted = 2;
   optional bool is_pinned = 3;
   optional bool show_member_nickname = 4;
   optional bool alert_enabled = 5;
   optional string background = 6;
-  optional int64 cleared_at_unix_ms = 7;
 }
 
 message UpdateGroupSettingsResponse {
