@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Created**: 2026-09-13 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -27,6 +27,7 @@
 | LDCP-D13 | Project Plan progress separately from environment health | accepted |
 | LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | accepted |
 | LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
+| LDCP-D16 | Bootstrap minimum registration from explicit Profile selection | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -621,3 +622,58 @@ actual mutation.
   loop.
 - Existing stable Profiles remain usable for non-reset operations under their
   normal capability and declaration guards.
+
+## LDCP-D16: Explicit Profile Selection Bootstraps Minimum Registration
+
+**Status**: accepted
+**Date**: 2026-09-28
+
+### Context
+
+`make profile <name>` is an explicit Owner action, but previously delegated to
+the update-only registry operation. A newly cloned or newly created worktree
+therefore failed with `WORKSPACE_UNREGISTERED` and required callers to discover
+the separate registration command, slot, capabilities, purpose, and owner
+fields before they could select an existing reviewed Profile.
+
+Remote `make station` also invoked deployment before checking whether the
+configured Station was already healthy, contradicting its documented
+idempotent ensure behavior. Any nested deployment failure was then rewritten as
+`DEVCTL_START_TIMEOUT`, even when the actual cause was a missing capability,
+dirty remote source, or missing runtime environment file.
+
+### Decision
+
+`make profile <name>` is the explicit registration boundary for normal Profile
+selection:
+
+- an unregistered worktree atomically receives the lowest available local slot;
+- a reviewed remote Profile receives only `station.connect` and
+  `station.deploy`;
+- a local or compose Profile receives only `station.connect`;
+- `station.reset` is never granted implicitly;
+- an existing registration keeps its slot, owner, and purpose while switching
+  Profile and retaining only capabilities valid for the selected Profile.
+
+`make env-register` remains the advanced command for callers that need an
+explicit slot, purpose, or capability set. Discovery, observation, branch
+names, and legacy profile pointers still cannot register a worktree.
+
+Remote `make station` probes health and `/app-meta/version` before deployment.
+It returns as reused without acquiring a deploy lease only when the endpoint is
+healthy and its live build commit matches the current local Git HEAD. A stale,
+missing, or malformed build identity enters the normal exact-source deployment
+path, whose result is verified again after health recovery. Typed downstream
+failures are preserved; only a real elapsed timeout is reported as
+`DEVCTL_START_TIMEOUT`.
+
+### Consequences
+
+- A fresh worktree can select an existing reviewed Profile with one command.
+- Automatic slot allocation remains registry-locked and cannot duplicate a
+  live allocation.
+- Profile selection cannot create topology or grant destructive reset.
+- Repeated `make station` is an idempotent health and source-identity
+  confirmation.
+- Operators receive the real failure code and remediation boundary instead of
+  a misleading timeout.
