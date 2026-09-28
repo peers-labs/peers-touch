@@ -25,6 +25,11 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from tooling.scripts.plan.acceptance_admission import (  # noqa: E402
+    AcceptanceAdmissionError,
+    require_acceptance_admission,
+)
+
 SCAN_TYPE_TO_GATE = {
     "path-absent": "chat-w11-forbidden-scan",
     "source-scan": "chat-w11-forbidden-scan",
@@ -593,6 +598,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        require_acceptance_admission(
+            REPO_ROOT,
+            args.run,
+            "gap",
+        )
         store = EvidenceStore.from_environment(
             repo_root=REPO_ROOT,
             worktree=REPO_ROOT,
@@ -635,7 +645,7 @@ def main() -> int:
                 else None
             ),
         )
-    except DetectorError as error:
+    except (AcceptanceAdmissionError, DetectorError) as error:
         sys.stderr.write(f"acceptance gap detector failed closed: {error}\n")
         return 2
 
