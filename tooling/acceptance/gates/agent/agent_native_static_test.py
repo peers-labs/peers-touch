@@ -1140,6 +1140,18 @@ class AgentHarnessStaticTest(unittest.TestCase):
         end = self.source.index("async runDevelopmentLoopBudget", start)
         scenario = self.source[start:end]
 
+        self.assertIn("const sourceAgent = selectedAgent()", scenario)
+        self.assertIn(
+            "foundation-provider-timeout-${sampleId}-${crypto.randomUUID()}",
+            scenario,
+        )
+        self.assertIn("thinkingMode: 'disabled'", scenario)
+        self.assertIn("chatConfig: JSON.stringify({ tools: [] })", scenario)
+        self.assertIn(
+            "agent.acceptance.providerTimeoutToolIsolationFailed",
+            scenario,
+        )
+        self.assertIn("capability.capability_id.startsWith('tool:')", scenario)
         self.assertIn("useChatStore.getState().sendMessage(", scenario)
         self.assertIn("max_output_tokens: 8192", scenario)
         self.assertIn("wall_time_ms: requestedWallTimeMs", scenario)
@@ -1195,6 +1207,9 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "await deleteFoundationConversation(",
             scenario,
         )
+        self.assertIn("await api.deleteAgent(disposableAgentId)", scenario)
+        self.assertIn("disposableAgentDeleted,", scenario)
+        self.assertIn("agentRestored,", scenario)
         self.assertNotIn("recovery.click()", scenario)
 
     def test_loop_budget_development_journey_reuses_f04_tool_loop(self) -> None:

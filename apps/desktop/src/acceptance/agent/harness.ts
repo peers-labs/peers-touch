@@ -32430,25 +32430,56 @@ export function installAcceptanceHarness(): void {
       platform?: 'desktop_app' | 'browser';
       locale?: string;
     }) {
-      const agent = selectedAgent();
-      if (!agent?.provider || !agent.model) {
+      const sourceAgent = selectedAgent();
+      if (!sourceAgent?.provider || !sourceAgent.model) {
         throw new Error('agent.acceptance.providerTimeout');
       }
-      const agentId = agent.id || agent.name;
-      const capabilitySessions = await waitForCapabilitySessionEvidence();
-      const capabilitySessionId =
-        capabilitySessions.selectedStationSession?.session_id;
-      if (!capabilitySessionId) {
-        throw new Error('agent.acceptance.capabilitySessionUnavailable');
-      }
+      const agentStore = useAgentStore.getState();
+      const priorSelection = agentStore.selectedAgent;
+      const priorSurface = agentStore.getAgentSurface(priorSelection);
       const requestedWallTimeMs = 180_000;
       const providerDeadlineMs = 120_000;
+      let agentRestored = priorSelection === '';
+      let disposableAgentDeleted = false;
+      let disposableAgentId = '';
       let conversationId = '';
       let turnId = '';
       let conversationDeleted = false;
       let localProjectionCleared = false;
       let capture: Record<string, unknown> | null = null;
       try {
+        const agent = await agentStore.createAgent({
+          name: `foundation-provider-timeout-${sampleId}-${crypto.randomUUID()}`,
+          title: `Foundation provider timeout ${sampleId}`,
+          description: 'Foundation provider timeout fixture',
+          provider: sourceAgent.provider,
+          model: sourceAgent.model,
+          thinkingMode: 'disabled',
+          chatConfig: JSON.stringify({ tools: [] }),
+        });
+        const agentId = agent.id || agent.name;
+        disposableAgentId = agentId;
+        await api.setSelectedAgent(agent.name);
+        useAgentStore.getState().setSelectedAgent(agent.name);
+        useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+        const capabilitySessions = await waitForCapabilitySessionEvidence();
+        const capabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!capabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        const fixtureReadiness = await api.getAgentCapabilityReadiness({
+          agent_id: agentId,
+          client_capability_session_id: capabilitySessionId,
+        });
+        if (fixtureReadiness.capabilities.some((capability) => (
+          capability.capability_id.startsWith('tool:')
+          && isAgentCapabilityReady(capability)
+        ))) {
+          throw new Error(
+            'agent.acceptance.providerTimeoutToolIsolationFailed',
+          );
+        }
         const conversation = await api.createAgentConversation({
           agent_id: agentId,
           title: `Provider timeout ${sampleId}`,
@@ -32765,7 +32796,9 @@ export function installAcceptanceHarness(): void {
           runtimeEvent,
           replay,
           cleanup: {
+            agentRestored: false,
             conversationDeleted: false,
+            disposableAgentDeleted: false,
             localProjectionCleared: false,
           },
         };
@@ -32902,14 +32935,40 @@ export function installAcceptanceHarness(): void {
           replay,
         };
       } finally {
-        if (conversationId) {
-          clearFoundationLocalConversationProjection(conversationId);
-          localProjectionCleared = true;
-          const deletionErrorCode = await deleteFoundationConversation(
-            conversationId,
-          );
-          conversationDeleted = deletionErrorCode === ''
-            || deletionErrorCode.includes('AGENT_4004');
+        try {
+          if (conversationId) {
+            clearFoundationLocalConversationProjection(conversationId);
+            localProjectionCleared = true;
+            const deletionErrorCode = await deleteFoundationConversation(
+              conversationId,
+            );
+            conversationDeleted = deletionErrorCode === ''
+              || deletionErrorCode.includes('AGENT_4004');
+          }
+        } finally {
+          try {
+            if (disposableAgentId) {
+              await api.deleteAgent(disposableAgentId);
+              await useAgentStore.getState().loadAgents();
+              disposableAgentDeleted =
+                !useAgentStore.getState().agents.some(
+                  (candidate) => (
+                    (candidate.id || candidate.name) === disposableAgentId
+                  ),
+                );
+            }
+          } finally {
+            if (priorSelection) {
+              useAgentStore.getState().setSelectedAgent(priorSelection);
+              useAgentStore.getState().setAgentSurface(
+                priorSelection,
+                priorSurface,
+              );
+              await api.setSelectedAgent(priorSelection);
+            }
+            agentRestored =
+              useAgentStore.getState().selectedAgent === priorSelection;
+          }
         }
       }
       if (!capture) {
@@ -32920,12 +32979,17 @@ export function installAcceptanceHarness(): void {
         resourceIdHash: await sha256Hex(stableJson({
           conversationId,
           platform,
-          providerId: agent.provider,
+          providerId: sourceAgent.provider,
         })),
+        agentRestored,
         conversationDeleted,
+        disposableAgentDeleted,
         localProjectionCleared,
         status:
-          conversationDeleted && localProjectionCleared
+          agentRestored
+            && conversationDeleted
+            && disposableAgentDeleted
+            && localProjectionCleared
             ? 'clean'
             : 'failed',
       };
