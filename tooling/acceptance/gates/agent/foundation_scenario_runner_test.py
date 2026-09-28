@@ -1756,6 +1756,23 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(browser.calls, 1)
         self.assertEqual(native.calls, 1)
 
+    def test_debug_cleanup_restores_only_the_selected_client(self) -> None:
+        native = CapabilityIsolationCleanupClient(
+            "desktop_app",
+            always_fail=True,
+        )
+        browser = CapabilityIsolationCleanupClient("browser")
+
+        errors = foundation_scenario_runner._restore_capability_isolation_for_cleanup(
+            SimpleNamespace(native=native, browser=browser),
+            {},
+            clients=(browser,),
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(browser.calls, 1)
+        self.assertEqual(native.calls, 0)
+
     def test_f06_restoration_accepts_an_empty_original_capability_set(
         self,
     ) -> None:
