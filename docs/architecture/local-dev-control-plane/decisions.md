@@ -675,6 +675,13 @@ post-lock source validation, and OS lease exclusion remain mandatory. This
 exception never applies to `station.reset`; Agent-driven Plan work still
 declares runtime intent before invoking the command.
 
+Before a runtime `start` or `restart`, Devctl reconciles a stale registration
+HEAD to the current Git HEAD only when `workspaceId`, canonical root, and
+branch are unchanged and the workspace holds no runtime lease. Root or branch
+drift remains `WORKTREE_IDENTITY_MISMATCH`. The bounded owner action is carried
+through the lease holder into inherited `verify-held` validation, so the
+post-lock check enforces the same policy as initial acquisition.
+
 `make desktop` and `make desktop-web` are complete developer entrypoints. They
 resolve runtime values from the selected Profile, prepare missing workspace
 packages from the committed `pnpm-lock.yaml` with frozen-lockfile semantics,
@@ -690,6 +697,8 @@ lockfiles remain their owner.
 - Profile selection cannot create topology or grant destructive reset.
 - Repeated `make station` is an idempotent health and source-identity
   confirmation.
+- Normal same-branch commit, merge, rebase, or pull no longer requires a
+  separate `make env-update` before runtime startup.
 - An operator can ready the selected Station with one command without learning
   internal Development declaration commands.
 - An operator can start Desktop from a fresh checkout without a separate

@@ -214,6 +214,10 @@ def run_with_lease(args):
                 child_environment["PT_MACHINE_LEASE_RESET_SCOPE"] = (
                     args.reset_scope
                 )
+            if args.owner_action:
+                child_environment["PT_MACHINE_LEASE_OWNER_ACTION"] = (
+                    args.owner_action
+                )
             child = subprocess.Popen(
                 args.command,
                 start_new_session=True,
@@ -390,6 +394,7 @@ def parser():
     run.add_argument("--budget-seconds", required=True, type=int)
     run.add_argument("--validation-command-json", required=True)
     run.add_argument("--reset-scope")
+    run.add_argument("--owner-action")
     run.add_argument("command", nargs=argparse.REMAINDER)
 
     status = commands.add_parser("status")

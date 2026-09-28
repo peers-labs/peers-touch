@@ -15,6 +15,7 @@ import {
   activateProfile,
   initializeProfile,
   listProfiles,
+  prepareRuntimeWorkspace,
   redactProfile,
   resolveProfile,
 } from './profile.mjs';
@@ -227,6 +228,9 @@ export async function run(argv = process.argv.slice(2), environment = process.en
   }
 
   if (command === 'station') {
+    if (['start', 'restart'].includes(subcommand)) {
+      prepareRuntimeWorkspace(root, environment);
+    }
     let result;
     if (subcommand === 'start') {
       result = await startStation(root, environment);
@@ -263,6 +267,9 @@ export async function run(argv = process.argv.slice(2), environment = process.en
         `Unexpected Desktop arguments: ${args.slice(2).join(' ')}`,
         { arguments: args.slice(2) },
       );
+    }
+    if (['start', 'restart'].includes(subcommand)) {
+      prepareRuntimeWorkspace(root, environment);
     }
     let result;
     if (subcommand === 'start') {
