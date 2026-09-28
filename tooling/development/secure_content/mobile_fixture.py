@@ -104,8 +104,13 @@ class MobileProductionFixture:
     ) -> Mapping[str, object]:
         clients = self._selected_clients(payload)
         variant = str(payload.get("variant") or "")
+        milestone_observations: list[Mapping[str, Any]] = []
         if operation == "publish-states":
             sender = self._sender(payload)
+            self._capture_publish_observation(
+                sender,
+                milestone_observations,
+            )
             self._call(
                 sender,
                 "moments.publish",
@@ -113,6 +118,10 @@ class MobileProductionFixture:
                     "text": f"secure-content-{variant}-public",
                     "audienceKind": 1,
                 },
+            )
+            self._capture_publish_observation(
+                sender,
+                milestone_observations,
             )
             post_id, _published = self._publish_post(
                 sender,
@@ -128,6 +137,10 @@ class MobileProductionFixture:
                 label="private post",
             )
             self._posts[variant] = post_id
+            self._capture_publish_observation(
+                sender,
+                milestone_observations,
+            )
             for suffix, audience, expected_error in (
                 (
                     "unsupported",
@@ -163,12 +176,20 @@ class MobileProductionFixture:
                     },
                     expected_error,
                 )
+                self._capture_publish_observation(
+                    sender,
+                    milestone_observations,
+                )
             self._exhaust_content_prekeys(
                 sender,
                 self._receiver(payload),
                 variant,
                 deadline_monotonic,
                 cancellation,
+            )
+            self._capture_publish_observation(
+                sender,
+                milestone_observations,
             )
             for client_id in clients:
                 self._call(client_id, "moments.private.reconcile")
@@ -182,6 +203,10 @@ class MobileProductionFixture:
                     "audience": {"kind": "FRIENDS"},
                 },
                 "draft replay conflict",
+            )
+            self._capture_publish_observation(
+                sender,
+                milestone_observations,
             )
         elif operation == "read-states":
             post_id = self._required_text(
@@ -315,6 +340,7 @@ class MobileProductionFixture:
             self._call(client_id, "moments.private.snapshot")
             for client_id in clients
         ]
+        observations = [*milestone_observations, *observations]
         if operation == "cross-platform-receivers":
             platforms = {
                 "ios" if "ios" in client_id else "android"
@@ -468,6 +494,15 @@ class MobileProductionFixture:
             "publicFallbackUsed": False,
             "receiverObservationDigests": self._digests(observations),
         }
+
+    def _capture_publish_observation(
+        self,
+        client_id: str,
+        observations: list[Mapping[str, Any]],
+    ) -> None:
+        observations.append(
+            self._call(client_id, "moments.private.snapshot")
+        )
 
     def _publish_post(
         self,
