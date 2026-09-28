@@ -16,6 +16,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
@@ -506,6 +507,18 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		done <- turnStreamResult{turn: domainTurnToProto(turn), err: err}
 	}()
 
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	return serveTurnStream(ctx, resp, events, done, heartbeat.C)
+}
+
+func serveTurnStream(
+	ctx context.Context,
+	resp server.Response,
+	events <-chan service.TurnEvent,
+	done <-chan turnStreamResult,
+	heartbeat <-chan time.Time,
+) error {
 	for {
 		select {
 		case event, ok := <-events:
@@ -527,6 +540,10 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 				return nil
 			}
 			return nil
+		case <-heartbeat:
+			if err := writeTurnStreamHeartbeat(resp); err != nil {
+				return nil
+			}
 		case <-ctx.Done():
 			return nil
 		}
@@ -718,6 +735,13 @@ func writeTurnStreamEvent(resp server.Response, event string, payload any) error
 		return err
 	}
 	if _, err := resp.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
+		return err
+	}
+	return resp.Flush()
+}
+
+func writeTurnStreamHeartbeat(resp server.Response) error {
+	if _, err := resp.Write([]byte(": heartbeat\n\n")); err != nil {
 		return err
 	}
 	return resp.Flush()

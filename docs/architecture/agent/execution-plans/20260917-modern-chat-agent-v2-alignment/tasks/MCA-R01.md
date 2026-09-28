@@ -20,6 +20,8 @@
     "apps/mobile/src/gen/proto/domain/agent/agent_pb.ts",
     "apps/desktop/src/gen/proto/domain/agent/agent_pb.ts",
     "apps/station/app/subserver/agent/errcode/error.go",
+    "apps/station/app/subserver/agent/handler/turn_handler.go",
+    "apps/station/app/subserver/agent/handler/turn_handler_test.go",
     "apps/station/app/subserver/agent/model/agent.pb.go",
     "apps/station/app/subserver/agent/service/chat_task_service.go",
     "apps/station/app/subserver/agent/service/chat_task_recovery_test.go",
@@ -142,13 +144,9 @@ permission-denied contract exposed by the next exact-source Foundation run.
 
 ## Current Snapshot
 
-- Exact-source Foundation run `20260924T200431539686Z-b02b1a38a66edf1e9af21f7bb280339e`
-  failed at `agent.acceptance.foundationInterruptedMessageMissing`.
-- Runtime evidence shows the matching Turn Attempt is durably interrupted with
-  `station_restart_interrupted`, while Station message readback contains only
-  the admitted user message.
-- Desktop had projected the empty interrupted Assistant before synchronization;
-  the defect is owned by Station startup recovery persistence.
+- Run `20260924T200431539686Z-b02b1a38a66edf1e9af21f7bb280339e`
+  exposed missing Station persistence for the interrupted Assistant; the
+  startup-recovery owner now persists the typed projection.
 - A later exact-source retry reached a matching corrected-resend `done` event
   and canonical store state, then sampled receiver visibility before DOM
   convergence; the Harness must await exactly one visible canonical Assistant.
@@ -170,3 +168,7 @@ permission-denied contract exposed by the next exact-source Foundation run.
   and zero-execution proof boundary.
 - Run `20260925T200337561495Z-2467c5cfacc56fecabff73ab2e5ce7a3` exposed a late canonical refresh dropping the local-only `BASE-DUPLICATE_CONFLICT` Assistant; the owner is Desktop chat merge with focused regression coverage.
 - Exact-source redeploy after the sanitized-history rebase exposed two orphaned legacy Social adapters and one stale Conversation response constructor; reconciliation removes the adapters and uses the canonical protobuf `oneof`.
+- Ark run `20260928T014932696320Z-45059d51355332a04a644511cec18390`
+  reached Browser `BASE-PROVIDER_TIMEOUT`; source inspection found that live
+  Turn SSE lacked heartbeat frames, so the 30-second Browser idle deadline
+  preceded the 120-second provider terminal. Cleanup passed.
