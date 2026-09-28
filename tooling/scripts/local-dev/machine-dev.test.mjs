@@ -200,7 +200,14 @@ function declareLeaseIntent(scope) {
   });
 }
 
-function leaseArguments(scope, resourceKind, resourceId, budgetSeconds, command) {
+function leaseArguments(
+  scope,
+  resourceKind,
+  resourceId,
+  budgetSeconds,
+  command,
+  { ownerAction } = {},
+) {
   const args = [
     cli,
     'lease',
@@ -219,6 +226,9 @@ function leaseArguments(scope, resourceKind, resourceId, budgetSeconds, command)
   ];
   if (resourceKind === 'station.reset') {
     args.push('--reset-scope', resourceId);
+  }
+  if (ownerAction) {
+    args.push('--owner-action', ownerAction);
   }
   return [...args, '--', ...command];
 }
@@ -930,6 +940,53 @@ for (const leaseCase of [
     }
   });
 }
+
+test('make.station owner action acquires only the bounded deploy lease', () => {
+  const scope = fixture();
+  try {
+    registerWorkspace(
+      registrationOptions(scope, {
+        capabilities: 'station.connect,station.deploy,station.reset',
+      }),
+    );
+    const marker = path.join(scope.root, 'owner-action-station-deploy');
+    const allowed = spawnSync(
+      process.execPath,
+      leaseArguments(
+        scope,
+        'station.deploy',
+        'station-four',
+        5,
+        [
+          process.execPath,
+          '-e',
+          `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ready')`,
+        ],
+        { ownerAction: 'make.station' },
+      ),
+      { encoding: 'utf8' },
+    );
+    assert.equal(allowed.status, 0, allowed.stderr);
+    assert.equal(readFileSync(marker, 'utf8'), 'ready');
+
+    const rejected = spawnSync(
+      process.execPath,
+      leaseArguments(
+        scope,
+        'station.reset',
+        'station-four-fixture',
+        5,
+        [process.execPath, '-e', 'process.exit(0)'],
+        { ownerAction: 'make.station' },
+      ),
+      { encoding: 'utf8' },
+    );
+    assert.equal(rejected.status, 2);
+    assert.match(rejected.stderr, /OWNER_ACTION_INVALID/);
+  } finally {
+    scope.close();
+  }
+});
 
 test('lease acquisition waits for the workspace lifecycle fence before validation', async () => {
   const scope = fixture();

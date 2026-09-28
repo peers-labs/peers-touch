@@ -667,6 +667,21 @@ path, whose result is verified again after health recovery. Typed downstream
 failures are preserved; only a real elapsed timeout is reported as
 `DEVCTL_START_TIMEOUT`.
 
+An explicit operator invocation of `make station` is itself a bounded
+`make.station` owner action. When deployment is required, that action may
+acquire only the exact bound `station.deploy` lease without a separately
+authored Development declaration. Registry capability, deploy-target matching,
+post-lock source validation, and OS lease exclusion remain mandatory. This
+exception never applies to `station.reset`; Agent-driven Plan work still
+declares runtime intent before invoking the command.
+
+`make desktop` and `make desktop-web` are complete developer entrypoints. They
+resolve runtime values from the selected Profile, prepare missing workspace
+packages from the committed `pnpm-lock.yaml` with frozen-lockfile semantics,
+and run the source-aware Station ready closure before starting Desktop. Profile
+definitions do not duplicate source package graphs; source manifests and
+lockfiles remain their owner.
+
 ### Consequences
 
 - A fresh worktree can select an existing reviewed Profile with one command.
@@ -675,5 +690,9 @@ failures are preserved; only a real elapsed timeout is reported as
 - Profile selection cannot create topology or grant destructive reset.
 - Repeated `make station` is an idempotent health and source-identity
   confirmation.
+- An operator can ready the selected Station with one command without learning
+  internal Development declaration commands.
+- An operator can start Desktop from a fresh checkout without a separate
+  dependency-install or Station-preparation command.
 - Operators receive the real failure code and remediation boundary instead of
   a misleading timeout.

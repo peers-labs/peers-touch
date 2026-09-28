@@ -13,6 +13,7 @@ import {
   stopManagedProcess,
 } from './process-adapter.mjs';
 import { resolveProfile, runtimeEnvironment } from './profile.mjs';
+import { startStation } from './station.mjs';
 
 function desktopValues(root, resolved, mode) {
   const appMode = mode === 'app';
@@ -38,6 +39,10 @@ function desktopValues(root, resolved, mode) {
     viteLog: path.join(resolved.paths.profileLogs, `desktop-${mode}-vite.log`),
     tauriLog: path.join(resolved.paths.profileLogs, `desktop-${mode}-tauri.log`),
     appletLog: path.join(resolved.paths.profileLogs, 'desktop-applets-build.log'),
+    dependencyLog: path.join(
+      resolved.paths.profileLogs,
+      'desktop-dependencies-install.log',
+    ),
     appletStamp: path.join(resolved.paths.localDev, 'cache', 'applets-build.sha256'),
     viteScript: path.join(
       root,
@@ -162,7 +167,65 @@ export function desktopRuntimeIdentity(values, environment = process.env) {
   };
 }
 
-function runAppletBuild(root, pnpm, environment, values) {
+export function ensureDesktopDependencies(
+  root,
+  invocation,
+  environment,
+  values,
+  runCommand = spawnSync,
+) {
+  const requiredTools = [values.viteScript, values.tauriScript];
+  const missingBefore = requiredTools.filter(
+    (toolScript) => !fs.existsSync(toolScript),
+  );
+  if (missingBefore.length === 0) {
+    return { installed: false, missingBefore };
+  }
+
+  const result = runCommand(
+    invocation.command,
+    [...invocation.prefix, 'install', '--frozen-lockfile'],
+    {
+      cwd: root,
+      env: environment,
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 600_000,
+    },
+  );
+  fs.mkdirSync(path.dirname(values.dependencyLog), { recursive: true });
+  fs.writeFileSync(
+    values.dependencyLog,
+    `${result.stdout ?? ''}${result.stderr ?? ''}`,
+  );
+  if (result.error || result.status !== 0) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      `Desktop dependency installation failed; see ${values.dependencyLog}`,
+      {
+        status: result.status,
+        signal: result.signal,
+        cause: result.error?.message,
+        missingTools: missingBefore,
+      },
+    );
+  }
+
+  const missingAfter = requiredTools.filter(
+    (toolScript) => !fs.existsSync(toolScript),
+  );
+  if (missingAfter.length > 0) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      `Desktop dependencies are incomplete after installation; see ${values.dependencyLog}`,
+      { missingTools: missingAfter },
+    );
+  }
+  return { installed: true, missingBefore };
+}
+
+function runAppletBuild(root, invocation, environment, values) {
   const fingerprint = appletSourceFingerprint(root);
   if (
     fs.existsSync(values.appletStamp)
@@ -171,7 +234,6 @@ function runAppletBuild(root, pnpm, environment, values) {
   ) {
     return { built: false, fingerprint };
   }
-  const invocation = pnpmInvocation(pnpm);
   const result = spawnSync(
     invocation.command,
     [...invocation.prefix, 'applets:build'],
@@ -301,6 +363,23 @@ export async function startDesktop(
   validateMode(mode);
   const resolved = resolveProfile(root, environment);
   const values = desktopValues(root, resolved, mode);
+  const runtimeEnv = runtimeEnvironment(resolved, environment);
+  const runtimeIdentity = desktopRuntimeIdentity(values, environment);
+  const pnpm = findExecutable('pnpm', runtimeEnv);
+  if (!pnpm) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      'pnpm is required to start Desktop',
+    );
+  }
+  const pnpmCommand = pnpmInvocation(pnpm);
+  const dependencyState = ensureDesktopDependencies(
+    root,
+    pnpmCommand,
+    runtimeEnv,
+    values,
+  );
+  await startStation(root, environment);
   const existing = await desktopStatus(root, mode, environment);
   if (
     existing.web.health.ok
@@ -308,7 +387,11 @@ export async function startDesktop(
     && existing.web.process.status === 'running'
     && existing.gateway.process.status === 'running'
   ) {
-    return { ...existing, reused: true };
+    return {
+      ...existing,
+      dependenciesInstalled: dependencyState.installed,
+      reused: true,
+    };
   }
   if (
     existing.web.process.status === 'foreign'
@@ -320,38 +403,9 @@ export async function startDesktop(
     );
   }
   await assertPortsAvailable(values);
-  const stationHealth = await probeHttp(
-    resolved.profile.PT_STATION_HEALTH_URL
-      || `${resolved.profile.PT_STATION_URL}/api/oauth/providers`,
-  );
-  if (!stationHealth.ok) {
-    throw new DevctlError(
-      ERROR_CODES.START_TIMEOUT,
-      `Station is not healthy for Desktop ${mode}`,
-      { stationHealth },
-    );
-  }
 
-  const runtimeEnv = runtimeEnvironment(resolved, environment);
-  const runtimeIdentity = desktopRuntimeIdentity(values, environment);
-  const pnpm = findExecutable('pnpm', runtimeEnv);
-  if (!pnpm) {
-    throw new DevctlError(
-      ERROR_CODES.DEPENDENCY_MISSING,
-      'pnpm is required to start Desktop',
-    );
-  }
   fs.mkdirSync(runtimeIdentity.storageRoot, { recursive: true });
-  for (const toolScript of [values.viteScript, values.tauriScript]) {
-    if (!fs.existsSync(toolScript)) {
-      throw new DevctlError(
-        ERROR_CODES.DEPENDENCY_MISSING,
-        `Desktop tool entrypoint is missing: ${toolScript}`,
-        { toolScript },
-      );
-    }
-  }
-  runAppletBuild(root, pnpm, runtimeEnv, values);
+  runAppletBuild(root, pnpmCommand, runtimeEnv, values);
   writeTauriOverride(values, resolved.reference.worktreeId);
 
   const childEnvironment = windowsDeveloperEnvironment({
@@ -426,7 +480,7 @@ export async function startDesktop(
         { status },
       );
     }
-    return status;
+    return { ...status, dependenciesInstalled: dependencyState.installed };
   } catch (error) {
     for (const service of [values.tauriService, values.viteService]) {
       try {

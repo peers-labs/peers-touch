@@ -384,9 +384,13 @@ When the user says "set up environment for X" or "I want to debug against Y":
    allowed capabilities, remote mode, non-loopback URL, and exact deploy-host
    match.
 8. **Declare runtime intent**: the active Development declaration must contain
-   the exact profile and exclusive runtime resource before lease acquisition.
+   the exact profile and exclusive runtime resource before an Agent acquires
+   the lease. A human invoking `make station` directly uses its bounded
+   `make.station` owner action and does not run this internal step.
 9. **Execute**: only after preflight may the agent run `make station`,
    `make desktop`, `make mobile`, or related lifecycle/Acceptance commands.
+   Desktop startup automatically installs missing workspace packages from the
+   committed lockfile and runs the source-aware Station ready closure.
 10. **Report**: include workspace ID, slot, capabilities, derived reset policy,
     Station URL, deploy environment, and lease result.
 
@@ -492,8 +496,11 @@ Source modes:
   `~/.peers-touch/dev/workspaces/<workspaceId>/runtime/<profile>/`.
 - `local.slot`, `station.deploy`, and `station.reset` possession requires the
   canonical OS-held lease plus matching PID/process-start metadata.
-- A live Development declaration is required before lease acquisition but
-  never substitutes for the lease.
+- Agent-driven runtime work requires a live Development declaration before
+  lease acquisition. A direct human `make station` invocation may acquire only
+  the exact `station.deploy` lease through the bounded `make.station` owner
+  action. Neither path substitutes for the OS-held lease, and no owner action
+  bypass exists for `station.reset`.
 - `make station` is idempotent — it reuses an already healthy Station only when
   `/app-meta/version` reports a build commit matching the current local HEAD;
   stale or missing build identity triggers exact-source deployment
@@ -503,7 +510,13 @@ Source modes:
   above. Local/compose Station execution is reserved for human developers.
 - `make desktop`, `make desktop-web`, `make mobile`, and restart targets may
   ready Station indirectly, so the same agent preflight applies to them.
-- `make desktop` / `make mobile` always ensure Station is ready first
+- `make desktop` / `make desktop-web` install missing package dependencies with
+  frozen-lockfile semantics and always ensure Station is source-current before
+  starting the client.
+- `make mobile` always ensures Station is ready first.
+- Profile files own runtime topology and allocation inputs. Repository
+  manifests and lockfiles own source package dependencies; do not duplicate
+  the package graph into Profile fields.
 - Never hardcode station URLs in code — they come from the profile
 
 ## Machine State And Local Definitions
