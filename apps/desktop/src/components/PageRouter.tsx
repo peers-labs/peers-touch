@@ -1,11 +1,9 @@
 import { lazy, Suspense } from 'react';
 
-import { useChatStore } from '../store/chat';
 import { getModule } from '../modules/registry';
 import { getPage } from '../kernel/page';
 import type { Page, Navigation, AppletPins, HashRouter } from '../types/navigation';
 
-const NotesPage = lazy(() => import('../pages/NotesPage').then((m) => ({ default: m.NotesPage })));
 const AgentCanvasPage = lazy(() => import('../pages/AgentCanvasPage').then((m) => ({ default: m.AgentCanvasPage })));
 const AgentProfilePage = lazy(() => import('../pages/AgentProfilePage').then((m) => ({ default: m.AgentProfilePage })));
 
@@ -32,17 +30,6 @@ export function PageRouter({ page, router, navigation }: PageRouterProps) {
 
 function EphemeralPage({ page, router, navigation }: Pick<PageRouterProps, 'page' | 'router' | 'navigation'>) {
   switch (page) {
-    case 'notes':
-      return (
-        <NotesPage
-          initialDocId={router.getDocIdFromHash()}
-          onNavigateChat={(sessionKey) => {
-            useChatStore.getState().selectSession(sessionKey);
-            navigation.navigateTo('agent');
-          }}
-        />
-      );
-
     case 'agent-profile':
       return (
         <AgentProfilePage
