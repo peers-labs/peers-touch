@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => {
     authValidateToken: vi.fn(),
     accountListRestorable: vi.fn(),
     accountLoad: vi.fn(),
+    accessStart: vi.fn(),
+    accessSubmitLogin: vi.fn(),
     restoreSession: vi.fn(),
     loginWithPassword: vi.fn(),
     logout: vi.fn(),
@@ -69,6 +71,8 @@ vi.mock('../store/session', () => ({
         };
         mocks.session.authenticated = true;
       },
+      accessStart: mocks.accessStart,
+      accessSubmitLogin: mocks.accessSubmitLogin,
       loginWithPassword: mocks.loginWithPassword,
       restoreSession: mocks.restoreSession,
       updateProfile: vi.fn(),
@@ -198,8 +202,29 @@ describe('identityRuntime account switch ordering', () => {
       mocks.order.push(`pipeline:${mocks.session.currentUser?.actorPtid}`);
       return { ok: true, failures: [] };
     });
-    mocks.loginWithPassword.mockImplementation(async () => {
-      mocks.order.push('session-login');
+    mocks.accessStart.mockResolvedValue({
+      state: 'ACCESS_DECISION_STATE_ACTION_REQUIRED',
+      attemptId: 'attempt-1',
+      currentGateId: 'auth.login',
+      gates: [{
+        gateId: 'auth.login',
+        gateType: 'ACCESS_GATE_TYPE_AUTH_LOGIN',
+        state: 'ACCESS_GATE_STATE_ACTION_REQUIRED',
+        title: 'Login',
+        description: '',
+        blockingReason: '',
+        submitAction: 'access_submit_login',
+        inputSchemaJson: '',
+        alternativeActions: [],
+        actionId: 'auth.login.password',
+        schemaRevision: 1,
+        schemaDigest: 'login-schema',
+      }],
+      accessGrantId: '',
+      message: '',
+    });
+    mocks.accessSubmitLogin.mockImplementation(async () => {
+      mocks.order.push('access-login');
       mocks.session.currentUser = {
         actorPtid: 'ptid:person:new',
         name: 'New',
@@ -243,7 +268,13 @@ describe('identityRuntime account switch ordering', () => {
 
     await identityRuntime.loginWithPassword('alice@p.t', 'password');
 
-    expect(mocks.loginWithPassword).toHaveBeenCalledWith('alice@p.t', 'password');
+    expect(mocks.accessStart).toHaveBeenCalledOnce();
+    expect(mocks.accessSubmitLogin).toHaveBeenCalledWith(
+      'attempt-1',
+      'alice@p.t',
+      'password',
+    );
+    expect(mocks.loginWithPassword).not.toHaveBeenCalled();
     expect(identityRuntime.getSnapshot().phase.kind).toBe('authenticatedPendingCompletion');
 
     await identityRuntime.completeCurrentSession();
