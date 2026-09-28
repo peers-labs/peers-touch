@@ -37,8 +37,7 @@ import {
 
 export const MACHINE_REGISTRY_KIND = 'peers-touch-machine-dev-registry';
 export const MACHINE_REGISTRY_AUTHORITY = 'machine-control-plane';
-export const MACHINE_REGISTRY_SCHEMA_VERSION = 2;
-const LEGACY_MACHINE_REGISTRY_SCHEMA_VERSION = 1;
+export const MACHINE_REGISTRY_SCHEMA_VERSION = 1;
 export const STATION_CAPABILITIES = new Set([
   'station.connect',
   'station.deploy',
@@ -68,7 +67,6 @@ const REGISTRATION_KEYS = new Set([
   'updatedAt',
   'updatedBy',
 ]);
-const LEGACY_REGISTRATION_KEYS = new Set([...REGISTRATION_KEYS, 'head']);
 const AUTHORITATIVE_REGISTRY_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -608,14 +606,6 @@ function normalizeRegistration(value) {
   return normalized;
 }
 
-function normalizeLegacyRegistration(value) {
-  if (!isObject(value) || !HEAD_PATTERN.test(value.head)) {
-    fail('MACHINE_REGISTRY_INVALID', 'legacy registration identity is invalid');
-  }
-  const { head: _head, ...registration } = value;
-  return normalizeRegistration(registration);
-}
-
 function workspaceIdForCanonicalPath(canonicalRoot) {
   return createHash('sha256')
     .update(canonicalRoot)
@@ -682,10 +672,7 @@ function parseRegistryDocument(file) {
 
 function validateReadableHeader(registry) {
   if (
-    ![
-      LEGACY_MACHINE_REGISTRY_SCHEMA_VERSION,
-      MACHINE_REGISTRY_SCHEMA_VERSION,
-    ].includes(registry?.schemaVersion) ||
+    registry?.schemaVersion !== MACHINE_REGISTRY_SCHEMA_VERSION ||
     registry?.kind !== MACHINE_REGISTRY_KIND ||
     !['observed-snapshot', MACHINE_REGISTRY_AUTHORITY].includes(
       registry?.authority,
@@ -710,41 +697,14 @@ function requireRegistryAuthority(registry, requireAuthority) {
   return null;
 }
 
-function migrateLegacyRegistry(registry, now) {
-  if (
-    registry.schemaVersion !== LEGACY_MACHINE_REGISTRY_SCHEMA_VERSION ||
-    registry.authority !== MACHINE_REGISTRY_AUTHORITY ||
-    Object.keys(registry).some((key) => !AUTHORITATIVE_REGISTRY_KEYS.has(key))
-  ) {
-    fail('MACHINE_REGISTRY_INVALID', 'legacy machine registry schema is invalid');
-  }
-  validateIsoTimestamp(registry.updatedAt, 'updatedAt');
-  const normalized = normalizeRegistrationCollection(
-    registry,
-    LEGACY_REGISTRATION_KEYS,
-    normalizeLegacyRegistration,
-  );
-  return validateRegistry({
-    ...normalized,
-    schemaVersion: MACHINE_REGISTRY_SCHEMA_VERSION,
-    updatedAt: now.toISOString(),
-  });
-}
-
-function loadRegistryForMutation(file, now) {
+function loadValidatedRegistry(file) {
   const registry = parseRegistryDocument(file);
-  if (registry === null) return { registry: null, migrated: false };
+  if (registry === null) return null;
   validateReadableHeader(registry);
   if (registry.authority !== MACHINE_REGISTRY_AUTHORITY) {
-    return { registry, migrated: false };
+    return registry;
   }
-  if (registry.schemaVersion === LEGACY_MACHINE_REGISTRY_SCHEMA_VERSION) {
-    return {
-      registry: migrateLegacyRegistry(registry, now),
-      migrated: true,
-    };
-  }
-  return { registry: validateRegistry(registry), migrated: false };
+  return validateRegistry(registry);
 }
 
 export function readRegistry(file, { requireAuthority = true } = {}) {
@@ -761,12 +721,6 @@ export function readRegistry(file, { requireAuthority = true } = {}) {
     requireAuthority,
   );
   if (nonAuthoritative) return nonAuthoritative;
-  if (registry.schemaVersion !== MACHINE_REGISTRY_SCHEMA_VERSION) {
-    fail(
-      'MACHINE_REGISTRY_MIGRATION_REQUIRED',
-      'machine registry must be migrated before use',
-    );
-  }
   return validateRegistry(registry);
 }
 
@@ -776,24 +730,18 @@ function readOperationalRegistry(
 ) {
   const file = options.registryPath ?? machineRegistryPath(options.home);
   const readCurrent = () => {
-    const loaded = loadRegistryForMutation(
-      file,
-      options.now ?? new Date(),
-    );
-    if (loaded.registry === null) {
+    const registry = loadValidatedRegistry(file);
+    if (registry === null) {
       if (requireAuthority) {
         fail('WORKSPACE_UNREGISTERED', 'machine registry does not exist');
       }
       return null;
     }
-    if (loaded.migrated) {
-      writeRegistryAtomic(file, loaded.registry);
-    }
     const nonAuthoritative = requireRegistryAuthority(
-      loaded.registry,
+      registry,
       requireAuthority,
     );
-    return nonAuthoritative ?? loaded.registry;
+    return nonAuthoritative ?? registry;
   };
   if (registryLockHeld) return readCurrent();
   const release = acquireRegistryLock(
@@ -953,7 +901,7 @@ function mutateRegistryUnderFence(options, mutation) {
   const now = options.now ?? new Date();
   const release = acquireRegistryLock(lock, options.lockTimeoutMs);
   try {
-    const current = loadRegistryForMutation(file, now).registry;
+    const current = loadValidatedRegistry(file);
     const registry = promoteRegistry(current, now);
     const output = mutation(registry, now);
     registry.updatedAt = now.toISOString();
