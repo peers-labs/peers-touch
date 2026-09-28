@@ -17,6 +17,13 @@ const deviceMocks = vi.hoisted(() => ({
   persistDevicePreferences: vi.fn(),
   readDeviceSettingsRuntimeSnapshot: vi.fn(),
 }));
+const privateMomentRuntimeMocks = vi.hoisted(() => ({
+  trackPublicMomentPublish: vi.fn(async (operation, isPublished) => {
+    const result = await operation();
+    isPublished(result);
+    return result;
+  }),
+}));
 
 vi.mock('../features/social/socialRuntime', () => ({
   acceptSocialFriendRequest: vi.fn(),
@@ -44,6 +51,12 @@ vi.mock('../runtimes/deviceSettingsRuntime', () => ({
   persistDevicePreferences: deviceMocks.persistDevicePreferences,
   readDeviceSettingsRuntimeSnapshot:
     deviceMocks.readDeviceSettingsRuntimeSnapshot,
+}));
+
+vi.mock('../runtimes/privateMomentsRuntime', async (importOriginal) => ({
+  ...await importOriginal(),
+  trackPublicMomentPublish:
+    privateMomentRuntimeMocks.trackPublicMomentPublish,
 }));
 
 import { mobileAcceptanceActions, publicCallSnapshot } from './actions';
@@ -151,6 +164,8 @@ describe('Mobile Acceptance social actions', () => {
       postId: 'post-1',
       authorPtid: 'ptid:alice',
     });
+    expect(privateMomentRuntimeMocks.trackPublicMomentPublish)
+      .toHaveBeenCalledOnce();
     await expect(mobileAcceptanceActions['moments.react']({
       postId: 'post-1',
       reactionKind: 1,
@@ -174,6 +189,23 @@ describe('Mobile Acceptance social actions', () => {
       'post-1',
       [reaction],
     );
+  });
+
+  it('does not route a private audience through the legacy public publish action', async () => {
+    const createMoment = vi.fn();
+    projectionMocks.readCurrentActiveMomentsRuntime.mockReturnValue({
+      gateway: { createMoment },
+      feed: { refresh: vi.fn(), state: vi.fn(), updateReaction: vi.fn() },
+    });
+
+    await expect(mobileAcceptanceActions['moments.publish']({
+      text: 'private',
+      audienceKind: 2,
+    })).rejects.toThrow('acceptance.mobile.privateMomentRequiresNativeAction');
+
+    expect(createMoment).not.toHaveBeenCalled();
+    expect(privateMomentRuntimeMocks.trackPublicMomentPublish)
+      .not.toHaveBeenCalled();
   });
 
   it('routes Settings writes through independent owner runtimes', async () => {

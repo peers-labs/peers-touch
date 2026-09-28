@@ -114,21 +114,28 @@ describe('Mobile Acceptance private Social audience', () => {
     );
   });
 
-  it('accepts only FOLLOWERS as the CUSTOM_DENY base', async () => {
+  it('forwards CUSTOM_DENY(PUBLIC) so Native can return PRIVATE_UNSUPPORTED', async () => {
     await publishPrivateText(publishInput({
       kind: 'CUSTOM_DENY',
       actorPtids: ['ptid:bob'],
       baseKind: 'FOLLOWERS',
     }));
-
-    await expect(publishPrivateText(publishInput({
+    await publishPrivateText(publishInput({
       kind: 'CUSTOM_DENY',
       actorPtids: ['ptid:bob'],
       baseKind: 'PUBLIC',
-    }))).rejects.toThrow(
-      'acceptance.mobile.invalidInput:moments.private.audience.baseKind',
+    }));
+
+    expect(privateMomentMocks.publish).toHaveBeenCalledTimes(2);
+    expect(privateMomentMocks.publish).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        audience: {
+          kind: 'CUSTOM_DENY',
+          actorPtids: ['ptid:bob'],
+          baseKind: 'PUBLIC',
+        },
+      }),
     );
-    expect(privateMomentMocks.publish).toHaveBeenCalledOnce();
   });
 
   it('rejects typed targets on the wrong audience kind', async () => {

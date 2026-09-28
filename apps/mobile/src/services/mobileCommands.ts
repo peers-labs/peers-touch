@@ -473,7 +473,7 @@ export type PrivateSocialAudience =
   | {
     kind: 'CUSTOM_DENY';
     actorPtids: string[];
-    baseKind: 'FOLLOWERS';
+    baseKind: 'FOLLOWERS' | 'PUBLIC';
   };
 
 export interface PrivateSocialTextIntent {
@@ -539,6 +539,7 @@ export interface PrivateSocialMomentIntent extends PrivateSocialTextIntent {
 
 export type PrivateSocialPublishState =
   | 'PREPARING'
+  | 'READY_PRIVATE'
   | 'PUBLISHING'
   | 'UNKNOWN_OUTCOME'
   | 'PUBLISHED'
@@ -737,10 +738,19 @@ export async function privateSocialStatus(): Promise<PrivateSocialRuntimeStatus>
   return invoke<PrivateSocialRuntimeStatus>('social_private_status');
 }
 
-export async function privateSocialPublishText(
+export async function privateSocialPrepareText(
   input: PrivateSocialAccountInput & PrivateSocialTextIntent,
 ): Promise<PrivateMomentProjection> {
-  return invoke<PrivateMomentProjection>('social_private_publish_text', { input });
+  return invoke<PrivateMomentProjection>('social_private_prepare_text', { input });
+}
+
+export async function privateSocialSubmitText(
+  input: PrivateSocialAccountInput & {
+    draftId: string;
+    draftRevision: number;
+  },
+): Promise<PrivateMomentProjection> {
+  return invoke<PrivateMomentProjection>('social_private_submit_text', { input });
 }
 
 export async function privateSocialPublish(

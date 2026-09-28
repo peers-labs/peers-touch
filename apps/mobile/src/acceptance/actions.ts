@@ -79,6 +79,7 @@ import {
   reconcilePrivateMoments,
   storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
+  trackPublicMomentPublish,
 } from '../runtimes/privateMomentsRuntime';
 import {
   acceptSocialFriendRequest,
@@ -100,9 +101,9 @@ import {
   MomentDraftPayloadSchema,
 } from '../gen/proto/domain/mobile/reliability_pb';
 import {
+  Audience_Kind,
   AudienceSchema,
   ReactionKind,
-  type Audience_Kind,
   type Post,
 } from '../gen/proto/domain/social/post_pb';
 import type { Comment } from '../gen/proto/domain/social/comment_pb';
@@ -1176,13 +1177,19 @@ export const mobileAcceptanceActions: MobileAcceptanceNamespace = {
 
   'moments.publish': async (input) => {
     const runtime = requireMomentsRuntime();
-    const result = await runtime.gateway.createMoment({
-      kind: 'text',
-      text: requireString(input?.text, 'moments.publish.text'),
-      audience: create(AudienceSchema, {
-        kind: requireAudienceKind(input?.audienceKind),
+    const text = requireString(input?.text, 'moments.publish.text');
+    const audienceKind = requireAudienceKind(input?.audienceKind);
+    if (audienceKind !== Audience_Kind.PUBLIC) {
+      throw new Error('acceptance.mobile.privateMomentRequiresNativeAction');
+    }
+    const result = await trackPublicMomentPublish(
+      () => runtime.gateway.createMoment({
+        kind: 'text',
+        text,
+        audience: create(AudienceSchema, { kind: audienceKind }),
       }),
-    });
+      (outcome) => outcome.ok && Boolean(outcome.data.post),
+    );
     const created = requireAcceptanceOutcome(
       result,
       'acceptance.mobile.momentsPublishFailed',
@@ -1915,7 +1922,7 @@ function requirePrivateSocialAudience(value: unknown): PrivateSocialAudience {
       audience.baseKind,
       'moments.private.audience.baseKind',
     );
-    if (baseKind !== 'FOLLOWERS') {
+    if (baseKind !== 'FOLLOWERS' && baseKind !== 'PUBLIC') {
       throw new Error(
         'acceptance.mobile.invalidInput:moments.private.audience.baseKind',
       );

@@ -48,6 +48,7 @@ pub struct TransportError {
     pub http_status: Option<u16>,
     pub stable_code: i32,
     pub typed_error: bool,
+    pub private_content_code: Option<String>,
     pub retry_after_seconds: Option<u64>,
     pub disposition: TransportDisposition,
 }
@@ -56,8 +57,10 @@ impl std::fmt::Display for TransportError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "private Social transport failed (status={:?}, code={})",
-            self.http_status, self.stable_code
+            "private Social transport failed (status={:?}, code={}, private_content_code={})",
+            self.http_status,
+            self.stable_code,
+            self.private_content_code.as_deref().unwrap_or("none"),
         )
     }
 }
@@ -1009,6 +1012,7 @@ fn decode_proto_response<Resp: Message + Default>(
         http_status: Some(status.as_u16()),
         stable_code: 20005,
         typed_error: false,
+        private_content_code: None,
         retry_after_seconds: None,
         disposition: match semantics {
             CommitSemantics::ReadOnly => TransportDisposition::Terminal,
@@ -1081,6 +1085,11 @@ fn decode_typed_error(
 ) -> TransportError {
     let typed = error_model::ErrorResponse::decode(body).ok();
     let stable_code = typed.as_ref().map(|error| error.code).unwrap_or(1);
+    let private_content_code = typed
+        .as_ref()
+        .and_then(|error| error.details.get("private_content_code"))
+        .filter(|code| !code.trim().is_empty())
+        .cloned();
     let disposition = match (typed.is_some(), stable_code) {
         (false, _) if matches!(semantics, CommitSemantics::MayCommit) => {
             TransportDisposition::UnknownOutcome
@@ -1094,6 +1103,7 @@ fn decode_typed_error(
         http_status: Some(status),
         stable_code,
         typed_error: typed.is_some(),
+        private_content_code,
         retry_after_seconds,
         disposition,
     }
@@ -1104,6 +1114,7 @@ fn network_error(_error: impl std::fmt::Display) -> TransportError {
         http_status: None,
         stable_code: 1,
         typed_error: false,
+        private_content_code: None,
         retry_after_seconds: None,
         disposition: TransportDisposition::UnknownOutcome,
     }
@@ -1114,6 +1125,7 @@ fn local_error(code: i32) -> TransportError {
         http_status: None,
         stable_code: code,
         typed_error: false,
+        private_content_code: None,
         retry_after_seconds: None,
         disposition: TransportDisposition::Terminal,
     }
@@ -1294,6 +1306,29 @@ mod tests {
         assert_eq!(error.disposition, TransportDisposition::UnknownOutcome);
         let read = decode_typed_error(400, b"not protobuf", None, CommitSemantics::ReadOnly);
         assert_eq!(read.disposition, TransportDisposition::Terminal);
+    }
+
+    #[test]
+    fn typed_private_content_error_preserves_the_domain_code() {
+        let body = error_model::ErrorResponse {
+            code: 20002,
+            message: "invalid private-content command".to_string(),
+            details: [(
+                "private_content_code".to_string(),
+                "SOCIAL_PRIVATE_UNSUPPORTED".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+        }
+        .encode_to_vec();
+
+        let error = decode_typed_error(400, &body, None, CommitSemantics::MayCommit);
+
+        assert_eq!(
+            error.private_content_code.as_deref(),
+            Some("SOCIAL_PRIVATE_UNSUPPORTED")
+        );
+        assert!(error.to_string().contains("SOCIAL_PRIVATE_UNSUPPORTED"));
     }
 
     #[test]

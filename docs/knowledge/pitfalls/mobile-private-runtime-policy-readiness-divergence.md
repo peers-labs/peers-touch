@@ -62,6 +62,15 @@ submit had committed remotely, but the Mobile worker retried submit before
 checking the authoritative resource readback, so it never consumed the
 already-committed result and the Fixture handler could not quiesce cleanly.
 
+A later W9 run reached a successful private publish but could observe only
+`AUDIENCE_REQUIRED`, `CHECKING_PRIVATE_READINESS`, and `PUBLISHED`. Mobile's
+one-shot Native command claimed recipient PreKeys, built and persisted the
+encrypted request, dispatched it, and returned only the terminal projection.
+The web runtime therefore had no source-owned boundary at which to project
+`READY_PRIVATE`; treating the persisted request as ordinary `Pending` would
+also let background reconciliation publish it before the user's explicit
+submit action.
+
 A later exact-source iOS replay repeated the same timeout after readback-first
 reconciliation landed. Mobile sent `Accept: application/protobuf` on typed GET
 requests but omitted `Content-Type: application/protobuf`. Station's typed
@@ -120,6 +129,13 @@ media types, while GET requests carried only `Accept`. This is insufficient for
 the current Station typed-handler contract, which uses request Content-Type to
 select binary protobuf responses.
 
+Private publish readiness and durable admission were also collapsed into one
+operation. A prepared encrypted request had no distinct durable state, so
+either the web layer had to invent readiness or the worker had to treat
+readiness as permission to submit. Tests hid the gap by manufacturing the full
+visible-state set in fixture snapshots instead of deriving it from production
+actions.
+
 ## Mitigation
 
 ### What was done in code
@@ -155,6 +171,14 @@ select binary protobuf responses.
 - Every private Social protobuf request, including bodyless GET requests, now
   sets both `Content-Type: application/protobuf` and
   `Accept: application/protobuf`.
+- Private text publication now persists a distinct `Prepared` submission after
+  the one and only Station prepare/PreKey claim. `Prepared` is excluded from
+  background reconciliation and becomes dispatchable only through the explicit
+  submit command. The web runtime projects `READY_PRIVATE` only from that
+  Native result, then projects `PUBLISHING` around the explicit submit.
+- Typed Station private-content error details are retained through the Mobile
+  transport so unsupported audience and recipient-key failures map to their
+  exact visible states instead of a generic failure.
 - Focused Rust and TypeScript regressions cover both policy modes and failed
   activation readiness.
 
@@ -220,6 +244,11 @@ the exact content resource has been queried and cryptographically verified.
 The readback request must negotiate binary protobuf with both request
 Content-Type and response Accept headers; `Accept` alone does not satisfy the
 Station typed-handler contract.
+A readiness-only private publish must remain in durable `Prepared`, must not
+appear in `pending_submissions()`, and must not be sent by reconciliation.
+Retrying prepare must reuse the same stored encrypted request; only explicit
+submit may acquire it for dispatch. Fixture tests must return per-action
+production histories and must fail if a required state is absent.
 
 ## Crosswalks
 

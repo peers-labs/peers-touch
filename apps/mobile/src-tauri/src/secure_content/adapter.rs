@@ -157,6 +157,7 @@ pub struct PreparedPrivateAttachment {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum PrivatePublishState {
     Preparing,
+    ReadyPrivate,
     Publishing,
     UnknownOutcome,
     Published,
@@ -336,7 +337,7 @@ pub fn build_text_submission(
         content_id: draft.content_id.clone(),
         generation: resource.generation,
         audience_kind: intent.audience.kind.clone(),
-        state: PrivatePublishState::Publishing,
+        state: PrivatePublishState::ReadyPrivate,
         post_id: None,
         text: Some(intent.text.clone()),
         error_code: None,
@@ -352,7 +353,7 @@ pub fn build_text_submission(
             request_bytes,
             root_key: root_key.to_bytes(),
             projection_json: projection.encode()?,
-            state: DurableState::Pending,
+            state: DurableState::Prepared,
             lease_generation: 0,
             session_generation: 0,
             post_id: None,
@@ -1247,10 +1248,12 @@ fn private_audience(
 ) -> Result<social::Audience, String> {
     let mut actor_ptids = intent.actor_ptids.clone();
     actor_ptids.sort();
-    if actor_ptids.len() > MAX_PRIVATE_RECIPIENT_ACTORS
-        || actor_ptids
-            .iter()
-            .any(|ptid| ptid.trim().is_empty() || ptid != ptid.trim() || ptid == actor_ptid)
+    if actor_ptids.len() > MAX_PRIVATE_RECIPIENT_ACTORS {
+        return Err("AUDIENCE_TOO_LARGE".to_string());
+    }
+    if actor_ptids
+        .iter()
+        .any(|ptid| ptid.trim().is_empty() || ptid != ptid.trim() || ptid == actor_ptid)
         || actor_ptids.windows(2).any(|pair| pair[0] == pair[1])
     {
         return Err("private Social audience actor list is invalid".to_string());
@@ -1311,6 +1314,9 @@ fn private_audience(
     let base_kind = match kind {
         social::audience::Kind::CustomDeny if intent.base_kind.as_deref() == Some("FOLLOWERS") => {
             social::audience::Kind::Followers as i32
+        }
+        social::audience::Kind::CustomDeny if intent.base_kind.as_deref() == Some("PUBLIC") => {
+            return Err("SOCIAL_PRIVATE_UNSUPPORTED".to_string())
         }
         social::audience::Kind::CustomDeny => {
             return Err("private Social custom deny base is invalid".to_string())
@@ -1805,7 +1811,28 @@ mod tests {
             actor_ptids: vec!["ptid:bob".to_string()],
             base_kind: Some("PUBLIC".to_string()),
         };
-        assert!(private_audience(&public_deny, "ptid:alice").is_err());
+        assert_eq!(
+            private_audience(&public_deny, "ptid:alice").unwrap_err(),
+            "SOCIAL_PRIVATE_UNSUPPORTED"
+        );
+    }
+
+    #[test]
+    fn oversized_private_audience_is_typed_before_prepare() {
+        let audience = PrivateAudienceIntent {
+            kind: "CUSTOM_ALLOW".to_string(),
+            circle_id: None,
+            group_conversation_id: None,
+            actor_ptids: (0..=MAX_PRIVATE_RECIPIENT_ACTORS)
+                .map(|index| format!("ptid:recipient-{index}"))
+                .collect(),
+            base_kind: None,
+        };
+
+        assert_eq!(
+            private_audience(&audience, "ptid:alice").unwrap_err(),
+            "AUDIENCE_TOO_LARGE"
+        );
     }
 
     #[test]
