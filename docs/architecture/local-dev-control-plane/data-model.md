@@ -1,7 +1,7 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.4
+> **Version**: v1.3
 > **Created**: 2026-09-13 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
@@ -20,7 +20,7 @@ Bootstrap audit state may use:
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 1,
   "kind": "peers-touch-machine-dev-registry",
   "authority": "observed-snapshot"
 }
@@ -32,7 +32,7 @@ does not read those registrations as authority. The first explicit
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 1,
   "kind": "peers-touch-machine-dev-registry",
   "authority": "machine-control-plane",
   "updatedAt": "2026-09-13T00:00:00.000Z",
@@ -90,10 +90,10 @@ captured from the worktree at operation time and is never persisted in the
 registration. A root or branch mismatch makes the registration `stale`;
 ordinary commits, merges, rebases, and pulls do not.
 
-Schema v2 removes `WorkspaceRecord.head`. On first use, a schema-v1
-authoritative registry is validated under the registry lock, rewritten
-atomically to schema v2, and never returned to runtime callers in the legacy
-shape.
+Schema v1 authoritative registrations exclude `WorkspaceRecord.head`. This is
+a development-stage hard correction, not a version migration. Runtime has no
+compatibility reader for head-bearing registrations or alternate schema
+versions; incompatible files fail closed and must be corrected explicitly.
 
 ## 3. Profile Definition
 

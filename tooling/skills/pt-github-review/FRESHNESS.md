@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-28
-covered_docs_hash: 69ec034dbd806bb84891fafdff093bc6dea510bde4598ed9f2dce0ff99d908e7
+covered_docs_hash: 2ab6002609051e008a4b484d2f865f642a9104ab20299f2933da35739bb54df9
 
 covered_docs:
   - AGENTS.md
@@ -33,10 +33,11 @@ Updating this file is a review act, not bookkeeping. The PR must explain whether
 
 ## 2026-09-28 Review
 
-Local Dev Control Plane schema v2 removes mutable Git HEAD from machine
-registration authority. Review now rejects persisted HEAD and command-specific
-reconciliation while preserving declaration/Session source fencing, exact
-runtime build readback, and fail-closed root/branch identity.
+Local Dev Control Plane schema v1 excludes mutable Git HEAD from machine
+registration authority without a development-stage version bump or compatibility
+reader. Review rejects persisted HEAD and command-specific reconciliation while
+preserving declaration/Session source fencing, exact runtime build readback, and
+fail-closed root/branch identity.
 
 Desktop navigation ownership now removes the standalone Notes host page and
 makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
