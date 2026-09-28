@@ -78,6 +78,16 @@ pub struct PrivateSocialPublishTextInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PrivateSocialSubmitTextInput {
+    station_peer_id: String,
+    actor_ptid: String,
+    activation_generation: u64,
+    draft_id: String,
+    draft_revision: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PrivateSocialPublishInput {
     station_peer_id: String,
     actor_ptid: String,
@@ -212,7 +222,7 @@ impl PrivateSocialEngine {
         })
     }
 
-    fn publish_text(
+    fn prepare_text(
         &self,
         activation_generation: u64,
         intent: &PrivateTextMomentIntent,
@@ -232,9 +242,21 @@ impl PrivateSocialEngine {
                 return Err("private Social submission replay conflict".to_string());
             }
             return match existing.state {
-                DurableState::Pending | DurableState::UnknownOutcome => {
-                    self.worker.dispatch_submission(&existing.command_id)
+                DurableState::Prepared => {
+                    projection_for_state(&existing, PrivatePublishState::ReadyPrivate, None, None)
                 }
+                DurableState::Pending => projection_for_state(
+                    &existing,
+                    PrivatePublishState::Publishing,
+                    existing.post_id.clone(),
+                    existing.last_error_code,
+                ),
+                DurableState::UnknownOutcome => projection_for_state(
+                    &existing,
+                    PrivatePublishState::UnknownOutcome,
+                    existing.post_id.clone(),
+                    existing.last_error_code,
+                ),
                 DurableState::Committed => projection_for_state(
                     &existing,
                     PrivatePublishState::Published,
@@ -263,8 +285,56 @@ impl PrivateSocialEngine {
             .ok_or_else(|| "private Social prepare response omitted its plan".to_string())?;
         let prepared = build_text_submission(&self.session, &draft, intent, plan)?;
         self.store.persist_submission(&prepared.command)?;
-        self.worker
-            .dispatch_submission(&prepared.command.command_id)
+        projection_for_state(
+            &prepared.command,
+            PrivatePublishState::ReadyPrivate,
+            None,
+            None,
+        )
+    }
+
+    fn submit_text(
+        &self,
+        activation_generation: u64,
+        draft_id: &str,
+        draft_revision: u64,
+    ) -> Result<PrivateMomentProjection, String> {
+        let _operation = self
+            .operation_lock
+            .lock()
+            .map_err(|_| "private Social operation lock poisoned".to_string())?;
+        self.ensure_activation_generation(activation_generation)?;
+        self.ensure_current()?;
+        if draft_id.trim().is_empty() || draft_id != draft_id.trim() || draft_revision == 0 {
+            return Err("private Social draft identity is invalid".to_string());
+        }
+        let existing = self
+            .store
+            .submission(draft_id, draft_revision)?
+            .ok_or_else(|| "private Social prepared submission is unavailable".to_string())?;
+        match existing.state {
+            DurableState::Prepared | DurableState::Pending | DurableState::UnknownOutcome => {
+                self.worker.dispatch_submission(&existing.command_id)
+            }
+            DurableState::Committed => projection_for_state(
+                &existing,
+                PrivatePublishState::Published,
+                existing.post_id.clone(),
+                None,
+            ),
+            DurableState::InFlight => projection_for_state(
+                &existing,
+                PrivatePublishState::UnknownOutcome,
+                existing.post_id.clone(),
+                existing.last_error_code,
+            ),
+            DurableState::Terminal => projection_for_state(
+                &existing,
+                PrivatePublishState::PublishFailed,
+                existing.post_id.clone(),
+                existing.last_error_code,
+            ),
+        }
     }
 
     fn publish_moment<R: Runtime>(
@@ -288,7 +358,7 @@ impl PrivateSocialEngine {
                 return Err("private Social submission replay conflict".to_string());
             }
             let projection = match existing.state {
-                DurableState::Pending | DurableState::UnknownOutcome => {
+                DurableState::Prepared | DurableState::Pending | DurableState::UnknownOutcome => {
                     self.worker.dispatch_submission(&existing.command_id)
                 }
                 DurableState::Committed => projection_for_state(
@@ -1306,7 +1376,7 @@ pub fn social_private_status(
 }
 
 #[tauri::command]
-pub fn social_private_publish_text(
+pub fn social_private_prepare_text(
     social: State<'_, MobilePrivateSocialRuntime>,
     input: PrivateSocialPublishTextInput,
 ) -> MobileResult<PrivateMomentProjection> {
@@ -1316,7 +1386,26 @@ pub fn social_private_publish_text(
             &input.actor_ptid,
             input.activation_generation,
         )?
-        .publish_text(input.activation_generation, &input.intent)
+        .prepare_text(input.activation_generation, &input.intent)
+        .map_err(MobileError::social)
+}
+
+#[tauri::command]
+pub fn social_private_submit_text(
+    social: State<'_, MobilePrivateSocialRuntime>,
+    input: PrivateSocialSubmitTextInput,
+) -> MobileResult<PrivateMomentProjection> {
+    social
+        .active_engine_at_generation(
+            &input.station_peer_id,
+            &input.actor_ptid,
+            input.activation_generation,
+        )?
+        .submit_text(
+            input.activation_generation,
+            &input.draft_id,
+            input.draft_revision,
+        )
         .map_err(MobileError::social)
 }
 
@@ -1739,6 +1828,7 @@ mod tests {
             http_status: Some(503),
             stable_code: 1,
             typed_error: false,
+            private_content_code: None,
             retry_after_seconds: Some(2),
             disposition: crate::secure_content::transport::TransportDisposition::UnknownOutcome,
         };
@@ -1778,6 +1868,7 @@ mod tests {
                     crate::secure_content::proto::error::v1::ErrorCode::PostNotFound as i32
                 },
                 typed_error: false,
+                private_content_code: None,
                 retry_after_seconds: None,
                 disposition: crate::secure_content::transport::TransportDisposition::Terminal,
             };
@@ -1795,6 +1886,7 @@ mod tests {
             http_status: Some(401),
             stable_code: crate::secure_content::proto::error::v1::ErrorCode::Unauthorized as i32,
             typed_error: true,
+            private_content_code: None,
             retry_after_seconds: None,
             disposition: crate::secure_content::transport::TransportDisposition::Terminal,
         };
@@ -1861,6 +1953,7 @@ mod tests {
             http_status: Some(404),
             stable_code: crate::secure_content::proto::error::v1::ErrorCode::PostNotFound as i32,
             typed_error: true,
+            private_content_code: None,
             retry_after_seconds: None,
             disposition: crate::secure_content::transport::TransportDisposition::Terminal,
         };

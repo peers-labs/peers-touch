@@ -15,8 +15,8 @@ import {
   privateSocialComments,
   privateSocialCommentSubmit,
   privateSocialOpenMedia,
+  privateSocialPrepareText,
   privateSocialPublish,
-  privateSocialPublishText,
   privateSocialRead,
   privateSocialReadText,
   privateSocialRecover,
@@ -24,6 +24,7 @@ import {
   privateSocialStoreRecoveryPhrase,
   privateSocialReconcile,
   privateSocialSnapshot,
+  privateSocialSubmitText,
   privateSocialTeardown,
   type PrivateCommentIntent,
   type PrivateCommentPage,
@@ -169,19 +170,61 @@ export async function publishPrivateTextMoment(
   const scope = requireActiveScope();
   appendPublishStates('CHECKING_PRIVATE_READINESS');
   try {
-    const projection = await privateSocialPublishText({
+    const prepared = await privateSocialPrepareText({
       ...operationScope(scope),
       ...intent,
     });
     if (!isCurrentScope(scope)) {
       throw new Error('mobile.privateSocial.stalePublishCompletion');
     }
+    mergeProjection(prepared);
+    if (prepared.state !== 'READY_PRIVATE') {
+      appendPublishStates(visibleNativePublishState(prepared.state));
+      return prepared;
+    }
+    appendPublishStates('READY_PRIVATE', 'PUBLISHING');
+    mergeProjection({ ...prepared, state: 'PUBLISHING' });
+    const projection = await privateSocialSubmitText({
+      ...operationScope(scope),
+      draftId: intent.draftId,
+      draftRevision: intent.draftRevision,
+    });
+    if (!isCurrentScope(scope)) {
+      throw new Error('mobile.privateSocial.stalePublishCompletion');
+    }
     mergeProjection(projection);
-    appendPublishStates(projection.state === 'PUBLISHED' ? 'PUBLISHED' : 'PUBLISH_FAILED');
+    appendPublishStates(visibleNativePublishState(projection.state));
     return projection;
   } catch (error) {
     if (isCurrentScope(scope)) {
       appendPublishStates(publishFailureState(error));
+      setSnapshot({
+        ...snapshot,
+        errorMessage: readableErrorMessage(error),
+      });
+    }
+    throw error;
+  }
+}
+
+export async function trackPublicMomentPublish<T>(
+  operation: () => Promise<T>,
+  isPublished: (result: T) => boolean,
+): Promise<T> {
+  const session = admittedSession(useAuthStore.getState());
+  if (!session) throw new Error('mobile.privateSocial.authenticationRequired');
+  const expectedSessionKey = sessionKey(session);
+  appendPublishStates('READY_PUBLIC', 'PUBLISHING');
+  try {
+    const result = await operation();
+    if (sessionKey(admittedSession(useAuthStore.getState())) !== expectedSessionKey) {
+      throw new Error('mobile.privateSocial.stalePublicPublishCompletion');
+    }
+    appendPublishStates(isPublished(result) ? 'PUBLISHED' : 'PUBLISH_FAILED');
+    return result;
+  } catch (error) {
+    if (sessionKey(admittedSession(useAuthStore.getState())) === expectedSessionKey) {
+      appendPublishStates('PUBLISH_FAILED');
       setSnapshot({
         ...snapshot,
         errorMessage: readableErrorMessage(error),
@@ -205,7 +248,7 @@ export async function publishPrivateMoment(
       throw new Error('mobile.privateSocial.stalePublishCompletion');
     }
     mergeProjection(projection);
-    appendPublishStates(projection.state === 'PUBLISHED' ? 'PUBLISHED' : 'PUBLISH_FAILED');
+    appendPublishStates(visibleNativePublishState(projection.state));
     return projection;
   } catch (error) {
     if (isCurrentScope(scope)) {
@@ -669,10 +712,31 @@ function publishFailureState(error: unknown): PrivateSocialVisiblePublishState {
   const message = readableErrorMessage(error);
   if (message.includes('SOCIAL_PRIVATE_UNSUPPORTED')) return 'PRIVATE_UNSUPPORTED';
   if (message.includes('AUDIENCE_TOO_LARGE')) return 'AUDIENCE_TOO_LARGE';
-  if (message.includes('PREKEY') || message.includes('KEY_UNAVAILABLE')) {
+  if (
+    message.includes('PREKEY')
+    || message.includes('KEY_UNAVAILABLE')
+    || message.includes('SOCIAL_PRIVATE_DEPENDENCY_FAILURE')
+  ) {
     return 'RECIPIENT_KEY_UNAVAILABLE';
   }
   return 'PUBLISH_FAILED';
+}
+
+function visibleNativePublishState(
+  state: PrivateMomentProjection['state'],
+): PrivateSocialVisiblePublishState {
+  switch (state) {
+    case 'READY_PRIVATE':
+      return 'READY_PRIVATE';
+    case 'PUBLISHED':
+      return 'PUBLISHED';
+    case 'PREPARING':
+    case 'PUBLISHING':
+    case 'UNKNOWN_OUTCOME':
+      return 'PUBLISHING';
+    case 'PUBLISH_FAILED':
+      return 'PUBLISH_FAILED';
+  }
 }
 
 function mergeProjection(projection: PrivateMomentProjection): void {

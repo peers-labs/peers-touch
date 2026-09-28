@@ -18,7 +18,8 @@ import { useAuthStore } from '../features/auth/authStore';
 
 const commandMocks = vi.hoisted(() => ({
   activate: vi.fn(),
-  publish: vi.fn(),
+  prepareText: vi.fn(),
+  submitText: vi.fn(),
   publishMoment: vi.fn(),
   readText: vi.fn(),
   readMoment: vi.fn(),
@@ -41,8 +42,8 @@ vi.mock('../services/mobileCommands', async (importOriginal) => {
     privateSocialComments: commandMocks.comments,
     privateSocialOpenMedia: commandMocks.openMedia,
     privateSocialActivate: commandMocks.activate,
+    privateSocialPrepareText: commandMocks.prepareText,
     privateSocialPublish: commandMocks.publishMoment,
-    privateSocialPublishText: commandMocks.publish,
     privateSocialRead: commandMocks.readMoment,
     privateSocialReadText: commandMocks.readText,
     privateSocialRecover: commandMocks.recoverMoment,
@@ -50,6 +51,7 @@ vi.mock('../services/mobileCommands', async (importOriginal) => {
     privateSocialStoreRecoveryPhrase: commandMocks.storeRecoveryPhrase,
     privateSocialReconcile: commandMocks.reconcile,
     privateSocialSnapshot: commandMocks.snapshot,
+    privateSocialSubmitText: commandMocks.submitText,
     privateSocialTeardown: commandMocks.teardown,
   };
 });
@@ -70,6 +72,7 @@ import {
   reconcilePrivateMoments,
   storePrivateSocialRecoveryPhrase,
   submitPrivateComment,
+  trackPublicMomentPublish,
 } from './privateMomentsRuntime';
 
 let activeDescriptor: ReturnType<typeof createPrivateMomentsRuntimeDescriptor> | null = null;
@@ -104,6 +107,9 @@ beforeEach(() => {
     activationGeneration: 0,
     workerMode: 'on_demand',
   });
+  commandMocks.prepareText.mockImplementation(async (intent) => (
+    projection(intent.draftId, intent.draftRevision, 'READY_PRIVATE')
+  ));
   useAuthStore.setState({
     session: null,
     accessDecision: null,
@@ -269,7 +275,7 @@ describe('privateMomentsRuntime projection', () => {
 
   it('carries the exact activation generation on every account-scoped command', async () => {
     commandMocks.activate.mockResolvedValue(activeStatus(7));
-    commandMocks.publish.mockResolvedValue(projection('draft-a', 1, 'PUBLISHED'));
+    commandMocks.submitText.mockResolvedValue(projection('draft-a', 1, 'PUBLISHED'));
     commandMocks.reconcile.mockResolvedValue({
       endpointPrekeysAvailable: 8,
       recoveryPrekeysAvailable: 8,
@@ -304,12 +310,17 @@ describe('privateMomentsRuntime projection', () => {
       activationGeneration: 7,
     };
     expect(commandMocks.snapshot).toHaveBeenCalledWith(exactScope);
-    expect(commandMocks.publish).toHaveBeenCalledWith({
+    expect(commandMocks.prepareText).toHaveBeenCalledWith({
       ...exactScope,
       draftId: 'draft-a',
       draftRevision: 1,
       text: 'private',
       audience: { kind: 'FRIENDS' },
+    });
+    expect(commandMocks.submitText).toHaveBeenCalledWith({
+      ...exactScope,
+      draftId: 'draft-a',
+      draftRevision: 1,
     });
     expect(commandMocks.reconcile).toHaveBeenCalledWith(exactScope);
     expect(commandMocks.teardown).toHaveBeenCalledWith(exactScope);
@@ -317,7 +328,7 @@ describe('privateMomentsRuntime projection', () => {
 
   it('projects private publish and recovery states without exposing the phrase', async () => {
     commandMocks.activate.mockResolvedValue(activeStatus(7));
-    commandMocks.publish.mockResolvedValue(projection('draft-a', 1, 'PUBLISHED'));
+    commandMocks.submitText.mockResolvedValue(projection('draft-a', 1, 'PUBLISHED'));
     commandMocks.storeRecoveryPhrase.mockResolvedValue(undefined);
     commandMocks.recoverText.mockResolvedValue(
       readProjection('post-a', '2', 'CONTENT_READY'),
@@ -352,11 +363,78 @@ describe('privateMomentsRuntime projection', () => {
     expect(readPrivateMomentsSnapshot().publishStateHistory).toEqual([
       'AUDIENCE_REQUIRED',
       'CHECKING_PRIVATE_READINESS',
+      'READY_PRIVATE',
+      'PUBLISHING',
       'PUBLISHED',
     ]);
     expect(readPrivateMomentsSnapshot().readStateHistoryByPostId['post-a']).toEqual([
       'WAITING_FOR_PRIVATE_KEY',
       'CONTENT_READY',
+    ]);
+  });
+
+  it.each([
+    ['SOCIAL_PRIVATE_UNSUPPORTED', 'PRIVATE_UNSUPPORTED'],
+    ['SOCIAL_PRIVATE_DEPENDENCY_FAILURE', 'RECIPIENT_KEY_UNAVAILABLE'],
+    ['AUDIENCE_TOO_LARGE', 'AUDIENCE_TOO_LARGE'],
+    ['private Social prepare failed', 'PUBLISH_FAILED'],
+  ] as const)(
+    'projects a source-observed private prepare failure for %s',
+    async (message, expectedState) => {
+      commandMocks.activate.mockResolvedValue(activeStatus(7));
+      commandMocks.prepareText.mockRejectedValueOnce(new Error(message));
+      useAuthStore.setState({
+        session: authSession('session-1'),
+        accessDecision: {
+          state: 'ACCESS_DECISION_STATE_GRANTED',
+          attemptId: 'attempt-1',
+          gates: [],
+        },
+      });
+      activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+      await activeDescriptor.bootstrap(runtimeContext);
+
+      await expect(publishPrivateTextMoment({
+        draftId: `draft-${expectedState}`,
+        draftRevision: 1,
+        text: 'private',
+        audience: { kind: 'FRIENDS' },
+      })).rejects.toThrow(message);
+
+      expect(commandMocks.submitText).not.toHaveBeenCalled();
+      expect(readPrivateMomentsSnapshot().publishStateHistory).toEqual([
+        'AUDIENCE_REQUIRED',
+        'CHECKING_PRIVATE_READINESS',
+        expectedState,
+      ]);
+    },
+  );
+
+  it('projects public readiness around the real public publish operation', async () => {
+    commandMocks.activate.mockResolvedValue(activeStatus(7));
+    useAuthStore.setState({
+      session: authSession('session-1'),
+      accessDecision: {
+        state: 'ACCESS_DECISION_STATE_GRANTED',
+        attemptId: 'attempt-1',
+        gates: [],
+      },
+    });
+    activeDescriptor = createPrivateMomentsRuntimeDescriptor();
+    await activeDescriptor.bootstrap(runtimeContext);
+    const operation = vi.fn(async () => ({ ok: true, postId: 'post-public' }));
+
+    await expect(trackPublicMomentPublish(
+      operation,
+      (result) => result.ok,
+    )).resolves.toEqual({ ok: true, postId: 'post-public' });
+
+    expect(operation).toHaveBeenCalledOnce();
+    expect(readPrivateMomentsSnapshot().publishStateHistory).toEqual([
+      'AUDIENCE_REQUIRED',
+      'READY_PUBLIC',
+      'PUBLISHING',
+      'PUBLISHED',
     ]);
   });
 
@@ -627,7 +705,7 @@ describe('privateMomentsRuntime projection', () => {
       .mockResolvedValueOnce(activeStatus(1))
       .mockResolvedValueOnce(activeStatus(2));
     let resolvePublish: ((value: PrivateMomentProjection) => void) | undefined;
-    commandMocks.publish.mockReturnValueOnce(new Promise((resolve) => {
+    commandMocks.submitText.mockReturnValueOnce(new Promise((resolve) => {
       resolvePublish = resolve;
     }));
     useAuthStore.setState({
@@ -647,6 +725,12 @@ describe('privateMomentsRuntime projection', () => {
       text: 'private',
       audience: { kind: 'FRIENDS' },
     });
+    await vi.waitFor(() => {
+      expect(commandMocks.submitText).toHaveBeenCalledOnce();
+    });
+    expect(readPrivateMomentsSnapshot().projections).toEqual([
+      expect.objectContaining({ state: 'PUBLISHING' }),
+    ]);
     useAuthStore.setState({ session: authSession('session-2') });
     await vi.waitFor(() => {
       expect(commandMocks.activate).toHaveBeenCalledTimes(2);
@@ -664,7 +748,7 @@ describe('privateMomentsRuntime projection', () => {
       .mockResolvedValueOnce(activeStatus(1))
       .mockResolvedValueOnce(activeStatus(2));
     let rejectPublish: ((reason: Error) => void) | undefined;
-    commandMocks.publish.mockReturnValueOnce(new Promise((_, reject) => {
+    commandMocks.submitText.mockReturnValueOnce(new Promise((_, reject) => {
       rejectPublish = reject;
     }));
     useAuthStore.setState({
@@ -683,6 +767,9 @@ describe('privateMomentsRuntime projection', () => {
       draftRevision: 1,
       text: 'private',
       audience: { kind: 'FRIENDS' },
+    });
+    await vi.waitFor(() => {
+      expect(commandMocks.submitText).toHaveBeenCalledOnce();
     });
     useAuthStore.setState({ session: authSession('session-2') });
     await vi.waitFor(() => {

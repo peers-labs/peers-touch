@@ -154,6 +154,7 @@ impl PrivateSocialWorker {
                         http_status: None,
                         stable_code: 20005,
                         typed_error: false,
+                        private_content_code: None,
                         retry_after_seconds: None,
                         disposition: TransportDisposition::UnknownOutcome,
                     })
@@ -545,6 +546,7 @@ mod tests {
             http_status: Some(401),
             stable_code: 20001,
             typed_error: true,
+            private_content_code: None,
             retry_after_seconds: None,
             disposition: TransportDisposition::Terminal,
         };

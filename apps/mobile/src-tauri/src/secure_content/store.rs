@@ -20,6 +20,7 @@ pub enum DurableState {
     UnknownOutcome = 3,
     Committed = 4,
     Terminal = 5,
+    Prepared = 6,
 }
 
 impl TryFrom<i64> for DurableState {
@@ -32,6 +33,7 @@ impl TryFrom<i64> for DurableState {
             3 => Ok(Self::UnknownOutcome),
             4 => Ok(Self::Committed),
             5 => Ok(Self::Terminal),
+            6 => Ok(Self::Prepared),
             _ => Err("private Social durable state is invalid".to_string()),
         }
     }
@@ -639,7 +641,7 @@ impl PrivateSocialStore {
                     command.request_sha256.as_slice(),
                     command.root_key.as_slice(),
                     command.projection_json,
-                    DurableState::Pending as i64,
+                    command.state as i64,
                     to_i64(self.generation()?, "session generation")?,
                     now_unix_ms(),
                 ],
@@ -723,12 +725,13 @@ impl PrivateSocialStore {
                 "UPDATE mobile_private_social_submissions
                  SET state = ?1, lease_generation = lease_generation + 1,
                      session_generation = ?2, updated_at_unix_ms = ?3
-                 WHERE command_id = ?4 AND state IN (?5, ?6)",
+                 WHERE command_id = ?4 AND state IN (?5, ?6, ?7)",
                 params![
                     DurableState::InFlight as i64,
                     to_i64(generation, "session generation")?,
                     now_unix_ms(),
                     command_id,
+                    DurableState::Prepared as i64,
                     DurableState::Pending as i64,
                     DurableState::UnknownOutcome as i64,
                 ],
@@ -1367,6 +1370,10 @@ fn validate_submission(command: &StoredSubmission) -> Result<(), String> {
         || command.request_bytes.is_empty()
         || command.projection_json.is_empty()
         || Sha256::digest(&command.request_bytes).as_slice() != command.request_sha256
+        || !matches!(
+            command.state,
+            DurableState::Prepared | DurableState::Pending
+        )
     {
         Err("private Social submission is invalid".to_string())
     } else {
@@ -1808,6 +1815,21 @@ mod tests {
             store.submission("draft-1", 1).unwrap().unwrap().state,
             DurableState::Committed
         );
+    }
+
+    #[test]
+    fn prepared_submission_waits_for_explicit_dispatch() {
+        let store = PrivateSocialStore::in_memory("station-1", "ptid:alice").unwrap();
+        store.bind_session_generation(7).unwrap();
+        let mut prepared = submission(3);
+        prepared.state = DurableState::Prepared;
+
+        store.persist_submission(&prepared).unwrap();
+
+        assert!(store.pending_submissions().unwrap().is_empty());
+        let acquired = store.acquire_submission("submit-1").unwrap();
+        assert_eq!(acquired.command.state, DurableState::InFlight);
+        assert!(!acquired.reconciles_unknown_outcome);
     }
 
     #[test]
