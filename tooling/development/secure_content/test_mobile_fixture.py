@@ -22,10 +22,12 @@ class _Session:
         endpoint_prekeys: int = 8,
         recovery_prekeys: int | None = 8,
         recipient_prekey_owner: _Session | None = None,
+        publish_history_limit: int | None = None,
     ) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.publish_state_history = ["AUDIENCE_REQUIRED"]
         self.record_publish_states = record_publish_states
+        self.publish_history_limit = publish_history_limit
         self.published_drafts: dict[tuple[str, int], str] = {}
         self.endpoint_prekey_capacity = endpoint_prekeys
         self.recovery_prekey_capacity = recovery_prekeys
@@ -36,6 +38,10 @@ class _Session:
     def append_publish_states(self, *states: str) -> None:
         if self.record_publish_states:
             self.publish_state_history.extend(states)
+            if self.publish_history_limit is not None:
+                self.publish_state_history = self.publish_state_history[
+                    -self.publish_history_limit:
+                ]
 
     def call_action(
         self,
@@ -315,6 +321,44 @@ class MobileProductionFixtureTest(unittest.TestCase):
         self.assertTrue(result["completed"])
         self.assertEqual(len(drain_calls), 40)
 
+    def test_publish_state_evidence_survives_bounded_production_history(
+        self,
+    ) -> None:
+        bob = _Session(endpoint_prekeys=100, recovery_prekeys=100)
+        alice = _Session(
+            recipient_prekey_owner=bob,
+            publish_history_limit=64,
+        )
+        self.sessions = {
+            "ios_alice": alice,
+            "ios_bob": bob,
+        }
+        self.fixture = MobileProductionFixture(
+            sessions=self.sessions,
+            actor_ptids={
+                "ios_alice": "ptid:alice",
+                "ios_bob": "ptid:bob",
+            },
+            federation_id="federation-1",
+        )
+
+        result = self.invoke(
+            "publish-states",
+            {
+                "variant": "ios",
+                "clients": ["ios_alice", "ios_bob"],
+            },
+        )
+
+        self.assertEqual(
+            set(result["observedStates"]),
+            PLATFORM_OPERATIONS["publish-states"],
+        )
+        self.assertNotIn("AUDIENCE_REQUIRED", alice.publish_state_history)
+        self.assertNotIn("READY_PUBLIC", alice.publish_state_history)
+        self.assertNotIn("PRIVATE_UNSUPPORTED", alice.publish_state_history)
+        self.assertNotIn("AUDIENCE_TOO_LARGE", alice.publish_state_history)
+
     def test_publish_drain_uses_smaller_recovery_pool(self) -> None:
         bob = _Session(endpoint_prekeys=40, recovery_prekeys=5)
         self.sessions = {
@@ -401,7 +445,11 @@ class MobileProductionFixtureTest(unittest.TestCase):
             [
                 action
                 for action, _ in self.sessions["ios_alice"].calls
-                if action.startswith("moments.private.")
+                if action
+                in {
+                    "moments.private.publishText",
+                    "moments.private.reconcile",
+                }
             ][:2],
             [
                 "moments.private.publishText",
