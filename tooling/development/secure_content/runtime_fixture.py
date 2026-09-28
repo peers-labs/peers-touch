@@ -182,6 +182,19 @@ class RuntimeFixtureCapabilityHandler(EphemeralCapabilityHandler):
                 "Secure Content runtime fixture outcome is invalid",
                 resource=f"fixture:{self._binding.capability}:{operation}",
             )
+        outcome_payload = dict(outcome)
+        supplied_identity = outcome_payload.get("fixtureIdentityDigest")
+        if (
+            supplied_identity is not None
+            and supplied_identity != self._binding.expected_identity_digest
+        ):
+            raise EphemeralCapabilityBlocked(
+                "Secure Content runtime fixture outcome identity does not match",
+                resource=f"fixture:{self._binding.capability}:{operation}",
+            )
+        outcome_payload["fixtureIdentityDigest"] = (
+            self._binding.expected_identity_digest
+        )
         acknowledgement: dict[str, object] = {
             "schemaVersion": 1,
             "capability": self._binding.capability,
@@ -189,7 +202,7 @@ class RuntimeFixtureCapabilityHandler(EphemeralCapabilityHandler):
             "handleId": self._binding.opaque_id,
             "expectedIdentityDigest": self._binding.expected_identity_digest,
             "runtimeManifestDigest": manifest_digest,
-            "outcome": dict(outcome),
+            "outcome": outcome_payload,
         }
         acknowledgement["acknowledgementDigest"] = canonical_digest(
             acknowledgement
