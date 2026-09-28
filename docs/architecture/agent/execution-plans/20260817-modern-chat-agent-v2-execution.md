@@ -1198,7 +1198,7 @@ and zero local-path leakage.
 - The first unchanged G-F run
   `20260909T092206777723Z-b50ac4f18635f12f4b7e91213e3ce332`
   failed closed before AS-F06 because the invocation omitted its documented
-  `PT_AGENT_V2_ALLOW_STATION_RESTART=1` authorization. Cleanup passed.
+  `PT_AGENT_ALLOW_STATION_RESTART=1` authorization. Cleanup passed.
 - The authorized G-F run
   `20260909T093249009857Z-8249ea00d31ec1c6803823fd36fa7cf3`
   advanced to Browser AS-F04 and failed when the Browser gateway reported
@@ -1665,7 +1665,7 @@ and zero local-path leakage.
     unchanged-source rerun
     `20260914T151213561983Z-57306baff0e2d528ecd7321dc0f6182a`
     completed AS-F05 and stopped only because the invocation omitted the
-    documented `PT_AGENT_V2_ALLOW_STATION_RESTART=1`. Fully authorized run
+    documented `PT_AGENT_ALLOW_STATION_RESTART=1`. Fully authorized run
     `20260914T152422560360Z-6b640c89e4e1afdc1d2644d666dbc12a`
     crossed both AS-F05 locales and AS-F06, then exposed a transient Browser
     English `BASE-INVALID_REFERENCE` resend timeout. A clean instrumented
@@ -5386,7 +5386,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   exact-source to profile `two`. Run
   `20260829T211516341470Z-bded0cbd9862cbe09dc0273d73bf3a2a`
   reached Browser AS-F06 and then failed closed before its destructive Station
-  restart because `PT_AGENT_V2_ALLOW_STATION_RESTART=1` was not present in the
+  restart because `PT_AGENT_ALLOW_STATION_RESTART=1` was not present in the
   runner environment. The immutable result is `PARTIAL / UNPROVEN`; cleanup,
   redaction, runtime storage removal, and release of ports `3130`, `3131`,
   `3310`, `3311`, `4445`, and `4446` passed. This is an execution-environment
@@ -6117,7 +6117,7 @@ All statuses start `pending`. Execution records external Evidence Store paths.
   `20260830T203842372359Z-3e8aa65f2ac7ddefb381dbabaf74709e`
   passed the AS-F03 prefix and retained fully clean Native/Browser teardown,
   then failed at Browser AS-F06 because the invocation omitted the required
-  `PT_AGENT_V2_ALLOW_STATION_RESTART=1` authorization. This is an operator
+  `PT_AGENT_ALLOW_STATION_RESTART=1` authorization. This is an operator
   invocation defect, not product evidence. The next run must use the documented
   restart authorization while keeping profile `two` serially leased.
 - Authorized exact-source run

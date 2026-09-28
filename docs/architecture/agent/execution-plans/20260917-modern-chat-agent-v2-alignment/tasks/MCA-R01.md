@@ -77,6 +77,8 @@
     "tooling/acceptance/gates/agent/foundation_runtime_client_test.py",
     "tooling/acceptance/gates/agent/foundation_scenario_runner.py",
     "tooling/acceptance/gates/agent/foundation_scenario_runner_test.py",
+    "tooling/acceptance/gates/agent/foundation_station_restart.py",
+    "tooling/acceptance/gates/agent/foundation_station_restart_test.py",
     "tooling/acceptance/gates/agent/agent_native_static_test.py",
     "docs/architecture/agent"
   ],
