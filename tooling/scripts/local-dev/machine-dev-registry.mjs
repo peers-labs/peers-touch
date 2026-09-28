@@ -32,7 +32,8 @@ import { LIVE_STATES } from './dev-work-schema.mjs';
 
 export const MACHINE_REGISTRY_KIND = 'peers-touch-machine-dev-registry';
 export const MACHINE_REGISTRY_AUTHORITY = 'machine-control-plane';
-export const MACHINE_REGISTRY_SCHEMA_VERSION = 1;
+export const MACHINE_REGISTRY_SCHEMA_VERSION = 2;
+const LEGACY_MACHINE_REGISTRY_SCHEMA_VERSION = 1;
 export const STATION_CAPABILITIES = new Set([
   'station.connect',
   'station.deploy',
@@ -47,12 +48,12 @@ export const LEASE_RESOURCE_KINDS = new Set([
 const IDENTIFIER = /^[a-z0-9][a-z0-9._-]{0,127}$/i;
 const HEAD_PATTERN = /^[0-9a-f]{40,64}$/;
 const REGISTRY_LOCK_TIMEOUT_MS = 5_000;
+const REGISTRY_LOCK_HELD = Symbol('registryLockHeld');
 const REGISTRATION_KEYS = new Set([
   'workspaceId',
   'canonicalRoot',
   'name',
   'branch',
-  'head',
   'profile',
   'slot',
   'allowedCapabilities',
@@ -62,6 +63,7 @@ const REGISTRATION_KEYS = new Set([
   'updatedAt',
   'updatedBy',
 ]);
+const LEGACY_REGISTRATION_KEYS = new Set([...REGISTRATION_KEYS, 'head']);
 const AUTHORITATIVE_REGISTRY_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -239,6 +241,15 @@ export function captureWorkspace(workspaceRoot = repoRoot) {
     name: path.basename(canonicalRoot),
     branch,
     head,
+  };
+}
+
+function registrationIdentity(workspace) {
+  return {
+    workspaceId: workspace.workspaceId,
+    canonicalRoot: workspace.canonicalRoot,
+    name: workspace.name,
+    branch: workspace.branch,
   };
 }
 
@@ -554,7 +565,6 @@ function normalizeRegistration(value) {
     canonicalRoot: value.canonicalRoot,
     name: value.name,
     branch: value.branch,
-    head: value.head,
     profile: value.profile,
     slot: value.slot,
     allowedCapabilities: value.allowedCapabilities,
@@ -569,8 +579,7 @@ function normalizeRegistration(value) {
     !path.isAbsolute(normalized.canonicalRoot) ||
     workspaceIdForCanonicalPath(normalized.canonicalRoot) !==
       normalized.workspaceId ||
-    path.basename(normalized.canonicalRoot) !== normalized.name ||
-    !HEAD_PATTERN.test(normalized.head)
+    path.basename(normalized.canonicalRoot) !== normalized.name
   ) {
     fail('MACHINE_REGISTRY_INVALID', 'registration identity is invalid', {
       workspaceId: normalized.workspaceId,
@@ -594,11 +603,44 @@ function normalizeRegistration(value) {
   return normalized;
 }
 
+function normalizeLegacyRegistration(value) {
+  if (!isObject(value) || !HEAD_PATTERN.test(value.head)) {
+    fail('MACHINE_REGISTRY_INVALID', 'legacy registration identity is invalid');
+  }
+  const { head: _head, ...registration } = value;
+  return normalizeRegistration(registration);
+}
+
 function workspaceIdForCanonicalPath(canonicalRoot) {
   return createHash('sha256')
     .update(canonicalRoot)
     .digest('hex')
     .slice(0, 16);
+}
+
+function normalizeRegistrationCollection(registry, keys, normalize) {
+  const workspaceIds = new Set();
+  const slots = new Set();
+  registry.registrations = registry.registrations.map((entry) => {
+    if (
+      !isObject(entry) ||
+      Object.keys(entry).length !== keys.size ||
+      Object.keys(entry).some((key) => !keys.has(key))
+    ) {
+      fail('MACHINE_REGISTRY_INVALID', 'registration fields are invalid');
+    }
+    const normalized = normalize(entry);
+    if (workspaceIds.has(normalized.workspaceId)) {
+      fail('MACHINE_REGISTRY_INVALID', 'workspace is registered more than once');
+    }
+    if (slots.has(normalized.slot)) {
+      fail('MACHINE_REGISTRY_INVALID', 'local slot is allocated more than once');
+    }
+    workspaceIds.add(normalized.workspaceId);
+    slots.add(normalized.slot);
+    return normalized;
+  });
+  return registry;
 }
 
 function validateRegistry(registry) {
@@ -613,46 +655,32 @@ function validateRegistry(registry) {
     fail('MACHINE_REGISTRY_INVALID', 'machine registry schema is invalid');
   }
   validateIsoTimestamp(registry.updatedAt, 'updatedAt');
-  const workspaceIds = new Set();
-  const slots = new Set();
-  registry.registrations = registry.registrations.map((entry) => {
-    if (
-      Object.keys(entry).length !== REGISTRATION_KEYS.size ||
-      Object.keys(entry).some((key) => !REGISTRATION_KEYS.has(key))
-    ) {
-      fail('MACHINE_REGISTRY_INVALID', 'registration fields are invalid');
-    }
-    const normalized = normalizeRegistration(entry);
-    if (workspaceIds.has(normalized.workspaceId)) {
-      fail('MACHINE_REGISTRY_INVALID', 'workspace is registered more than once');
-    }
-    if (slots.has(normalized.slot)) {
-      fail('MACHINE_REGISTRY_INVALID', 'local slot is allocated more than once');
-    }
-    workspaceIds.add(normalized.workspaceId);
-    slots.add(normalized.slot);
-    return normalized;
-  });
-  return registry;
+  return normalizeRegistrationCollection(
+    registry,
+    REGISTRATION_KEYS,
+    normalizeRegistration,
+  );
 }
 
-export function readRegistry(file, { requireAuthority = true } = {}) {
+function parseRegistryDocument(file) {
   if (!existsSync(file)) {
-    if (requireAuthority) {
-      fail('WORKSPACE_UNREGISTERED', 'machine registry does not exist');
-    }
     return null;
   }
-  let registry;
   try {
-    registry = JSON.parse(readFileSync(file, 'utf8'));
+    return JSON.parse(readFileSync(file, 'utf8'));
   } catch (error) {
     fail('MACHINE_REGISTRY_INVALID', 'machine registry is not valid JSON', {
       cause: String(error),
     });
   }
+}
+
+function validateReadableHeader(registry) {
   if (
-    registry?.schemaVersion !== MACHINE_REGISTRY_SCHEMA_VERSION ||
+    ![
+      LEGACY_MACHINE_REGISTRY_SCHEMA_VERSION,
+      MACHINE_REGISTRY_SCHEMA_VERSION,
+    ].includes(registry?.schemaVersion) ||
     registry?.kind !== MACHINE_REGISTRY_KIND ||
     !['observed-snapshot', MACHINE_REGISTRY_AUTHORITY].includes(
       registry?.authority,
@@ -661,6 +689,10 @@ export function readRegistry(file, { requireAuthority = true } = {}) {
   ) {
     fail('MACHINE_REGISTRY_INVALID', 'machine registry header is invalid');
   }
+  return registry;
+}
+
+function requireRegistryAuthority(registry, requireAuthority) {
   if (registry.authority !== MACHINE_REGISTRY_AUTHORITY) {
     if (requireAuthority) {
       fail(
@@ -670,7 +702,101 @@ export function readRegistry(file, { requireAuthority = true } = {}) {
     }
     return registry;
   }
+  return null;
+}
+
+function migrateLegacyRegistry(registry, now) {
+  if (
+    registry.schemaVersion !== LEGACY_MACHINE_REGISTRY_SCHEMA_VERSION ||
+    registry.authority !== MACHINE_REGISTRY_AUTHORITY ||
+    Object.keys(registry).some((key) => !AUTHORITATIVE_REGISTRY_KEYS.has(key))
+  ) {
+    fail('MACHINE_REGISTRY_INVALID', 'legacy machine registry schema is invalid');
+  }
+  validateIsoTimestamp(registry.updatedAt, 'updatedAt');
+  const normalized = normalizeRegistrationCollection(
+    registry,
+    LEGACY_REGISTRATION_KEYS,
+    normalizeLegacyRegistration,
+  );
+  return validateRegistry({
+    ...normalized,
+    schemaVersion: MACHINE_REGISTRY_SCHEMA_VERSION,
+    updatedAt: now.toISOString(),
+  });
+}
+
+function loadRegistryForMutation(file, now) {
+  const registry = parseRegistryDocument(file);
+  if (registry === null) return { registry: null, migrated: false };
+  validateReadableHeader(registry);
+  if (registry.authority !== MACHINE_REGISTRY_AUTHORITY) {
+    return { registry, migrated: false };
+  }
+  if (registry.schemaVersion === LEGACY_MACHINE_REGISTRY_SCHEMA_VERSION) {
+    return {
+      registry: migrateLegacyRegistry(registry, now),
+      migrated: true,
+    };
+  }
+  return { registry: validateRegistry(registry), migrated: false };
+}
+
+export function readRegistry(file, { requireAuthority = true } = {}) {
+  const registry = parseRegistryDocument(file);
+  if (registry === null) {
+    if (requireAuthority) {
+      fail('WORKSPACE_UNREGISTERED', 'machine registry does not exist');
+    }
+    return null;
+  }
+  validateReadableHeader(registry);
+  const nonAuthoritative = requireRegistryAuthority(
+    registry,
+    requireAuthority,
+  );
+  if (nonAuthoritative) return nonAuthoritative;
+  if (registry.schemaVersion !== MACHINE_REGISTRY_SCHEMA_VERSION) {
+    fail(
+      'MACHINE_REGISTRY_MIGRATION_REQUIRED',
+      'machine registry must be migrated before use',
+    );
+  }
   return validateRegistry(registry);
+}
+
+function readOperationalRegistry(
+  options,
+  { requireAuthority = true, registryLockHeld = false } = {},
+) {
+  const file = options.registryPath ?? machineRegistryPath(options.home);
+  const readCurrent = () => {
+    const loaded = loadRegistryForMutation(file, options.now ?? new Date());
+    if (loaded.registry === null) {
+      if (requireAuthority) {
+        fail('WORKSPACE_UNREGISTERED', 'machine registry does not exist');
+      }
+      return null;
+    }
+    if (loaded.migrated) {
+      writeRegistryAtomic(file, loaded.registry);
+    }
+    const nonAuthoritative = requireRegistryAuthority(
+      loaded.registry,
+      requireAuthority,
+    );
+    return nonAuthoritative ?? loaded.registry;
+  };
+  if (registryLockHeld) return readCurrent();
+  const release = acquireRegistryLock(
+    options.lockPath ?? machineRegistryLockPath(options.home),
+    options.lockTimeoutMs,
+  );
+  try {
+    return readCurrent();
+  } finally {
+    release();
+  }
 }
 
 function promoteRegistry(registry, now) {
@@ -819,7 +945,7 @@ function mutateRegistry(options, mutation) {
   const now = options.now ?? new Date();
   const release = acquireRegistryLock(lock, options.lockTimeoutMs);
   try {
-    const current = readRegistry(file, { requireAuthority: false });
+    const current = loadRegistryForMutation(file, now).registry;
     const registry = promoteRegistry(current, now);
     const output = mutation(registry, now);
     registry.updatedAt = now.toISOString();
@@ -930,7 +1056,7 @@ export function registerWorkspace(options) {
     assertSlotAvailable(registry, workspace.workspaceId, slot);
     const timestamp = now.toISOString();
     const registration = {
-      ...workspace,
+      ...registrationIdentity(workspace),
       profile,
       slot,
       allowedCapabilities,
@@ -986,7 +1112,7 @@ export function updateWorkspace(options) {
 
     const updated = {
       ...current,
-      ...workspace,
+      ...registrationIdentity(workspace),
       profile,
       slot,
       allowedCapabilities,
@@ -1019,19 +1145,20 @@ export function slotPorts(slotValue) {
 export function checkWorkspace(options = {}) {
   const workspace = captureWorkspace(options.workspaceRoot ?? repoRoot);
   const home = options.home;
-  const registry = readRegistry(options.registryPath ?? machineRegistryPath(home));
+  const registry = readOperationalRegistry(options, {
+    registryLockHeld: options[REGISTRY_LOCK_HELD] === true,
+  });
   const registration = registrationForWorkspace(
     registry,
     workspace.workspaceId,
   );
   if (
     registration.canonicalRoot !== workspace.canonicalRoot ||
-    registration.branch !== workspace.branch ||
-    registration.head !== workspace.head
+    registration.branch !== workspace.branch
   ) {
     fail(
       'WORKTREE_IDENTITY_MISMATCH',
-      'registered workspace identity does not match current Git state',
+      'registered workspace identity does not match current worktree state',
       { registered: registration, actual: workspace },
     );
   }
@@ -1082,6 +1209,10 @@ export function checkWorkspace(options = {}) {
   return {
     authority: registry.authority,
     binding: registration,
+    source: {
+      branch: workspace.branch,
+      head: workspace.head,
+    },
     profile: definition,
     ports: slotPorts(registration.slot),
     workspaceStateRoot: workspaceStatePath({
@@ -1091,7 +1222,13 @@ export function checkWorkspace(options = {}) {
   };
 }
 
-function validateRuntimeIntent(options, binding, resourceKind, resourceId) {
+function validateRuntimeIntent(
+  options,
+  binding,
+  source,
+  resourceKind,
+  resourceId,
+) {
   const now = options.now ?? new Date();
   const file =
     options.workLedgerPath ??
@@ -1100,8 +1237,8 @@ function validateRuntimeIntent(options, binding, resourceKind, resourceId) {
   const declaration = Object.values(ledger.declarations).find((candidate) => {
     if (
       candidate.workspaceId !== binding.workspaceId ||
-      candidate.branch !== binding.branch ||
-      candidate.sourceHead !== binding.head ||
+      candidate.branch !== source.branch ||
+      candidate.sourceHead !== source.head ||
       !LIVE_STATES.has(candidate.state) ||
       Date.parse(candidate.expiresAt) <= now.getTime()
     ) {
@@ -1188,6 +1325,7 @@ export function prepareLease(options) {
   const declaration = validateRuntimeIntent(
     options,
     resolved.binding,
+    resolved.source,
     resourceKind,
     resourceId,
   );
@@ -1212,12 +1350,11 @@ function registrationState(registration) {
     const workspace = captureWorkspace(registration.canonicalRoot);
     if (
       workspace.workspaceId !== registration.workspaceId ||
-      workspace.branch !== registration.branch ||
-      workspace.head !== registration.head
+      workspace.branch !== registration.branch
     ) {
       return {
         activity: 'stale',
-        reason: 'registered source identity does not match current Git state',
+        reason: 'registered workspace identity does not match current worktree state',
       };
     }
     return { activity: 'idle', reason: null };
@@ -1235,7 +1372,10 @@ export function validateLeaseRequest(options) {
     options.lockTimeoutMs,
   );
   try {
-    return prepareLease(options);
+    return prepareLease({
+      ...options,
+      [REGISTRY_LOCK_HELD]: true,
+    });
   } finally {
     release();
   }
@@ -1315,9 +1455,9 @@ export function verifyHeldLease(options) {
 }
 
 export function statusAll(options = {}) {
-  const home = options.home;
-  const file = options.registryPath ?? machineRegistryPath(home);
-  const registry = readRegistry(file, { requireAuthority: false });
+  const registry = readOperationalRegistry(options, {
+    requireAuthority: false,
+  });
   const leases = observeLeases(options);
   const authoritative =
     registry?.authority === MACHINE_REGISTRY_AUTHORITY;

@@ -1,8 +1,8 @@
 # Local Development Environment
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-07-23 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-07-23 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 
 ---
@@ -107,6 +107,11 @@ Each Git worktree selects its profile through the machine registry binding keyed
 by canonical `workspaceId`. `make profile PROFILE=<name>` updates only an
 already registered workspace and never writes a legacy active-profile pointer.
 Runtime commands load the sibling `env` repository source directly.
+
+The registration stores the canonical root and registered branch, but not Git
+HEAD. Current HEAD is read directly from the worktree for each command.
+Schema-v1 registries are atomically migrated on first use and their persisted
+`head` fields are removed.
 
 Local slot and Desktop/Mobile ports come from the machine binding. A profile's
 `PT_DEV_SLOT` and local client port fields are legacy topology observations and
@@ -289,8 +294,8 @@ registered and its binding must resolve.
 | Target | What it does |
 |--------|-------------|
 | `make env-register ...` | Explicitly register this verified workspace and allocate profile, slot, and allowed capabilities |
-| `make env-update ...` | Update requested binding fields and refresh current branch/HEAD while no lease is held |
-| `make env-check ...` | Verify workspace binding, tracked-clean topology, slot, capabilities, target match, and budget |
+| `make env-update ...` | Update requested binding fields and current registered branch while no lease is held |
+| `make env-check ...` | Verify stable workspace binding, current Git source, tracked-clean topology, slot, capabilities, target match, and budget |
 | `make env-status-all` | Report all registrations and observed OS-held leases |
 | `make dev-start ...` | Publish and conflict-check this task's source/runtime intent |
 | `make dev-update WORK_ITEM=<id>` | Replace supplied scope or refresh the declared branch/HEAD |
