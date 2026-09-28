@@ -68,6 +68,7 @@ Target command behavior:
 | Command | Control-plane action |
 |---------|----------------------|
 | `make env-register` | Explicitly enroll the verified current workspace and allocate one profile/slot/capability binding |
+| `make profile <name>` | Explicitly select a reviewed Profile; register with the lowest free slot and minimum operational capabilities, excluding reset, on first use; otherwise update the existing binding |
 | `make env-update` | Atomically refresh the registered Git identity or replace requested binding fields while no lease is held |
 | `make env-check` | Verify current root/ID/branch/HEAD, selected definition, slot, capabilities, target host, and budget |
 | `make dev-start` | Publish and confirm source/runtime intent before mutation |
@@ -265,9 +266,11 @@ Migration remains incomplete until every condition below holds:
 
 ## 8. Registration And Activity Rules
 
-- `make env-register` is the only operation that enrolls the current
-  `workspaceId`; it requires an Owner-provided purpose, profile, capability
-  set, and slot or allocation request.
+- `make profile <name>` and `make env-register` are the only operations that
+  enroll the current `workspaceId`. The former is the normal explicit
+  first-use path with atomic free-slot allocation and minimum operational
+  capabilities without reset; the latter accepts an Owner-provided purpose,
+  profile, capability set, and slot.
 - `make profiles`, `git worktree list`, repository scans, and old
   `.local/dev/active` pointers are discovery only.
 - `make env-status-all` lists registered worktrees first, then separately

@@ -194,6 +194,11 @@
       ],
       "when": {
         "paths": [
+          "tooling/devctl/errors.mjs",
+          "tooling/devctl/profile.mjs",
+          "tooling/devctl/station.mjs",
+          "tooling/devctl/test/profile.test.mjs",
+          "tooling/devctl/test/station.test.mjs",
           "tooling/scripts/local-dev/machine-dev*",
           "tooling/make/local-dev.mk",
           "Makefile"

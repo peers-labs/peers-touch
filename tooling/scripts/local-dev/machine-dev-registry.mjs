@@ -882,6 +882,21 @@ function assertSlotAvailable(registry, workspaceId, slot) {
   }
 }
 
+function firstAvailableSlot(registry) {
+  const allocated = new Set(registry.registrations.map((entry) => entry.slot));
+  for (let slot = 0; slot <= 99; slot += 1) {
+    if (!allocated.has(slot)) return slot;
+  }
+  fail('LOCAL_SLOT_UNAVAILABLE', 'no local development slot is available');
+}
+
+function defaultProfileCapabilities(definition) {
+  return definition.stationMode === 'remote'
+    && definition.stationDeployEnvironment
+    ? ['station.connect', 'station.deploy']
+    : ['station.connect'];
+}
+
 function registrationForWorkspace(registry, workspaceId) {
   const registration = registry.registrations.find(
     (entry) => entry.workspaceId === workspaceId,
@@ -1022,6 +1037,79 @@ export function registerWorkspace(options) {
     registry.registrations.sort((left, right) =>
       left.workspaceId.localeCompare(right.workspaceId),
     );
+    return registration;
+  }).output;
+}
+
+export function selectWorkspaceProfile(options) {
+  const profile = requiredIdentifier(options.profile, 'profile');
+  const selectedBy = requiredText(options.owner, 'owner', 256);
+
+  return mutateRegistry(options, (registry, now, workspace) => {
+    const definition = resolveProfileDefinition({
+      workspaceRoot: workspace.canonicalRoot,
+      envRepo: options.envRepo,
+      profile,
+    });
+    const currentIndex = registry.registrations.findIndex(
+      (entry) => entry.workspaceId === workspace.workspaceId,
+    );
+    const current =
+      currentIndex === -1 ? null : registry.registrations[currentIndex];
+    const slot =
+      options.slot === undefined
+        ? current?.slot ?? firstAvailableSlot(registry)
+        : requiredSlot(options.slot);
+    const defaultCapabilities = defaultProfileCapabilities(definition);
+    const selectableCapabilities = new Set(defaultCapabilities);
+    if (
+      definition.stationMode === 'remote'
+      && definition.stationDeployEnvironment
+      && definition.resetPolicy !== 'stable-protected'
+    ) {
+      selectableCapabilities.add('station.reset');
+    }
+    const allowedCapabilities =
+      options.capabilities === undefined
+        ? current
+          ? parseCapabilities(
+              [...current.allowedCapabilities, ...defaultCapabilities].filter(
+                (capability) => selectableCapabilities.has(capability),
+              ),
+            )
+          : defaultCapabilities
+        : parseCapabilities(options.capabilities);
+    const purpose =
+      options.purpose === undefined
+        ? current?.purpose ?? `Interactive profile selection: ${profile}`
+        : requiredText(options.purpose, 'purpose', 1024);
+
+    validateProfileCapabilities(definition, allowedCapabilities);
+    assertSlotAvailable(registry, workspace.workspaceId, slot);
+
+    if (current) {
+      assertWorkspaceHasNoLease(options, workspace.workspaceId);
+    }
+    const timestamp = now.toISOString();
+    const registration = {
+      ...workspace,
+      profile,
+      slot,
+      allowedCapabilities,
+      purpose,
+      owner: current?.owner ?? selectedBy,
+      registeredAt: current?.registeredAt ?? timestamp,
+      updatedAt: timestamp,
+      updatedBy: selectedBy,
+    };
+    if (currentIndex === -1) {
+      registry.registrations.push(registration);
+      registry.registrations.sort((left, right) =>
+        left.workspaceId.localeCompare(right.workspaceId),
+      );
+    } else {
+      registry.registrations[currentIndex] = registration;
+    }
     return registration;
   }).output;
 }

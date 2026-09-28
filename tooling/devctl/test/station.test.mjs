@@ -104,6 +104,7 @@ function machineEnvironment(t, root, slot = 0) {
   registerWorkspace({
     workspaceRoot: root,
     envRepo,
+    home,
     registryPath: machineRegistryPath(home),
     profile: 'machine-test',
     slot,
@@ -120,10 +121,26 @@ function machineEnvironment(t, root, slot = 0) {
   };
 }
 
-async function startHealthServer(t, port = 0) {
-  const server = http.createServer((_request, response) => {
-    response.writeHead(200);
-    response.end('ok');
+async function startHealthServer(
+  t,
+  port = 0,
+  isHealthy = () => true,
+  buildCommit = 'unknown',
+) {
+  const server = http.createServer((request, response) => {
+    const healthy = isHealthy();
+    if (healthy && request.url === '/app-meta/version') {
+      const commit =
+        typeof buildCommit === 'function' ? buildCommit() : buildCommit;
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({
+        service: 'peers-touch-station',
+        build_commit: commit,
+      }));
+      return;
+    }
+    response.writeHead(healthy ? 200 : 503);
+    response.end(healthy ? 'ok' : 'not ready');
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -136,13 +153,18 @@ async function startHealthServer(t, port = 0) {
 }
 
 test(
-  'remote start invokes the Unix deployment bridge even when Station is healthy',
+  'remote start reuses a healthy Station without invoking the deployment bridge',
   { skip: process.platform === 'win32' },
   async (t) => {
     const root = temporaryRoot(t);
-    const port = await startHealthServer(t);
-    const profilePath = writeProfile(root, 'remote-test', 'remote', port);
     const environment = machineEnvironment(t, root);
+    const port = await startHealthServer(
+      t,
+      0,
+      () => true,
+      git(root, 'rev-parse', 'HEAD').slice(0, 12),
+    );
+    const profilePath = writeProfile(root, 'remote-test', 'remote', port);
     writeRemoteBridge(
       root,
       [
@@ -158,12 +180,46 @@ test(
       PT_DEV_PROFILE_FILE: profilePath,
     });
 
-    assert.equal(result.deployed, true);
+    assert.equal(result.deployed, false);
+    assert.equal(result.reused, true);
     assert.equal(result.mode, 'remote');
-    assert.equal(
-      fs.readFileSync(path.join(root, 'remote-bridge-ran'), 'utf8'),
-      'remote\n',
+    assert.equal(fs.existsSync(path.join(root, 'remote-bridge-ran')), false);
+  },
+);
+
+test(
+  'remote start deploys when the healthy Station build is stale',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const root = temporaryRoot(t);
+    const markerPath = path.join(root, 'remote-stale-deployed');
+    const environment = machineEnvironment(t, root);
+    const currentCommit = git(root, 'rev-parse', 'HEAD');
+    const port = await startHealthServer(
+      t,
+      0,
+      () => true,
+      () => fs.existsSync(markerPath) ? currentCommit : 'a'.repeat(40),
     );
+    const profilePath = writeProfile(root, 'remote-stale', 'remote', port);
+    writeRemoteBridge(
+      root,
+      [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'printf \"deployed\\n\" > \"$PWD/remote-stale-deployed\"',
+        '',
+      ].join('\n'),
+    );
+
+    const result = await startStation(root, {
+      ...environment,
+      PT_DEV_PROFILE_FILE: profilePath,
+    });
+
+    assert.equal(result.deployed, true);
+    assert.equal(result.build.commit, currentCommit);
+    assert.equal(fs.readFileSync(markerPath, 'utf8'), 'deployed\n');
   },
 );
 
@@ -172,9 +228,15 @@ test(
   { skip: process.platform === 'win32' },
   async (t) => {
     const root = temporaryRoot(t);
-    const port = await startHealthServer(t);
-    const profilePath = writeProfile(root, 'remote-lease', 'remote', port);
+    const markerPath = path.join(root, 'remote-lease-inherited');
     const environment = machineEnvironment(t, root);
+    const port = await startHealthServer(
+      t,
+      0,
+      () => fs.existsSync(markerPath),
+      git(root, 'rev-parse', 'HEAD'),
+    );
+    const profilePath = writeProfile(root, 'remote-lease', 'remote', port);
     const leasePath = path.join(root, 'lease.lock');
     fs.writeFileSync(leasePath, 'lease\n');
     const leaseFd = fs.openSync(leasePath, 'r');
@@ -197,7 +259,7 @@ test(
     });
 
     assert.equal(
-      fs.readFileSync(path.join(root, 'remote-lease-inherited'), 'utf8'),
+      fs.readFileSync(markerPath, 'utf8'),
       'inherited\n',
     );
   },
@@ -222,8 +284,69 @@ test(
       }),
       (error) =>
         error instanceof DevctlError
-        && error.code === ERROR_CODES.START_TIMEOUT
+        && error.code === ERROR_CODES.REMOTE_DEPLOY_FAILED
         && error.details.status === 23,
+    );
+  },
+);
+
+test(
+  'remote deployment bridge preserves a structured upstream failure',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const root = temporaryRoot(t);
+    const profilePath = writeProfile(root, 'remote-structured', 'remote', 18080);
+    const environment = machineEnvironment(t, root);
+    writeRemoteBridge(
+      root,
+      [
+        '#!/usr/bin/env bash',
+        'printf \'%s\\n\' \'{"status":"BLOCKED","code":"WORKSPACE_CAPABILITY_MISSING","message":"deploy capability is missing","detail":{"missingCapabilities":["station.deploy"]}}\' >&2',
+        'exit 2',
+        '',
+      ].join('\n'),
+    );
+
+    await assert.rejects(
+      startStation(root, {
+        ...environment,
+        PT_DEV_PROFILE_FILE: profilePath,
+      }),
+      (error) =>
+        error instanceof DevctlError
+        && error.code === 'WORKSPACE_CAPABILITY_MISSING'
+        && error.message === 'deploy capability is missing'
+        && error.details.upstream.missingCapabilities[0] === 'station.deploy',
+    );
+  },
+);
+
+test(
+  'remote deployment bridge reports a missing runtime environment directly',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const root = temporaryRoot(t);
+    const profilePath = writeProfile(root, 'remote-env', 'remote', 18080);
+    const environment = machineEnvironment(t, root);
+    writeRemoteBridge(
+      root,
+      [
+        '#!/usr/bin/env bash',
+        "printf '%s\\n' \"Couldn't find env file: /runtime/station.env\" >&2",
+        'exit 15',
+        '',
+      ].join('\n'),
+    );
+
+    await assert.rejects(
+      startStation(root, {
+        ...environment,
+        PT_DEV_PROFILE_FILE: profilePath,
+      }),
+      (error) =>
+        error instanceof DevctlError
+        && error.code === ERROR_CODES.REMOTE_ENV_REQUIRED
+        && error.message.includes('/runtime/station.env'),
     );
   },
 );
