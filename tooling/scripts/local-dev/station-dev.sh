@@ -37,6 +37,7 @@ if [[ "$STATION_MODE" == "remote" ]]; then
       --env-repo "$PT_ENV_REPO" \
       --resource-kind station.deploy \
       --resource-id "$deploy_env" \
+      --owner-action make.station \
       --budget-seconds "${PT_STATION_LEASE_BUDGET_SECONDS:-1200}" \
       -- /bin/bash "$0"
   fi

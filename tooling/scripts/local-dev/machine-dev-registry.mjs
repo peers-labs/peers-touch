@@ -1286,6 +1286,17 @@ export function checkWorkspace(options = {}) {
 }
 
 function validateRuntimeIntent(options, binding, resourceKind, resourceId) {
+  if (options.ownerAction !== undefined) {
+    const ownerAction = requiredText(options.ownerAction, 'ownerAction', 64);
+    if (ownerAction !== 'make.station' || resourceKind !== 'station.deploy') {
+      fail(
+        'OWNER_ACTION_INVALID',
+        'direct owner action is not valid for this runtime resource',
+        { ownerAction, resourceKind, resourceId },
+      );
+    }
+    return { declarationId: `owner-action:${ownerAction}` };
+  }
   const now = options.now ?? new Date();
   const file =
     options.workLedgerPath ??
@@ -1631,6 +1642,9 @@ export function buildLeaseCommand(options) {
       '--reset-scope',
       options.resetScope,
     );
+  }
+  if (options.ownerAction) {
+    validationCommand.push('--owner-action', options.ownerAction);
   }
   const arguments_ = [
     leaseHelperPath(),
