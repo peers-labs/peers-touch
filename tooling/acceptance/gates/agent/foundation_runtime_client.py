@@ -30,6 +30,8 @@ from tooling.acceptance.gates.agent.tcp_fault_proxy import (
 WAIT_TICK = threading.Event()
 PROCESS_TERMINATION_TIMEOUT_SECONDS = 15.0
 PROCESS_KILL_TIMEOUT_SECONDS = 5.0
+WEBDRIVER_SESSION_TIMEOUT_SECONDS = 30.0
+WEBDRIVER_SESSION_RETRY_INTERVAL_SECONDS = 0.25
 
 
 class FoundationClientError(RuntimeError):
@@ -310,15 +312,27 @@ class FoundationRuntimeClient:
                 self.startup_timeout,
             )
             endpoint = f"http://127.0.0.1:{self.spec.webdriver_port}"
-            connection = RemoteConnection(
-                client_config=ClientConfig(
-                    remote_server_addr=endpoint,
-                    timeout=min(self.startup_timeout, 120),
-                ),
-            )
-            self.driver = webdriver.Remote(
-                command_executor=connection,
-                options=ChromeOptions(),
+
+            def connect_session() -> Any:
+                self._process_alive()
+                connection = RemoteConnection(
+                    client_config=ClientConfig(
+                        remote_server_addr=endpoint,
+                        timeout=min(self.startup_timeout, 120),
+                    ),
+                )
+                driver = webdriver.Remote(
+                    command_executor=connection,
+                    options=ChromeOptions(),
+                )
+                self.driver = driver
+                return driver
+
+            wait_until(
+                connect_session,
+                "Native embedded WebDriver session",
+                min(self.startup_timeout, WEBDRIVER_SESSION_TIMEOUT_SECONDS),
+                interval=WEBDRIVER_SESSION_RETRY_INTERVAL_SECONDS,
             )
             return
 
