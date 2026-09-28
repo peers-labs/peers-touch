@@ -89,6 +89,7 @@ CORE_LIFECYCLE_SELECTORS = {
     "confirm_delete": '[data-pt-agent-delete-confirm="{agent_id}"]',
 }
 APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
+CORE_LIFECYCLE_PROFILE = "two"
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("PT_AGENT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 
@@ -145,6 +146,12 @@ def require(condition: bool, message: str) -> None:
         raise JourneyError(message)
 
 
+def approved_profile_for_journey(journey: str) -> str:
+    if journey == "core-lifecycle":
+        return CORE_LIFECYCLE_PROFILE
+    return APPROVED_PROFILE
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -180,6 +187,7 @@ class AgentNativeJourney:
     def __init__(self, journey: str) -> None:
         self.journey = journey
         self.gate_id = GATE_BY_JOURNEY[journey]
+        self.approved_profile = approved_profile_for_journey(journey)
         manifest_value = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
         require(bool(manifest_value), "PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
         self.runtime_manifest_path = Path(manifest_value)
@@ -193,8 +201,8 @@ class AgentNativeJourney:
         ).to_dict()
         require(
             self.runtime_manifest.get("profile", {}).get("resolvedName")
-            == APPROVED_PROFILE,
-            f"{self.gate_id} requires the approved {APPROVED_PROFILE} profile",
+            == self.approved_profile,
+            f"{self.gate_id} requires the approved {self.approved_profile} profile",
         )
         clients = self.runtime_manifest.get("clients")
         require(
@@ -243,8 +251,8 @@ class AgentNativeJourney:
             resolve_machine_profile_environment(REPO_ROOT)
         )
         require(
-            profile_name == APPROVED_PROFILE
-            and self.profile_env.get("PT_DEV_PROFILE") == APPROVED_PROFILE,
+            profile_name == self.approved_profile
+            and self.profile_env.get("PT_DEV_PROFILE") == self.approved_profile,
             "active profile identity changed after provisioning",
         )
         self.password = self.profile_env.get(
@@ -295,7 +303,7 @@ class AgentNativeJourney:
         )
         require(str(self.storage_root), "runtime client storage root is missing")
         self.run_root = self.storage_root.parent
-        self.runtime_profile = self.run_root / f"{APPROVED_PROFILE}.env"
+        self.runtime_profile = self.run_root / f"{self.approved_profile}.env"
         self.desktop_log = self.run_root / "desktop.log"
         self.proxy = (
             TcpFaultProxy.from_url(self.station_url)
@@ -398,7 +406,7 @@ class AgentNativeJourney:
         self.storage_root.mkdir(parents=True, exist_ok=True)
         values = {
             **self.profile_env,
-            "PT_DEV_PROFILE": APPROVED_PROFILE,
+            "PT_DEV_PROFILE": self.approved_profile,
             "PT_STATION_URL": self.station_transport_url,
             "PT_STATION_HEALTH_URL": (
                 f"{self.station_transport_url}/app-meta/version"
@@ -419,7 +427,7 @@ class AgentNativeJourney:
         self._write_runtime_profile()
         environment = {
             **self.profile_env,
-            "PT_DEV_PROFILE": APPROVED_PROFILE,
+            "PT_DEV_PROFILE": self.approved_profile,
             "PT_DEV_PROFILE_FILE": str(self.runtime_profile),
             "PT_DEV_PROFILE_FILE_AUTHORITY": "acceptance-runtime-manifest",
             "PT_ACCEPTANCE_RUNTIME_PROFILE_ROOT": str(self.run_root),
@@ -439,7 +447,7 @@ class AgentNativeJourney:
                 gateway_port=self.gateway_port,
                 profile=self.profile_env.get(
                     "PT_PROFILE",
-                    f"{APPROVED_PROFILE}-app",
+                    f"{self.approved_profile}-app",
                 ),
                 storage_root=str(self.storage_root),
                 environment=environment,
@@ -2152,7 +2160,7 @@ def run_journey(journey_name: str) -> int:
             proof_status="PROVEN" if status == "passed" else "UNPROVEN",
             runtime={
                 "environment": "home-station",
-                "profile": APPROVED_PROFILE,
+                "profile": approved_profile_for_journey(journey_name),
                 "journey": journey_name,
             },
         )
