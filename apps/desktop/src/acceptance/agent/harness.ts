@@ -130,6 +130,7 @@ import {
   parseFoundationCapabilityFixtureJournal,
   parseFoundationCapabilityIsolationJournal,
   planFoundationCapabilityBindingRestoration,
+  resolveFoundationCapabilityBindingForCleanup,
   restoreFoundationCapabilityBindings,
   type FoundationCapabilityFixtureJournal,
   type FoundationCapabilityIsolationJournal,
@@ -5045,18 +5046,29 @@ async function runFoundationF04Scenario(input: {
       },
     };
   } finally {
-    if (originalBinding) {
+    const cleanupBinding = currentBinding
+      ? resolveFoundationCapabilityBindingForCleanup(
+          currentBinding,
+          await api.listAgentCapabilityBindings(
+            input.agent.id || input.agent.name,
+          ),
+        )
+      : null;
+    if (originalBinding && cleanupBinding) {
+      const authoritativeAgent = await api.getAgent(
+        input.agent.id || input.agent.name,
+      );
       await updateFoundationToolPolicy(
-        input.agent,
+        authoritativeAgent,
         fixture,
-        currentBinding,
+        cleanupBinding,
         originalBinding.approvalPolicy,
         originalBinding.enabled,
       );
-    } else if (currentBinding) {
+    } else if (!originalBinding && cleanupBinding) {
       await api.deleteAgentCapabilityBinding(
-        currentBinding.bindingId,
-        currentBinding.revision,
+        cleanupBinding.bindingId,
+        cleanupBinding.revision,
         crypto.randomUUID(),
         'acceptance_fixture_cleanup',
       );
