@@ -47,6 +47,54 @@ interface SettingsSectionProps {
   style?: CSSProperties;
 }
 
+interface SettingsPanelHeaderProps {
+  icon: ReactNode;
+  title: string;
+  subtitle?: string;
+  extra?: ReactNode;
+  actions?: ReactNode;
+}
+
+export function SettingsPanelHeader({
+  icon,
+  title,
+  subtitle,
+  extra,
+  actions,
+}: SettingsPanelHeaderProps) {
+  const { token } = theme.useToken();
+
+  return (
+    <Flexbox
+      horizontal
+      align="center"
+      justify="space-between"
+      gap={16}
+      style={{ flexWrap: 'wrap' }}
+    >
+      <Flexbox gap={4} style={{ flex: 1, minWidth: 0 }}>
+        <Flexbox horizontal align="center" gap={8}>
+          <span style={{ color: token.colorPrimary, display: 'flex' }}>{icon}</span>
+          <Title level={4} style={{ margin: 0 }}>{title}</Title>
+          {extra}
+        </Flexbox>
+        {subtitle && (
+          <Text type="secondary" style={{ fontSize: 13 }}>{subtitle}</Text>
+        )}
+      </Flexbox>
+      {actions && (
+        <Flexbox
+          horizontal
+          gap={8}
+          style={{ flexShrink: 0, flexWrap: 'wrap' }}
+        >
+          {actions}
+        </Flexbox>
+      )}
+    </Flexbox>
+  );
+}
+
 export function SettingsSection({
   icon,
   title,

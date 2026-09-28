@@ -189,7 +189,13 @@ function useTabGroups(): TabGroupDef[] {
         key: 'ai',
         label: t('settings.group.ai'),
         icon: Sparkles,
-        sectionKeys: ['providers', 'models', 'memory', 'skills', 'mcp', 'tts', 'tools'],
+        sectionKeys: ['providers', 'models', 'memory', 'skills', 'mcp', 'tts'],
+      },
+      {
+        key: 'tools',
+        label: t('settings.group.tools'),
+        icon: Wrench,
+        sectionKeys: ['cron', 'command-menu', 'tools'],
       },
       {
         key: 'channels',
@@ -207,7 +213,7 @@ function useTabGroups(): TabGroupDef[] {
         key: 'data',
         label: t('settings.group.data'),
         icon: Database,
-        sectionKeys: ['storage', 'logs'],
+        sectionKeys: ['storage', 'oss', 'logs'],
       },
       {
         key: 'help',

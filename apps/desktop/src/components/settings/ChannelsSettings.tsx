@@ -12,11 +12,11 @@ import {
   Webhook, MessageSquare, Bot, Hash, ArrowDownLeft, ArrowUpRight,
   BarChart3, AlertCircle, Timer, Inbox, QrCode, CheckCircle, Loader2,
 } from 'lucide-react';
-import { api, type Channel, type ChatTarget, type ChannelEvent, type ChannelEventStats } from '../services/desktop_api';
-import { PageHeader } from '../components/PageHeader';
-import { LarkSimulateLoginModal } from '../components/settings/LarkSimulateLoginModal';
-import { useOAuth2Store } from '../store/oauth2';
-import { EVENT, eventBus } from '../kernel/events';
+import { api, type Channel, type ChatTarget, type ChannelEvent, type ChannelEventStats } from '../../services/desktop_api';
+import { LarkSimulateLoginModal } from './LarkSimulateLoginModal';
+import { SettingsContainer, SettingsPanelHeader } from './SettingsLayout';
+import { useOAuth2Store } from '../../store/oauth2';
+import { EVENT, eventBus } from '../../kernel/events';
 
 const { Text } = Typography;
 
@@ -254,7 +254,7 @@ function CreateBotProgressModal({
   );
 }
 
-export function ChannelsPage() {
+export function ChannelsSettings() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -398,10 +398,11 @@ export function ChannelsPage() {
   };
 
   return (
-    <Flexbox gap={0} style={{ height: '100%', overflow: 'hidden' }}>
-      <PageHeader
+    <SettingsContainer fullHeight maxWidth={1100}>
+      <SettingsPanelHeader
         title={t('channels.title')}
         subtitle={t('channels.subtitle')}
+        icon={<Send size={20} />}
         actions={<>
           <Button icon={<RefreshCw size={14} />} onClick={load} loading={loading}>{t('channels.action.refresh')}</Button>
           <Button type="primary" icon={<Plus size={14} />} onClick={handleCreate}>{t('channels.action.addChannel')}</Button>
@@ -409,7 +410,7 @@ export function ChannelsPage() {
       />
 
       {/* Channel List */}
-      <Flexbox flex={1} style={{ overflow: 'auto', padding: 24 }} gap={16}>
+      <Flexbox flex={1} style={{ minHeight: 0 }} gap={16}>
         {channels.length === 0 && !loading ? (
           <Empty description={t('channels.empty.title')} image={Empty.PRESENTED_IMAGE_SIMPLE}>
             <Flexbox gap={12} align="center">
@@ -821,7 +822,7 @@ export function ChannelsPage() {
           </Button>
         </Flexbox>
       </Drawer>
-    </Flexbox>
+    </SettingsContainer>
   );
 }
 

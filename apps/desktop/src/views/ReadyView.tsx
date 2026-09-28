@@ -90,7 +90,6 @@ export function ReadyView({ lifecycle: _lifecycle }: ReadyViewProps) {
     <ShellCommitProfiler owner="shell:side-nav" surface="side-nav">
       <AppSideNav
         page={router.page}
-        router={router}
         navigation={navigation}
         appletPins={appletPins}
       />

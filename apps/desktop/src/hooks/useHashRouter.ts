@@ -12,7 +12,7 @@ function parsePageFromHash(): Page {
   if (segment === 'agent-profile') return 'agent-profile';
   if ((CORE_PAGE_LIST as readonly string[]).includes(segment)) return segment;
   if (segment.startsWith('applet:')) return segment;
-  if (getModule(segment)) return segment;
+  if (getModule(segment)?.page) return segment;
   return DEFAULT_READY_PAGE;
 }
 
@@ -20,12 +20,6 @@ function parseAgentNameFromHash(): string {
   const hash = window.location.hash.slice(1) || '';
   const match = hash.match(/^\/agent-profile\/(.+)$/);
   return match?.[1] ? decodeURIComponent(match[1]) : 'assistant';
-}
-
-function parseDocIdFromHash(): string | undefined {
-  const hash = window.location.hash.slice(1) || '';
-  const match = hash.match(/^\/notes\/(.+)$/);
-  return match?.[1];
 }
 
 export function useHashRouter(): HashRouter {
@@ -76,6 +70,5 @@ export function useHashRouter(): HashRouter {
     resetToDefaultPage,
     profileAgentName,
     setProfileAgentName,
-    getDocIdFromHash: parseDocIdFromHash,
   };
 }

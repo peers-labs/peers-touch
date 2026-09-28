@@ -391,7 +391,7 @@ function stringParam(params: Record<string, unknown>, key: string): string | und
 function normalizeAppletNavigationPage(page?: string): Page | undefined {
   if (!page) return undefined;
   if (page.startsWith('applet:')) return page as Page;
-  if (['applets', 'search', 'chat', 'agent', 'notes', 'settings'].includes(page)) {
+  if (['applets', 'search', 'chat', 'agent', 'settings'].includes(page)) {
     return page as Page;
   }
   return undefined;

@@ -1464,7 +1464,7 @@ fn normalize_navigation_page(page: &str) -> Result<String, String> {
     }
 
     match trimmed {
-        "applets" | "search" | "chat" | "agent" | "notes" | "settings" => Ok(trimmed.to_string()),
+        "applets" | "search" | "chat" | "agent" | "settings" => Ok(trimmed.to_string()),
         _ => Err(format!("navigation target is not allowed: {}", page)),
     }
 }
@@ -7119,6 +7119,15 @@ mod tests {
         assert!(status.contains("\"__hostCommands\""));
         assert!(status.contains("\"navigation\""));
         assert!(status.contains("\"applets\""));
+    }
+
+    #[test]
+    fn rejects_standalone_notes_route_but_accepts_official_note_applet_route() {
+        assert_eq!(
+            normalize_navigation_page("applet:peers.note").unwrap(),
+            "applet:peers.note"
+        );
+        assert!(normalize_navigation_page("notes").is_err());
     }
 
     #[test]

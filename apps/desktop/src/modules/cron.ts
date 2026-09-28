@@ -1,11 +1,14 @@
 import { Clock } from 'lucide-react';
 import { registerModule } from './registry';
-import { CronPage } from '../pages/CronPage';
+import { CronJobsSettings } from '../components/settings/CronJobsSettings';
 
 registerModule({
   id: 'cron',
   name: 'Cron Jobs',
   icon: Clock,
-  page: CronPage,
-  sidebarEntry: { position: 'top', order: 40, title: 'Cron Jobs' },
+  settingsPanel: CronJobsSettings,
+  settingsEntry: {
+    order: 45,
+    sectionHostPolicy: { cache: 'selected-only' },
+  },
 });

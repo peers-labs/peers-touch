@@ -10,6 +10,7 @@ import './skills';
 import './mcp';
 import './channels';
 import './cron';
+import './command-menu';
 import './memory';
 import './oss';
 import './moments';
