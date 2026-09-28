@@ -73,6 +73,10 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
         self.assertTrue(
             all(value.startswith("[data-pt-") for value in selectors.values())
         )
+        self.assertEqual(
+            selectors["confirm_delete"],
+            '[data-pt-agent-delete-confirm="{agent_id}"]',
+        )
 
     def test_lifecycle_journey_covers_required_actions_and_negative_states(
         self,
@@ -106,6 +110,8 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
         )
         self.assertIn("input.focus();", self.source)
         self.assertIn("self.station_agent_absent(agent_id)", self.source)
+        self.assertIn("delete confirmation closure", self.source)
+        self.assertIn("native roster removal", self.source)
         self.assertNotIn(
             'duplicate_station["conversations"].get("conversations")',
             lifecycle,
