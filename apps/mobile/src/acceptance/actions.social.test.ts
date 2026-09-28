@@ -3,7 +3,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const socialMocks = vi.hoisted(() => ({
+  readFederationContexts: vi.fn(),
   readCurrentSocialProfile: vi.fn(),
+  searchSocialPeople: vi.fn(),
   updateCurrentSocialProfile: vi.fn(),
 }));
 const projectionMocks = vi.hoisted(() => ({
@@ -19,10 +21,11 @@ const deviceMocks = vi.hoisted(() => ({
 vi.mock('../features/social/socialRuntime', () => ({
   acceptSocialFriendRequest: vi.fn(),
   applySocialFriendRequestProjectionCheckpoints: vi.fn(),
+  readFederationContexts: socialMocks.readFederationContexts,
   readSocialRuntimeProjection: vi.fn(),
   readCurrentSocialProfile: socialMocks.readCurrentSocialProfile,
   reconcileSocialRuntime: vi.fn(),
-  searchSocialPeople: vi.fn(),
+  searchSocialPeople: socialMocks.searchSocialPeople,
   sendSocialFriendRequest: vi.fn(),
   submitSocialFriendRequest: vi.fn(),
   updateCurrentSocialProfile: socialMocks.updateCurrentSocialProfile,
@@ -47,6 +50,40 @@ import { mobileAcceptanceActions } from './actions';
 describe('Mobile Acceptance social actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('binds people search results to an authoritative Federation context', async () => {
+    socialMocks.searchSocialPeople.mockResolvedValue([{
+      ptid: 'ptid:bob',
+      homeStationPeerId: 'station-peer',
+      federation: { handle: '@bob@station.example' },
+    }]);
+    socialMocks.readFederationContexts.mockResolvedValue([{
+      federationId: 'federation-1',
+      name: 'Acceptance Federation',
+      status: 'active',
+    }]);
+
+    await expect(mobileAcceptanceActions['social.people.search']({
+      query: '@bob@station.example',
+      federationId: 'federation-1',
+    })).resolves.toEqual([{
+      ptid: 'ptid:bob',
+      federationId: 'federation-1',
+      homeStationPeerId: 'station-peer',
+    }]);
+    expect(socialMocks.searchSocialPeople)
+      .toHaveBeenCalledWith('@bob@station.example');
+  });
+
+  it('rejects an unknown Federation context after authoritative lookup', async () => {
+    socialMocks.searchSocialPeople.mockResolvedValue([]);
+    socialMocks.readFederationContexts.mockResolvedValue([]);
+
+    await expect(mobileAcceptanceActions['social.people.search']({
+      query: '@bob@station.example',
+      federationId: 'untrusted-federation',
+    })).rejects.toThrow('acceptance.mobile.federationContextUnavailable');
   });
 
   it('routes Moments mutations through the active owner runtime', async () => {

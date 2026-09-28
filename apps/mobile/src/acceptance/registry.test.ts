@@ -558,7 +558,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(source).not.toMatch(/window\.location\.reload/);
   });
 
-  it('projects Federation identity from the authoritative search result', () => {
+  it('requires and projects an authoritative Federation search context', () => {
     const source = readFileSync(
       new URL('./actions.ts', import.meta.url),
       'utf8',
@@ -569,12 +569,11 @@ describe('Mobile Acceptance Harness', () => {
     );
 
     expect(searchAction).toContain(
-      "requireString(query, 'social.people.search.query')",
+      "federationId,\n      'social.people.search.federationId'",
     );
-    expect(searchAction).toContain(
-      "federationId: searchResult.federation?.handle ?? ''",
-    );
-    expect(searchAction).toContain('federationId: result.federationId');
+    expect(searchAction).toContain('readFederationContexts()');
+    expect(searchAction).toContain('federationId: contextId');
+    expect(searchAction).not.toContain('federation?.handle');
   });
 
   it('routes platform evidence through production Rust commands', async () => {
