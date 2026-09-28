@@ -1,6 +1,6 @@
 # Chat 存储批量会话清理
 
-> **Status**: active
+> **Status**: completed
 > **Branch**: peers-touch-git
 > **Workspace ID**: 5f50d8bb381b0123
 > **Initial HEAD**: 4186816bc19a563395dd4b13c0ced0d9735dff11
@@ -8,7 +8,147 @@
 ## Plan Package
 
 ```json
-{"kind":"peers-touch-plan-package","planId":"CSG-BATCH-20260927","status":"active","binding":{"branch":"peers-touch-git","workspaceId":"5f50d8bb381b0123","initialHead":"4186816bc19a563395dd4b13c0ced0d9735dff11"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/chat-storage-governance/product-definition.md","docs/architecture/chat-storage-governance/benchmark-disposition.md","docs/architecture/chat-storage-governance/experience-contract.md","docs/architecture/chat-storage-governance/product-state-model.md","docs/architecture/chat-storage-governance/acceptance-matrix.md","docs/architecture/chat-storage-governance/design.md","docs/architecture/chat-storage-governance/decisions.md","docs/architecture/chat-storage-governance/data-model.md","docs/architecture/chat-storage-governance/integration.md","docs/architecture/local-dev-control-plane/decisions.md"],"decisions":["CSG-D01","CSG-D04","CSG-D07","CSG-D08","CSG-D09","LDCP-D15"]},"scope":{"sourceClaims":[{"pathPrefix":"README.md","mode":"exclusive-write"},{"pathPrefix":"apps","mode":"exclusive-write"},{"pathPrefix":"docs","mode":"exclusive-write"},{"pathPrefix":"go.work.sum","mode":"exclusive-write"},{"pathPrefix":"model","mode":"exclusive-write"},{"pathPrefix":"packages","mode":"exclusive-write"},{"pathPrefix":"pnpm-lock.yaml","mode":"exclusive-write"},{"pathPrefix":"tooling","mode":"exclusive-write"}],"nonGoals":["Delete Station authority history or another device's data","Add an unscoped delete-all-chat action","Add a cross-conversation database transaction or new storage protocol","Add restore, undo, custom retention periods or disappearing messages","Claim Browser parity","Change Local Dev Control Plane behavior beyond restoring accepted LDCP-D15 Profile-ID reset policy"]},"tasks":[{"id":"CSG-BATCH-01-desktop","workstreamId":"CSG-BATCH-SOURCE","path":"tasks/CSG-BATCH-01-desktop.md","dependsOn":[],"status":"done","blocker":null},{"id":"CSG-BATCH-02A-desktop","workstreamId":"CSG-BATCH-SOURCE","path":"tasks/CSG-BATCH-02A-desktop.md","dependsOn":["CSG-BATCH-01-desktop"],"status":"done","blocker":null},{"id":"CSG-BATCH-02-mobile","workstreamId":"CSG-BATCH-MOBILE","path":"tasks/CSG-BATCH-02-mobile.md","dependsOn":["CSG-BATCH-01-desktop"],"status":"done","blocker":null},{"id":"CSG-BATCH-03-aggregate","workstreamId":"CSG-BATCH-ACCEPTANCE","path":"tasks/CSG-BATCH-03-aggregate.md","dependsOn":["CSG-BATCH-02A-desktop","CSG-BATCH-02-mobile"],"status":"in_progress","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"denied","pullRequest":"denied"},"runtime":{"deployProfiles":["chat-native-five","mobile-direct-simulator"],"destructiveResetScopes":["chat-native-five"]},"history":{"rewrite":"denied"}}}
+{
+  "kind": "peers-touch-plan-package",
+  "planId": "CSG-BATCH-20260927",
+  "status": "completed",
+  "binding": {
+    "branch": "peers-touch-git",
+    "workspaceId": "5f50d8bb381b0123",
+    "initialHead": "4186816bc19a563395dd4b13c0ced0d9735dff11"
+  },
+  "workClass": "product-behavior",
+  "architecture": {
+    "sources": [
+      "docs/architecture/chat-storage-governance/product-definition.md",
+      "docs/architecture/chat-storage-governance/benchmark-disposition.md",
+      "docs/architecture/chat-storage-governance/experience-contract.md",
+      "docs/architecture/chat-storage-governance/product-state-model.md",
+      "docs/architecture/chat-storage-governance/acceptance-matrix.md",
+      "docs/architecture/chat-storage-governance/design.md",
+      "docs/architecture/chat-storage-governance/decisions.md",
+      "docs/architecture/chat-storage-governance/data-model.md",
+      "docs/architecture/chat-storage-governance/integration.md",
+      "docs/architecture/local-dev-control-plane/decisions.md"
+    ],
+    "decisions": [
+      "CSG-D01",
+      "CSG-D04",
+      "CSG-D07",
+      "CSG-D08",
+      "CSG-D09",
+      "LDCP-D15"
+    ]
+  },
+  "scope": {
+    "sourceClaims": [
+      {
+        "pathPrefix": "README.md",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "apps",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "go.work.sum",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "model",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "packages",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "pnpm-lock.yaml",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling",
+        "mode": "exclusive-write"
+      }
+    ],
+    "nonGoals": [
+      "Delete Station authority history or another device's data",
+      "Add an unscoped delete-all-chat action",
+      "Add a cross-conversation database transaction or new storage protocol",
+      "Add restore, undo, custom retention periods or disappearing messages",
+      "Claim Browser parity",
+      "Change Local Dev Control Plane behavior beyond restoring accepted LDCP-D15 Profile-ID reset policy"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "CSG-BATCH-01-desktop",
+      "workstreamId": "CSG-BATCH-SOURCE",
+      "path": "tasks/CSG-BATCH-01-desktop.md",
+      "dependsOn": [],
+      "status": "done",
+      "blocker": null
+    },
+    {
+      "id": "CSG-BATCH-02A-desktop",
+      "workstreamId": "CSG-BATCH-SOURCE",
+      "path": "tasks/CSG-BATCH-02A-desktop.md",
+      "dependsOn": [
+        "CSG-BATCH-01-desktop"
+      ],
+      "status": "done",
+      "blocker": null
+    },
+    {
+      "id": "CSG-BATCH-02-mobile",
+      "workstreamId": "CSG-BATCH-MOBILE",
+      "path": "tasks/CSG-BATCH-02-mobile.md",
+      "dependsOn": [
+        "CSG-BATCH-01-desktop"
+      ],
+      "status": "done",
+      "blocker": null
+    },
+    {
+      "id": "CSG-BATCH-03-aggregate",
+      "workstreamId": "CSG-BATCH-ACCEPTANCE",
+      "path": "tasks/CSG-BATCH-03-aggregate.md",
+      "dependsOn": [
+        "CSG-BATCH-02A-desktop",
+        "CSG-BATCH-02-mobile"
+      ],
+      "status": "done",
+      "blocker": null
+    }
+  ],
+  "exhaustion": null,
+  "authorization": {
+    "checkpoint": {
+      "localCommit": "allowed",
+      "amend": "allowed"
+    },
+    "delivery": {
+      "push": "denied",
+      "pullRequest": "denied"
+    },
+    "runtime": {
+      "deployProfiles": [
+        "chat-native-five",
+        "mobile-direct-simulator"
+      ],
+      "destructiveResetScopes": [
+        "chat-native-five"
+      ]
+    },
+    "history": {
+      "rewrite": "denied"
+    }
+  }
+}
 ```
 
 ## Acceptance Execution
