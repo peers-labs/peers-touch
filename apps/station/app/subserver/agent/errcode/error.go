@@ -17,6 +17,7 @@ const (
 	AgentUnauthorized                     Code = "AGENT_4002"
 	AgentNotFound                         Code = "AGENT_4004"
 	AgentVersionConflict                  Code = "AGENT_4009"
+	AgentNameConflict                     Code = "AGENT_NAME_CONFLICT"
 	AgentIdempotencyConflict              Code = "IDEMPOTENCY_CONFLICT"
 	AgentInvalidSourceState               Code = "INVALID_SOURCE_STATE"
 	AgentActiveDependency                 Code = "ACTIVE_DEPENDENCY"
@@ -67,6 +68,7 @@ const (
 	AgentCanvasSingleAgentNotReady  Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
 
 	AgentAdmissionDuplicateConflictLocaleKey       = "agent.errors.duplicateConflict"
+	AgentNameConflictLocaleKey                     = "agent.errors.nameConflict"
 	AgentCanvasSingleAgentNotReadyLocaleKey        = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate     = "agent-v2-kernel-foundation-e2e"
 	AgentQueueFullLocaleKey                        = "agent.errors.queueFull"
@@ -150,6 +152,21 @@ func NewCanvasSingleAgentNotReady() *BizError {
 			Details: map[string]string{
 				"required_gate": AgentCanvasSingleAgentNotReadyRequiredGate,
 			},
+		},
+	}
+}
+
+func NewAgentNameConflict() *BizError {
+	return &BizError{
+		Code:       AgentNameConflict,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentNameConflictLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentNameConflictLocaleKey,
+			ErrorType: string(AgentNameConflict),
+			LocaleKey: AgentNameConflictLocaleKey,
+			Retryable: false,
+			Terminal:  true,
 		},
 	}
 }

@@ -1,0 +1,54 @@
+{
+  "id": "agent-core-lifecycle-native-matrix",
+  "version": "2026-09-28.1",
+  "status": "reviewed",
+  "gate": "agent-core-lifecycle-native-e2e",
+  "command_argv": [
+    "python3",
+    "tooling/acceptance/gates/agent/native_agent_runner.py",
+    "--journey",
+    "core-lifecycle"
+  ],
+  "environment": "home-station",
+  "runtime": {
+    "client": "native-tauri",
+    "profile": "two",
+    "service_binding": "services.station"
+  },
+  "rows": [
+    {
+      "id": "create-list-select",
+      "actions": ["create", "list", "select"],
+      "required_evidence": ["receiver-dom", "station-readback"]
+    },
+    {
+      "id": "edit-duplicate-default",
+      "actions": ["edit", "duplicate", "set-default"],
+      "required_evidence": ["receiver-dom", "station-readback"]
+    },
+    {
+      "id": "session-start",
+      "actions": ["start-session"],
+      "required_evidence": ["receiver-dom", "station-readback"]
+    },
+    {
+      "id": "topic-load-recovery",
+      "actions": ["cut-station-transport", "preserve-topics", "retry"],
+      "required_evidence": ["receiver-dom", "station-readback", "cleanup"]
+    },
+    {
+      "id": "delete",
+      "actions": ["delete"],
+      "required_evidence": ["receiver-dom", "station-readback", "cleanup"]
+    },
+    {
+      "id": "negative-states",
+      "actions": ["repeat-duplicate-unique-name", "deleted-selection-unavailable"],
+      "required_evidence": ["receiver-dom", "station-readback"]
+    }
+  ],
+  "expected_tuple_count": 6,
+  "expected_assertion_count": 12,
+  "unexpected_action": "reject",
+  "missing_evidence": "reject"
+}

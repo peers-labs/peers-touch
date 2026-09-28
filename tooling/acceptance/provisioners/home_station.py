@@ -30,6 +30,7 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 GATE_ROLES = {
     "agent-attachment-e2e": ("alice",),
+    "agent-core-lifecycle-native-e2e": ("alice",),
     "agent-stream-resilience-e2e": ("alice",),
     "agent-v2-capability-binding-e2e": ("alice", "bob"),
     "agent-v2-governed-tool-loop-e2e": ("bob",),
@@ -61,6 +62,7 @@ AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
+        "agent-core-lifecycle-native-e2e",
         "agent-stream-resilience-e2e",
     }
 )

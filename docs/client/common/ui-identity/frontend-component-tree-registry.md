@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.0
-> **Created**: 2026-07-01 | **Updated**: 2026-09-22
+> **Created**: 2026-07-01 | **Updated**: 2026-09-28
 > **Owner**: Client Platform Team
 > **Module**: `docs/client/common/ui-identity/`
 
@@ -71,6 +71,7 @@ Budget fields are recorded inside `Evidence` until the registry grows explicit c
 | Applet runtime instance | PageHost / AppletContainerShell | `on-visit + lru` | Navigate to `applet:<id>` | LRU by applet id; standalone window uses window lease | `applets` runtime/store projection; applet host bridge | lru | PageHost dispatches page runtime lease events; `appletsRuntime.acquirePage/releasePage` owns materialize/load/unload; `applet/AppletContainerShell.tsx` owns contained/immersive/standalone shell chrome; runtime sample confirmed `hello-lynx` contained shell, immersive mode, floating controls hide/show/exit, route-to-visible ~122ms, page-acquire ~792ms | Applet Platform |
 | Agent profile page | PageBoundary / PageFrame | `idle + forever` | First profile visit | Forever while Agent module is alive | Agent/social projections | alive | Prototype Shell preserves the visited profile frame; production hidden-render cost still needs sampling | Agent |
 | Agent orchestration/canvas | PageBoundary / PageFrame | `idle + forever` | First orchestration visit | Forever while Agent module is alive | Agent canvas/orchestration stores | alive | Prototype L3 verifies prompt and panel state recovery across Agent / Atelier / Orchestration switches; production mount cost and memory sampling remain required | Agent |
+| Agent creation workbench | OverlayHost | `on-visit + none` | Explicit Create Agent intent | None; transient form state is discarded on cancel | Agent store | not alive | `ReadyView` owns one global `AgentCreateDialogHost`; opening/cancelling performs no Station write and Save persists once through `store.createAgent` | Agent |
 | Import/export flows | OverlayHost / PageBoundary | `on-visit + none` | Explicit user intent | None | Owning feature store | not alive | Must preserve draft or recovery externally if interrupted | Client Platform |
 | Command palette / transient search overlay | OverlayHost | `on-visit + none` or selected draft cache | Keyboard/command intent | None or explicit draft cache | Navigation/search projection | needs audit | Needs audit before alive promotion: do not keep hidden full result trees alive without virtualization | Client Platform |
 | Desktop call surface | OverlayHost | `on-visit + none` | Incoming or outgoing one-to-one call | None; call snapshot remains in runtime owner | Session-scoped `call` runtime + `callP2p` | needs audit | `ReadyView` owns the global overlay, so incoming and active calls remain visible while Chat is hidden; native media and reconnect evidence remain required | Chat / Client Platform |

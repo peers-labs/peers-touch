@@ -849,11 +849,11 @@
       "description": "Validate Agent module structural contracts: ToolCall state machine, fencing, redaction, dead-code removal, opaque refs, event protocol, and native E2E selector bindings."
     },
     "agent-native-turn-static": {
-      "command": "python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test",
+      "command": "python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test tooling.acceptance.gates.agent.native_agent_runner_test",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate Agent native runner fail-closed evidence, selector bindings, canonical TauriDriver launch, and cleanup contracts without launching a live journey."
+      "description": "Validate Agent native runner fail-closed evidence, lifecycle command/matrix wiring, selector bindings, canonical TauriDriver launch, and cleanup contracts without launching a live journey."
     },
     "agent-native-turn-e2e": {
       "argv": [
@@ -874,12 +874,29 @@
       "description": "Validate the Agent managed domain profile against station turn, context intelligence, tool authority, attachments, diagnostics, and desktop surface contracts."
     },
     "agent-core-lifecycle-native-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey core-lifecycle",
-      "timeout_seconds": 300,
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "--journey",
+        "core-lifecycle"
+      ],
+      "timeout_seconds": 900,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "P0 agent lifecycle: auto-create, select, send, receive, topic, update."
+      "description": "Run the approved-profile native Agent core lifecycle: create, list, select, edit, duplicate, set default, start an empty session, delete, verify negative states, compare Station readback, and clean up.",
+      "runtime_matrix": {
+        "id": "agent-core-lifecycle-native-matrix",
+        "version": "2026-09-28.1",
+        "sha256": "9605afef17f67b05dfceb4b44b242ca245512d559cb27cb0ab77d7e94050bdb2",
+        "expected_tuple_count": 6,
+        "expected_assertion_count": 12
+      },
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "cleanup"
+      ]
     },
     "agent-conversation-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey conversation",
@@ -1142,8 +1159,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-09-21.2",
+        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
         "expected_tuple_count": 419
       },
       "required_artifact_roles": [
@@ -1173,8 +1190,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-09-21.2",
+        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
         "expected_tuple_count": 33
       },
       "required_artifact_roles": [
@@ -1182,6 +1199,7 @@
         "station-readback",
         "command-ids",
         "projection-revisions",
+        "contract-evidence",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
@@ -1202,8 +1220,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-09-21.2",
+        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
         "expected_tuple_count": 69
       },
       "required_artifact_roles": [
@@ -1211,6 +1229,8 @@
         "station-readback",
         "readiness-snapshots",
         "zero-execution",
+        "contract-evidence",
+        "guard-report",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
@@ -1231,17 +1251,19 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-09-21.2",
+        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
         "expected_tuple_count": 86
       },
       "required_artifact_roles": [
         "receiver-dom",
         "station-readback",
         "executor-receipts",
+        "contract-evidence",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
+        "zero-execution",
         "cleanup",
         "replay",
         "source-identity",
@@ -1259,8 +1281,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-09-21.2",
+        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
         "expected_tuple_count": 41
       },
       "required_artifact_roles": [
@@ -1268,6 +1290,8 @@
         "station-readback",
         "executor-receipts",
         "process-port-secret-canary",
+        "contract-evidence",
+        "zero-execution",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
@@ -1288,8 +1312,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-09-21.2",
+        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
         "expected_tuple_count": 37
       },
       "required_artifact_roles": [
@@ -1297,9 +1321,11 @@
         "station-readback",
         "oauth-resource-manifest",
         "provider-revoke",
+        "contract-evidence",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
+        "zero-execution",
         "cleanup",
         "replay",
         "source-identity",
@@ -1317,8 +1343,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-09-21.2",
+        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
         "expected_tuple_count": 57
       },
       "required_artifact_roles": [
@@ -1328,6 +1354,7 @@
         "runtime-events",
         "turn-trace",
         "metrics-lineage",
+        "contract-evidence",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",

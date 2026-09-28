@@ -1559,9 +1559,16 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**",
+          "apps/desktop/src/components/agent/workbench/AgentRail.tsx",
+          "apps/desktop/src/components/agent/workbench/TopicRail.tsx",
+          "apps/desktop/src/pages/AgentProfilePage.tsx",
           "apps/desktop/src/store/agent.ts",
           "apps/desktop/src/store/provider.ts",
-          "apps/desktop/src/services/eventStream.ts"
+          "apps/desktop/src/services/eventStream.ts",
+          "tooling/acceptance/features/agent-core-lifecycle.yaml",
+          "tooling/acceptance/gates/agent/native_agent_runner.py",
+          "tooling/acceptance/gates/agent/native_agent_runner_test.py",
+          "tooling/acceptance/matrices/agent-core-lifecycle-native.yaml"
         ]
       },
       "require": [

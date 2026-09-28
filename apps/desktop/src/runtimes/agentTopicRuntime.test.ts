@@ -37,6 +37,7 @@ const bootstrapSession = vi.hoisted(() => vi.fn());
 const syncMessages = vi.hoisted(() => vi.fn());
 const syncTurnQueue = vi.hoisted(() => vi.fn());
 const selectSession = vi.hoisted(() => vi.fn());
+const ensureDraftTopic = vi.hoisted(() => vi.fn());
 
 vi.mock('../store/agent', () => ({
   useAgentStore: {
@@ -49,6 +50,7 @@ vi.mock('../store/agentTopics', () => ({
   useAgentTopicStore: {
     getState: () => ({
       loadTopicsForAgent,
+      ensureDraftTopic,
       resetProjection: vi.fn(),
       upsertTopics: vi.fn(),
     }),
@@ -92,6 +94,7 @@ describe('agentTopicRuntime', () => {
     syncMessages.mockResolvedValue(undefined);
     syncTurnQueue.mockResolvedValue(undefined);
     selectSession.mockResolvedValue(undefined);
+    ensureDraftTopic.mockReturnValue(firstTopic);
   });
 
   it('preserves and synchronizes the current canonical Agent session during reconcile', async () => {
@@ -102,6 +105,16 @@ describe('agentTopicRuntime', () => {
     expect(bootstrapSession).toHaveBeenCalledOnce();
     expect(syncMessages).toHaveBeenCalledOnce();
     expect(syncTurnQueue).toHaveBeenCalledWith(currentSession.key);
+    expect(selectSession).not.toHaveBeenCalled();
+  });
+
+  it('does not create a draft when authoritative topic loading fails', async () => {
+    loadTopicsForAgent.mockRejectedValueOnce(new Error('station unavailable'));
+
+    await expect(agentTopicRuntime.reconcile?.('retry')).resolves.toBeUndefined();
+
+    expect(mergeSessions).not.toHaveBeenCalled();
+    expect(ensureDraftTopic).not.toHaveBeenCalled();
     expect(selectSession).not.toHaveBeenCalled();
   });
 });
