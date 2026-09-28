@@ -22,16 +22,21 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import math
 import os
 import re
+import secrets
+import shlex
 import sys
+import threading
 import time
 import urllib.request
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +51,7 @@ from tooling.acceptance.core import (
 )
 from tooling.acceptance.core.provisioner import (
     PROFILE_ENV_OVERRIDES,
+    load_env_file,
     resolve_machine_profile_environment,
 )
 from tooling.acceptance.core.redaction import (
@@ -68,6 +74,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_probe import (
 )
 from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_queue_full,
+    evaluate_base_rate_limit,
 )
 from tooling.acceptance.gates.agent.foundation_station_restart import (
     restart_foundation_station,
@@ -87,6 +94,7 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationRuntimeClient,
     FoundationRuntimePair,
 )
+from tooling.acceptance.transports import SshTarget, SshTransport, SshTunnel
 
 
 class ScenarioRunnerError(RuntimeError):
@@ -219,6 +227,7 @@ DIRECT_PROBE_TIMEOUT_SECONDS = {
     "BASE-APPROVAL_EXPIRED": 1200,
     "BASE-LOOP_BUDGET_EXHAUSTED": 660,
     "BASE-MODEL_UNAVAILABLE": 300,
+    "BASE-RATE_LIMIT": 300,
 }
 LEASE_EXPIRED_DISPATCH_WINDOW_MS = 90_000
 LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS = 15_000
@@ -229,6 +238,502 @@ PROVIDER_RATE_LIMIT_MARKERS = (
     "agent.errors.providerRateLimit",
     "PROVIDER_RATE_LIMIT",
 )
+RATE_LIMIT_RETRY_AFTER_SECONDS = 2
+RATE_LIMIT_MAX_REQUEST_BYTES = 1_048_576
+
+RATE_LIMIT_REMOTE_TCP_BRIDGE = r"""
+import selectors
+import socket
+import socketserver
+import sys
+
+bind_host = sys.argv[1]
+listen_port = int(sys.argv[2])
+target_port = int(sys.argv[3])
+
+class Handler(socketserver.BaseRequestHandler):
+    def handle(self):
+        upstream = socket.create_connection(("127.0.0.1", target_port), 5)
+        try:
+            self.request.setblocking(False)
+            upstream.setblocking(False)
+            selector = selectors.DefaultSelector()
+            selector.register(self.request, selectors.EVENT_READ, upstream)
+            selector.register(upstream, selectors.EVENT_READ, self.request)
+            try:
+                while True:
+                    events = selector.select(timeout=30)
+                    if not events:
+                        continue
+                    for key, _ in events:
+                        data = key.fileobj.recv(65536)
+                        if not data:
+                            return
+                        key.data.sendall(data)
+            finally:
+                selector.close()
+        finally:
+            upstream.close()
+
+class Server(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+Server((bind_host, listen_port), Handler).serve_forever()
+""".strip()
+
+
+class _RateLimitProviderServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, api_key: str) -> None:
+        super().__init__(("127.0.0.1", 0), _RateLimitProviderHandler)
+        self.api_key = api_key
+        self.request_lock = threading.Lock()
+        self.requests: list[dict[str, Any]] = []
+
+    def record_request(self, request: dict[str, Any]) -> None:
+        with self.request_lock:
+            self.requests.append(request)
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self.request_lock:
+            return [dict(request) for request in self.requests]
+
+
+class _RateLimitProviderHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    @property
+    def fixture(self) -> _RateLimitProviderServer:
+        return self.server  # type: ignore[return-value]
+
+    def log_message(self, _format: str, *_args: object) -> None:
+        return
+
+    def do_POST(self) -> None:
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_error(400)
+            return
+        if content_length <= 0 or content_length > RATE_LIMIT_MAX_REQUEST_BYTES:
+            self.send_error(413)
+            return
+        try:
+            payload = json.loads(self.rfile.read(content_length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_error(400)
+            return
+        if not isinstance(payload, Mapping):
+            self.send_error(400)
+            return
+
+        authorization_present = (
+            self.headers.get("Authorization")
+            == f"Bearer {self.fixture.api_key}"
+        )
+        accepted = (
+            self.path == "/v1/chat/completions"
+            and payload.get("stream") is True
+            and authorization_present
+        )
+        self.fixture.record_request(
+            {
+                "path": self.path,
+                "stream": payload.get("stream") is True,
+                "model": str(payload.get("model") or ""),
+                "authorizationPresent": authorization_present,
+                "statusCode": 429 if accepted else 422,
+                "retryAfter": (
+                    str(RATE_LIMIT_RETRY_AFTER_SECONDS) if accepted else ""
+                ),
+            }
+        )
+        if not accepted:
+            self.send_error(422)
+            return
+
+        encoded = json.dumps(
+            {
+                "error": {
+                    "code": "rate_limit_exceeded",
+                    "message": "rate limit exceeded",
+                    "type": "rate_limit_error",
+                }
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.send_response(429)
+        self.send_header("Content-Type", "application/json")
+        self.send_header(
+            "Retry-After",
+            str(RATE_LIMIT_RETRY_AFTER_SECONDS),
+        )
+        self.send_header("Connection", "close")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+        self.wfile.flush()
+        self.close_connection = True
+
+
+class FoundationRateLimitProviderFixture:
+    def __init__(self) -> None:
+        self.api_key = secrets.token_urlsafe(32)
+        self.server = _RateLimitProviderServer(self.api_key)
+        self.started = False
+        self.thread = threading.Thread(
+            target=self.server.serve_forever,
+            name="mca-foundation-rate-limit-provider",
+            daemon=True,
+        )
+
+    @property
+    def port(self) -> int:
+        return int(self.server.server_address[1])
+
+    def start(self) -> None:
+        if self.started:
+            return
+        self.thread.start()
+        self.started = True
+
+    def stop(self) -> None:
+        if self.started:
+            self.server.shutdown()
+        self.server.server_close()
+        if self.started:
+            self.thread.join(timeout=5)
+            if self.thread.is_alive():
+                raise ScenarioRunnerError(
+                    "rate-limit provider fixture thread did not stop"
+                )
+            self.started = False
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        return self.server.snapshot()
+
+
+class FoundationRateLimitProviderBridge:
+    def __init__(self, deployment_environment: str) -> None:
+        environment_path = (
+            REPO_ROOT
+            / ".local"
+            / "deploy"
+            / "envs"
+            / f"{deployment_environment}.env"
+        )
+        if not environment_path.is_file():
+            raise ScenarioRunnerError(
+                f"deployment environment is missing: {environment_path}"
+            )
+        environment = load_env_file(environment_path)
+        self.host = environment.get("PT_DEPLOY_HOST", "").strip()
+        user = environment.get("PT_DEPLOY_USER", "").strip()
+        if not self.host or not user:
+            raise ScenarioRunnerError(
+                "deployment SSH identity is incomplete"
+            )
+        self.transport = SshTransport(
+            SshTarget(
+                host=self.host,
+                user=user,
+                port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
+                known_hosts_file=environment.get(
+                    "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                    "",
+                ),
+            )
+        )
+        self.tunnel: SshTunnel | None = None
+        self.reverse_port = 0
+        self.bridge_port = 0
+        self.remote_pid = 0
+        self.remote_pid_path = ""
+        self.remote_log_path = ""
+
+    def _remote_endpoint_ready(self) -> bool:
+        probe = self.transport.run_argv(
+            (
+                "python3",
+                "-c",
+                (
+                    "import socket,sys;"
+                    "connection=socket.create_connection("
+                    "(sys.argv[1],int(sys.argv[2])),0.5);"
+                    "connection.close()"
+                ),
+                self.host,
+                str(self.bridge_port),
+            ),
+            timeout=5,
+            check=False,
+        )
+        return probe.returncode == 0
+
+    def start(self, local_port: int, run_id: str) -> str:
+        self.reverse_port = self.transport.available_remote_port()
+        self.bridge_port = self.transport.available_remote_port()
+        if self.reverse_port == self.bridge_port:
+            raise ScenarioRunnerError(
+                "rate-limit provider bridge ports collided"
+            )
+        self.tunnel = self.transport.start_reverse_forward(
+            local_port=local_port,
+            remote_port=self.reverse_port,
+            timeout=15,
+        )
+        token = "".join(character for character in run_id if character.isalnum())
+        self.remote_pid_path = f"/tmp/mca-foundation-rate-limit-{token}.pid"
+        self.remote_log_path = f"/tmp/mca-foundation-rate-limit-{token}.log"
+        encoded_script = base64.b64encode(
+            RATE_LIMIT_REMOTE_TCP_BRIDGE.encode("utf-8")
+        ).decode("ascii")
+        bootstrap = (
+            "import base64;"
+            f"exec(base64.b64decode('{encoded_script}'))"
+        )
+        remote_command = (
+            "umask 077; "
+            f"nohup python3 -c {shlex.quote(bootstrap)} "
+            f"{shlex.quote(self.host)} {self.bridge_port} {self.reverse_port} "
+            f">{shlex.quote(self.remote_log_path)} 2>&1 </dev/null & "
+            f"echo $! > {shlex.quote(self.remote_pid_path)}; "
+            f"cat {shlex.quote(self.remote_pid_path)}"
+        )
+        started = self.transport.run_argv(
+            ("bash", "-lc", remote_command),
+            timeout=15,
+            check=True,
+        )
+        pid = started.stdout.strip()
+        if not pid.isdecimal():
+            raise ScenarioRunnerError(
+                "rate-limit provider bridge did not return a pid"
+            )
+        self.remote_pid = int(pid)
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if self._remote_endpoint_ready():
+                return f"http://{self.host}:{self.bridge_port}"
+            time.sleep(0.1)
+        raise ScenarioRunnerError(
+            "rate-limit provider bridge did not become reachable"
+        )
+
+    def stop(self) -> dict[str, Any]:
+        failures: list[str] = []
+        if self.remote_pid_path:
+            known_pid = str(self.remote_pid) if self.remote_pid else ""
+            pid_path = shlex.quote(self.remote_pid_path)
+            try:
+                stopped = self.transport.run_argv(
+                    (
+                        "bash",
+                        "-lc",
+                        (
+                            f"pid={shlex.quote(known_pid)}; "
+                            f"if test -f {pid_path}; then "
+                            f"candidate=$(cat {pid_path}); "
+                            'case "$candidate" in '
+                            "'') ;; *[!0-9]*) ;; *) pid=$candidate ;; esac; "
+                            "fi; "
+                            'if test -n "$pid"; then '
+                            'kill "$pid" 2>/dev/null || true; '
+                            "fi; "
+                            f"rm -f {pid_path} "
+                            f"{shlex.quote(self.remote_log_path)}"
+                        ),
+                    ),
+                    timeout=10,
+                    check=False,
+                )
+                if stopped.returncode != 0:
+                    failures.append("remote bridge process cleanup failed")
+                deadline = time.monotonic() + 5
+                while (
+                    time.monotonic() < deadline
+                    and self._remote_endpoint_ready()
+                ):
+                    time.sleep(0.05)
+                if self._remote_endpoint_ready():
+                    failures.append("remote bridge port remained open")
+            except BaseException as error:
+                failures.append(
+                    f"remote bridge cleanup: {type(error).__name__}: {error}"
+                )
+        if self.tunnel is not None:
+            try:
+                self.tunnel.stop()
+            except BaseException as error:
+                failures.append(
+                    f"SSH reverse-forward cleanup: "
+                    f"{type(error).__name__}: {error}"
+                )
+            finally:
+                self.tunnel = None
+        if self.reverse_port:
+            try:
+                if self.transport.remote_loopback_port_listening(
+                    self.reverse_port,
+                    timeout=2,
+                ):
+                    failures.append("SSH reverse-forward port remained open")
+            except BaseException as error:
+                failures.append(
+                    f"SSH reverse-forward verification: "
+                    f"{type(error).__name__}: {error}"
+                )
+        return {
+            "status": "clean" if not failures else "failed",
+            "failures": failures,
+            "reversePort": self.reverse_port,
+            "bridgePort": self.bridge_port,
+            "remotePid": self.remote_pid,
+        }
+
+
+class FoundationRateLimitCoordinator:
+    def __init__(
+        self,
+        client: FoundationRuntimeClient,
+        deployment_environment: str,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._client = client
+        self._fixture = FoundationRateLimitProviderFixture()
+        self._bridge = FoundationRateLimitProviderBridge(
+            deployment_environment
+        )
+        self._provider_base_url = ""
+        self._sleep = sleep
+
+    def _ensure_started(self, sample_id: str) -> None:
+        if self._provider_base_url:
+            return
+        self._fixture.start()
+        try:
+            self._provider_base_url = self._bridge.start(
+                self._fixture.port,
+                f"{self._client.spec.runtime}-{sample_id}",
+            )
+        except BaseException:
+            self._fixture.stop()
+            raise
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        self._ensure_started(probe_input.sample_id)
+        request_count_before = len(self._fixture.snapshot())
+        try:
+            capture = self._client.harness(
+                "runDevelopmentProviderRateLimit",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "sampleId": probe_input.sample_id,
+                    "providerBaseUrl": self._provider_base_url,
+                    "providerApiKey": self._fixture.api_key,
+                },
+                timeout=DIRECT_PROBE_TIMEOUT_SECONDS["BASE-RATE_LIMIT"],
+            )
+        except BaseException as error:
+            requests = self._fixture.snapshot()[request_count_before:]
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT provider Journey failed; "
+                f"providerRequests={json.dumps(requests, sort_keys=True)}"
+            ) from error
+        if not isinstance(capture, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT provider Journey returned invalid evidence"
+            )
+        self._sleep(RATE_LIMIT_RETRY_AFTER_SECONDS + 0.5)
+        requests = self._fixture.snapshot()[request_count_before:]
+        projected = dict(capture)
+        scenario_facts = projected.get("scenarioFacts")
+        if not isinstance(scenario_facts, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT scenario facts are missing"
+            )
+        harness_assertions = projected.get("assertions")
+        if not isinstance(harness_assertions, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT Harness assertions are missing"
+            )
+        scenario_facts = dict(scenario_facts)
+        scenario_facts["harnessAssertions"] = dict(harness_assertions)
+        request = dict(requests[0]) if len(requests) == 1 else {}
+        provider_fixture = {
+            "statusCode": request.get("statusCode"),
+            "retryAfter": request.get("retryAfter"),
+            "requestCount": len(requests),
+            "noRequestsAfterRetryWindow": len(requests) == 1,
+            "request": request,
+        }
+        scenario_facts["providerFixture"] = provider_fixture
+        assertions = evaluate_base_rate_limit(scenario_facts)
+        side_effects = projected.get("side-effect-count")
+        if not isinstance(side_effects, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT side-effect-count evidence is missing"
+            )
+        side_effects = dict(side_effects)
+        station = scenario_facts.get("station")
+        if not isinstance(station, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT Station evidence is missing"
+            )
+        completed = station.get("completedAssistantCount")
+        completed_count = completed if type(completed) is int else -1
+        side_effects.update(
+            {
+                "count": max(0, len(requests) - 1) + completed_count,
+                "maximum": 0,
+                "measurements": {
+                    "providerRequestCount": len(requests),
+                    "completedAssistantCount": completed_count,
+                },
+            }
+        )
+        projected.update(
+            {
+                "assertions": assertions,
+                "facts": scenario_facts,
+                "scenarioFacts": scenario_facts,
+                "side-effect-count": side_effects,
+            }
+        )
+        return projected
+
+    def cleanup(self) -> dict[str, Any]:
+        failures: list[str] = []
+        bridge: dict[str, Any] = {}
+        try:
+            bridge = self._bridge.stop()
+            if bridge.get("status") != "clean":
+                failures.extend(
+                    str(failure) for failure in bridge.get("failures", [])
+                )
+        except BaseException as error:
+            failures.append(
+                f"provider bridge cleanup: {type(error).__name__}: {error}"
+            )
+        try:
+            self._fixture.stop()
+        except BaseException as error:
+            failures.append(
+                f"provider fixture cleanup: {type(error).__name__}: {error}"
+            )
+        return {
+            "status": "clean" if not failures else "failed",
+            "bridge": bridge,
+            "providerFixtureStopped": not self._fixture.started,
+            "failures": failures,
+        }
 
 RESTORE_IDENTITY_STATES = frozenset(
     {
@@ -270,6 +775,7 @@ def _with_provider_rate_limit_retry(
             message = str(error)
             if (
                 cooldown_seconds <= 0
+                or probe_input.cell == "BASE-RATE_LIMIT"
                 or "CLEANUP_FAILED" in message
                 or not any(marker in message for marker in PROVIDER_RATE_LIMIT_MARKERS)
             ):
@@ -1776,6 +2282,8 @@ def _make_direct_probe(
         "FoundationPermissionDeniedCoordinator | None" = None,
     forbidden_actor_coordinator:
         "FoundationForbiddenActorCoordinator | None" = None,
+    rate_limit_coordinator:
+        "FoundationRateLimitCoordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -1845,6 +2353,14 @@ def _make_direct_probe(
                 f"direct probe locale did not converge for "
                 f"{probe_input.cell}/{probe_input.sample_id}"
             )
+        if probe_input.cell == "BASE-RATE_LIMIT":
+            if rate_limit_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-RATE_LIMIT requires provider fixture orchestration"
+                )
+            result = rate_limit_coordinator.capture(probe_input)
+            assert_group_one_capture(probe_input, result)
+            return result
         method = {
             "BASE-LOOP_BUDGET_EXHAUSTED": "runDevelopmentLoopBudget",
             "BASE-MODEL_UNAVAILABLE": "runDevelopmentProviderModelUnavailable",
@@ -3691,6 +4207,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
     candidate_path: Path | None = None
     primary_error: BaseException | None = None
     cleanup_clients: tuple[FoundationRuntimeClient, ...] | None = None
+    rate_limit_coordinators: tuple[FoundationRateLimitCoordinator, ...] = ()
     try:
         runtime_pair.start()
 
@@ -3735,6 +4252,25 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             runtime_pair,
             profile_env,
         )
+        deployment_environment = profile_env.get(
+            "PT_STATION_DEPLOY_ENV",
+            "",
+        ).strip()
+        native_rate_limit_coordinator = None
+        browser_rate_limit_coordinator = None
+        if deployment_environment:
+            native_rate_limit_coordinator = FoundationRateLimitCoordinator(
+                runtime_pair.native,
+                deployment_environment,
+            )
+            browser_rate_limit_coordinator = FoundationRateLimitCoordinator(
+                runtime_pair.browser,
+                deployment_environment,
+            )
+            rate_limit_coordinators = (
+                native_rate_limit_coordinator,
+                browser_rate_limit_coordinator,
+            )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
@@ -3755,6 +4291,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                         permission_denied_coordinator
                     ),
                     forbidden_actor_coordinator=forbidden_actor_coordinator,
+                    rate_limit_coordinator=native_rate_limit_coordinator,
                 ),
                 cooldown_seconds=provider_cooldown_seconds,
             ),
@@ -3779,6 +4316,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                         permission_denied_coordinator
                     ),
                     forbidden_actor_coordinator=forbidden_actor_coordinator,
+                    rate_limit_coordinator=browser_rate_limit_coordinator,
                 ),
                 cooldown_seconds=provider_cooldown_seconds,
             ),
@@ -3875,6 +4413,21 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         primary_error = error
     finally:
         # --- Cleanup: restore durable fixture mutations, then stop clients ---
+        rate_limit_cleanup_errors: list[str] = []
+        rate_limit_cleanup_results: list[dict[str, Any]] = []
+        for coordinator in rate_limit_coordinators:
+            try:
+                result = coordinator.cleanup()
+                rate_limit_cleanup_results.append(result)
+                if result.get("status") != "clean":
+                    rate_limit_cleanup_errors.extend(
+                        str(failure)
+                        for failure in result.get("failures", [])
+                    )
+            except BaseException as error:
+                rate_limit_cleanup_errors.append(
+                    f"{type(error).__name__}: {error}"
+                )
         restoration_errors = _restore_capability_isolation_for_cleanup(
             runtime_pair,
             profile_env,
@@ -3889,6 +4442,15 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         if restoration_errors:
             cleanup_result["status"] = "failed"
             cleanup_result["capabilityIsolationFailures"] = restoration_errors
+        if rate_limit_cleanup_results:
+            cleanup_result["providerRateLimitFixtures"] = (
+                rate_limit_cleanup_results
+            )
+        if rate_limit_cleanup_errors:
+            cleanup_result["status"] = "failed"
+            cleanup_result["providerRateLimitFailures"] = (
+                rate_limit_cleanup_errors
+            )
         run.write_json(
             "runtime/cleanup-result.json",
             cleanup_result,
@@ -3903,7 +4465,11 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         cleanup_kind = (
             "capability isolation restoration"
             if restoration_errors
-            else "runtime release"
+            else (
+                "provider rate-limit fixture cleanup"
+                if rate_limit_cleanup_errors
+                else "runtime release"
+            )
         )
         raise ScenarioRunnerError(
             f"CLEANUP_FAILED: {cleanup_kind} failed; "

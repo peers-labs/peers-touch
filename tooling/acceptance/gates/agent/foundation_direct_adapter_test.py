@@ -401,6 +401,23 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
             },
         )
 
+    def test_provider_rate_limit_requires_exact_assertion_contract(self) -> None:
+        self.assertEqual(
+            REQUIRED_ASSERTIONS["BASE-RATE_LIMIT"],
+            {
+                "typedProviderRateLimit",
+                "localizedRetryLaterVisible",
+                "retryAfterProjected",
+                "realProvider429Observed",
+                "oneTerminalProviderAttempt",
+                "noHiddenRetry",
+                "zeroSuccessfulCompletion",
+                "queueUnchanged",
+                "replayEqual",
+                "cleanupComplete",
+            },
+        )
+
     def test_group_one_cells_are_explicitly_supported_on_both_receivers(self) -> None:
         adapter = self.adapter()
         producer = FoundationCandidateProducer(
@@ -462,7 +479,7 @@ class DirectRuntimeFoundationAdapterTest(unittest.TestCase):
         ):
             self.adapter().observe_browser(
                 runtime_tuple(
-                    "BASE-RATE_LIMIT",
+                    "BASE-RESUME_UNAVAILABLE",
                     row="foundation-browser-direct",
                     platform="browser",
                 )

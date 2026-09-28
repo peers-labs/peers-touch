@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import tempfile
 import time
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -35,6 +38,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_model_unavailable,
     evaluate_base_permission_denied,
     evaluate_base_queue_full,
+    evaluate_base_rate_limit,
     evaluate_as_f04,
     evaluate_as_f06,
     evaluate_as_f12,
@@ -49,6 +53,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_model_unavailable_capture,
     valid_permission_denied_capture,
     valid_base_queue_full_capture,
+    valid_rate_limit_capture,
     valid_as_f04_capture,
     valid_as_f06_capture,
     valid_as_f12_capture,
@@ -879,6 +884,60 @@ class ProviderTimeoutHarnessClient:
         return capture(probe)
 
 
+class RateLimitCoordinator:
+    def __init__(self) -> None:
+        self.calls: list[DirectRuntimeProbeInput] = []
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> dict[str, object]:
+        self.calls.append(probe_input)
+        result = capture(probe_input)
+        facts = valid_rate_limit_capture()
+        result["scenarioFacts"] = facts
+        result["assertions"] = evaluate_base_rate_limit(facts)
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
+
+
+class RateLimitHarnessClient:
+    def __init__(self) -> None:
+        self.spec = SimpleNamespace(runtime="browser")
+
+    def harness(
+        self,
+        method: str,
+        payload: dict[str, object] | None = None,
+        timeout: float = 120,
+    ) -> dict[str, object]:
+        del timeout
+        request = payload or {}
+        if method != "runDevelopmentProviderRateLimit":
+            raise AssertionError(f"unexpected method: {method}")
+        probe = DirectRuntimeProbeInput(
+            platform=str(request["platform"]),
+            locale=str(request["locale"]),
+            cell="BASE-RATE_LIMIT",
+            sample_id=str(request["sampleId"]),
+        )
+        result = capture(probe)
+        facts = valid_rate_limit_capture()
+        provider_fixture = facts.pop("providerFixture")
+        del provider_fixture
+        harness_assertions = facts.pop("harnessAssertions")
+        result["scenarioFacts"] = facts
+        result["assertions"] = harness_assertions
+        result["runtime-events"] = typed_runtime_role(facts)
+        result["runtimeAttestation"]["actorIdentityHash"] = (
+            facts["runtimeEvent"]["sourcePtidHash"]
+        )
+        return result
+
+
 class F06HarnessClient:
     def __init__(
         self,
@@ -1523,6 +1582,33 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertEqual(result, {"passed": True})
         self.assertEqual(calls, 2)
         self.assertEqual(cooldowns, [65])
+
+    def test_provider_rate_limit_cell_is_never_retried(self) -> None:
+        calls = 0
+        cooldowns: list[float] = []
+
+        def probe(_input: DirectRuntimeProbeInput) -> dict[str, bool]:
+            nonlocal calls
+            calls += 1
+            raise RuntimeError("PROVIDER_RATE_LIMIT")
+
+        retrying = foundation_scenario_runner._with_provider_rate_limit_retry(
+            probe,
+            cooldown_seconds=65,
+            sleep=cooldowns.append,
+        )
+        probe_input = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-RATE_LIMIT",
+            sample_id="sample-001",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "PROVIDER_RATE_LIMIT"):
+            retrying(probe_input)
+
+        self.assertEqual(calls, 1)
+        self.assertEqual(cooldowns, [])
 
     def test_provider_rate_limit_retry_fails_closed_after_second_attempt(
         self,
@@ -2500,6 +2586,296 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                     300,
                 ),
             ],
+        )
+
+    def test_provider_rate_limit_uses_real_fixture_coordinator(self) -> None:
+        client = TimeoutCaptureHarnessClient()
+        coordinator = RateLimitCoordinator()
+        probe_input = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="zh-CN",
+            cell="BASE-RATE_LIMIT",
+            sample_id="sample-001",
+        )
+
+        result = foundation_scenario_runner._make_direct_probe(
+            client,
+            rate_limit_coordinator=coordinator,
+        )(probe_input)
+
+        self.assertTrue(result["assertions"]["realProvider429Observed"])
+        self.assertEqual(client.locale, "zh-CN")
+        self.assertEqual(coordinator.calls, [probe_input])
+
+    def test_rate_limit_fixture_emits_real_429(self) -> None:
+        fixture = (
+            foundation_scenario_runner.FoundationRateLimitProviderFixture()
+        )
+        fixture.start()
+        try:
+            request = urllib.request.Request(
+                (
+                    f"http://127.0.0.1:{fixture.port}"
+                    "/v1/chat/completions"
+                ),
+                data=json.dumps(
+                    {
+                        "model": "model-rate-limit",
+                        "stream": True,
+                        "messages": [
+                            {"role": "user", "content": "trigger 429"},
+                        ],
+                    }
+                ).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {fixture.api_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                urllib.request.urlopen(request, timeout=5)
+            response_body = json.loads(
+                raised.exception.read().decode("utf-8")
+            )
+        finally:
+            fixture.stop()
+
+        self.assertEqual(raised.exception.code, 429)
+        self.assertEqual(
+            raised.exception.headers.get("Retry-After"),
+            "2",
+        )
+        self.assertEqual(
+            response_body["error"]["code"],
+            "rate_limit_exceeded",
+        )
+        self.assertEqual(
+            fixture.snapshot(),
+            [
+                {
+                    "path": "/v1/chat/completions",
+                    "stream": True,
+                    "model": "model-rate-limit",
+                    "authorizationPresent": True,
+                    "statusCode": 429,
+                    "retryAfter": "2",
+                }
+            ],
+        )
+
+    def test_rate_limit_coordinator_preserves_harness_assertions(self) -> None:
+        provider_request = {
+            "path": "/v1/chat/completions",
+            "stream": True,
+            "model": "model-rate-limit",
+            "authorizationPresent": True,
+            "statusCode": 429,
+            "retryAfter": "2",
+        }
+
+        class Fixture:
+            api_key = "fixture-key"
+
+            def __init__(self) -> None:
+                self.snapshots = 0
+
+            def snapshot(self) -> list[dict[str, object]]:
+                self.snapshots += 1
+                return [] if self.snapshots == 1 else [provider_request]
+
+        coordinator = (
+            foundation_scenario_runner.FoundationRateLimitCoordinator.__new__(
+                foundation_scenario_runner.FoundationRateLimitCoordinator
+            )
+        )
+        coordinator._client = RateLimitHarnessClient()
+        coordinator._fixture = Fixture()
+        coordinator._provider_base_url = "http://station.test:43123"
+        coordinator._sleep = lambda _seconds: None
+        probe_input = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-RATE_LIMIT",
+            sample_id="sample-001",
+        )
+
+        result = coordinator.capture(probe_input)
+
+        facts = result["scenarioFacts"]
+        self.assertEqual(
+            facts["harnessAssertions"],
+            valid_rate_limit_capture()["harnessAssertions"],
+        )
+        self.assertTrue(all(result["assertions"].values()))
+        self.assertEqual(result["side-effect-count"]["count"], 0)
+
+    def test_rate_limit_coordinator_reports_redacted_request_on_failure(
+        self,
+    ) -> None:
+        provider_request = {
+            "path": "/v1/chat/completions",
+            "stream": False,
+            "model": "model-rate-limit",
+            "authorizationPresent": True,
+            "statusCode": 422,
+            "retryAfter": "",
+        }
+
+        class Client:
+            spec = SimpleNamespace(runtime="browser")
+
+            def harness(
+                self,
+                method: str,
+                payload: dict[str, object] | None = None,
+                timeout: float = 120,
+            ) -> dict[str, object]:
+                del method, payload, timeout
+                raise RuntimeError("recovery surface timeout")
+
+        class Fixture:
+            api_key = "fixture-key"
+
+            def __init__(self) -> None:
+                self.snapshots = 0
+
+            def snapshot(self) -> list[dict[str, object]]:
+                self.snapshots += 1
+                return [] if self.snapshots == 1 else [provider_request]
+
+        coordinator = (
+            foundation_scenario_runner.FoundationRateLimitCoordinator.__new__(
+                foundation_scenario_runner.FoundationRateLimitCoordinator
+            )
+        )
+        coordinator._client = Client()
+        coordinator._fixture = Fixture()
+        coordinator._provider_base_url = "http://station.test:43123"
+        coordinator._sleep = lambda _seconds: None
+
+        with self.assertRaisesRegex(
+            foundation_scenario_runner.ScenarioRunnerError,
+            '"statusCode": 422',
+        ) as raised:
+            coordinator.capture(
+                DirectRuntimeProbeInput(
+                    platform="browser",
+                    locale="en",
+                    cell="BASE-RATE_LIMIT",
+                    sample_id="sample-001",
+                )
+            )
+
+        self.assertNotIn("fixture-key", str(raised.exception))
+
+    def test_rate_limit_bridge_cleanup_uses_pid_file_after_lost_stdout(
+        self,
+    ) -> None:
+        class Transport:
+            def __init__(self) -> None:
+                self.commands: list[tuple[str, ...]] = []
+
+            def run_argv(
+                self,
+                argv: tuple[str, ...],
+                *,
+                timeout: float,
+                check: bool,
+            ) -> SimpleNamespace:
+                del timeout, check
+                self.commands.append(argv)
+                return SimpleNamespace(returncode=0)
+
+            def remote_loopback_port_listening(
+                self,
+                port: int,
+                *,
+                timeout: float,
+            ) -> bool:
+                del port, timeout
+                return False
+
+        transport = Transport()
+        bridge = (
+            foundation_scenario_runner.FoundationRateLimitProviderBridge
+            .__new__(
+                foundation_scenario_runner.FoundationRateLimitProviderBridge
+            )
+        )
+        bridge.transport = transport
+        bridge.tunnel = None
+        bridge.reverse_port = 41234
+        bridge.bridge_port = 42345
+        bridge.remote_pid = 0
+        bridge.remote_pid_path = "/tmp/rate-limit.pid"
+        bridge.remote_log_path = "/tmp/rate-limit.log"
+        bridge._remote_endpoint_ready = lambda: False
+
+        result = bridge.stop()
+
+        self.assertEqual(result["status"], "clean")
+        self.assertEqual(len(transport.commands), 1)
+        cleanup_command = transport.commands[0][2]
+        self.assertIn("candidate=$(cat /tmp/rate-limit.pid)", cleanup_command)
+        self.assertIn('kill "$pid"', cleanup_command)
+
+    def test_rate_limit_bridge_cleanup_stops_tunnel_after_ssh_failure(
+        self,
+    ) -> None:
+        class Transport:
+            def run_argv(
+                self,
+                argv: tuple[str, ...],
+                *,
+                timeout: float,
+                check: bool,
+            ) -> SimpleNamespace:
+                del argv, timeout, check
+                raise RuntimeError("ssh unavailable")
+
+            def remote_loopback_port_listening(
+                self,
+                port: int,
+                *,
+                timeout: float,
+            ) -> bool:
+                del port, timeout
+                return False
+
+        class Tunnel:
+            def __init__(self) -> None:
+                self.stopped = False
+
+            def stop(self) -> None:
+                self.stopped = True
+
+        tunnel = Tunnel()
+        bridge = (
+            foundation_scenario_runner.FoundationRateLimitProviderBridge
+            .__new__(
+                foundation_scenario_runner.FoundationRateLimitProviderBridge
+            )
+        )
+        bridge.transport = Transport()
+        bridge.tunnel = tunnel
+        bridge.reverse_port = 41234
+        bridge.bridge_port = 42345
+        bridge.remote_pid = 0
+        bridge.remote_pid_path = "/tmp/rate-limit.pid"
+        bridge.remote_log_path = "/tmp/rate-limit.log"
+        bridge._remote_endpoint_ready = lambda: False
+
+        result = bridge.stop()
+
+        self.assertEqual(result["status"], "failed")
+        self.assertTrue(tunnel.stopped)
+        self.assertIsNone(bridge.tunnel)
+        self.assertTrue(
+            any(
+                failure.startswith("remote bridge cleanup: RuntimeError")
+                for failure in result["failures"]
+            )
         )
 
     def test_as_f06_closes_each_tuple_around_its_own_restart(self) -> None:

@@ -34,6 +34,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
     evaluate_base_model_unavailable,
     evaluate_base_permission_denied,
     evaluate_base_queue_full,
+    evaluate_base_rate_limit,
     evaluate_as_f02,
     evaluate_as_f03,
     evaluate_as_f04,
@@ -63,6 +64,7 @@ from tooling.acceptance.gates.agent.foundation_group_one_scenarios_test import (
     valid_model_unavailable_capture,
     valid_permission_denied_capture,
     valid_base_queue_full_capture,
+    valid_rate_limit_capture,
     valid_as_f04_capture,
     valid_as_f05_capture,
     valid_as_f06_capture,
@@ -496,6 +498,35 @@ class FoundationGroupOneProbeRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(
             GroupOneProbeError,
             "BASE-QUEUE_FULL assertions do not match",
+        ):
+            assert_group_one_capture(probe, capture_value)
+
+    def test_base_rate_limit_routes_to_independent_oracle(self) -> None:
+        facts = valid_rate_limit_capture()
+        capture_value = {
+            "scenarioFacts": facts,
+            "assertions": evaluate_base_rate_limit(facts),
+            "runtime-events": typed_runtime_role(facts),
+            "runtimeAttestation": {
+                "actorIdentityHash": facts["runtimeEvent"]["sourcePtidHash"],
+            },
+        }
+        probe = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="en",
+            cell="BASE-RATE_LIMIT",
+            sample_id="sample-001",
+        )
+
+        assert_group_one_capture(probe, capture_value)
+
+        capture_value["assertions"] = {
+            **capture_value["assertions"],
+            "noHiddenRetry": False,
+        }
+        with self.assertRaisesRegex(
+            GroupOneProbeError,
+            "BASE-RATE_LIMIT assertions do not match",
         ):
             assert_group_one_capture(probe, capture_value)
 
