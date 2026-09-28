@@ -173,9 +173,10 @@ Rules:
   run `make dev-heartbeat`; heartbeat extends liveness but cannot change source,
   scope, or Plan identity.
 - After an authorized commit, merge, or rebase changes source HEAD, run
-  `make env-update`, then `make dev-update ... PLAN=<path> TASK=<id>`, and
-  finally `make dev-check`. Registry and declaration source identities must
-  advance together before the next mutation or runtime action.
+  `make dev-update ... PLAN=<path> TASK=<id>`, then `make dev-check` before the
+  next mutation or runtime action. The machine registration does not store
+  HEAD; Development declaration and Plan/Session source identities remain the
+  mutation fence.
 - Different worktrees on different branches may overlap with
   `SOURCE_OVERLAP_WARNING`; same-workspace overlap, same-branch parallel
   writes, and exclusive runtime overlap return

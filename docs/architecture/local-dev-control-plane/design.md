@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Design
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-09-28
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -45,6 +45,10 @@
     compatible worktree launch reuses that instance.
 13. **Immutable Plan ownership**: each workspace has one machine-local Plan
     binding; repository/PR synchronization cannot replace it.
+14. **Stable binding, live source**: the registry owns durable root, branch,
+    profile, slot, and capability binding only. Current Git HEAD is read from
+    the worktree for each operation and fenced by Development intent and
+    runtime build identity where mutation occurs.
 
 ## 2. System Architecture
 
@@ -108,7 +112,8 @@ not remain as a symlink, fallback, or second read owner.
 | Deployable Station/Relay topology | Environment repository | `env/peers-touch/<profile>/` |
 | Profile reset policy | Canonical profile identity | Case-insensitive `stable` substring in the verified directory/`PT_DEV_PROFILE` ID |
 | Machine-local environment creation approval | Human developer | `~/.peers-touch/dev/authorizations/environment-creation/` |
-| Worktree identity | Git + canonical filesystem path | `workspaceId = sha256(realpath(root))[0:16]` |
+| Worktree registration identity | Canonical filesystem path + registered branch | `workspaceId = sha256(realpath(root))[0:16]` |
+| Current worktree source identity | Git | Current branch and HEAD captured at operation time |
 | Worktree profile selection | Machine Dev Control Plane | `bindings[workspaceId].profile` |
 | Worktree Plan ownership | Development Workflow | `workspaces/<workspaceId>/workflow/plan-binding.json` |
 | Development source/runtime intent | Development Workflow | `~/.peers-touch/dev/work.json` |
@@ -178,7 +183,6 @@ Owns durable machine-local declarations:
 - Independent profile selection per `workspaceId`.
 - Local slot allocation.
 - Allowed Station capability mode.
-- Last observed source and runtime state.
 - Detected conflicts.
 
 It does not own Plan selection. Development Workflow stores the immutable Plan
@@ -196,7 +200,7 @@ Worktree activity is a derived runtime fact:
 |-------|------------|
 | `active` | A live process/listener or held lease has matching `workspaceId`, PID and process-start identity |
 | `idle` | Explicitly registered, but no matching live process or lease exists |
-| `stale` | Explicit registration exists, but root/source identity no longer matches |
+| `stale` | Explicit registration exists, but canonical root or registered branch no longer matches |
 | `unregistered` | Discovered or observed only; cannot acquire managed runtime resources |
 
 A profile pointer alone does not make a worktree active.
@@ -273,8 +277,9 @@ that same value as run-scoped authorization input. `local.slot` is keyed by the
 machine binding's slot.
 
 Lease acquisition also requires one live Development declaration for the same
-workspace, branch, HEAD, profile, and exclusive runtime claim. The declaration
-proves intent; the OS lock proves possession.
+workspace, current branch, current HEAD, profile, and exclusive runtime claim.
+The registry does not cache that HEAD: the declaration proves source intent,
+the worktree supplies current source, and the OS lock proves possession.
 The binding and intent are revalidated after OS-lock acquisition under the
 registry update lock, closing the registration-update/acquisition race.
 
