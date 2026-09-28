@@ -33,6 +33,7 @@ test('spawns, identifies, and stops an owned process tree', async (t) => {
     environment: process.env,
     logPath: path.join(directory, 'fixture.log'),
     identityTokens: [marker],
+    sourceCommit: 'a'.repeat(40),
   });
   t.after(() => {
     if (inspectProcess(record.pid)) {
@@ -45,7 +46,9 @@ test('spawns, identifies, and stops an owned process tree', async (t) => {
   });
 
   await new Promise((resolve) => setTimeout(resolve, 300));
-  assert.equal(inspectManagedProcess(directory, 'fixture').status, 'running');
+  const managed = inspectManagedProcess(directory, 'fixture');
+  assert.equal(managed.status, 'running');
+  assert.equal(managed.record.sourceCommit, 'a'.repeat(40));
   assert.equal(stopManagedProcess(directory, 'fixture').status, 'stopped');
   assert.equal(inspectProcess(record.pid), undefined);
 });
