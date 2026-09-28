@@ -86,7 +86,7 @@ CORE_LIFECYCLE_SELECTORS = {
     "topic_error": "[data-pt-agent-topic-load-error]",
     "topic_retry": "[data-pt-agent-topic-load-retry]",
     "composer": "[data-pt-agent-composer]",
-    "confirm_delete": "[data-pt-agent-delete-confirm]",
+    "confirm_delete": '[data-pt-agent-delete-confirm="{agent_id}"]',
 }
 APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 WAIT_TICK = threading.Event()
@@ -927,17 +927,30 @@ class AgentNativeJourney:
 
     def delete_lifecycle_agent(self, agent_id: str) -> None:
         self.click_agent_action(agent_id, "delete")
+        confirm_selector = self.lifecycle_selector(
+            "confirm_delete",
+            agent_id=agent_id,
+        )
         self.wait_visible_element(
-            self.lifecycle_selector("confirm_delete"),
+            confirm_selector,
             f"Agent {agent_id} delete confirmation",
         )
         self.click_visible(
-            self.lifecycle_selector("confirm_delete"),
+            confirm_selector,
             f"Agent {agent_id} delete confirmation",
+        )
+        wait_until(
+            lambda: self.visible_element_state(confirm_selector) is None,
+            f"Agent {agent_id} delete confirmation closure",
         )
         wait_until(
             lambda: self.station_agent_absent(agent_id),
             f"Agent {agent_id} Station roster removal",
+        )
+        row_selector = self.lifecycle_selector("row", agent_id=agent_id)
+        wait_until(
+            lambda: self.visible_element_state(row_selector) is None,
+            f"Agent {agent_id} native roster removal",
         )
         if agent_id in self.lifecycle_fixture_ids:
             self.lifecycle_fixture_ids.remove(agent_id)
