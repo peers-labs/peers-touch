@@ -1169,6 +1169,52 @@ export function updateWorkspace(options) {
   }).output;
 }
 
+export function refreshWorkspaceSourceIdentity(options = {}) {
+  const observed = captureWorkspace(options.workspaceRoot ?? repoRoot);
+  const file = options.registryPath ?? machineRegistryPath(options.home);
+  const current = registrationForWorkspace(
+    readRegistry(file),
+    observed.workspaceId,
+  );
+  if (
+    current.canonicalRoot === observed.canonicalRoot
+    && current.branch === observed.branch
+    && current.head === observed.head
+  ) {
+    return current;
+  }
+
+  return mutateRegistry(options, (registry, now, workspace) => {
+    const registration = registrationForWorkspace(
+      registry,
+      workspace.workspaceId,
+    );
+    if (
+      registration.canonicalRoot !== workspace.canonicalRoot
+      || registration.branch !== workspace.branch
+    ) {
+      fail(
+        'WORKTREE_IDENTITY_MISMATCH',
+        'runtime startup cannot reconcile a different worktree or branch',
+        { registered: registration, actual: workspace },
+      );
+    }
+    assertWorkspaceHasNoLease(options, workspace.workspaceId);
+    const updated = {
+      ...registration,
+      head: workspace.head,
+      updatedAt: now.toISOString(),
+      updatedBy: options.updatedBy ?? registration.owner,
+    };
+    registry.registrations[
+      registry.registrations.findIndex(
+        (entry) => entry.workspaceId === workspace.workspaceId,
+      )
+    ] = updated;
+    return updated;
+  }).output;
+}
+
 export function unregisterWorkspace(options) {
   const owner = requiredText(options.owner, 'owner', 256);
   return mutateRegistry(options, (registry, now, workspace) => {
@@ -1527,6 +1573,9 @@ export function verifyHeldLease(options) {
     validateLeaseRequest({
       ...options,
       budgetSeconds: options.budgetSeconds ?? 1,
+      ownerAction:
+        options.ownerAction
+        ?? process.env.PT_MACHINE_LEASE_OWNER_ACTION,
       resetScope:
         options.resetScope ??
         process.env.PT_MACHINE_LEASE_RESET_SCOPE,
@@ -1667,6 +1716,9 @@ export function buildLeaseCommand(options) {
       '--reset-scope',
       options.resetScope,
     );
+  }
+  if (options.ownerAction) {
+    arguments_.push('--owner-action', options.ownerAction);
   }
   arguments_.push('--', ...options.command);
   return {
