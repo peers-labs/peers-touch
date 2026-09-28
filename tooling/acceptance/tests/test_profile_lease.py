@@ -136,6 +136,10 @@ class ProfileLeaseTests(unittest.TestCase):
         self.assertIn("PT_PROFILE_LEASE_HELD", source)
         self.assertIn("tooling.acceptance.core.lease", source)
         self.assertIn('--resource "$env_name"', source)
+        station_source = (
+            REPO_ROOT / "tooling" / "scripts" / "local-dev" / "station-dev.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("--owner-action make.station", station_source)
 
     def test_deploy_script_forwards_only_valid_capability_scenario_environment(
         self,
