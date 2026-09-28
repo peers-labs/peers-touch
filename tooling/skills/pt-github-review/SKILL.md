@@ -373,6 +373,13 @@ declaration, scope, topology/source identity, and OS-lease guards. Missing
 capability or scope must remain a typed control-plane failure, not a request for
 human authorization.
 
+For machine workspace registration changes, reject persisted Git HEAD,
+command-specific HEAD reconciliation, or another mutable source cache in the
+binding. The registration owns canonical root, workspace ID, registered branch,
+Profile, slot, capabilities, and Owner metadata. Current HEAD comes from Git;
+Development declaration/Session identity and runtime build readback fence
+source-sensitive mutation.
+
 ### Acceptance Review
 
 Check domain, capability, feature, gate, report, and onboarding consistency.
