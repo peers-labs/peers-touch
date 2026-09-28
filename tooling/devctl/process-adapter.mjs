@@ -121,6 +121,7 @@ export function spawnManaged({
   ports = [],
   readinessUrl,
   identityTokens = [],
+  sourceCommit,
 }) {
   fs.mkdirSync(path.dirname(logPath), { recursive: true });
   const log = fs.openSync(logPath, 'a');
@@ -159,6 +160,7 @@ export function spawnManaged({
     observedStartedAt: observed?.startedAt,
     logPath,
     readinessUrl,
+    ...(sourceCommit ? { sourceCommit } : {}),
   };
   writeRuntimeState(stateDirectory, record);
   return record;

@@ -194,9 +194,13 @@
       ],
       "when": {
         "paths": [
+          "tooling/devctl/desktop.mjs",
           "tooling/devctl/errors.mjs",
+          "tooling/devctl/process-adapter.mjs",
           "tooling/devctl/profile.mjs",
           "tooling/devctl/station.mjs",
+          "tooling/devctl/test/desktop.test.mjs",
+          "tooling/devctl/test/process-adapter.test.mjs",
           "tooling/devctl/test/profile.test.mjs",
           "tooling/devctl/test/station.test.mjs",
           "tooling/scripts/local-dev/machine-dev*",

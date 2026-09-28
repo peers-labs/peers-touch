@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-28
-covered_docs_hash: 2ab6002609051e008a4b484d2f865f642a9104ab20299f2933da35739bb54df9
+covered_docs_hash: 979e7616d1056d25b08de9c326c3ca72cb202975c02d6b31f4c10d224eefbd8a
 
 covered_docs:
   - AGENTS.md
@@ -38,6 +38,12 @@ registration authority without a development-stage version bump or compatibility
 reader. Review rejects persisted HEAD and command-specific reconciliation while
 preserving declaration/Session source fencing, exact runtime build readback, and
 fail-closed root/branch identity.
+
+Desktop development startup now treats Vite and Tauri as one managed runtime:
+only a complete source-matched pair is reusable, partial pairs are reconciled
+before port checks, and required generated bindings are prepared through the
+canonical model generator. The machine control-plane Gate owns the regression;
+no GitHub Review `SKILL.md` rule change is required.
 
 Desktop navigation ownership now removes the standalone Notes host page and
 makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command

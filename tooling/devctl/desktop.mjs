@@ -43,7 +43,14 @@ function desktopValues(root, resolved, mode) {
       resolved.paths.profileLogs,
       'desktop-dependencies-install.log',
     ),
+    generatedSourceLog: path.join(
+      resolved.paths.profileLogs,
+      'desktop-generated-sources.log',
+    ),
     appletStamp: path.join(resolved.paths.localDev, 'cache', 'applets-build.sha256'),
+    protoRoot: path.join(root, 'model'),
+    protoOutput: path.join(root, 'apps', 'desktop', 'src', 'gen', 'proto'),
+    modelBuildScript: path.join(root, 'model', 'build.sh'),
     viteScript: path.join(
       root,
       'apps',
@@ -102,6 +109,35 @@ function appletSourceFingerprint(root) {
     hash.update(fs.readFileSync(filePath));
   }
   return hash.digest('hex');
+}
+
+function desktopProtoRequirements(values) {
+  const domainRoot = path.join(values.protoRoot, 'domain');
+  const pending = fs.existsSync(domainRoot) ? [domainRoot] : [];
+  const requirements = [];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const absolute = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(absolute);
+      } else if (
+        entry.name.endsWith('.proto')
+        && !absolute.endsWith(path.join('ai_box', 'ai_box_message.proto'))
+      ) {
+        const relative = path.relative(values.protoRoot, absolute);
+        requirements.push({
+          source: absolute,
+          output: path.join(
+            values.protoOutput,
+            relative.replace(/\.proto$/u, '_pb.ts'),
+          ),
+        });
+      }
+    }
+  }
+  return requirements.sort((left, right) =>
+    left.source.localeCompare(right.source));
 }
 
 function validateMode(mode) {
@@ -225,6 +261,67 @@ export function ensureDesktopDependencies(
   return { installed: true, missingBefore };
 }
 
+export function ensureDesktopGeneratedSources(
+  root,
+  environment,
+  values,
+  runCommand = spawnSync,
+) {
+  const requirements = desktopProtoRequirements(values);
+  const missingBefore = requirements
+    .filter(({ output }) => !fs.existsSync(output))
+    .map(({ output }) => output);
+  if (missingBefore.length === 0) {
+    return { generated: false, missingBefore };
+  }
+
+  const bash = findExecutable('bash', environment);
+  if (!bash || !fs.existsSync(values.modelBuildScript)) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      'Desktop generated-source builder is unavailable',
+      { bash, modelBuildScript: values.modelBuildScript },
+    );
+  }
+  const result = runCommand(bash, [values.modelBuildScript], {
+    cwd: root,
+    env: environment,
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: 600_000,
+  });
+  fs.mkdirSync(path.dirname(values.generatedSourceLog), { recursive: true });
+  fs.writeFileSync(
+    values.generatedSourceLog,
+    `${result.stdout ?? ''}${result.stderr ?? ''}`,
+  );
+  if (result.error || result.status !== 0) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      `Desktop generated-source preparation failed; see ${values.generatedSourceLog}`,
+      {
+        status: result.status,
+        signal: result.signal,
+        cause: result.error?.message,
+        missingOutputs: missingBefore,
+      },
+    );
+  }
+
+  const missingAfter = requirements
+    .filter(({ output }) => !fs.existsSync(output))
+    .map(({ output }) => output);
+  if (missingAfter.length > 0) {
+    throw new DevctlError(
+      ERROR_CODES.DEPENDENCY_MISSING,
+      `Desktop generated sources are incomplete; see ${values.generatedSourceLog}`,
+      { missingOutputs: missingAfter },
+    );
+  }
+  return { generated: true, missingBefore };
+}
+
 function runAppletBuild(root, invocation, environment, values) {
   const fingerprint = appletSourceFingerprint(root);
   if (
@@ -319,6 +416,40 @@ async function assertPortsAvailable(values) {
   }
 }
 
+export function reconcileDesktopRuntime(
+  stateDirectory,
+  values,
+  existing,
+  sourceCommit,
+  stopProcess = stopManagedProcess,
+) {
+  const processStates = [
+    existing.web.process,
+    existing.gateway.process,
+  ];
+  if (processStates.some(({ status }) => status === 'foreign')) {
+    throw new DevctlError(
+      ERROR_CODES.PROCESS_IDENTITY_MISMATCH,
+      `Desktop ${values.mode} has a foreign runtime-state record`,
+    );
+  }
+  const reusable =
+    existing.web.health.ok
+    && existing.gateway.listening
+    && processStates.every(({ status }) => status === 'running')
+    && processStates.every(
+      ({ record }) => record.sourceCommit === sourceCommit,
+    );
+  if (reusable) {
+    return { reused: true, stopped: [] };
+  }
+  return {
+    reused: false,
+    stopped: [values.tauriService, values.viteService].map((service) =>
+      stopProcess(stateDirectory, service)),
+  };
+}
+
 export async function desktopStatus(
   root,
   mode = 'app',
@@ -379,28 +510,37 @@ export async function startDesktop(
     runtimeEnv,
     values,
   );
-  await startStation(root, environment);
+  const sourceCommit = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).stdout?.trim();
+  if (!/^[0-9a-f]{40,64}$/u.test(sourceCommit ?? '')) {
+    throw new DevctlError(
+      ERROR_CODES.CHECK_FAILED,
+      'Current Git commit is unavailable for Desktop runtime ownership',
+    );
+  }
   const existing = await desktopStatus(root, mode, environment);
-  if (
-    existing.web.health.ok
-    && existing.gateway.listening
-    && existing.web.process.status === 'running'
-    && existing.gateway.process.status === 'running'
-  ) {
+  const reconciliation = reconcileDesktopRuntime(
+    resolved.paths.profileState,
+    values,
+    existing,
+    sourceCommit,
+  );
+  const generatedSourceState = ensureDesktopGeneratedSources(
+    root,
+    runtimeEnv,
+    values,
+  );
+  await startStation(root, environment);
+  if (reconciliation.reused) {
     return {
       ...existing,
       dependenciesInstalled: dependencyState.installed,
+      generatedSourcesPrepared: generatedSourceState.generated,
       reused: true,
     };
-  }
-  if (
-    existing.web.process.status === 'foreign'
-    || existing.gateway.process.status === 'foreign'
-  ) {
-    throw new DevctlError(
-      ERROR_CODES.PROCESS_IDENTITY_MISMATCH,
-      `Desktop ${mode} has a foreign runtime-state record`,
-    );
   }
   await assertPortsAvailable(values);
 
@@ -439,6 +579,7 @@ export async function startDesktop(
     ports: [values.webPort],
     readinessUrl: `http://127.0.0.1:${values.webPort}/`,
     identityTokens: ['vite', String(values.webPort)],
+    sourceCommit,
   });
 
   try {
@@ -461,6 +602,7 @@ export async function startDesktop(
       logPath: values.tauriLog,
       ports: [values.gatewayPort],
       identityTokens: ['tauri', path.basename(values.configPath)],
+      sourceCommit,
     });
     await waitForPort(values.gatewayPort, {
       label: `Desktop ${mode} Gateway`,
@@ -480,7 +622,11 @@ export async function startDesktop(
         { status },
       );
     }
-    return { ...status, dependenciesInstalled: dependencyState.installed };
+    return {
+      ...status,
+      dependenciesInstalled: dependencyState.installed,
+      generatedSourcesPrepared: generatedSourceState.generated,
+    };
   } catch (error) {
     for (const service of [values.tauriService, values.viteService]) {
       try {
