@@ -45,7 +45,7 @@ from tooling.acceptance.core import (
     source_identity,
 )
 from tooling.acceptance.core.provisioner import (
-    PROFILE_SECRET_ENV_OVERRIDES,
+    PROFILE_ENV_OVERRIDES,
     resolve_machine_profile_environment,
 )
 from tooling.acceptance.core.redaction import (
@@ -91,13 +91,10 @@ class ScenarioRunnerError(RuntimeError):
 
 
 FOUNDATION_PROFILE_ENV_OVERRIDES = (
-    "PT_AGENT_PROVIDER_ID",
-    *PROFILE_SECRET_ENV_OVERRIDES,
-    "PT_AGENT_DEFAULT_MODEL_ID",
+    *PROFILE_ENV_OVERRIDES,
     "PT_AGENT_DEFAULT_MODEL_NAME",
     "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW",
     "PT_AGENT_DEFAULT_MODEL_CAPABILITIES",
-    "PT_AGENT_PROVIDER_BASE_URL",
 )
 
 
