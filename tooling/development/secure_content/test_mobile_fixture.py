@@ -280,6 +280,12 @@ class MobileProductionFixtureTest(unittest.TestCase):
             set(result["observedStates"]),
             PLATFORM_OPERATIONS["publish-states"],
         )
+        observation_digests = result["receiverObservationDigests"]
+        self.assertEqual(len(observation_digests), 8)
+        self.assertEqual(
+            len(observation_digests),
+            len(set(observation_digests)),
+        )
         self.assertIn(
             "moments.private.publishText",
             [action for action, _ in self.sessions["ios_alice"].calls],
