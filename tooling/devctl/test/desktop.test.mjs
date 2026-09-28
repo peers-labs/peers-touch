@@ -8,6 +8,8 @@ import {
   desktopRuntimeIdentity,
   desktopTauriArguments,
   ensureDesktopDependencies,
+  ensureDesktopGeneratedSources,
+  reconcileDesktopRuntime,
 } from '../desktop.mjs';
 import { ERROR_CODES } from '../errors.mjs';
 
@@ -20,6 +22,31 @@ function dependencyFixture(t) {
       viteScript: path.join(root, 'apps', 'desktop', 'node_modules', 'vite.js'),
       tauriScript: path.join(root, 'apps', 'desktop', 'node_modules', 'tauri.js'),
       dependencyLog: path.join(root, 'runtime', 'desktop-dependencies-install.log'),
+    },
+  };
+}
+
+function generatedSourceFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devctl-desktop-proto-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const protoRoot = path.join(root, 'model');
+  const protoOutput = path.join(root, 'apps', 'desktop', 'src', 'gen', 'proto');
+  const modelBuildScript = path.join(protoRoot, 'build.sh');
+  fs.mkdirSync(path.join(protoRoot, 'domain', 'chat'), { recursive: true });
+  fs.writeFileSync(
+    path.join(protoRoot, 'domain', 'chat', 'storage.proto'),
+    'syntax = "proto3";\n',
+  );
+  fs.writeFileSync(modelBuildScript, '#!/bin/bash\n');
+  fs.chmodSync(modelBuildScript, 0o755);
+  return {
+    root,
+    output: path.join(protoOutput, 'domain', 'chat', 'storage_pb.ts'),
+    values: {
+      protoRoot,
+      protoOutput,
+      modelBuildScript,
+      generatedSourceLog: path.join(root, 'runtime', 'desktop-proto.log'),
     },
   };
 }
@@ -172,5 +199,179 @@ test('desktop dependency preparation preserves a typed install failure', (t) => 
   assert.equal(
     fs.readFileSync(fixture.values.dependencyLog, 'utf8'),
     'lockfile mismatch\n',
+  );
+});
+
+test('desktop generated-source preparation fills missing proto bindings once', (t) => {
+  const fixture = generatedSourceFixture(t);
+  const calls = [];
+  const runCommand = (command, args, options) => {
+    calls.push({ command, args, options });
+    fs.mkdirSync(path.dirname(fixture.output), { recursive: true });
+    fs.writeFileSync(fixture.output, 'export {};\n');
+    return { status: 0, stdout: 'generated\n', stderr: '' };
+  };
+
+  const generated = ensureDesktopGeneratedSources(
+    fixture.root,
+    process.env,
+    fixture.values,
+    runCommand,
+  );
+  const reused = ensureDesktopGeneratedSources(
+    fixture.root,
+    process.env,
+    fixture.values,
+    runCommand,
+  );
+
+  assert.equal(generated.generated, true);
+  assert.deepEqual(generated.missingBefore, [fixture.output]);
+  assert.equal(reused.generated, false);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args[0], fixture.values.modelBuildScript);
+  assert.equal(
+    fs.readFileSync(fixture.values.generatedSourceLog, 'utf8'),
+    'generated\n',
+  );
+});
+
+test('desktop partial managed runtime is stopped before restart', () => {
+  const stopped = [];
+  const values = {
+    mode: 'app',
+    tauriService: 'desktop-app-tauri',
+    viteService: 'desktop-app-vite',
+  };
+  const result = reconcileDesktopRuntime(
+    '/runtime',
+    values,
+    {
+      web: {
+        health: { ok: true },
+        process: {
+          status: 'running',
+          record: { sourceCommit: 'old' },
+        },
+      },
+      gateway: {
+        listening: false,
+        process: { status: 'stale', record: {} },
+      },
+    },
+    'current',
+    (stateDirectory, service) => {
+      stopped.push({ stateDirectory, service });
+      return { status: 'stopped' };
+    },
+  );
+
+  assert.equal(result.reused, false);
+  assert.deepEqual(stopped, [
+    { stateDirectory: '/runtime', service: 'desktop-app-tauri' },
+    { stateDirectory: '/runtime', service: 'desktop-app-vite' },
+  ]);
+});
+
+test('desktop reuses only a complete source-matched managed runtime', () => {
+  const values = {
+    mode: 'app',
+    tauriService: 'desktop-app-tauri',
+    viteService: 'desktop-app-vite',
+  };
+  const existing = {
+    web: {
+      health: { ok: true },
+      process: {
+        status: 'running',
+        record: { sourceCommit: 'current' },
+      },
+    },
+    gateway: {
+      listening: true,
+      process: {
+        status: 'running',
+        record: { sourceCommit: 'current' },
+      },
+    },
+  };
+
+  assert.deepEqual(
+    reconcileDesktopRuntime(
+      '/runtime',
+      values,
+      existing,
+      'current',
+      () => assert.fail('source-matched runtime must not be stopped'),
+    ),
+    { reused: true, stopped: [] },
+  );
+});
+
+test('desktop recycles a complete managed runtime from another source commit', () => {
+  const stopped = [];
+  const values = {
+    mode: 'app',
+    tauriService: 'desktop-app-tauri',
+    viteService: 'desktop-app-vite',
+  };
+  const result = reconcileDesktopRuntime(
+    '/runtime',
+    values,
+    {
+      web: {
+        health: { ok: true },
+        process: {
+          status: 'running',
+          record: { sourceCommit: 'old' },
+        },
+      },
+      gateway: {
+        listening: true,
+        process: {
+          status: 'running',
+          record: { sourceCommit: 'old' },
+        },
+      },
+    },
+    'current',
+    (_stateDirectory, service) => {
+      stopped.push(service);
+      return { status: 'stopped' };
+    },
+  );
+
+  assert.equal(result.reused, false);
+  assert.deepEqual(stopped, [
+    'desktop-app-tauri',
+    'desktop-app-vite',
+  ]);
+});
+
+test('desktop never reconciles a foreign runtime-state record', () => {
+  assert.throws(
+    () =>
+      reconcileDesktopRuntime(
+        '/runtime',
+        {
+          mode: 'app',
+          tauriService: 'desktop-app-tauri',
+          viteService: 'desktop-app-vite',
+        },
+        {
+          web: {
+            health: { ok: true },
+            process: { status: 'foreign', record: {} },
+          },
+          gateway: {
+            listening: false,
+            process: { status: 'absent' },
+          },
+        },
+        'current',
+        () => assert.fail('foreign runtime must not be stopped'),
+      ),
+    (error) =>
+      error.code === ERROR_CODES.PROCESS_IDENTITY_MISMATCH,
   );
 });

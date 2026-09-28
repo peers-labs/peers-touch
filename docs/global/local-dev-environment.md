@@ -351,9 +351,13 @@ acquisition so the declared `sourceHead` equals the live worktree HEAD.
 `make desktop` and `make desktop-web` are self-preparing. They resolve ports,
 Station topology, and runtime settings from the selected Profile; resolve
 package requirements from the repository manifests and `pnpm-lock.yaml`;
-install missing packages with `pnpm install --frozen-lockfile`; and run the
-source-aware Station ready closure before starting Desktop. A separate
-`pnpm install` or `make station` is not required.
+install missing packages with `pnpm install --frozen-lockfile`; generate missing
+Desktop TypeScript proto bindings through `model/build.sh`; and run the
+source-aware Station ready closure before starting Desktop. A complete managed
+Vite/Tauri pair is reused only when both records match the current Git commit.
+Partial or source-stale managed pairs are stopped as one owned runtime before
+ports are checked and the pair is restarted. A separate `pnpm install`,
+`make model-gen`, or `make station` is not required.
 
 Registration does not create or edit an environment definition. A later
 destructive wrapper uses the generic lease API after deriving Profile reset
