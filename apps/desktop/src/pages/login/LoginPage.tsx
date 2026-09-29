@@ -645,6 +645,7 @@ export function LoginPage({
   const cardMinHeight = loginCardMinHeight(loginState, !!expiredAccount);
   const cardStyle: React.CSSProperties = {
     width: CARD_WIDTH,
+    maxWidth: '100%',
     minHeight: cardMinHeight,
     background: token.colorBgContainer,
     borderRadius: 24,
@@ -654,7 +655,6 @@ export function LoginPage({
     position: 'relative',
   };
 
-  const shiftX = panelOpen ? -(PANEL_WIDTH + PANEL_GAP + ARROW_SIZE) / 2 : 0;
   const hasSignedInUser = hasValidRestoredUser;
 
   // ── Gate state prop for LoginFormView ──
@@ -812,16 +812,19 @@ export function LoginPage({
   };
 
   const cardContent = (
-    <div style={{
-      position: 'relative',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 0,
-      transform: `translateX(${shiftX}px)`,
-      transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-    }}>
+    <div
+      className={`login-card-cluster${panelOpen ? ' login-card-cluster--panel-open' : ''}`}
+      style={{
+        '--login-card-width': `${CARD_WIDTH}px`,
+        '--login-panel-width': `${PANEL_WIDTH}px`,
+        '--login-panel-gap': `${PANEL_GAP}px`,
+        '--login-arrow-size': `${ARROW_SIZE}px`,
+      } as React.CSSProperties}
+    >
       <Flexbox
         ref={cardRef}
+        className="login-card"
+        data-pt-login-card
         style={cardStyle}
         align="center"
         justify="center"
@@ -832,25 +835,15 @@ export function LoginPage({
 
       {panelOpen && (
         <div
-          style={{
-            position: 'absolute',
-            left: `calc(100% + ${PANEL_GAP}px)`,
-            top: 0,
-            height: '100%',
-            pointerEvents: 'none',
-          }}
+          className="login-oauth-panel-slot"
         >
           <svg
+            className="login-oauth-panel-arrow"
             width={ARROW_SIZE}
             height={ARROW_SIZE * 2}
             style={{
-              position: 'absolute',
               top: arrowTop,
-              left: 0,
-              transform: 'translateY(-50%)',
               filter: 'drop-shadow(-1px 0 1px rgba(0,0,0,0.05))',
-              pointerEvents: 'none',
-              zIndex: 1,
             }}
           >
             <polygon
@@ -861,16 +854,15 @@ export function LoginPage({
 
           <div
             ref={panelRef}
+            className="login-oauth-panel"
+            data-pt-login-oauth-panel={connectProvider.id}
             style={{
-              position: 'absolute',
               top: panelTop,
-              left: ARROW_SIZE,
-              pointerEvents: 'auto',
             }}
           >
             <Flexbox
               style={{
-                width: PANEL_WIDTH,
+                width: '100%',
                 background: token.colorBgContainer,
                 borderRadius: 14,
                 boxShadow: `0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px ${token.colorBorderSecondary}`,

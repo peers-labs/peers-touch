@@ -4,6 +4,7 @@
   "domain": "station-access",
   "status": "active",
   "owners": [
+    "apps/desktop/src/index.css",
     "apps/desktop/src/pages/login/**",
     "apps/desktop/src/services/accessGate.ts",
     "apps/desktop/src-tauri/src/application/station_binding/**",
@@ -20,10 +21,12 @@
   ],
   "visible_surfaces": [
     {"type": "native-desktop", "route": "access-gate"},
+    {"type": "browser", "route": "desktop-access-gate"},
     {"type": "native-mobile", "route": "access-gate"}
   ],
   "required_gates": [
     "station-access-capability-contract",
+    "station-access-desktop-oauth-layout-e2e",
     "station-access-auth-e2e"
   ],
   "acceptance": {
@@ -32,12 +35,14 @@
       "a granted decision activates exactly the actor and Station named by the bound runtime"
     ],
     "surface": [
-      "Desktop and Mobile leave the Access Gate only after the canonical decision is granted"
+      "Desktop and Mobile leave the Access Gate only after the canonical decision is granted",
+      "Desktop GitHub and Google actions expose a complete provider-specific side card without clipping or covering the login card at wide and narrow window sizes"
     ]
   },
   "negative": [
     "reachability metadata must not substitute for signed Station identity",
     "unknown gate, identity mismatch, and expired attempt must fail closed",
-    "authentication failure must not invoke a direct-login fallback"
+    "authentication failure must not invoke a direct-login fallback",
+    "the Desktop OAuth side card must not cross the viewport boundary or intersect the login card"
   ]
 }

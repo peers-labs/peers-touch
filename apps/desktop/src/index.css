@@ -117,6 +117,51 @@ input, textarea, [contenteditable="true"] {
   min-width: 0;
 }
 
+.login-card-cluster {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: var(--login-card-width);
+  max-width: 100%;
+}
+
+.login-card-cluster--panel-open {
+  width: calc(
+    var(--login-card-width)
+    + var(--login-panel-gap)
+    + var(--login-arrow-size)
+    + var(--login-panel-width)
+  );
+}
+
+.login-card {
+  flex: 0 0 var(--login-card-width);
+}
+
+.login-oauth-panel-slot {
+  position: absolute;
+  top: 0;
+  left: calc(var(--login-card-width) + var(--login-panel-gap));
+  width: calc(var(--login-arrow-size) + var(--login-panel-width));
+  height: 100%;
+  pointer-events: none;
+}
+
+.login-oauth-panel-arrow {
+  position: absolute;
+  left: 0;
+  z-index: 1;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.login-oauth-panel {
+  position: absolute;
+  left: var(--login-arrow-size);
+  width: var(--login-panel-width);
+  pointer-events: auto;
+}
+
 .pt-network-intro {
   position: absolute;
   inset: 0;
@@ -349,6 +394,52 @@ input, textarea, [contenteditable="true"] {
   /* On narrow windows the card dominates; fade the mesh further back. */
   .pt-network-intro {
     opacity: 0.5;
+  }
+}
+
+@media (max-width: 760px) {
+  .login-network-shell {
+    align-items: flex-start;
+    overflow: auto;
+  }
+
+  .login-card-region {
+    align-items: center;
+    width: 100%;
+    min-height: 100%;
+  }
+
+  .login-card-cluster,
+  .login-card-cluster--panel-open {
+    flex-direction: column;
+    width: min(var(--login-card-width), 100%);
+    margin-block: auto;
+    gap: 12px;
+  }
+
+  .login-card {
+    flex-basis: auto;
+    width: 100% !important;
+  }
+
+  .login-oauth-panel-slot {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+    pointer-events: auto;
+  }
+
+  .login-oauth-panel-arrow {
+    display: none;
+  }
+
+  .login-oauth-panel {
+    position: relative;
+    top: auto !important;
+    left: auto;
+    width: 100%;
   }
 }
 

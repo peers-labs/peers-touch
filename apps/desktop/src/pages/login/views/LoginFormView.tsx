@@ -297,6 +297,7 @@ export const LoginFormView = memo(function LoginFormView({
               return (
                 <Button
                   key={provider.id}
+                  data-pt-login-oauth-provider={provider.id}
                   ref={(el) => { buttonRefs.current[provider.id] = el; }}
                   style={{
                     ...oauthButtonStyle,
@@ -317,10 +318,20 @@ export const LoginFormView = memo(function LoginFormView({
             })}
             {oauth2AccountProviders.length === 0 && (
               <>
-                <Button style={oauthButtonStyle} icon={<Github size={18} />} disabled>
+                <Button
+                  data-pt-login-oauth-provider="github"
+                  style={oauthButtonStyle}
+                  icon={<Github size={18} />}
+                  disabled
+                >
                   {t('auth.login.continueWith', { provider: 'GitHub' })}
                 </Button>
-                <Button style={oauthButtonStyle} icon={<GoogleIcon />} disabled>
+                <Button
+                  data-pt-login-oauth-provider="google"
+                  style={oauthButtonStyle}
+                  icon={<GoogleIcon />}
+                  disabled
+                >
                   {t('auth.login.continueWith', { provider: 'Google' })}
                 </Button>
               </>
