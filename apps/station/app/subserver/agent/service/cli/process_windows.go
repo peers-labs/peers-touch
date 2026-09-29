@@ -5,6 +5,7 @@ package cli
 import (
 	"os"
 	"os/exec"
+	"time"
 )
 
 func configureProcessGroup(_ *exec.Cmd) {}
@@ -21,4 +22,8 @@ func killProcessGroup(process *os.Process) error {
 		return nil
 	}
 	return process.Kill()
+}
+
+func shutdownProcessGroup(_ *os.Process, _ time.Duration) error {
+	return nil
 }
