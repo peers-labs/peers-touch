@@ -1354,9 +1354,13 @@ class AgentHarnessStaticTest(unittest.TestCase):
             scenario,
         )
         self.assertIn(
-            "await cleanupFoundationToolConversation(conversationId, turnId)",
+            "await cleanupFoundationToolConversation(\n"
+            "              conversationId,\n"
+            "              turnId,\n"
+            "              30_000,\n",
             scenario,
         )
+        self.assertNotIn("await deleteFoundationConversation(", scenario)
         self.assertIn("await api.deleteAgent(disposableAgentId)", scenario)
         self.assertIn("disposableAgentDeleted,", scenario)
         self.assertIn("agentRestored,", scenario)

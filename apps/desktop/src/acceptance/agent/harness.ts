@@ -1215,8 +1215,11 @@ async function observeFoundationActiveDependency(
 
 async function deleteFoundationConversation(
   conversationId: string,
+  timeoutMs = 3_000,
 ): Promise<string> {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  const deadline = Date.now() + timeoutMs;
+  let lastErrorCode = '';
+  do {
     try {
       const conversation = await api.getAgentConversation(conversationId);
       if (conversation.status === 'deleted') {
@@ -1230,6 +1233,7 @@ async function deleteFoundationConversation(
       return '';
     } catch (error) {
       const code = observedErrorCode(error);
+      lastErrorCode = code;
       if (isFoundationResourceNotFound(error)) return 'AGENT_4004';
       if (code !== 'VERSION_CONFLICT' && code !== 'ACTIVE_DEPENDENCY') {
         try {
@@ -1238,15 +1242,21 @@ async function deleteFoundationConversation(
           throw error;
         }
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) break;
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, Math.min(250, remainingMs)));
     }
-  }
-  throw new Error('agent.acceptance.foundationConversationDeleteBlocked');
+  } while (Date.now() < deadline);
+  throw new Error(
+    `agent.acceptance.foundationConversationDeleteBlocked:${lastErrorCode || 'UNKNOWN'}`,
+  );
 }
 
 async function cleanupFoundationToolConversation(
   conversationId: string,
   turnId: string,
+  deleteTimeoutMs = 3_000,
 ): Promise<void> {
   let cancellationError: unknown = null;
   if (turnId) {
@@ -1258,7 +1268,10 @@ async function cleanupFoundationToolConversation(
   }
 
   try {
-    const deletionErrorCode = await deleteFoundationConversation(conversationId);
+    const deletionErrorCode = await deleteFoundationConversation(
+      conversationId,
+      deleteTimeoutMs,
+    );
     let conversationDeleted = deletionErrorCode.includes('AGENT_4004');
     if (!conversationDeleted) {
       try {
@@ -34782,7 +34795,11 @@ export function installAcceptanceHarness(): void {
           if (conversationId) {
             clearFoundationLocalConversationProjection(conversationId);
             localProjectionCleared = true;
-            await cleanupFoundationToolConversation(conversationId, turnId);
+            await cleanupFoundationToolConversation(
+              conversationId,
+              turnId,
+              30_000,
+            );
             conversationDeleted = true;
           }
         } finally {
