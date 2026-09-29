@@ -36,6 +36,7 @@ from tooling.acceptance.provisioners.home_station import (
     agent_native_requires_disposable_fixture,
     agent_native_requires_provider,
     agent_profile_for_gate,
+    audit_remote_station_cli_processes,
     resolve_existing_actor,
 )
 
@@ -810,6 +811,125 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertIn("pt-agent-cli-provider-run-cli-provider", client.storage_root)
         self.assertFalse(agent_native_requires_disposable_fixture(gate_id))
         self.assertFalse(agent_native_requires_provider(gate_id))
+
+    def test_remote_station_cli_process_audit_checks_only_process_argv0(self):
+        transport = MagicMock()
+        transport.run_argv.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        )
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "reviewed_remote_transport",
+            return_value=(
+                transport,
+                {"PT_ACCEPTANCE_COMPOSE_PROJECT": "pt-station-two"},
+            ),
+        ):
+            audit_remote_station_cli_processes("station-two")
+
+        remote_argv = transport.run_argv.call_args.args[0]
+        self.assertEqual(remote_argv[:2], ["bash", "-lc"])
+        remote_script = remote_argv[2]
+        self.assertIn(
+            "label=com.docker.compose.project=pt-station-two",
+            remote_script,
+        )
+        self.assertIn(
+            "label=com.docker.compose.service=station",
+            remote_script,
+        )
+        self.assertIn("/proc/[0-9]*/cmdline", remote_script)
+        self.assertIn("sed -n '1p'", remote_script)
+        self.assertIn("traecli|host-cli-bin", remote_script)
+        self.assertEqual(
+            transport.run_argv.call_args.kwargs,
+            {"timeout": 30, "check": False},
+        )
+
+    def test_remote_station_cli_process_audit_reports_bounded_failures(self):
+        cases = (
+            (41, "could not select exactly one Station container"),
+            (42, "detected a residual provider process"),
+            (17, "could not complete"),
+        )
+        for returncode, expected in cases:
+            with self.subTest(returncode=returncode):
+                transport = MagicMock()
+                transport.run_argv.return_value = subprocess.CompletedProcess(
+                    args=[],
+                    returncode=returncode,
+                    stdout="sensitive provider prompt",
+                    stderr="sensitive remote command",
+                )
+                with patch(
+                    "tooling.acceptance.provisioners.home_station."
+                    "reviewed_remote_transport",
+                    return_value=(
+                        transport,
+                        {
+                            "PT_ACCEPTANCE_COMPOSE_PROJECT": (
+                                "pt-station-two"
+                            )
+                        },
+                    ),
+                ), self.assertRaisesRegex(RuntimeError, expected) as raised:
+                    audit_remote_station_cli_processes("station-two")
+
+                self.assertNotIn("sensitive", str(raised.exception))
+
+    def test_agent_cli_provider_registers_remote_process_cleanup_audit(self):
+        gate_id = "agent-cli-provider-primary-native-e2e"
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        manifest = dataclasses.replace(
+            provisioner._new_base_manifest(gate_id),
+            profile_slot=2,
+        )
+        actor_ref = {
+            "artifactKind": "acceptance-artifact-ref",
+            "workspaceId": "0" * 16,
+            "gateId": gate_id,
+            "runId": manifest.run_id,
+            "path": "runtime/actors.json",
+            "sha256": "0" * 64,
+            "mediaType": "application/json",
+        }
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "resolve_existing_actor",
+            return_value=MagicMock(),
+        ), patch(
+            "tooling.acceptance.provisioners.home_station."
+            "persist_actor_manifest",
+            return_value=(None, None, actor_ref),
+        ), patch.object(
+            provisioner,
+            "_agent_cli_provider_client",
+            return_value=MagicMock(),
+        ):
+            provisioner._agent_native_manifest(
+                manifest,
+                gate_id=gate_id,
+                station_url="http://station.example:28080",
+                deployment_environment="station-two",
+                profile_env={"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+            )
+
+        with patch(
+            "tooling.acceptance.provisioners.home_station."
+            "audit_remote_station_cli_processes",
+        ) as audit:
+            completed = provisioner.cleanup()
+
+        self.assertEqual(
+            completed,
+            ("remote-station-cli-process-audit:station-two",),
+        )
+        audit.assert_called_once_with("station-two")
 
     def test_existing_actor_resolution_logs_out_without_reset(self):
         login = MagicMock()
