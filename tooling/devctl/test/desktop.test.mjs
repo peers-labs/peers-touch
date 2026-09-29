@@ -7,9 +7,11 @@ import test from 'node:test';
 import {
   desktopRuntimeIdentity,
   desktopTauriArguments,
+  desktopViteReadinessUrl,
   ensureDesktopDependencies,
   ensureDesktopGeneratedSources,
   reconcileDesktopRuntime,
+  waitForDesktopVite,
 } from '../desktop.mjs';
 import { ERROR_CODES } from '../errors.mjs';
 
@@ -56,6 +58,34 @@ test('desktop development keeps the default Tauri feature set', () => {
     desktopTauriArguments('/tmp/tauri.conf.json', {}),
     ['dev', '--no-watch', '--config', '/tmp/tauri.conf.json'],
   );
+});
+
+test('desktop waits for the Vite entry module before launching Tauri', async () => {
+  assert.equal(
+    desktopViteReadinessUrl(3210),
+    'http://127.0.0.1:3210/src/main.tsx',
+  );
+  const processAlive = () => true;
+  const calls = [];
+  const result = await waitForDesktopVite(
+    3210,
+    'app',
+    processAlive,
+    async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200 };
+    },
+  );
+  assert.deepEqual(result, { ok: true, status: 200 });
+  assert.deepEqual(calls, [
+    {
+      url: 'http://127.0.0.1:3210/src/main.tsx',
+      options: {
+        label: 'Desktop app Vite',
+        processAlive,
+      },
+    },
+  ]);
 });
 
 test('desktop acceptance enables the embedded WebDriver feature', () => {
