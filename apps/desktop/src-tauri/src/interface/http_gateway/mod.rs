@@ -5683,14 +5683,12 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            match gateway_identity(state) {
-                Ok((actor_ptid, _)) => to_json(app_oauth2::oauth2_start_loopback(
-                    input,
-                    state.i18n.clone(),
-                    &actor_ptid,
-                )),
-                Err(error) => error,
-            }
+            let actor_ptid = actor_ptid_from_state(state);
+            to_json(app_oauth2::oauth2_start_loopback(
+                input,
+                state.i18n.clone(),
+                actor_ptid.as_deref(),
+            ))
         }
         "oauth2_poll_loopback" => {
             let input = match parse_args::<OAuthLoopbackPollInput>(args) {
@@ -8569,6 +8567,47 @@ mod tests {
                 .and_then(Value::as_str),
             Some("UNAUTHORIZED")
         );
+    }
+
+    #[test]
+    fn oauth_loopback_start_allows_unauthenticated_login_for_builtin_providers() {
+        for provider_id in ["github", "google"] {
+            let layout = temp_layout(&format!("oauth-loopback-pre-auth-{provider_id}"));
+            let config_dir = layout
+                .dirs
+                .get(&StorageKind::Config)
+                .cloned()
+                .unwrap_or_else(PathBuf::new);
+            let state = AppState::new(layout, I18nService::new(&config_dir));
+            let runtime = GatewayRuntime::headless();
+
+            let result = dispatch(
+                "oauth2_start_loopback",
+                json!({ "id": provider_id, "environment": "prod" }),
+                &state,
+                &runtime,
+            );
+
+            assert!(
+                app_result_ok(&result),
+                "{provider_id} pre-authentication OAuth failed: {result}",
+            );
+            let status = status_json(&result);
+            assert!(
+                status
+                    .get("auth_url")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value.contains("return_to=")),
+                "{provider_id} must return an OAuth authorization URL: {status}",
+            );
+            assert!(
+                status
+                    .get("session_id")
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value.starts_with("lp-")),
+                "{provider_id} must return a loopback session: {status}",
+            );
+        }
     }
 
     #[test]
