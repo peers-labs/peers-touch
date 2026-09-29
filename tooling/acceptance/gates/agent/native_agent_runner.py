@@ -807,7 +807,7 @@ class AgentNativeJourney:
         expected_title: str | None = None,
         expected_default: bool | None = None,
     ) -> dict[str, Any]:
-        state = self.harness("getFoundationAgentState", timeout=60)
+        state = self.harness("getCoreLifecycleAgentState", timeout=60)
         require(isinstance(state, Mapping), "Agent Station readback is invalid")
         agent = state.get("agent")
         conversations = state.get("conversations")
@@ -977,7 +977,7 @@ class AgentNativeJourney:
         self.step("navigate_and_configure", self.navigate_and_configure)
         baseline = self.step(
             "station_baseline_readback",
-            lambda: self.harness("getFoundationAgentState", timeout=60),
+            lambda: self.harness("getCoreLifecycleAgentState", timeout=60),
         )
         require(isinstance(baseline, Mapping), "baseline Agent state is invalid")
         baseline_agent = baseline.get("agent")

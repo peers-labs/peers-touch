@@ -20,6 +20,7 @@
     "apps/desktop/src/components/agent/workbench/AgentRail.tsx",
     "apps/desktop/src/components/agent/workbench/TopicRail.tsx",
     "apps/desktop/src/hooks/useCommandMenuItems.ts",
+    "apps/desktop/src/acceptance/agent/harness.ts",
     "apps/desktop/src/pages/AgentCanvasPage.tsx",
     "apps/desktop/src/pages/AgentProfilePage.tsx",
     "apps/desktop/src/pages/HomePage.tsx",
