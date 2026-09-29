@@ -31,6 +31,8 @@ REQUIRED_ASSERTIONS = frozenset(
         "native_login_surface_is_unauthenticated",
         "github_loopback_starts_before_authentication",
         "google_loopback_starts_before_authentication",
+        "github_loopback_cancels_before_authentication",
+        "google_loopback_cancels_before_authentication",
         "native_runtime_is_source_bound",
         "native_runtime_cleanup",
     }
@@ -59,6 +61,23 @@ Promise.resolve(internals.invoke('oauth2_start_loopback', {
 })).then(
   (value) => finish({ transport: 'resolved', value }),
   (error) => finish({
+    transport: 'rejected',
+    error: {
+      code: error?.code || error?.error?.code || '',
+      message: error?.message || error?.error?.message || String(error),
+    },
+  }),
+);
+"""
+OAUTH_CANCEL_SCRIPT = """
+const sessionId = arguments[0];
+const done = arguments[arguments.length - 1];
+const internals = window.__TAURI_INTERNALS__;
+Promise.resolve(internals.invoke('oauth2_cancel_loopback', {
+  input: { session_id: sessionId },
+})).then(
+  (value) => done({ transport: 'resolved', value }),
+  (error) => done({
     transport: 'rejected',
     error: {
       code: error?.code || error?.error?.code || '',
@@ -161,6 +180,18 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                     and providers[provider_id]["hasAuthorizationUrl"] is True
                     and providers[provider_id]["hasLoopbackSession"] is True,
                     json.dumps(providers[provider_id], sort_keys=True),
+                )
+                cancellation = self._cancel_oauth(
+                    session,
+                    providers[provider_id]["sessionId"],
+                )
+                providers[provider_id]["cancellation"] = cancellation
+                self.assert_condition(
+                    f"{provider_id}_loopback_cancels_before_authentication",
+                    cancellation["transport"] == "resolved"
+                    and cancellation["cancelled"] is True
+                    and cancellation["status"] == "cancelled",
+                    json.dumps(cancellation, sort_keys=True),
                 )
             source_identity = self._source_identity()
             self.assert_condition(
@@ -327,6 +358,38 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             ),
             "hasAuthorizationUrl": parsed_url.scheme in {"http", "https"},
             "hasLoopbackSession": session_id.startswith("lp-"),
+            "sessionId": session_id,
+        }
+
+    @staticmethod
+    def _cancel_oauth(
+        session: TauriSession,
+        session_id: str,
+    ) -> dict[str, Any]:
+        raw = session.execute_async_script(OAUTH_CANCEL_SCRIPT, session_id)
+        if not isinstance(raw, Mapping) or raw.get("transport") != "resolved":
+            raise GateError(
+                "OAuth cancellation failed before authentication: "
+                f"{json.dumps(raw, sort_keys=True)}"
+            )
+        result = raw.get("value")
+        if not isinstance(result, Mapping) or result.get("ok") is not True:
+            raise GateError(
+                "OAuth cancellation was rejected before authentication: "
+                f"{json.dumps(result, sort_keys=True)}"
+            )
+        data = result.get("data")
+        status_raw = data.get("status") if isinstance(data, Mapping) else None
+        if not isinstance(status_raw, str):
+            raise GateError("OAuth cancellation omitted status")
+        try:
+            status = json.loads(status_raw)
+        except json.JSONDecodeError as error:
+            raise GateError("OAuth cancellation returned invalid status JSON") from error
+        return {
+            "transport": "resolved",
+            "cancelled": status.get("cancelled") is True,
+            "status": str(status.get("status") or ""),
         }
 
     @staticmethod

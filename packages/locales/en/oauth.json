@@ -1,5 +1,6 @@
 {
   "oauth.callback.autoCloseHint": "This page will try to close automatically. You can close it manually if it doesn't.",
+  "oauth.callback.cancelled": "This login attempt was cancelled. Return to Peers to start again.",
   "oauth.callback.loginComplete": "Login completed. You can return to Peers.",
   "oauth.callback.missingFields": "Authorization callback missing required fields. Please try again.",
   "oauth.callback.providerMismatch": "Authorization provider mismatch. Please try again.",
