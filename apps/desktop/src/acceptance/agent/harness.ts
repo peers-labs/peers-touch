@@ -2236,6 +2236,37 @@ function foundationDiagnosticToolFacts(
     evidenceRecord(value, 'turnDiagnosticToolFact'));
 }
 
+function isTransientFoundationFetchError(
+  error: unknown,
+): error is Error {
+  if (!(error instanceof Error)) return false;
+  const transientMessage = [
+    'Failed to fetch',
+    'Load failed',
+    'NetworkError when attempting to fetch resource.',
+  ].includes(error.message);
+  return transientMessage
+    && (error instanceof TypeError || error.name === 'RustCommandException');
+}
+
+async function retryFoundationTransientFetch<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientFoundationFetchError(error)) throw error;
+      lastError = error;
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError ?? new Error('agent.acceptance.foundationFetchRetryExhausted');
+}
+
 async function waitForFoundationToolFacts(
   turnId: string,
   predicate: (
@@ -2249,13 +2280,23 @@ async function waitForFoundationToolFacts(
   facts: Record<string, unknown>[];
 }> {
   const startedAt = Date.now();
+  let lastTransientError = '';
   while (Date.now() - startedAt < timeoutMs) {
-    const replay = await foundationDiagnosticReplay(turnId);
-    const facts = foundationDiagnosticToolFacts(replay);
-    if (predicate(facts, replay)) return { replay, facts };
+    try {
+      const replay = await foundationDiagnosticReplay(turnId);
+      const facts = foundationDiagnosticToolFacts(replay);
+      if (predicate(facts, replay)) return { replay, facts };
+      lastTransientError = '';
+    } catch (error) {
+      if (!isTransientFoundationFetchError(error)) throw error;
+      lastTransientError = error.message;
+    }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
-  throw new Error(`timed out waiting for: ${description}`);
+  throw new Error(
+    `timed out waiting for: ${description}`
+    + (lastTransientError ? `; last transient error: ${lastTransientError}` : ''),
+  );
 }
 
 function governedToolSettlementSucceeded(
@@ -2326,15 +2367,16 @@ async function updateFoundationToolPolicy(
   enabled = true,
   idempotencyKey = crypto.randomUUID(),
 ): Promise<AgentCapabilityBinding> {
-  return api.upsertAgentCapabilityBinding({
-    bindingId: current?.bindingId,
-    agentId: agent.id || agent.name,
-    capabilityId: fixture.manifest.capabilityId,
-    capabilityVersion: fixture.manifest.version,
-    enabled,
-    approvalPolicy: policy,
-    expectedAgentVersion: agent.version,
-  }, current?.revision ?? 0, idempotencyKey);
+  return retryFoundationTransientFetch(() =>
+    api.upsertAgentCapabilityBinding({
+      bindingId: current?.bindingId,
+      agentId: agent.id || agent.name,
+      capabilityId: fixture.manifest.capabilityId,
+      capabilityVersion: fixture.manifest.version,
+      enabled,
+      approvalPolicy: policy,
+      expectedAgentVersion: agent.version,
+    }, current?.revision ?? 0, idempotencyKey));
 }
 
 async function updateFoundationCapabilityBindingEnabled(
@@ -4566,7 +4608,9 @@ async function runFoundationToolLoopBudget(input: {
   replay: Record<string, unknown>;
   facts: Record<string, unknown>;
 }> {
-  const capabilitySession = await resolveFoundationToolTurnSession();
+  const capabilitySession = await retryFoundationTransientFetch(
+    resolveFoundationToolTurnSession,
+  );
   let conversationId = '';
   let turnId = '';
   let events: ObservedFoundationTurnResult['events'] = [];
@@ -4683,7 +4727,9 @@ async function runFoundationToolLoopBudget(input: {
       throw new Error('agent.acceptance.foundationToolLoopBudgetNotObserved');
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const replay = await foundationDiagnosticReplay(turnId);
+    const replay = await retryFoundationTransientFetch(
+      () => foundationDiagnosticReplay(turnId),
+    );
     const executionAfterLimit =
       foundationDiagnosticToolFacts(replay)
         .reduce(
@@ -4784,7 +4830,9 @@ async function runFoundationF04Scenario(input: {
     decision?: boolean,
   ) => {
     await applyPolicy(policy);
-    const capabilitySession = await resolveFoundationToolTurnSession();
+    const capabilitySession = await retryFoundationTransientFetch(
+      resolveFoundationToolTurnSession,
+    );
     const turn = await startFoundationToolTurn({
       agent: input.agent,
       capabilitySessionId: capabilitySession.capabilitySessionId,

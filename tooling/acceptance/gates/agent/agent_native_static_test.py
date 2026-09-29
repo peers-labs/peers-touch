@@ -383,6 +383,50 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertTrue(HARNESS.is_file(), f"{HARNESS} must exist")
         self.source = HARNESS.read_text(encoding="utf-8")
 
+    def test_foundation_idempotent_calls_retry_only_transport_fetch_errors(
+        self,
+    ) -> None:
+        start = self.source.index(
+            "function isTransientFoundationFetchError"
+        )
+        end = self.source.index(
+            "function governedToolSettlementSucceeded",
+            start,
+        )
+        poller = self.source[start:end]
+
+        self.assertIn("error instanceof TypeError", poller)
+        self.assertIn("error.name === 'RustCommandException'", poller)
+        self.assertIn("'Failed to fetch'", poller)
+        self.assertIn("catch (error)", poller)
+        self.assertIn(
+            "if (!isTransientFoundationFetchError(error)) throw error;",
+            poller,
+        )
+        self.assertIn("for (let attempt = 0; attempt < 3; attempt += 1)", poller)
+        self.assertIn("last transient error", poller)
+        policy_start = self.source.index(
+            "async function updateFoundationToolPolicy"
+        )
+        policy_end = self.source.index(
+            "async function updateFoundationCapabilityBindingEnabled",
+            policy_start,
+        )
+        policy = self.source[policy_start:policy_end]
+        self.assertIn("return retryFoundationTransientFetch(() =>", policy)
+        self.assertIn("idempotencyKey));", policy)
+        f04_start = self.source.index("async function runFoundationF04Scenario")
+        f04_end = self.source.index(
+            "async function restoreFoundationExecutorUnavailableBinding",
+            f04_start,
+        )
+        f04 = self.source[f04_start:f04_end]
+        self.assertIn(
+            "retryFoundationTransientFetch(\n"
+            "      resolveFoundationToolTurnSession,",
+            f04,
+        )
+
     def test_attachment_turn_disables_unrelated_thinking(self) -> None:
         attachment_turn = self.source.split(
             "async function runFoundationAttachmentTurn",
@@ -3344,10 +3388,11 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
 
         self.assertLess(
             run_case.index(
-                "const capabilitySession = await resolveFoundationToolTurnSession()"
+                "const capabilitySession = await retryFoundationTransientFetch("
             ),
             run_case.index("const turn = await startFoundationToolTurn"),
         )
+        self.assertIn("resolveFoundationToolTurnSession,", run_case)
         self.assertIn(
             "capabilitySessionId: capabilitySession.capabilitySessionId",
             run_case,
@@ -3364,16 +3409,17 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("replayTerminal: diagnosticReplayTerminal(replay)", run_case)
         self.assertLess(
             loop_helper.index(
-                "const capabilitySession = await resolveFoundationToolTurnSession()"
+                "const capabilitySession = await retryFoundationTransientFetch("
             ),
             loop_helper.index("const turn = await startFoundationToolTurn"),
         )
+        self.assertIn("resolveFoundationToolTurnSession,", loop_helper)
         self.assertIn(
             "capabilitySessionId: capabilitySession.capabilitySessionId",
             loop_helper,
         )
         self.assertEqual(
-            scenario.count("await resolveFoundationToolTurnSession()"),
+            scenario.count("resolveFoundationToolTurnSession,"),
             1,
         )
         self.assertNotIn("input.capabilitySessionId", scenario)
