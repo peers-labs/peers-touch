@@ -2668,19 +2668,55 @@ def _w8_receiver_ui_probe(
                 resource=f"client:{client.spec.profile}",
             ) from error
 
-    nav_target = execute(
-        """
-const root = document.querySelector('[data-pt-primary-nav="moments"]');
-const target = root?.querySelector('button') ?? root;
-return target instanceof HTMLElement ? target : null;
-"""
-    )
-    if nav_target is None:
+    def find_visible(using: str, selector: str) -> Any:
+        candidates = driver.find_elements(using, selector)
+        for candidate in candidates:
+            if candidate.is_displayed():
+                return candidate
+        return None
+
+    def xpath_literal(value: str) -> str:
+        if "'" not in value:
+            return f"'{value}'"
+        if '"' not in value:
+            return f'"{value}"'
+        parts = value.split("'")
+        quoted_parts = (f"'{part}'" for part in parts)
+        return "concat(" + ", \"'\", ".join(quoted_parts) + ")"
+
+    def find_visible_text(value: str, *, leaf_only: bool) -> Any:
+        leaf_predicate = "[not(*)]" if leaf_only else ""
+        return find_visible(
+            "xpath",
+            (
+                "//*[self::p or self::span or self::div or self::a "
+                f"or self::button]{leaf_predicate}"
+                f"[contains(string(.), {xpath_literal(value)})]"
+            ),
+        )
+
+    try:
+        nav_target = wait_until(
+            lambda: find_visible(
+                "css selector",
+                (
+                    '[data-pt-primary-nav="moments"] button, '
+                    '[data-pt-primary-nav="moments"]'
+                ),
+            ),
+            f"W8 {scenario_id} Moments product navigation",
+            timeout=90,
+            interval=0.25,
+        )
+    except Exception as error:
         raise RuntimeOwnerBlocked(
             "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
-            f"W8 scenario {scenario_id!r} cannot open the Moments product page",
+            (
+                f"W8 scenario {scenario_id!r} cannot open the Moments "
+                f"product page: {redact_text(str(error))}"
+            ),
             resource=f"client:{client.spec.profile}",
-        )
+        ) from error
     try:
         nav_target.click()
     except Exception as error:
@@ -2694,27 +2730,7 @@ return target instanceof HTMLElement ? target : null;
         ) from error
 
     def click_action_text() -> Any:
-        target = execute(
-            """
-const expected = arguments[0];
-const candidates = Array.from(
-  document.querySelectorAll('p, span, div, a, button'),
-);
-const target = candidates.find((element) => {
-  if (!(element instanceof HTMLElement)) return false;
-  if (element.children.length !== 0) return false;
-  if (!(element.textContent ?? '').includes(expected)) return false;
-  const style = window.getComputedStyle(element);
-  const rect = element.getBoundingClientRect();
-  return style.display !== 'none'
-    && style.visibility !== 'hidden'
-    && rect.width > 0
-    && rect.height > 0;
-});
-return target instanceof HTMLElement ? target : null;
-""",
-            action_text,
-        )
+        target = find_visible_text(action_text, leaf_only=True)
         if target is None:
             return None
         try:
@@ -2736,13 +2752,9 @@ return target instanceof HTMLElement ? target : null;
         )
         if open_comments:
             comments_target = wait_until(
-                lambda: execute(
-                    """
-const target = document.querySelector(
-  '[data-moments-comments-toggle]',
-);
-return target instanceof HTMLElement ? target : null;
-"""
+                lambda: find_visible(
+                    "css selector",
+                    "[data-moments-comments-toggle]",
                 ),
                 f"W8 {scenario_id} comment-thread action",
                 timeout=30,
@@ -2769,53 +2781,16 @@ return target instanceof HTMLElement ? target : null;
                     resource=f"client:{client.spec.profile}",
                 ) from error
 
-        receiver = wait_until(
-            lambda: execute(
-                """
-const expected = arguments[0];
-const candidates = Array.from(
-  document.querySelectorAll('p, span, div, a, button'),
-);
-const target = candidates.find((element) => {
-  if (!(element instanceof HTMLElement)) return false;
-  if (!(element.textContent ?? '').includes(expected)) return false;
-  const style = window.getComputedStyle(element);
-  const rect = element.getBoundingClientRect();
-  return style.display !== 'none'
-    && style.visibility !== 'hidden'
-    && rect.width > 0
-    && rect.height > 0;
-});
-return target
-  ? { tagName: target.tagName, visible: true }
-  : null;
-""",
-                visible_text,
-            ),
+        receiver_target = wait_until(
+            lambda: find_visible_text(visible_text, leaf_only=False),
             f"W8 {scenario_id} receiver-visible assertion",
             timeout=90,
             interval=0.25,
         )
         absence = wait_until(
-            lambda: execute(
-                """
-const forbidden = arguments[0];
-const visibleTexts = Array.from(
-  document.querySelectorAll('p, span, div, a, button'),
-).filter((element) => {
-  if (!(element instanceof HTMLElement)) return false;
-  const style = window.getComputedStyle(element);
-  const rect = element.getBoundingClientRect();
-  return style.display !== 'none'
-    && style.visibility !== 'hidden'
-    && rect.width > 0
-    && rect.height > 0;
-}).map((element) => element.textContent ?? '');
-return forbidden.every(
-  (expected) => !visibleTexts.some((text) => text.includes(expected)),
-);
-""",
-                list(absent_texts),
+            lambda: all(
+                find_visible_text(value, leaf_only=False) is None
+                for value in absent_texts
             ),
             f"W8 {scenario_id} receiver-visible negative assertion",
             timeout=30,
@@ -2838,7 +2813,7 @@ return forbidden.every(
             f"W8 scenario {scenario_id!r} did not execute a visible UI action",
             resource=f"client:{client.spec.profile}",
         )
-    if not isinstance(receiver, Mapping) or receiver.get("visible") is not True:
+    if receiver_target is None:
         raise RuntimeOwnerBlocked(
             "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
             (
@@ -2866,7 +2841,7 @@ return forbidden.every(
             + _sha256(f"{scenario_id}:{client.spec.profile}:{visible_text}")[:24]
         ),
         "actionTag": str(action["tagName"]),
-        "receiverTag": str(receiver["tagName"]),
+        "receiverTag": str(receiver_target.tag_name),
         "actionTextSha256": _sha256(action_text),
         "visibleTextSha256": _sha256(visible_text),
         "absentTextSha256": [

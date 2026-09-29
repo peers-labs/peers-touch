@@ -229,28 +229,56 @@ class RuntimeOwnerTest(unittest.TestCase):
         self,
     ) -> None:
         class Element:
-            tag_name = "p"
+            def __init__(self, tag_name: str) -> None:
+                self.tag_name = tag_name
+                self.clicked = False
 
             def click(self) -> None:
-                return None
+                self.clicked = True
+
+            def is_displayed(self) -> bool:
+                return True
 
         class Driver:
             session_id = "webdriver-session"
             current_url = "tauri://localhost/moments"
 
-            def execute_script(self, script: str, *arguments: object) -> object:
-                if 'data-pt-primary-nav="moments"' in script:
-                    return Element()
-                if "data-moments-comments-toggle" in script:
-                    return Element()
-                if "return target instanceof HTMLElement" in script:
-                    return Element()
-                if "return target" in script and arguments:
-                    return {"tagName": "P", "visible": True}
-                return True
+            def __init__(self) -> None:
+                self.nav = Element("button")
+                self.action = Element("p")
+                self.comments = Element("button")
+                self.receiver = Element("p")
 
+            def find_elements(self, using: str, selector: str) -> list[Element]:
+                self.assert_locator(using)
+                if using == "css selector":
+                    if 'data-pt-primary-nav="moments"' in selector:
+                        return [self.nav]
+                    if "data-moments-comments-toggle" in selector:
+                        return [self.comments]
+                if using == "xpath":
+                    if "'parent'" in selector:
+                        return [self.action]
+                    if "'comment'" in selector:
+                        return [self.receiver]
+                return []
+
+            def execute_script(self, script: str, *arguments: object) -> object:
+                self.assert_locator("script")
+                if "scrollIntoView" not in script or len(arguments) != 1:
+                    raise AssertionError(
+                        "the probe must not return DOM elements from script"
+                    )
+                return None
+
+            @staticmethod
+            def assert_locator(using: str) -> None:
+                if using not in {"css selector", "xpath", "script"}:
+                    raise AssertionError(f"unexpected locator strategy: {using}")
+
+        driver = Driver()
         client = SimpleNamespace(
-            driver=Driver(),
+            driver=driver,
             spec=SimpleNamespace(profile="w8-alice"),
         )
 
@@ -271,6 +299,9 @@ class RuntimeOwnerTest(unittest.TestCase):
             r"^dom-receiver:[0-9a-f]{24}$",
         )
         self.assertEqual("webdriver-session", evidence["automationSessionId"])
+        self.assertTrue(driver.nav.clicked)
+        self.assertTrue(driver.action.clicked)
+        self.assertTrue(driver.comments.clicked)
 
     def test_w9_suite_contract_is_single_entry(self) -> None:
         self.assertEqual(
