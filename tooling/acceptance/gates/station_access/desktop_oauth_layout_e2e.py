@@ -6,12 +6,15 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
+import traceback
 from pathlib import Path
 from typing import Any
 
 from tooling.acceptance.core import (
     AcceptanceGate,
+    ArtifactSession,
     GateError,
     REPORTS_DIR,
     load_runtime_manifest,
@@ -35,6 +38,111 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
     spec = ("STATION-ACCESS-AUTHENTICATION",)
     report_path = REPORT_PATH
     evidence_dir = EVIDENCE_DIR
+
+    def execute(self) -> int:
+        with ArtifactSession(repo_root=REPO_ROOT, gate_id=self.gate_id) as artifacts:
+            status = "FAIL"
+            completion_status = "PARTIAL"
+            proof_status = "UNPROVEN"
+            exit_code = 1
+            result: dict[str, Any] = {}
+            caught_error: Exception | None = None
+            try:
+                result = self.run()
+                status = "PASS"
+                completion_status = "DONE"
+                proof_status = "PROVEN"
+                exit_code = 0
+            except Exception as error:
+                caught_error = error
+
+            evidence_refs: dict[str, Any] = {}
+            raw_evidence = result.get("evidence")
+            if isinstance(raw_evidence, dict):
+                for name, value in raw_evidence.items():
+                    source = Path(value) if isinstance(value, str) else None
+                    if source is None or not source.is_file():
+                        continue
+                    suffix = source.suffix.lower()
+                    media_type = {
+                        ".html": "text/html",
+                        ".log": "text/plain",
+                        ".png": "image/png",
+                    }.get(suffix, "application/octet-stream")
+                    reference = artifacts.write_bytes(
+                        f"evidence/{name}{suffix}",
+                        source.read_bytes(),
+                        media_type=media_type,
+                        role=f"station-access-oauth-layout/{name}",
+                    )
+                    evidence_refs[name] = reference.to_dict()
+
+            canonical_report = {
+                "artifactKind": "acceptance-gate-evidence-report",
+                "gateId": self.gate_id,
+                "gate": self.gate_id,
+                "environment": ENVIRONMENT_ID,
+                "runtimeCell": PROFILE_ID,
+                "status": status,
+                "completionStatus": completion_status,
+                "proofStatus": proof_status,
+                "phase": self.phase,
+                "bom": list(self.bom),
+                "spec": list(self.spec),
+                "observedScope": (
+                    [
+                        "Desktop GitHub and Google OAuth actions at 1200x800",
+                        "Desktop GitHub and Google OAuth actions at 640x800",
+                        "OAuth panel viewport containment and login-card separation",
+                    ]
+                    if status == "PASS"
+                    else []
+                ),
+                "unprovenScope": [
+                    "third-party provider authorization and callback completion",
+                ],
+                "sampleEmissionAllowed": status == "PASS",
+                "assertions": [
+                    {
+                        "name": assertion.name,
+                        "passed": assertion.passed,
+                        "detail": assertion.detail,
+                    }
+                    for assertion in self.report.assertions
+                ],
+                "cases": result.get("cases", []),
+                "evidence": evidence_refs,
+            }
+            if caught_error is not None:
+                canonical_report["reason"] = str(caught_error)
+
+            artifacts.write_json(
+                "reports/station-access-desktop-oauth-layout-evidence.json",
+                canonical_report,
+                role="station-access-desktop-oauth-layout-result",
+            )
+            artifacts.complete(
+                status=status,
+                completion_status=completion_status,
+                proof_status=proof_status,
+                runtime={
+                    "environment": ENVIRONMENT_ID,
+                    "runtimeCell": PROFILE_ID,
+                    "caseCount": len(result.get("cases", [])),
+                },
+            )
+
+        if caught_error is not None:
+            traceback.print_exception(
+                type(caught_error),
+                caught_error,
+                caught_error.__traceback__,
+                file=sys.stderr,
+            )
+            print(f"FAIL: {self.gate_id}: {caught_error}", file=sys.stderr)
+        else:
+            print(f"PASS: {self.gate_id}")
+        return exit_code
 
     def _manifest(self) -> dict[str, Any]:
         value = os.environ.get("PT_ACCEPTANCE_RUNTIME_MANIFEST", "").strip()
