@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { findExecutable } from './doctor.mjs';
 import { DevctlError, ERROR_CODES } from './errors.mjs';
-import { probeHttp, waitForPort } from './health.mjs';
+import { probeHttp, waitForHttp, waitForPort } from './health.mjs';
 import {
   inspectManagedProcess,
   inspectProcess,
@@ -15,10 +15,31 @@ import {
 import { resolveProfile, runtimeEnvironment } from './profile.mjs';
 import { startStation } from './station.mjs';
 
+export function desktopViteReadinessUrl(webPort) {
+  return `http://127.0.0.1:${webPort}/src/main.tsx`;
+}
+
+export async function waitForDesktopVite(
+  webPort,
+  mode,
+  processAlive,
+  waitForReady = waitForHttp,
+) {
+  return waitForReady(desktopViteReadinessUrl(webPort), {
+    label: `Desktop ${mode} Vite`,
+    processAlive,
+  });
+}
+
 function desktopValues(root, resolved, mode) {
   const appMode = mode === 'app';
   const profile = resolved.profile;
   const runtimeProfile = `${profile.PT_DEV_PROFILE}-${mode}`;
+  const webPort = Number(
+    appMode
+      ? profile.PT_DESKTOP_APP_WEB_PORT
+      : profile.PT_DESKTOP_WEB_WEB_PORT,
+  );
   return {
     mode,
     runtimeProfile,
@@ -28,11 +49,8 @@ function desktopValues(root, resolved, mode) {
         ? profile.PT_DESKTOP_APP_GATEWAY_PORT
         : profile.PT_DESKTOP_WEB_GATEWAY_PORT,
     ),
-    webPort: Number(
-      appMode
-        ? profile.PT_DESKTOP_APP_WEB_PORT
-        : profile.PT_DESKTOP_WEB_WEB_PORT,
-    ),
+    webPort,
+    viteReadinessUrl: desktopViteReadinessUrl(webPort),
     viteService: `desktop-${mode}-vite`,
     tauriService: `desktop-${mode}-tauri`,
     storageRoot: path.join(resolved.paths.profileData, `desktop-${mode}`),
@@ -460,7 +478,7 @@ export async function desktopStatus(
   const values = desktopValues(root, resolved, mode);
   const runtimeIdentity = desktopRuntimeIdentity(values, environment);
   const [viteReady, gatewayReady] = await Promise.all([
-    probeHttp(`http://127.0.0.1:${values.webPort}/`),
+    probeHttp(values.viteReadinessUrl),
     isPortListening(values.gatewayPort),
   ]);
   return {
@@ -577,16 +595,17 @@ export async function startDesktop(
     environment: childEnvironment,
     logPath: values.viteLog,
     ports: [values.webPort],
-    readinessUrl: `http://127.0.0.1:${values.webPort}/`,
+    readinessUrl: values.viteReadinessUrl,
     identityTokens: ['vite', String(values.webPort)],
     sourceCommit,
   });
 
   try {
-    await waitForPort(values.webPort, {
-      label: `Desktop ${mode} Vite`,
-      processAlive: () => Boolean(inspectProcess(vite.pid)),
-    });
+    await waitForDesktopVite(
+      values.webPort,
+      mode,
+      () => Boolean(inspectProcess(vite.pid)),
+    );
     const tauri = spawnManaged({
       stateDirectory: resolved.paths.profileState,
       service: values.tauriService,
