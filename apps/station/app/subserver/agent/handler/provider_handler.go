@@ -63,7 +63,8 @@ func (h *ProviderHandlers) HandleProviderList(ctx context.Context, _ *model.List
 	}
 
 	for _, cp := range entries {
-		if !catalogProviderAdvertisedByFrozenProfile(cp) {
+		if !catalogProviderAdvertisedByFrozenProfile(cp) ||
+			!service.CatalogProviderAvailable(cp) {
 			continue
 		}
 		userMatch := userMatchMap[cp.ID]

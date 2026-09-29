@@ -15,6 +15,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	providercli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 )
 
 type RuntimeAdmissionResolver struct {
@@ -787,6 +788,14 @@ func catalogProviderAdvertised(cp catalog.CatalogProvider) bool {
 	return ProviderRuntimeAdvertised(cp.RuntimeKind, cp.Protocol)
 }
 
+func CatalogProviderAvailable(cp catalog.CatalogProvider) bool {
+	if strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) ||
+		strings.EqualFold(strings.TrimSpace(cp.Protocol), providerRuntimeCLI) {
+		return providercli.VerifyCliBinary(cp.CliCommand).Available
+	}
+	return true
+}
+
 // ProviderRuntimeAdvertised reports whether Station has an executable adapter
 // for the declared runtime and protocol in the active product profile.
 func ProviderRuntimeAdvertised(runtimeKind, protocol string) bool {
@@ -815,7 +824,7 @@ func runtimeAdvertised(runtimeKind string) bool {
 }
 
 func admitProvider(cp catalog.CatalogProvider, userMatch *persistence.AgentProvider) bool {
-	if !catalogProviderAdvertised(cp) {
+	if !catalogProviderAdvertised(cp) || !CatalogProviderAvailable(cp) {
 		return false
 	}
 	enabled := cp.Enabled
