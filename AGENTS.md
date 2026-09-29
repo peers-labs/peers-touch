@@ -137,7 +137,12 @@ Example:
 8. **UI Identity first** — For any UI/UX design, visual refactor, screenshot review, layout issue, button/style issue, or client UI code change, first read `docs/client/common/ux-design-methodology.md`, `docs/client/common/ui-identity/README.md`, and the closest module contract under `docs/client/common/ui-identity/modules/`. Do not rely on ad-hoc component-library defaults.
 9. **Service coordination first** — For cross-service issues (relay mount, DHT bootstrap, federation resolve failures, Station↔Relay↔Desktop connectivity), consult `docs/architecture/service-coordination.md` before debugging. It defines the dependency DAG, credential lifecycle, and troubleshooting index.
 10. **Acceptance Infra ownership first** — Acceptance Core, planner, validator, runner, Evidence Store, lifecycle, and framework tooling work MUST use `pt-acceptance-infra-engineering`. Infra defines and validates injection contracts; it MUST NOT create, repair, weaken, or complete business Domain injection. Business Acceptance onboarding and proof remain with `pt-acceptance-engineering`.
-11. **Execution worktree binding first** — A skill source path selects
+11. **Acceptance Suite reuse first** — Multi-scenario runtime Tasks MUST keep
+    build, deploy, account, client, device, storage, and login ownership at Task
+    or Suite scope. Scenarios are attach-only and own only namespaced data,
+    reset, real product actions, and receiver-visible assertions. Declare
+    `runtimeReuse` and audit it with `pt-acceptance-pipeline-auditor`.
+12. **Execution worktree binding first** — A skill source path selects
     instructions, never the execution worktree. Before dispatch and before the
     first edit, bind the explicitly selected current worktree through
     `tooling/scripts/verify-worktree-binding.py` and resolve its canonical root,
@@ -145,7 +150,7 @@ Example:
     Expected HEAD is advancing source identity outside the Plan Package; only
     an explicitly authorized refresh operation defined in §13.5.1 may change
     it.
-12. **Development declaration first** — Read-only intake may inspect any
+13. **Development declaration first** — Read-only intake may inspect any
     permitted source, but every non-trivial task MUST publish and confirm its
     source/runtime intent through `make dev-start` before the first repository
     write or runtime acquisition. Scope growth uses `make dev-update`;
@@ -453,6 +458,7 @@ Current project skills:
 | `pt-codex-host-adapter` | Bind approved worker/UI actions to capabilities actually exposed by a detected Codex host |
 | `pt-acceptance-infra-engineering` | Optimize and audit Acceptance Infra while enforcing the responsibility firewall against business Domain injection |
 | `pt-acceptance-engineering` | Deterministically add, complete, upgrade, or audit Acceptance contracts, runtime scenarios, gates, and evidence |
+| `pt-acceptance-pipeline-auditor` | Audit multi-scenario Suite lifecycle reuse, proof strength, resource budgets, and cleanup without modifying product code or evidence |
 | `pt-acceptance-gap-detector` | Enforce "No Silent Pass" iron law — detect 25+ bypass patterns (mocks, stale evidence, single-actor, hardcoded creds, downgraded gates) before marking any claim proven |
 | `pt-dev-runtime-handoff` | Own host-neutral runtime launch, interaction, exact-source Journey verification, Session result projection, and cleanup |
 | `pt-architecture-design-methodology` | Design source-backed architecture boundaries, ownership, contracts, topology, and ADR decisions before execution planning (referenced from §4.3) |
@@ -559,6 +565,7 @@ Any non-trivial development task (cross-module, new feature, architecture change
 9. **Acceptance ownership dispatch**:
    - Core/runtime/planner/validator/runner/Evidence Store/framework optimization → `pt-acceptance-infra-engineering`.
    - Domain/Feature/Capability/Registry rule/concrete Gate/Environment/Provisioner/Fixture/product proof → `pt-acceptance-engineering`.
+   - Multi-scenario lifecycle reuse and proof-strength audit → `pt-acceptance-pipeline-auditor`.
    - Mixed requests MUST be split. Infra reports business gaps as `BUSINESS_INJECTION_REQUIRED`; it does not implement them.
 10. **Functional fence**: focused source checks and one exact-source Journey
    precede Acceptance expansion. `SOURCE_CHECK`, `STRUCTURAL_CHECK`, `UX_REVIEW`,

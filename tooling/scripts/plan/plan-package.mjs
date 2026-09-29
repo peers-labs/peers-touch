@@ -537,6 +537,62 @@ function validateExhaustion(value, context) {
   assertUniqueStrings(value.evidenceRefs, `${context}.evidenceRefs`, { min: 1 });
 }
 
+function validateRuntimeReuse(value, context) {
+  assertClosedObject(
+    value,
+    [
+      'scope',
+      'entryCheckId',
+      'scenarioIds',
+      'maxProvisioningRuns',
+      'maxClientLaunches',
+      'minWarmReuseRate',
+      'requireAttachOnlyScenarios',
+      'requireReceiverVisibleProof',
+      'allowClientReplacement',
+    ],
+    context,
+  );
+  assertEnum(value.scope, new Set(['suite']), `${context}.scope`);
+  assertString(value.entryCheckId, `${context}.entryCheckId`, {
+    pattern: ID_PATTERN,
+  });
+  assertUniqueStrings(value.scenarioIds, `${context}.scenarioIds`, {
+    min: 2,
+    pattern: ID_PATTERN,
+  });
+  assertInteger(
+    value.maxProvisioningRuns,
+    `${context}.maxProvisioningRuns`,
+    { min: 1 },
+  );
+  assertInteger(
+    value.maxClientLaunches,
+    `${context}.maxClientLaunches`,
+    { min: 1 },
+  );
+  if (
+    typeof value.minWarmReuseRate !== 'number' ||
+    !Number.isFinite(value.minWarmReuseRate) ||
+    value.minWarmReuseRate < 0 ||
+    value.minWarmReuseRate > 1
+  ) {
+    fail(
+      'PLAN_SCHEMA_INVALID',
+      `${context}.minWarmReuseRate must be a finite number between 0 and 1`,
+    );
+  }
+  for (const field of [
+    'requireAttachOnlyScenarios',
+    'requireReceiverVisibleProof',
+    'allowClientReplacement',
+  ]) {
+    if (typeof value[field] !== 'boolean') {
+      fail('PLAN_SCHEMA_INVALID', `${context}.${field} must be a boolean`);
+    }
+  }
+}
+
 function validateManifestSchema(manifest) {
   assertClosedObject(
     manifest,
@@ -758,6 +814,7 @@ function validateDagAndLifecycle(manifest) {
 function validateTaskSliceSchema(task) {
   const optionalFields = [];
   if ('status' in task) optionalFields.push('status');
+  if ('runtimeReuse' in task) optionalFields.push('runtimeReuse');
   assertClosedObject(
     task,
     [
@@ -801,6 +858,39 @@ function validateTaskSliceSchema(task) {
   assertString(task.closureId, 'Task Slice.closureId', { pattern: ID_PATTERN });
   assertString(task.journeyId, 'Task Slice.journeyId');
   assertEnum(task.runtimeClass, RUNTIME_CLASSES, 'Task Slice.runtimeClass');
+  if ('runtimeReuse' in task) {
+    if (task.completionClass !== 'functional') {
+      fail(
+        'PLAN_TASK_RUNTIME_INVALID',
+        'runtimeReuse is valid only for functional Task Slices',
+        { taskId: task.taskId, completionClass: task.completionClass },
+      );
+    }
+    if (task.runtimeClass === 'source-only') {
+      fail(
+        'PLAN_TASK_RUNTIME_INVALID',
+        'runtimeReuse requires an executable runtime class',
+        { taskId: task.taskId, runtimeClass: task.runtimeClass },
+      );
+    }
+    validateRuntimeReuse(task.runtimeReuse, 'Task Slice.runtimeReuse');
+    const entryCheck = task.checks?.find(
+      (check) => check.id === task.runtimeReuse.entryCheckId,
+    );
+    if (
+      !entryCheck ||
+      entryCheck.verificationClass !== 'FUNCTIONAL_CHECK'
+    ) {
+      fail(
+        'PLAN_TASK_CHECK_INVALID',
+        'runtimeReuse.entryCheckId must reference one functional check',
+        {
+          taskId: task.taskId,
+          entryCheckId: task.runtimeReuse.entryCheckId,
+        },
+      );
+    }
+  }
   if (task.completionClass === 'source' && task.runtimeClass !== 'source-only') {
     fail(
       'PLAN_TASK_RUNTIME_INVALID',

@@ -79,6 +79,8 @@ Do not retry, downgrade, substitute, or edit evidence to change the state.
 | 23 | Tier downgrade | Required env Gate moved to cheap tier | Restore declared tier |
 | 24 | Blocked-as-passed | Provisioning blocker ignored | Keep BLOCKED/UNPROVEN |
 | 25 | Swallowed failure | Exception hidden or exit forced zero | Propagate structured failure |
+| 26 | Scenario-owned provisioning | Accounts, clients, devices, login, build, or deployment repeat inside each Scenario | Move resources to Task/Suite scope and validate a Suite Runtime report |
+| 27 | Harness-only product proof | Internal Harness action or Store state replaces real UI action or receiver assertion | Run the declared product surface and preserve Harness output as supporting evidence only |
 
 ## Commands
 

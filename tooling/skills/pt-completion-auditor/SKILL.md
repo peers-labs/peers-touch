@@ -172,6 +172,8 @@ Never treat:
 - Mock bridge as real Host proof.
 - Manifest validation as live permission proof.
 - Docs update as implementation proof.
+- A passing Suite Runtime audit as product proof; it establishes lifecycle
+  conformance only.
 
 ### 8. Documentation And Plan Alignment
 
@@ -190,6 +192,10 @@ Check:
 - The immutable workspace binding resolves exactly one formal Plan, every closure is
   complete before merge, and the plan's Acceptance Execution contract matches
   the actual diff impact.
+- Multi-scenario runtime Tasks declare `runtimeReuse`; their Suite Runtime
+  reports satisfy provisioning, client-launch, warm-reuse, attach-only,
+  receiver-proof, and cleanup constraints through
+  `pt-acceptance-pipeline-auditor`.
 - workspace active-work, dashboards, and chat projections do not claim progress
   stronger than the plan status table and repository evidence.
 - Acceptance Infra readiness is judged from `acceptance_core_self_validation`

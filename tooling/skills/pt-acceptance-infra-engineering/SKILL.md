@@ -16,6 +16,8 @@ Invoke for work on Acceptance infrastructure:
 - Planner, validator, runner, reporter, coverage, and quality-evidence tooling.
 - Evidence Store, ArtifactRef, manifests, durability, retention, and cleanup.
 - Generic Provisioner, Driver, Fixture, and Harness interfaces or lifecycle.
+- Suite-scoped runtime reuse contracts, lifecycle accounting, performance
+  budgets, and attach-only Scenario enforcement.
 - Registration mechanisms, schemas, templates, onboarding, and structural
   validation.
 - Framework self-tests, synthetic fixtures, CI Gates, observability,
@@ -48,6 +50,7 @@ Ownership is determined by responsibility, not path. A file under
 | Registration and plugin mechanisms | Gate catalog entries and Gate implementations |
 | Structural checks for injected content | Registry path mappings |
 | Generic lifecycle, timeout, cancellation, isolation, and cleanup | Actor/client roles, credentials, datasets, and Domain Fixtures |
+| Suite Runtime schema, lifecycle ledger, reuse metrics, and structural audit | Scenario IDs, concrete resource budgets, UI actions, and receiver assertions |
 | Templates, onboarding contracts, synthetic fixtures, and self-validation | Product failure diagnosis and repair |
 
 Infra may inspect concrete injection for compatibility and emit a gap. It may
@@ -99,6 +102,7 @@ Review and improve:
 - portability and path containment;
 - diagnostics, observability, and operator ergonomics;
 - bounded resource use and testability.
+- explicit Plan/Task/Suite/Scenario/Step ownership and warm-reuse accounting.
 
 Do not optimize a product journey or assertion under this Skill.
 
@@ -126,10 +130,12 @@ Do not silently continue in the Infra worktree or plan.
 4. Stop or split any mixed ownership item.
 5. Define framework invariants and synthetic failure cases.
 6. Implement only generic contracts, lifecycle, validation, or tooling.
-7. Run framework self-validation and failure-path tests.
-8. Run Quality Evidence with capability-direction separation.
-9. Report Infra readiness and Business Injection gaps in separate sections.
-10. Dispatch business gaps without modifying them.
+7. Run `pt-acceptance-pipeline-auditor` against at least one synthetic Suite
+   contract and report; product-domain results remain reverse evidence only.
+8. Run framework self-validation and failure-path tests.
+9. Run Quality Evidence with capability-direction separation.
+10. Report Infra readiness and Business Injection gaps in separate sections.
+11. Dispatch business gaps without modifying them.
 
 ## Output
 
@@ -199,6 +205,8 @@ Never:
 - downgrade or waive product assertions;
 - use placeholders, mocks, defaults, fallbacks, or hardcoded identities;
 - debug product behavior while claiming to optimize Infra;
+- encode a Domain, actor, selector, scenario name, or product assertion in the
+  generic Suite Runtime contract;
 - treat business `UNPROVEN`, `FAILED`, or `BLOCKED` as Infra failure;
 - require reverse-validation capabilities for every Infra PR;
 - write into another worktree to close a business injection gap;
