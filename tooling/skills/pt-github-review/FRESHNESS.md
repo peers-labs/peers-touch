@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-29
-covered_docs_hash: 777b34050e7347b3db170e5c3dffc7742a61ba6d8e8c0d8934af1ce2161f7c76
+covered_docs_hash: a569251aa220bf92f9eb5455b0936e95bf707562c7ccc5556c3cebc5864c2cb6
 
 covered_docs:
   - AGENTS.md
@@ -36,6 +36,17 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-09-29 Suite Runtime Review
+
+Acceptance Framework D-21 adds a closed, domain-neutral Suite Runtime contract
+for multi-scenario lifecycle reuse. Review must reject Scenario-owned build,
+deploy, account, client/device launch, storage, or login; Harness-only product
+proof; missing receiver assertions; unbounded launch counts; and incomplete
+cleanup. The new `pt-acceptance-pipeline-auditor`, Plan schema regressions,
+Suite Runtime unit tests, and operational invariant provide deterministic
+coverage. Existing GitHub Review severity and evidence rules remain valid, so
+no `pt-github-review/SKILL.md` or golden fixture change is required.
 
 ## 2026-09-28 Review
 

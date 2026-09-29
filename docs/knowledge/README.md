@@ -168,6 +168,7 @@ Pick one based on intent:
 - [`invariants/continuous-plan-run.md`](invariants/continuous-plan-run.md) — one authorized Plan Run continues across Task, Goal, review, Anchor, and context boundaries until completion or a true hard stop.
 - [`invariants/host-neutral-agent-execution.md`](invariants/host-neutral-agent-execution.md) — project scheduling, runtime verification, Session, evidence, and cleanup semantics remain independent of TRAE, Cursor, Codex, or future hosts.
 - [`invariants/user-skill-overlays-are-interaction-only.md`](invariants/user-skill-overlays-are-interaction-only.md) — machine-local user overlays may shape interaction only and cannot alter project execution semantics.
+- [`invariants/acceptance-suite-runtime-reuse.md`](invariants/acceptance-suite-runtime-reuse.md) — multi-scenario Acceptance provisions expensive resources once at Suite scope and keeps Scenarios attach-only.
 
 ### Pitfalls
 
