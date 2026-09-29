@@ -1259,12 +1259,18 @@ async function cleanupFoundationToolConversation(
   deleteTimeoutMs = 3_000,
 ): Promise<void> {
   let cancellationError: unknown = null;
+  let queueCancellationError: unknown = null;
   if (turnId) {
     try {
       await api.cancelAgentTurn(turnId);
     } catch (error) {
       cancellationError = error;
     }
+  }
+  try {
+    await cancelFoundationQueuedTurns(conversationId);
+  } catch (error) {
+    queueCancellationError = error;
   }
 
   try {
@@ -1288,10 +1294,22 @@ async function cleanupFoundationToolConversation(
       );
     }
   } catch (cleanupError) {
+    const cancellationCode = cancellationError
+      ? observedErrorCode(cancellationError)
+      : 'NONE';
+    const queueCancellationCode = queueCancellationError
+      ? observedErrorCode(queueCancellationError)
+      : 'NONE';
+    const cleanupCode = observedErrorCode(cleanupError);
     throw Object.assign(
-      new Error('agent.acceptance.foundationToolConversationCleanupFailed'),
+      new Error(
+        'agent.acceptance.foundationToolConversationCleanupFailed:'
+        + `cancel=${cancellationCode}:`
+        + `queue=${queueCancellationCode}:delete=${cleanupCode}`,
+      ),
       {
         cancellationError,
+        queueCancellationError,
         cleanupError,
       },
     );
