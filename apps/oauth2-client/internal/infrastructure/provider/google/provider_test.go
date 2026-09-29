@@ -92,8 +92,26 @@ func TestRefreshToken(t *testing.T) {
 		tokenForm.Get("refresh_token") != "refresh-old" ||
 		tokens.AccessToken != "access-new" ||
 		tokens.RefreshToken != "" ||
+		tokens.TokenType != "Bearer" ||
+		tokens.Scope != "openid email" ||
 		tokens.AccessExpiresAt == nil ||
 		!tokens.AccessExpiresAt.Equal(now.Add(20*time.Minute)) {
 		t.Fatalf("unexpected refresh result: form=%v tokens=%#v", tokenForm, tokens)
+	}
+}
+
+func TestRefreshTokenRedactsProviderResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":"invalid_grant","refresh_token":"refresh-old"}`, http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	provider := NewWithEndpoints(server.Client(), Endpoints{Token: server.URL})
+	_, err := provider.RefreshToken(context.Background(), "refresh-old", port.ProviderConfig{
+		ClientID:     "client",
+		ClientSecret: "provider-secret",
+	})
+	if err == nil || err.Error() != "google_token_failed" {
+		t.Fatalf("unexpected sanitized error: %v", err)
 	}
 }
