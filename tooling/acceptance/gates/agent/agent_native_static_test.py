@@ -3811,6 +3811,19 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             app,
         )
 
+    def test_authenticated_critical_runtime_has_no_debug_network_dependency(
+        self,
+    ) -> None:
+        app_runtime = DESKTOP_APP_RUNTIME.read_text(encoding="utf-8")
+        start = app_runtime.index(
+            "export async function installAuthenticatedCriticalRuntimes("
+        )
+        end = app_runtime.index("export function teardownAppRuntime()", start)
+        critical_runtime = app_runtime[start:end]
+
+        self.assertNotIn("fetch(", critical_runtime)
+        self.assertNotIn("#region debug-point", critical_runtime)
+
     def test_group_one_controller_uses_manifest_bound_client_modes(self) -> None:
         source = FOUNDATION_RUNTIME_CLIENT.read_text(encoding="utf-8")
         self.assertIn('"native-tauri", "browser"', source)
