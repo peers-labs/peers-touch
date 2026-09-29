@@ -20,6 +20,7 @@
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
     "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
     "apps/desktop/index.html",
+    "apps/desktop/vite.config.ts",
     "tooling/devctl/desktop.mjs",
     "tooling/devctl/test/desktop.test.mjs",
     "docs/knowledge/invariants/desktop-vite-entry-readiness.md",
@@ -108,6 +109,7 @@
 - Root cause: Tauri and HTTP Gateway require an actor before starting the OAuth
   loopback listener, although the login page has no actor yet.
 - Runtime amendment: normal `make desktop` must wait for a dependency canary
-  that resolves generated protocol modules, not only `/src/main.tsx`.
+  and the transformed module graph, then require the WebView's React mount
+  signal instead of trusting only ports and HTTP probes.
 - Next boundary: integrate the reviewed Vite readiness fix, prove a cold
   `make desktop` launch, refresh exact-source Acceptance, then close.

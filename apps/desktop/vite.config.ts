@@ -74,7 +74,7 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 3210,
     strictPort: true,
-    headers: isEvidenceRuntime ? { 'Cache-Control': 'no-store' } : undefined,
+    headers: { 'Cache-Control': 'no-store' },
     hmr: process.env.VITE_RUNTIME_EVIDENCE_HARNESS ? false : undefined,
     watch: process.env.VITE_RUNTIME_EVIDENCE_HARNESS
       ? { ignored: ['**/*'] }

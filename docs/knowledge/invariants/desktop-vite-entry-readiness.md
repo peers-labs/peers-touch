@@ -16,11 +16,15 @@ detected: 2026-09-29
 
 ## What must hold
 
-Desktop startup and runtime reuse MUST treat Vite as ready only after a
-dependency canary that imports generated protocol bindings returns a successful
-HTTP response, remains stable for a bounded window, and succeeds again. An open
-TCP port, root document response, or shallow renderer entry transform is
-insufficient.
+Desktop startup MUST treat Vite as ready only after a dependency canary that
+imports generated protocol bindings succeeds, the transformed local module graph
+has been fetched, and the canary succeeds again. Startup itself is complete only
+after the WebView reports that React mounted. An open TCP port, root document
+response, or shallow renderer entry transform is insufficient.
+
+The Vite dev server MUST send `Cache-Control: no-store` for every runtime mode.
+WebKit otherwise retains transformed module responses across Vite restarts and
+can reject a new entry graph even when every current HTTP request succeeds.
 
 ## Why this is non-negotiable
 
@@ -30,16 +34,19 @@ WebView fail its one-shot entry request when a dependency such as
 `desktop_api.ts` cannot yet resolve a generated protocol module, leaving the
 window on the boot error surface after Vite recovers.
 
-Startup and status reuse must share the same probe. Otherwise a failed native
-window can be classified as reusable solely because the port and root document
-are available.
+Startup and status reuse must share the same dependency canary. Startup must
+also fail closed and stop its managed processes when the receiver-side mount
+signal is missing or the early boot bridge reports a resource failure.
 
 ## How to verify
 
 - `node --test tooling/devctl/test/desktop.test.mjs` passes.
 - `rg -n "desktopViteReadinessUrl|waitForDesktopVite" tooling/devctl/desktop.mjs`
-  shows the same dependency-canary URL used by startup and status, with a
-  bounded stability window before the second startup probe.
+  shows the dependency canary, module-graph warm-up, and second startup probe.
+- `rg -n "waitForDesktopFrontend|React app mounted" tooling/devctl/desktop.mjs`
+  shows the receiver-side startup gate.
+- `rg -n "Cache-Control.*no-store" apps/desktop/vite.config.ts` shows the
+  normal dev runtime does not reuse stale transformed modules.
 - A cold `make desktop` reaches `shell:end` and `identity:end` without
   `RESOURCE LOAD ERROR` or `React did not mount`.
 
