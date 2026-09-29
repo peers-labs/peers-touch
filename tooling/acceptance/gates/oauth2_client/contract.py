@@ -73,6 +73,10 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                 "./internal/infrastructure/provider/weixin",
                 ("TestExchangeReturnsRefreshableTokenSet",),
             ),
+            TestGroup(
+                "./internal/integration",
+                ("TestOAuthLoginBrokerCrossInstanceHTTPJourney",),
+            ),
         ),
     ),
     "refresh-idempotency": (
