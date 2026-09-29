@@ -62,8 +62,11 @@
 
 ## Current Snapshot
 
-- State: pending on `OLB-01-DURABLE-CORE`.
-- Token refresh and uncertain-response convergence are not implemented.
+- State: in progress.
+- Provider refresh, omitted refresh-token retention, duplicate-operation
+  short-circuiting, and lost Git ref response convergence are implemented.
+- Review-requested provider metadata and error-redaction assertions are pending
+  exact-source verification.
 
 ## Closure
 

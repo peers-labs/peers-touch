@@ -96,15 +96,24 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
             ),
             TestGroup(
                 "./internal/infrastructure/provider/github",
-                ("TestRefreshToken",),
+                (
+                    "TestRefreshToken",
+                    "TestRefreshTokenRedactsProviderResponse",
+                ),
             ),
             TestGroup(
                 "./internal/infrastructure/provider/google",
-                ("TestRefreshToken",),
+                (
+                    "TestRefreshToken",
+                    "TestRefreshTokenRedactsProviderResponse",
+                ),
             ),
             TestGroup(
                 "./internal/infrastructure/provider/weixin",
-                ("TestRefreshToken",),
+                (
+                    "TestRefreshToken",
+                    "TestRefreshTokenRedactsProviderResponse",
+                ),
             ),
         ),
     ),

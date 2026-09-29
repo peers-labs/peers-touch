@@ -82,3 +82,19 @@ func TestRefreshToken(t *testing.T) {
 		t.Fatalf("unexpected refresh result: %#v", tokens)
 	}
 }
+
+func TestRefreshTokenRedactsProviderResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errcode":40030,"errmsg":"refresh-old is invalid"}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithEndpoints(server.Client(), Endpoints{Refresh: server.URL})
+	_, err := provider.RefreshToken(context.Background(), "refresh-old", port.ProviderConfig{
+		ClientID: "client",
+	})
+	if err == nil || err.Error() != "weixin_token_invalid" {
+		t.Fatalf("unexpected sanitized error: %v", err)
+	}
+}
