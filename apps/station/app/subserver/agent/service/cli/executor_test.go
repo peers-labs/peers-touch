@@ -154,6 +154,101 @@ sleep 5
 	}
 }
 
+func TestExecutorDoesNotExposeStationSecrets(t *testing.T) {
+	root := t.TempDir()
+	envPath := filepath.Join(root, "environment.txt")
+	commandPath := writeExecutable(t, root, "provider", `#!/bin/sh
+cat >/dev/null
+env > "$1"
+printf '%s\n' '{"type":"done","content":"safe"}'
+`)
+	t.Setenv("PEERS_AUTH_SECRET", "must-not-reach-cli")
+	t.Setenv("PEERS_DB_DSN", "must-not-reach-cli")
+	t.Setenv("HOME", root)
+	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
+
+	_, err := executor.Execute(context.Background(), &ExecuteRequest{
+		ActorPTID:      "actor-1",
+		AgentID:        "agent-1",
+		ConversationID: "conversation-1",
+		CliCommand:     commandPath + " " + envPath,
+		Messages: []domain.Message{
+			{Role: domain.MessageRoleUser, Content: "hello"},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	environment, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read child environment: %v", err)
+	}
+	value := string(environment)
+	for _, forbidden := range []string{"PEERS_AUTH_SECRET=", "PEERS_DB_DSN="} {
+		if strings.Contains(value, forbidden) {
+			t.Fatalf("child environment contains %s", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"HOME=" + root,
+		"PEERS_TOUCH_AGENT_ID=agent-1",
+		"PEERS_TOUCH_CONVERSATION_ID=conversation-1",
+	} {
+		if !strings.Contains(value, required) {
+			t.Fatalf("child environment does not contain %q: %s", required, value)
+		}
+	}
+}
+
+func TestExecutorBoundsTotalStdout(t *testing.T) {
+	root := t.TempDir()
+	commandPath := writeExecutable(t, root, "provider", `#!/bin/sh
+cat >/dev/null
+i=0
+while [ "$i" -lt 3000 ]; do
+  printf '%01024d\n' 0
+  i=$((i + 1))
+done
+`)
+	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
+
+	_, err := executor.Execute(context.Background(), &ExecuteRequest{
+		ActorPTID:  "actor-1",
+		CliCommand: commandPath,
+		Messages: []domain.Message{
+			{Role: domain.MessageRoleUser, Content: "hello"},
+		},
+	}, nil)
+	if !IsFailureKind(err, FailureOutput) {
+		t.Fatalf("Execute() error = %v, want output_failed", err)
+	}
+}
+
+func TestExecutorDrainsOutputAfterTerminalEvent(t *testing.T) {
+	root := t.TempDir()
+	commandPath := writeExecutable(t, root, "provider", `#!/bin/sh
+cat >/dev/null
+printf '%s\n' '{"type":"done","content":"complete"}'
+dd if=/dev/zero bs=1024 count=128 2>/dev/null | tr '\000' x
+`)
+	executor := NewExecutor(&WorkspaceManager{BaseDir: filepath.Join(root, "workspaces")})
+	executor.Timeout = 2 * time.Second
+
+	result, err := executor.Execute(context.Background(), &ExecuteRequest{
+		ActorPTID:  "actor-1",
+		CliCommand: commandPath,
+		Messages: []domain.Message{
+			{Role: domain.MessageRoleUser, Content: "hello"},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if result.Content != "complete" {
+		t.Fatalf("Execute() content = %q, want complete", result.Content)
+	}
+}
+
 func writeExecutable(t *testing.T, root, name, content string) string {
 	t.Helper()
 	path := filepath.Join(root, name)

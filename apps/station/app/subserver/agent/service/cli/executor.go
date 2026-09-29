@@ -17,9 +17,11 @@ import (
 )
 
 const (
-	defaultTimeout      = 5 * time.Minute
-	maxOutputLineBytes  = 2 * 1024 * 1024
-	maxStderrCaptureLen = 64 * 1024
+	defaultTimeout          = 5 * time.Minute
+	defaultTerminationGrace = 2 * time.Second
+	maxOutputBytes          = 2 * 1024 * 1024
+	maxOutputLineBytes      = 2 * 1024 * 1024
+	maxStderrCaptureLen     = 64 * 1024
 )
 
 type FailureKind string
@@ -103,6 +105,7 @@ type ExecuteResult struct {
 type Executor struct {
 	WorkspaceManager *WorkspaceManager
 	Timeout          time.Duration
+	TerminationGrace time.Duration
 }
 
 func NewExecutor(workspaceManager *WorkspaceManager) *Executor {
@@ -112,6 +115,7 @@ func NewExecutor(workspaceManager *WorkspaceManager) *Executor {
 	return &Executor{
 		WorkspaceManager: workspaceManager,
 		Timeout:          defaultTimeout,
+		TerminationGrace: defaultTerminationGrace,
 	}
 }
 
@@ -165,9 +169,10 @@ func (e *Executor) Execute(
 	execCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	process := exec.CommandContext(execCtx, command.Program, args...)
+	process := exec.Command(command.Program, args...)
 	process.Dir = workDir
-	process.Env = append(enrichedEnv(),
+	configureProcessGroup(process)
+	process.Env = append(restrictedEnv(),
 		"RUST_LOG=error",
 		"PEERS_TOUCH_AGENT_ID="+req.AgentID,
 		"PEERS_TOUCH_CONVERSATION_ID="+req.ConversationID,
@@ -227,40 +232,54 @@ func (e *Executor) Execute(
 		_, _ = io.Copy(stderrCapture, stderr)
 		close(stderrDone)
 	}()
+	processDone := make(chan struct{})
+	supervisorDone := superviseProcess(
+		execCtx,
+		process.Process,
+		processDone,
+		e.TerminationGrace,
+	)
 
+	var inputErr error
 	if stdin != nil {
 		if _, err := io.WriteString(stdin, prompt); err != nil {
-			_ = process.Process.Kill()
-			_ = stdin.Close()
-			_ = process.Wait()
-			<-stderrDone
-			return nil, &ExecutionError{
-				Kind:    FailureStart,
-				Program: command.Program,
-				Cause:   err,
-			}
+			inputErr = err
+			cancel()
 		}
 		_ = stdin.Close()
 	}
 
 	var content strings.Builder
+	totalOutputBytes := 0
 	streamed := false
 	streamError := ""
+	var sinkErr error
+	var outputErr error
+	terminalSeen := false
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 4096), maxOutputLineBytes)
 	for scanner.Scan() {
 		if execCtx.Err() != nil {
 			break
 		}
+		totalOutputBytes += len(scanner.Bytes()) + 1
+		if totalOutputBytes > maxOutputBytes {
+			outputErr = errors.New("CLI provider output exceeded the allowed limit")
+			cancel()
+			break
+		}
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
+			continue
+		}
+		if terminalSeen {
 			continue
 		}
 
 		eventType, eventContent, eventError, terminal := normalizeOutputLine(line)
 		if eventError != "" {
 			streamError = eventError
-			_ = process.Process.Kill()
+			cancel()
 			break
 		}
 		if eventContent != "" {
@@ -272,27 +291,52 @@ func (e *Executor) Execute(
 					Type:    eventType,
 					Content: eventContent,
 				}); err != nil {
-					_ = process.Process.Kill()
-					_ = process.Wait()
-					<-stderrDone
-					return nil, &ExecutionError{
-						Kind:    FailureOutput,
-						Program: command.Program,
-						Cause:   err,
-					}
+					sinkErr = err
+					cancel()
+					break
 				}
 				streamed = true
 			}
 		}
 		if terminal {
-			break
+			terminalSeen = true
 		}
 	}
 
 	scanErr := scanner.Err()
 	waitErr := process.Wait()
+	close(processDone)
+	<-supervisorDone
 	<-stderrDone
 
+	if inputErr != nil {
+		return nil, &ExecutionError{
+			Kind:    FailureStart,
+			Program: command.Program,
+			Cause:   inputErr,
+		}
+	}
+	if sinkErr != nil {
+		return nil, &ExecutionError{
+			Kind:    FailureOutput,
+			Program: command.Program,
+			Cause:   sinkErr,
+		}
+	}
+	if outputErr != nil {
+		return nil, &ExecutionError{
+			Kind:    FailureOutput,
+			Program: command.Program,
+			Cause:   outputErr,
+		}
+	}
+	if streamError != "" {
+		return nil, &ExecutionError{
+			Kind:    FailureExit,
+			Program: command.Program,
+			Cause:   errors.New(streamError),
+		}
+	}
 	if execCtx.Err() != nil {
 		kind := FailureTimeout
 		if errors.Is(execCtx.Err(), context.Canceled) &&
@@ -310,13 +354,6 @@ func (e *Executor) Execute(
 			Kind:    FailureOutput,
 			Program: command.Program,
 			Cause:   scanErr,
-		}
-	}
-	if streamError != "" {
-		return nil, &ExecutionError{
-			Kind:    FailureExit,
-			Program: command.Program,
-			Cause:   errors.New(streamError),
 		}
 	}
 	if waitErr != nil {
@@ -473,8 +510,24 @@ func installHint(adapter string) string {
 	}
 }
 
-func enrichedEnv() []string {
-	env := os.Environ()
+func restrictedEnv() []string {
+	allowed := []string{
+		"HOME",
+		"LANG",
+		"LC_ALL",
+		"SSL_CERT_DIR",
+		"SSL_CERT_FILE",
+		"TEMP",
+		"TMP",
+		"TMPDIR",
+		"TZ",
+	}
+	env := make([]string, 0, len(allowed)+1)
+	for _, key := range allowed {
+		if value, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+value)
+		}
+	}
 	pathDirs := []string{
 		os.ExpandEnv("$HOME/.local/bin"),
 		os.ExpandEnv("$HOME/.cargo/bin"),
@@ -484,14 +537,34 @@ func enrichedEnv() []string {
 	if existingPath := os.Getenv("PATH"); existingPath != "" {
 		pathDirs = append(pathDirs, existingPath)
 	}
-	newPath := "PATH=" + strings.Join(pathDirs, ":")
-	for index, value := range env {
-		if strings.HasPrefix(value, "PATH=") {
-			env[index] = newPath
-			return env
+	return append(env, "PATH="+strings.Join(pathDirs, string(os.PathListSeparator)))
+}
+
+func superviseProcess(
+	ctx context.Context,
+	process *os.Process,
+	processDone <-chan struct{},
+	grace time.Duration,
+) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		select {
+		case <-processDone:
+			return
+		case <-ctx.Done():
 		}
-	}
-	return append(env, newPath)
+
+		_ = terminateProcessGroup(process)
+		if grace <= 0 {
+			grace = defaultTerminationGrace
+		}
+		timer := time.NewTimer(grace)
+		defer timer.Stop()
+		<-timer.C
+		_ = killProcessGroup(process)
+	}()
+	return done
 }
 
 type boundedCapture struct {
