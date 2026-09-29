@@ -10,6 +10,7 @@ import {
   CompletionReviewError,
   completionReviewPaths,
   completionReviewState,
+  digestCompletionCandidate,
   inspectForbiddenPathInventory,
   prepareCompletionReview,
   readCompletionReview,
@@ -20,6 +21,7 @@ import {
   submitCompletionReview,
 } from './completion-review.mjs';
 import { workspaceIdForRoot } from '../lib/machine-dev-paths.mjs';
+import { renderPlanDocument } from '../plan/plan-package.mjs';
 import { DevSessionError } from './dev-session-schema.mjs';
 import { inspectGitWorkspace } from './git-workspace.mjs';
 import { bindConversation } from './workflow-conversation-binding.mjs';
@@ -35,7 +37,14 @@ function taskEntry(id, status, dependsOn = []) {
     path: `tasks/${id}.md`,
     dependsOn,
     status,
-    blocker: null,
+    blocker:
+      status === 'blocked'
+        ? {
+            code: 'OWNER_INPUT_REQUIRED',
+            owner: 'product',
+            evidenceRef: `evidence/${id}.json`,
+          }
+        : null,
   };
 }
 
@@ -91,7 +100,10 @@ function assessment(openFindingId = null) {
   };
 }
 
-async function makeFixture(t, { finalTask = false } = {}) {
+async function makeFixture(
+  t,
+  { finalTask = false, blockedBranch = false } = {},
+) {
   const root = await fsp.realpath(
     await fsp.mkdtemp(path.join(os.tmpdir(), 'completion-review-test-')),
   );
@@ -100,15 +112,23 @@ async function makeFixture(t, { finalTask = false } = {}) {
   const planPath = path.join(root, 'plan.md');
   const workspaceId = workspaceIdForRoot(root);
 
-  const tasks = finalTask
-    ? [
-        taskEntry('task-a', 'done'),
-        taskEntry('task-b', 'in_progress', ['task-a']),
-      ]
-    : [
-        taskEntry('task-a', 'in_progress'),
-        taskEntry('task-b', 'pending', ['task-a']),
-      ];
+  let tasks;
+  if (blockedBranch) {
+    tasks = [
+      taskEntry('task-a', 'in_progress'),
+      taskEntry('task-b', 'blocked'),
+    ];
+  } else if (finalTask) {
+    tasks = [
+      taskEntry('task-a', 'done'),
+      taskEntry('task-b', 'in_progress', ['task-a']),
+    ];
+  } else {
+    tasks = [
+      taskEntry('task-a', 'in_progress'),
+      taskEntry('task-b', 'pending', ['task-a']),
+    ];
+  }
   const slices = new Map(tasks.map((entry) => [entry.id, taskSlice(entry.id)]));
   const current = tasks.find((entry) => entry.status === 'in_progress');
   const planPackage = {
@@ -743,6 +763,98 @@ test('final Task requires a Plan-scoped review while owner action stays Task-bou
     EXECUTOR_DIGEST,
   ].sort());
   assert.equal(ownerContext.taskId, 'task-b');
+});
+
+test('fixed-point blocked candidate uses explicit exhaustion metadata', async (t) => {
+  const fixture = await makeFixture(t, { blockedBranch: true });
+  await expectReviewError(
+    prepareCompletionReview(
+      {
+        repoRoot: fixture.root,
+        workItemId: 'DWF-REVIEW-WORK',
+      },
+      fixture.dependencies,
+    ),
+    'COMPLETION_REVIEW_EXHAUSTION_REQUIRED',
+  );
+
+  const decisionRefs = ['DWF-D20', 'MCA-R01'];
+  const evidenceRefs = ['evidence/task-b.json'];
+  const prepared = await runCompletionReviewCli(
+    [
+      'prepare',
+      '--repo-root',
+      fixture.root,
+      '--work-item',
+      'DWF-REVIEW-WORK',
+      '--next',
+      'none',
+      '--recorded-at',
+      FIXED_TIME,
+      '--exhaustion-decision-ref',
+      decisionRefs[0],
+      '--exhaustion-decision-ref',
+      decisionRefs[1],
+      '--exhaustion-evidence-ref',
+      evidenceRefs[0],
+    ],
+    fixture.dependencies,
+  );
+
+  const expectedManifest = structuredClone(fixture.planPackage.manifest);
+  expectedManifest.tasks[0].status = 'done';
+  expectedManifest.status = 'blocked';
+  expectedManifest.exhaustion = {
+    recordedAt: FIXED_TIME,
+    blockedTaskIds: ['task-b'],
+    decisionRefs,
+    evidenceRefs,
+  };
+  const expectedDocument = renderPlanDocument(
+    await fsp.readFile(fixture.planPackage.path, 'utf8'),
+    expectedManifest,
+  );
+  assert.equal(
+    prepared.request.candidatePlanDigest,
+    digestCompletionCandidate(expectedDocument),
+  );
+
+  fixture.useReviewer();
+  const submitted = await submitCompletionReview(
+    {
+      repoRoot: fixture.root,
+      reviewId: prepared.request.reviewId,
+      verdict: 'PASS',
+      recordedAt: FIXED_TIME,
+      exhaustionDecisionRefs: decisionRefs,
+      exhaustionEvidenceRefs: evidenceRefs,
+    },
+    {
+      ...fixture.dependencies,
+      assessment: assessment(),
+    },
+  );
+  assert.equal(submitted.receipt.verdict, 'PASS');
+
+  const status = await runCompletionReviewCli(
+    [
+      'status',
+      '--repo-root',
+      fixture.root,
+      '--work-item',
+      'DWF-REVIEW-WORK',
+      '--recorded-at',
+      FIXED_TIME,
+      '--exhaustion-decision-ref',
+      decisionRefs[0],
+      '--exhaustion-decision-ref',
+      decisionRefs[1],
+      '--exhaustion-evidence-ref',
+      evidenceRefs[0],
+    ],
+    fixture.dependencies,
+  );
+  assert.equal(status.state, 'PASS');
 });
 
 test('status projects STALE when current review material is unavailable', async (t) => {
