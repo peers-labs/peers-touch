@@ -127,9 +127,6 @@ func (h *TurnHandlers) HandleExecuteTurn(ctx context.Context, req *model.Execute
 		return nil, toHandlerError(errcode.New(errcode.AgentInvalidRequest, 400,
 			"agent_id and user_input are required", nil))
 	}
-	if err := validateFrozenDirectModelRequest(req); err != nil {
-		return nil, toHandlerError(err)
-	}
 
 	createdConversation := false
 	if strings.TrimSpace(req.GetConversationId()) == "" && len(req.GetAttachments()) > 0 {
@@ -289,13 +286,6 @@ func (h *TurnHandlers) HandleExecuteTurnStream(ctx context.Context, req server.R
 		_ = writeTurnStreamEvent(resp, "error", map[string]any{
 			"type":  "error",
 			"error": "agent_id and user_input are required",
-		})
-		return nil
-	}
-	if err := validateFrozenDirectModelRequest(&input); err != nil {
-		_ = writeTurnStreamEvent(resp, "error", map[string]any{
-			"type":  "error",
-			"error": err.Error(),
 		})
 		return nil
 	}
@@ -707,23 +697,6 @@ func (h *TurnHandlers) turnConfigFromRequest(
 		EventSink:                 sink,
 		MemoryDisabled:            req.GetMemoryDisabled(),
 	}, nil
-}
-
-func validateFrozenDirectModelRequest(req *model.ExecuteTurnRequest) error {
-	if req == nil {
-		return errcode.New(errcode.AgentInvalidRequest, http.StatusBadRequest,
-			"turn request is required", nil)
-	}
-	provider := strings.ToLower(strings.TrimSpace(req.GetProvider()))
-	switch provider {
-	case "trae-cli", "codex-cli", "claude-cli", "cursor-cli",
-		"trae", "codex", "claude", "cursor":
-		return errcode.NewRuntimeUnavailable(
-			"direct_model",
-			"runtime_not_advertised",
-		)
-	}
-	return nil
 }
 
 func writeTurnStreamEvent(resp server.Response, event string, payload any) error {
