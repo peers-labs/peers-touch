@@ -23,7 +23,7 @@ type StartAuthInput struct {
 
 type StartAuthUseCase struct {
 	Sites     SiteRegistry
-	Sessions  repository.SessionRepository
+	Store     repository.OAuthStore
 	Providers map[valueobject.Provider]port.ProviderGateway
 	Clock     Clock
 }
@@ -54,12 +54,12 @@ func (u StartAuthUseCase) Execute(ctx context.Context, input StartAuthInput) (st
 		State:     state,
 		SiteID:    input.SiteID,
 		Provider:  input.Provider,
-		ReturnTo:  sanitizeReturnTo(input.ReturnTo),
+		ReturnTo:  sanitizeReturnTo(input.ReturnTo, site.AllowedReturnTo),
 		Verifier:  verifier,
 		CreatedAt: now,
 		ExpiresAt: now.Add(10 * time.Minute),
 	}
-	if err := u.Sessions.Save(ctx, session); err != nil {
+	if err := u.Store.CreateAuthorization(ctx, session); err != nil {
 		return "", err
 	}
 	return gw.AuthorizeURL(state, verifier, providerCfg)
@@ -73,7 +73,7 @@ func randomURLSafe(size int) (string, error) {
 	return strings.TrimRight(base64.RawURLEncoding.EncodeToString(buf), "="), nil
 }
 
-func sanitizeReturnTo(raw string) string {
+func sanitizeReturnTo(raw string, allowed []string) string {
 	v := strings.TrimSpace(raw)
 	if v == "" {
 		return ""
@@ -82,10 +82,20 @@ func sanitizeReturnTo(raw string) string {
 	if err != nil {
 		return ""
 	}
-	if u.Scheme != "https" && u.Scheme != "http" {
-		if u.Scheme != "peers-touch" {
-			return ""
+	if u.User != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	for _, candidate := range allowed {
+		approved, err := url.Parse(strings.TrimSpace(candidate))
+		if err != nil || approved.User != nil {
+			continue
+		}
+		if strings.EqualFold(u.Scheme, approved.Scheme) &&
+			strings.EqualFold(u.Host, approved.Host) &&
+			u.EscapedPath() == approved.EscapedPath() {
+			u.Fragment = ""
+			return u.String()
 		}
 	}
-	return u.String()
+	return ""
 }

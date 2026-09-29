@@ -82,6 +82,67 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "oauth-login-broker",
+      "root": "docs/architecture/oauth-login-broker",
+      "status": "active",
+      "owner": "Identity and Access",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "OLB-D01",
+        "OLB-D02",
+        "OLB-D03",
+        "OLB-D04",
+        "OLB-D05",
+        "OLB-D06",
+        "OLB-D07",
+        "OLB-D08",
+        "OLB-D09"
+      ],
+      "governedPaths": [
+        "apps/oauth2-client",
+        "docs/architecture/oauth-login-broker"
+      ],
+      "capabilities": [
+        {
+          "id": "oauth.login.broker",
+          "owner": "oauth.login-broker",
+          "contractRoots": [
+            "apps/oauth2-client/internal/domain/oauth",
+            "docs/architecture/oauth-login-broker"
+          ],
+          "consumers": [
+            "apps/oauth2-client/api",
+            "apps/oauth2-client/cmd/server"
+          ],
+          "allowedDependencies": [
+            "github.rest",
+            "go.crypto",
+            "oauth.provider"
+          ],
+          "evidenceGates": [
+            "oauth-login-broker-contract"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "station-access-lifecycle",
       "root": "docs/architecture/station-access-lifecycle",
       "status": "active",

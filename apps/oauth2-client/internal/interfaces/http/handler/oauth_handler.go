@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/usecase"
@@ -46,12 +45,11 @@ func (h *OAuthHandler) CallbackWithProvider(w http.ResponseWriter, r *http.Reque
 		Code:     code,
 	})
 	if err != nil {
-		redirect, ok := h.buildErrorRedirect(r.URL.Query().Get("site_id"), state, err.Error())
-		if ok {
-			http.Redirect(w, r, redirect, http.StatusFound)
+		if out != nil && out.RedirectURL != "" {
+			http.Redirect(w, r, out.RedirectURL, http.StatusFound)
 			return
 		}
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error(), "state": state})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": usecase.PublicErrorCode(err)})
 		return
 	}
 	http.Redirect(w, r, out.RedirectURL, http.StatusFound)
@@ -59,31 +57,6 @@ func (h *OAuthHandler) CallbackWithProvider(w http.ResponseWriter, r *http.Reque
 
 func (h *OAuthHandler) Healthz(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (h *OAuthHandler) buildErrorRedirect(siteID, state, message string) (string, bool) {
-	if siteID == "" {
-		siteID = "default"
-	}
-	site, ok := h.Sites.Get(siteID)
-	if !ok || strings.TrimSpace(site.ErrorURL) == "" {
-		return "", false
-	}
-	u, err := url.Parse(site.ErrorURL)
-	if err != nil {
-		return "", false
-	}
-	if state != "" {
-		q := u.Query()
-		q.Set("state", state)
-		u.RawQuery = q.Encode()
-	}
-	if message != "" {
-		q := u.Query()
-		q.Set("error", message)
-		u.RawQuery = q.Encode()
-	}
-	return u.String(), true
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

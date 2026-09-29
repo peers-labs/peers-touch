@@ -1,0 +1,72 @@
+package github
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"testing"
+	"time"
+
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/port"
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/provider/common"
+)
+
+func TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet(t *testing.T) {
+	var tokenForm url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			body, _ := io.ReadAll(r.Body)
+			tokenForm, _ = url.ParseQuery(string(body))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"access-secret","refresh_token":"refresh-secret","token_type":"bearer","scope":"read:user","expires_in":3600}`))
+		case "/user":
+			if r.Header.Get("Authorization") != "Bearer access-secret" {
+				t.Fatalf("unexpected authorization header")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":42,"login":"alice","name":"Alice","email":"alice@example.com"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewWithEndpoints(server.Client(), Endpoints{
+		Authorize: server.URL + "/authorize",
+		Token:     server.URL + "/token",
+		User:      server.URL + "/user",
+	})
+	now := time.Date(2026, 9, 30, 1, 0, 0, 0, time.UTC)
+	provider.now = func() time.Time { return now }
+	cfg := port.ProviderConfig{
+		ClientID:     "client",
+		ClientSecret: "provider-secret",
+		RedirectURI:  "https://broker.example/callback",
+		Scope:        "read:user",
+	}
+	authorizeURL, err := provider.AuthorizeURL("state", "verifier", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, _ := url.Parse(authorizeURL)
+	if parsed.Query().Get("code_challenge") != common.PKCEChallenge("verifier") ||
+		parsed.Query().Get("code_challenge_method") != "S256" {
+		t.Fatalf("PKCE challenge missing from %s", authorizeURL)
+	}
+	grant, err := provider.ExchangeCode(context.Background(), "code", "verifier", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tokenForm.Get("code_verifier") != "verifier" {
+		t.Fatalf("exchange omitted verifier: %v", tokenForm)
+	}
+	if grant.Identity.ProviderUserID != "42" ||
+		grant.Tokens.RefreshToken != "refresh-secret" ||
+		grant.Tokens.AccessExpiresAt == nil ||
+		!grant.Tokens.AccessExpiresAt.Equal(now.Add(time.Hour)) {
+		t.Fatalf("unexpected grant: %#v", grant)
+	}
+}

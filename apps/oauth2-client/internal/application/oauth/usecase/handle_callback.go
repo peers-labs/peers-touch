@@ -7,9 +7,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"regexp"
 	"time"
 
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/port"
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/entity"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/repository"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/valueobject"
 )
@@ -25,10 +27,11 @@ type HandleCallbackOutput struct {
 }
 
 type HandleCallbackUseCase struct {
-	Sites     SiteRegistry
-	Sessions  repository.SessionRepository
-	Providers map[valueobject.Provider]port.ProviderGateway
-	Clock     Clock
+	Sites         SiteRegistry
+	Store         repository.OAuthStore
+	Providers     map[valueobject.Provider]port.ProviderGateway
+	Fingerprinter port.SecretFingerprinter
+	Clock         Clock
 }
 
 func (u HandleCallbackUseCase) Execute(ctx context.Context, input HandleCallbackInput) (*HandleCallbackOutput, error) {
@@ -36,47 +39,85 @@ func (u HandleCallbackUseCase) Execute(ctx context.Context, input HandleCallback
 	if !ok {
 		return nil, errors.New("provider_gateway_missing")
 	}
-	session, err := u.Sessions.FindByState(ctx, input.State)
+	session, err := u.Store.FindAuthorization(ctx, input.State)
 	if err != nil {
 		return nil, err
 	}
 	if session == nil {
 		return nil, errors.New("invalid_state")
 	}
-	if session.Provider != input.Provider {
-		return nil, errors.New("provider_mismatch")
-	}
-	if session.IsConsumed() {
-		return nil, errors.New("state_consumed")
-	}
-	if session.IsExpired(u.Clock.Now()) {
-		return nil, errors.New("state_expired")
-	}
 	site, ok := u.Sites.Get(session.SiteID)
 	if !ok {
 		return nil, errors.New("unknown_site")
 	}
+	codeFingerprint := u.Fingerprinter.Fingerprint(input.Code)
+	if session.Provider != input.Provider {
+		return u.fail(ctx, site, entity.AuthorizationFailure{
+			State:           input.State,
+			Provider:        input.Provider,
+			CodeFingerprint: codeFingerprint,
+			ErrorCode:       "provider_mismatch",
+			OccurredAt:      u.Clock.Now(),
+		}, errors.New("provider_mismatch"))
+	}
+	if session.IsConsumed() {
+		return u.errorOutput(site, "state_consumed"), errors.New("state_consumed")
+	}
+	if session.IsExpired(u.Clock.Now()) {
+		return u.fail(ctx, site, entity.AuthorizationFailure{
+			State:           input.State,
+			Provider:        input.Provider,
+			CodeFingerprint: codeFingerprint,
+			ErrorCode:       "state_expired",
+			OccurredAt:      u.Clock.Now(),
+		}, errors.New("state_expired"))
+	}
 	cfg, ok := site.Providers[input.Provider]
 	if !ok {
-		return nil, errors.New("provider_not_enabled")
+		return u.fail(ctx, site, entity.AuthorizationFailure{
+			State:           input.State,
+			Provider:        input.Provider,
+			CodeFingerprint: codeFingerprint,
+			ErrorCode:       "provider_not_enabled",
+			OccurredAt:      u.Clock.Now(),
+		}, errors.New("provider_not_enabled"))
 	}
-	identity, err := gw.ExchangeCode(ctx, input.Code, cfg)
+	grant, err := gw.ExchangeCode(ctx, input.Code, session.Verifier, cfg)
 	if err != nil {
-		return nil, err
+		return u.fail(ctx, site, entity.AuthorizationFailure{
+			State:           input.State,
+			Provider:        input.Provider,
+			CodeFingerprint: codeFingerprint,
+			ErrorCode:       PublicErrorCode(err),
+			OccurredAt:      u.Clock.Now(),
+		}, err)
 	}
-	if err := u.Sessions.MarkConsumed(ctx, session.State); err != nil {
-		return nil, err
+	identity, err := u.Store.CompleteAuthorization(ctx, entity.AuthorizationCompletion{
+		State:           input.State,
+		CompletionID:    codeFingerprint,
+		CodeFingerprint: codeFingerprint,
+		Identity:        grant.Identity,
+		Tokens:          grant.Tokens,
+		CompletedAt:     u.Clock.Now(),
+	})
+	if err != nil {
+		return u.errorOutput(site, PublicErrorCode(err)), err
 	}
+	return u.successOutput(site, session, identity)
+}
+
+func (u HandleCallbackUseCase) successOutput(site SiteConfig, session *entity.AuthSession, identity *entity.OAuthIdentity) (*HandleCallbackOutput, error) {
 	target := site.SuccessURL
 	if session.ReturnTo != "" {
 		target = session.ReturnTo
 	}
 
-	ts := time.Now().UTC().Format(time.RFC3339)
+	ts := u.Clock.Now().UTC().Format(time.RFC3339)
 
 	params := map[string]string{
+		"bridge_version":   "v1",
 		"site_id":          session.SiteID,
-		"provider":         string(input.Provider),
+		"provider":         string(session.Provider),
 		"provider_user_id": identity.ProviderUserID,
 		"union_id":         identity.UnionID,
 		"username":         identity.Username,
@@ -88,7 +129,7 @@ func (u HandleCallbackUseCase) Execute(ctx context.Context, input HandleCallback
 
 	// Compute HMAC-SHA256 signature when bridge secret is configured.
 	if site.BridgeSecret != "" {
-		message := string(input.Provider) + ":" + identity.ProviderUserID + ":" + identity.Email + ":" + ts
+		message := canonicalBridgePayload(params)
 		mac := hmac.New(sha256.New, []byte(site.BridgeSecret))
 		mac.Write([]byte(message))
 		params["sig"] = hex.EncodeToString(mac.Sum(nil))
@@ -99,6 +140,44 @@ func (u HandleCallbackUseCase) Execute(ctx context.Context, input HandleCallback
 		return nil, err
 	}
 	return &HandleCallbackOutput{RedirectURL: redirectURL}, nil
+}
+
+func canonicalBridgePayload(values map[string]string) string {
+	canonical := url.Values{}
+	for key, value := range values {
+		if value != "" {
+			canonical.Set(key, value)
+		}
+	}
+	return canonical.Encode()
+}
+
+func (u HandleCallbackUseCase) fail(ctx context.Context, site SiteConfig, failure entity.AuthorizationFailure, cause error) (*HandleCallbackOutput, error) {
+	if err := u.Store.RecordAuthorizationFailure(ctx, failure); err != nil {
+		return u.errorOutput(site, PublicErrorCode(err)), err
+	}
+	return u.errorOutput(site, PublicErrorCode(cause)), cause
+}
+
+func (u HandleCallbackUseCase) errorOutput(site SiteConfig, code string) *HandleCallbackOutput {
+	redirectURL, err := appendQuery(site.ErrorURL, map[string]string{"error": code})
+	if err != nil {
+		return nil
+	}
+	return &HandleCallbackOutput{RedirectURL: redirectURL}
+}
+
+var safeErrorCode = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+func PublicErrorCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	code := err.Error()
+	if safeErrorCode.MatchString(code) {
+		return code
+	}
+	return "oauth_request_failed"
 }
 
 func appendQuery(raw string, values map[string]string) (string, error) {
