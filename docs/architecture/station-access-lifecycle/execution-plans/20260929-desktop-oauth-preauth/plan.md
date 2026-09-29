@@ -51,6 +51,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/desktop/vite.config.ts",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "tooling/devctl/desktop.mjs",
         "mode": "exclusive-write"
       },

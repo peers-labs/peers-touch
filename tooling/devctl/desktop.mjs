@@ -19,11 +19,57 @@ export function desktopViteReadinessUrl(webPort) {
   return `http://127.0.0.1:${webPort}/src/services/desktop_api.ts`;
 }
 
+export function desktopViteEntryUrl(webPort) {
+  return `http://127.0.0.1:${webPort}/src/main.tsx`;
+}
+
+export async function warmDesktopViteModuleGraph(
+  webPort,
+  fetchModule = fetch,
+  maxModules = 2_000,
+) {
+  const origin = `http://127.0.0.1:${webPort}`;
+  const queue = [desktopViteEntryUrl(webPort)];
+  const seen = new Set();
+  while (queue.length > 0) {
+    const url = queue.shift();
+    if (seen.has(url)) continue;
+    if (seen.size >= maxModules) {
+      throw new DevctlError(
+        ERROR_CODES.CHECK_FAILED,
+        `Desktop Vite module graph exceeded ${maxModules} modules`,
+        { url, modules: seen.size },
+      );
+    }
+    seen.add(url);
+    const response = await fetchModule(url);
+    if (!response.ok) {
+      throw new DevctlError(
+        ERROR_CODES.START_TIMEOUT,
+        `Desktop Vite module graph failed at ${url}`,
+        { url, status: response.status },
+      );
+    }
+    const body = await response.text();
+    const imports =
+      /(?:\bfrom\s*|\bimport\s*\(|\bimport\s*)["']([^"']+)["']/gu;
+    for (const match of body.matchAll(imports)) {
+      if (!match[1].startsWith('/')) continue;
+      const imported = new URL(match[1], url);
+      if (imported.origin === origin && !seen.has(imported.href)) {
+        queue.push(imported.href);
+      }
+    }
+  }
+  return { ok: true, url: desktopViteEntryUrl(webPort), modules: seen.size };
+}
+
 export async function waitForDesktopVite(
   webPort,
   mode,
   processAlive,
   waitForReady = waitForHttp,
+  warmModuleGraph = warmDesktopViteModuleGraph,
   stabilize = (durationMs) =>
     new Promise((resolve) => setTimeout(resolve, durationMs)),
 ) {
@@ -33,8 +79,66 @@ export async function waitForDesktopVite(
     processAlive,
   };
   await waitForReady(url, options);
+  await warmModuleGraph(webPort);
   await stabilize(3_000);
   return waitForReady(url, options);
+}
+
+export function desktopFrontendLogState(content) {
+  if (content.includes('React app mounted — dismissing boot fallback')) {
+    return { ready: true };
+  }
+  const failure = content
+    .split(/\r?\n/u)
+    .find(
+      (line) =>
+        line.includes('RESOURCE LOAD ERROR') ||
+        line.includes('MODULE RETRY ERROR') ||
+        line.includes('TIMEOUT: React did not mount'),
+    );
+  return failure ? { ready: false, failure } : { ready: false };
+}
+
+export async function waitForDesktopFrontend(
+  logPath,
+  {
+    fromOffset = 0,
+    timeoutMs = 90_000,
+    intervalMs = 250,
+    processAlive,
+    readLog = () =>
+      fs.existsSync(logPath)
+        ? fs.readFileSync(logPath, 'utf8').slice(fromOffset)
+        : '',
+    wait = (durationMs) =>
+      new Promise((resolve) => setTimeout(resolve, durationMs)),
+  } = {},
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (processAlive && !processAlive()) {
+      throw new DevctlError(
+        ERROR_CODES.START_TIMEOUT,
+        'Desktop Tauri exited before the renderer mounted',
+        { logPath },
+      );
+    }
+    const state = desktopFrontendLogState(readLog());
+    if (state.ready) return state;
+    if (state.failure) {
+      throw new DevctlError(
+        ERROR_CODES.START_TIMEOUT,
+        'Desktop renderer failed before React mounted',
+        { logPath, failure: state.failure },
+      );
+    }
+    await wait(intervalMs);
+  }
+  throw new DevctlError(
+    ERROR_CODES.START_TIMEOUT,
+    `Desktop renderer did not mount within ${timeoutMs}ms`,
+    { logPath },
+  );
 }
 
 function desktopValues(root, resolved, mode) {
@@ -592,6 +696,7 @@ export async function startDesktop(
     command: process.execPath,
     args: [
       values.viteScript,
+      '--force',
       '--host',
       '127.0.0.1',
       '--port',
@@ -612,6 +717,9 @@ export async function startDesktop(
       mode,
       () => Boolean(inspectProcess(vite.pid)),
     );
+    const tauriLogOffset = fs.existsSync(values.tauriLog)
+      ? fs.statSync(values.tauriLog).size
+      : 0;
     const tauri = spawnManaged({
       stateDirectory: resolved.paths.profileState,
       service: values.tauriService,
@@ -633,6 +741,10 @@ export async function startDesktop(
       label: `Desktop ${mode} Gateway`,
       processAlive: () => Boolean(inspectProcess(tauri.pid)),
       timeoutMs: 1_800_000,
+    });
+    await waitForDesktopFrontend(values.tauriLog, {
+      fromOffset: tauriLogOffset,
+      processAlive: () => Boolean(inspectProcess(tauri.pid)),
     });
     const status = await desktopStatus(root, mode, environment);
     if (
