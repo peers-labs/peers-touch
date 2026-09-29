@@ -35,6 +35,9 @@ from .native_tauri_embedded_webdriver import (
 from .native_tauri_current_profile import (
     NativeTauriCurrentProfileProvisioner,
 )
+from .station_access_desktop_oauth_native import (
+    StationAccessDesktopOAuthNativeProvisioner,
+)
 from .station_access_login_browser import (
     StationAccessLoginBrowserProvisioner,
 )
@@ -68,6 +71,9 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     StationAccessLoginBrowserProvisioner.environment_id: (
         StationAccessLoginBrowserProvisioner
+    ),
+    StationAccessDesktopOAuthNativeProvisioner.environment_id: (
+        StationAccessDesktopOAuthNativeProvisioner
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
@@ -146,6 +152,7 @@ __all__ = [
     "MobileSimulatorProvisioner",
     "MobileSocialSimulatorProvisioner",
     "MobileStationLifecycleSimulatorProvisioner",
+    "StationAccessDesktopOAuthNativeProvisioner",
     "StationAccessLoginBrowserProvisioner",
     "StationAccessNativeProvisioner",
     "NativeDesktopLinuxProvisioner",

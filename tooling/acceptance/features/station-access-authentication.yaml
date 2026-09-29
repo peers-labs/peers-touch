@@ -9,6 +9,9 @@
     "apps/desktop/src/services/accessGate.ts",
     "apps/desktop/src-tauri/src/application/station_binding/**",
     "apps/desktop/src-tauri/src/application/auth/**",
+    "apps/desktop/src-tauri/src/application/oauth2/**",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
+    "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
     "apps/mobile/src/features/station/**",
     "apps/mobile/src/features/auth/**",
     "apps/mobile/src-tauri/src/commands/station.rs",
@@ -27,22 +30,26 @@
   "required_gates": [
     "station-access-capability-contract",
     "station-access-desktop-oauth-layout-e2e",
+    "station-access-desktop-oauth-native-e2e",
     "station-access-auth-e2e"
   ],
   "acceptance": {
     "service": [
       "each native client verifies its bound Station before submitting credentials",
+      "Desktop GitHub and Google loopback authorization starts before an actor session exists",
       "a granted decision activates exactly the actor and Station named by the bound runtime"
     ],
     "surface": [
       "Desktop and Mobile leave the Access Gate only after the canonical decision is granted",
-      "Desktop GitHub and Google actions expose a complete provider-specific side card without clipping or covering the login card at wide and narrow window sizes"
+      "Desktop GitHub and Google actions expose a complete provider-specific side card without clipping or covering the login card at wide and narrow window sizes",
+      "native Desktop GitHub and Google login starts return an authorization URL and loopback session while the Access Gate is unauthenticated"
     ]
   },
   "negative": [
     "reachability metadata must not substitute for signed Station identity",
     "unknown gate, identity mismatch, and expired attempt must fail closed",
     "authentication failure must not invoke a direct-login fallback",
+    "OAuth identity bootstrap must not require an existing authenticated actor session",
     "the Desktop OAuth side card must not cross the viewport boundary or intersect the login card"
   ]
 }
