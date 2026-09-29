@@ -11,7 +11,7 @@
   "title": "Prevent topic load failures from becoming empty sessions",
   "workClass": "product-behavior",
   "completionClass": "functional",
-  "executionMode": "fix",
+  "executionMode": "build",
   "closureId": "V2-agent-topic-recovery",
   "journeyId": "V2-agent-topic-recovery",
   "runtimeClass": "native-desktop",
