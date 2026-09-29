@@ -435,7 +435,7 @@ class AgentNativeJourney:
         )
         self.runtime_profile.chmod(0o600)
 
-    def start(self) -> None:
+    def start(self, *, require_initial_route: bool = True) -> None:
         if self.proxy is not None:
             self.proxy.start()
         self._write_runtime_profile()
@@ -469,7 +469,8 @@ class AgentNativeJourney:
             )
         )
         self.driver = self.tauri_driver.start()
-        self.tauri_driver.wait_for_ready()
+        if require_initial_route:
+            self.tauri_driver.wait_for_ready()
         self.tauri_driver.wait_for_acceptance_harness()
         require(
             bool(
@@ -500,7 +501,7 @@ class AgentNativeJourney:
             "native runtime ports to close",
             timeout=30,
         )
-        self.start()
+        self.start(require_initial_route=False)
         return {
             "restarted": True,
             "storageRootPreserved": self.storage_root.exists(),

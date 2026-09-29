@@ -230,6 +230,20 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
         self.assertNotIn('get("messageCount") or -1', journey)
         self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", journey)
 
+    def test_state_preserving_restart_does_not_require_the_initial_route(
+        self,
+    ) -> None:
+        start = self.source.split("    def start(", 1)[1]
+        start = start.split("    def restart_native_runtime", 1)[0]
+        restart = self.source.split("    def restart_native_runtime", 1)[1]
+        restart = restart.split("    def login", 1)[0]
+        self.assertIn("require_initial_route: bool = True", start)
+        self.assertIn("if require_initial_route:", start)
+        self.assertIn("self.tauri_driver.wait_for_ready()", start)
+        self.assertIn("self.tauri_driver.wait_for_acceptance_harness()", start)
+        self.assertIn("self.start(require_initial_route=False)", restart)
+        self.assertNotIn("self.start()", restart)
+
     def test_cli_provider_fixture_uses_automatic_thinking_negotiation(self) -> None:
         preparation = self.harness_source.split(
             "async function prepareCliProviderPrimaryJourney",
