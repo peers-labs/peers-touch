@@ -135,6 +135,9 @@ scenario and Station readback pass.
 
 `optional-advertised` means the product may ship without the capability, but it
 cannot advertise it until its complete journey and acceptance cells pass.
+One-shot CLI Providers that receive complete context and do not retain an
+external session are an allowed `DIRECT_MODEL` transport for MCA-P01/MCA-P03;
+they are not MCA-P12.
 
 ### 5.1 V2 Required Capability Extension
 
