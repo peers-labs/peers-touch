@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tooling.acceptance.core import (
     BlockedError,
@@ -36,6 +36,7 @@ from tooling.acceptance.provisioners.home_station import (
     agent_native_requires_disposable_fixture,
     agent_native_requires_provider,
     agent_profile_for_gate,
+    resolve_existing_actor,
 )
 
 
@@ -783,6 +784,33 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertTrue(
             agent_native_requires_provider("agent-stream-resilience-e2e")
         )
+
+    def test_existing_actor_resolution_logs_out_without_reset(self):
+        login = MagicMock()
+        login.__enter__.return_value.read.return_value = json.dumps(
+            {
+                "data": {
+                    "actor_ref": {"ptid": "ptid:alice"},
+                    "tokens": {"access_token": "access-token"},
+                }
+            }
+        ).encode("utf-8")
+        logout = MagicMock()
+
+        with patch(
+            "tooling.acceptance.provisioners.home_station.urllib.request.urlopen",
+            side_effect=[login, logout],
+        ) as urlopen:
+            actor = resolve_existing_actor(
+                "http://station.example:18080",
+                "alice",
+                "fixture-password",
+            )
+
+        self.assertEqual(actor.ptid, "ptid:alice")
+        self.assertEqual(actor.device_policy, "ephemeral-acceptance")
+        self.assertEqual(urlopen.call_count, 2)
+        logout.close.assert_called_once_with()
 
     def test_agent_stream_credentials_must_come_from_one_profile(self):
         provisioner = HomeStationProvisioner(
