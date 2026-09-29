@@ -51,6 +51,24 @@ func TestAdminRejectsUnauthorizedBeforeStorage(t *testing.T) {
 	}
 }
 
+func TestAdminUnavailableIncludesSecurityHeaders(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	WriteAdminUnavailable(recorder)
+	response := recorder.Result()
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("expected service unavailable, got %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(body)) != "admin_data_unavailable" {
+		t.Fatalf("unexpected error body: %q", body)
+	}
+	assertAdminSecurityHeaders(t, response.Header)
+}
+
 func TestAdminJSONAndHTMLAreSanitized(t *testing.T) {
 	store := &countingAdminStore{Store: memory.NewStore()}
 	seedAdminStore(t, store.Store)

@@ -241,6 +241,34 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 	if duplicate.Generation != 2 || fixture.commitCount() != commitsAfterRefresh {
 		t.Fatalf("duplicate refresh mutated storage: %#v", duplicate)
 	}
+	secondOperation, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:  identity.IdentityID,
+		OperationID: "refresh-operation-2",
+		Tokens: entity.TokenSet{
+			AccessToken: "access-newer",
+			ObtainedAt:  now.Add(3 * time.Minute),
+		},
+		RefreshedAt: now.Add(3 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondOperation.Generation != 3 {
+		t.Fatalf("second refresh did not advance generation: %#v", secondOperation)
+	}
+	commitsAfterSecondOperation := fixture.commitCount()
+	olderDuplicate, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:  identity.IdentityID,
+		OperationID: "refresh-operation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if olderDuplicate.Generation != 3 ||
+		olderDuplicate.AccessToken != "access-newer" ||
+		fixture.commitCount() != commitsAfterSecondOperation {
+		t.Fatalf("older duplicate refresh mutated storage: %#v", olderDuplicate)
+	}
 	snapshot, err := store.AdminSnapshot(context.Background(), 10)
 	if err != nil {
 		t.Fatal(err)
@@ -251,8 +279,8 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 			refreshEvents++
 		}
 	}
-	if refreshEvents != 1 {
-		t.Fatalf("expected one refresh event, got %d", refreshEvents)
+	if refreshEvents != 2 {
+		t.Fatalf("expected two refresh events, got %d", refreshEvents)
 	}
 }
 
@@ -315,6 +343,18 @@ func TestRotateEncryptionCoversEveryRecordClass(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := oldStore.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:  oldStore.identityID("main", string(valueobject.ProviderGitHub), "42"),
+		OperationID: "rotation-refresh",
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-rotated",
+			RefreshToken: "refresh-rotated",
+			ObtainedAt:   now.Add(2 * time.Minute),
+		},
+		RefreshedAt: now.Add(2 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
 		"v1": oldKey,
@@ -331,8 +371,8 @@ func TestRotateEncryptionCoversEveryRecordClass(t *testing.T) {
 			break
 		}
 	}
-	if totalRotated != 5 {
-		t.Fatalf("expected five rotated records, got %d", totalRotated)
+	if totalRotated != 7 {
+		t.Fatalf("expected seven rotated records, got %d", totalRotated)
 	}
 	commitsAfterRotation := fixture.commitCount()
 	second, err := rotatingStore.RotateEncryption(context.Background(), 2)

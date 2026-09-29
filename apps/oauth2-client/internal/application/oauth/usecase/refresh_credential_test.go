@@ -60,6 +60,59 @@ func TestRefreshCredentialReturnsCommittedDuplicateWithoutProviderCall(t *testin
 	}
 }
 
+func TestRefreshCredentialRemembersEarlierOperation(t *testing.T) {
+	store, identityID, now := seededRefreshStore(t)
+	provider := &refreshProvider{tokens: entity.TokenSet{
+		AccessToken: "access-a",
+		ObtainedAt:  now.Add(time.Hour),
+	}}
+	useCase := refreshUseCase(store, provider, now.Add(time.Hour))
+
+	first, err := useCase.Execute(context.Background(), RefreshCredentialInput{
+		IdentityID: identityID, OperationID: "refresh-a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.tokens = entity.TokenSet{
+		AccessToken: "access-b",
+		ObtainedAt:  now.Add(2 * time.Hour),
+	}
+	second, err := useCase.Execute(context.Background(), RefreshCredentialInput{
+		IdentityID: identityID, OperationID: "refresh-b",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider.tokens = entity.TokenSet{
+		AccessToken: "must-not-be-used",
+		ObtainedAt:  now.Add(3 * time.Hour),
+	}
+	replayed, err := useCase.Execute(context.Background(), RefreshCredentialInput{
+		IdentityID: identityID, OperationID: "refresh-a",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 2 || first.Generation != 2 || second.Generation != 3 ||
+		replayed.Generation != 3 || replayed.AccessToken != "access-b" {
+		t.Fatalf("non-consecutive duplicate did not converge: calls=%d first=%#v second=%#v replayed=%#v", provider.calls, first, second, replayed)
+	}
+	snapshot, err := store.AdminSnapshot(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshEvents := 0
+	for _, event := range snapshot.Events {
+		if event.EventType == entity.AuditCredentialRefreshed {
+			refreshEvents++
+		}
+	}
+	if refreshEvents != 2 {
+		t.Fatalf("expected two refresh audit events, got %d", refreshEvents)
+	}
+}
+
 func TestRefreshCredentialPreservesOmittedRefreshToken(t *testing.T) {
 	store, identityID, now := seededRefreshStore(t)
 	provider := &refreshProvider{

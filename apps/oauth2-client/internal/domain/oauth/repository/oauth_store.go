@@ -26,6 +26,7 @@ type OAuthStore interface {
 	CompleteAuthorization(ctx context.Context, completion entity.AuthorizationCompletion) (*entity.OAuthIdentity, error)
 	RecordAuthorizationFailure(ctx context.Context, failure entity.AuthorizationFailure) error
 	LoadCredential(ctx context.Context, identityID string) (*entity.OAuthCredential, error)
+	LoadCredentialForRefresh(ctx context.Context, identityID, operationID string) (*entity.OAuthCredential, bool, error)
 	ReplaceCredential(ctx context.Context, refresh entity.CredentialRefresh) (*entity.OAuthCredential, error)
 	AdminSnapshot(ctx context.Context, limit int) (entity.AdminSnapshot, error)
 }

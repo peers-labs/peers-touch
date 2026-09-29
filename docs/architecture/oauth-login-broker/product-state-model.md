@@ -71,7 +71,7 @@ unknown_key | authentication_failed -> unreadable
 
 Normal reads report the encountered key ID without mutating append-only data.
 The explicit maintenance command walks transactions, identities, credentials,
-and audits and rewrites every old-key envelope before key removal.
+refresh-operation markers, and audits before key removal.
 
 Every envelope authenticates its version, key ID, algorithm, update timestamp,
 record kind, and repository path as AES-GCM associated data.
