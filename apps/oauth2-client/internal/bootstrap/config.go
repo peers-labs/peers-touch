@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"net/url"
 	"os"
 	"strings"
 
@@ -22,11 +23,12 @@ func (r siteRegistry) Get(siteID string) (usecase.SiteConfig, bool) {
 }
 
 type rawSite struct {
-	SiteID       string                         `json:"site_id"`
-	SuccessURL   string                         `json:"success_url"`
-	ErrorURL     string                         `json:"error_url"`
-	BridgeSecret string                         `json:"bridge_secret"`
-	Providers    map[string]port.ProviderConfig `json:"providers"`
+	SiteID          string                         `json:"site_id"`
+	SuccessURL      string                         `json:"success_url"`
+	ErrorURL        string                         `json:"error_url"`
+	BridgeSecret    string                         `json:"bridge_secret"`
+	AllowedReturnTo []string                       `json:"allowed_return_to"`
+	Providers       map[string]port.ProviderConfig `json:"providers"`
 }
 
 type rawProviderLite struct {
@@ -38,11 +40,12 @@ type rawProviderLite struct {
 }
 
 type rawSiteLite struct {
-	SiteID       string                     `json:"site_id"`
-	SuccessURL   string                     `json:"success_url"`
-	ErrorURL     string                     `json:"error_url"`
-	BridgeSecret string                     `json:"bridge_secret"`
-	Providers    map[string]rawProviderLite `json:"providers"`
+	SiteID          string                     `json:"site_id"`
+	SuccessURL      string                     `json:"success_url"`
+	ErrorURL        string                     `json:"error_url"`
+	BridgeSecret    string                     `json:"bridge_secret"`
+	AllowedReturnTo []string                   `json:"allowed_return_to"`
+	Providers       map[string]rawProviderLite `json:"providers"`
 }
 
 type rawFileConfig struct {
@@ -68,30 +71,44 @@ func LoadSiteRegistry() (usecase.SiteRegistry, error) {
 	}
 	sites := make(map[string]usecase.SiteConfig, len(raw))
 	for _, item := range raw {
+		siteID := strings.TrimSpace(item.SiteID)
+		successURL := strings.TrimSpace(item.SuccessURL)
+		errorURL := strings.TrimSpace(item.ErrorURL)
 		providers := make(map[valueobject.Provider]port.ProviderConfig)
 		for k, cfg := range item.Providers {
 			provider, ok := valueobject.ParseProvider(k)
 			if !ok {
 				continue
 			}
-			if cfg.ClientID == "" || cfg.ClientSecret == "" || cfg.RedirectURI == "" {
+			cfg.ClientID = strings.TrimSpace(cfg.ClientID)
+			cfg.ClientSecret = strings.TrimSpace(cfg.ClientSecret)
+			cfg.RedirectURI = strings.TrimSpace(cfg.RedirectURI)
+			cfg.Scope = strings.TrimSpace(cfg.Scope)
+			if cfg.ClientID == "" || cfg.ClientSecret == "" || !validAbsoluteURL(cfg.RedirectURI, true) {
 				continue
 			}
 			providers[provider] = cfg
 		}
-		if item.SiteID == "" || item.SuccessURL == "" || item.ErrorURL == "" || len(providers) == 0 {
+		if siteID == "" ||
+			!validAbsoluteURL(successURL, false) ||
+			!validAbsoluteURL(errorURL, false) ||
+			len(providers) == 0 {
 			continue
 		}
-		sites[item.SiteID] = usecase.SiteConfig{
-			SiteID:       item.SiteID,
-			SuccessURL:   item.SuccessURL,
-			ErrorURL:     item.ErrorURL,
-			BridgeSecret: firstNonEmpty(strings.TrimSpace(item.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
-			Providers:    providers,
+		sites[siteID] = usecase.SiteConfig{
+			SiteID:          siteID,
+			SuccessURL:      successURL,
+			ErrorURL:        errorURL,
+			AllowedReturnTo: normalizeAllowedReturnTo(item.AllowedReturnTo),
+			BridgeSecret:    firstNonEmpty(strings.TrimSpace(item.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
+			Providers:       providers,
 		}
 	}
 	if len(sites) == 0 {
 		return nil, errors.New("invalid_oauth_sites")
+	}
+	if err := validateProductionSites(sites); err != nil {
+		return nil, err
 	}
 	return siteRegistry{sites: sites}, nil
 }
@@ -164,7 +181,7 @@ func buildFromLite(rawSites []rawSiteLite) (usecase.SiteRegistry, error) {
 			if redirectURI == "" && baseURL != "" {
 				redirectURI = defaultRedirectURI(baseURL, p)
 			}
-			if redirectURI == "" {
+			if !validAbsoluteURL(redirectURI, true) {
 				continue
 			}
 			scope := strings.TrimSpace(providerLite.Scope)
@@ -181,19 +198,25 @@ func buildFromLite(rawSites []rawSiteLite) (usecase.SiteRegistry, error) {
 				Scope:        scope,
 			}
 		}
-		if successURL == "" || errorURL == "" || len(providers) == 0 {
+		if !validAbsoluteURL(successURL, false) ||
+			!validAbsoluteURL(errorURL, false) ||
+			len(providers) == 0 {
 			continue
 		}
 		sites[siteID] = usecase.SiteConfig{
-			SiteID:       siteID,
-			SuccessURL:   successURL,
-			ErrorURL:     errorURL,
-			BridgeSecret: firstNonEmpty(strings.TrimSpace(s.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
-			Providers:    providers,
+			SiteID:          siteID,
+			SuccessURL:      successURL,
+			ErrorURL:        errorURL,
+			AllowedReturnTo: normalizeAllowedReturnTo(s.AllowedReturnTo),
+			BridgeSecret:    firstNonEmpty(strings.TrimSpace(s.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
+			Providers:       providers,
 		}
 	}
 	if len(sites) == 0 {
 		return nil, errors.New("invalid_oauth_config_file")
+	}
+	if err := validateProductionSites(sites); err != nil {
+		return nil, err
 	}
 	return siteRegistry{sites: sites}, nil
 }
@@ -218,7 +241,7 @@ func loadFromSingleSiteEnv() (usecase.SiteRegistry, error) {
 		clientSecret := strings.TrimSpace(os.Getenv(prefix + "_CLIENT_SECRET"))
 		redirectURI := strings.TrimSpace(os.Getenv(prefix + "_REDIRECT_URI"))
 		scope := strings.TrimSpace(os.Getenv(prefix + "_SCOPE"))
-		if clientID == "" || clientSecret == "" || redirectURI == "" {
+		if clientID == "" || clientSecret == "" || !validAbsoluteURL(redirectURI, true) {
 			if clientID == "" || clientSecret == "" {
 				return
 			}
@@ -226,6 +249,9 @@ func loadFromSingleSiteEnv() (usecase.SiteRegistry, error) {
 				return
 			}
 			redirectURI = defaultRedirectURI(baseURL, provider)
+		}
+		if !validAbsoluteURL(redirectURI, true) {
+			return
 		}
 		if scope == "" {
 			scope = defaultScope(provider)
@@ -243,15 +269,20 @@ func loadFromSingleSiteEnv() (usecase.SiteRegistry, error) {
 	if len(providers) == 0 {
 		return nil, errors.New("no_provider_enabled")
 	}
-	return siteRegistry{sites: map[string]usecase.SiteConfig{
+	sites := map[string]usecase.SiteConfig{
 		siteID: {
-			SiteID:       siteID,
-			SuccessURL:   successURL,
-			ErrorURL:     errorURL,
-			BridgeSecret: strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET")),
-			Providers:    providers,
+			SiteID:          siteID,
+			SuccessURL:      successURL,
+			ErrorURL:        errorURL,
+			AllowedReturnTo: normalizeAllowedReturnTo(strings.Split(os.Getenv("OAUTH_ALLOWED_RETURN_TO"), ",")),
+			BridgeSecret:    strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET")),
+			Providers:       providers,
 		},
-	}}, nil
+	}
+	if err := validateProductionSites(sites); err != nil {
+		return nil, err
+	}
+	return siteRegistry{sites: sites}, nil
 }
 
 func envOrDefault(key, fallback string) string {
@@ -311,4 +342,50 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func normalizeAllowedReturnTo(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		parsed, err := url.Parse(strings.TrimSpace(value))
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
+			continue
+		}
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		normalized := parsed.String()
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+	return result
+}
+
+func validAbsoluteURL(raw string, providerRedirect bool) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
+		return false
+	}
+	if providerRedirect && parsed.Scheme != "https" && parsed.Scheme != "http" {
+		return false
+	}
+	return true
+}
+
+func validateProductionSites(sites map[string]usecase.SiteConfig) error {
+	if strings.TrimSpace(os.Getenv("VERCEL")) == "" {
+		return nil
+	}
+	for _, site := range sites {
+		if strings.TrimSpace(site.BridgeSecret) == "" {
+			return errors.New("production_bridge_secret_required")
+		}
+		if len(site.AllowedReturnTo) == 0 {
+			return errors.New("production_return_to_allowlist_required")
+		}
+	}
+	return nil
 }

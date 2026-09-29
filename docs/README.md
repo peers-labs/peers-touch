@@ -217,6 +217,9 @@
 - Station 接入生命周期：`architecture/station-access-lifecycle/README.md`
   （active；定义双端签名 Station identity、protobuf Access Gate、scope 隔离、
   Federation context 与 Relay 客户端边界，实施 Plan 已完成）
+- OAuth Login Broker：`architecture/oauth-login-broker/README.md`
+  （active；定义 Vercel 跨实例 OAuth 事务、GitHub 私有仓库存储、
+  AES-256-GCM 凭据、Provider refresh 与只读管理面）
 - Chat 本机存储治理：`architecture/chat-storage-governance/README.md`
   （active；定义当前设备 Chat 空间统计、缓存、保留周期、消息 redaction、单会话及
   显式批量清理与物理回收）
