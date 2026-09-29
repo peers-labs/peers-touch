@@ -115,7 +115,7 @@
       "dependsOn": [
         "OLB-01-DURABLE-CORE"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -125,7 +125,7 @@
       "dependsOn": [
         "OLB-02-REFRESH-IDEMPOTENCY"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {

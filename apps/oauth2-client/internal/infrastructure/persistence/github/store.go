@@ -474,13 +474,12 @@ func (s *Store) RotateEncryption(ctx context.Context, limit int) (entity.Rotatio
 		limit = 1000
 	}
 	var result entity.RotationResult
+	var recordFailure error
 	err := s.repository.Update(ctx, "oauth: rotate encrypted records", func(snapshot *Snapshot) (map[string][]byte, error) {
 		attempt := entity.RotationResult{}
+		attemptFailure := error(nil)
 		changes := make(map[string][]byte)
 		paths := snapshot.Paths(recordRoot + "/")
-		if len(paths) > limit {
-			paths = paths[:limit]
-		}
 		for _, path := range paths {
 			kind, ok := recordKindForPath(path)
 			if !ok {
@@ -488,34 +487,49 @@ func (s *Store) RotateEncryption(ctx context.Context, limit int) (entity.Rotatio
 			}
 			attempt.Scanned++
 			payload, found, err := snapshot.Read(ctx, path)
-			if err != nil || !found {
+			if err != nil {
+				return nil, err
+			}
+			if !found {
 				attempt.Failed++
+				if attemptFailure == nil {
+					attemptFailure = repository.ErrRecordCorrupt
+				}
 				continue
 			}
 			plaintext, needsRotation, err := s.codec.Decrypt(kind, path, payload)
 			if err != nil {
 				attempt.Failed++
+				if attemptFailure == nil {
+					attemptFailure = err
+				}
 				continue
 			}
 			if !needsRotation {
 				attempt.Unchanged++
 				continue
 			}
+			if len(changes) >= limit {
+				continue
+			}
 			rotated, err := s.codec.Encrypt(kind, path, plaintext)
 			if err != nil {
-				attempt.Failed++
-				continue
+				return nil, err
 			}
 			changes[path] = rotated
 			attempt.Rotated++
 		}
 		result = attempt
+		recordFailure = attemptFailure
 		return changes, nil
 	})
 	if err != nil {
 		return result, err
 	}
 	if result.Failed > 0 {
+		if recordFailure != nil {
+			return result, recordFailure
+		}
 		return result, repository.ErrRecordCorrupt
 	}
 	return result, nil
