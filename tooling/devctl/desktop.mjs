@@ -16,7 +16,7 @@ import { resolveProfile, runtimeEnvironment } from './profile.mjs';
 import { startStation } from './station.mjs';
 
 export function desktopViteReadinessUrl(webPort) {
-  return `http://127.0.0.1:${webPort}/src/main.tsx`;
+  return `http://127.0.0.1:${webPort}/src/services/desktop_api.ts`;
 }
 
 export async function waitForDesktopVite(
@@ -24,11 +24,17 @@ export async function waitForDesktopVite(
   mode,
   processAlive,
   waitForReady = waitForHttp,
+  stabilize = (durationMs) =>
+    new Promise((resolve) => setTimeout(resolve, durationMs)),
 ) {
-  return waitForReady(desktopViteReadinessUrl(webPort), {
+  const url = desktopViteReadinessUrl(webPort);
+  const options = {
     label: `Desktop ${mode} Vite`,
     processAlive,
-  });
+  };
+  await waitForReady(url, options);
+  await stabilize(3_000);
+  return waitForReady(url, options);
 }
 
 function desktopValues(root, resolved, mode) {
