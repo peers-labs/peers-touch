@@ -23,8 +23,11 @@ git diff range
   -> route-change.sh
   -> knowledge-match.sh
   -> hard-rules.sh
+  -> structure-signals.mjs for advisory structural triage
+  -> pt-code-structure-review source-bound decision for authored source
   -> skill-check.sh when review skill or upstream rules changed
   -> platform verification commands
+  -> quality-evidence.py aggregates the structural decision
   -> AI review using tooling/skills/pt-github-review/SKILL.md
   -> human owner review
   -> knowledge / skill growth proposal when needed
@@ -71,11 +74,56 @@ Lower layers may refine implementation details but cannot redefine upper-layer b
 | `docs/knowledge/**` | `knowledge` | frontmatter, `owns:` validity, lifecycle rules, append-only supersession |
 | `tooling/acceptance/**`, `tooling/scripts/acceptance-*.py` | `acceptance` | product acceptance contracts, domain onboarding, gate determinism, report freshness |
 | `tooling/skills/**` | `skill` | skill schema, freshness, safety, golden cases |
+| non-generated authored source | `code-structure` | domain fidelity, ownership, cohesion, dependency direction, locality, lifecycle, proportionality, cutover, testability |
 | `.github/**` | `ci` | gates still match framework and PR template |
 
 Multiple profiles may apply to one PR.
 
-## 6. Hard Gates
+## 6. Code Structure Contract
+
+`pt-code-structure-review` is the specialist evidence owner for structural
+quality. It uses stable rule IDs:
+
+| Rule | Required property |
+|---|---|
+| `STRUCT-01 DOMAIN_FIDELITY` | Names, APIs, and models express one accepted domain truth |
+| `STRUCT-02 SINGLE_OWNER` | Each policy, state, and transition has one authoritative owner |
+| `STRUCT-03 COHESION` | Units group one reason to change and separate unrelated control flow |
+| `STRUCT-04 DEPENDENCY_DIRECTION` | Dependencies follow architecture and remain acyclic |
+| `STRUCT-05 CHANGE_LOCALITY` | Routine changes stay inside their natural owner boundary |
+| `STRUCT-06 EXPLICIT_LIFECYCLE` | Side effects, errors, cancellation, cleanup, and observability are explicit |
+| `STRUCT-07 PROPORTIONAL_ABSTRACTION` | Abstraction cost matches real complexity and variability |
+| `STRUCT-08 COMPLETE_CUTOVER` | Replacements remove dual truth and unbounded compatibility residue |
+| `STRUCT-09 TESTABLE_BOUNDARY` | Behavior and failures are verifiable through stable public boundaries |
+
+The authoritative blocking conditions, exceptions, and examples live in:
+
+- `tooling/skills/pt-code-structure-review/references/rubric.md`
+- `tooling/skills/pt-code-structure-review/references/examples.md`
+- `tooling/review-fixtures/code-structure/cases.json`
+
+Verdicts are `PASS`, `PASS_WITH_SUGGESTIONS`, or `REFACTOR_REQUIRED`. A blocker
+requires a primary stable rule ID, concrete evidence, concrete change or
+failure cost, and no applicable documented exception. Related rule IDs record
+consequences resolved by the same correction and do not duplicate findings.
+Naming taste, formatting, file or function length, nesting, fan-out, and
+optional file splits do not block by themselves.
+
+`structure-signals.mjs` reports deterministic investigation signals. Its output
+is always advisory and cannot produce a merge verdict.
+`code_structure_decision.py prepare` accepts one target selector (`--range`,
+`--path [--depth]`, or `--pr`) and derives the exact source scope, exclusions,
+signals, source identity, and rubric hash. `record` accepts findings only,
+derives the verdict and per-file coverage receipt, and publishes the
+source-bound result to the external Evidence Store. Fixture validation proves
+schema and rubric-reference integrity only; cross-model conformance requires a
+separate evaluation run.
+Local review automation fails closed when the routed decision is missing,
+invalid, stale, or blocking. CI reports a missing semantic decision as pending
+review work because deterministic automation must not impersonate an agent
+reviewer.
+
+## 7. Hard Gates
 
 These checks are automatic and blocking:
 
@@ -92,7 +140,7 @@ These checks are automatic and blocking:
 
 Hard gates are intentionally conservative. A false positive should be fixed by narrowing the script rule and adding a fixture, not by bypassing review.
 
-## 7. Required Verification
+## 8. Required Verification
 
 The review report must list the profile-driven commands that were run or explicitly explain why they were not run.
 
@@ -106,20 +154,22 @@ The review report must list the profile-driven commands that were run or explici
 | `knowledge` | `tooling/scripts/review/knowledge-match.sh --range <range>` plus structure validation |
 | `acceptance` | `make acceptance-validate`; `make acceptance-coverage-report`; targeted domain gates when product contracts changed |
 | `skill` | `tooling/scripts/review/skill-check.sh` |
+| `code-structure` | `python3 tooling/scripts/review/code_structure_decision.py prepare --range <range>`; review the prepared files; record findings with the same selector; `python3 tooling/scripts/review/code_structure_decision.py verify --range <range>` |
 
-## 8. Review Skill Freshness
+## 9. Review Skill Freshness
 
 `tooling/skills/pt-github-review/SKILL.md` is fresh only when all of the following hold:
 
 - it declares trigger conditions, scope detection, severity, hard rules, platform profiles, knowledge lookup, output format, and anti-patterns;
 - `tooling/skills/pt-github-review/FRESHNESS.md` records the upstream rule files it claims to cover and their current hash;
 - `skill-check.sh` passes;
-- every golden fixture in `tooling/review-fixtures/` has an expected finding and is represented by the skill's rules;
+- every fixture in `tooling/review-fixtures/` has a schema-valid expected
+  finding and every rubric fixture reference resolves;
 - upstream rule changes force either a skill update or a conscious freshness hash update in the same PR.
 
 The skill is not considered complete because it sounds comprehensive. It is complete because a script can prove that required sections, upstream hashes, and regression fixtures are present.
 
-## 9. Knowledge Freshness
+## 10. Knowledge Freshness
 
 `docs/knowledge/` is fresh only when:
 
@@ -132,7 +182,7 @@ The skill is not considered complete because it sounds comprehensive. It is comp
 
 `knowledge-match.sh` is the review-time enforcement layer. It proves whether a PR touched paths covered by operational knowledge and lists the entries that must be read.
 
-## 10. Self-Growth Loop
+## 11. Self-Growth Loop
 
 The Review Skill may propose its own growth but must not silently rewrite itself.
 

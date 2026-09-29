@@ -355,7 +355,9 @@ Review is an internal quality gate, not a default user handoff:
 
 1. Generate the owning methodology or delivery review prompt.
 2. Invoke the applicable project review path, normally
-   `pt-quality-check` -> `pt-completion-auditor` -> `pt-github-review`.
+   `route-change` -> `pt-code-structure-review` for authored source and record
+   its source-bound decision -> `pt-quality-check` ->
+   `pt-completion-auditor` -> `pt-github-review`.
 3. Treat findings that accepted sources resolve as Run work.
 4. Fix them at the owning layer, rerun affected checks, and repeat review.
 5. Advance automatically when the review passes.

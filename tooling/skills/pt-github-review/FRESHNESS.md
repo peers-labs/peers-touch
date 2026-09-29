@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-28
-covered_docs_hash: 979e7616d1056d25b08de9c326c3ca72cb202975c02d6b31f4c10d224eefbd8a
+last_verified_at: 2026-09-29
+covered_docs_hash: c1d5869698aab5871ce6ea227443848abadcdcff0f81671adccaff03a3ffe28e
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,19 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-09-29 Review
+
+Authored source changes now route through `pt-code-structure-review`. The
+specialist uses stable `STRUCT-01` through `STRUCT-09` rule IDs, explicit
+blocking conditions and exceptions, schema-validated positive, blocking, and
+false-positive anchors, and advisory-only structural signals. Its decision is
+bound to source and rubric identity before quality evidence and GitHub Review
+consume it. Fixture schema validation is not presented as cross-model proof.
+The review interface now accepts one range, path/depth, or PR selector and
+derives file classification, advisory signals, source identity, rubric hash,
+verdict fields, and per-file coverage. Reviewers submit semantic findings only;
+the source-bound and fail-closed requirements are unchanged.
 
 ## 2026-09-28 Review
 

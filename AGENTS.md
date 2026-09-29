@@ -331,6 +331,11 @@ This rule exists because compliance drift produces worse outcomes than honest di
 
 Three dimensions for every piece of generated code:
 
+Review these requirements through `pt-code-structure-review`. Its stable
+`STRUCT-01` through `STRUCT-09` rubric defines blocking conditions, legal
+exceptions, positive/negative examples, and schema-validated calibration
+fixtures. Cross-model conformance requires a separate evaluation.
+
 1. **Human-Readable**
    - Names are self-documenting: a reader should understand purpose without jumping to the definition.
    - Explicit over implicit: no magic numbers, no hidden side-effects, no unnamed boolean parameters.
@@ -464,6 +469,7 @@ Current project skills:
 | `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
 | `pt-read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |
 | `pt-quality-check` | Produce review-ready evidence from review profiles, acceptance, knowledge, deterministic gates, and test coverage |
+| `pt-code-structure-review` | Review authored source against stable structural rule IDs, blocking boundaries, legal exceptions, and fixture-calibrated verdicts |
 | `pt-github-commit` | Conventional commit message generation with AI traceability |
 | `pt-github-pr` | PR creation with templates, labels, and issue linking |
 | `pt-github-release` | Semantic versioning, changelog generation, GitHub Release creation |

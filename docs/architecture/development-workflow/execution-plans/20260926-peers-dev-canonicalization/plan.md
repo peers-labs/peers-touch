@@ -64,6 +64,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "docs/global/code-review-framework.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "docs/architecture/prototypes/execution-plans/20260622-prototype-portal.md",
         "mode": "exclusive-write"
       },
@@ -85,6 +89,10 @@
       },
       {
         "pathPrefix": "tooling/make/local-dev.mk",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/make/review.mk",
         "mode": "exclusive-write"
       },
       {
@@ -124,7 +132,11 @@
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "tooling/scripts/review/skill-check.sh",
+        "pathPrefix": "tooling/review-fixtures",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/review",
         "mode": "exclusive-write"
       },
       {

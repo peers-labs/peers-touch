@@ -61,6 +61,8 @@ prototype evidence cannot substitute for `FUNCTIONAL_CHECK`.
 - `pt-execution-plan-guardian`: keeps work tied to plan and evidence while
   executing.
 - `pt-quality-check`: gathers review/acceptance evidence for a PR or range.
+- `pt-code-structure-review`: produces the stable structural verdict and rule
+  IDs for authored source changes.
 - `pt-completion-auditor`: performs a multi-dimensional completion and
   architecture audit for a change or workstream, including AI overclaim checks.
 
@@ -148,6 +150,9 @@ Check:
 
 Check:
 
+- The source-bound `pt-code-structure-review` decision matches the current
+  HEAD, workspace digest, range, reviewed files, and rubric hash, and has no
+  unresolved blocking primary rule IDs when authored source changed.
 - Clear domain naming and no misleading capability names.
 - No fake APIs or manifest permissions for unimplemented gateway methods.
 - No hidden coupling across Desktop / Station / applet / prototype layers.

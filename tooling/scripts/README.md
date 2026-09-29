@@ -55,8 +55,9 @@ export VITE_PORT=3000
 | `check-frontend-runtime-registry.sh` | 可用 | 校验 Frontend Runtime registry 门禁 | 检查 registry 必填字段、alive/status 枚举、evidence、`needs audit` owner/revisit wording，并支持 review diff-range warning |
 | `apps/mobile/scripts/check-social-wire-contract.sh` | 可用 | 校验 Mobile 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
 | `apps/desktop/scripts/check-social-wire-contract.sh` | 可用 | 校验 Desktop 社交实时协议契约 | 禁止回退到手写 protobuf wire decoder |
-| `review/run.sh` | 推荐 | 运行 Code Review Framework 门禁 | 统一调用变更路由、硬规则、知识库匹配、Review Skill 保鲜检查；也可通过 `make review` 使用 |
-| `review/route-change.sh` | 推荐 | 将 git diff 映射到 Review profiles | 输出每类变更需要关注的规则和验证命令 |
+| `review/run.sh` | 推荐 | 运行 Code Review Framework 门禁 | 统一调用变更路由、硬规则、结构信号、source-bound 结构 verdict 校验、知识库匹配和 Review Skill 保鲜检查；也可通过 `make review` 使用 |
+| `review/route-change.sh` | 推荐 | 将 git diff 映射到 Review profiles | 非生成源码自动包含 `code-structure`，并输出每类变更需要关注的规则和验证命令 |
+| `review/code_structure_decision.py` | 推荐 | 准备、记录并验证结构审查 verdict | 仅需选择 `--range`、`--path [--depth]` 或 `--pr`；自动派生文件、排除项、signals、source identity、rubric hash 与逐文件 coverage，并写入外部 Evidence Store |
 | `review/hard-rules.sh` | 推荐 | 自动拦截 Review 铁律违规 | 检查 debug 语句、泄密、生成物手改、mock API、硬编码 UI 文案、静默吞错；无 Proto diff 时仅允许与隔离目录内 canonical Mobile Web regeneration 完全一致的生成物变更 |
 | `review/knowledge-match.sh` | 推荐 | 匹配 `docs/knowledge/` 的 `owns:` | 输出 PR 必读 invariant / pitfall / playbook，并支持 strict 新鲜度校验 |
 | `review/skill-check.sh` | 推荐 | 校验 Review Skill 完整性与新鲜度 | 检查 skill 结构、上游文档 hash、golden fixtures 和危险指令 |
