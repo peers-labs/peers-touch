@@ -11,7 +11,7 @@
   "title": "Remove unconditional Agent UI debug telemetry",
   "workClass": "infrastructure",
   "completionClass": "functional",
-  "executionMode": "fix",
+  "executionMode": "build",
   "closureId": "V2-agent-debug-telemetry-cleanup",
   "journeyId": "V2-agent-core-lifecycle",
   "runtimeClass": "source-only",
