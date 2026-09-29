@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"testing"
 	"time"
 
@@ -714,6 +715,31 @@ func TestRuntimeAdmissionListAvailableModels(t *testing.T) {
 	if !models[0].Capabilities["streaming"] ||
 		!models[0].Capabilities["native-tools"] {
 		t.Fatalf("available model dropped runtime capabilities: %+v", models[0])
+	}
+}
+
+func TestCatalogProviderAvailableRequiresCLIExecutable(t *testing.T) {
+	available := catalog.CatalogProvider{
+		RuntimeKind: "cli",
+		Protocol:    "cli",
+		CliCommand:  os.Args[0],
+	}
+	if !CatalogProviderAvailable(available) {
+		t.Fatal("executable CLI provider was not available")
+	}
+
+	missing := available
+	missing.CliCommand = "peers-touch-cli-that-does-not-exist"
+	if CatalogProviderAvailable(missing) {
+		t.Fatal("missing CLI provider binary remained available")
+	}
+
+	httpProvider := catalog.CatalogProvider{
+		RuntimeKind: "http",
+		Protocol:    "openai-compatible",
+	}
+	if !CatalogProviderAvailable(httpProvider) {
+		t.Fatal("HTTP provider availability must not depend on a CLI binary")
 	}
 }
 
