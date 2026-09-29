@@ -128,6 +128,49 @@ This makes resume, reset, isolation, capabilities, and cleanup explicit.
 Revisit when a claimed external Agent can prove stateless behavior under the
 same context, isolation, and replay contract as `DIRECT_MODEL`.
 
+## MCA-D28: Treat One-Shot CLI Providers As Direct Model Adapters
+
+**Status**: approved
+**Date**: 2026-09-29
+
+### Context
+
+The existing CLI Provider implementations invoke a configured command once per
+request and can receive the complete Station-owned prompt context. They do not
+require a reusable external session to provide a useful first response.
+
+### Decision
+
+A CLI Provider is a `DIRECT_MODEL` adapter when every invocation:
+
+- receives the complete prompt context from Station;
+- returns normalized text or typed failure events;
+- owns no resumable external session;
+- persists user, Assistant, Turn, and terminal state through Station.
+
+CLI runtimes that retain an external session remain `EXTERNAL_AGENT` and must
+still satisfy MCA-D02 and MCA-J10.
+
+### Rationale
+
+Execution transport does not determine runtime semantics. This restores the
+existing non-rate-limited CLI path without weakening the stateful external
+Agent contract.
+
+### Consequences
+
+- Station owns one-shot CLI execution and persistence.
+- Built-in CLI adapters may be advertised only when their command is available.
+- Missing binaries and failed commands produce typed terminal failures.
+- Desktop-local conversation truth remains forbidden.
+
+### Alternatives Considered
+
+- Keep all CLI providers disabled until P12: rejected because it removes an
+  already implemented direct-provider path and blocks the first usable journey.
+- Execute and persist CLI turns only in Desktop: rejected because restart
+  recovery would diverge from Station truth.
+
 ## MCA-D03: Bind Stateful Runtime Identity To The Conversation
 
 **Status**: approved  

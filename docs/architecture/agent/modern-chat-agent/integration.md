@@ -400,16 +400,18 @@ Cutover requirements:
 
 1. Proto contracts land before Station, Rust, Web Harness, or Acceptance
    adapters.
-2. Station explicitly evaluates P12 and registered CLI candidates as
-   `NOT_ADVERTISED` under the frozen profile.
+2. Station executes one-shot CLI Providers as `DIRECT_MODEL` adapters only
+   when the command is available and the complete prompt context is supplied.
+   Stateful CLI runtimes remain P12 and `NOT_ADVERTISED` under the frozen
+   profile.
 3. Station and Desktop counter owners increment at the actual side-effect
    boundaries, never inside Acceptance code.
 4. The XR-4 adapter captures immutable before/after snapshots and rejects
    identity, revision, epoch, or counter regression.
 5. Old provider-list and TurnTrace-only proof code is deleted rather than kept
    as a fallback.
-6. P12/CLI remain unavailable; this cutover proves non-advertisement and does
-   not activate either runtime.
+6. P12 remains unavailable. Stateless CLI Provider activation is governed by
+   MCA-D28 and does not imply external-session resume or reset support.
 
 ## 10. Resolved Integration Policies
 
