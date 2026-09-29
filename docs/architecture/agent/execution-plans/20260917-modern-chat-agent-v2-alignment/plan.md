@@ -69,6 +69,12 @@ gap.
   `DESIGN_AMENDMENT_REQUIRED`; it never treats an arbitrary repository URL as a
   JSON index.
 
+## Optimization Ledger
+
+| ID | Status | Follow-up |
+|---|---|---|
+| MCA-OPT-01 | deferred | Normalize vendor-specific provider failures inside each provider adapter into canonical `ProviderHTTPError` fields; keep shared classification provider-neutral. Add fixtures for nonstandard `200 + error`, private error codes, and alternate retry headers before changing common classification. This does not alter the current real-429 `BASE-RATE_LIMIT` proof. |
+
 ## Claim Boundary
 
 - A functional Task can reach `FUNCTIONAL_PASS` only from an exact-source real
