@@ -76,6 +76,27 @@ class StationAccessDesktopOAuthLayoutAcceptanceTests(unittest.TestCase):
             with self.subTest(required_source=required_source):
                 self.assertIn(required_source, driver)
 
+    def test_gate_publishes_canonical_evidence_report(self) -> None:
+        gate = (
+            ENVIRONMENTS_DIR.parent
+            / "gates"
+            / "station_access"
+            / "desktop_oauth_layout_e2e.py"
+        ).read_text(encoding="utf-8")
+
+        for required_source in (
+            "with ArtifactSession(repo_root=REPO_ROOT, gate_id=self.gate_id)",
+            '"artifactKind": "acceptance-gate-evidence-report"',
+            '"completionStatus": completion_status',
+            '"proofStatus": proof_status',
+            '"phase": self.phase',
+            '"bom": list(self.bom)',
+            '"spec": list(self.spec)',
+            "station-access-desktop-oauth-layout-evidence.json",
+        ):
+            with self.subTest(required_source=required_source):
+                self.assertIn(required_source, gate)
+
 
 if __name__ == "__main__":
     unittest.main()
