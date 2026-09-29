@@ -2,6 +2,7 @@ package recordcrypto
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -61,8 +62,8 @@ func TestEnvelopeAuthenticatesMetadataKindAndPath(t *testing.T) {
 		"version":    func(value *Envelope) { value.Version++ },
 		"key id":     func(value *Envelope) { value.KeyID = "v2" },
 		"algorithm":  func(value *Envelope) { value.Algorithm = "AES-128-GCM" },
-		"nonce":      func(value *Envelope) { value.Nonce = mutateLast(value.Nonce) },
-		"ciphertext": func(value *Envelope) { value.Ciphertext = mutateLast(value.Ciphertext) },
+		"nonce":      func(value *Envelope) { value.Nonce = mutateBase64URL(value.Nonce) },
+		"ciphertext": func(value *Envelope) { value.Ciphertext = mutateBase64URL(value.Ciphertext) },
 		"updated at": func(value *Envelope) { value.UpdatedAt = "2026-09-30T01:02:04Z" },
 	}
 	for name, mutate := range tests {
@@ -115,10 +116,11 @@ func TestEnvelopeReportsRotation(t *testing.T) {
 	}
 }
 
-func mutateLast(value string) string {
-	replacement := byte('A')
-	if value[len(value)-1] == replacement {
-		replacement = 'B'
+func mutateBase64URL(value string) string {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil || len(decoded) == 0 {
+		panic("test fixture is not valid non-empty base64url")
 	}
-	return value[:len(value)-1] + string(replacement)
+	decoded[0] ^= 1
+	return base64.RawURLEncoding.EncodeToString(decoded)
 }
