@@ -321,10 +321,14 @@ class FoundationRuntimeClient:
                         timeout=min(self.startup_timeout, 120),
                     ),
                 )
-                driver = webdriver.Remote(
-                    command_executor=connection,
-                    options=ChromeOptions(),
-                )
+                try:
+                    driver = webdriver.Remote(
+                        command_executor=connection,
+                        options=ChromeOptions(),
+                    )
+                except BaseException:
+                    connection.close()
+                    raise
                 self.driver = driver
                 return driver
 
