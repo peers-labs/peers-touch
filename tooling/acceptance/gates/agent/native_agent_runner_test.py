@@ -223,6 +223,9 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
         self.assertIn("cleanupCliProviderPrimaryResidue", self.source)
         self.assertIn('"agent.cli-provider.stream.delta-observed"', journey)
         self.assertIn('"agent.cli-provider.restart.restored"', journey)
+        self.assertIn('prepared_receiver.get("messageCount", -1)', journey)
+        self.assertIn('prepared_station.get("messageCount", -1)', journey)
+        self.assertNotIn('get("messageCount") or -1', journey)
         self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", journey)
 
     def test_cli_provider_gate_and_reviewed_matrix_are_identical(self) -> None:

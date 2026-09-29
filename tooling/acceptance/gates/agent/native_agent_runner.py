@@ -1604,7 +1604,7 @@ class AgentNativeJourney:
             prepared_receiver.get("visible") is True
             and prepared_receiver.get("providerId") == "trae-cli"
             and prepared_receiver.get("modelId") == "default"
-            and int(prepared_receiver.get("messageCount") or -1) == 0,
+            and int(prepared_receiver.get("messageCount", -1)) == 0,
             "CLI Provider empty topic is not visible",
         )
         require(
@@ -1612,7 +1612,7 @@ class AgentNativeJourney:
             and prepared_station.get("providerId") == "trae-cli"
             and prepared_station.get("modelId") == "default"
             and prepared_station.get("conversationId") == conversation_id
-            and int(prepared_station.get("messageCount") or -1) == 0,
+            and int(prepared_station.get("messageCount", -1)) == 0,
             "CLI Provider Agent or empty topic is not Station-backed",
         )
 
