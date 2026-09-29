@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shlex
 import shutil
 import socket
 import subprocess
@@ -34,6 +35,7 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     produce_actor_manifest,
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
+    reviewed_remote_transport,
     resolve_remote_source_identity,
 )
 
@@ -134,6 +136,85 @@ def agent_native_requires_provider(gate_id: str) -> bool:
         AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
     }
+
+
+def audit_remote_station_cli_processes(deployment_environment: str) -> None:
+    try:
+        transport, environment = reviewed_remote_transport(
+            deployment_environment
+        )
+    except Exception as error:
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit could not resolve "
+            "the approved runtime"
+        ) from error
+
+    compose_project = environment.get(
+        "PT_ACCEPTANCE_COMPOSE_PROJECT",
+        "",
+    ).strip()
+    if not compose_project or any(
+        not (character.isalnum() or character in "._-")
+        for character in compose_project
+    ):
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit has no approved "
+            "Compose project"
+        )
+
+    process_audit = r"""
+set -eu
+for cmdline in /proc/[0-9]*/cmdline; do
+    [ -r "$cmdline" ] || continue
+    argv0="$(tr '\000' '\n' < "$cmdline" | sed -n '1p')"
+    case "${argv0##*/}" in
+        traecli|host-cli-bin) exit 42 ;;
+    esac
+done
+"""
+    project_filter = shlex.quote(
+        f"label=com.docker.compose.project={compose_project}"
+    )
+    service_filter = shlex.quote(
+        "label=com.docker.compose.service=station"
+    )
+    remote_command = (
+        "set -eu; "
+        "container_ids=\"$(docker ps --quiet "
+        f"--filter {project_filter} --filter {service_filter})\"; "
+        "container_count=\"$(printf '%s\\n' \"$container_ids\" "
+        "| sed '/^$/d' | wc -l | tr -d '[:space:]')\"; "
+        "test \"$container_count\" = 1 || exit 41; "
+        "container_id=\"$(printf '%s\\n' \"$container_ids\" "
+        "| sed -n '1p')\"; "
+        f"docker exec \"$container_id\" sh -c {shlex.quote(process_audit)}"
+    )
+    try:
+        completed = transport.run_argv(
+            ["bash", "-lc", remote_command],
+            timeout=30,
+            check=False,
+        )
+    except Exception as error:
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit could not complete"
+        ) from error
+
+    if completed.returncode == 0:
+        return
+    if completed.returncode == 41:
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit could not select "
+            "exactly one Station container"
+        )
+    if completed.returncode == 42:
+        raise RuntimeError(
+            "remote Station CLI process cleanup audit detected a residual "
+            "provider process"
+        )
+    raise RuntimeError(
+        "remote Station CLI process cleanup audit could not complete"
+    )
 
 
 def resolve_existing_actor(
@@ -1154,6 +1235,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 manifest.run_id,
                 manifest.profile_slot,
                 profile_env,
+            )
+            self.register_cleanup(
+                "remote-station-cli-process-audit:"
+                f"{deployment_environment}",
+                lambda: audit_remote_station_cli_processes(
+                    deployment_environment
+                ),
             )
         else:
             client = self._agent_stream_client(
