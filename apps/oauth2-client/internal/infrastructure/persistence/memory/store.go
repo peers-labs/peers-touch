@@ -18,6 +18,7 @@ type Store struct {
 	sessions    map[string]entity.AuthSession
 	identities  map[string]entity.OAuthIdentity
 	credentials map[string]entity.OAuthCredential
+	refreshOps  map[string]map[string]struct{}
 	events      map[string]entity.AuditEvent
 }
 
@@ -26,6 +27,7 @@ func NewStore() *Store {
 		sessions:    make(map[string]entity.AuthSession),
 		identities:  make(map[string]entity.OAuthIdentity),
 		credentials: make(map[string]entity.OAuthCredential),
+		refreshOps:  make(map[string]map[string]struct{}),
 		events:      make(map[string]entity.AuditEvent),
 	}
 }
@@ -198,9 +200,30 @@ func (s *Store) LoadCredential(_ context.Context, identityID string) (*entity.OA
 	return &out, nil
 }
 
+func (s *Store) LoadCredentialForRefresh(_ context.Context, identityID, operationID string) (*entity.OAuthCredential, bool, error) {
+	identityID = strings.TrimSpace(identityID)
+	operationID = strings.TrimSpace(operationID)
+	if identityID == "" || operationID == "" {
+		return nil, false, repository.ErrRecordCorrupt
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	credential, ok := s.credentials[identityID]
+	if !ok {
+		return nil, false, repository.ErrCredentialNotFound
+	}
+	_, completed := s.refreshOps[identityID][operationID]
+	if credential.LastRefreshOperationID == operationID {
+		completed = true
+	}
+	out := credential
+	return &out, completed, nil
+}
+
 func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRefresh) (*entity.OAuthCredential, error) {
-	if strings.TrimSpace(refresh.IdentityID) == "" ||
-		strings.TrimSpace(refresh.OperationID) == "" {
+	refresh.IdentityID = strings.TrimSpace(refresh.IdentityID)
+	refresh.OperationID = strings.TrimSpace(refresh.OperationID)
+	if refresh.IdentityID == "" || refresh.OperationID == "" {
 		return nil, repository.ErrRecordCorrupt
 	}
 	s.mu.Lock()
@@ -209,7 +232,8 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 	if !ok {
 		return nil, repository.ErrCredentialNotFound
 	}
-	if credential.LastRefreshOperationID == refresh.OperationID && refresh.OperationID != "" {
+	if _, completed := s.refreshOps[refresh.IdentityID][refresh.OperationID]; completed ||
+		credential.LastRefreshOperationID == refresh.OperationID {
 		out := credential
 		return &out, nil
 	}
@@ -245,6 +269,10 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 	credential.Generation++
 	credential.LastRefreshOperationID = refresh.OperationID
 	s.credentials[refresh.IdentityID] = credential
+	if s.refreshOps[refresh.IdentityID] == nil {
+		s.refreshOps[refresh.IdentityID] = make(map[string]struct{})
+	}
+	s.refreshOps[refresh.IdentityID][refresh.OperationID] = struct{}{}
 	event := entity.AuditEvent{
 		SchemaVersion: 1,
 		EventID:       digest("refresh\x00" + refresh.IdentityID + "\x00" + refresh.OperationID),

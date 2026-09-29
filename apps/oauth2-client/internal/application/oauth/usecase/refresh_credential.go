@@ -32,11 +32,15 @@ func (u RefreshCredentialUseCase) Execute(ctx context.Context, input RefreshCred
 	if operationID == "" {
 		return nil, errors.New("refresh_operation_id_required")
 	}
-	current, err := u.Store.LoadCredential(ctx, identityID)
+	current, completed, err := u.Store.LoadCredentialForRefresh(
+		ctx,
+		identityID,
+		operationID,
+	)
 	if err != nil {
 		return nil, err
 	}
-	if current.LastRefreshOperationID == operationID {
+	if completed {
 		return current, nil
 	}
 	if current.RefreshToken == "" {

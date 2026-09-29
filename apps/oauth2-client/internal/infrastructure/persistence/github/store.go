@@ -16,13 +16,14 @@ import (
 )
 
 const (
-	recordRoot        = "oauth-data"
-	transactionKind   = "authorization-transaction"
-	identityKind      = "oauth-identity"
-	credentialKind    = "oauth-credential"
-	auditKind         = "oauth-audit"
-	recordSchema      = 1
-	defaultAdminLimit = 100
+	recordRoot           = "oauth-data"
+	transactionKind      = "authorization-transaction"
+	identityKind         = "oauth-identity"
+	credentialKind       = "oauth-credential"
+	refreshOperationKind = "oauth-refresh-operation"
+	auditKind            = "oauth-audit"
+	recordSchema         = 1
+	defaultAdminLimit    = 100
 )
 
 type Store struct {
@@ -45,6 +46,14 @@ type transactionRecord struct {
 	ConsumedAt       *time.Time `json:"consumed_at,omitempty"`
 	CompletionID     string     `json:"completion_id,omitempty"`
 	IdentityID       string     `json:"identity_id,omitempty"`
+}
+
+type refreshOperationRecord struct {
+	SchemaVersion        int       `json:"schema_version"`
+	IdentityID           string    `json:"identity_id"`
+	OperationFingerprint string    `json:"operation_fingerprint"`
+	CredentialGeneration uint64    `json:"credential_generation"`
+	CompletedAt          time.Time `json:"completed_at"`
 }
 
 func NewStore(repositoryClient *Client, codec *recordcrypto.Codec, indexFingerprint, auditFingerprint *recordcrypto.Fingerprinter) (*Store, error) {
@@ -316,11 +325,52 @@ func (s *Store) LoadCredential(ctx context.Context, identityID string) (*entity.
 	return &credential, nil
 }
 
+func (s *Store) LoadCredentialForRefresh(ctx context.Context, identityID, operationID string) (*entity.OAuthCredential, bool, error) {
+	identityID = strings.TrimSpace(identityID)
+	operationID = strings.TrimSpace(operationID)
+	if identityID == "" || operationID == "" {
+		return nil, false, repository.ErrRecordCorrupt
+	}
+	operationFingerprint := s.refreshOperationID(identityID, operationID)
+	var credential *entity.OAuthCredential
+	var completed bool
+	err := s.repository.View(ctx, func(snapshot *Snapshot) error {
+		current, found, err := s.readCredential(ctx, snapshot, credentialPath(identityID))
+		if err != nil {
+			return err
+		}
+		if !found {
+			return repository.ErrCredentialNotFound
+		}
+		operation, found, err := s.readRefreshOperation(
+			ctx,
+			snapshot,
+			refreshOperationPath(identityID, operationFingerprint),
+		)
+		if err != nil {
+			return err
+		}
+		if found &&
+			(operation.IdentityID != identityID ||
+				operation.OperationFingerprint != operationFingerprint ||
+				operation.CredentialGeneration > current.Generation) {
+			return repository.ErrRecordCorrupt
+		}
+		credential = current
+		completed = found || current.LastRefreshOperationID == operationID
+		return nil
+	})
+	return credential, completed, err
+}
+
 func (s *Store) ReplaceCredential(ctx context.Context, refresh entity.CredentialRefresh) (*entity.OAuthCredential, error) {
-	if strings.TrimSpace(refresh.IdentityID) == "" ||
-		strings.TrimSpace(refresh.OperationID) == "" {
+	refresh.IdentityID = strings.TrimSpace(refresh.IdentityID)
+	refresh.OperationID = strings.TrimSpace(refresh.OperationID)
+	if refresh.IdentityID == "" || refresh.OperationID == "" {
 		return nil, repository.ErrRecordCorrupt
 	}
+	operationFingerprint := s.refreshOperationID(refresh.IdentityID, refresh.OperationID)
+	operationPath := refreshOperationPath(refresh.IdentityID, operationFingerprint)
 	var replaced *entity.OAuthCredential
 	err := s.repository.Update(ctx, "oauth: refresh credential", func(snapshot *Snapshot) (map[string][]byte, error) {
 		path := credentialPath(refresh.IdentityID)
@@ -331,7 +381,20 @@ func (s *Store) ReplaceCredential(ctx context.Context, refresh entity.Credential
 		if !found {
 			return nil, repository.ErrCredentialNotFound
 		}
-		if current.LastRefreshOperationID == refresh.OperationID && refresh.OperationID != "" {
+		operation, found, err := s.readRefreshOperation(ctx, snapshot, operationPath)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			if operation.IdentityID != refresh.IdentityID ||
+				operation.OperationFingerprint != operationFingerprint ||
+				operation.CredentialGeneration > current.Generation {
+				return nil, repository.ErrRecordCorrupt
+			}
+			replaced = current
+			return map[string][]byte{}, nil
+		}
+		if current.LastRefreshOperationID == refresh.OperationID {
 			replaced = current
 			return map[string][]byte{}, nil
 		}
@@ -367,6 +430,13 @@ func (s *Store) ReplaceCredential(ctx context.Context, refresh entity.Credential
 		next.RefreshExpiresAt = refreshExpiresAt
 		next.Generation++
 		next.LastRefreshOperationID = refresh.OperationID
+		operation = &refreshOperationRecord{
+			SchemaVersion:        recordSchema,
+			IdentityID:           refresh.IdentityID,
+			OperationFingerprint: operationFingerprint,
+			CredentialGeneration: next.Generation,
+			CompletedAt:          refresh.RefreshedAt.UTC(),
+		}
 		event := entity.AuditEvent{
 			SchemaVersion: recordSchema,
 			EventID:       s.auditFingerprint.Fingerprint("refresh\x00" + refresh.IdentityID + "\x00" + refresh.OperationID),
@@ -381,6 +451,10 @@ func (s *Store) ReplaceCredential(ctx context.Context, refresh entity.Credential
 			path: {
 				kind:  credentialKind,
 				value: next,
+			},
+			operationPath: {
+				kind:  refreshOperationKind,
+				value: operation,
 			},
 			auditPath(event): {
 				kind:  auditKind,
@@ -612,8 +686,33 @@ func (s *Store) readCredential(ctx context.Context, snapshot *Snapshot, path str
 	return &credential, true, nil
 }
 
+func (s *Store) readRefreshOperation(ctx context.Context, snapshot *Snapshot, path string) (*refreshOperationRecord, bool, error) {
+	payload, found, err := snapshot.Read(ctx, path)
+	if err != nil || !found {
+		return nil, found, err
+	}
+	var operation refreshOperationRecord
+	if err := s.decode(refreshOperationKind, path, payload, &operation); err != nil {
+		return nil, false, err
+	}
+	if operation.SchemaVersion != recordSchema ||
+		operation.IdentityID == "" ||
+		operation.OperationFingerprint == "" ||
+		operation.CredentialGeneration == 0 ||
+		operation.CompletedAt.IsZero() {
+		return nil, false, repository.ErrRecordCorrupt
+	}
+	return &operation, true, nil
+}
+
 func (s *Store) identityID(siteID, provider, providerUserID string) string {
 	return s.indexFingerprint.Fingerprint(strings.Join([]string{siteID, provider, providerUserID}, "\x00"))
+}
+
+func (s *Store) refreshOperationID(identityID, operationID string) string {
+	return s.indexFingerprint.Fingerprint(
+		strings.Join([]string{"refresh", identityID, operationID}, "\x00"),
+	)
 }
 
 func transactionPath(stateID string) string {
@@ -628,6 +727,10 @@ func credentialPath(identityID string) string {
 	return recordRoot + "/credentials/" + identityID + ".json"
 }
 
+func refreshOperationPath(identityID, operationFingerprint string) string {
+	return recordRoot + "/refresh-operations/" + identityID + "/" + operationFingerprint + ".json"
+}
+
 func recordKindForPath(path string) (string, bool) {
 	switch {
 	case strings.HasPrefix(path, recordRoot+"/transactions/"):
@@ -636,6 +739,8 @@ func recordKindForPath(path string) (string, bool) {
 		return identityKind, true
 	case strings.HasPrefix(path, recordRoot+"/credentials/"):
 		return credentialKind, true
+	case strings.HasPrefix(path, recordRoot+"/refresh-operations/"):
+		return refreshOperationKind, true
 	case strings.HasPrefix(path, recordRoot+"/audits/"):
 		return auditKind, true
 	default:

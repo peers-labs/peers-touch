@@ -150,6 +150,11 @@ func setAdminSecurityHeaders(header http.Header) {
 	header.Set("X-Robots-Tag", "noindex, nofollow")
 }
 
+func WriteAdminUnavailable(w http.ResponseWriter) {
+	setAdminSecurityHeaders(w.Header())
+	writeAdminError(w)
+}
+
 func writeAdminError(w http.ResponseWriter) {
 	http.Error(w, "admin_data_unavailable", http.StatusServiceUnavailable)
 }

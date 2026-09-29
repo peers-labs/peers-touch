@@ -61,8 +61,9 @@
 - Google and GitHub send PKCE verifier during authorization-code exchange.
 - Refresh uses the provider-specific endpoint and retains the old refresh token
   when the response omits it.
-- Duplicate refresh with the same idempotency key produces one credential
-  generation and one audit event.
+- Reusing a completed refresh idempotency key, including after another refresh,
+  returns the current credential without another provider call, credential
+  generation, or audit event.
 
 ### OLB-G04: Operator Readback
 
@@ -71,6 +72,8 @@
 - HTML and JSON expose only identity, aggregate credential metadata, and typed
   audit fields.
 - Security, cache, frame, MIME, and robot headers are present.
+- Bootstrap failures return the same generic unavailable response and security
+  headers as authenticated handler failures.
 
 ### OLB-G05: Configuration And Deployment
 
@@ -84,8 +87,8 @@
 
 ### OLB-G06: Complete Key Rotation
 
-- A maintenance command scans transaction, identity, credential, and audit
-  prefixes.
+- A maintenance command scans transaction, identity, credential, refresh
+  operation, and audit prefixes.
 - Every old-key envelope is rewritten with the active key while plaintext
   remains unchanged.
 - A second run performs no writes.

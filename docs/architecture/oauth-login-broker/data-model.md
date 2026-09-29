@@ -142,7 +142,31 @@ Encrypted payload:
 Only server-side store and refresh use cases may materialize token fields.
 Administration projections expose booleans and expiry timestamps only.
 
-## 5. Audit Event
+## 5. Refresh Operation
+
+Repository path:
+
+```text
+oauth-data/refresh-operations/<identity-id>/<HMAC-SHA256(identity-id + NUL + operation-id)>.json
+```
+
+Encrypted payload:
+
+```json
+{
+  "schema_version": 1,
+  "identity_id": "<hex hmac>",
+  "operation_fingerprint": "<hex hmac>",
+  "credential_generation": 2,
+  "completed_at": "2026-09-30T00:00:00Z"
+}
+```
+
+The append-only marker keeps every completed operation idempotent even after a
+later refresh replaces the credential. It is committed atomically with the
+credential and audit event and never exposes the caller-supplied operation ID.
+
+## 6. Audit Event
 
 Repository path:
 
@@ -171,7 +195,7 @@ Encrypted payload:
 No free-form provider body, stack trace, URL query, token, code, state, verifier,
 or key material is accepted by the audit schema.
 
-## 6. Token Set
+## 7. Token Set
 
 ```go
 type TokenSet struct {
@@ -190,7 +214,7 @@ clock. Refresh replacement increments credential generation. Repeating the
 same non-empty refresh operation ID returns the committed credential without a
 second mutation or audit event.
 
-## 7. Administration Projection
+## 8. Administration Projection
 
 ```json
 {
@@ -224,7 +248,7 @@ second mutation or audit event.
 }
 ```
 
-## 8. Typed Errors
+## 9. Typed Errors
 
 | Code | Meaning | Retry |
 |---|---|---|

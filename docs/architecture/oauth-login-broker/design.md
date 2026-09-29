@@ -75,6 +75,7 @@ flowchart LR
 | Authorization transaction | OAuth Store | start/callback use cases |
 | Provider identity ledger | OAuth Store | callback completion |
 | Provider credential | encrypted OAuth Store record | callback/refresh use cases |
+| Refresh operation ledger | encrypted OAuth Store record | refresh use case |
 | Login audit | append-only OAuth Store records | OAuth use cases |
 | Encryption key ring | Vercel secret environment | deployment operator |
 | Git branch head | dedicated private repository branch | GitHub adapter CAS |
@@ -93,6 +94,7 @@ type OAuthStore interface {
     CompleteAuthorization(context.Context, AuthorizationCompletion) error
     RecordAuthorizationFailure(context.Context, AuthorizationFailure) error
     LoadCredential(context.Context, identityID string) (*OAuthCredential, error)
+    LoadCredentialForRefresh(context.Context, identityID, operationID string) (*OAuthCredential, bool, error)
     ReplaceCredential(context.Context, CredentialRefresh) error
     AdminSnapshot(context.Context, int) (AdminSnapshot, error)
 }
@@ -130,6 +132,7 @@ oauth-data/
 ├── transactions/<state-fingerprint>.json
 ├── identities/<identity-fingerprint>.json
 ├── credentials/<identity-fingerprint>.json
+├── refresh-operations/<identity-fingerprint>/<operation-fingerprint>.json
 └── audits/YYYY/MM/<event-id>.json
 ```
 
@@ -153,10 +156,12 @@ Retries are bounded. Idempotency keys are stable event IDs:
 
 - start: transaction fingerprint plus `authorization_started`;
 - callback: transaction fingerprint plus `login_succeeded`;
-- refresh: caller-supplied opaque refresh operation ID.
+- refresh: HMAC fingerprint of the caller-supplied opaque operation ID, retained
+  as an append-only encrypted marker.
 
-The store treats an already committed identical event as success and rejects a
-different second completion for the same transaction.
+The store treats an already committed identical event as success, remembers
+completed refresh IDs across later refreshes, and rejects a different second
+completion for the same authorization transaction.
 
 ## 8. Cryptographic Boundary
 
@@ -174,7 +179,7 @@ Decryption errors are typed and never include ciphertext, nonce, key bytes, or
 upstream bodies.
 
 Key rotation is an explicit server-side maintenance operation. It scans all
-four record prefixes, rewrites old-key envelopes through the same CAS adapter,
+five record prefixes, rewrites old-key envelopes through the same CAS adapter,
 and reports only counts and opaque paths. Admin GETs never mutate repository
 state.
 

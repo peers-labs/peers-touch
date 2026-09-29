@@ -97,6 +97,7 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                 "./internal/application/oauth/usecase",
                 (
                     "TestRefreshCredentialReturnsCommittedDuplicateWithoutProviderCall",
+                    "TestRefreshCredentialRemembersEarlierOperation",
                     "TestRefreshCredentialPreservesOmittedRefreshToken",
                 ),
             ),
@@ -152,8 +153,17 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                 "./internal/interfaces/http/handler",
                 (
                     "TestAdminRejectsUnauthorizedBeforeStorage",
+                    "TestAdminUnavailableIncludesSecurityHeaders",
                     "TestAdminJSONAndHTMLAreSanitized",
                 ),
+            ),
+            TestGroup(
+                "./api/admin",
+                ("TestHandlerBootstrapFailureHasAdminSecurityHeaders",),
+            ),
+            TestGroup(
+                "./api/admin/data",
+                ("TestHandlerBootstrapFailureHasAdminSecurityHeaders",),
             ),
             TestGroup(
                 "./internal/integration",
