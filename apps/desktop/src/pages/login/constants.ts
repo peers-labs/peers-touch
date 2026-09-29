@@ -2,9 +2,6 @@ export const CARD_WIDTH = 400;
 export const CARD_MIN_HEIGHT = 420;
 export const LOGIN_CARD_MIN_HEIGHT = 356;
 export const REAUTH_CARD_MIN_HEIGHT = 392;
-export const PANEL_WIDTH = 250;
-export const ARROW_SIZE = 8;
-export const PANEL_GAP = 8;
 export const PIN_LENGTH = 6;
 export const PIN_SUBMIT_DELAY_MS = 140;
 

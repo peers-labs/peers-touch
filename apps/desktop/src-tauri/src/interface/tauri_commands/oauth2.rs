@@ -141,3 +141,8 @@ pub fn oauth2_start_loopback(
 pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
     application_oauth2::oauth2_poll_loopback(input)
 }
+
+#[tauri::command]
+pub fn oauth2_cancel_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_cancel_loopback(input)
+}

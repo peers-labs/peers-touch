@@ -24,7 +24,8 @@
       "docs/architecture/station-access-lifecycle/product-state-model.md",
       "docs/architecture/station-access-lifecycle/design.md",
       "docs/architecture/station-access-lifecycle/decisions.md",
-      "docs/client/desktop/identity-lifecycle.md"
+      "docs/client/desktop/identity-lifecycle.md",
+      "docs/client/common/ui-identity/modules/auth/desktop.md"
     ],
     "decisions": [
       "SAL-D01",
@@ -34,108 +35,53 @@
   },
   "scope": {
     "sourceClaims": [
-      {
-        "pathPrefix": "apps/desktop/src-tauri/src/application/oauth2/mod.rs",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "apps/desktop/index.html",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "apps/desktop/vite.config.ts",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/devctl/desktop.mjs",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/devctl/test/desktop.test.mjs",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "docs/knowledge/invariants/desktop-vite-entry-readiness.md",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "docs/knowledge/README.md",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "docs/architecture/station-access-lifecycle/README.md",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "docs/architecture/station-access-lifecycle/execution-plans/20260929-desktop-oauth-preauth",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/acceptance/capabilities/station-access.yaml",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/acceptance/environments/station-access-desktop-oauth-native.yaml",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/acceptance/features/station-access-authentication.yaml",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/acceptance/gates.yaml",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/acceptance/gates/station_access",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/acceptance/provisioners/__init__.py",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/acceptance/registry.yaml",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "docs/architecture/station-access-lifecycle/experience-contract.md",
-        "mode": "shared-read"
-      },
-      {
-        "pathPrefix": "docs/architecture/station-access-lifecycle/product-state-model.md",
-        "mode": "shared-read"
-      },
-      {
-        "pathPrefix": "docs/architecture/station-access-lifecycle/design.md",
-        "mode": "shared-read"
-      },
-      {
-        "pathPrefix": "docs/architecture/station-access-lifecycle/decisions.md",
-        "mode": "shared-read"
-      },
-      {
-        "pathPrefix": "docs/client/desktop/identity-lifecycle.md",
-        "mode": "shared-read"
-      }
+      {"pathPrefix":"apps/desktop/src-tauri/src/application/oauth2/mod.rs","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src-tauri/src/interface/http_gateway/mod.rs","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src-tauri/src/main.rs","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/pages/login","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/services/desktop_api.ts","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/store/oauth2.ts","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/index.css","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/index.html","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/vite.config.ts","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/devctl/desktop.mjs","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/devctl/test/desktop.test.mjs","mode":"exclusive-write"},
+      {"pathPrefix":"docs/knowledge/invariants/desktop-vite-entry-readiness.md","mode":"exclusive-write"},
+      {"pathPrefix":"docs/knowledge/README.md","mode":"exclusive-write"},
+      {"pathPrefix":"docs/client/common/ui-identity/modules/auth/desktop.md","mode":"exclusive-write"},
+      {"pathPrefix":"docs/architecture/desktop/prototype/README.md","mode":"exclusive-write"},
+      {"pathPrefix":"packages/prototypes/desktop/shell","mode":"exclusive-write"},
+      {"pathPrefix":"packages/locales/en/auth.json","mode":"exclusive-write"},
+      {"pathPrefix":"packages/locales/en/oauth.json","mode":"exclusive-write"},
+      {"pathPrefix":"packages/locales/zh-CN/auth.json","mode":"exclusive-write"},
+      {"pathPrefix":"packages/locales/zh-CN/oauth.json","mode":"exclusive-write"},
+      {"pathPrefix":"docs/architecture/station-access-lifecycle/README.md","mode":"exclusive-write"},
+      {"pathPrefix":"docs/architecture/station-access-lifecycle/execution-plans/20260929-desktop-oauth-preauth","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/capabilities/station-access.yaml","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/environments/station-access-desktop-oauth-native.yaml","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/features/station-access-authentication.yaml","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/gates.yaml","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/gates/station_access","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/provisioners/__init__.py","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/provisioners/station_access_desktop_oauth_native.py","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/registry.yaml","mode":"exclusive-write"},
+      {"pathPrefix":"docs/architecture/station-access-lifecycle/experience-contract.md","mode":"shared-read"},
+      {"pathPrefix":"docs/architecture/station-access-lifecycle/product-state-model.md","mode":"shared-read"},
+      {"pathPrefix":"docs/architecture/station-access-lifecycle/design.md","mode":"shared-read"},
+      {"pathPrefix":"docs/architecture/station-access-lifecycle/decisions.md","mode":"shared-read"},
+      {"pathPrefix":"docs/client/desktop/identity-lifecycle.md","mode":"shared-read"},
+      {"pathPrefix":"docs/client/common/ui-identity/README.md","mode":"shared-read"},
+      {"pathPrefix":"docs/client/common/ui-identity/foundations.md","mode":"shared-read"},
+      {"pathPrefix":"docs/client/common/ui-identity/tokens.md","mode":"shared-read"},
+      {"pathPrefix":"docs/client/common/ui-identity/layout.md","mode":"shared-read"},
+      {"pathPrefix":"docs/client/common/ui-identity/components.md","mode":"shared-read"}
     ],
     "nonGoals": [
       "Complete an external GitHub or Google authorization grant with a real user account",
       "Change provider credentials, callback endpoints, or Station OAuth bridge semantics",
       "Change Mobile OAuth behavior",
-      "Redesign the Desktop login layout",
+      "Change the Desktop auth card or OAuth action dimensions",
       "Use browser mocks as native OAuth functional proof"
     ]
   },
@@ -192,19 +138,41 @@
     "acceptance-plan-self",
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
+    "agent-marketplace-catalog-e2e",
+    "agent-native-connector-lifecycle-e2e",
+    "agent-native-knowledge-binding-e2e",
+    "agent-quick-completion-e2e",
+    "agent-stream-resilience-e2e",
+    "agent-v2-connector-invocation-e2e",
     "chat-desktop-gateway-e2e",
     "chat-lifecycle-call-resolution-e2e",
+    "chat-lifecycle-direct-e2e",
     "chat-lifecycle-mixed-client-cross-station-e2e",
     "chat-lifecycle-mixed-client-group-mls-e2e",
     "chat-lifecycle-mixed-client-multi-device-e2e",
     "chat-lifecycle-mixed-client-same-station-e2e",
+    "chat-lifecycle-onboarding-e2e",
     "chat-lifecycle-tree-zero-reference-e2e",
+    "chat-native-current-profile-two-client-e2e",
+    "chat-native-group-mls-e2e",
+    "chat-native-interactions-e2e",
+    "chat-native-multi-device-e2e",
+    "chat-native-recovery-e2e",
+    "chat-native-two-client-e2e",
+    "chat-native-visible-static",
+    "chat-storage-desktop-batch-clear-e2e",
+    "chat-storage-mobile-batch-clear-e2e",
+    "chat-storage-zero-legacy-e2e",
     "desktop-release-build",
+    "federation-three-node-e2e",
     "messaging-platform-contract",
+    "mobile-hard-cut-static",
     "mobile-ios-simulator-layout-accessibility-e2e",
     "mobile-native-build",
+    "mobile-simulator-platform-e2e",
     "mobile-simulator-station-lifecycle-e2e",
     "proto-build",
+    "station-agent-unit",
     "station-access-auth-e2e",
     "station-access-capability-contract",
     "station-access-desktop-oauth-layout-e2e",
@@ -214,6 +182,8 @@
     "station-access-lifecycle-aggregate-e2e",
     "station-access-scope-isolation-e2e",
     "station-api-ownership",
+    "station-federation-unit",
+    "station-messaging-unit",
     "desktop-check",
     "machine-dev-registry-self"
   ]
@@ -223,7 +193,8 @@
 ## Goal
 
 Restore GitHub and Google login from the unauthenticated Desktop Access Gate
-without weakening authenticated connector ownership.
+without weakening authenticated connector ownership, and keep the complete
+OAuth progress and recovery flow inside the fixed-size provider action.
 
 ## Traceability
 
@@ -246,6 +217,10 @@ SAL-OAUTH-01
 - The application loopback owner is optional and validated when present.
 - The callback uses no owner for login bootstrap and the current actor for an
   authenticated connector flow.
+- OAuth opening, waiting, cancellation, initialization, success, and retry are
+  rendered inside the original fixed-size provider action.
+- The auth card and provider action keep identical geometry across OAuth states;
+  no detached OAuth result panel participates in layout.
 - No compatibility command, fallback login, or duplicate OAuth path is added.
 
 ## Completion
@@ -253,7 +228,11 @@ SAL-OAUTH-01
 - Rust regression tests cover login and connector owner modes.
 - GitHub and Google return `auth_url` and `session_id` in a source-bound native
   Tauri window before password authentication.
-- Existing wide/narrow layout evidence remains valid.
+- Wide and narrow layout evidence proves stable card and provider-action
+  geometry across idle, waiting, cancelled, initialization, success, and
+  failure/retry states.
+- The canonical Desktop prototype exposes the same fixed-size inline OAuth
+  state model.
 - `make desktop` starts the exact checkpoint source.
 - Secret scanning passes and the native Gate releases its runtime resources.
 

@@ -3,7 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { message, notification, theme, Typography } from 'antd';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
-import { useOAuth2Store } from '../../store/oauth2';
+import {
+  isOAuthAuthorizationCancelled,
+  useOAuth2Store,
+} from '../../store/oauth2';
 import { useSessionStore } from '../../store/session';
 import { api, AuthCommandException } from '../../services/desktop_api';
 import type { OAuth2ProviderSummary } from '../../services/desktop_api';
@@ -23,15 +26,11 @@ import { SetPinView } from './views/SetPinView';
 import { RelinkPinView } from './views/RelinkPinView';
 import { WelcomeBackView } from './views/WelcomeBackView';
 import { LoginFormView, type GateState } from './views/LoginFormView';
-import { OAuthDrawerPanel } from './components/OAuthDrawerPanel';
 import {
   CARD_WIDTH,
   CARD_MIN_HEIGHT,
   LOGIN_CARD_MIN_HEIGHT,
   REAUTH_CARD_MIN_HEIGHT,
-  PANEL_WIDTH,
-  ARROW_SIZE,
-  PANEL_GAP,
 } from './constants';
 import { accountIdentityToSessionUser, type LoginState, type LoginTab, type AuthState, type SessionUser } from './types';
 
@@ -58,6 +57,10 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function wait(milliseconds: number): Promise<void> {
+  return new Promise(resolve => window.setTimeout(resolve, milliseconds));
+}
+
 export function LoginPage({
   onComplete,
   onLoginWithOAuthBridge,
@@ -70,7 +73,6 @@ export function LoginPage({
   const { token } = theme.useToken();
   const { t } = useTranslation('auth');
   const providers = useOAuth2Store(s => s.providers);
-  const connections = useOAuth2Store(s => s.connections);
   const loadAll = useOAuth2Store(s => s.loadAll);
   const startAuth = useOAuth2Store(s => s.startAuth);
   const accessStart = useSessionStore(s => s.accessStart);
@@ -109,14 +111,14 @@ export function LoginPage({
   const [recoveryNewPinError, setRecoveryNewPinError] = useState('');
   const recoveryIdRef = useRef<string | null>(null);
 
-  // ── OAuth drawer state ──
+  // ── OAuth action state ──
   const [connectProvider, setConnectProvider] = useState<OAuth2ProviderSummary | null>(null);
   const [authState, setAuthState] = useState<AuthState>('idle');
   const [authError, setAuthError] = useState('');
-  const [arrowTop, setArrowTop] = useState(0);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [panelTop, setPanelTop] = useState(0);
+  const oauthAttemptRef = useRef<{
+    controller: AbortController;
+    providerId: string;
+  } | null>(null);
 
   // ── Gate state ──
   const [gateDecision, setGateDecision] = useState<AccessDecision | null>(null);
@@ -129,6 +131,20 @@ export function LoginPage({
   const passwordRef = useRef('');
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  const resetOAuthAction = useCallback(() => {
+    const attempt = oauthAttemptRef.current;
+    oauthAttemptRef.current = null;
+    attempt?.controller.abort();
+    setConnectProvider(null);
+    setAuthState('idle');
+    setAuthError('');
+  }, []);
+
+  useEffect(() => () => {
+    oauthAttemptRef.current?.controller.abort();
+    oauthAttemptRef.current = null;
+  }, []);
 
   // Guard: if welcome_back without authentication, redirect
   useEffect(() => {
@@ -248,9 +264,7 @@ export function LoginPage({
   // ── Event handlers ──
 
   const handleSwitchAccount = useCallback(() => {
-    setConnectProvider(null);
-    setAuthState('idle');
-    setAuthError('');
+    resetOAuthAction();
     setExpiredAccount(null);
     if (hasMultipleAccounts) {
       setLoginState('account_picker');
@@ -258,18 +272,16 @@ export function LoginPage({
       setLoginState('logged_out');
       setTab('quick');
     }
-  }, [hasMultipleAccounts]);
+  }, [hasMultipleAccounts, resetOAuthAction]);
 
   const handleBackToWelcome = useCallback(() => {
-    setConnectProvider(null);
-    setAuthState('idle');
-    setAuthError('');
+    resetOAuthAction();
     if (hasMultipleAccounts) {
       setLoginState('account_picker');
     } else if (hasValidRestoredUser) {
       setLoginState('welcome_back');
     }
-  }, [hasMultipleAccounts, hasValidRestoredUser]);
+  }, [hasMultipleAccounts, hasValidRestoredUser, resetOAuthAction]);
 
   const handleNewAccountLogin = useCallback(() => {
     setExpiredAccount(null);
@@ -408,11 +420,12 @@ export function LoginPage({
   }, [recoveryId, onComplete, t]);
 
   const handleRecoveryCancel = useCallback(() => {
+    resetOAuthAction();
     recoveryIdRef.current = null;
     setRecoveryId(null);
     setRecoveryNewPinError('');
     setLoginState('pin_entry');
-  }, []);
+  }, [resetOAuthAction]);
 
   // ── Re-link PIN ──
 
@@ -480,52 +493,58 @@ export function LoginPage({
 
   // ── OAuth handlers ──
 
-  const handleOAuthConnect = useCallback((provider: OAuth2ProviderSummary, buttonEl: HTMLElement | null) => {
-    const card = cardRef.current;
-    if (buttonEl && card) {
-      const btnRect = buttonEl.getBoundingClientRect();
-      const cardRect = card.getBoundingClientRect();
-      setArrowTop(btnRect.top - cardRect.top + btnRect.height / 2);
-    }
+  const handleOAuthConnect = useCallback(async (provider: OAuth2ProviderSummary) => {
+    if (oauthAttemptRef.current) return;
+
+    const attempt = {
+      controller: new AbortController(),
+      providerId: provider.id,
+    };
+    oauthAttemptRef.current = attempt;
     setConnectProvider(provider);
-    setAuthState('idle');
+    setAuthState('opening');
     setAuthError('');
-  }, []);
 
-  const handleDrawerClose = useCallback(() => {
-    if (authState === 'waiting') return;
-    setConnectProvider(null);
-    setAuthState('idle');
-    setAuthError('');
-  }, [authState]);
-
-  const handleSignIn = useCallback(async () => {
-    if (!connectProvider) return;
-    setAuthState('waiting');
-    setAuthError('');
     try {
-      await startAuth(connectProvider.id);
-      const updatedConn = useOAuth2Store.getState().connections.find(
-        c => c.provider_id === connectProvider.id,
-      );
-      if (updatedConn) {
-        setAuthState('success');
-      } else {
-        setAuthState('error');
-        setAuthError(t('auth.login.incomplete'));
-      }
-    } catch (err: any) {
-      setAuthState('error');
-      setAuthError(err?.message || t('auth.login.failedRetry'));
-    }
-  }, [connectProvider, startAuth, t]);
+      await startAuth(provider.id, undefined, {
+        signal: attempt.controller.signal,
+        onBrowserOpened: () => {
+          if (oauthAttemptRef.current === attempt) setAuthState('waiting');
+        },
+      });
+      if (oauthAttemptRef.current !== attempt) return;
 
-  const handleAuthDone = useCallback(async () => {
-    setConnectProvider(null);
-    setAuthState('idle');
-    await onLoginWithOAuthBridge();
-    await continueAfterFreshAuth();
-  }, [onLoginWithOAuthBridge, continueAfterFreshAuth]);
+      setAuthState('initializing');
+      await onLoginWithOAuthBridge();
+      if (oauthAttemptRef.current !== attempt) return;
+
+      setAuthState('success');
+      await wait(650);
+      if (oauthAttemptRef.current !== attempt) return;
+
+      await continueAfterFreshAuth();
+      if (oauthAttemptRef.current === attempt) {
+        oauthAttemptRef.current = null;
+        setConnectProvider(null);
+        setAuthState('idle');
+      }
+    } catch (err: unknown) {
+      if (oauthAttemptRef.current !== attempt) return;
+      oauthAttemptRef.current = null;
+      if (isOAuthAuthorizationCancelled(err)) {
+        setConnectProvider(null);
+        setAuthState('idle');
+        setAuthError('');
+        return;
+      }
+      setAuthState('error');
+      setAuthError(errorMessage(err, t('auth.login.failedRetry')));
+    }
+  }, [continueAfterFreshAuth, onLoginWithOAuthBridge, startAuth, t]);
+
+  const handleOAuthCancel = useCallback(() => {
+    resetOAuthAction();
+  }, [resetOAuthAction]);
 
   // ── Email login handler ──
 
@@ -588,28 +607,9 @@ export function LoginPage({
   const handleTabChange = useCallback((newTab: LoginTab) => {
     setTab(newTab);
     if (newTab === 'email') {
-      setConnectProvider(null);
-      setAuthState('idle');
-      setAuthError('');
+      resetOAuthAction();
     }
-  }, []);
-
-  // ── Panel positioning ──
-  const panelOpen = !!connectProvider && (loginState === 'logged_out' || loginState === 'pin_recovery_auth');
-
-  useEffect(() => {
-    if (!panelOpen) return;
-    requestAnimationFrame(() => {
-      const panel = panelRef.current;
-      const card = cardRef.current;
-      if (!panel || !card) return;
-      const panelH = panel.offsetHeight;
-      const cardH = card.offsetHeight;
-      const idealTop = arrowTop - panelH / 2;
-      const clamped = Math.max(0, Math.min(idealTop, cardH - panelH));
-      setPanelTop(clamped);
-    });
-  }, [panelOpen, arrowTop]);
+  }, [resetOAuthAction]);
 
   // ── Network intro labels (memoized) ──
   const networkIntroLabels = useMemo(() => ({
@@ -687,11 +687,6 @@ export function LoginPage({
     </>
   );
 
-  // ── Drawer connection for current provider ──
-  const drawerConnection = connectProvider
-    ? connections.find(c => c.provider_id === connectProvider.id)
-    : null;
-
   // ── Render card content based on state ──
   const renderCardContent = () => {
     switch (loginState) {
@@ -748,11 +743,13 @@ export function LoginPage({
             reauthReason={reauthReason}
             hasBackButton={true}
             oauth2Providers={providers}
-            connections={connections}
-            highlightProviderId={connectProvider?.id}
+            oauthActionProviderId={connectProvider?.id}
+            oauthActionState={authState}
+            oauthActionError={authError}
             onBack={handleRecoveryCancel}
             onEmailLogin={handleEmailLogin}
             onOAuthLogin={handleOAuthConnect}
+            onOAuthCancel={handleOAuthCancel}
             onTabChange={handleTabChange}
             gateState={gateStateProp}
             backContent={
@@ -796,13 +793,15 @@ export function LoginPage({
             tab={tab}
             expiredAccount={expiredAccount}
             reauthReason={reauthReason}
-            hasBackButton={hasSignedInUser || hasMultipleAccounts}
+            hasBackButton={(hasSignedInUser || hasMultipleAccounts) && !connectProvider}
             oauth2Providers={providers}
-            connections={connections}
-            highlightProviderId={connectProvider?.id}
+            oauthActionProviderId={connectProvider?.id}
+            oauthActionState={authState}
+            oauthActionError={authError}
             onBack={handleBackToWelcome}
             onEmailLogin={handleEmailLogin}
             onOAuthLogin={handleOAuthConnect}
+            onOAuthCancel={handleOAuthCancel}
             onTabChange={handleTabChange}
             gateState={gateStateProp}
             backContent={backButtonContent}
@@ -813,16 +812,12 @@ export function LoginPage({
 
   const cardContent = (
     <div
-      className={`login-card-cluster${panelOpen ? ' login-card-cluster--panel-open' : ''}`}
+      className="login-card-cluster"
       style={{
         '--login-card-width': `${CARD_WIDTH}px`,
-        '--login-panel-width': `${PANEL_WIDTH}px`,
-        '--login-panel-gap': `${PANEL_GAP}px`,
-        '--login-arrow-size': `${ARROW_SIZE}px`,
       } as React.CSSProperties}
     >
       <Flexbox
-        ref={cardRef}
         className="login-card"
         data-pt-login-card
         style={cardStyle}
@@ -832,56 +827,6 @@ export function LoginPage({
       >
         {renderCardContent()}
       </Flexbox>
-
-      {panelOpen && (
-        <div
-          className="login-oauth-panel-slot"
-        >
-          <svg
-            className="login-oauth-panel-arrow"
-            width={ARROW_SIZE}
-            height={ARROW_SIZE * 2}
-            style={{
-              top: arrowTop,
-              filter: 'drop-shadow(-1px 0 1px rgba(0,0,0,0.05))',
-            }}
-          >
-            <polygon
-              points={`${ARROW_SIZE},0 0,${ARROW_SIZE} ${ARROW_SIZE},${ARROW_SIZE * 2}`}
-              fill={token.colorBgContainer}
-            />
-          </svg>
-
-          <div
-            ref={panelRef}
-            className="login-oauth-panel"
-            data-pt-login-oauth-panel={connectProvider.id}
-            style={{
-              top: panelTop,
-            }}
-          >
-            <Flexbox
-              style={{
-                width: '100%',
-                background: token.colorBgContainer,
-                borderRadius: 14,
-                boxShadow: `0 4px 20px rgba(0,0,0,0.08), 0 0 0 1px ${token.colorBorderSecondary}`,
-              }}
-              gap={0}
-            >
-              <OAuthDrawerPanel
-                provider={connectProvider}
-                authState={authState}
-                authError={authError}
-                connection={drawerConnection}
-                onSignIn={handleSignIn}
-                onDone={handleAuthDone}
-                onClose={handleDrawerClose}
-              />
-            </Flexbox>
-          </div>
-        </div>
-      )}
     </div>
   );
 

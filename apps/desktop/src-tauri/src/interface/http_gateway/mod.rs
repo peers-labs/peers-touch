@@ -5697,6 +5697,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_oauth2::oauth2_poll_loopback(input))
         }
+        "oauth2_cancel_loopback" => {
+            let input = match parse_args::<OAuthLoopbackPollInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_oauth2::oauth2_cancel_loopback(input))
+        }
 
         // =================================================================
         // Account (no state)

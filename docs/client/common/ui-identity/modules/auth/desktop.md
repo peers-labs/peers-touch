@@ -68,7 +68,30 @@ Rules:
   foreground animation.
 - `prefers-reduced-motion` must stop data flow and freeze transitions.
 
-## 6. State Coverage
+## 6. Inline OAuth Progress
+
+OAuth progress belongs to the provider action that started it.
+
+Rules:
+
+- The first provider click starts OAuth immediately; do not open a second
+  confirmation card before opening the provider.
+- Opening-browser, waiting, cancellation, account initialization, success, and
+  failure/retry render inside the original provider action.
+- The auth card and provider action preserve the same `x`, `y`, `width`, and
+  `height` across those states. Icon, label, and trailing cancel/retry slots
+  reserve stable geometry so copy changes cannot shift the page.
+- A detached side card, popover, or inline row that expands the auth card is
+  forbidden for routine OAuth progress and recovery.
+- While one provider is opening, waiting, or initializing, other login entries
+  are disabled. Cancellation restores all entries without navigating away.
+- Failure keeps recovery local: the provider action becomes retryable and
+  exposes a fixed trailing cancel action. Error detail may use a tooltip or
+  accessible description without entering document flow.
+- After account initialization succeeds, show a short in-place success state
+  and continue through the existing identity/PIN pipeline automatically.
+
+## 7. State Coverage
 
 Auth must represent each state on the same calm backdrop:
 
@@ -78,7 +101,7 @@ Auth must represent each state on the same calm backdrop:
 - Expired-session re-auth (revoked vs. continue).
 - Active station known vs. unknown (friendly placeholder, never raw host).
 
-## 7. Acceptance States
+## 8. Acceptance States
 
 Every Desktop Auth implementation must capture or manually verify:
 
@@ -91,8 +114,10 @@ Every Desktop Auth implementation must capture or manually verify:
 - Long account name and long station name.
 - Narrow desktop window (card dominates; mesh recedes further).
 - Reduced-motion enabled.
+- OAuth idle, waiting/cancellable, failure/retry, initializing, and success
+  states with identical auth-card and provider-action geometry.
 
-## 8. AI Agent Checklist
+## 9. AI Agent Checklist
 
 - [ ] Is there one floating card over one backdrop, not two side-by-side panels?
 - [ ] Does the card dominate and use the brand accent; is the mesh single-accent and quiet?
@@ -101,3 +126,5 @@ Every Desktop Auth implementation must capture or manually verify:
 - [ ] Is motion limited to data flow and the station-swap transition?
 - [ ] Does reduced-motion stop the data flow?
 - [ ] Does every auth state stay on the same calm backdrop with one primary action?
+- [ ] Does OAuth progress remain inside the original fixed-size provider action?
+- [ ] Do state transitions avoid card growth, provider-action resizing, and page shift?

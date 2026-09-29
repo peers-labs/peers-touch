@@ -50,6 +50,7 @@ import { T } from './theme';
 import { ToastHost } from '../../shared/Toast';
 import { ModernChatReview } from '../../features/modern-chat-agent/src/ModernChatReview';
 import { V2ProductReview } from '../../features/modern-chat-agent/src/V2ProductReview';
+import { OAuthLoginPrototype } from './OAuthLoginPrototype';
 
 /** An installed applet (mirrors RuntimeAppletInfo.manifest + status). */
 interface AppletInfo {
@@ -619,9 +620,11 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     : new URLSearchParams(window.location.search).get('state') ?? '';
   const showModernChatReview = modernChatState.startsWith('modern-');
   const showV2ProductReview = modernChatState.startsWith('v2-');
+  const showAuthPrototype = modernChatState.startsWith('auth-oauth-');
   const defaultPage = showModernChatReview || showV2ProductReview ? 'agent' : initialPage ?? 'applets';
   const [page, setPage] = useState(defaultPage);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [authPrototypeComplete, setAuthPrototypeComplete] = useState(false);
   const [visitedAgentSurfaces, setVisitedAgentSurfaces] = useState<Set<AgentSurfaceId>>(() => {
     const initialSurface = getAgentSurfaceId(defaultPage);
     return initialSurface ? new Set([initialSurface]) : new Set();
@@ -653,6 +656,10 @@ export function DesktopShell({ pages, initialPage }: DesktopShellProps = {}) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  if (showAuthPrototype && !authPrototypeComplete) {
+    return <OAuthLoginPrototype onComplete={() => setAuthPrototypeComplete(true)} />;
+  }
 
   const applet = page.startsWith('applet:')
     ? APPLETS.find((a) => `applet:${a.id}` === page)

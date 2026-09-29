@@ -7055,11 +7055,20 @@ export const api = {
   oauth2PollLoopback: (sessionId: string) =>
     invokeRustDataFromStatus<OAuthLoopbackPollInput, {
       completed: boolean;
-      status: 'pending' | 'completed' | 'failed' | 'expired';
+      status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
       callback_url?: string;
       error?: string;
     }>(
       'oauth2_poll_loopback',
+      { session_id: sessionId },
+    ),
+
+  oauth2CancelLoopback: (sessionId: string) =>
+    invokeRustDataFromStatus<OAuthLoopbackPollInput, {
+      cancelled: boolean;
+      status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
+    }>(
+      'oauth2_cancel_loopback',
       { session_id: sessionId },
     ),
 
