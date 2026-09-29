@@ -105,6 +105,16 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
                 },
             },
         }
+        gate.runtime_cell_manifest = {
+            "cellId": "desktop-macos-native",
+            "gateId": "station-access-desktop-oauth-native-e2e",
+            "state": "LEASED",
+            "source": {
+                "commit": "a" * 40,
+                "workspaceDigest": "clean",
+                "binarySha256": "b" * 64,
+            },
+        }
         gate.runtime_binding = _FakeRuntimeBinding("b" * 64)
 
         identity = gate._source_identity()
@@ -125,6 +135,16 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
                     "liveCommit": "a" * 40,
                     "workspaceDigest": "clean",
                 },
+            },
+        }
+        gate.runtime_cell_manifest = {
+            "cellId": "desktop-macos-native",
+            "gateId": "station-access-desktop-oauth-native-e2e",
+            "state": "LEASED",
+            "source": {
+                "commit": "a" * 40,
+                "workspaceDigest": "clean",
+                "binarySha256": "b" * 64,
             },
         }
         gate.runtime_binding = _FakeRuntimeBinding("c" * 64)

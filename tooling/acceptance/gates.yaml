@@ -271,7 +271,7 @@
       "description": "Prove source-bound native macOS Desktop and iOS Simulator clients bind signed Station identity before authenticating through the canonical Access Gate."
     },
     "station-access-desktop-oauth-native-e2e": {
-      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.station_access.desktop_oauth_native_e2e",
+      "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.station_access.desktop_oauth_native_e2e",
       "timeout_seconds": 1200,
       "environment": "station-access-desktop-oauth-native",
       "provisioner": "station-access-desktop-oauth-native",

@@ -63,7 +63,7 @@
     },
     {
       "id": "station-access-desktop-oauth-native-e2e",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate station-access-desktop-oauth-native-e2e --runtime-cell desktop-macos-native",
+      "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 tooling/scripts/acceptance-run.py --gate station-access-desktop-oauth-native-e2e --runtime-cell desktop-macos-native",
       "verificationClass": "ACCEPTANCE_PROOF"
     },
     {
