@@ -909,13 +909,13 @@
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "Run the profile-two native CLI Provider journey: discover trae-cli without HTTP credentials, create an Agent, open an empty topic, stream and persist a response, restart the native client, restore the conversation, and clean up.",
+      "description": "Run the profile-two native CLI Provider journey: discover trae-cli without HTTP credentials, stream and persist a response, restore it after native restart, prove a missing CLI binary produces a visible Station-backed typed failure without a fabricated completion, and clean up.",
       "runtime_matrix": {
         "id": "agent-cli-provider-primary-native-matrix",
-        "version": "2026-09-29.1",
-        "sha256": "0804a2bc57640c2f6bcefb2f00122c7d24dbdae9f258c559472664c201c55ec3",
-        "expected_tuple_count": 4,
-        "expected_assertion_count": 10
+        "version": "2026-09-29.2",
+        "sha256": "32e35baec617aeed3b9e0b6c62f8655e148456a725ddce580f04f0f7447a18a4",
+        "expected_tuple_count": 5,
+        "expected_assertion_count": 13
       },
       "required_artifact_roles": [
         "receiver-dom",
