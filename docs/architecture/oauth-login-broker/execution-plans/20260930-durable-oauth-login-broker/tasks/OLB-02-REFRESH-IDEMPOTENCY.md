@@ -33,7 +33,7 @@
     },
     {
       "id": "olb-idempotency",
-      "command": "cd apps/oauth2-client && go test ./internal/integration -run 'TestCallbackLostResponseIsIdempotent|TestRefreshIsIdempotent'",
+      "command": "cd apps/oauth2-client && go test ./internal/application/oauth/usecase ./internal/infrastructure/persistence/github -run 'TestRefreshCredential|TestStoreConvergesRefreshAfterLostRefUpdateResponse'",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {

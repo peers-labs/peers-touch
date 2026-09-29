@@ -181,6 +181,80 @@ func TestStoreConvergesAfterLostRefUpdateResponse(t *testing.T) {
 	}
 }
 
+func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	now := time.Date(2026, 9, 30, 2, 30, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "refresh-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGoogle,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := store.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := store.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:        session.State,
+		CompletionID: "login-operation",
+		Identity:     entity.ProviderIdentity{ProviderUserID: "subject"},
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-old",
+			RefreshToken: "refresh-old",
+			ObtainedAt:   now,
+		},
+		CompletedAt: now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fixture.abortAfterNextRefUpdate()
+	refreshed, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:  identity.IdentityID,
+		OperationID: "refresh-operation",
+		Tokens: entity.TokenSet{
+			AccessToken: "access-new",
+			ObtainedAt:  now.Add(2 * time.Minute),
+		},
+		RefreshedAt: now.Add(2 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.Generation != 2 ||
+		refreshed.RefreshToken != "refresh-old" ||
+		refreshed.LastRefreshOperationID != "refresh-operation" {
+		t.Fatalf("lost refresh response did not converge: %#v", refreshed)
+	}
+	commitsAfterRefresh := fixture.commitCount()
+	duplicate, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:  identity.IdentityID,
+		OperationID: "refresh-operation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate.Generation != 2 || fixture.commitCount() != commitsAfterRefresh {
+		t.Fatalf("duplicate refresh mutated storage: %#v", duplicate)
+	}
+	snapshot, err := store.AdminSnapshot(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshEvents := 0
+	for _, event := range snapshot.Events {
+		if event.EventType == entity.AuditCredentialRefreshed {
+			refreshEvents++
+		}
+	}
+	if refreshEvents != 1 {
+		t.Fatalf("expected one refresh event, got %d", refreshEvents)
+	}
+}
+
 func TestGitDataRetriesConflictAndRefreshesInstallationToken(t *testing.T) {
 	fixture := newGitDataFixture(t)
 	store := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})

@@ -70,3 +70,35 @@ func TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet(t *testing.T) {
 		t.Fatalf("unexpected grant: %#v", grant)
 	}
 }
+
+func TestRefreshToken(t *testing.T) {
+	var tokenForm url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		tokenForm, _ = url.ParseQuery(string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"access-new","token_type":"bearer","scope":"read:user","expires_in":900,"refresh_token_expires_in":7200}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithEndpoints(server.Client(), Endpoints{Token: server.URL})
+	now := time.Date(2026, 9, 30, 2, 0, 0, 0, time.UTC)
+	provider.now = func() time.Time { return now }
+	tokens, err := provider.RefreshToken(context.Background(), "refresh-old", port.ProviderConfig{
+		ClientID:     "client",
+		ClientSecret: "provider-secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tokenForm.Get("grant_type") != "refresh_token" ||
+		tokenForm.Get("refresh_token") != "refresh-old" ||
+		tokens.AccessToken != "access-new" ||
+		tokens.RefreshToken != "" ||
+		tokens.AccessExpiresAt == nil ||
+		!tokens.AccessExpiresAt.Equal(now.Add(15*time.Minute)) ||
+		tokens.RefreshExpiresAt == nil ||
+		!tokens.RefreshExpiresAt.Equal(now.Add(2*time.Hour)) {
+		t.Fatalf("unexpected refresh result: form=%v tokens=%#v", tokenForm, tokens)
+	}
+}

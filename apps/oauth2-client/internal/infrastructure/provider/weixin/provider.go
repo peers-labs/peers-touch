@@ -16,6 +16,7 @@ import (
 type Endpoints struct {
 	Authorize string
 	Token     string
+	Refresh   string
 	UserInfo  string
 }
 
@@ -39,6 +40,7 @@ func New() *Provider {
 	return NewWithEndpoints(common.DefaultHTTPClient, Endpoints{
 		Authorize: "https://open.weixin.qq.com/connect/qrconnect",
 		Token:     "https://api.weixin.qq.com/sns/oauth2/access_token",
+		Refresh:   "https://api.weixin.qq.com/sns/oauth2/refresh_token",
 		UserInfo:  "https://api.weixin.qq.com/sns/userinfo",
 	})
 }
@@ -132,7 +134,7 @@ func (p *Provider) RefreshToken(ctx context.Context, refreshToken string, cfg po
 	if refreshToken == "" {
 		return nil, errors.New("credential_not_refreshable")
 	}
-	endpoint := p.endpoints.Token + "?" + url.Values{
+	endpoint := p.endpoints.Refresh + "?" + url.Values{
 		"appid":         []string{cfg.ClientID},
 		"grant_type":    []string{"refresh_token"},
 		"refresh_token": []string{refreshToken},
