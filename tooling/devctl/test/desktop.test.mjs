@@ -60,13 +60,14 @@ test('desktop development keeps the default Tauri feature set', () => {
   );
 });
 
-test('desktop waits for the Vite entry module before launching Tauri', async () => {
+test('desktop waits for the Vite dependency canary before launching Tauri', async () => {
   assert.equal(
     desktopViteReadinessUrl(3210),
-    'http://127.0.0.1:3210/src/main.tsx',
+    'http://127.0.0.1:3210/src/services/desktop_api.ts',
   );
   const processAlive = () => true;
   const calls = [];
+  const stabilizationDurations = [];
   const result = await waitForDesktopVite(
     3210,
     'app',
@@ -75,17 +76,22 @@ test('desktop waits for the Vite entry module before launching Tauri', async () 
       calls.push({ url, options });
       return { ok: true, status: 200 };
     },
+    async (durationMs) => {
+      stabilizationDurations.push(durationMs);
+    },
   );
   assert.deepEqual(result, { ok: true, status: 200 });
-  assert.deepEqual(calls, [
-    {
-      url: 'http://127.0.0.1:3210/src/main.tsx',
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.deepEqual(call, {
+      url: 'http://127.0.0.1:3210/src/services/desktop_api.ts',
       options: {
         label: 'Desktop app Vite',
         processAlive,
       },
-    },
-  ]);
+    });
+  }
+  assert.deepEqual(stabilizationDurations, [3_000]);
 });
 
 test('desktop acceptance enables the embedded WebDriver feature', () => {

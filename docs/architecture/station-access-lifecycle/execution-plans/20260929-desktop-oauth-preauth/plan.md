@@ -47,6 +47,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/desktop/index.html",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "tooling/devctl/desktop.mjs",
         "mode": "exclusive-write"
       },
