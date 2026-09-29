@@ -926,6 +926,7 @@ fn main() {
             oauth2::oauth2_get_page,
             oauth2::oauth2_start_loopback,
             oauth2::oauth2_poll_loopback,
+            oauth2::oauth2_cancel_loopback,
             account::account_list,
             account::account_get_active,
             account::account_switch,

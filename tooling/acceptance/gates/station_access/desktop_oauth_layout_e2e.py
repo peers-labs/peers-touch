@@ -93,7 +93,8 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
                     [
                         "Desktop GitHub and Google OAuth actions at 1200x800",
                         "Desktop GitHub and Google OAuth actions at 640x800",
-                        "OAuth panel viewport containment and login-card separation",
+                        "Inline OAuth waiting, cancellation, retry, initialization, and success",
+                        "Stable auth-card and provider-action geometry across OAuth states",
                     ]
                     if status == "PASS"
                     else []
@@ -209,7 +210,8 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
 
             for artifact_group in ("doms", "screenshots"):
                 values = artifacts.get(artifact_group)
-                if not isinstance(values, dict) or len(values) != 4:
+                expected_count = 4 if artifact_group == "doms" else 24
+                if not isinstance(values, dict) or len(values) != expected_count:
                     raise GateError(
                         f"Desktop OAuth layout {artifact_group} evidence is incomplete"
                     )

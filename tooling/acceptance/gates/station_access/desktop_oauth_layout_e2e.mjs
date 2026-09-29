@@ -82,6 +82,8 @@ function loadEnglishResources() {
 async function installMockTauri(context, resources) {
   await context.addInitScript(({ localeResources }) => {
     const invocations = [];
+    let connectedProvider = null;
+    let oauthAttemptCount = 0;
     const status = (command, value) => ({
       ok: true,
       data: {
@@ -146,17 +148,70 @@ async function installMockTauri(context, resources) {
           };
         case 'account_list_restorable':
           return status(command, { accounts: [] });
+        case 'account_get_active':
+          return status(command, {
+            account: {
+              id: 'github:fixture-user',
+              provider: 'github',
+              provider_user_id: 'fixture-user',
+              name: 'OAuth Fixture',
+              email: 'fixture@example.invalid',
+              has_pin: false,
+              has_session: true,
+            },
+          });
         case 'oauth2_list_providers':
           return status(command, oauthProviders);
         case 'oauth2_list_connections':
-          return status(command, []);
+          return status(command, connectedProvider ? [{
+            provider_id: connectedProvider,
+            user_id: 'fixture-user',
+            user_name: 'OAuth Fixture',
+            status: 'connected',
+          }] : []);
         case 'oauth2_start_loopback':
+          oauthAttemptCount += 1;
           return status(command, {
             auth_url: `https://example.invalid/oauth/${args?.input?.id || 'unknown'}`,
-            session_id: `session-${args?.input?.id || 'unknown'}`,
+            session_id: `session-${args?.input?.id || 'unknown'}-${oauthAttemptCount}`,
           });
+        case 'oauth2_poll_loopback': {
+          const sessionId = args?.input?.session_id || '';
+          if (sessionId.endsWith('-1')) {
+            return status(command, { completed: false, status: 'pending' });
+          }
+          if (sessionId.endsWith('-2')) {
+            return status(command, {
+              completed: true,
+              status: 'failed',
+              error: 'provider rejected the fixture authorization',
+            });
+          }
+          connectedProvider = sessionId.includes('google') ? 'google' : 'github';
+          return status(command, { completed: true, status: 'completed' });
+        }
+        case 'oauth2_cancel_loopback':
+          return status(command, { cancelled: true, status: 'cancelled' });
         case 'open_external_url':
           return status(command, { ok: true });
+        case 'ensure_station_session':
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          return {
+            ok: true,
+            data: {
+              actor_ptid: 'ptid:person:oauth-fixture',
+              name: 'OAuth Fixture',
+              email: 'fixture@example.invalid',
+              login_method: connectedProvider || 'github',
+              session_token: 'fixture-session-token',
+            },
+          };
+        case 'sync_user_profile':
+          return status(command, {
+            name: 'OAuth Fixture',
+            email: 'fixture@example.invalid',
+            avatar_url: '',
+          });
         default:
           return status(command, {});
       }
@@ -189,11 +244,47 @@ async function installMockTauri(context, resources) {
   }, { localeResources: resources });
 }
 
-function rectanglesIntersect(left, right) {
-  return (
-    Math.max(left.left, right.left) < Math.min(left.right, right.right)
-    && Math.max(left.top, right.top) < Math.min(left.bottom, right.bottom)
-  );
+async function measureOAuthGeometry(page, provider) {
+  return page.evaluate(({ expectedProvider }) => {
+    const cardElement = document.querySelector('[data-pt-login-card]');
+    const actionElement = document.querySelector(
+      `[data-pt-login-oauth-action="${expectedProvider}"]`,
+    );
+    const buttonElement = document.querySelector(
+      `[data-pt-login-oauth-provider="${expectedProvider}"]`,
+    );
+    if (!cardElement || !actionElement || !buttonElement) return null;
+    const rect = (element) => {
+      const value = element.getBoundingClientRect();
+      return {
+        left: value.left,
+        top: value.top,
+        right: value.right,
+        bottom: value.bottom,
+        width: value.width,
+        height: value.height,
+      };
+    };
+    return {
+      viewport: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      },
+      card: rect(cardElement),
+      action: rect(actionElement),
+      button: rect(buttonElement),
+      detachedPanelCount: document.querySelectorAll('[data-pt-login-oauth-panel]').length,
+    };
+  }, { expectedProvider: provider });
+}
+
+function assertStableRect(expected, actual, label, epsilon = 0.5) {
+  for (const field of ['left', 'top', 'width', 'height']) {
+    assert.ok(
+      Math.abs(expected[field] - actual[field]) <= epsilon,
+      `${label} changed ${field}: ${expected[field]} -> ${actual[field]}`,
+    );
+  }
 }
 
 async function runCase(browser, endpoint, viewport, provider) {
@@ -225,101 +316,142 @@ async function runCase(browser, endpoint, viewport, provider) {
     const providerButton = page.locator(
       `[data-pt-login-oauth-provider="${provider}"]`,
     );
+    const otherProvider = provider === 'github' ? 'google' : 'github';
+    const otherProviderButton = page.locator(
+      `[data-pt-login-oauth-provider="${otherProvider}"]`,
+    );
+    const screenshotPaths = {};
+    const capture = async (state) => {
+      const screenshotPath = path.join(outputDir, `${caseId}-${state}.png`);
+      await page.screenshot({ path: screenshotPath });
+      screenshotPaths[state] = screenshotPath;
+    };
+    const geometries = {};
+
+    geometries.idle = await measureOAuthGeometry(page, provider);
+    assert.ok(geometries.idle, `${caseId} must expose idle login geometry`);
+    assert.equal(
+      geometries.idle.detachedPanelCount,
+      0,
+      `${caseId} must not render a detached OAuth panel`,
+    );
+    await capture('idle');
+
     await providerButton.click();
-    const panel = page.locator(
-      `[data-pt-login-oauth-panel="${provider}"]`,
+    await page.waitForSelector(
+      `[data-pt-login-oauth-provider="${provider}"][data-pt-login-oauth-state="waiting"]`,
     );
-    await panel.waitFor();
-    await page.waitForTimeout(100);
-
-    const geometry = await page.evaluate(({ expectedProvider }) => {
-      const cardElement = document.querySelector('[data-pt-login-card]');
-      const panelElement = document.querySelector(
-        `[data-pt-login-oauth-panel="${expectedProvider}"]`,
-      );
-      const buttonElement = document.querySelector(
-        `[data-pt-login-oauth-provider="${expectedProvider}"]`,
-      );
-      if (!cardElement || !panelElement || !buttonElement) return null;
-      const rect = (element) => {
-        const value = element.getBoundingClientRect();
-        return {
-          left: value.left,
-          top: value.top,
-          right: value.right,
-          bottom: value.bottom,
-          width: value.width,
-          height: value.height,
-        };
-      };
-      return {
-        viewport: {
-          width: window.innerWidth,
-          height: window.innerHeight,
-        },
-        card: rect(cardElement),
-        panel: rect(panelElement),
-        button: rect(buttonElement),
-      };
-    }, { expectedProvider: provider });
-    assert.ok(geometry, `${caseId} must expose measurable login geometry`);
-
-    const epsilon = 0.5;
-    assert.ok(geometry.panel.left >= -epsilon, `${caseId} panel left overflow`);
-    assert.ok(geometry.panel.top >= -epsilon, `${caseId} panel top overflow`);
-    assert.ok(
-      geometry.panel.right <= geometry.viewport.width + epsilon,
-      `${caseId} panel right overflow`,
-    );
-    assert.ok(
-      geometry.panel.bottom <= geometry.viewport.height + epsilon,
-      `${caseId} panel bottom overflow`,
+    geometries.waiting = await measureOAuthGeometry(page, provider);
+    assert.ok(geometries.waiting, `${caseId} must expose waiting login geometry`);
+    assert.equal(await otherProviderButton.isDisabled(), true);
+    assert.equal(
+      await page.locator(`[data-pt-login-oauth-cancel="${provider}"]`).count(),
+      1,
+      `${caseId} must expose inline cancellation while waiting`,
     );
     assert.equal(
-      rectanglesIntersect(geometry.card, geometry.panel),
-      false,
-      `${caseId} panel must not intersect the login card`,
+      await page.evaluate(() => document.activeElement?.getAttribute('data-pt-login-oauth-cancel')),
+      provider,
+      `${caseId} must move focus to the inline cancel action`,
     );
-    assert.ok(
-      geometry.button.left >= geometry.card.left - epsilon
-        && geometry.button.right <= geometry.card.right + epsilon
-        && geometry.button.top >= geometry.card.top - epsilon
-        && geometry.button.bottom <= geometry.card.bottom + epsilon,
-      `${caseId} OAuth action must remain inside the login card`,
+    await capture('waiting');
+
+    await page.locator(`[data-pt-login-oauth-cancel="${provider}"]`).click();
+    await page.waitForSelector(
+      `[data-pt-login-oauth-provider="${provider}"][data-pt-login-oauth-state="idle"]`,
     );
-    if (viewport.layout === 'side-by-side') {
-      assert.ok(
-        geometry.panel.left >= geometry.card.right,
-        `${caseId} must keep the wide side-card layout`,
-      );
-    } else {
-      assert.ok(
-        geometry.panel.top >= geometry.card.bottom,
-        `${caseId} must stack the side card below the login card`,
-      );
-    }
-
-    const screenshotPath = path.join(outputDir, `${caseId}.png`);
-    const domPath = path.join(outputDir, `${caseId}.html`);
-    await page.screenshot({ path: screenshotPath });
-    writeFileSync(domPath, await page.content(), { mode: 0o600 });
-
-    const startAuth = panel.locator('button.ant-btn-primary');
-    await startAuth.click();
+    geometries.cancelled = await measureOAuthGeometry(page, provider);
+    assert.ok(geometries.cancelled, `${caseId} must expose cancelled login geometry`);
+    assert.equal(await otherProviderButton.isEnabled(), true);
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-pt-login-oauth-provider')),
+      provider,
+      `${caseId} must restore focus to the provider action after cancellation`,
+    );
     await page.waitForFunction(
       ({ expectedProvider }) => window.__PT_E2E_INVOCATIONS__.some(
-        (invocation) => invocation.command === 'oauth2_start_loopback'
-          && invocation.args?.input?.id === expectedProvider,
+        (invocation) => invocation.command === 'oauth2_cancel_loopback'
+          && String(invocation.args?.input?.session_id || '').includes(expectedProvider),
       ),
       { expectedProvider: provider },
     );
+    await capture('cancelled');
+
+    await providerButton.click();
+    await page.waitForSelector(
+      `[data-pt-login-oauth-provider="${provider}"][data-pt-login-oauth-state="error"]`,
+    );
+    geometries.error = await measureOAuthGeometry(page, provider);
+    assert.ok(geometries.error, `${caseId} must expose error login geometry`);
+    assert.equal(await providerButton.isEnabled(), true);
+    assert.equal(
+      await page.locator(`[data-pt-login-oauth-cancel="${provider}"]`).count(),
+      1,
+      `${caseId} must expose inline recovery cancellation`,
+    );
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-pt-login-oauth-cancel')),
+      provider,
+      `${caseId} error recovery must keep focus on an available action`,
+    );
+    await capture('error');
+
+    await providerButton.click();
+    await page.waitForSelector(
+      `[data-pt-login-oauth-provider="${provider}"][data-pt-login-oauth-state="initializing"]`,
+    );
+    geometries.initializing = await measureOAuthGeometry(page, provider);
+    assert.ok(geometries.initializing, `${caseId} must expose initializing login geometry`);
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-pt-login-oauth-action')),
+      provider,
+      `${caseId} initialization must retain a focus owner`,
+    );
+    await capture('initializing');
+
+    await page.waitForSelector(
+      `[data-pt-login-oauth-provider="${provider}"][data-pt-login-oauth-state="success"]`,
+    );
+    geometries.success = await measureOAuthGeometry(page, provider);
+    assert.ok(geometries.success, `${caseId} must expose success login geometry`);
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-pt-login-oauth-action')),
+      provider,
+      `${caseId} success must retain a focus owner`,
+    );
+    await capture('success');
+
+    for (const [state, geometry] of Object.entries(geometries)) {
+      assert.equal(
+        geometry.detachedPanelCount,
+        0,
+        `${caseId}/${state} must not render a detached OAuth panel`,
+      );
+      assertStableRect(geometries.idle.card, geometry.card, `${caseId}/${state} card`);
+      assertStableRect(geometries.idle.action, geometry.action, `${caseId}/${state} action`);
+      assertStableRect(geometries.idle.button, geometry.button, `${caseId}/${state} button`);
+    }
+    assert.equal(geometries.idle.card.width, 400, `${caseId} card width must stay fixed`);
+    assert.equal(geometries.idle.action.height, 44, `${caseId} OAuth action height must stay fixed`);
+
+    const domPath = path.join(outputDir, `${caseId}.html`);
+    writeFileSync(domPath, await page.content(), { mode: 0o600 });
+
+    const startCount = await page.evaluate(
+      ({ expectedProvider }) => window.__PT_E2E_INVOCATIONS__.filter(
+        (invocation) => invocation.command === 'oauth2_start_loopback'
+          && invocation.args?.input?.id === expectedProvider,
+      ).length,
+      { expectedProvider: provider },
+    );
+    assert.equal(startCount, 3, `${caseId} must start one attempt per click/retry`);
     assert.deepEqual(pageErrors, [], `${caseId} emitted page errors`);
 
     return {
       caseId,
-      geometry,
+      geometries,
       domPath,
-      screenshotPath,
+      screenshotPaths,
       invocationCount: await page.evaluate(
         () => window.__PT_E2E_INVOCATIONS__.length,
       ),
@@ -375,10 +507,13 @@ async function main() {
     const assertions = {
       github_and_google_actions_enabled: true,
       oauth_actions_route_to_selected_provider: true,
-      wide_side_card_inside_viewport: true,
-      narrow_side_card_inside_viewport: true,
-      oauth_panel_never_intersects_login_card: true,
-      oauth_actions_never_occluded: true,
+      oauth_progress_is_inline: true,
+      detached_oauth_panel_absent: true,
+      oauth_cancel_and_retry_recover_in_place: true,
+      oauth_initialization_and_success_render_in_place: true,
+      card_geometry_stable_across_oauth_states: true,
+      action_geometry_stable_across_oauth_states: true,
+      oauth_focus_transfers_and_restores: true,
       dom_and_screenshot_evidence_saved: true,
       no_page_errors: true,
     };
@@ -392,7 +527,9 @@ async function main() {
           serverLog: serverLogPath,
           doms: Object.fromEntries(cases.map((item) => [item.caseId, item.domPath])),
           screenshots: Object.fromEntries(
-            cases.map((item) => [item.caseId, item.screenshotPath]),
+            cases.flatMap((item) => Object.entries(item.screenshotPaths).map(
+              ([state, screenshotPath]) => [`${item.caseId}-${state}`, screenshotPath],
+            )),
           ),
         },
       }, null, 2)}\n`,

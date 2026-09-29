@@ -8,7 +8,7 @@
   "planId": "SAL-OAUTH-20260929",
   "taskId": "SAL-OAUTH-01",
   "workstreamId": "SAL-OAUTH-W01",
-  "title": "Allow native OAuth loopback startup before actor authentication",
+  "title": "Restore OAuth bootstrap with fixed-size inline progress",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "fix",
@@ -19,8 +19,20 @@
     "apps/desktop/src-tauri/src/application/oauth2/mod.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
     "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
+    "apps/desktop/src-tauri/src/main.rs",
+    "apps/desktop/src/pages/login",
+    "apps/desktop/src/services/desktop_api.ts",
+    "apps/desktop/src/store/oauth2.ts",
+    "apps/desktop/src/index.css",
     "apps/desktop/index.html",
     "apps/desktop/vite.config.ts",
+    "packages/locales/en/auth.json",
+    "packages/locales/en/oauth.json",
+    "packages/locales/zh-CN/auth.json",
+    "packages/locales/zh-CN/oauth.json",
+    "packages/prototypes/desktop/shell",
+    "docs/client/common/ui-identity/modules/auth/desktop.md",
+    "docs/architecture/desktop/prototype/README.md",
     "tooling/devctl/desktop.mjs",
     "tooling/devctl/test/desktop.test.mjs",
     "docs/knowledge/invariants/desktop-vite-entry-readiness.md",
@@ -39,7 +51,12 @@
     "docs/architecture/station-access-lifecycle/product-state-model.md",
     "docs/architecture/station-access-lifecycle/design.md",
     "docs/architecture/station-access-lifecycle/decisions.md",
-    "docs/client/desktop/identity-lifecycle.md"
+    "docs/client/desktop/identity-lifecycle.md",
+    "docs/client/common/ui-identity/README.md",
+    "docs/client/common/ui-identity/foundations.md",
+    "docs/client/common/ui-identity/tokens.md",
+    "docs/client/common/ui-identity/layout.md",
+    "docs/client/common/ui-identity/components.md"
   ],
   "budgets": {
     "focusedCheckSeconds": 900,
@@ -73,6 +90,11 @@
       "verificationClass": "STRUCTURAL_CHECK"
     },
     {
+      "id": "desktop-auth-prototype-build",
+      "command": "pnpm --dir packages/prototypes/desktop/shell build",
+      "verificationClass": "UX_REVIEW"
+    },
+    {
       "id": "machine-dev-registry-self",
       "command": "python3 tooling/scripts/acceptance-run.py --gate machine-dev-registry-self",
       "verificationClass": "STRUCTURAL_CHECK"
@@ -96,12 +118,17 @@
   "doneWhen": [
     "Unauthenticated native Desktop GitHub and Google starts return authorization URLs and loopback session IDs",
     "Authenticated connector starts retain canonical actor ownership at the application boundary",
+    "OAuth opening, waiting, cancellation, initialization, success, and failure/retry remain inside the original fixed-size provider action",
+    "The auth card and provider action keep identical geometry across OAuth states with no detached result panel",
+    "The canonical Desktop prototype exposes the same inline OAuth state model",
     "The native proof is source-bound and cleanup completes"
   ],
   "failureBehavior": [
     "Do not restore the authenticated-session guard on login bootstrap",
     "Do not treat the browser mock layout Gate as OAuth functional proof",
-    "Do not weaken connector owner validation or add a fallback login path"
+    "Do not weaken connector owner validation or add a fallback login path",
+    "Do not resize the auth card or provider action when OAuth state changes",
+    "Do not reintroduce a detached OAuth progress or recovery panel"
   ],
   "updatedAt": "2026-09-29T02:30:00.000Z",
   "durableEvidence": []
@@ -116,5 +143,7 @@
 - Runtime amendment: normal `make desktop` must wait for a dependency canary
   and the transformed module graph, then require the WebView's React mount
   signal instead of trusting only ports and HTTP probes.
-- Next boundary: integrate the reviewed Vite readiness fix, prove a cold
-  `make desktop` launch, refresh exact-source Acceptance, then close.
+- Product amendment: OAuth progress and recovery move into the fixed-size
+  provider action; the canonical Desktop prototype must match.
+- Next boundary: implement the inline state model, prove zero layout shift in
+  product and prototype, refresh exact-source Acceptance, then close.
