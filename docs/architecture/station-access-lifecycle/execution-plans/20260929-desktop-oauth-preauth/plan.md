@@ -154,14 +154,12 @@
 {
   "closures": {
     "sal-desktop-oauth-preauth-fix": [
-      "station-access-capability-contract",
       "station-access-desktop-oauth-layout-e2e",
       "station-access-desktop-oauth-native-e2e",
       "desktop-check"
     ]
   },
   "completion": [
-    "station-access-capability-contract",
     "station-access-desktop-oauth-layout-e2e",
     "station-access-desktop-oauth-native-e2e",
     "desktop-check"

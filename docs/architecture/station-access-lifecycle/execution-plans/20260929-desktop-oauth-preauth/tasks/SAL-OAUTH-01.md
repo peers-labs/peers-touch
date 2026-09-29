@@ -47,8 +47,8 @@
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
-      "id": "station-access-capability-contract",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate station-access-capability-contract",
+      "id": "station-access-domain-structure",
+      "command": "make acceptance-validate DOMAIN=station-access",
       "verificationClass": "STRUCTURAL_CHECK"
     },
     {
