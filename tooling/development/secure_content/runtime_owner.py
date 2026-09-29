@@ -2909,6 +2909,152 @@ def _start_client(
         client.harness_namespace = previous_namespace
 
 
+def _write_browser_runtime_manifest_with_recovery(
+    *,
+    manifest_payload: Mapping[str, Any],
+    output_path: Path,
+    journey_id: str,
+    sessions_by_client: Mapping[str, FoundationRuntimeClient],
+    repo_root: Path,
+    timeout: float = 30.0,
+) -> Path:
+    payload = json.loads(json.dumps(manifest_payload))
+    recovered_client_ids: set[str] = set()
+
+    while True:
+        try:
+            return write_attached_runtime_manifest(
+                manifest_payload=payload,
+                output_path=output_path,
+                journey_id=journey_id,
+                sessions_by_client=sessions_by_client,
+                automation_refs_by_client={
+                    client_id: {
+                        "kind": runtime_manifest.AUTOMATION_ATTACHMENT_KIND,
+                        "endpoint": _webdriver_endpoint(client),
+                        "session_id": str(client.driver.session_id),
+                    }
+                    for client_id, client in sessions_by_client.items()
+                },
+                repo_root=repo_root,
+                timeout=timeout,
+            )
+        except RunnerError as error:
+            failed_client_id = next(
+                (
+                    client_id
+                    for client_id, client in sessions_by_client.items()
+                    if client.spec.runtime == "browser"
+                    and str(error)
+                    == (
+                        f"runtime client {client_id!r} did not expose "
+                        "'moments' acceptance harness"
+                    )
+                ),
+                None,
+            )
+            if failed_client_id is None:
+                raise
+
+            client = sessions_by_client[failed_client_id]
+            if failed_client_id in recovered_client_ids:
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    (
+                        f"client {client.spec.profile} lost its Moments "
+                        "harness after one bounded Browser attachment recovery"
+                    ),
+                    resource=f"client:{client.spec.profile}",
+                ) from error
+
+            previous_session_id = str(client.driver.session_id)
+            clients = payload.get("clients")
+            previous = next(
+                (
+                    item
+                    for item in clients
+                    if isinstance(item, Mapping)
+                    and item.get("id") == failed_client_id
+                ),
+                None,
+            ) if isinstance(clients, list) else None
+            actor_role = (
+                previous.get("actor_role")
+                if isinstance(previous, Mapping)
+                else None
+            )
+            bindings = (
+                previous.get("service_bindings")
+                if isinstance(previous, Mapping)
+                else None
+            )
+            if (
+                not isinstance(actor_role, str)
+                or not actor_role
+                or not isinstance(bindings, Mapping)
+                or any(
+                    not isinstance(binding, Mapping)
+                    or not str(binding.get("service_id") or "")
+                    for binding in bindings.values()
+                )
+            ):
+                raise
+            service_roles = {
+                str(role): str(binding["service_id"])
+                for role, binding in bindings.items()
+            }
+
+            try:
+                previous_namespace = client.harness_namespace
+                client.restart()
+                try:
+                    snapshot = _wait_for_moments_snapshot(client)
+                finally:
+                    client.harness_namespace = previous_namespace
+                refreshed = _client_payload(
+                    failed_client_id,
+                    actor_role,
+                    client,
+                    snapshot,
+                    service_roles=service_roles,
+                )
+            except Exception as recovery_error:
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    redact_text(
+                        (
+                            f"client {client.spec.profile} Browser attachment "
+                            "recovery failed: "
+                            f"{_error_message_with_cleanup(recovery_error)}"
+                        )
+                    ),
+                    resource=f"client:{client.spec.profile}",
+                ) from recovery_error
+
+            if (
+                refreshed["storage_identity_digest"]
+                != previous.get("storage_identity_digest")
+                or str(client.driver.session_id) == previous_session_id
+                or refreshed["actor_role_digest"]
+                != previous.get("actor_role_digest")
+            ):
+                raise RuntimeOwnerBlocked(
+                    "CLIENT_RUNTIME_UNAVAILABLE",
+                    (
+                        f"client {client.spec.profile} Browser attachment "
+                        "recovery did not preserve storage and actor identity "
+                        "with a fresh WebDriver session"
+                    ),
+                    resource=f"client:{client.spec.profile}",
+                )
+
+            payload["clients"] = [
+                refreshed if item.get("id") == failed_client_id else item
+                for item in clients
+            ]
+            recovered_client_ids.add(failed_client_id)
+
+
 def _ensure_browser_station_binding(
     client: FoundationRuntimeClient,
 ) -> None:
@@ -4220,7 +4366,7 @@ class W7RuntimeOwner:
                     secondary_schema_attestation,
                 )
             )
-            browser_path = write_attached_runtime_manifest(
+            browser_path = _write_browser_runtime_manifest_with_recovery(
                 manifest_payload=_manifest_payload(
                     identity=identity,
                     journey_id=BROWSER_JOURNEY,
@@ -4252,14 +4398,6 @@ class W7RuntimeOwner:
                 output_path=browser_dir / "runtime.json",
                 journey_id=BROWSER_JOURNEY,
                 sessions_by_client=browser,
-                automation_refs_by_client={
-                    client_id: {
-                        "kind": runtime_manifest.AUTOMATION_ATTACHMENT_KIND,
-                        "endpoint": _webdriver_endpoint(client),
-                        "session_id": str(client.driver.session_id),
-                    }
-                    for client_id, client in browser.items()
-                },
                 repo_root=self.repo_root,
             )
             browser_result = execute_scenario(
