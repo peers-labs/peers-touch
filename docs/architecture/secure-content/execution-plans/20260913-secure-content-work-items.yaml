@@ -1071,7 +1071,7 @@ items:
     architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D10, SC-D11, SC-D12, SC-D13, SC-D22, SC-D24]
     journeyIds: [sc-dj-mobile-matrix]
     scope:
-      include: [apps/mobile, tooling/development/secure_content/scenarios/mobile_matrix.py, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
+      include: [apps/mobile, tooling/development/secure_content/runtime_owner.py, tooling/development/secure_content/scenarios/mobile_matrix.py, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
       exclude: [source mutation, Chat authority changes, formal Acceptance]
     resources:
       sourceClaims:
@@ -1080,6 +1080,7 @@ items:
         - { pathPrefix: docs/architecture/secure-content, mode: shared-read }
         - { pathPrefix: docs/architecture/social, mode: shared-read }
         - { pathPrefix: tooling/acceptance, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/runtime_owner.py, mode: shared-read }
         - { pathPrefix: tooling/development/secure_content/scenarios/mobile_matrix.py, mode: shared-read }
         - { pathPrefix: tooling/development/secure_content/run.py, mode: shared-read }
         - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, mode: exclusive-write }

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import io
+import inspect
 import json
+import re
 import shutil
 import tempfile
 import threading
@@ -33,6 +35,9 @@ from tooling.development.secure_content.run import RunnerError, ScenarioContext
 from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
     REQUIRED_FIXTURE_CAPABILITIES,
+    W8_RUNTIME_REUSE,
+    W8_SCENARIOS,
+    W9_RUNTIME_REUSE,
     RuntimeOwnerBlocked,
     W8_REMOTE_RECIPIENT_CAPABILITY,
     W8_REMOTE_RECIPIENT_OPERATION,
@@ -75,6 +80,7 @@ from tooling.development.secure_content.runtime_owner import (
     _wait_for_mls_readiness,
     _verify_live_canonical_private_schema_attestation,
     _wait_for_moments_snapshot,
+    _w8_receiver_ui_probe,
     main,
 )
 
@@ -118,150 +124,192 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
-    def test_w8_actions_use_owner_provisioned_runtime(self) -> None:
-        owner = W7RuntimeOwner.__new__(W7RuntimeOwner)
-        owner._run_w8_scenario = MagicMock(
-            side_effect=[
-                {
-                    "privateCommentResult": "PASS",
-                    "runtimeRoot": "comment-root",
-                },
-                {
-                    "socialExpansionResult": "PASS",
-                    "runtimeRoot": "audience-root",
-                },
-                {
-                    "socialSubtypeResult": "PASS",
-                    "runtimeRoot": "subtype-root",
-                },
-                {
-                    "socialObjectResult": "PASS",
-                    "runtimeRoot": "object-root",
-                },
-                {
-                    "socialDeleteBlockResult": "PASS",
-                    "runtimeRoot": "delete-block-root",
-                },
-                {
-                    "socialBoundsResult": "PASS",
-                    "runtimeRoot": "bounds-root",
-                },
-            ]
+    def test_w8_suite_contract_closes_all_scenarios(self) -> None:
+        self.assertEqual(
+            tuple(spec.scenario_id for spec in W8_SCENARIOS),
+            W8_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(
+            {
+                "comment",
+                "audience",
+                "subtype",
+                "object",
+                "delete-block",
+                "bounds",
+            },
+            {spec.variant_id for spec in W8_SCENARIOS},
+        )
+        self.assertEqual(1, W8_RUNTIME_REUSE.max_provisioning_runs)
+        self.assertEqual(4, W8_RUNTIME_REUSE.max_client_launches)
+        self.assertTrue(W8_RUNTIME_REUSE.require_attach_only_scenarios)
+        self.assertTrue(W8_RUNTIME_REUSE.require_receiver_visible_proof)
+        self.assertFalse(W8_RUNTIME_REUSE.allow_client_replacement)
+
+    def test_w8_suite_provisions_before_attach_only_scenario_loop(self) -> None:
+        source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
+        scenario_loop = source.index("for spec in W8_SCENARIOS:")
+
+        self.assertEqual(1, source.count("_provision_runtime_accounts("))
+        self.assertLess(
+            source.index("_provision_runtime_accounts("),
+            scenario_loop,
+        )
+        self.assertNotIn("_start_client(", source[scenario_loop:])
+        self.assertNotIn("_make_client(", source[scenario_loop:])
+        self.assertEqual(
+            1,
+            source.count("SuiteRuntimeAction.PROVISION"),
+        )
+        self.assertIn(
+            "SuiteRuntimeAction.CLEANUP_COMPLETE",
+            source,
         )
 
+    def test_w8_suite_cli_is_the_only_w8_entry(self) -> None:
         self.assertEqual(
-            {
-                "privateCommentResult": "PASS",
-                "runtimeRoot": "comment-root",
-            },
-            owner.run_private_comment(),
-        )
-        self.assertEqual(
-            {
-                "status": "FUNCTIONAL_PASS",
-                "proofState": "UNPROVEN",
-                "variantResults": {
-                    "audience": "PASS",
-                    "subtype": "PASS",
-                    "object": "PASS",
-                    "delete-block": "PASS",
-                    "bounds": "PASS",
-                },
-                "runtimeRoots": {
-                    "audience": "audience-root",
-                    "subtype": "subtype-root",
-                    "object": "object-root",
-                    "delete-block": "delete-block-root",
-                    "bounds": "bounds-root",
-                },
-            },
-            owner.run_social_expansion(),
-        )
-        self.assertEqual(
-            [
-                call(
-                    scenario_id="private-comment",
-                    variant_id="comment",
-                    result_field="privateCommentResult",
-                    purpose="Private Comment",
-                    requires_remote_recipient=False,
-                ),
-                call(
-                    scenario_id="social-expansion",
-                    variant_id="audience",
-                    result_field="socialExpansionResult",
-                    purpose="Social Audience",
-                    requires_remote_recipient=True,
-                ),
-                call(
-                    scenario_id="social-subtype",
-                    variant_id="subtype",
-                    result_field="socialSubtypeResult",
-                    purpose="Social Subtypes",
-                    requires_remote_recipient=False,
-                ),
-                call(
-                    scenario_id="social-object",
-                    variant_id="object",
-                    result_field="socialObjectResult",
-                    purpose="Social Objects",
-                    requires_remote_recipient=False,
-                ),
-                call(
-                    scenario_id="social-delete-block",
-                    variant_id="delete-block",
-                    result_field="socialDeleteBlockResult",
-                    purpose="Social Delete And Block",
-                    requires_remote_recipient=False,
-                ),
-                call(
-                    scenario_id="social-bounds",
-                    variant_id="bounds",
-                    result_field="socialBoundsResult",
-                    purpose="Social Bounds",
-                    requires_remote_recipient=False,
-                ),
-            ],
-            owner._run_w8_scenario.call_args_list,
-        )
-        self.assertEqual(
-            "run-social-expansion",
+            "run-w8-suite",
             _parse_args(
                 [
-                    "run-social-expansion",
-                    "--secondary-profile",
-                    "fiveArm",
+                    "run-w8-suite",
+                    "--profiles",
+                    "four,fiveArm",
                 ]
             ).action,
         )
         self.assertEqual(
-            "fiveArm",
+            "four,fiveArm",
             _parse_args(
                 [
-                    "run-social-expansion",
-                    "--secondary-profile",
-                    "fiveArm",
+                    "run-w8-suite",
+                    "--profiles",
+                    "four,fiveArm",
                 ]
-            ).secondary_profile,
+            ).profiles,
         )
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                _parse_args(["run-private-comment"])
+            with self.assertRaises(SystemExit):
+                _parse_args(["run-social-expansion"])
 
-    def test_w8_social_expansion_requires_explicit_secondary_profile(
+    def test_w8_suite_requires_complete_profile_closure(
         self,
     ) -> None:
         stderr = io.StringIO()
         with redirect_stderr(stderr):
-            status = main(["run-social-expansion"])
+            status = main(["run-w8-suite"])
 
         self.assertEqual(2, status)
         payload = json.loads(stderr.getvalue())
         self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
-        self.assertEqual("profile:fiveArm", payload["resource"])
+        self.assertEqual("runtime:secure-content-w8", payload["resource"])
+
+    def test_w8_suite_cli_dispatches_once(self) -> None:
+        with patch.object(
+            W7RuntimeOwner,
+            "run_w8_suite",
+            return_value={
+                "status": "FUNCTIONAL_PASS",
+                "proofState": "UNPROVEN",
+            },
+        ) as run_suite:
+            status = main(
+                [
+                    "run-w8-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                ]
+            )
+
+        self.assertEqual(0, status)
+        run_suite.assert_called_once_with()
+
+    def test_w8_receiver_probe_binds_real_dom_action_and_assertion(
+        self,
+    ) -> None:
+        class Element:
+            tag_name = "p"
+
+            def click(self) -> None:
+                return None
+
+        class Driver:
+            session_id = "webdriver-session"
+            current_url = "tauri://localhost/moments"
+
+            def execute_script(self, script: str, *arguments: object) -> object:
+                if 'data-pt-primary-nav="moments"' in script:
+                    return Element()
+                if "data-moments-comments-toggle" in script:
+                    return Element()
+                if "return target instanceof HTMLElement" in script:
+                    return Element()
+                if "return target" in script and arguments:
+                    return {"tagName": "P", "visible": True}
+                return True
+
+        client = SimpleNamespace(
+            driver=Driver(),
+            spec=SimpleNamespace(profile="w8-alice"),
+        )
+
+        evidence = _w8_receiver_ui_probe(
+            client,
+            scenario_id="private-comment",
+            action_text="parent",
+            visible_text="comment",
+            open_comments=True,
+        )
+
+        self.assertRegex(
+            evidence["actionResourceId"],
+            r"^dom-action:[0-9a-f]{24}$",
+        )
+        self.assertRegex(
+            evidence["receiverResourceId"],
+            r"^dom-receiver:[0-9a-f]{24}$",
+        )
+        self.assertEqual("webdriver-session", evidence["automationSessionId"])
+
+    def test_w9_suite_contract_is_single_entry(self) -> None:
+        self.assertEqual(
+            ("ios", "android", "cross-platform"),
+            W9_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(1, W9_RUNTIME_REUSE.max_provisioning_runs)
+        self.assertEqual(6, W9_RUNTIME_REUSE.max_client_launches)
+        self.assertEqual("run-w9-suite", _parse_args(["run-w9-suite"]).action)
+
+    def test_suite_runtime_contracts_match_plan_tasks(self) -> None:
+        plan_root = (
+            Path(__file__).resolve().parents[3]
+            / "docs"
+            / "architecture"
+            / "secure-content"
+            / "execution-plans"
+            / "20260913-secure-content-hard-cut"
+            / "tasks"
+        )
+        for task_id, contract in (
+            ("W8", W8_RUNTIME_REUSE),
+            ("W9", W9_RUNTIME_REUSE),
+        ):
+            text = (plan_root / f"{task_id}.md").read_text(encoding="utf-8")
+            match = re.search(
+                r"^```json\s*$\s*(\{.*\})\s*^```$",
+                text,
+                re.MULTILINE,
+            )
+            self.assertIsNotNone(match)
+            task = json.loads(match.group(1))
+            self.assertEqual(contract.to_dict(), task["runtimeReuse"])
 
     def test_platform_owner_cli_dispatches_without_manifest_argument(
         self,
     ) -> None:
-        parsed = _parse_args(["run-w9-ios"])
-        self.assertEqual("run-w9-ios", parsed.action)
+        parsed = _parse_args(["run-w2-ios", "--profiles", "four,fiveArm"])
+        self.assertEqual("run-w2-ios", parsed.action)
         self.assertFalse(hasattr(parsed, "runtime_manifest"))
 
         with patch.object(
@@ -272,11 +320,11 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "proofState": "UNPROVEN",
             },
         ) as run_platform:
-            status = main(["run-w9-ios"])
+            status = main(["run-w2-ios", "--profiles", "four,fiveArm"])
 
         self.assertEqual(0, status)
         self.assertEqual(
-            "run-w9-ios",
+            "run-w2-ios",
             run_platform.call_args.args[0].action,
         )
 
