@@ -146,9 +146,13 @@ test('current repository satisfies the module registry', () => {
   const result = validateArchitectureRegistry({ repoRoot: REPO_ROOT });
   assert.deepEqual(result.moduleIds, [
     'architecture-module-governance',
+    'oauth-login-broker',
     'station-access-lifecycle',
   ]);
-  assert.deepEqual(result.capabilityIds, ['architecture.module.validate']);
+  assert.deepEqual(result.capabilityIds, [
+    'architecture.module.validate',
+    'oauth.login.broker',
+  ]);
 });
 
 test('required documents are derived from module characteristics', () => {

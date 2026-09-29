@@ -20,7 +20,8 @@
     "docs/README.md",
     "docs/architecture/architecture-module-governance/architecture-modules.json",
     "docs/architecture/oauth-login-broker",
-    "tooling/acceptance"
+    "tooling/acceptance",
+    "tooling/scripts/architecture/module-governance.test.mjs"
   ],
   "readSet": [
     "docs/architecture/development-workflow",

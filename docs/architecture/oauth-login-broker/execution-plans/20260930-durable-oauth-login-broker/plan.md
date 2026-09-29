@@ -88,6 +88,10 @@
       {
         "pathPrefix": "tooling/acceptance",
         "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/architecture/module-governance.test.mjs",
+        "mode": "exclusive-write"
       }
     ],
     "nonGoals": [
@@ -188,24 +192,22 @@
     "oauth-login-broker-refresh-idempotency",
     "oauth-login-broker-key-rotation",
     "oauth-login-broker-operator",
-    "oauth-login-broker-contract",
-    "architecture-module-governance",
+    "oauth-login-broker-architecture",
     "acceptance-infra-validation",
-    "acceptance-plan-self",
-    "acceptance-runtime-provisioning-self",
-    "acceptance-workflow-contract"
+    "oauth-login-broker-contract"
   ],
   "full": [
     "oauth-login-broker-durable-login",
     "oauth-login-broker-refresh-idempotency",
     "oauth-login-broker-key-rotation",
     "oauth-login-broker-operator",
-    "oauth-login-broker-contract",
+    "oauth-login-broker-architecture",
     "architecture-module-governance",
     "acceptance-infra-validation",
     "acceptance-plan-self",
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
+    "oauth-login-broker-contract",
     "chat-lifecycle-call-resolution-e2e",
     "chat-lifecycle-mixed-client-cross-station-e2e",
     "chat-lifecycle-mixed-client-group-mls-e2e",
