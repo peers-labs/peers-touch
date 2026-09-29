@@ -73,6 +73,11 @@
       "verificationClass": "STRUCTURAL_CHECK"
     },
     {
+      "id": "machine-dev-registry-self",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate machine-dev-registry-self",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
       "id": "station-access-desktop-oauth-native-e2e",
       "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 tooling/scripts/acceptance-run.py --gate station-access-desktop-oauth-native-e2e --runtime-cell desktop-macos-native",
       "verificationClass": "ACCEPTANCE_PROOF"
