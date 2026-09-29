@@ -31151,7 +31151,7 @@ async function prepareCliProviderPrimaryJourney(
     description: 'Disposable native CLI Provider acceptance Agent',
     provider: CLI_PRIMARY_PROVIDER_ID,
     model: CLI_PRIMARY_MODEL_ID,
-    thinkingMode: 'disabled',
+    thinkingMode: 'auto',
   });
   const agentId = agent.id || agent.name;
 
