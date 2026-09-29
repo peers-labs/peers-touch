@@ -51,6 +51,23 @@
       ]
     },
     {
+      "id": "station-access-oauth-bridge",
+      "features": [
+        "station-access-authentication"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/frame/touch/actor_handler.go",
+          "apps/station/frame/touch/oauth_handler.go"
+        ]
+      },
+      "require": [
+        "station-access-capability-contract",
+        "station-access-desktop-oauth-native-e2e",
+        "station-access-auth-e2e"
+      ]
+    },
+    {
       "id": "station-access-desktop-runtime",
       "features": [
         "station-access-authentication",

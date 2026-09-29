@@ -7,6 +7,8 @@ let loadAllPromise: Promise<void> | null = null;
 export interface OAuth2StartAuthOptions {
   signal?: AbortSignal;
   onBrowserOpened?: () => void;
+  onLoopbackStarted?: (start: { authUrl: string; sessionId: string }) => void;
+  openAuthorizationUrl?: (authUrl: string) => Promise<void>;
 }
 
 export function isOAuthAuthorizationCancelled(error: unknown): boolean {
@@ -97,12 +99,13 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
     throwIfCancelled(options?.signal);
     set({ completedLoopbackSessionId: null });
     const { auth_url, session_id } = await api.oauth2StartLoopback(id, environment);
+    options?.onLoopbackStarted?.({ authUrl: auth_url, sessionId: session_id });
     if (options?.signal?.aborted) {
       await cancelLoopbackSession(session_id);
       throw oauthAuthorizationCancelled();
     }
     try {
-      await api.openExternalUrl(auth_url);
+      await (options?.openAuthorizationUrl ?? api.openExternalUrl)(auth_url);
     } catch (error) {
       await cancelLoopbackSession(session_id);
       throwIfCancelled(options?.signal);

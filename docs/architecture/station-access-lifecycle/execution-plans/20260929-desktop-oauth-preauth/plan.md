@@ -35,10 +35,16 @@
   },
   "scope": {
     "sourceClaims": [
+      {"pathPrefix":"apps/station/frame/touch/actor_handler.go","mode":"exclusive-write"},
+      {"pathPrefix":"apps/station/frame/touch/actor_handler_test.go","mode":"exclusive-write"},
+      {"pathPrefix":"apps/station/frame/touch/oauth_handler.go","mode":"exclusive-write"},
+      {"pathPrefix":"apps/station/frame/touch/auth/oauth_bridge.go","mode":"exclusive-write"},
+      {"pathPrefix":"apps/station/frame/touch/auth/oauth_bridge_test.go","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src-tauri/src/application/oauth2/mod.rs","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src-tauri/src/interface/http_gateway/mod.rs","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src-tauri/src/main.rs","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/acceptance/station_access/harness.ts","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src/pages/login","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src/services/desktop_api.ts","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src/store/oauth2.ts","mode":"exclusive-write"},
@@ -79,7 +85,7 @@
     ],
     "nonGoals": [
       "Complete an external GitHub or Google authorization grant with a real user account",
-      "Change provider credentials, callback endpoints, or Station OAuth bridge semantics",
+      "Change provider credentials, callback endpoints, or the verified Station OAuth bridge payload and session semantics",
       "Change Mobile OAuth behavior",
       "Change the Desktop auth card or OAuth action dimensions",
       "Use browser mocks as native OAuth functional proof"
@@ -204,6 +210,22 @@ OAuth progress and recovery flow inside the fixed-size provider action.
   authenticated connector owner (`Some(ptid)`).
 - Commit `80f796894` incorrectly required an existing window session before
   `oauth2_start_loopback`, making the login entrypoint unreachable.
+- Runtime reproduction on `corpstable` proved the provider callback reaches
+  Desktop, but `POST /actor/oauth-bridge` returns 404 because the existing
+  `OAuthLogin` handler is absent from `GetActorHandlers`.
+- Desktop currently converts that Station bridge failure into a completed
+  loopback result, then fails later while restoring the missing Station
+  session. Bridge failures must remain terminal callback failures.
+- After route registration, the live bridge exposed that OAuth account
+  bootstrap generated a 64-character hex password while Actor signup permits
+  at most 20 characters. The internal password generator must satisfy the same
+  validation contract as every other account creation path.
+- The Desktop bridge sends `application/protobuf`; the Station OAuth handler
+  must use the canonical protobuf-or-JSON request binder instead of the generic
+  Hertz binder.
+- Native proof must complete the production OAuth store and identity-runtime
+  transition, not merely persist a backend session while the visible Desktop
+  remains on the Access Gate.
 
 ## Execution DAG
 
@@ -217,6 +239,11 @@ SAL-OAUTH-01
 - The application loopback owner is optional and validated when present.
 - The callback uses no owner for login bootstrap and the current actor for an
   authenticated connector flow.
+- The existing Station OAuth bridge is registered as the public
+  `POST /actor/oauth-bridge` endpoint and preserves its signature, actor,
+  access-gate, token, and session behavior.
+- A login callback is successful only after Desktop persists a non-empty
+  Station session and access token; bridge failures remain failed callbacks.
 - OAuth opening, waiting, cancellation, initialization, success, and retry are
   rendered inside the original fixed-size provider action.
 - The auth card and provider action keep identical geometry across OAuth states;
@@ -226,8 +253,11 @@ SAL-OAUTH-01
 ## Completion
 
 - Rust regression tests cover login and connector owner modes.
+- Station registration tests prove the exact public POST OAuth bridge route.
 - GitHub and Google return `auth_url` and `session_id` in a source-bound native
   Tauri window before password authentication.
+- Deterministic native callback proof reaches Station session restoration and
+  an authenticated Desktop identity instead of stopping at browser launch.
 - Wide and narrow layout evidence proves stable card and provider-action
   geometry across idle, waiting, cancelled, initialization, success, and
   failure/retry states.

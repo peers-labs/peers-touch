@@ -63,6 +63,12 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		{
+			RouterURL: RouterURLOAuthLogin,
+			Handler:   OAuthLogin,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{commonWrapper},
+		},
+		{
 			RouterURL: RouterURLAccessAttemptStart,
 			Handler:   StartAccessAttempt,
 			Method:    server.POST,
