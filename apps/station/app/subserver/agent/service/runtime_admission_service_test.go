@@ -630,22 +630,27 @@ func TestRuntimeCapabilityResolutionClassifiesUnsupportedFacts(t *testing.T) {
 	}
 }
 
-func TestProviderAdvertisementRequiresImplementedProtocol(t *testing.T) {
+func TestProviderAdvertisementRequiresImplementedRuntimeProtocolPair(t *testing.T) {
 	for _, test := range []struct {
+		runtime  string
 		protocol string
 		want     bool
 	}{
-		{protocol: "openai-compatible", want: true},
-		{protocol: "openai", want: true},
-		{protocol: "anthropic", want: true},
-		{protocol: "ollama", want: true},
-		{protocol: "gemini", want: false},
-		{protocol: "cli", want: false},
-		{protocol: "", want: false},
+		{runtime: "http", protocol: "openai-compatible", want: true},
+		{runtime: "http", protocol: "openai", want: true},
+		{runtime: "http", protocol: "anthropic", want: true},
+		{runtime: "http", protocol: "ollama", want: true},
+		{runtime: "cli", protocol: "cli", want: true},
+		{runtime: "http", protocol: "gemini", want: false},
+		{runtime: "http", protocol: "cli", want: false},
+		{runtime: "cli", protocol: "openai-compatible", want: false},
+		{runtime: "external_agent", protocol: "cli", want: false},
+		{runtime: "http", protocol: "", want: false},
 	} {
-		if got := ProviderRuntimeAdvertised("http", test.protocol); got != test.want {
+		if got := ProviderRuntimeAdvertised(test.runtime, test.protocol); got != test.want {
 			t.Fatalf(
-				"provider protocol %q advertised=%v, want %v",
+				"provider runtime/protocol %q/%q advertised=%v, want %v",
+				test.runtime,
 				test.protocol,
 				got,
 				test.want,

@@ -898,6 +898,31 @@
         "cleanup"
       ]
     },
+    "agent-cli-provider-primary-native-e2e": {
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "--journey",
+        "cli-provider"
+      ],
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "Run the profile-two native CLI Provider journey: discover trae-cli without HTTP credentials, create an Agent, open an empty topic, stream and persist a response, restart the native client, restore the conversation, and clean up.",
+      "runtime_matrix": {
+        "id": "agent-cli-provider-primary-native-matrix",
+        "version": "2026-09-29.1",
+        "sha256": "0804a2bc57640c2f6bcefb2f00122c7d24dbdae9f258c559472664c201c55ec3",
+        "expected_tuple_count": 4,
+        "expected_assertion_count": 10
+      },
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "cleanup"
+      ]
+    },
     "agent-conversation-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey conversation",
       "timeout_seconds": 300,

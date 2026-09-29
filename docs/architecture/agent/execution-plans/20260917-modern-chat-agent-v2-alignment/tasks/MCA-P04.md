@@ -23,9 +23,16 @@
     "apps/station/app/subserver/agent/service/provider_config_service_test.go",
     "apps/station/app/subserver/agent/service/provider_service.go",
     "apps/station/app/subserver/agent/service/provider_stream_test.go",
+    "apps/station/app/subserver/agent/service/runtime_admission_service.go",
+    "apps/station/app/subserver/agent/service/runtime_admission_service_test.go",
+    "apps/station/app/subserver/agent/service/turn_service.go",
+    "apps/station/app/subserver/agent/handler/provider_handler.go",
+    "apps/station/app/subserver/agent/handler/provider_handler_readiness_test.go",
     "apps/station/app/subserver/agent/handler/turn_handler.go",
     "apps/station/app/subserver/agent/handler/turn_runtime_profile_test.go",
     "apps/desktop/src/acceptance/agent/harness.ts",
+    "tooling/acceptance/capabilities/agent.yaml",
+    "tooling/acceptance/domains/agent.yaml",
     "tooling/acceptance/features/agent-cli-provider-primary.yaml",
     "tooling/acceptance/gates.yaml",
     "tooling/acceptance/gates/agent/native_agent_runner.py",
@@ -33,6 +40,7 @@
     "tooling/acceptance/matrices/agent-cli-provider-primary-native.yaml",
     "tooling/acceptance/provisioners/home_station.py",
     "tooling/acceptance/registry.yaml",
+    "tooling/acceptance/tests/test_provisioner_runtime.py",
     "tooling/docker/compose.yml",
     "tooling/scripts/deploy/deploy.sh",
     "docs/architecture/agent/modern-chat-agent",
@@ -58,8 +66,13 @@
     },
     {
       "id": "agent-cli-provider-functional",
-      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item MCA-P04 --gate agent-cli-provider-primary-native-e2e",
+      "command": "cd apps/station && go test ./app/subserver/agent/service/... -run 'Test(Executor|ProviderService.*CLI|ProviderCallWithRetryBypassesCredentialLeaseForCLI)' -count=1",
       "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "agent-cli-provider-proof",
+      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item MCA-P04 --gate agent-cli-provider-primary-native-e2e",
+      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [

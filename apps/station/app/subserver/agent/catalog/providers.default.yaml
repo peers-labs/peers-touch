@@ -268,7 +268,7 @@ providers:
   - id: trae-cli
     name: TRAE CLI
     description: Local TRAE CLI adapter running in the Agent workspace
-    enabled: false
+    enabled: true
     builtin: true
     show_checker: false
     show_api_key: false
@@ -280,4 +280,10 @@ providers:
     runtime_kind: cli
     cli_command: traecli --json exec --skip-git-repo-check -
     models_command: traecli debug models
-    models: []
+    models:
+      - id: default
+        display_name: Default
+        type: chat
+        enabled: true
+        context_window: 200000
+        capabilities: [text-input, text-output, streaming]

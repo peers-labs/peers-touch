@@ -41,11 +41,14 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/catalog"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	providercli "github.com/peers-labs/peers-touch/station/app/subserver/agent/service/cli"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
 	"github.com/peers-labs/peers-touch/station/frame/core/store"
 )
@@ -189,6 +192,8 @@ func reportFoundationF04DuplicateToolCallsDebug(
 // ProviderCallRequest carries all inputs needed to invoke a single LLM completion.
 type ProviderCallRequest struct {
 	ProviderID                      string
+	AgentID                         string
+	ConversationID                  string
 	Model                           string
 	SystemPrompt                    string
 	Messages                        []domain.Message
@@ -204,6 +209,7 @@ type ProviderCallRequest struct {
 	RuntimeAuthorityMode            providerRuntimeAuthorityMode
 	PinnedRuntimeCapabilities       *model.RuntimeCapabilitySnapshot
 	BeforeDispatch                  func(context.Context) error
+	AllowedRoots                    []string
 }
 
 type providerRuntimeAuthorityMode uint8
@@ -285,6 +291,82 @@ func (s *ProviderService) loadProvider(ctx context.Context, providerID string) (
 	return &provider, nil
 }
 
+func (s *ProviderService) resolveProviderForCall(
+	ctx context.Context,
+	req *ProviderCallRequest,
+) (*persistence.AgentProvider, error) {
+	db, err := store.GetRDS(ctx, store.WithRDSDBName("agent"))
+	if err != nil {
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to open agent db",
+			err,
+		)
+	}
+
+	var provider persistence.AgentProvider
+	query := db.WithContext(ctx).Where("id = ?", req.ProviderID).First(&provider)
+	if query.Error == nil {
+		return &provider, nil
+	}
+	if !errors.Is(query.Error, gorm.ErrRecordNotFound) {
+		return nil, errcode.New(
+			errcode.AgentInternal,
+			http.StatusInternalServerError,
+			"failed to load provider",
+			query.Error,
+		)
+	}
+
+	logicalProviderID := strings.TrimSpace(req.ProviderType)
+	if logicalProviderID == "" {
+		logicalProviderID = strings.TrimSpace(req.ProviderID)
+	}
+	if strings.TrimSpace(req.UserID) != "" && logicalProviderID != "" {
+		query = db.WithContext(ctx).
+			Where("actor_ptid = ? AND name = ?", req.UserID, logicalProviderID).
+			First(&provider)
+		if query.Error == nil {
+			return &provider, nil
+		}
+		if !errors.Is(query.Error, gorm.ErrRecordNotFound) {
+			return nil, errcode.New(
+				errcode.AgentInternal,
+				http.StatusInternalServerError,
+				"failed to load provider",
+				query.Error,
+			)
+		}
+	}
+
+	cp := catalog.Find(logicalProviderID)
+	if cp != nil &&
+		strings.EqualFold(strings.TrimSpace(cp.RuntimeKind), providerRuntimeCLI) {
+		return &persistence.AgentProvider{
+			ID:            "catalog:" + cp.ID,
+			ActorPTID:     strings.TrimSpace(req.UserID),
+			Name:          cp.ID,
+			DisplayName:   cp.Name,
+			BaseURL:       cp.DefaultBaseURL,
+			SourceType:    "catalog",
+			RuntimeKind:   cp.RuntimeKind,
+			CliCommand:    cp.CliCommand,
+			ModelsCommand: cp.ModelsCommand,
+			Protocol:      cp.Protocol,
+			Enabled:       cp.Enabled,
+			Version:       0,
+		}, nil
+	}
+
+	return nil, errcode.New(
+		errcode.AgentNotFound,
+		http.StatusNotFound,
+		"provider not found",
+		gorm.ErrRecordNotFound,
+	)
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -297,6 +379,7 @@ type ProviderService struct {
 	cachingService  *PromptCachingService
 	httpClient      *http.Client
 	providerTimeout time.Duration
+	cliExecutor     *providercli.Executor
 }
 
 // NewProviderService creates a ProviderService with the given caching dependency.
@@ -305,6 +388,7 @@ func NewProviderService(cachingService *PromptCachingService) *ProviderService {
 		cachingService:  cachingService,
 		httpClient:      &http.Client{},
 		providerTimeout: providerHTTPTimeout,
+		cliExecutor:     providercli.NewExecutor(providercli.NewWorkspaceManager("")),
 	}
 }
 
@@ -374,7 +458,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	}
 
 	// Step 1 — Load provider config from agent DB.
-	provider, err := s.loadProvider(ctx, req.ProviderID)
+	provider, err := s.resolveProviderForCall(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -386,10 +470,11 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 			nil,
 		)
 	}
-	if strings.EqualFold(strings.TrimSpace(provider.RuntimeKind), providerRuntimeCLI) ||
-		strings.EqualFold(strings.TrimSpace(provider.SourceType), providerRuntimeCLI) {
-		return nil, errcode.New(errcode.AgentSecurityViolation, http.StatusForbidden,
-			"cli provider execution is owned by Desktop runtime", nil)
+	if !ProviderRuntimeAdvertised(provider.RuntimeKind, provider.Protocol) {
+		return nil, errcode.NewRuntimeUnavailable(
+			runtimeKindForUnavailableProvider(provider.RuntimeKind),
+			"runtime_not_advertised",
+		)
 	}
 
 	// Step 2 — Extract base_url and api_key from provider record.
@@ -444,7 +529,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		if err := req.BeforeDispatch(ctx); err != nil {
 			return nil, err
 		}
-		finalProvider, err := s.loadProvider(ctx, req.ProviderID)
+		finalProvider, err := s.resolveProviderForCall(ctx, req)
 		if err != nil {
 			return nil, err
 		}
@@ -466,6 +551,8 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		ctx,
 		func(providerCtx context.Context) (*ProviderCallResponse, error) {
 			switch providerType {
+			case providerRuntimeCLI:
+				return s.callCLI(providerCtx, provider, req, model)
 			case providerTypeOllama:
 				if baseURL == "" {
 					baseURL = "http://127.0.0.1:11434"
@@ -540,6 +627,10 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	if err != nil {
 		logger.Errorf(ctx, "provider call failed: provider_id=%s type=%s model=%s err=%v",
 			req.ProviderID, providerType, model, err)
+		var bizErr *errcode.BizError
+		if errors.As(err, &bizErr) {
+			return nil, bizErr
+		}
 		var timeoutErr *providerTimeoutError
 		if errors.As(err, &timeoutErr) {
 			return nil, timeoutErr
@@ -558,6 +649,89 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 		req.ProviderID, resp.Model, resp.InputTokens, resp.OutputTokens, resp.CacheHit)
 
 	return resp, nil
+}
+
+func (s *ProviderService) callCLI(
+	ctx context.Context,
+	provider *persistence.AgentProvider,
+	req *ProviderCallRequest,
+	model string,
+) (*ProviderCallResponse, error) {
+	if provider == nil || s.cliExecutor == nil {
+		return nil, errcode.NewRuntimeUnavailable(
+			"direct_model",
+			"cli_executor_unavailable",
+		)
+	}
+	if len(req.Tools) > 0 {
+		return nil, errcode.NewRuntimeIncompatibleCapability(
+			"native-tools",
+			"cli_provider_does_not_support_native_tools",
+		)
+	}
+
+	result, err := s.cliExecutor.Execute(ctx, &providercli.ExecuteRequest{
+		ActorPTID:      req.UserID,
+		AgentID:        req.AgentID,
+		ConversationID: req.ConversationID,
+		Provider:       provider.Name,
+		Model:          model,
+		Effort:         req.Effort,
+		CliCommand:     provider.CliCommand,
+		SystemPrompt:   req.SystemPrompt,
+		Messages:       req.Messages,
+		AllowedRoots:   req.AllowedRoots,
+	}, func(deltaCtx context.Context, delta providercli.Delta) error {
+		if req.DeltaSink == nil {
+			return nil
+		}
+		return req.DeltaSink(deltaCtx, ProviderDelta{
+			Type:    delta.Type,
+			Content: delta.Content,
+		})
+	})
+	if err != nil {
+		switch {
+		case providercli.IsFailureKind(err, providercli.FailureInvalidCommand):
+			return nil, errcode.New(
+				errcode.AgentInvalidRequest,
+				http.StatusBadRequest,
+				"CLI provider command is invalid",
+				err,
+			)
+		case providercli.IsFailureKind(err, providercli.FailureBinaryMissing):
+			return nil, errcode.NewRuntimeUnavailable(
+				"direct_model",
+				"cli_binary_missing",
+			)
+		case providercli.IsFailureKind(err, providercli.FailureTimeout):
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				deadline = time.Now().UTC()
+			}
+			return nil, errcode.NewProviderTimeout(provider.Name, model, deadline)
+		case providercli.IsFailureKind(err, providercli.FailureExit):
+			return nil, errcode.NewRuntimeUnavailable(
+				"direct_model",
+				"cli_execution_failed",
+			)
+		case providercli.IsFailureKind(err, providercli.FailureEmptyResponse):
+			return nil, errcode.NewRuntimeUnavailable(
+				"direct_model",
+				"cli_empty_response",
+			)
+		default:
+			return nil, err
+		}
+	}
+
+	return &ProviderCallResponse{
+		Content:      result.Content,
+		Model:        model,
+		Provider:     provider.Name,
+		FinishReason: "stop",
+		Streamed:     result.Streamed,
+	}, nil
 }
 
 func validateExpectedProviderAuthority(
@@ -696,6 +870,8 @@ func explicitProviderType(protocol string) (string, error) {
 		return providerTypeAnthropic, nil
 	case providerTypeOllama:
 		return providerTypeOllama, nil
+	case providerRuntimeCLI:
+		return providerRuntimeCLI, nil
 	default:
 		return "", fmt.Errorf("unsupported provider protocol %q", protocol)
 	}

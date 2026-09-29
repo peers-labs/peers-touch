@@ -8,8 +8,8 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 )
 
-func TestFrozenProfileDoesNotAdvertiseOptionalRuntimeKinds(t *testing.T) {
-	for _, runtimeKind := range []string{"cli", "external_agent", "EXTERNAL_AGENT"} {
+func TestFrozenProfileDoesNotAdvertiseExternalAgentRuntimeKinds(t *testing.T) {
+	for _, runtimeKind := range []string{"external_agent", "EXTERNAL_AGENT"} {
 		if runtimeAdvertisedByFrozenProfile(runtimeKind) {
 			t.Fatalf("runtime kind %q must not be advertised", runtimeKind)
 		}
@@ -21,16 +21,16 @@ func TestFrozenProfileDoesNotAdvertiseOptionalRuntimeKinds(t *testing.T) {
 	}
 }
 
-func TestFrozenProfileKeepsCLIRegistrationDisabledAndUnadvertised(t *testing.T) {
+func TestFrozenProfileAdvertisesBuiltInCLIProvider(t *testing.T) {
 	trae := catalog.Find("trae-cli")
 	if trae == nil {
-		t.Fatal("expected retained trae-cli catalog registration")
+		t.Fatal("expected trae-cli catalog registration")
 	}
-	if trae.Enabled {
-		t.Fatal("trae-cli registration must remain disabled")
+	if !trae.Enabled {
+		t.Fatal("trae-cli registration must be enabled")
 	}
-	if catalogProviderAdvertisedByFrozenProfile(*trae) {
-		t.Fatal("disabled CLI registration must not enter the effective provider projection")
+	if !catalogProviderAdvertisedByFrozenProfile(*trae) {
+		t.Fatal("implemented CLI registration must enter the effective provider projection")
 	}
 }
 
@@ -51,7 +51,10 @@ func TestProviderProjectionDoesNotInferRuntimeCapabilityFromCatalog(t *testing.T
 		Enabled:     false,
 	})
 
-	if info.Protocol != "" || info.RuntimeKind != "" || info.CliCommand != "" || info.ModelsCommand != "" {
+	if info.Protocol != "cli" ||
+		info.RuntimeKind != "" ||
+		info.CliCommand != "" ||
+		info.ModelsCommand != "" {
 		t.Fatalf("catalog metadata must not infer an advertised runtime capability: %+v", info)
 	}
 }

@@ -785,6 +785,32 @@ class ProvisionerBlockingTests(unittest.TestCase):
             agent_native_requires_provider("agent-stream-resilience-e2e")
         )
 
+    def test_agent_cli_provider_uses_two_without_reset_or_http_credentials(self):
+        gate_id = "agent-cli-provider-primary-native-e2e"
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        profile_env = {
+            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+            "PT_DESKTOP_APP_WEB_PORT": "13511",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_AGENT_CLI_PROVIDER_WEBDRIVER_PORT": "14449"},
+            clear=True,
+        ), patch.object(provisioner, "_assert_client_ports_available"):
+            client = provisioner._agent_cli_provider_client(
+                "run-cli-provider",
+                1,
+                profile_env,
+            )
+
+        self.assertEqual(agent_profile_for_gate(gate_id), "two")
+        self.assertEqual(client.profile, "two")
+        self.assertIn("pt-agent-cli-provider-run-cli-provider", client.storage_root)
+        self.assertFalse(agent_native_requires_disposable_fixture(gate_id))
+        self.assertFalse(agent_native_requires_provider(gate_id))
+
     def test_existing_actor_resolution_logs_out_without_reset(self):
         login = MagicMock()
         login.__enter__.return_value.read.return_value = json.dumps(

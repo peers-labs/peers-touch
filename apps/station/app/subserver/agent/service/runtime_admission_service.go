@@ -790,12 +790,16 @@ func catalogProviderAdvertised(cp catalog.CatalogProvider) bool {
 // ProviderRuntimeAdvertised reports whether Station has an executable adapter
 // for the declared runtime and protocol in the active product profile.
 func ProviderRuntimeAdvertised(runtimeKind, protocol string) bool {
-	if !runtimeAdvertised(runtimeKind) {
-		return false
-	}
-	switch strings.ToLower(strings.TrimSpace(protocol)) {
-	case "openai-compatible", "openai", "anthropic", "ollama":
-		return true
+	switch strings.ToLower(strings.TrimSpace(runtimeKind)) {
+	case "", "http":
+		switch strings.ToLower(strings.TrimSpace(protocol)) {
+		case "openai-compatible", "openai", "anthropic", "ollama":
+			return true
+		default:
+			return false
+		}
+	case "cli":
+		return strings.EqualFold(strings.TrimSpace(protocol), "cli")
 	default:
 		return false
 	}
@@ -803,7 +807,7 @@ func ProviderRuntimeAdvertised(runtimeKind, protocol string) bool {
 
 func runtimeAdvertised(runtimeKind string) bool {
 	switch strings.ToLower(strings.TrimSpace(runtimeKind)) {
-	case "", "http":
+	case "", "http", "cli":
 		return true
 	default:
 		return false
