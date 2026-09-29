@@ -270,6 +270,17 @@
       "tier": "env-evidence",
       "description": "Prove source-bound native macOS Desktop and iOS Simulator clients bind signed Station identity before authenticating through the canonical Access Gate."
     },
+    "station-access-desktop-oauth-native-e2e": {
+      "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.station_access.desktop_oauth_native_e2e",
+      "timeout_seconds": 1200,
+      "environment": "station-access-desktop-oauth-native",
+      "provisioner": "station-access-desktop-oauth-native",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Launch one clean source-bound native macOS Desktop at the unauthenticated login surface and prove GitHub and Google return authorization URLs and loopback session IDs without an existing actor session."
+    },
     "station-access-desktop-oauth-layout-e2e": {
       "command": "python3 -m tooling.acceptance.gates.station_access.desktop_oauth_layout_e2e",
       "timeout_seconds": 300,

@@ -51,6 +51,7 @@
       "required_gates": [
         "station-access-capability-contract",
         "station-access-desktop-oauth-layout-e2e",
+        "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e"
       ],
       "synthetic_paths": [
@@ -58,6 +59,9 @@
         "apps/desktop/src/pages/login/LoginPage.tsx",
         "apps/desktop/src/pages/login/views/LoginFormView.tsx",
         "apps/desktop/src/services/accessGate.ts",
+        "apps/desktop/src-tauri/src/application/oauth2/mod.rs",
+        "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
+        "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
         "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
         "apps/mobile/src/features/auth/authSession.ts",
         "apps/mobile/src/features/station/stationConnection.ts",
@@ -76,10 +80,12 @@
         ],
         "proven_by": [
           "station-access-desktop-oauth-layout-e2e",
+          "station-access-desktop-oauth-native-e2e",
           "station-access-auth-e2e"
         ],
         "proven_scope": [
           "GitHub and Google actions open complete provider-specific OAuth side cards without viewport overflow or login-card intersection",
+          "native macOS Desktop starts GitHub and Google loopback authorization before an actor session exists",
           "Desktop and Mobile bind a signed Station identity before authentication",
           "both native clients obtain an actor session through the canonical Access Gate",
           "authenticated Station and actor identities match source-bound runtime manifests"

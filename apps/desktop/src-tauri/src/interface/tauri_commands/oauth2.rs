@@ -133,10 +133,8 @@ pub fn oauth2_start_loopback(
     window: Window,
     input: OAuthLoopbackStartInput,
 ) -> AppResult<StubPayload> {
-    let Some(actor_ptid) = session_resolver::ptid_for_window(state.inner(), &window) else {
-        return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
-    };
-    application_oauth2::oauth2_start_loopback(input, state.i18n.clone(), &actor_ptid)
+    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window);
+    application_oauth2::oauth2_start_loopback(input, state.i18n.clone(), actor_ptid.as_deref())
 }
 
 #[tauri::command]

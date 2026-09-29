@@ -2,7 +2,7 @@
 
 > **Status**: active
 > **Version**: v1.1
-> **Created**: 2026-09-26 | **Updated**: 2026-09-27
+> **Created**: 2026-09-26 | **Updated**: 2026-09-29
 > **Owner**: Identity and Access
 > **Module**: `apps/desktop/`, `apps/mobile/`, `apps/station/frame/touch/`
 
@@ -59,6 +59,7 @@ Station/Actor/Device scope。该模块把这条接入链及其 Federation contex
 | [module-layout.md](./module-layout.md) | 目标模块布局与依赖方向 |
 | [integration.md](./integration.md) | 当前实现映射与跨运行时集成 |
 | [execution-plans/20260926-station-access-lifecycle/plan.md](./execution-plans/20260926-station-access-lifecycle/plan.md) | 已完成的绑定 Plan |
+| [execution-plans/20260929-desktop-oauth-preauth/plan.md](./execution-plans/20260929-desktop-oauth-preauth/plan.md) | Desktop OAuth 登录前回归修复 |
 | [reviews/review-01-product-architecture.md](./reviews/review-01-product-architecture.md) | 第一轮产品与架构审查 |
 | [reviews/review-02-plan-readiness.md](./reviews/review-02-plan-readiness.md) | 第二轮计划与验收审查 |
 
@@ -75,5 +76,6 @@ Station/Actor/Device scope。该模块把这条接入链及其 Federation contex
 
 - Product：`accepted`
 - Architecture：`accepted`
-- Plan：`completed`，3/3 Task 已关闭
+- Lifecycle Plan：`completed`，3/3 Task 已关闭
+- Desktop OAuth 回归 Plan：`active`，SAL-OAUTH-01 执行中
 - `CCU-20260922`：保持 `completed`

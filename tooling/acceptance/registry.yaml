@@ -65,15 +65,19 @@
           "apps/desktop/src/services/accessGate.ts",
           "apps/desktop/src/store/session.ts",
           "apps/desktop/src-tauri/src/application/auth/**",
+          "apps/desktop/src-tauri/src/application/oauth2/**",
           "apps/desktop/src-tauri/src/application/key_exchange/device_install.rs",
           "apps/desktop/src-tauri/src/application/station_binding/**",
           "apps/desktop/src-tauri/src/infrastructure/station_client.rs",
-          "apps/desktop/src-tauri/src/infrastructure/station_registry.rs"
+          "apps/desktop/src-tauri/src/infrastructure/station_registry.rs",
+          "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs"
         ]
       },
       "require": [
         "station-access-capability-contract",
         "station-access-desktop-oauth-layout-e2e",
+        "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e"
       ]
@@ -150,9 +154,11 @@
           "tooling/acceptance/domains/station-access.yaml",
           "tooling/acceptance/capabilities/station-access.yaml",
           "tooling/acceptance/features/station-access-*.yaml",
+          "tooling/acceptance/environments/station-access-desktop-oauth-native.yaml",
           "tooling/acceptance/environments/station-access-login-browser.yaml",
           "tooling/acceptance/environments/station-access-native.yaml",
           "tooling/acceptance/gates/station_access/**",
+          "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
           "tooling/acceptance/provisioners/station_access_login_browser.py"
         ]
       },
@@ -161,6 +167,7 @@
         "station-api-ownership",
         "station-access-capability-contract",
         "station-access-desktop-oauth-layout-e2e",
+        "station-access-desktop-oauth-native-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
         "station-access-federation-boundary-e2e",

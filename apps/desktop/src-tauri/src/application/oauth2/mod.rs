@@ -186,6 +186,21 @@ fn parse_query_params(raw_path: &str) -> HashMap<String, String> {
         .collect()
 }
 
+fn resolve_loopback_connector_owner(actor_ptid: Option<&str>) -> CmdResult<Option<String>> {
+    let Some(actor_ptid) = actor_ptid else {
+        return Ok(None);
+    };
+    let actor_ptid = actor_ptid.trim();
+    if !actor_ptid.starts_with("ptid:") {
+        return Err(AppResult::fail(
+            ErrorCode::Unauthorized,
+            "authentication required",
+            None,
+        ));
+    }
+    Ok(Some(actor_ptid.to_string()))
+}
+
 fn save_oauth_callback(
     input: OAuthCallbackInput,
     ts: Option<String>,
@@ -1402,7 +1417,7 @@ pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
 pub fn oauth2_start_loopback(
     input: OAuthLoopbackStartInput,
     i18n: I18nService,
-    actor_ptid: &str,
+    actor_ptid: Option<&str>,
 ) -> AppResult<StubPayload> {
     if input.id.trim().is_empty() {
         return invalid_argument("id is required");
@@ -1414,6 +1429,10 @@ pub fn oauth2_start_loopback(
     if provider.status == "coming_soon" {
         return AppResult::fail(ErrorCode::Conflict, "error.oauth2.providerDeveloping", None);
     }
+    let connector_owner_ptid = match resolve_loopback_connector_owner(actor_ptid) {
+        Ok(value) => value,
+        Err(error) => return error,
+    };
 
     let listener = match TcpListener::bind("127.0.0.1:0") {
         Ok(v) => v,
@@ -1440,7 +1459,6 @@ pub fn oauth2_start_loopback(
 
     let session_id_for_thread = session_id.clone();
     let provider_id_for_thread = provider_id.to_string();
-    let actor_ptid_for_thread = actor_ptid.to_string();
     thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
             let mut buffer = [0_u8; 8192];
@@ -1517,7 +1535,7 @@ pub fn oauth2_start_loopback(
                     },
                     params.get("ts").cloned(),
                     params.get("sig").cloned(),
-                    Some(&actor_ptid_for_thread),
+                    connector_owner_ptid.as_deref(),
                 ) {
                     Ok(_) => {
                         update_loopback_session(
@@ -1896,6 +1914,24 @@ mod tests {
         assert_eq!(
             params.get("display_name").map(String::as_str),
             Some("Connector Fixture"),
+        );
+    }
+
+    #[test]
+    fn loopback_owner_mode_distinguishes_login_from_connector_bits_ut() {
+        assert_eq!(
+            resolve_loopback_connector_owner(None)
+                .expect("pre-authentication OAuth must select login mode"),
+            None,
+        );
+        assert_eq!(
+            resolve_loopback_connector_owner(Some("  ptid:person:owner  "))
+                .expect("authenticated OAuth must preserve connector ownership"),
+            Some("ptid:person:owner".to_string()),
+        );
+        assert!(
+            resolve_loopback_connector_owner(Some("not-a-ptid")).is_err(),
+            "an invalid authenticated owner must fail closed",
         );
     }
 
