@@ -395,15 +395,29 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         poller = self.source[start:end]
 
-        self.assertIn("error instanceof TypeError", poller)
-        self.assertIn("error.name === 'RustCommandException'", poller)
+        self.assertIn("errorName === 'TypeError'", poller)
+        self.assertIn("errorName === 'RustCommandException'", poller)
+        self.assertNotIn("error instanceof Error", poller)
         self.assertIn("'Failed to fetch'", poller)
         self.assertIn("catch (error)", poller)
         self.assertIn(
             "if (!isTransientFoundationFetchError(error)) throw error;",
             poller,
         )
-        self.assertIn("for (let attempt = 0; attempt < 3; attempt += 1)", poller)
+        self.assertIn(
+            "const FOUNDATION_TRANSIENT_FETCH_RETRY_TIMEOUT_MS = 15_000;",
+            self.source,
+        )
+        self.assertIn(
+            "const FOUNDATION_TRANSIENT_FETCH_RETRY_INTERVAL_MS = 500;",
+            self.source,
+        )
+        self.assertIn("const startedAt = Date.now()", poller)
+        self.assertIn("while (true)", poller)
+        self.assertIn(
+            "agent.acceptance.foundationFetchRetryExhausted:${operationName}",
+            poller,
+        )
         self.assertIn("last transient error", poller)
         policy_start = self.source.index(
             "async function updateFoundationToolPolicy"
@@ -413,8 +427,9 @@ class AgentHarnessStaticTest(unittest.TestCase):
             policy_start,
         )
         policy = self.source[policy_start:policy_end]
-        self.assertIn("return retryFoundationTransientFetch(() =>", policy)
-        self.assertIn("idempotencyKey));", policy)
+        self.assertIn("return retryFoundationTransientFetch(", policy)
+        self.assertEqual(policy.count("idempotencyKey"), 2)
+        self.assertIn("'capability-policy-upsert'", policy)
         f04_start = self.source.index("async function runFoundationF04Scenario")
         f04_end = self.source.index(
             "async function restoreFoundationExecutorUnavailableBinding",
@@ -426,6 +441,15 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "      resolveFoundationToolTurnSession,",
             f04,
         )
+        self.assertIn("`${label}-capability-session-read`", f04)
+        self.assertIn("'f04-cleanup-binding-list'", f04)
+        self.assertIn("'f04-cleanup-agent-read'", f04)
+        self.assertIn("'f04-cleanup-binding-delete'", f04)
+        self.assertEqual(f04.count("cleanupIdempotencyKey"), 2)
+        self.assertIn("primaryError = error", f04)
+        self.assertIn("foundationF04CleanupFailed:", f04)
+        self.assertIn("foundationFailureSummary(primaryError)", f04)
+        self.assertIn("foundationFailureSummary(cleanupError)", f04)
 
     def test_attachment_turn_disables_unrelated_thinking(self) -> None:
         attachment_turn = self.source.split(
@@ -3397,6 +3421,11 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "capabilitySessionId: capabilitySession.capabilitySessionId",
             run_case,
         )
+        self.assertIn("turn.observed.controller.abort();", run_case)
+        self.assertIn(
+            "await turn.observed.controller.disconnectTransport();",
+            run_case,
+        )
         for label in ("'auto'", "'manual'", "'deny'", "'expiry'"):
             self.assertIn(label, scenario)
         self.assertIn(
@@ -3418,6 +3447,7 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "capabilitySessionId: capabilitySession.capabilitySessionId",
             loop_helper,
         )
+        self.assertIn("turnController?.abort();", loop_helper)
         self.assertEqual(
             scenario.count("resolveFoundationToolTurnSession,"),
             1,

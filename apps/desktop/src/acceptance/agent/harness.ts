@@ -1920,6 +1920,8 @@ async function waitFor(
 
 const FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS = 180_000;
 const FOUNDATION_TOOL_RECONCILE_TIMEOUT_MS = 90_000;
+const FOUNDATION_TRANSIENT_FETCH_RETRY_TIMEOUT_MS = 15_000;
+const FOUNDATION_TRANSIENT_FETCH_RETRY_INTERVAL_MS = 500;
 const FOUNDATION_LOOP_MAX_TOOL_CALLS = 2;
 const FOUNDATION_LOOP_PROVIDER_MARKER =
   'PT_ACCEPTANCE_REPEAT_TOOL_UNTIL_BUDGET';
@@ -2238,33 +2240,59 @@ function foundationDiagnosticToolFacts(
 
 function isTransientFoundationFetchError(
   error: unknown,
-): error is Error {
-  if (!(error instanceof Error)) return false;
+): error is { name?: unknown; message?: unknown } {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as { name?: unknown; message?: unknown };
+  const errorName = String(candidate.name ?? '');
+  const errorMessage = String(candidate.message ?? '');
   const transientMessage = [
     'Failed to fetch',
     'Load failed',
     'NetworkError when attempting to fetch resource.',
-  ].includes(error.message);
+  ].includes(errorMessage);
   return transientMessage
-    && (error instanceof TypeError || error.name === 'RustCommandException');
+    && (errorName === 'TypeError' || errorName === 'RustCommandException');
 }
 
 async function retryFoundationTransientFetch<T>(
   operation: () => Promise<T>,
+  operationName: string,
 ): Promise<T> {
   let lastError: Error | null = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const startedAt = Date.now();
+  while (true) {
     try {
       return await operation();
     } catch (error) {
       if (!isTransientFoundationFetchError(error)) throw error;
-      lastError = error;
-      if (attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
-      }
+      lastError = Object.assign(
+        new Error(String(error.message ?? '')),
+        { name: String(error.name ?? 'Error') },
+      );
+      const remainingMs = FOUNDATION_TRANSIENT_FETCH_RETRY_TIMEOUT_MS
+        - (Date.now() - startedAt);
+      if (remainingMs <= 0) break;
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          Math.min(FOUNDATION_TRANSIENT_FETCH_RETRY_INTERVAL_MS, remainingMs),
+        ));
     }
   }
-  throw lastError ?? new Error('agent.acceptance.foundationFetchRetryExhausted');
+  throw Object.assign(
+    new Error(
+      `agent.acceptance.foundationFetchRetryExhausted:${operationName}`,
+    ),
+    { cause: lastError },
+  );
+}
+
+function foundationFailureSummary(error: unknown): string {
+  if (!error || typeof error !== 'object') return String(error);
+  const candidate = error as { name?: unknown; message?: unknown };
+  const name = String(candidate.name ?? 'Error');
+  const message = String(candidate.message ?? '');
+  return `${name}:${message}`;
 }
 
 async function waitForFoundationToolFacts(
@@ -2289,7 +2317,7 @@ async function waitForFoundationToolFacts(
       lastTransientError = '';
     } catch (error) {
       if (!isTransientFoundationFetchError(error)) throw error;
-      lastTransientError = error.message;
+      lastTransientError = String(error.message ?? '');
     }
     await new Promise((resolve) => setTimeout(resolve, 300));
   }
@@ -2367,16 +2395,22 @@ async function updateFoundationToolPolicy(
   enabled = true,
   idempotencyKey = crypto.randomUUID(),
 ): Promise<AgentCapabilityBinding> {
-  return retryFoundationTransientFetch(() =>
-    api.upsertAgentCapabilityBinding({
-      bindingId: current?.bindingId,
-      agentId: agent.id || agent.name,
-      capabilityId: fixture.manifest.capabilityId,
-      capabilityVersion: fixture.manifest.version,
-      enabled,
-      approvalPolicy: policy,
-      expectedAgentVersion: agent.version,
-    }, current?.revision ?? 0, idempotencyKey));
+  return retryFoundationTransientFetch(
+    () => api.upsertAgentCapabilityBinding(
+      {
+        bindingId: current?.bindingId,
+        agentId: agent.id || agent.name,
+        capabilityId: fixture.manifest.capabilityId,
+        capabilityVersion: fixture.manifest.version,
+        enabled,
+        approvalPolicy: policy,
+        expectedAgentVersion: agent.version,
+      },
+      current?.revision ?? 0,
+      idempotencyKey,
+    ),
+    'capability-policy-upsert',
+  );
 }
 
 async function updateFoundationCapabilityBindingEnabled(
@@ -4610,10 +4644,12 @@ async function runFoundationToolLoopBudget(input: {
 }> {
   const capabilitySession = await retryFoundationTransientFetch(
     resolveFoundationToolTurnSession,
+    'loop-capability-session-read',
   );
   let conversationId = '';
   let turnId = '';
   let events: ObservedFoundationTurnResult['events'] = [];
+  let turnController: AgentTurnStreamController | null = null;
   let unsubscribe: (() => void) | null = null;
   if (input.selectConversation) {
     const agentId = input.agent.id || input.agent.name;
@@ -4677,6 +4713,7 @@ async function runFoundationToolLoopBudget(input: {
     conversationId = turn.conversationId;
     turnId = turn.turnId;
     events = turn.observed.events;
+    turnController = turn.observed.controller;
   }
   try {
     const source = await waitForFoundationToolFacts(
@@ -4729,6 +4766,7 @@ async function runFoundationToolLoopBudget(input: {
     await new Promise((resolve) => setTimeout(resolve, 500));
     const replay = await retryFoundationTransientFetch(
       () => foundationDiagnosticReplay(turnId),
+      'loop-final-diagnostic-read',
     );
     const executionAfterLimit =
       foundationDiagnosticToolFacts(replay)
@@ -4781,6 +4819,7 @@ async function runFoundationToolLoopBudget(input: {
       },
     };
   } finally {
+    turnController?.abort();
     unsubscribe?.();
   }
 }
@@ -4806,6 +4845,7 @@ async function runFoundationF04Scenario(input: {
   );
   const originalBinding = fixture.binding;
   let currentBinding = originalBinding;
+  let primaryError: unknown = null;
   const diagnosticPairs: Array<{
     source: Record<string, unknown>;
     replay: Record<string, unknown>;
@@ -4832,6 +4872,7 @@ async function runFoundationF04Scenario(input: {
     await applyPolicy(policy);
     const capabilitySession = await retryFoundationTransientFetch(
       resolveFoundationToolTurnSession,
+      `${label}-capability-session-read`,
     );
     const turn = await startFoundationToolTurn({
       agent: input.agent,
@@ -4840,10 +4881,15 @@ async function runFoundationF04Scenario(input: {
       sampleId: input.sampleId,
       label,
     });
+    const approval = policy === CapabilityApprovalPolicy.MANUAL
+      ? await waitForToolApprovalEvent(turn)
+      : null;
     let decisionIntent: Parameters<typeof api.submitAgentToolDecision>[0] | null = null;
     let firstDecision: Awaited<ReturnType<typeof api.submitAgentToolDecision>> | null = null;
     if (decision !== undefined) {
-      const approval = await waitForToolApprovalEvent(turn);
+      if (!approval) {
+        throw new Error('agent.acceptance.foundationToolApprovalMissing');
+      }
       const approvalId = String(
         evidenceField(approval, 'approvalId', 'approval_id') ?? '',
       );
@@ -4868,6 +4914,13 @@ async function runFoundationF04Scenario(input: {
       if (!firstDecision.accepted) {
         throw new Error('agent.acceptance.foundationToolDecisionRejected');
       }
+    }
+    if (
+      input.platform === 'browser'
+      && policy === CapabilityApprovalPolicy.MANUAL
+      && decision === undefined
+    ) {
+      await turn.observed.controller.disconnectTransport();
     }
 
     let beforeReplay: Awaited<ReturnType<typeof waitForFoundationToolFacts>>;
@@ -4929,6 +4982,8 @@ async function runFoundationF04Scenario(input: {
         }
       }
       throw error;
+    } finally {
+      turn.observed.controller.abort();
     }
     let replayedDecision = firstDecision;
     if (decisionIntent && firstDecision) {
@@ -5112,32 +5167,55 @@ async function runFoundationF04Scenario(input: {
         },
       },
     };
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    const cleanupBinding = currentBinding
-      ? resolveFoundationCapabilityBindingForCleanup(
-          currentBinding,
-          await api.listAgentCapabilityBindings(
-            input.agent.id || input.agent.name,
+    try {
+      const cleanupBinding = currentBinding
+        ? resolveFoundationCapabilityBindingForCleanup(
+            currentBinding,
+            await retryFoundationTransientFetch(
+              () => api.listAgentCapabilityBindings(
+                input.agent.id || input.agent.name,
+              ),
+              'f04-cleanup-binding-list',
+            ),
+          )
+        : null;
+      if (originalBinding && cleanupBinding) {
+        const authoritativeAgent = await retryFoundationTransientFetch(
+          () => api.getAgent(input.agent.id || input.agent.name),
+          'f04-cleanup-agent-read',
+        );
+        await updateFoundationToolPolicy(
+          authoritativeAgent,
+          fixture,
+          cleanupBinding,
+          originalBinding.approvalPolicy,
+          originalBinding.enabled,
+        );
+      } else if (!originalBinding && cleanupBinding) {
+        const cleanupIdempotencyKey = crypto.randomUUID();
+        await retryFoundationTransientFetch(
+          () => api.deleteAgentCapabilityBinding(
+            cleanupBinding.bindingId,
+            cleanupBinding.revision,
+            cleanupIdempotencyKey,
+            'acceptance_fixture_cleanup',
           ),
-        )
-      : null;
-    if (originalBinding && cleanupBinding) {
-      const authoritativeAgent = await api.getAgent(
-        input.agent.id || input.agent.name,
-      );
-      await updateFoundationToolPolicy(
-        authoritativeAgent,
-        fixture,
-        cleanupBinding,
-        originalBinding.approvalPolicy,
-        originalBinding.enabled,
-      );
-    } else if (!originalBinding && cleanupBinding) {
-      await api.deleteAgentCapabilityBinding(
-        cleanupBinding.bindingId,
-        cleanupBinding.revision,
-        crypto.randomUUID(),
-        'acceptance_fixture_cleanup',
+          'f04-cleanup-binding-delete',
+        );
+      }
+    } catch (cleanupError) {
+      if (!primaryError) throw cleanupError;
+      throw Object.assign(
+        new Error(
+          'agent.acceptance.foundationF04CleanupFailed:'
+          + `primary=${foundationFailureSummary(primaryError)};`
+          + `cleanup=${foundationFailureSummary(cleanupError)}`,
+        ),
+        { primaryError, cleanupError },
       );
     }
   }
