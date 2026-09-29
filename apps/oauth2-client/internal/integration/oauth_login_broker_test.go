@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,6 +22,60 @@ import (
 )
 
 func TestOAuthLoginBrokerCrossInstanceHTTPJourney(t *testing.T) {
+	runOAuthHTTPJourney(t)
+}
+
+func TestOAuthLoginBrokerJourney(t *testing.T) {
+	store := runOAuthHTTPJourney(t)
+	auth, err := handler.NewBasicAuthenticator(
+		"operator",
+		"pbkdf2-sha256$100000$MDEyMzQ1Njc4OWFiY2RlZg==$pnq3X8b0RCPy3QPbc4tMRNkzzR3dLJBRf6HfSFzQh1Y=",
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := &handler.AdminHandler{Store: store, Auth: auth}
+	adminServer := httptest.NewServer(http.HandlerFunc(admin.Page))
+	defer adminServer.Close()
+
+	unauthorized, err := adminServer.Client().Get(adminServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = unauthorized.Body.Close()
+	if unauthorized.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unexpected unauthenticated status: %d", unauthorized.StatusCode)
+	}
+
+	request, err := http.NewRequest(http.MethodGet, adminServer.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.SetBasicAuth("operator", "correct-password")
+	response, err := adminServer.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK ||
+		!strings.Contains(string(body), "Alice") ||
+		!strings.Contains(string(body), "Present") {
+		t.Fatalf("unexpected operator response: status=%d body=%s", response.StatusCode, body)
+	}
+	for _, secret := range []string{"access-secret", "refresh-secret", "state-secret", "verifier-secret"} {
+		if strings.Contains(string(body), secret) {
+			t.Fatalf("operator response leaked %q", secret)
+		}
+	}
+}
+
+func runOAuthHTTPJourney(t *testing.T) *memory.Store {
+	t.Helper()
 	store := memory.NewStore()
 	provider := &httpJourneyProvider{}
 	now := time.Date(2026, 9, 30, 2, 0, 0, 0, time.UTC)
@@ -149,6 +204,7 @@ func TestOAuthLoginBrokerCrossInstanceHTTPJourney(t *testing.T) {
 		len(snapshot.Events) != 2 {
 		t.Fatalf("unexpected durable readback: %#v", snapshot)
 	}
+	return store
 }
 
 type integrationSites map[string]usecase.SiteConfig

@@ -125,7 +125,7 @@
       "dependsOn": [
         "OLB-02-REFRESH-IDEMPOTENCY"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -135,7 +135,7 @@
       "dependsOn": [
         "OLB-03-KEY-ROTATION"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     }
   ],
