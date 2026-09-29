@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
 RUNNER = ROOT / "tooling/acceptance/gates/agent/native_agent_runner.py"
+HARNESS = ROOT / "apps/desktop/src/acceptance/agent/harness.ts"
 GATES = ROOT / "tooling/acceptance/gates.yaml"
 MATRIX = (
     ROOT
@@ -183,6 +184,7 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.source = RUNNER.read_text(encoding="utf-8")
+        cls.harness_source = HARNESS.read_text(encoding="utf-8")
         cls.gate = json.loads(GATES.read_text(encoding="utf-8"))["gates"][
             "agent-cli-provider-primary-native-e2e"
         ]
@@ -227,6 +229,17 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
         self.assertIn('prepared_station.get("messageCount", -1)', journey)
         self.assertNotIn('get("messageCount") or -1', journey)
         self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", journey)
+
+    def test_cli_provider_fixture_uses_automatic_thinking_negotiation(self) -> None:
+        preparation = self.harness_source.split(
+            "async function prepareCliProviderPrimaryJourney",
+            1,
+        )[1].split(
+            "async function executeCliProviderPrimaryTurn",
+            1,
+        )[0]
+        self.assertIn("thinkingMode: 'auto'", preparation)
+        self.assertNotIn("thinkingMode: 'disabled'", preparation)
 
     def test_cli_provider_gate_and_reviewed_matrix_are_identical(self) -> None:
         self.assertEqual(self.gate["argv"], self.matrix["command_argv"])
