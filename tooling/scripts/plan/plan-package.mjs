@@ -1781,16 +1781,17 @@ export function renderPlanDocument(markdown, manifest) {
     return candidate;
   }
 
-  let rendered = renderWith(JSON.stringify(manifest, null, 2));
+  let serializedManifest = JSON.stringify(manifest, null, 2);
   try {
-    assertBounds(rendered, 'manifest', '<memory>');
+    assertBounds(serializedManifest, 'manifest', '<memory>');
   } catch (error) {
     if (!(error instanceof PlanPackageError) || error.code !== 'PLAN_BOUNDS_EXCEEDED') {
       throw error;
     }
-    rendered = renderWith(JSON.stringify(manifest));
-    assertBounds(rendered, 'manifest', '<memory>');
+    serializedManifest = JSON.stringify(manifest);
+    assertBounds(serializedManifest, 'manifest', '<memory>');
   }
+  const rendered = renderWith(serializedManifest);
   assertNoForbiddenSections(rendered, '<memory>');
   return rendered;
 }
