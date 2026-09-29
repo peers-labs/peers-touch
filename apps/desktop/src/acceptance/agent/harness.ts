@@ -34782,11 +34782,8 @@ export function installAcceptanceHarness(): void {
           if (conversationId) {
             clearFoundationLocalConversationProjection(conversationId);
             localProjectionCleared = true;
-            const deletionErrorCode = await deleteFoundationConversation(
-              conversationId,
-            );
-            conversationDeleted = deletionErrorCode === ''
-              || deletionErrorCode.includes('AGENT_4004');
+            await cleanupFoundationToolConversation(conversationId, turnId);
+            conversationDeleted = true;
           }
         } finally {
           try {
