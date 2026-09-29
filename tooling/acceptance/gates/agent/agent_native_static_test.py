@@ -3356,6 +3356,32 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
         self.assertIn("app_agent_growth::agent_submit_feedback", gateway)
         self.assertIn("app_agent_growth::agent_list_turn_feedback", gateway)
 
+    def test_browser_gateway_isolates_long_lived_agent_stream_workers(self) -> None:
+        gateway = DESKTOP_HTTP_GATEWAY.read_text(encoding="utf-8")
+
+        self.assertIn("const COMMAND_POOL_SIZE: usize = 8;", gateway)
+        self.assertIn("const AGENT_STREAM_POOL_SIZE: usize = 8;", gateway)
+        self.assertIn(
+            "let command_pool = threadpool::ThreadPool::new(COMMAND_POOL_SIZE);",
+            gateway,
+        )
+        self.assertIn(
+            "threadpool::ThreadPool::new(AGENT_STREAM_POOL_SIZE);",
+            gateway,
+        )
+        self.assertIn(
+            'matches!(url, "/agent/turn/stream" | "/agent/turn/events")',
+            gateway,
+        )
+        self.assertIn(
+            "GatewayWorkerLane::Command => &command_pool",
+            gateway,
+        )
+        self.assertIn(
+            "GatewayWorkerLane::AgentStream => &agent_stream_pool",
+            gateway,
+        )
+
     def test_executor_supervisor_control_is_acceptance_gated(self) -> None:
         runtime_evidence = DESKTOP_RUNTIME_EVIDENCE.read_text(encoding="utf-8")
         desktop_main = DESKTOP_MAIN.read_text(encoding="utf-8")
