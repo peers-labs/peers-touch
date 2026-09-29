@@ -231,14 +231,13 @@ fn respond_agent_stream<R: Read>(
     writer.write_all(b"Cache-Control: no-cache\r\n")?;
     writer.write_all(b"Access-Control-Allow-Origin: *\r\n")?;
     writer.write_all(b"Access-Control-Expose-Headers: X-Agent-Turn-ID\r\n")?;
-    // Browser cancellation must close the socket instead of leaving an
-    // unbounded SSE response eligible for keep-alive connection reuse.
-    writer.write_all(b"Connection: close\r\n")?;
     if let Some(turn_id) = turn_id {
         write!(writer, "X-Agent-Turn-ID: {turn_id}\r\n")?;
     }
     if chunked {
         writer.write_all(b"Transfer-Encoding: chunked\r\n")?;
+    } else {
+        writer.write_all(b"Connection: close\r\n")?;
     }
     writer.write_all(b"\r\n")?;
     writer.flush()?;

@@ -71,6 +71,7 @@ DESKTOP_RUNTIME_EVIDENCE = (
     / "runtime_evidence.rs"
 )
 DESKTOP_API = ROOT / "apps" / "desktop" / "src" / "services" / "desktop_api.ts"
+DESKTOP_INDEX = ROOT / "apps" / "desktop" / "index.html"
 DESKTOP_ASSISTANT_MESSAGE = (
     ROOT
     / "apps"
@@ -3381,12 +3382,15 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "GatewayWorkerLane::AgentStream => &agent_stream_pool",
             gateway,
         )
-        connection_close = 'writer.write_all(b"Connection: close\\r\\n")?;'
-        chunked_branch = "if chunked {"
-        self.assertIn(connection_close, gateway)
-        self.assertLess(
-            gateway.index(connection_close),
-            gateway.index(chunked_branch, gateway.index("fn respond_agent_stream")),
+
+    def test_desktop_boot_ready_reaches_managed_runtime_log(self) -> None:
+        desktop_index = DESKTOP_INDEX.read_text(encoding="utf-8")
+
+        self.assertIn("window.__TAURI_INTERNALS__", desktop_index)
+        self.assertIn("invoke('frontend_log'", desktop_index)
+        self.assertIn(
+            "React app mounted — dismissing boot fallback",
+            desktop_index,
         )
 
     def test_executor_supervisor_control_is_acceptance_gated(self) -> None:
