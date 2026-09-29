@@ -8,9 +8,11 @@ import os
 import re
 import time
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.request import ProxyHandler, build_opener
 
 from tooling.acceptance.core import (
     AcceptanceGate,
@@ -33,6 +35,8 @@ REQUIRED_ASSERTIONS = frozenset(
         "google_loopback_starts_before_authentication",
         "github_loopback_cancels_before_authentication",
         "google_loopback_cancels_before_authentication",
+        "oauth_callback_creates_station_session",
+        "oauth_callback_restores_authenticated_identity",
         "native_runtime_is_source_bound",
         "native_runtime_cleanup",
     }
@@ -74,6 +78,23 @@ const sessionId = arguments[0];
 const done = arguments[arguments.length - 1];
 const internals = window.__TAURI_INTERNALS__;
 Promise.resolve(internals.invoke('oauth2_cancel_loopback', {
+  input: { session_id: sessionId },
+})).then(
+  (value) => done({ transport: 'resolved', value }),
+  (error) => done({
+    transport: 'rejected',
+    error: {
+      code: error?.code || error?.error?.code || '',
+      message: error?.message || error?.error?.message || String(error),
+    },
+  }),
+);
+"""
+OAUTH_POLL_SCRIPT = """
+const sessionId = arguments[0];
+const done = arguments[arguments.length - 1];
+const internals = window.__TAURI_INTERNALS__;
+Promise.resolve(internals.invoke('oauth2_poll_loopback', {
   input: { session_id: sessionId },
 })).then(
   (value) => done({ transport: 'resolved', value }),
@@ -178,7 +199,8 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                     f"{provider_id}_loopback_starts_before_authentication",
                     providers[provider_id]["transport"] == "resolved"
                     and providers[provider_id]["hasAuthorizationUrl"] is True
-                    and providers[provider_id]["hasLoopbackSession"] is True,
+                    and providers[provider_id]["hasLoopbackSession"] is True
+                    and providers[provider_id]["hasLoopbackCallback"] is True,
                     json.dumps(providers[provider_id], sort_keys=True),
                 )
                 cancellation = self._cancel_oauth(
@@ -193,6 +215,53 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                     and cancellation["status"] == "cancelled",
                     json.dumps(cancellation, sort_keys=True),
                 )
+
+            login_start = self._start_oauth_via_product(session, "github")
+            callback = self._send_callback(
+                login_start["callbackUrl"],
+                provider_id="github",
+                provider_user_id="acceptance-native-oauth",
+                email="oauth.acceptance@test.invalid",
+            )
+            callback_result = self._poll_oauth(
+                session,
+                login_start["sessionId"],
+            )
+            authenticated_identity = self._complete_oauth_via_product(
+                session,
+                "github",
+            )
+            login_surface_visible = any(
+                element.is_displayed()
+                for element in session.find_elements("[data-pt-login-card]")
+            )
+            providers["github"]["loginProof"] = {
+                "callback": callback,
+                "loopback": callback_result,
+                "identity": authenticated_identity,
+                "loginSurfaceVisible": login_surface_visible,
+            }
+            actor_ptid = str(authenticated_identity.get("actorPtid") or "")
+            self.assert_condition(
+                "oauth_callback_creates_station_session",
+                callback["statusCode"] == 200
+                and callback_result["completed"] is True
+                and callback_result["status"] == "completed"
+                and actor_ptid.startswith("ptid:"),
+                json.dumps(providers["github"]["loginProof"], sort_keys=True),
+            )
+            self.assert_condition(
+                "oauth_callback_restores_authenticated_identity",
+                authenticated_identity.get("authenticated") is True
+                and authenticated_identity.get("lifecycleState") == "ready"
+                and authenticated_identity.get("phaseKind") != "accountGate"
+                and actor_ptid.startswith("ptid:")
+                and not login_surface_visible,
+                json.dumps(authenticated_identity, sort_keys=True),
+            )
+            self.save_screenshot(session, "desktop-oauth-authenticated")
+            self.save_dom(session, "desktop-oauth-authenticated")
+
             source_identity = self._source_identity()
             self.assert_condition(
                 "native_runtime_is_source_bound",
@@ -319,6 +388,34 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         }
 
     @staticmethod
+    def _oauth_start_evidence(
+        provider_id: str,
+        auth_url: str,
+        session_id: str,
+    ) -> dict[str, Any]:
+        parsed_url = urlparse(auth_url)
+        return_to = parse_qs(parsed_url.query).get("return_to", [""])[0]
+        parsed_callback = urlparse(return_to)
+        return {
+            "provider": provider_id,
+            "transport": "resolved",
+            "authorizationOrigin": (
+                f"{parsed_url.scheme}://{parsed_url.netloc}"
+                if parsed_url.scheme and parsed_url.netloc
+                else ""
+            ),
+            "hasAuthorizationUrl": parsed_url.scheme in {"http", "https"},
+            "hasLoopbackSession": session_id.startswith("lp-"),
+            "hasLoopbackCallback": (
+                parsed_callback.scheme == "http"
+                and parsed_callback.hostname in {"127.0.0.1", "localhost", "::1"}
+                and parse_qs(parsed_callback.query).get("session_id") == [session_id]
+            ),
+            "callbackUrl": return_to,
+            "sessionId": session_id,
+        }
+
+    @staticmethod
     def _start_oauth(
         session: TauriSession,
         provider_id: str,
@@ -345,21 +442,164 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             raise GateError(
                 f"{provider_id} OAuth start returned invalid status JSON"
             ) from error
-        auth_url = str(status.get("auth_url") or "")
-        session_id = str(status.get("session_id") or "")
-        parsed_url = urlparse(auth_url)
+        return DesktopOAuthNativeGate._oauth_start_evidence(
+            provider_id,
+            str(status.get("auth_url") or ""),
+            str(status.get("session_id") or ""),
+        )
+
+    @staticmethod
+    def _start_oauth_via_product(
+        session: TauriSession,
+        provider_id: str,
+    ) -> dict[str, Any]:
+        start = DesktopOAuthNativeGate._mapping(
+            call_async_harness(
+                session,
+                "beginOAuthLogin",
+                {"providerId": provider_id},
+                namespace="stationAccess",
+                script_timeout=15,
+            ),
+            "Desktop product OAuth start",
+        )
+        return DesktopOAuthNativeGate._oauth_start_evidence(
+            provider_id,
+            str(start.get("authUrl") or ""),
+            str(start.get("sessionId") or ""),
+        )
+
+    @staticmethod
+    def _build_callback_url(
+        callback_url: str,
+        *,
+        provider_id: str,
+        provider_user_id: str,
+        email: str,
+        timestamp: str,
+    ) -> str:
+        parsed = urlparse(callback_url)
+        query = {
+            key: values[-1]
+            for key, values in parse_qs(parsed.query, keep_blank_values=True).items()
+            if values
+        }
+        query.update(
+            {
+                "provider": provider_id,
+                "provider_user_id": provider_user_id,
+                "username": "oauthacceptance",
+                "display_name": "OAuth Acceptance",
+                "email": email,
+                "ts": timestamp,
+            }
+        )
+        return urlunparse(parsed._replace(query=urlencode(query)))
+
+    @classmethod
+    def _send_callback(
+        cls,
+        callback_url: str,
+        *,
+        provider_id: str,
+        provider_user_id: str,
+        email: str,
+    ) -> dict[str, Any]:
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
+            "+00:00",
+            "Z",
+        )
+        target = cls._build_callback_url(
+            callback_url,
+            provider_id=provider_id,
+            provider_user_id=provider_user_id,
+            email=email,
+            timestamp=timestamp,
+        )
+        try:
+            opener = build_opener(ProxyHandler({}))
+            with opener.open(target, timeout=15) as response:
+                response.read()
+                status_code = int(response.status)
+        except OSError as error:
+            raise GateError(f"OAuth loopback callback failed: {error}") from error
         return {
             "provider": provider_id,
-            "transport": "resolved",
-            "authorizationOrigin": (
-                f"{parsed_url.scheme}://{parsed_url.netloc}"
-                if parsed_url.scheme and parsed_url.netloc
-                else ""
-            ),
-            "hasAuthorizationUrl": parsed_url.scheme in {"http", "https"},
-            "hasLoopbackSession": session_id.startswith("lp-"),
-            "sessionId": session_id,
+            "statusCode": status_code,
         }
+
+    @staticmethod
+    def _invoke_status(
+        session: TauriSession,
+        script: str,
+        *args: str,
+        label: str,
+    ) -> dict[str, Any]:
+        raw = session.execute_async_script(script, *args)
+        if not isinstance(raw, Mapping) or raw.get("transport") != "resolved":
+            raise GateError(f"{label} transport failed: {json.dumps(raw, sort_keys=True)}")
+        result = raw.get("value")
+        if not isinstance(result, Mapping) or result.get("ok") is not True:
+            raise GateError(f"{label} failed: {json.dumps(result, sort_keys=True)}")
+        data = result.get("data")
+        status_raw = data.get("status") if isinstance(data, Mapping) else None
+        if not isinstance(status_raw, str):
+            raise GateError(f"{label} omitted status")
+        try:
+            return DesktopOAuthNativeGate._mapping(
+                json.loads(status_raw),
+                f"{label} status",
+            )
+        except json.JSONDecodeError as error:
+            raise GateError(f"{label} returned invalid status JSON") from error
+
+    @classmethod
+    def _poll_oauth(
+        cls,
+        session: TauriSession,
+        session_id: str,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + 20
+        latest: dict[str, Any] = {}
+        while time.monotonic() < deadline:
+            latest = cls._invoke_status(
+                session,
+                OAUTH_POLL_SCRIPT,
+                session_id,
+                label="OAuth callback poll",
+            )
+            if latest.get("completed") is True:
+                result = {
+                    "completed": True,
+                    "status": str(latest.get("status") or ""),
+                    "error": str(latest.get("error") or ""),
+                }
+                if result["status"] != "completed":
+                    raise GateError(
+                        "OAuth callback failed: "
+                        f"{json.dumps(result, sort_keys=True)}"
+                    )
+                return result
+            time.sleep(0.1)
+        raise GateError(
+            f"OAuth callback did not complete: {json.dumps(latest, sort_keys=True)}"
+        )
+
+    @staticmethod
+    def _complete_oauth_via_product(
+        session: TauriSession,
+        provider_id: str,
+    ) -> dict[str, Any]:
+        return DesktopOAuthNativeGate._mapping(
+            call_async_harness(
+                session,
+                "completeOAuthLogin",
+                {"providerId": provider_id},
+                namespace="stationAccess",
+                script_timeout=45,
+            ),
+            "Desktop completed OAuth identity",
+        )
 
     @staticmethod
     def _cancel_oauth(

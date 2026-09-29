@@ -219,6 +219,23 @@ fn resolve_loopback_connector_owner(actor_ptid: Option<&str>) -> CmdResult<Optio
     Ok(Some(actor_ptid.to_string()))
 }
 
+fn validate_oauth_bridge_response(bridge: &OAuthBridgeResponse) -> CmdResult<&str> {
+    if bridge.session_id.trim().is_empty() {
+        return Err(internal_error(
+            "OAuth bridge response missing Station session",
+        ));
+    }
+    if bridge.access_token.trim().is_empty() {
+        return Err(internal_error("OAuth bridge response missing access token"));
+    }
+    bridge
+        .actor_ref
+        .as_ref()
+        .map(|actor| actor.ptid.trim())
+        .filter(|ptid| ptid.starts_with("ptid:"))
+        .ok_or_else(|| internal_error("OAuth bridge response missing canonical actor PTID"))
+}
+
 fn save_oauth_callback(
     input: OAuthCallbackInput,
     ts: Option<String>,
@@ -336,49 +353,35 @@ fn save_oauth_callback(
         sig: sig.clone().unwrap_or_default(),
     };
     if connector_owner_ptid.is_none() {
-        match station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
-            "/actor/oauth-bridge",
-            &bridge_req,
-        ) {
-            Ok(bridge) => {
-                if !bridge.access_token.is_empty() {
-                    let actor_ptid = bridge
-                        .actor_ref
-                        .as_ref()
-                        .map(|actor| actor.ptid.trim())
-                        .filter(|ptid| ptid.starts_with("ptid:"))
-                        .ok_or_else(|| {
-                            internal_error("OAuth bridge response missing canonical actor PTID")
-                        })?;
-                    let account_id = auth_identity::upsert_oauth(
-                        actor_ptid,
-                        provider_id,
-                        provider_user_id.as_str(),
-                        user_name.as_str(),
-                        input.created_at.as_deref(),
-                        Some(email.as_str()),
-                        Some(avatar_url.as_str()),
-                        Some(profile_url.as_str()),
-                    )
-                    .map_err(internal_error)?;
-                    session_vault::persist_raw_session_for_account(
-                        &account_id,
-                        actor_ptid,
-                        &bridge.access_token,
-                        SessionSource::OauthBridge,
-                    )
-                    .map_err(|error| internal_error(&error.to_string()))?;
-                    let mut connections = read_connections()?;
-                    if let Some(connection) = connections.get_mut(provider_id) {
-                        connection.owner_ptid = actor_ptid.to_string();
-                    }
-                    write_connections(&connections)?;
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "station oauth-bridge call failed, continuing without station session");
-            }
+        let bridge = station_client::post_peers_proto_no_auth::<
+            OAuthBridgeRequest,
+            OAuthBridgeResponse,
+        >("/actor/oauth-bridge", &bridge_req)
+        .map_err(|error| error.into_app_result("OAuth login failed to create Station session"))?;
+        let actor_ptid = validate_oauth_bridge_response(&bridge)?;
+        let account_id = auth_identity::upsert_oauth(
+            actor_ptid,
+            provider_id,
+            provider_user_id.as_str(),
+            user_name.as_str(),
+            input.created_at.as_deref(),
+            Some(email.as_str()),
+            Some(avatar_url.as_str()),
+            Some(profile_url.as_str()),
+        )
+        .map_err(internal_error)?;
+        session_vault::persist_raw_session_for_account(
+            &account_id,
+            actor_ptid,
+            &bridge.access_token,
+            SessionSource::OauthBridge,
+        )
+        .map_err(|error| internal_error(&error.to_string()))?;
+        let mut connections = read_connections()?;
+        if let Some(connection) = connections.get_mut(provider_id) {
+            connection.owner_ptid = actor_ptid.to_string();
         }
+        write_connections(&connections)?;
     }
 
     advance_connector_projection_epoch();
@@ -2013,6 +2016,68 @@ mod tests {
         assert!(
             resolve_loopback_connector_owner(Some("not-a-ptid")).is_err(),
             "an invalid authenticated owner must fail closed",
+        );
+    }
+
+    #[test]
+    fn loopback_login_rejects_incomplete_station_bridge_response_bits_ut() {
+        let actor_ref = crate::model::actor::ActorRef {
+            ptid: "ptid:person:oauth-user".to_string(),
+            ..Default::default()
+        };
+        let cases = [
+            (
+                OAuthBridgeResponse {
+                    access_token: "access-token".to_string(),
+                    actor_ref: Some(actor_ref.clone()),
+                    ..Default::default()
+                },
+                "OAuth bridge response missing Station session",
+            ),
+            (
+                OAuthBridgeResponse {
+                    session_id: "session-id".to_string(),
+                    actor_ref: Some(actor_ref),
+                    ..Default::default()
+                },
+                "OAuth bridge response missing access token",
+            ),
+            (
+                OAuthBridgeResponse {
+                    session_id: "session-id".to_string(),
+                    access_token: "access-token".to_string(),
+                    ..Default::default()
+                },
+                "OAuth bridge response missing canonical actor PTID",
+            ),
+        ];
+
+        for (bridge, expected_message) in cases {
+            let error = validate_oauth_bridge_response(&bridge)
+                .expect_err("an incomplete bridge response must fail");
+            assert_eq!(
+                error.error.as_ref().map(|error| error.message.as_str()),
+                Some(expected_message),
+            );
+        }
+    }
+
+    #[test]
+    fn loopback_login_accepts_complete_station_bridge_response_bits_ut() {
+        let bridge = OAuthBridgeResponse {
+            session_id: "session-id".to_string(),
+            access_token: "access-token".to_string(),
+            actor_ref: Some(crate::model::actor::ActorRef {
+                ptid: "ptid:person:oauth-user".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            validate_oauth_bridge_response(&bridge)
+                .expect("a complete Station bridge response must be accepted"),
+            "ptid:person:oauth-user",
         );
     }
 

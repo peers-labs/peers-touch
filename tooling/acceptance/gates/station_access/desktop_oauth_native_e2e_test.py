@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from urllib.parse import parse_qs, urlparse
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
@@ -47,7 +48,11 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
     def test_accepts_pre_authentication_loopback_start(self) -> None:
         status = json.dumps(
             {
-                "auth_url": "https://oauth.example/start?return_to=loopback",
+                "auth_url": (
+                    "https://oauth.example/start?"
+                    "return_to=http%3A%2F%2F127.0.0.1%3A49152%2Fcallback"
+                    "%3Fsession_id%3Dlp-123"
+                ),
                 "session_id": "lp-123",
             }
         )
@@ -66,8 +71,30 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(result["provider"], "github")
         self.assertTrue(result["hasAuthorizationUrl"])
         self.assertTrue(result["hasLoopbackSession"])
+        self.assertTrue(result["hasLoopbackCallback"])
+        self.assertEqual(
+            result["callbackUrl"],
+            "http://127.0.0.1:49152/callback?session_id=lp-123",
+        )
         self.assertIn("oauth2_start_loopback", session.script)
         self.assertEqual(session.provider_id, "github")
+
+    def test_builds_deterministic_loopback_callback(self) -> None:
+        callback_url = DesktopOAuthNativeGate._build_callback_url(
+            "http://127.0.0.1:49152/callback?session_id=lp-123",
+            provider_id="github",
+            provider_user_id="fixture-user",
+            email="fixture@test.invalid",
+            timestamp="2026-09-29T15:30:00Z",
+        )
+
+        query = parse_qs(urlparse(callback_url).query)
+        self.assertEqual(query["session_id"], ["lp-123"])
+        self.assertEqual(query["provider"], ["github"])
+        self.assertEqual(query["provider_user_id"], ["fixture-user"])
+        self.assertEqual(query["email"], ["fixture@test.invalid"])
+        self.assertEqual(query["ts"], ["2026-09-29T15:30:00Z"])
+        self.assertNotIn("sig", query)
 
     def test_rejects_unauthorized_pre_authentication_start(self) -> None:
         session = _FakeSession(

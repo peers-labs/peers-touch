@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -151,7 +152,10 @@ func findOrRegisterOAuthActor(ctx context.Context, identity *coreauth.OAuth2Iden
 		return nil, fmt.Errorf("ensure unique username: %w", err)
 	}
 
-	password := generateRandomHex(32)
+	password, err := generateOAuthPassword()
+	if err != nil {
+		return nil, err
+	}
 
 	email := identity.Email
 	if email == "" {
@@ -209,8 +213,10 @@ func ensureUniqueUsername(ctx context.Context, base string) (string, error) {
 	return "", err
 }
 
-func generateRandomHex(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+func generateOAuthPassword() (string, error) {
+	random := make([]byte, 12)
+	if _, err := rand.Read(random); err != nil {
+		return "", fmt.Errorf("generate OAuth account password: %w", err)
+	}
+	return "A1!" + base64.RawURLEncoding.EncodeToString(random), nil
 }

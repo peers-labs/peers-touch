@@ -20,7 +20,7 @@ import (
 // Verifies HMAC signature, performs find-or-register, issues JWT + session.
 func OAuthLogin(c context.Context, ctx *app.RequestContext) {
 	var req model.OAuthBridgeRequest
-	if err := ctx.Bind(&req); err != nil {
+	if err := bindProtoOrJSON(ctx, &req); err != nil {
 		log.Warnf(c, "[OAuth] bind: %v", err)
 		ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return

@@ -16,10 +16,16 @@
   "journeyId": "station-access-desktop-oauth-preauth",
   "runtimeClass": "native-desktop",
   "writeSet": [
+    "apps/station/frame/touch/actor_handler.go",
+    "apps/station/frame/touch/actor_handler_test.go",
+    "apps/station/frame/touch/oauth_handler.go",
+    "apps/station/frame/touch/auth/oauth_bridge.go",
+    "apps/station/frame/touch/auth/oauth_bridge_test.go",
     "apps/desktop/src-tauri/src/application/oauth2/mod.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
     "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
     "apps/desktop/src-tauri/src/main.rs",
+    "apps/desktop/src/acceptance/station_access/harness.ts",
     "apps/desktop/src/pages/login",
     "apps/desktop/src/services/desktop_api.ts",
     "apps/desktop/src/store/oauth2.ts",
@@ -65,9 +71,19 @@
   },
   "checks": [
     {
+      "id": "station-oauth-route-regression",
+      "command": "go test ./apps/station/frame/touch ./apps/station/frame/touch/auth -run 'Test(GetActorHandlersRegistersOAuthBridge|OAuthBridgeRequestAcceptsProtobuf|GenerateOAuthPasswordPassesActorValidation)' -count=1",
+      "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
       "id": "desktop-oauth-rust-regression",
       "command": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop loopback",
       "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "desktop-oauth-gate-regression",
+      "command": "python3 -m unittest tooling.acceptance.gates.station_access.desktop_oauth_native_e2e_test",
+      "verificationClass": "STRUCTURAL_CHECK"
     },
     {
       "id": "station-access-domain-structure",
@@ -117,6 +133,9 @@
   ],
   "doneWhen": [
     "Unauthenticated native Desktop GitHub and Google starts return authorization URLs and loopback session IDs",
+    "Station exposes the existing signed OAuth bridge as POST /actor/oauth-bridge",
+    "OAuth callback success persists a non-empty Station session and restores an authenticated Desktop identity",
+    "Station bridge errors produce a failed callback state rather than a false completed state",
     "Authenticated connector starts retain canonical actor ownership at the application boundary",
     "OAuth opening, waiting, cancellation, initialization, success, and failure/retry remain inside the original fixed-size provider action",
     "The auth card and provider action keep identical geometry across OAuth states with no detached result panel",
@@ -125,12 +144,13 @@
   ],
   "failureBehavior": [
     "Do not restore the authenticated-session guard on login bootstrap",
+    "Do not report a successful OAuth callback before Station session creation succeeds",
     "Do not treat the browser mock layout Gate as OAuth functional proof",
     "Do not weaken connector owner validation or add a fallback login path",
     "Do not resize the auth card or provider action when OAuth state changes",
     "Do not reintroduce a detached OAuth progress or recovery panel"
   ],
-  "updatedAt": "2026-09-29T02:30:00.000Z",
+  "updatedAt": "2026-09-29T15:31:00.000Z",
   "durableEvidence": []
 }
 ```
@@ -145,5 +165,8 @@
   signal instead of trusting only ports and HTTP probes.
 - Product amendment: OAuth progress and recovery move into the fixed-size
   provider action; the canonical Desktop prototype must match.
-- Next boundary: implement the inline state model, prove zero layout shift in
-  product and prototype, refresh exact-source Acceptance, then close.
+- Runtime defect amendment: register the existing Station OAuth bridge route,
+  propagate bridge failures through the Desktop loopback state, and prove the
+  callback restores an authenticated identity.
+- Next boundary: implement the Station/Desktop fixes, strengthen native
+  callback proof, refresh exact-source Acceptance, then close.
