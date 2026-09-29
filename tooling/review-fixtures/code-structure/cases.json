@@ -1,0 +1,149 @@
+[
+  {
+    "caseId": "duplicate-domain-policy",
+    "source": "tooling/review-fixtures/code-structure/blocking/duplicate-domain-policy.ts",
+    "category": "blocking",
+    "expectedVerdict": "REFACTOR_REQUIRED",
+    "expectedFindings": [
+      {
+        "primaryRuleId": "STRUCT-02",
+        "relatedRuleIds": ["STRUCT-01", "STRUCT-05"],
+        "blocking": true
+      }
+    ],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-01", "STRUCT-02", "STRUCT-05"],
+    "rationale": "The same role policy is independently encoded by UI and persistence-facing branches, creating multiple truth owners and a multi-file change radius."
+  },
+  {
+    "caseId": "mixed-owner-handler",
+    "source": "tooling/review-fixtures/code-structure/blocking/mixed-owner-handler.ts",
+    "category": "blocking",
+    "expectedVerdict": "REFACTOR_REQUIRED",
+    "expectedFindings": [
+      {
+        "primaryRuleId": "STRUCT-02",
+        "relatedRuleIds": ["STRUCT-03"],
+        "blocking": true
+      },
+      {
+        "primaryRuleId": "STRUCT-06",
+        "relatedRuleIds": ["STRUCT-09"],
+        "blocking": true
+      }
+    ],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-02", "STRUCT-03", "STRUCT-06", "STRUCT-09"],
+    "rationale": "One transport handler owns authorization, persistence, cache mutation, event publication, and error suppression, so partial failure and tests cannot be bounded."
+  },
+  {
+    "caseId": "wrong-layer-dependency",
+    "source": "tooling/review-fixtures/code-structure/blocking/wrong-layer-dependency.ts",
+    "category": "blocking",
+    "expectedVerdict": "REFACTOR_REQUIRED",
+    "expectedFindings": [
+      {
+        "primaryRuleId": "STRUCT-04",
+        "relatedRuleIds": [],
+        "blocking": true
+      }
+    ],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-04"],
+    "rationale": "A domain policy imports a concrete HTTP adapter, reversing the required dependency direction and coupling policy to transport."
+  },
+  {
+    "caseId": "half-cutover",
+    "source": "tooling/review-fixtures/code-structure/blocking/half-cutover.ts",
+    "category": "blocking",
+    "expectedVerdict": "REFACTOR_REQUIRED",
+    "expectedFindings": [
+      {
+        "primaryRuleId": "STRUCT-08",
+        "relatedRuleIds": ["STRUCT-06"],
+        "blocking": true
+      }
+    ],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-06", "STRUCT-08"],
+    "rationale": "The replacement keeps an unbounded legacy dual write and suppresses divergence, leaving two live sources without rollback or removal evidence."
+  },
+  {
+    "caseId": "cohesive-service",
+    "source": "tooling/review-fixtures/code-structure/passing/cohesive-service.ts",
+    "category": "passing",
+    "expectedVerdict": "PASS",
+    "expectedFindings": [],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-01", "STRUCT-02", "STRUCT-03", "STRUCT-04", "STRUCT-05", "STRUCT-06", "STRUCT-08", "STRUCT-09"],
+    "rationale": "The application service delegates policy and an atomic persistence-plus-durable-event contract to explicit owners without exposing a partial-success state."
+  },
+  {
+    "caseId": "simple-rule",
+    "source": "tooling/review-fixtures/code-structure/false-positive/simple-rule.ts",
+    "category": "false-positive",
+    "expectedVerdict": "PASS",
+    "expectedFindings": [],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-07"],
+    "rationale": "A small pure rule needs no strategy, service, factory, or interface; adding layers would increase complexity without isolating variability."
+  },
+  {
+    "caseId": "composition-root-fanout",
+    "source": "tooling/review-fixtures/code-structure/false-positive/composition-root-fanout.ts",
+    "category": "false-positive",
+    "expectedVerdict": "PASS",
+    "expectedFindings": [],
+    "expectedSignalCodes": ["STRUCT-SIGNAL-IMPORT-FANOUT"],
+    "reviewedRuleIds": ["STRUCT-03", "STRUCT-04", "STRUCT-07"],
+    "rationale": "A composition root may legitimately import many owners; fan-out is an investigation signal and cannot block when dependency direction remains correct."
+  },
+  {
+    "caseId": "optional-local-split",
+    "source": "tooling/review-fixtures/code-structure/passing/optional-local-split.ts",
+    "category": "passing",
+    "expectedVerdict": "PASS_WITH_SUGGESTIONS",
+    "expectedFindings": [
+      {
+        "primaryRuleId": "STRUCT-03",
+        "relatedRuleIds": [],
+        "blocking": false
+      }
+    ],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-03", "STRUCT-07"],
+    "rationale": "Independent member and conversation presentation helpers can move behind their own domain modules, improving navigation without changing behavior or ownership."
+  },
+  {
+    "caseId": "hidden-lifecycle",
+    "source": "tooling/review-fixtures/code-structure/blocking/hidden-lifecycle.ts",
+    "category": "blocking",
+    "expectedVerdict": "REFACTOR_REQUIRED",
+    "expectedFindings": [
+      {
+        "primaryRuleId": "STRUCT-06",
+        "relatedRuleIds": [],
+        "blocking": true
+      }
+    ],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-06"],
+    "rationale": "A getter starts hidden background I/O, suppresses refresh failure, and provides no cancellation or shutdown owner."
+  },
+  {
+    "caseId": "untestable-boundary",
+    "source": "tooling/review-fixtures/code-structure/blocking/untestable-boundary.ts",
+    "category": "blocking",
+    "expectedVerdict": "REFACTOR_REQUIRED",
+    "expectedFindings": [
+      {
+        "primaryRuleId": "STRUCT-09",
+        "relatedRuleIds": ["STRUCT-06"],
+        "blocking": true
+      }
+    ],
+    "expectedSignalCodes": [],
+    "reviewedRuleIds": ["STRUCT-06", "STRUCT-09"],
+    "rationale": "The behavior reads global state and real time and performs an uncontrolled network effect, so failures cannot be exercised through a stable boundary."
+  }
+]

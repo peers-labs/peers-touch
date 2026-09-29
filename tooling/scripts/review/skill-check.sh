@@ -5,6 +5,8 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 skill_file="tooling/skills/pt-github-review/SKILL.md"
+code_structure_fixture_validator="tooling/skills/pt-code-structure-review/scripts/validate-fixtures.mjs"
+code_structure_decision_test="tooling/scripts/review/code_structure_decision_test.py"
 pr_skill_file="tooling/skills/pt-github-pr/SKILL.md"
 freshness_file="tooling/skills/pt-github-review/FRESHNESS.md"
 fixtures_dir="tooling/review-fixtures"
@@ -74,6 +76,8 @@ require_file() {
 }
 
 require_file "$skill_file"
+require_file "$code_structure_fixture_validator"
+require_file "$code_structure_decision_test"
 require_file "$pr_skill_file"
 require_file "$freshness_file"
 require_file "$pr_template"
@@ -1139,6 +1143,28 @@ else
     fi
   done < <(find "$fixtures_dir" -path '*/growth.yml' | sort)
 fi
+
+if ! node "$code_structure_fixture_validator" \
+  >/tmp/pt-code-structure-fixtures.$$ 2>&1; then
+  cat /tmp/pt-code-structure-fixtures.$$
+  fail "$code_structure_fixture_validator failed"
+fi
+rm -f /tmp/pt-code-structure-fixtures.$$
+
+if ! node --test \
+  tooling/skills/pt-code-structure-review/scripts/structure-signals.test.mjs \
+  >/tmp/pt-code-structure-signals.$$ 2>&1; then
+  cat /tmp/pt-code-structure-signals.$$
+  fail "code structure signal tests failed"
+fi
+rm -f /tmp/pt-code-structure-signals.$$
+
+if ! python3 "$code_structure_decision_test" \
+  >/tmp/pt-code-structure-decision.$$ 2>&1; then
+  cat /tmp/pt-code-structure-decision.$$
+  fail "code structure decision tests failed"
+fi
+rm -f /tmp/pt-code-structure-decision.$$
 
 invalid_range="__pt_missing_review_range__"
 if tooling/scripts/review/route-change.sh --range "$invalid_range" >/tmp/pt-route-invalid.$$ 2>&1; then
