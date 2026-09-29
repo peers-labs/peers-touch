@@ -1,6 +1,6 @@
 # Durable OAuth Login Broker
 
-> **Status**: active
+> **Status**: completed
 > **Branch**: work/station-access-lifecycle
 > **Workspace ID**: 95620934d3348d95
 > **Initial HEAD**: 45e3751e72648a4679082d5b4370268faf3e8881
@@ -20,7 +20,7 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "OLB-20260930",
-  "status": "active",
+  "status": "completed",
   "binding": {
     "branch": "work/station-access-lifecycle",
     "workspaceId": "95620934d3348d95",
@@ -139,7 +139,7 @@
       "dependsOn": [
         "OLB-03-KEY-ROTATION"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     }
   ],
