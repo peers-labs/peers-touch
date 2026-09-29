@@ -304,6 +304,7 @@ func (e *Executor) Execute(
 	}
 
 	scanErr := scanner.Err()
+	_ = terminateProcessGroup(process.Process)
 	waitErr := process.Wait()
 	close(processDone)
 	<-supervisorDone
@@ -561,8 +562,11 @@ func superviseProcess(
 		}
 		timer := time.NewTimer(grace)
 		defer timer.Stop()
-		<-timer.C
-		_ = killProcessGroup(process)
+		select {
+		case <-processDone:
+		case <-timer.C:
+			_ = killProcessGroup(process)
+		}
 	}()
 	return done
 }
