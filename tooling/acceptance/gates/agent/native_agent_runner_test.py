@@ -264,6 +264,45 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
         self.assertIn("thinkingMode: 'auto'", preparation)
         self.assertNotIn("thinkingMode: 'disabled'", preparation)
 
+    def test_cli_provider_failure_fixture_cleans_all_stale_residue_first(
+        self,
+    ) -> None:
+        failure = self.harness_source.split(
+            "async function executeCliProviderFailureJourney",
+            1,
+        )[1].split(
+            "async function restoreCliProviderPrimaryJourney",
+            1,
+        )[0]
+        self.assertLess(
+            failure.index("cleanupCliProviderPrimaryResidue("),
+            failure.index("api.getProvider(CLI_FAILURE_PROVIDER_ID)"),
+        )
+        self.assertIn("sampleId,\n    priorSelection,", failure)
+        self.assertIn(
+            "agent.acceptance.cliFailureFixtureCleanupFailed",
+            failure,
+        )
+
+        cleanup = self.harness_source.split(
+            "async function cleanupCliProviderPrimaryResidue",
+            1,
+        )[1].split(
+            "export function installAcceptanceHarness",
+            1,
+        )[0]
+        self.assertIn("const prefix = 'cli-primary-'", cleanup)
+        self.assertIn("candidate.name !== preservedAgentName", cleanup)
+        self.assertIn(
+            "model.id.startsWith('acceptance-missing-')",
+            cleanup,
+        )
+        self.assertIn(
+            "if (Number(provider.version ?? 0) > 0)",
+            cleanup,
+        )
+        self.assertNotIn("ownsFailureModel", cleanup)
+
     def test_cli_provider_gate_and_reviewed_matrix_are_identical(self) -> None:
         self.assertEqual(self.gate["argv"], self.matrix["command_argv"])
         self.assertEqual(self.gate["environment"], self.matrix["environment"])
