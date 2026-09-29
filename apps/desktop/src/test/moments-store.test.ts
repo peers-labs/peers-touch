@@ -124,15 +124,20 @@ function audience(): Audience {
   return create(AudienceSchema, { kind: 1 /* PUBLIC */ }) as Audience;
 }
 
-function installEventWindowStub(): void {
+function installEventWindowStub(): Array<() => void> {
   const target = new EventTarget();
+  const intervalCallbacks: Array<() => void> = [];
   vi.stubGlobal('window', {
     addEventListener: target.addEventListener.bind(target),
     removeEventListener: target.removeEventListener.bind(target),
     dispatchEvent: target.dispatchEvent.bind(target),
-    setInterval: vi.fn(() => 1),
+    setInterval: vi.fn((callback: () => void) => {
+      intervalCallbacks.push(callback);
+      return intervalCallbacks.length;
+    }),
     clearInterval: vi.fn(),
   });
+  return intervalCallbacks;
 }
 
 function dataOk(status: unknown) {
@@ -2082,6 +2087,89 @@ describe('station moderation bridge: moments projection signal', () => {
 });
 
 describe('moments runtime: realtime recovery', () => {
+  it('retries a failed native bootstrap on the periodic reconciliation tick', async () => {
+    const intervalCallbacks = installEventWindowStub();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    useSessionStore.setState({
+      authenticated: true,
+      currentUser: {
+        actorPtid: 'ptid:viewer',
+        name: 'Viewer',
+        email: '',
+        loginMethod: 'password',
+      },
+      restoring: false,
+      sessionEpoch: 9,
+    });
+    enqueue('social_private_moments_bootstrap', {
+      ok: false,
+      error: {
+        code: 'PRIVATE_NATIVE_COMMAND_FAILED',
+        message: 'secure content supervisor is not active',
+      },
+    });
+
+    momentsRuntime.install();
+
+    await vi.waitFor(() => {
+      expect(invokeMock.mock.calls.filter(
+        ([command]) => command === 'social_private_moments_bootstrap',
+      )).toHaveLength(1);
+    });
+    await vi.waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith(
+        'frontend_log',
+        {
+          input: expect.objectContaining({
+            message: 'moments projection bootstrap failed',
+          }),
+        },
+      );
+    });
+
+    enqueue('social_private_moments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '2',
+      projections: [],
+    }));
+    enqueue('social_private_comments_bootstrap', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '2',
+      drafts: [],
+      comments: [],
+    }));
+    enqueue('actor_get_my_profile', dataOk({
+      id: 'viewer',
+      displayName: 'Viewer',
+      username: 'viewer',
+      avatar: '',
+    }));
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: { posts: [], nextCursor: '', hasMore: false },
+        publicTimeline: { posts: [], nextCursor: '', hasMore: false },
+      }),
+    );
+    enqueue('social_circle_list_mine', bytesOk(ListMyCirclesResponseSchema, { circles: [] }));
+    enqueue('social_private_moments_reconcile', statusOk({
+      actor_ptid: 'ptid:viewer',
+      device_id: 'device-1',
+      session_generation: '2',
+      projections: [],
+    }));
+
+    intervalCallbacks[0]?.();
+
+    await vi.waitFor(() => {
+      expect(usePrivateMomentsStore.getState().scope.nativeSessionGeneration).toBe('2');
+      expect(invokeMock.mock.calls.filter(
+        ([command]) => command === 'social_private_moments_bootstrap',
+      )).toHaveLength(2);
+    });
+  });
+
   it('refreshes the Moments projection after realtime reconnect', async () => {
     installEventWindowStub();
     useSessionStore.setState({
