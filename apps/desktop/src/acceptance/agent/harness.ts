@@ -31429,6 +31429,15 @@ async function executeCliProviderFailureJourney(
   sampleId: string,
 ): Promise<Record<string, unknown>> {
   const modelId = `acceptance-missing-${sampleId}`;
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const residueCleanup = await cleanupCliProviderPrimaryResidue(
+    sampleId,
+    priorSelection,
+  );
+  if (residueCleanup.status !== 'clean') {
+    throw new Error('agent.acceptance.cliFailureFixtureCleanupFailed');
+  }
   const providerBefore = await api.getProvider(CLI_FAILURE_PROVIDER_ID);
   if (
     providerBefore.enabled
@@ -31438,8 +31447,6 @@ async function executeCliProviderFailureJourney(
     throw new Error('agent.acceptance.cliFailureFixtureConflict');
   }
 
-  const agentStore = useAgentStore.getState();
-  const priorSelection = agentStore.selectedAgent;
   const priorSurface = agentStore.getAgentSurface(priorSelection);
   let agentId = '';
   let conversationId = '';
@@ -31793,14 +31800,17 @@ async function cleanupCliProviderPrimaryJourney(input: {
 
 async function cleanupCliProviderPrimaryResidue(
   sampleId: string,
+  preservedAgentName = '',
 ): Promise<Record<string, unknown>> {
   const failures: string[] = [];
-  const failureModelId = `acceptance-missing-${sampleId}`;
   let failureProviderRemoved = false;
   await useAgentStore.getState().loadAgents();
-  const prefix = `cli-primary-${sampleId}-`;
+  const prefix = 'cli-primary-';
   const targets = useAgentStore.getState().agents.filter(
-    (candidate) => candidate.name.startsWith(prefix),
+    (candidate) => (
+      candidate.name.startsWith(prefix)
+      && candidate.name !== preservedAgentName
+    ),
   );
   for (const agent of targets) {
     try {
@@ -31821,20 +31831,25 @@ async function cleanupCliProviderPrimaryResidue(
   }
   await useAgentStore.getState().loadAgents();
   const remaining = useAgentStore.getState().agents.filter(
-    (candidate) => candidate.name.startsWith(prefix),
+    (candidate) => (
+      candidate.name.startsWith(prefix)
+      && candidate.name !== preservedAgentName
+    ),
   );
   try {
     const provider = await api.getProvider(CLI_FAILURE_PROVIDER_ID);
-    const ownsFailureModel = provider.models.some(
-      (model) => model.id === failureModelId,
+    const failureModels = provider.models.filter(
+      (model) => model.id.startsWith('acceptance-missing-'),
     );
-    if (Number(provider.version ?? 0) > 0 && ownsFailureModel) {
+    for (const model of failureModels) {
       await api.deleteModel(
         CLI_FAILURE_PROVIDER_ID,
-        failureModelId,
+        model.id,
       ).catch((error: unknown) => {
         if (!isFoundationResourceNotFound(error)) throw error;
       });
+    }
+    if (Number(provider.version ?? 0) > 0) {
       await api.deleteProvider(CLI_FAILURE_PROVIDER_ID);
     }
     failureProviderRemoved = true;
@@ -31855,6 +31870,8 @@ async function cleanupCliProviderPrimaryResidue(
     removedCount: targets.length - remaining.length,
     remainingCount: remaining.length,
     failureProviderRemoved,
+    sampleId,
+    preservedAgentName,
     failures,
   };
 }
