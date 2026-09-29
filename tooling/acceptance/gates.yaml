@@ -1,6 +1,45 @@
 {
   "version": 1,
   "gates": {
+    "oauth-login-broker-durable-login": {
+      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope durable-login",
+      "timeout_seconds": 600,
+      "environment": "oauth2-client-local-service",
+      "provisioner": "oauth2-client-local-service",
+      "tier": "env-evidence",
+      "description": "Prove encrypted cross-instance OAuth completion, replay rejection, PKCE, redirect confinement, GitHub App auth, and bounded CAS retry from exact source."
+    },
+    "oauth-login-broker-refresh-idempotency": {
+      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope refresh-idempotency",
+      "timeout_seconds": 600,
+      "environment": "oauth2-client-local-service",
+      "provisioner": "oauth2-client-local-service",
+      "tier": "env-evidence",
+      "description": "Prove provider refresh normalization, omitted refresh-token retention, and duplicate-operation convergence from exact source."
+    },
+    "oauth-login-broker-key-rotation": {
+      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope key-rotation",
+      "timeout_seconds": 600,
+      "environment": "oauth2-client-local-service",
+      "provisioner": "oauth2-client-local-service",
+      "tier": "env-evidence",
+      "description": "Prove full-prefix authenticated record rotation, unknown-key failure, and second-run no-op behavior from exact source."
+    },
+    "oauth-login-broker-operator": {
+      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope operator",
+      "timeout_seconds": 900,
+      "environment": "oauth2-client-local-browser",
+      "provisioner": "oauth2-client-local-browser",
+      "tier": "env-evidence",
+      "description": "Prove authenticated token-free operator HTML and JSON plus the local start, callback, and administration browser journey from exact source."
+    },
+    "oauth-login-broker-contract": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain oauth-login-broker --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the OAuth Login Broker managed domain against current durable-login, refresh, rotation, and operator evidence."
+    },
     "architecture-module-governance": {
       "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/workflow-kernel.test.mjs tooling/scripts/local-dev/workflow-host-adapters.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && tooling/scripts/review/knowledge-match.sh --changed-file tooling/scripts/plan/plan-package.mjs --strict && python3 -m unittest tooling/scripts/agent-integration-audit-test.py",
       "timeout_seconds": 240,

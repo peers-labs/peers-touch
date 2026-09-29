@@ -56,6 +56,14 @@
       "capabilities": "tooling/acceptance/capabilities/agent.yaml",
       "coverage": "managed_domain",
       "notes": "Modern Chat Agent domain. Station is the sole runtime/stream authority. Covers ContextLedger, ToolCall state machine, attachments, diagnostics, budgets, and Desktop surface."
+    },
+    {
+      "id": "oauth-login-broker",
+      "status": "active",
+      "profile": "tooling/acceptance/domains/oauth-login-broker.yaml",
+      "capabilities": "tooling/acceptance/capabilities/oauth-login-broker.yaml",
+      "coverage": "managed_domain",
+      "notes": "Durable serverless OAuth broker with encrypted GitHub-backed records, provider refresh, key rotation, and authenticated read-only operator surfaces."
     }
   ]
 }

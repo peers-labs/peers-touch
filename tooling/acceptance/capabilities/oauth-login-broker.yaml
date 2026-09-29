@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "oauth-login-broker-durability",
+      "domain": "oauth-login-broker",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "oauth2-client-durability"
+      ],
+      "required_gates": [
+        "oauth-login-broker-durable-login",
+        "oauth-login-broker-refresh-idempotency",
+        "oauth-login-broker-key-rotation",
+        "oauth-login-broker-operator"
+      ],
+      "synthetic_paths": [
+        "apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go",
+        "apps/oauth2-client/internal/application/oauth/usecase/refresh_credential.go",
+        "apps/oauth2-client/internal/infrastructure/persistence/github/store.go",
+        "apps/oauth2-client/internal/interfaces/http/handler/oauth_handler.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "OAuthStore durable records",
+          "provider token responses",
+          "administration projection"
+        ],
+        "surfaces": [
+          "/api/oauth/{provider}/{start|callback}",
+          "/api/admin",
+          "/api/admin/data"
+        ],
+        "proven_by": [
+          "oauth-login-broker-durable-login",
+          "oauth-login-broker-refresh-idempotency",
+          "oauth-login-broker-key-rotation",
+          "oauth-login-broker-operator"
+        ],
+        "proven_scope": [
+          "cross-instance durable OAuth completion and replay rejection",
+          "provider refresh token retention and duplicate-operation convergence",
+          "full-prefix encrypted-record key rotation",
+          "authenticated token-free operator HTML and JSON"
+        ],
+        "unproven_scope": [
+          "live provider consent",
+          "live GitHub App installation",
+          "Vercel deployment and production traffic"
+        ]
+      }
+    }
+  ]
+}

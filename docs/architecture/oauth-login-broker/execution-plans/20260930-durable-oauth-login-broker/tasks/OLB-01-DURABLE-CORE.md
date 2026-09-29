@@ -17,7 +17,18 @@
   "runtimeClass": "service",
   "writeSet": [
     "apps/oauth2-client",
-    "docs/architecture/oauth-login-broker"
+    "docs/architecture/oauth-login-broker",
+    "tooling/acceptance/capabilities/oauth-login-broker.yaml",
+    "tooling/acceptance/domains/index.yaml",
+    "tooling/acceptance/domains/oauth-login-broker.yaml",
+    "tooling/acceptance/environments/oauth2-client-local-service.yaml",
+    "tooling/acceptance/environments/oauth2-client-local-browser.yaml",
+    "tooling/acceptance/features/oauth2-client-durability.yaml",
+    "tooling/acceptance/gates.yaml",
+    "tooling/acceptance/gates/oauth2_client",
+    "tooling/acceptance/provisioners/__init__.py",
+    "tooling/acceptance/provisioners/oauth2_client_local.py",
+    "tooling/acceptance/registry.yaml"
   ],
   "readSet": [
     "docs/architecture/mobile",
@@ -43,6 +54,11 @@
       "id": "olb-cross-container",
       "command": "cd apps/oauth2-client && go test ./internal/infrastructure/persistence/github -run TestStoreCompletesAuthorizationAcrossInstances",
       "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "olb-durable-login-acceptance",
+      "command": "make acceptance-run",
+      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [

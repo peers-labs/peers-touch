@@ -35,6 +35,11 @@
       "id": "olb-idempotency",
       "command": "cd apps/oauth2-client && go test ./internal/integration -run 'TestCallbackLostResponseIsIdempotent|TestRefreshIsIdempotent'",
       "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "olb-refresh-acceptance",
+      "command": "make acceptance-run",
+      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [

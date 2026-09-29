@@ -1,0 +1,22 @@
+{
+  "id": "oauth2-client-local-service",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "services": {},
+  "fixtures": [],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "oauth2-client-service",
+      "actor": "test-operator",
+      "runtime": "go-service-test",
+      "required_service_roles": [],
+      "service_bindings": {}
+    }
+  ],
+  "cleanup": {
+    "resources": []
+  }
+}

@@ -167,22 +167,52 @@
 ```json
 {
   "closures": {
-    "olb-durable-login": [],
-    "olb-refresh-idempotency": [],
-    "olb-key-rotation": [],
+    "olb-durable-login": [
+      "oauth-login-broker-durable-login"
+    ],
+    "olb-refresh-idempotency": [
+      "oauth-login-broker-refresh-idempotency"
+    ],
+    "olb-key-rotation": [
+      "oauth-login-broker-key-rotation"
+    ],
     "olb-operator-proof": [
-      "oauth-login-broker-contract"
+      "oauth-login-broker-durable-login",
+      "oauth-login-broker-refresh-idempotency",
+      "oauth-login-broker-key-rotation",
+      "oauth-login-broker-operator"
     ]
   },
   "completion": [
+    "oauth-login-broker-durable-login",
+    "oauth-login-broker-refresh-idempotency",
+    "oauth-login-broker-key-rotation",
+    "oauth-login-broker-operator",
     "oauth-login-broker-contract",
     "architecture-module-governance",
-    "acceptance-infra-validation"
+    "acceptance-infra-validation",
+    "acceptance-plan-self",
+    "acceptance-runtime-provisioning-self",
+    "acceptance-workflow-contract"
   ],
   "full": [
+    "oauth-login-broker-durable-login",
+    "oauth-login-broker-refresh-idempotency",
+    "oauth-login-broker-key-rotation",
+    "oauth-login-broker-operator",
     "oauth-login-broker-contract",
     "architecture-module-governance",
-    "acceptance-infra-validation"
+    "acceptance-infra-validation",
+    "acceptance-plan-self",
+    "acceptance-runtime-provisioning-self",
+    "acceptance-workflow-contract",
+    "chat-lifecycle-call-resolution-e2e",
+    "chat-lifecycle-mixed-client-cross-station-e2e",
+    "chat-lifecycle-mixed-client-group-mls-e2e",
+    "chat-lifecycle-mixed-client-multi-device-e2e",
+    "chat-lifecycle-mixed-client-same-station-e2e",
+    "mobile-ios-simulator-layout-accessibility-e2e",
+    "mobile-simulator-station-lifecycle-e2e"
   ]
 }
 ```
