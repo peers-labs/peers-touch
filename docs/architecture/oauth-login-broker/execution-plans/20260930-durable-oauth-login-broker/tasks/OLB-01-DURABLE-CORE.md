@@ -17,6 +17,8 @@
   "runtimeClass": "service",
   "writeSet": [
     "apps/oauth2-client",
+    "docs/README.md",
+    "docs/architecture/architecture-module-governance/architecture-modules.json",
     "docs/architecture/oauth-login-broker",
     "tooling/acceptance/capabilities/oauth-login-broker.yaml",
     "tooling/acceptance/domains/index.yaml",
@@ -52,7 +54,7 @@
     },
     {
       "id": "olb-cross-container",
-      "command": "cd apps/oauth2-client && go test ./internal/infrastructure/persistence/github -run TestStoreCompletesAuthorizationAcrossInstances",
+      "command": "cd apps/oauth2-client && go test ./internal/integration -run TestOAuthLoginBrokerCrossInstanceHTTPJourney",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
