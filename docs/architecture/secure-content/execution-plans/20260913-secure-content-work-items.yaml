@@ -532,12 +532,14 @@ items:
     architectureRefs: [SC-A04, SC-D22, SC-D24]
     journeyIds: [sc-dj-mobile-matrix]
     scope:
-      include: [apps/desktop/src-tauri/src/interface/http_gateway/mod.rs, apps/desktop/src-tauri/src/interface/tauri_commands/station.rs, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/src/commands/mod.rs, apps/mobile/src-tauri/src/secure_content, apps/mobile/src-tauri/src/social, apps/mobile/src/features/auth/authSession.test.ts, apps/mobile/src/features/auth/authSession.ts, apps/mobile/src/features/social/socialRuntime.ts, apps/mobile/src/runtimes/privateMomentsRuntime.ts, apps/mobile/src/runtimes/privateMomentsRuntime.test.ts, apps/mobile/src/services/mobileCommands.ts, apps/mobile/src/acceptance, docs/knowledge/README.md, docs/knowledge/pitfalls/mobile-reliability-projection-checkpoint-single-owner.md, docs/knowledge/pitfalls/mobile-private-runtime-policy-readiness-divergence.md, tooling/acceptance/gates/agent/foundation_runtime_client.py, tooling/acceptance/gates/agent/foundation_runtime_client_test.py, tooling/development/secure_content/runtime_manifest.py, tooling/development/secure_content/runtime_owner.py, tooling/development/secure_content/source_projection.py, tooling/development/secure_content/test_runtime_manifest.py, tooling/development/secure_content/test_runtime_owner.py, tooling/development/secure_content/test_source_projection.py, tooling/scripts/plan_lifecycle_source.py, tooling/scripts/plan_lifecycle_source_test.py, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml]
+      include: [apps/desktop/src-tauri/src/interface/http_gateway/mod.rs, apps/desktop/src-tauri/src/interface/tauri_commands/station.rs, apps/mobile/src-tauri/Cargo.lock, apps/mobile/src-tauri/Cargo.toml, apps/mobile/src-tauri/src/commands/mod.rs, apps/mobile/src-tauri/src/secure_content, apps/mobile/src-tauri/src/social, apps/mobile/src/features/auth/authSession.test.ts, apps/mobile/src/features/auth/authSession.ts, apps/mobile/src/features/social/socialRuntime.ts, apps/mobile/src/runtimes/privateMomentsRuntime.ts, apps/mobile/src/runtimes/privateMomentsRuntime.test.ts, apps/mobile/src/services/mobileCommands.ts, apps/mobile/src/acceptance, docs/architecture/local-dev-control-plane, docs/global/local-dev-environment.md, docs/knowledge/README.md, docs/knowledge/pitfalls/mobile-reliability-projection-checkpoint-single-owner.md, docs/knowledge/pitfalls/mobile-private-runtime-policy-readiness-divergence.md, tooling/acceptance/gates/agent/foundation_runtime_client.py, tooling/acceptance/gates/agent/foundation_runtime_client_test.py, tooling/development/secure_content/runtime_manifest.py, tooling/development/secure_content/runtime_owner.py, tooling/development/secure_content/source_projection.py, tooling/development/secure_content/test_runtime_manifest.py, tooling/development/secure_content/test_runtime_owner.py, tooling/development/secure_content/test_source_projection.py, tooling/scripts/local-dev/machine-dev-registry.mjs, tooling/scripts/local-dev/machine-dev.test.mjs, tooling/scripts/plan_lifecycle_source.py, tooling/scripts/plan_lifecycle_source_test.py, tooling/skills/pt-github-review/FRESHNESS.md, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml]
       exclude: [runtime provisioning, product proof, formal Acceptance, Station authority changes]
     resources:
       sourceClaims:
         - { pathPrefix: apps/desktop/src-tauri/src/interface/http_gateway/mod.rs, mode: exclusive-write }
         - { pathPrefix: apps/desktop/src-tauri/src/interface/tauri_commands/station.rs, mode: shared-read }
+        - { pathPrefix: docs/architecture/local-dev-control-plane, mode: exclusive-write }
+        - { pathPrefix: docs/global/local-dev-environment.md, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src-tauri/Cargo.lock, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src-tauri/src/commands/mod.rs, mode: exclusive-write }
         - { pathPrefix: apps/mobile/src-tauri/Cargo.toml, mode: exclusive-write }
@@ -561,8 +563,11 @@ items:
         - { pathPrefix: tooling/development/secure_content/test_runtime_manifest.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_runtime_owner.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_source_projection.py, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/machine-dev-registry.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/machine-dev.test.mjs, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/plan_lifecycle_source.py, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/plan_lifecycle_source_test.py, mode: exclusive-write }
+        - { pathPrefix: tooling/skills/pt-github-review/FRESHNESS.md, mode: exclusive-write }
         - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, mode: exclusive-write }
         - { pathPrefix: apps/desktop/src-tauri/src/social, mode: shared-read }
         - { pathPrefix: apps/desktop/src/services/privateMomentsNative.ts, mode: shared-read }
