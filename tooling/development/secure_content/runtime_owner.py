@@ -176,6 +176,7 @@ class _W8ScenarioSpec:
     action_text: str
     visible_text: str
     open_comments: bool = False
+    absent_texts: tuple[str, ...] = ()
 
 
 DESKTOP_CLIENTS = (
@@ -221,9 +222,13 @@ W8_SCENARIOS = (
         scenario_id="social-delete-block",
         variant_id="delete-block",
         requires_remote_recipient=False,
-        receiver_client_id=DESKTOP_CLIENTS[0][0],
-        action_text="secure-content-w8-block-private-text",
-        visible_text="secure-content-w8-block-private-text",
+        receiver_client_id=DESKTOP_CLIENTS[1][0],
+        action_text="secure-content-w8-audience-friends",
+        visible_text="secure-content-w8-audience-friends",
+        absent_texts=(
+            "secure-content-w8-delete-private-image",
+            "secure-content-w8-block-private-text",
+        ),
     ),
     _W8ScenarioSpec(
         scenario_id="social-bounds",
@@ -2640,7 +2645,8 @@ def _w8_receiver_ui_probe(
     action_text: str,
     visible_text: str,
     open_comments: bool,
-) -> Mapping[str, str]:
+    absent_texts: Sequence[str] = (),
+) -> Mapping[str, Any]:
     driver = client.driver
     if driver is None:
         raise RuntimeOwnerBlocked(
@@ -2790,6 +2796,31 @@ return target
             timeout=90,
             interval=0.25,
         )
+        absence = wait_until(
+            lambda: execute(
+                """
+const forbidden = arguments[0];
+const visibleTexts = Array.from(
+  document.querySelectorAll('p, span, div, a, button'),
+).filter((element) => {
+  if (!(element instanceof HTMLElement)) return false;
+  const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return style.display !== 'none'
+    && style.visibility !== 'hidden'
+    && rect.width > 0
+    && rect.height > 0;
+}).map((element) => element.textContent ?? '');
+return forbidden.every(
+  (expected) => !visibleTexts.some((text) => text.includes(expected)),
+);
+""",
+                list(absent_texts),
+            ),
+            f"W8 {scenario_id} receiver-visible negative assertion",
+            timeout=30,
+            interval=0.25,
+        )
     except RuntimeOwnerBlocked:
         raise
     except Exception as error:
@@ -2816,6 +2847,15 @@ return target
             ),
             resource=f"client:{client.spec.profile}",
         )
+    if absence is not True:
+        raise RuntimeOwnerBlocked(
+            "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
+            (
+                f"W8 scenario {scenario_id!r} exposed a forbidden receiver "
+                "projection"
+            ),
+            resource=f"client:{client.spec.profile}",
+        )
     return {
         "actionResourceId": (
             "dom-action:"
@@ -2829,6 +2869,10 @@ return target
         "receiverTag": str(receiver["tagName"]),
         "actionTextSha256": _sha256(action_text),
         "visibleTextSha256": _sha256(visible_text),
+        "absentTextSha256": [
+            _sha256(value)
+            for value in absent_texts
+        ],
         "automationSessionId": str(driver.session_id),
         "pageUrlSha256": _sha256(str(driver.current_url)),
     }
@@ -5502,6 +5546,7 @@ class W7RuntimeOwner:
                     action_text=spec.action_text,
                     visible_text=spec.visible_text,
                     open_comments=spec.open_comments,
+                    absent_texts=spec.absent_texts,
                 )
                 ui_artifact: dict[str, Any] = {
                     "schemaVersion": 1,
@@ -5520,6 +5565,9 @@ class W7RuntimeOwner:
                     "receiverTag": ui_evidence["receiverTag"],
                     "actionTextSha256": ui_evidence["actionTextSha256"],
                     "visibleTextSha256": ui_evidence["visibleTextSha256"],
+                    "absentTextSha256": ui_evidence[
+                        "absentTextSha256"
+                    ],
                     "automationSessionId": ui_evidence[
                         "automationSessionId"
                     ],
