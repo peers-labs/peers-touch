@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -124,7 +125,11 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         cleanup: dict[str, Any] = {}
         try:
             session = self.runtime_binding.create_bound_session(CLIENT_ID)
-            login_card = session.wait_for_element("[data-pt-login-card]", timeout=30)
+            login_card = self._wait_for_displayed(
+                session,
+                "[data-pt-login-card]",
+                timeout=30,
+            )
             identity = self._mapping(
                 call_async_harness(
                     session,
@@ -209,6 +214,28 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         if len(matches) != 1:
             raise GateError("Desktop OAuth runtime requires exactly one login client")
         return matches[0]
+
+    @staticmethod
+    def _wait_for_displayed(
+        session: TauriSession,
+        selector: str,
+        *,
+        timeout: float,
+    ) -> Any:
+        deadline = time.monotonic() + timeout
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            try:
+                element = session.find_element(selector, timeout=1)
+                if element.is_displayed():
+                    return element
+            except Exception as error:  # noqa: BLE001 - retained for evidence.
+                last_error = error
+            time.sleep(0.1)
+        suffix = f"; last error: {last_error}" if last_error else ""
+        raise GateError(
+            f"Desktop OAuth element did not become visible: {selector}{suffix}"
+        )
 
     def _source_identity(self) -> dict[str, Any]:
         source = self._mapping(self.manifest.get("source"), "runtime source")
