@@ -19,6 +19,10 @@
     "apps/desktop/src-tauri/src/application/oauth2/mod.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
     "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
+    "tooling/devctl/desktop.mjs",
+    "tooling/devctl/test/desktop.test.mjs",
+    "docs/knowledge/invariants/desktop-vite-entry-readiness.md",
+    "docs/knowledge/README.md",
     "tooling/acceptance/capabilities/station-access.yaml",
     "tooling/acceptance/environments/station-access-desktop-oauth-native.yaml",
     "tooling/acceptance/features/station-access-authentication.yaml",
@@ -62,6 +66,11 @@
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
+      "id": "desktop-vite-readiness",
+      "command": "node --test tooling/devctl/test/desktop.test.mjs",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
       "id": "station-access-desktop-oauth-native-e2e",
       "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 tooling/scripts/acceptance-run.py --gate station-access-desktop-oauth-native-e2e --runtime-cell desktop-macos-native",
       "verificationClass": "ACCEPTANCE_PROOF"
@@ -97,5 +106,7 @@
 - State: in_progress.
 - Root cause: Tauri and HTTP Gateway require an actor before starting the OAuth
   loopback listener, although the login page has no actor yet.
-- Next boundary: source checkpoint, exact-source native Gate, then completion
-  evidence and ordinary push.
+- Runtime amendment: normal `make desktop` must wait for `/src/main.tsx`, not
+  only the Vite listening socket or root document.
+- Next boundary: integrate the reviewed Vite readiness fix, prove a cold
+  `make desktop` launch, refresh exact-source Acceptance, then close.
