@@ -37,6 +37,7 @@
     "apps/desktop/src-tauri/src/application/desktop_executor_worker/supervisor.rs",
     "apps/desktop/src-tauri/src/application/runtime_evidence.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+    "apps/desktop/src/services/appRuntime.ts",
     "apps/desktop/src/services/desktop_api.ts",
     "apps/desktop/src/services/desktop_api.clientPermissionDenied.test.ts",
     "apps/desktop/src/store/agent.ts",
@@ -129,7 +130,7 @@
     "Preserve terminal idempotency and active branch lineage",
     "Return only the first deterministic failure to its owning layer"
   ],
-  "updatedAt": "2026-09-29T21:41:08Z",
+  "updatedAt": "2026-09-29T22:32:00Z",
   "durableEvidence": []
 }
 ```
