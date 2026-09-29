@@ -25,7 +25,7 @@
   ],
   "budgets": {
     "focusedCheckSeconds": 1800,
-    "functionalRunSeconds": 3600,
+    "functionalRunSeconds": 7200,
     "cleanupSeconds": 600
   },
   "checks": [
@@ -50,7 +50,7 @@
     "Return any clean-source product failure to a new bounded remediation Task",
     "Keep formal proof UNPROVEN until MCA-A08 reruns the Gate"
   ],
-  "updatedAt": "2026-09-24T20:38:00Z",
+  "updatedAt": "2026-09-29T21:41:08Z",
   "durableEvidence": []
 }
 ```

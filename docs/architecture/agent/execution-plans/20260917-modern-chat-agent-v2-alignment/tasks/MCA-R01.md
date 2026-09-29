@@ -91,7 +91,7 @@
   ],
   "budgets": {
     "focusedCheckSeconds": 1800,
-    "functionalRunSeconds": 3600,
+    "functionalRunSeconds": 7200,
     "cleanupSeconds": 600
   },
   "checks": [
@@ -129,7 +129,7 @@
     "Preserve terminal idempotency and active branch lineage",
     "Return only the first deterministic failure to its owning layer"
   ],
-  "updatedAt": "2026-09-27T18:18:00Z",
+  "updatedAt": "2026-09-29T21:41:08Z",
   "durableEvidence": []
 }
 ```
