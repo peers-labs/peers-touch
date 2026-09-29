@@ -51,3 +51,34 @@ func TestExchangeReturnsRefreshableTokenSet(t *testing.T) {
 		t.Fatalf("unexpected grant: %#v", grant)
 	}
 }
+
+func TestRefreshToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("grant_type") != "refresh_token" ||
+			r.URL.Query().Get("refresh_token") != "refresh-old" ||
+			r.URL.Query().Get("appid") != "client" {
+			t.Fatalf("unexpected refresh query: %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"access-new","refresh_token":"refresh-new","openid":"openid","scope":"snsapi_login","expires_in":3600}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithEndpoints(server.Client(), Endpoints{Refresh: server.URL})
+	now := time.Date(2026, 9, 30, 2, 0, 0, 0, time.UTC)
+	provider.now = func() time.Time { return now }
+	tokens, err := provider.RefreshToken(context.Background(), "refresh-old", port.ProviderConfig{
+		ClientID: "client",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tokens.AccessToken != "access-new" ||
+		tokens.RefreshToken != "refresh-new" ||
+		tokens.TokenType != "Bearer" ||
+		tokens.Scope != "snsapi_login" ||
+		tokens.AccessExpiresAt == nil ||
+		!tokens.AccessExpiresAt.Equal(now.Add(time.Hour)) {
+		t.Fatalf("unexpected refresh result: %#v", tokens)
+	}
+}

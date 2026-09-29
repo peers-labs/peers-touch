@@ -105,7 +105,7 @@
       "workstreamId": "OLB-SERVICE",
       "path": "tasks/OLB-01-DURABLE-CORE.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -115,7 +115,7 @@
       "dependsOn": [
         "OLB-01-DURABLE-CORE"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {

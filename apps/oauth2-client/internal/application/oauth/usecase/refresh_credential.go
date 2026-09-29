@@ -24,15 +24,20 @@ type RefreshCredentialUseCase struct {
 }
 
 func (u RefreshCredentialUseCase) Execute(ctx context.Context, input RefreshCredentialInput) (*entity.OAuthCredential, error) {
-	if strings.TrimSpace(input.IdentityID) == "" {
+	identityID := strings.TrimSpace(input.IdentityID)
+	if identityID == "" {
 		return nil, errors.New("identity_id_required")
 	}
-	if strings.TrimSpace(input.OperationID) == "" {
+	operationID := strings.TrimSpace(input.OperationID)
+	if operationID == "" {
 		return nil, errors.New("refresh_operation_id_required")
 	}
-	current, err := u.Store.LoadCredential(ctx, input.IdentityID)
+	current, err := u.Store.LoadCredential(ctx, identityID)
 	if err != nil {
 		return nil, err
+	}
+	if current.LastRefreshOperationID == operationID {
+		return current, nil
 	}
 	if current.RefreshToken == "" {
 		return nil, repository.ErrCredentialNotRefreshable
@@ -53,9 +58,12 @@ func (u RefreshCredentialUseCase) Execute(ctx context.Context, input RefreshCred
 	if err != nil {
 		return nil, err
 	}
+	if tokens == nil || strings.TrimSpace(tokens.AccessToken) == "" {
+		return nil, errors.New("provider_refresh_failed")
+	}
 	return u.Store.ReplaceCredential(ctx, entity.CredentialRefresh{
-		IdentityID:  input.IdentityID,
-		OperationID: input.OperationID,
+		IdentityID:  identityID,
+		OperationID: operationID,
 		Tokens:      *tokens,
 		RefreshedAt: u.Clock.Now(),
 	})

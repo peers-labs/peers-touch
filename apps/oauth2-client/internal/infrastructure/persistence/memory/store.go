@@ -199,6 +199,10 @@ func (s *Store) LoadCredential(_ context.Context, identityID string) (*entity.OA
 }
 
 func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRefresh) (*entity.OAuthCredential, error) {
+	if strings.TrimSpace(refresh.IdentityID) == "" ||
+		strings.TrimSpace(refresh.OperationID) == "" {
+		return nil, repository.ErrRecordCorrupt
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	credential, ok := s.credentials[refresh.IdentityID]
@@ -209,6 +213,9 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 		out := credential
 		return &out, nil
 	}
+	if strings.TrimSpace(refresh.Tokens.AccessToken) == "" {
+		return nil, repository.ErrRecordCorrupt
+	}
 	refreshToken := refresh.Tokens.RefreshToken
 	if refreshToken == "" {
 		refreshToken = credential.RefreshToken
@@ -216,13 +223,25 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 	if refreshToken == "" {
 		return nil, repository.ErrCredentialNotRefreshable
 	}
+	tokenType := refresh.Tokens.TokenType
+	if tokenType == "" {
+		tokenType = credential.TokenType
+	}
+	scope := refresh.Tokens.Scope
+	if scope == "" {
+		scope = credential.Scope
+	}
+	refreshExpiresAt := refresh.Tokens.RefreshExpiresAt
+	if refreshExpiresAt == nil {
+		refreshExpiresAt = credential.RefreshExpiresAt
+	}
 	credential.AccessToken = refresh.Tokens.AccessToken
 	credential.RefreshToken = refreshToken
-	credential.TokenType = refresh.Tokens.TokenType
-	credential.Scope = refresh.Tokens.Scope
+	credential.TokenType = tokenType
+	credential.Scope = scope
 	credential.ObtainedAt = refresh.Tokens.ObtainedAt.UTC()
 	credential.AccessExpiresAt = refresh.Tokens.AccessExpiresAt
-	credential.RefreshExpiresAt = refresh.Tokens.RefreshExpiresAt
+	credential.RefreshExpiresAt = refreshExpiresAt
 	credential.Generation++
 	credential.LastRefreshOperationID = refresh.OperationID
 	s.credentials[refresh.IdentityID] = credential

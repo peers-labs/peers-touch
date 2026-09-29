@@ -317,6 +317,10 @@ func (s *Store) LoadCredential(ctx context.Context, identityID string) (*entity.
 }
 
 func (s *Store) ReplaceCredential(ctx context.Context, refresh entity.CredentialRefresh) (*entity.OAuthCredential, error) {
+	if strings.TrimSpace(refresh.IdentityID) == "" ||
+		strings.TrimSpace(refresh.OperationID) == "" {
+		return nil, repository.ErrRecordCorrupt
+	}
 	var replaced *entity.OAuthCredential
 	err := s.repository.Update(ctx, "oauth: refresh credential", func(snapshot *Snapshot) (map[string][]byte, error) {
 		path := credentialPath(refresh.IdentityID)
@@ -331,6 +335,9 @@ func (s *Store) ReplaceCredential(ctx context.Context, refresh entity.Credential
 			replaced = current
 			return map[string][]byte{}, nil
 		}
+		if strings.TrimSpace(refresh.Tokens.AccessToken) == "" {
+			return nil, repository.ErrRecordCorrupt
+		}
 		refreshToken := refresh.Tokens.RefreshToken
 		if refreshToken == "" {
 			refreshToken = current.RefreshToken
@@ -338,14 +345,26 @@ func (s *Store) ReplaceCredential(ctx context.Context, refresh entity.Credential
 		if refreshToken == "" {
 			return nil, repository.ErrCredentialNotRefreshable
 		}
+		tokenType := refresh.Tokens.TokenType
+		if tokenType == "" {
+			tokenType = current.TokenType
+		}
+		scope := refresh.Tokens.Scope
+		if scope == "" {
+			scope = current.Scope
+		}
+		refreshExpiresAt := refresh.Tokens.RefreshExpiresAt
+		if refreshExpiresAt == nil {
+			refreshExpiresAt = current.RefreshExpiresAt
+		}
 		next := *current
 		next.AccessToken = refresh.Tokens.AccessToken
 		next.RefreshToken = refreshToken
-		next.TokenType = refresh.Tokens.TokenType
-		next.Scope = refresh.Tokens.Scope
+		next.TokenType = tokenType
+		next.Scope = scope
 		next.ObtainedAt = refresh.Tokens.ObtainedAt.UTC()
 		next.AccessExpiresAt = refresh.Tokens.AccessExpiresAt
-		next.RefreshExpiresAt = refresh.Tokens.RefreshExpiresAt
+		next.RefreshExpiresAt = refreshExpiresAt
 		next.Generation++
 		next.LastRefreshOperationID = refresh.OperationID
 		event := entity.AuditEvent{
