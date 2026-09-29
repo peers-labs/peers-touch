@@ -255,6 +255,15 @@ printf '%s\n' '{"type":"done"}'
 
 func TestProviderServiceReturnsTypedCLIBinaryMissing(t *testing.T) {
 	db := openAdmissionTestDB(t, "provider_cli_missing_binary")
+	catalogProvider := catalog.Find("trae-cli")
+	if catalogProvider == nil {
+		t.Fatal("trae-cli catalog provider is missing")
+	}
+	originalCommand := catalogProvider.CliCommand
+	catalogProvider.CliCommand = "peers-touch-cli-that-does-not-exist"
+	t.Cleanup(func() {
+		catalogProvider.CliCommand = originalCommand
+	})
 	if err := db.Create(&persistence.AgentProvider{
 		ID:          "provider-row",
 		ActorPTID:   "actor-1",
@@ -284,6 +293,80 @@ func TestProviderServiceReturnsTypedCLIBinaryMissing(t *testing.T) {
 		bizErr.Code != errcode.AgentRuntimeUnavailable ||
 		bizErr.Payload.GetDetails()["reason_code"] != "cli_binary_missing" {
 		t.Fatalf("Call() error = %T %v, want typed CLI binary unavailable", err, err)
+	}
+}
+
+func TestProviderServiceIgnoresPersistedCLICommand(t *testing.T) {
+	db := openAdmissionTestDB(t, "provider_cli_registered_command")
+	root := t.TempDir()
+	expectedOutput := filepath.Join(root, "registered-output")
+	persistedOutput := filepath.Join(root, "persisted-output")
+	registeredCommand := filepath.Join(root, "registered")
+	persistedCommand := filepath.Join(root, "persisted")
+	for path, content := range map[string]string{
+		registeredCommand: `#!/bin/sh
+cat >/dev/null
+touch "$1"
+printf '%s\n' '{"type":"done","content":"registered"}'
+`,
+		persistedCommand: `#!/bin/sh
+cat >/dev/null
+touch "$1"
+printf '%s\n' '{"type":"done","content":"persisted"}'
+`,
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+			t.Fatalf("write CLI fixture: %v", err)
+		}
+	}
+	catalogProvider := catalog.Find("trae-cli")
+	if catalogProvider == nil {
+		t.Fatal("trae-cli catalog provider is missing")
+	}
+	originalCommand := catalogProvider.CliCommand
+	catalogProvider.CliCommand = registeredCommand + " " + expectedOutput
+	t.Cleanup(func() {
+		catalogProvider.CliCommand = originalCommand
+	})
+	if err := db.Create(&persistence.AgentProvider{
+		ID:          "provider-row",
+		ActorPTID:   "actor-1",
+		Name:        "trae-cli",
+		DisplayName: "TRAE CLI",
+		SourceType:  "catalog",
+		RuntimeKind: "cli",
+		Protocol:    "cli",
+		CliCommand:  persistedCommand + " " + persistedOutput,
+		Enabled:     true,
+		Version:     1,
+	}).Error; err != nil {
+		t.Fatalf("seed CLI provider: %v", err)
+	}
+
+	provider := NewProviderService(nil)
+	provider.cliExecutor = providercli.NewExecutor(&providercli.WorkspaceManager{
+		BaseDir: filepath.Join(root, "workspaces"),
+	})
+	response, err := provider.Call(context.Background(), &ProviderCallRequest{
+		ProviderID:   "trae-cli",
+		ProviderType: "trae-cli",
+		UserID:       "actor-1",
+		Model:        "default",
+		Messages: []domain.Message{
+			{Role: domain.MessageRoleUser, Content: "hello"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if response.Content != "registered" {
+		t.Fatalf("Call() content = %q, want registered", response.Content)
+	}
+	if _, err := os.Stat(expectedOutput); err != nil {
+		t.Fatalf("registered command did not run: %v", err)
+	}
+	if _, err := os.Stat(persistedOutput); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("persisted command unexpectedly ran: %v", err)
 	}
 }
 

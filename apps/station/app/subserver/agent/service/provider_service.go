@@ -663,6 +663,16 @@ func (s *ProviderService) callCLI(
 			"cli_executor_unavailable",
 		)
 	}
+	registered := catalog.Find(provider.Name)
+	if registered == nil ||
+		!strings.EqualFold(strings.TrimSpace(registered.RuntimeKind), providerRuntimeCLI) ||
+		!strings.EqualFold(strings.TrimSpace(registered.Protocol), providerRuntimeCLI) ||
+		strings.TrimSpace(registered.CliCommand) == "" {
+		return nil, errcode.NewRuntimeUnavailable(
+			"direct_model",
+			"cli_adapter_not_registered",
+		)
+	}
 	if len(req.Tools) > 0 {
 		return nil, errcode.NewRuntimeIncompatibleCapability(
 			"native-tools",
@@ -677,7 +687,7 @@ func (s *ProviderService) callCLI(
 		Provider:       provider.Name,
 		Model:          model,
 		Effort:         req.Effort,
-		CliCommand:     provider.CliCommand,
+		CliCommand:     registered.CliCommand,
 		SystemPrompt:   req.SystemPrompt,
 		Messages:       req.Messages,
 		AllowedRoots:   req.AllowedRoots,
