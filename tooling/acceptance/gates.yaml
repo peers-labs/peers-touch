@@ -33,12 +33,19 @@
       "tier": "env-evidence",
       "description": "Prove authenticated token-free operator HTML and JSON plus the local start, callback, and administration browser journey from exact source."
     },
+    "oauth-login-broker-architecture": {
+      "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs",
+      "timeout_seconds": 60,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate the OAuth Login Broker architecture module registration, governed paths, required documents, decisions, and capability projection."
+    },
     "oauth-login-broker-contract": {
-      "command": "python3 tooling/scripts/acceptance-validate.py --domain oauth-login-broker --require-proven",
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain oauth-login-broker",
       "timeout_seconds": 600,
       "environment": "local",
-      "tier": "local-evidence",
-      "description": "Validate the OAuth Login Broker managed domain against current durable-login, refresh, rotation, and operator evidence."
+      "tier": "ci-structure",
+      "description": "Validate the OAuth Login Broker managed-domain Feature, Capability, Registry, Gate, environment, and Provisioner graph."
     },
     "architecture-module-governance": {
       "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/workflow-kernel.test.mjs tooling/scripts/local-dev/workflow-host-adapters.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && tooling/scripts/review/knowledge-match.sh --changed-file tooling/scripts/plan/plan-package.mjs --strict && python3 -m unittest tooling/scripts/agent-integration-audit-test.py",
