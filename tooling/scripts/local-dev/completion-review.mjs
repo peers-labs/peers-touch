@@ -47,6 +47,10 @@ const REVIEW_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SHA = /^[0-9a-f]{40,64}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const WORKSPACE_DIGEST = /^(?:clean|sha256:[0-9a-f]{64})$/;
+const REPEATABLE_OPTIONS = new Set([
+  'exhaustion-decision-ref',
+  'exhaustion-evidence-ref',
+]);
 const REQUEST_KEYS = new Set([
   'schemaVersion',
   'kind',
@@ -156,6 +160,24 @@ function validateTimestamp(value, field) {
     new Date(parsed).toISOString() !== value
   ) {
     fail('COMPLETION_REVIEW_INVALID', `${field} must be an ISO timestamp`);
+  }
+}
+
+function validateReferenceArray(values, field) {
+  if (
+    !Array.isArray(values) ||
+    values.length === 0 ||
+    values.length > 64 ||
+    values.some(
+      (value) =>
+        typeof value !== 'string' ||
+        value.length === 0 ||
+        value.length > 2048 ||
+        value.includes('\0'),
+    ) ||
+    new Set(values).size !== values.length
+  ) {
+    fail('COMPLETION_REVIEW_INVALID', `${field} is invalid`, { field });
   }
 }
 
@@ -669,7 +691,38 @@ async function planBytes(planPackage, dependencies) {
   return fsp.readFile(planPackage.path);
 }
 
-function completionCandidateManifest(planPackage, requestedNextTaskId) {
+function completionExhaustion(options, manifest) {
+  const decisionRefs = options.exhaustionDecisionRefs;
+  const evidenceRefs = options.exhaustionEvidenceRefs;
+  if (
+    options.recordedAt === undefined ||
+    decisionRefs === undefined ||
+    evidenceRefs === undefined
+  ) {
+    fail(
+      'COMPLETION_REVIEW_EXHAUSTION_REQUIRED',
+      'blocked completion candidate requires recordedAt and exhaustion decision/evidence refs',
+    );
+  }
+  validateTimestamp(options.recordedAt, 'recordedAt');
+  validateReferenceArray(decisionRefs, 'exhaustionDecisionRefs');
+  validateReferenceArray(evidenceRefs, 'exhaustionEvidenceRefs');
+  return {
+    recordedAt: options.recordedAt,
+    blockedTaskIds: manifest.tasks
+      .filter((task) => task.status === 'blocked')
+      .map((task) => task.id),
+    decisionRefs,
+    evidenceRefs,
+  };
+}
+
+function completionCandidateManifest(planPackage, options = {}) {
+  const requestedNextTaskId =
+    typeof options.nextTaskId === 'string' &&
+    options.nextTaskId.toLowerCase() === 'none'
+      ? undefined
+      : options.nextTaskId;
   const manifest = structuredClone(planPackage.manifest);
   const current = manifest.tasks.find((task) => task.status === 'in_progress');
   if (!current) {
@@ -706,6 +759,15 @@ function completionCandidateManifest(planPackage, requestedNextTaskId) {
     nextTaskId = ready[0].id;
   }
   const next = ready.find((task) => task.id === nextTaskId);
+  if (
+    nextTaskId === undefined &&
+    ready.length === 0 &&
+    manifest.tasks.some((task) => task.status === 'blocked')
+  ) {
+    manifest.status = 'blocked';
+    manifest.exhaustion = completionExhaustion(options, manifest);
+    return manifest;
+  }
   if (!next) {
     fail(
       'COMPLETION_REVIEW_SUCCESSOR_REQUIRED',
@@ -729,7 +791,7 @@ export function digestCompletionCandidate(candidateDocument) {
 
 async function completionCandidateDigest(
   planPackage,
-  requestedNextTaskId,
+  options,
   dependencies,
 ) {
   if (dependencies.candidatePlanDigest !== undefined) {
@@ -741,7 +803,7 @@ async function completionCandidateDigest(
   )).toString('utf8');
   const candidate = renderPlanDocument(
     currentDocument,
-    completionCandidateManifest(planPackage, requestedNextTaskId),
+    completionCandidateManifest(planPackage, options),
   );
   return digestCompletionCandidate(candidate);
 }
@@ -788,7 +850,7 @@ async function currentReviewMaterial(options, dependencies = {}) {
       options.candidatePlanDigest ??
       (await completionCandidateDigest(
         planPackage,
-        options.nextTaskId,
+        options,
         dependencies,
       )),
     evidenceDigest: digest(
@@ -1096,6 +1158,9 @@ export async function submitCompletionReview(options, dependencies = {}) {
       workItemId: record.request.workItemId,
       scope: record.request.scope,
       nextTaskId: options.nextTaskId,
+      recordedAt: options.recordedAt,
+      exhaustionDecisionRefs: options.exhaustionDecisionRefs,
+      exhaustionEvidenceRefs: options.exhaustionEvidenceRefs,
     },
     dependencies,
   );
@@ -1625,10 +1690,14 @@ function parseArguments(argv) {
     if (value === undefined || value.startsWith('--')) {
       fail('COMPLETION_REVIEW_USAGE', `--${key} requires a value`);
     }
-    if (Object.hasOwn(options, key)) {
+    if (REPEATABLE_OPTIONS.has(key)) {
+      if (!options[key]) options[key] = [];
+      options[key].push(value);
+    } else if (Object.hasOwn(options, key)) {
       fail('COMPLETION_REVIEW_USAGE', `--${key} may appear only once`);
+    } else {
+      options[key] = value;
     }
-    options[key] = value;
     index += 1;
   }
   return { command, options };
@@ -1664,7 +1733,15 @@ export async function statusCompletionReviews(options, dependencies = {}) {
   let materialError = null;
   try {
     material = await currentReviewMaterial(
-      { repoRoot: root, workItemId, scope },
+      {
+        repoRoot: root,
+        workItemId,
+        scope,
+        nextTaskId: options.nextTaskId,
+        recordedAt: options.recordedAt,
+        exhaustionDecisionRefs: options.exhaustionDecisionRefs,
+        exhaustionEvidenceRefs: options.exhaustionEvidenceRefs,
+      },
       dependencies,
     );
   } catch (error) {
@@ -1734,13 +1811,24 @@ export async function runCompletionReviewCli(
 ) {
   const { command, options } = parseArguments(argv);
   if (command === 'prepare') {
-    allowedOptions(options, ['repo-root', 'work-item', 'scope', 'next']);
+    allowedOptions(options, [
+      'repo-root',
+      'work-item',
+      'scope',
+      'next',
+      'recorded-at',
+      'exhaustion-decision-ref',
+      'exhaustion-evidence-ref',
+    ]);
     const result = await prepareCompletionReview(
       {
         repoRoot: options['repo-root'],
         workItemId: requiredOption(options, 'work-item'),
         scope: options.scope,
         nextTaskId: options.next,
+        recordedAt: options['recorded-at'],
+        exhaustionDecisionRefs: options['exhaustion-decision-ref'],
+        exhaustionEvidenceRefs: options['exhaustion-evidence-ref'],
       },
       dependencies,
     );
@@ -1753,6 +1841,9 @@ export async function runCompletionReviewCli(
       'verdict',
       'assessment',
       'next',
+      'recorded-at',
+      'exhaustion-decision-ref',
+      'exhaustion-evidence-ref',
     ]);
     const result = await submitCompletionReview(
       {
@@ -1761,6 +1852,9 @@ export async function runCompletionReviewCli(
         verdict: requiredOption(options, 'verdict'),
         assessment: requiredOption(options, 'assessment'),
         nextTaskId: options.next,
+        recordedAt: options['recorded-at'],
+        exhaustionDecisionRefs: options['exhaustion-decision-ref'],
+        exhaustionEvidenceRefs: options['exhaustion-evidence-ref'],
       },
       dependencies,
     );
@@ -1772,11 +1866,22 @@ export async function runCompletionReviewCli(
     };
   }
   if (command === 'status') {
-    allowedOptions(options, ['repo-root', 'work-item']);
+    allowedOptions(options, [
+      'repo-root',
+      'work-item',
+      'next',
+      'recorded-at',
+      'exhaustion-decision-ref',
+      'exhaustion-evidence-ref',
+    ]);
     return statusCompletionReviews(
       {
         repoRoot: options['repo-root'],
         workItemId: requiredOption(options, 'work-item'),
+        nextTaskId: options.next,
+        recordedAt: options['recorded-at'],
+        exhaustionDecisionRefs: options['exhaustion-decision-ref'],
+        exhaustionEvidenceRefs: options['exhaustion-evidence-ref'],
       },
       dependencies,
     );
