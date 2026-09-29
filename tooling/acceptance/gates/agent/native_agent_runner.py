@@ -152,6 +152,10 @@ def approved_profile_for_journey(journey: str) -> str:
     return APPROVED_PROFILE
 
 
+def provider_configuration_required_for_journey(journey: str) -> bool:
+    return journey != "core-lifecycle"
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -276,22 +280,26 @@ class AgentNativeJourney:
             "PT_AGENT_PROVIDER_BASE_URL",
             "",
         ).strip()
-        require(
-            bool(self.provider_id),
-            "approved profile is missing PT_AGENT_PROVIDER_ID",
+        self.provider_configuration_required = (
+            provider_configuration_required_for_journey(journey)
         )
-        require(
-            bool(self.model_id),
-            "approved profile is missing PT_AGENT_DEFAULT_MODEL_ID",
-        )
-        require(
-            bool(self.provider_base_url),
-            "approved profile is missing PT_AGENT_PROVIDER_BASE_URL",
-        )
-        require(
-            bool(self.provider_key),
-            "approved profile is missing PT_AGENT_PROVIDER_API_KEY",
-        )
+        if self.provider_configuration_required:
+            require(
+                bool(self.provider_id),
+                "approved profile is missing PT_AGENT_PROVIDER_ID",
+            )
+            require(
+                bool(self.model_id),
+                "approved profile is missing PT_AGENT_DEFAULT_MODEL_ID",
+            )
+            require(
+                bool(self.provider_base_url),
+                "approved profile is missing PT_AGENT_PROVIDER_BASE_URL",
+            )
+            require(
+                bool(self.provider_key),
+                "approved profile is missing PT_AGENT_PROVIDER_API_KEY",
+            )
 
         self.gateway_port = int(self.client.get("gateway_port") or 0)
         self.renderer_port = int(self.client.get("renderer_port") or 0)
@@ -556,7 +564,8 @@ class AgentNativeJourney:
 
     def navigate_and_configure(self) -> None:
         self.harness("navigateToAgent", timeout=60)
-        self.configure_provider()
+        if self.provider_configuration_required:
+            self.configure_provider()
 
     def runtime_snapshot(self) -> dict[str, Any]:
         snapshot = self.harness("getRuntimeSnapshot")
@@ -1049,10 +1058,6 @@ class AgentNativeJourney:
         )
         created_id = created_profile["agentId"]
         self.lifecycle_fixture_ids.append(created_id)
-        self.step(
-            "configure_created_agent",
-            self.configure_provider,
-        )
         created_station = self.step(
             "created_agent_station_readback",
             lambda: self.lifecycle_station_state(
