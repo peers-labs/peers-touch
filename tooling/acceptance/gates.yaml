@@ -270,6 +270,14 @@
       "tier": "env-evidence",
       "description": "Prove source-bound native macOS Desktop and iOS Simulator clients bind signed Station identity before authenticating through the canonical Access Gate."
     },
+    "station-access-desktop-oauth-layout-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.station_access.desktop_oauth_layout_e2e",
+      "timeout_seconds": 300,
+      "environment": "station-access-login-browser",
+      "provisioner": "station-access-login-browser",
+      "tier": "env-evidence",
+      "description": "Render the exact-source Desktop login in Chromium at 1200x800 and 640x800, prove GitHub and Google actions open the provider-specific OAuth side card without viewport overflow or login-card intersection, and save DOM and screenshot evidence."
+    },
     "station-access-scope-isolation-e2e": {
       "argv": [
         "python3",

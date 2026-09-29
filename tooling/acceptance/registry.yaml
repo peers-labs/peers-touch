@@ -58,6 +58,7 @@
       ],
       "when": {
         "paths": [
+          "apps/desktop/src/index.css",
           "apps/desktop/src/kernel/identityLifecycle.ts",
           "apps/desktop/src/kernel/identityRuntime.ts",
           "apps/desktop/src/pages/login/**",
@@ -72,6 +73,7 @@
       },
       "require": [
         "station-access-capability-contract",
+        "station-access-desktop-oauth-layout-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e"
       ]
@@ -148,14 +150,17 @@
           "tooling/acceptance/domains/station-access.yaml",
           "tooling/acceptance/capabilities/station-access.yaml",
           "tooling/acceptance/features/station-access-*.yaml",
+          "tooling/acceptance/environments/station-access-login-browser.yaml",
           "tooling/acceptance/environments/station-access-native.yaml",
-          "tooling/acceptance/gates/station_access/**"
+          "tooling/acceptance/gates/station_access/**",
+          "tooling/acceptance/provisioners/station_access_login_browser.py"
         ]
       },
       "require": [
         "proto-build",
         "station-api-ownership",
         "station-access-capability-contract",
+        "station-access-desktop-oauth-layout-e2e",
         "station-access-auth-e2e",
         "station-access-scope-isolation-e2e",
         "station-access-federation-boundary-e2e",
