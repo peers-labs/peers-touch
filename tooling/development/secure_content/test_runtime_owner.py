@@ -80,6 +80,7 @@ from tooling.development.secure_content.runtime_owner import (
     _wait_for_mls_readiness,
     _verify_live_canonical_private_schema_attestation,
     _wait_for_moments_snapshot,
+    _write_browser_runtime_manifest_with_recovery,
     _w8_receiver_ui_probe,
     main,
 )
@@ -1443,6 +1444,203 @@ class RuntimeOwnerTest(unittest.TestCase):
             events,
         )
         self.assertEqual(anonymous_snapshot, result)
+
+    def test_browser_manifest_attachment_recovers_lost_harness_once(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            storage_root = root / "storage"
+            storage_root.mkdir()
+            output_path = root / "runtime.json"
+            old_driver = SimpleNamespace(
+                session_id="webdriver-old",
+                command_executor=SimpleNamespace(
+                    _client_config=SimpleNamespace(
+                        remote_server_addr="http://127.0.0.1:9515",
+                    ),
+                ),
+            )
+            new_driver = SimpleNamespace(
+                session_id="webdriver-new",
+                command_executor=SimpleNamespace(
+                    _client_config=SimpleNamespace(
+                        remote_server_addr="http://127.0.0.1:9516",
+                    ),
+                ),
+            )
+            client = MagicMock()
+            client.spec = SimpleNamespace(
+                profile="secure-content-browser-authenticated",
+                runtime="browser",
+                storage_root=storage_root,
+            )
+            client.harness_namespace = "agent"
+            client.driver = old_driver
+            client.restart.side_effect = lambda: setattr(
+                client,
+                "driver",
+                new_driver,
+            )
+            previous = {
+                "id": "secure-content-browser-authenticated",
+                "actor_role": "browser_actor",
+                "actor_role_digest": "a" * 64,
+                "runtime_kind": "browser",
+                "required_service_roles": [
+                    "station",
+                    "station-secondary",
+                ],
+                "service_bindings": {
+                    "station": {
+                        "service_id": "station-four",
+                        "required_kind": "station",
+                    },
+                    "station-secondary": {
+                        "service_id": "station-five-arm",
+                        "required_kind": "station",
+                    },
+                },
+                "storage_identity_digest": _storage_identity(storage_root),
+                "boot_identity": "1" * 64,
+                "session_generation": 1,
+            }
+            recovered_snapshot = {
+                "platform": "browser",
+                "actorPtidSha256": "a" * 64,
+                "bootIdentitySha256": "2" * 64,
+                "sessionGeneration": 2,
+            }
+            attachment_error = RunnerError(
+                "runtime client 'secure-content-browser-authenticated' "
+                "did not expose 'moments' acceptance harness"
+            )
+
+            with (
+                patch(
+                    "tooling.development.secure_content.runtime_owner."
+                    "write_attached_runtime_manifest",
+                    side_effect=(attachment_error, output_path),
+                ) as write_manifest,
+                patch(
+                    "tooling.development.secure_content.runtime_owner."
+                    "_wait_for_moments_snapshot",
+                    return_value=recovered_snapshot,
+                ) as wait_for_snapshot,
+            ):
+                result = _write_browser_runtime_manifest_with_recovery(
+                    manifest_payload={"clients": [previous]},
+                    output_path=output_path,
+                    journey_id=BROWSER_JOURNEY,
+                    sessions_by_client={previous["id"]: client},
+                    repo_root=root,
+                )
+
+        self.assertEqual(output_path, result)
+        client.restart.assert_called_once_with()
+        wait_for_snapshot.assert_called_once_with(client)
+        self.assertEqual("agent", client.harness_namespace)
+        self.assertEqual(2, write_manifest.call_count)
+        first_call, recovered_call = write_manifest.call_args_list
+        self.assertEqual(
+            "webdriver-old",
+            first_call.kwargs["automation_refs_by_client"][
+                previous["id"]
+            ]["session_id"],
+        )
+        self.assertEqual(
+            "webdriver-new",
+            recovered_call.kwargs["automation_refs_by_client"][
+                previous["id"]
+            ]["session_id"],
+        )
+        recovered_client = recovered_call.kwargs["manifest_payload"][
+            "clients"
+        ][0]
+        self.assertEqual(
+            previous["storage_identity_digest"],
+            recovered_client["storage_identity_digest"],
+        )
+        self.assertEqual("2" * 64, recovered_client["boot_identity"])
+        self.assertEqual(2, recovered_client["session_generation"])
+
+    def test_browser_manifest_attachment_recovery_is_bounded_per_client(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            storage_root = root / "storage"
+            storage_root.mkdir()
+            driver = SimpleNamespace(
+                session_id="webdriver",
+                command_executor=SimpleNamespace(
+                    _client_config=SimpleNamespace(
+                        remote_server_addr="http://127.0.0.1:9515",
+                    ),
+                ),
+            )
+            client = MagicMock()
+            client.spec = SimpleNamespace(
+                profile="secure-content-browser-authenticated",
+                runtime="browser",
+                storage_root=storage_root,
+            )
+            client.harness_namespace = "agent"
+            client.driver = driver
+            client.restart.side_effect = lambda: setattr(
+                client,
+                "driver",
+                SimpleNamespace(
+                    session_id="webdriver-recovered",
+                    command_executor=driver.command_executor,
+                ),
+            )
+            previous = {
+                "id": "secure-content-browser-authenticated",
+                "actor_role": "browser_actor",
+                "actor_role_digest": "a" * 64,
+                "service_bindings": {
+                    "station": {
+                        "service_id": "station-four",
+                        "required_kind": "station",
+                    },
+                },
+                "storage_identity_digest": _storage_identity(storage_root),
+            }
+            attachment_error = RunnerError(
+                "runtime client 'secure-content-browser-authenticated' "
+                "did not expose 'moments' acceptance harness"
+            )
+
+            with (
+                patch(
+                    "tooling.development.secure_content.runtime_owner."
+                    "write_attached_runtime_manifest",
+                    side_effect=(attachment_error, attachment_error),
+                ) as write_manifest,
+                patch(
+                    "tooling.development.secure_content.runtime_owner."
+                    "_wait_for_moments_snapshot",
+                    return_value={
+                        "actorPtidSha256": "a" * 64,
+                        "bootIdentitySha256": "2" * 64,
+                        "sessionGeneration": 2,
+                    },
+                ),
+                self.assertRaises(RuntimeOwnerBlocked) as raised,
+            ):
+                _write_browser_runtime_manifest_with_recovery(
+                    manifest_payload={"clients": [previous]},
+                    output_path=root / "runtime.json",
+                    journey_id=BROWSER_JOURNEY,
+                    sessions_by_client={previous["id"]: client},
+                    repo_root=root,
+                )
+
+        client.restart.assert_called_once_with()
+        self.assertEqual(2, write_manifest.call_count)
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn("one bounded", str(raised.exception))
 
     def test_station_tunnels_use_reviewed_profile_bindings_and_close(self) -> None:
         primary = MagicMock(local_port=4101)
