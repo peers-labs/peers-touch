@@ -32,7 +32,11 @@ from tooling.acceptance.provisioners import (
     NativeTauriEmbeddedWebDriverProvisioner,
     get_provisioner,
 )
-from tooling.acceptance.provisioners.home_station import agent_profile_for_gate
+from tooling.acceptance.provisioners.home_station import (
+    agent_native_requires_disposable_fixture,
+    agent_native_requires_provider,
+    agent_profile_for_gate,
+)
 
 
 class ProvisionerBaseClassTests(unittest.TestCase):
@@ -764,6 +768,20 @@ class ProvisionerBlockingTests(unittest.TestCase):
                 "PT_STATION_MODE": "remote",
                 "PT_STATION_DEPLOY_ENV": "station-two",
             },
+        )
+
+    def test_agent_core_lifecycle_reuses_actor_without_http_provider(self):
+        gate_id = "agent-core-lifecycle-native-e2e"
+
+        self.assertFalse(agent_native_requires_disposable_fixture(gate_id))
+        self.assertFalse(agent_native_requires_provider(gate_id))
+        self.assertTrue(
+            agent_native_requires_disposable_fixture(
+                "agent-stream-resilience-e2e"
+            )
+        )
+        self.assertTrue(
+            agent_native_requires_provider("agent-stream-resilience-e2e")
         )
 
     def test_agent_stream_credentials_must_come_from_one_profile(self):

@@ -17,12 +17,18 @@ from tooling.acceptance.core.attestation import (
 from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
+    ActorManifest,
     ClientRuntime,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
+    utc_now,
 )
-from tooling.acceptance.fixtures.chat_native_actors import produce_actor_manifest
+from tooling.acceptance.fixtures.chat_native_actors import (
+    persist_actor_manifest,
+    produce_actor_manifest,
+    resolve_actor_identity,
+)
 from tooling.acceptance.provisioners.remote_source_identity import (
     resolve_remote_source_identity,
 )
@@ -106,6 +112,14 @@ def agent_profile_for_gate(gate_id: str) -> str:
     if gate_id in AGENT_V2_BINDING_GATES:
         return AGENT_V2_BINDING_PROFILE
     return AGENT_V2_PROFILE
+
+
+def agent_native_requires_disposable_fixture(gate_id: str) -> bool:
+    return gate_id != AGENT_CORE_LIFECYCLE_GATE
+
+
+def agent_native_requires_provider(gate_id: str) -> bool:
+    return gate_id != AGENT_CORE_LIFECYCLE_GATE
 
 
 class HomeStationProvisioner(EnvironmentProvisioner):
@@ -938,7 +952,8 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         deployment_environment: str,
         profile_env: dict[str, str],
     ) -> RuntimeManifest:
-        if profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
+        requires_reset = agent_native_requires_disposable_fixture(gate_id)
+        if requires_reset and profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
             raise BlockedError(
                 reason=(
                     f"{gate_id} actor Fixture reset requires "
@@ -946,33 +961,67 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 ),
                 resource="fixture-reset:authorization",
             )
-        missing_configuration = sorted(
-            name
-            for name in (
-                "PT_AGENT_PROVIDER_ID",
-                "PT_AGENT_PROVIDER_BASE_URL",
-            )
-            if not profile_env.get(name, "")
-        )
-        if missing_configuration:
+        if not profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", ""):
             raise BlockedError(
                 reason=(
-                    f"{gate_id} requires profile values: "
-                    + ", ".join(missing_configuration)
+                    f"{gate_id} requires CHAT_NATIVE_DEMO_PASSWORD "
+                    "in the approved profile"
                 ),
-                resource=f"profile:{missing_configuration[0]}",
+                resource="credential-ref:profile:CHAT_NATIVE_DEMO_PASSWORD",
             )
-        credential_refs = self._export_profile_credential_refs(profile_env)
+        requires_provider = agent_native_requires_provider(gate_id)
+        if requires_provider:
+            missing_configuration = sorted(
+                name
+                for name in (
+                    "PT_AGENT_PROVIDER_ID",
+                    "PT_AGENT_PROVIDER_BASE_URL",
+                )
+                if not profile_env.get(name, "")
+            )
+            if missing_configuration:
+                raise BlockedError(
+                    reason=(
+                        f"{gate_id} requires profile values: "
+                        + ", ".join(missing_configuration)
+                    ),
+                    resource=f"profile:{missing_configuration[0]}",
+                )
+            credential_refs = self._export_profile_credential_refs(profile_env)
+        else:
+            credential_refs = ("profile:CHAT_NATIVE_DEMO_PASSWORD",)
         roles = GATE_ROLES[gate_id]
-        _, _, actor_ref = produce_actor_manifest(
-            environment_id=self.environment_id,
-            run_id=manifest.run_id,
-            station_url=station_url,
-            deployment_environment=deployment_environment,
-            roles=roles,
-            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
-            reset_authorized=True,
-        )
+        if requires_reset:
+            _, _, actor_ref = produce_actor_manifest(
+                environment_id=self.environment_id,
+                run_id=manifest.run_id,
+                station_url=station_url,
+                deployment_environment=deployment_environment,
+                roles=roles,
+                credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
+                reset_authorized=True,
+            )
+        else:
+            actors = tuple(
+                resolve_actor_identity(
+                    station_url,
+                    deployment_environment,
+                    role,
+                )
+                for role in roles
+            )
+            _, _, actor_ref = persist_actor_manifest(
+                ActorManifest(
+                    fixture_id="chat-native-existing-actors",
+                    environment_id=self.environment_id,
+                    run_id=manifest.run_id,
+                    created_at=utc_now(),
+                    actors=actors,
+                    credential_refs=credential_refs,
+                    reset_authorized=False,
+                    target_verified=True,
+                )
+            )
         client = (
             self._agent_attachment_client(
                 manifest.run_id,

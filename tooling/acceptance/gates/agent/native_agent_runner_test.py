@@ -39,6 +39,19 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
             self.source,
         )
 
+    def test_core_lifecycle_does_not_require_provider_configuration(self) -> None:
+        self.assertIn(
+            'return journey != "core-lifecycle"',
+            self.source,
+        )
+        self.assertIn(
+            "if self.provider_configuration_required:",
+            self.source,
+        )
+        lifecycle = self.source.split("    def run_core_lifecycle(self)", 1)[1]
+        lifecycle = lifecycle.split("    def run_attachment(self)", 1)[0]
+        self.assertNotIn('"configure_created_agent"', lifecycle)
+
     def test_lifecycle_selectors_are_isolated_as_an_integration_contract(
         self,
     ) -> None:

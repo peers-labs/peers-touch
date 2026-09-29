@@ -32,8 +32,10 @@
     "tooling/acceptance/features/agent-core-lifecycle.yaml",
     "tooling/acceptance/gates.yaml",
     "tooling/acceptance/gates/agent/native_agent_runner.py",
+    "tooling/acceptance/gates/agent/native_agent_runner_test.py",
     "tooling/acceptance/matrices/agent-core-lifecycle-native.yaml",
     "tooling/acceptance/provisioners/home_station.py",
+    "tooling/acceptance/tests/test_provisioner_runtime.py",
     "tooling/acceptance/registry.yaml"
   ],
   "readSet": [
@@ -87,5 +89,8 @@ readback.
 - Product audit found create buttons that persisted placeholders, opened the
   current profile, navigated to Settings, or navigated to Marketplace.
 - The registered core-lifecycle Gate referenced an unsupported runner journey.
+- The lifecycle Gate must reuse the existing profile-two actor without a
+  destructive Station reset and must not require an HTTP Provider credential;
+  provider execution is proved separately by the primary CLI Provider Journey.
 - Implementation and Gate repair are present locally but remain unproven until
   the main-agent exact-source run passes.
