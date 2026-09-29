@@ -90,3 +90,32 @@ func TestSitesJSONStoresNormalizedValues(t *testing.T) {
 		t.Fatalf("provider values were not normalized: %#v", provider)
 	}
 }
+
+func TestVercelRequiresValidAdminAuthentication(t *testing.T) {
+	t.Setenv("VERCEL", "1")
+	t.Setenv("OAUTH_ADMIN_USERNAME", "")
+	t.Setenv("OAUTH_ADMIN_PASSWORD_HASH", "")
+	if _, err := LoadAdminAuthenticator(); err == nil ||
+		err.Error() != "admin_auth_configuration_required" {
+		t.Fatalf("expected missing admin auth failure, got %v", err)
+	}
+
+	t.Setenv("OAUTH_ADMIN_USERNAME", "operator")
+	t.Setenv(
+		"OAUTH_ADMIN_PASSWORD_HASH",
+		"pbkdf2-sha256$100000$MDEyMzQ1Njc4OWFiY2RlZg==$pnq3X8b0RCPy3QPbc4tMRNkzzR3dLJBRf6HfSFzQh1Y=",
+	)
+	if auth, err := LoadAdminAuthenticator(); err != nil || auth == nil {
+		t.Fatalf("valid admin auth rejected: auth=%#v err=%v", auth, err)
+	}
+}
+
+func TestLocalAdminAuthenticationMayBeDisabled(t *testing.T) {
+	t.Setenv("VERCEL", "")
+	t.Setenv("OAUTH_ADMIN_USERNAME", "")
+	t.Setenv("OAUTH_ADMIN_PASSWORD_HASH", "")
+	auth, err := LoadAdminAuthenticator()
+	if err != nil || auth != nil {
+		t.Fatalf("optional local admin auth was not disabled: auth=%#v err=%v", auth, err)
+	}
+}

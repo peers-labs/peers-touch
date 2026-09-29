@@ -34,6 +34,14 @@ class _OAuth2ClientLocalProvisioner(EnvironmentProvisioner):
                     reason="Go toolchain is unavailable",
                     resource="toolchain:go",
                 )
+            if (
+                self.client_runtime.startswith("browser:")
+                and shutil.which("playwright") is None
+            ):
+                raise BlockedError(
+                    reason="Playwright browser toolchain is unavailable",
+                    resource="toolchain:playwright",
+                )
             module = REPO_ROOT / "apps" / "oauth2-client" / "go.mod"
             if not module.is_file() or manifest.workspace_digest != "clean":
                 raise BlockedError(

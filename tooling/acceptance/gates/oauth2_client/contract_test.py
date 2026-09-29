@@ -4,6 +4,7 @@ import unittest
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.oauth2_client.contract import (
+    BROWSER_SCRIPT,
     SCOPES,
     commands_for_scope,
     test_pattern,
@@ -35,6 +36,9 @@ class OAuth2ClientContractTests(unittest.TestCase):
     def test_unknown_scope_fails_closed(self) -> None:
         with self.assertRaises(GateError):
             commands_for_scope("unknown")
+
+    def test_browser_probe_is_valid_python(self) -> None:
+        compile(BROWSER_SCRIPT, "<oauth2-client-browser-probe>", "exec")
 
 
 if __name__ == "__main__":

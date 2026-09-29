@@ -17,6 +17,7 @@ import (
 
 type Container struct {
 	Handler     *handler.OAuthHandler
+	Admin       *handler.AdminHandler
 	Store       repository.OAuthStore
 	Maintenance repository.OAuthMaintenanceStore
 }
@@ -31,6 +32,10 @@ func BuildContainer() (*Container, error) {
 		return nil, err
 	}
 	store, maintenance, err := BuildOAuthStore(storageConfig, http.DefaultClient)
+	if err != nil {
+		return nil, err
+	}
+	adminAuth, err := LoadAdminAuthenticator()
 	if err != nil {
 		return nil, err
 	}
@@ -63,6 +68,10 @@ func BuildContainer() (*Container, error) {
 		Handler: &handler.OAuthHandler{
 			StartAuth:      startUC,
 			HandleCallback: callbackUC,
+		},
+		Admin: &handler.AdminHandler{
+			Store: store,
+			Auth:  adminAuth,
 		},
 		Store:       store,
 		Maintenance: maintenance,

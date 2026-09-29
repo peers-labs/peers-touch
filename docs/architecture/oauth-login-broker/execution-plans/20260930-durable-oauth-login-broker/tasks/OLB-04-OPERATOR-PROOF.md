@@ -44,7 +44,7 @@
     },
     {
       "id": "olb-acceptance",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate oauth-login-broker-contract --gate architecture-module-governance --gate acceptance-infra-validation",
+      "command": "make acceptance-run",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
@@ -68,9 +68,10 @@
 
 ## Current Snapshot
 
-- State: pending on `OLB-03-KEY-ROTATION`.
-- The existing service has no administration handler or Vercel routes.
-- Product proof requires authenticated HTTP and sanitized durable readback.
+- State: in progress.
+- The administration handler, Basic authentication, Vercel routes, and browser
+  Gate are implemented.
+- Exact-source browser, completion Acceptance, and final review remain.
 
 ## Closure
 
