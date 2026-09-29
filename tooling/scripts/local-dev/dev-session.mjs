@@ -1046,7 +1046,7 @@ function normalizeStandardizedResult(
   );
   if (
     sourceArtifact.value?.gateId !== result.id ||
-    sourceArtifact.value?.status !== 'PASS' ||
+    !['PASS', 'passed'].includes(sourceArtifact.value?.status) ||
     sourceArtifact.value?.completionStatus !== 'DONE' ||
     sourceArtifact.value?.proofStatus !== 'PROVEN' ||
     manifestArtifact.value?.state !== 'FIXTURE_READY' ||
