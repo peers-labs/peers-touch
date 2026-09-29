@@ -79,6 +79,12 @@ returned protobuf JSON. Mobile decoded the body as binary protobuf, treated the
 readback as unavailable, and kept the committed submission in
 `UNKNOWN_OUTCOME`.
 
+A later iOS replay reached an active lifecycle scope and an active Private
+Social runtime, then the first public Moment mutation failed with
+`MOBILE_WRITE_ADMISSION_CLOSED`. The Session or Social ingress admission could
+still be reopening after the post-login restart even though both higher-level
+readiness projections were already active.
+
 ## Root cause
 
 Private Social implemented its own Station-origin policy instead of consuming
@@ -136,6 +142,11 @@ readiness as permission to submit. Tests hid the gap by manufacturing the full
 visible-state set in fixture snapshots instead of deriving it from production
 actions.
 
+The Mobile runtime owner also treated active lifecycle and Private Social
+projections as sufficient mutation readiness. Those projections do not replace
+the dedicated `recovery.snapshot.writeAdmission` owner, which can remain closed
+briefly while Session refresh or Social ingress reconciliation completes.
+
 ## Mitigation
 
 ### What was done in code
@@ -179,6 +190,10 @@ actions.
 - Typed Station private-content error details are retained through the Mobile
   transport so unsupported audience and recipient-key failures map to their
   exact visible states instead of a generic failure.
+- The Mobile runtime owner polls the public recovery projection after key
+  reconciliation and does not hand the client to a mutating Fixture until
+  `writeAdmission.open` is true. Timeout diagnostics retain the last public
+  admission reason without exposing credentials.
 - Focused Rust and TypeScript regressions cover both policy modes and failed
   activation readiness.
 
@@ -249,6 +264,9 @@ appear in `pending_submissions()`, and must not be sent by reconciliation.
 Retrying prepare must reuse the same stored encrypted request; only explicit
 submit may acquire it for dispatch. Fixture tests must return per-action
 production histories and must fail if a required state is absent.
+Native runtime owners must also observe
+`recovery.snapshot.writeAdmission.open=true` after post-login restart and key
+reconciliation before invoking any mutating Fixture action.
 
 ## Crosswalks
 
