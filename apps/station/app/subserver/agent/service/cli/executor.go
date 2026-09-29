@@ -304,10 +304,13 @@ func (e *Executor) Execute(
 	}
 
 	scanErr := scanner.Err()
-	_ = terminateProcessGroup(process.Process)
+	if scanErr != nil {
+		cancel()
+	}
 	waitErr := process.Wait()
 	close(processDone)
 	<-supervisorDone
+	shutdownErr := shutdownProcessGroup(process.Process, e.TerminationGrace)
 	<-stderrDone
 
 	if inputErr != nil {
@@ -372,6 +375,13 @@ func (e *Executor) Execute(
 			Program:  command.Program,
 			ExitCode: exitCode,
 			Cause:    cause,
+		}
+	}
+	if shutdownErr != nil {
+		return nil, &ExecutionError{
+			Kind:    FailureExit,
+			Program: command.Program,
+			Cause:   shutdownErr,
 		}
 	}
 	if strings.TrimSpace(content.String()) == "" {

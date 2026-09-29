@@ -46,6 +46,8 @@
     "tooling/docker/compose.yml",
     "tooling/scripts/deploy/deploy.sh",
     "tooling/make/local-dev.mk",
+    "tooling/scripts/acceptance-gap-detect.py",
+    "tooling/scripts/acceptance-gap-detect-test.py",
     "tooling/scripts/local-dev/completion-review.mjs",
     "tooling/scripts/local-dev/completion-review.test.mjs",
     "tooling/scripts/local-dev/dev-session.mjs",
@@ -69,7 +71,7 @@
   "checks": [
     {
       "id": "agent-cli-provider-source",
-      "command": "cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler -count=1 && cd ../.. && cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml && pnpm --dir apps/desktop check && python3 -m unittest tooling.acceptance.gates.agent.native_agent_runner_test tooling.acceptance.tests.test_provisioner_runtime && node --test tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/dev-session.test.mjs && node --test --test-name-pattern='planctl advance records typed exhaustion' tooling/scripts/plan/planctl.test.mjs",
+      "command": "cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler -count=1 && cd ../.. && cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml && pnpm --dir apps/desktop check && python3 -m unittest tooling.acceptance.gates.agent.native_agent_runner_test tooling.acceptance.tests.test_provisioner_runtime && python3 tooling/scripts/acceptance-gap-detect-test.py && node --test tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/dev-session.test.mjs && node --test --test-name-pattern='planctl advance records typed exhaustion' tooling/scripts/plan/planctl.test.mjs",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -98,7 +100,7 @@
     "Do not require HTTP provider credentials for CLI execution",
     "Do not log CLI credentials, prompts, or unrestricted local paths"
   ],
-  "updatedAt": "2026-09-29T07:52:00Z",
+  "updatedAt": "2026-09-29T10:32:00Z",
   "durableEvidence": []
 }
 ```

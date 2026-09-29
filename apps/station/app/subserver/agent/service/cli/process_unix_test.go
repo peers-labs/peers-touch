@@ -90,7 +90,7 @@ func TestExecutorNormalExitTerminatesRemainingProcessGroup(t *testing.T) {
 	root := t.TempDir()
 	childPIDPath := filepath.Join(root, "child.pid")
 	commandPath := writeExecutable(t, root, "provider", `#!/bin/sh
-sleep 30 </dev/null >/dev/null 2>&1 &
+sh -c 'trap "" TERM; exec sleep 30' </dev/null >/dev/null 2>&1 &
 child_pid=$!
 printf '%s\n' "$child_pid" > "$1"
 printf '%s\n' '{"type":"done","content":"complete"}'
