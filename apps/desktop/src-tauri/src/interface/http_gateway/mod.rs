@@ -77,7 +77,8 @@ use reqwest::Method;
 use ulid::Ulid;
 
 const DEFAULT_PORT: u16 = 3030;
-const POOL_SIZE: usize = 8;
+const COMMAND_POOL_SIZE: usize = 8;
+const AGENT_STREAM_POOL_SIZE: usize = 8;
 const MAX_FRONTEND_TELEMETRY_BATCH_EVENTS: usize = 500;
 static IDENTITY_TRANSITION_WAITERS: AtomicUsize = AtomicUsize::new(0);
 static IDENTITY_TRANSITION_MAX_WAITERS: AtomicUsize = AtomicUsize::new(0);
@@ -113,6 +114,22 @@ struct GatewayRequestDiagnostics {
     active_workers_at_enqueue: usize,
     queue_wait_ms: u128,
     queued_at_enqueue: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GatewayWorkerLane {
+    Command,
+    AgentStream,
+}
+
+fn gateway_worker_lane(method: &tiny_http::Method, url: &str) -> GatewayWorkerLane {
+    if method == &tiny_http::Method::Post
+        && matches!(url, "/agent/turn/stream" | "/agent/turn/events")
+    {
+        GatewayWorkerLane::AgentStream
+    } else {
+        GatewayWorkerLane::Command
+    }
 }
 
 const AGENT_STREAM_PREAMBLE: &[u8] = b": gateway-connected\n\n";
@@ -449,7 +466,8 @@ fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
                 }
             };
 
-            let pool = threadpool::ThreadPool::new(POOL_SIZE);
+            let command_pool = threadpool::ThreadPool::new(COMMAND_POOL_SIZE);
+            let agent_stream_pool = threadpool::ThreadPool::new(AGENT_STREAM_POOL_SIZE);
             let server = Arc::new(server);
 
             loop {
@@ -464,6 +482,13 @@ fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
                 let state = Arc::clone(&state);
                 let runtime = runtime.clone();
                 let enqueued_at = std::time::Instant::now();
+                // A cancelled downstream fetch is only observed when the proxy
+                // writes the next upstream frame. Keep those long-lived SSE
+                // workers from blocking ordinary command and CORS requests.
+                let pool = match gateway_worker_lane(request.method(), request.url()) {
+                    GatewayWorkerLane::Command => &command_pool,
+                    GatewayWorkerLane::AgentStream => &agent_stream_pool,
+                };
                 let active_workers_at_enqueue = pool.active_count();
                 let queued_at_enqueue = pool.queued_count();
                 pool.execute(move || {
@@ -8360,6 +8385,26 @@ mod tests {
                 "upstream disconnected",
             ))
         }
+    }
+
+    #[test]
+    fn agent_stream_requests_use_a_dedicated_worker_lane() {
+        assert_eq!(
+            gateway_worker_lane(&tiny_http::Method::Post, "/agent/turn/stream"),
+            GatewayWorkerLane::AgentStream,
+        );
+        assert_eq!(
+            gateway_worker_lane(&tiny_http::Method::Post, "/agent/turn/events"),
+            GatewayWorkerLane::AgentStream,
+        );
+        assert_eq!(
+            gateway_worker_lane(&tiny_http::Method::Options, "/agent/turn/stream"),
+            GatewayWorkerLane::Command,
+        );
+        assert_eq!(
+            gateway_worker_lane(&tiny_http::Method::Post, "/"),
+            GatewayWorkerLane::Command,
+        );
     }
 
     #[test]
