@@ -83,6 +83,24 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             raise GateError("PT_ACCEPTANCE_RUNTIME_MANIFEST is required")
         self.manifest = load_runtime_manifest(Path(manifest_path), self.gate_id)
         self.report.manifest = self.manifest
+        runtime_cell_manifest_path = os.environ.get(
+            "PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST",
+            "",
+        ).strip()
+        if not runtime_cell_manifest_path:
+            raise GateError("PT_ACCEPTANCE_RUNTIME_CELL_MANIFEST is required")
+        try:
+            runtime_cell_manifest = json.loads(
+                Path(runtime_cell_manifest_path).read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise GateError(
+                f"Desktop OAuth runtime-cell manifest is invalid: {error}"
+            ) from error
+        self.runtime_cell_manifest = self._mapping(
+            runtime_cell_manifest,
+            "runtime-cell manifest",
+        )
         source = self._mapping(self.manifest.get("source"), "runtime source")
         source_commit = str(source.get("commit") or "")
         if source.get("workspaceDigest") != "clean" or not source_commit:
@@ -188,9 +206,14 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         station = self._mapping(services.get("station"), "Station attestation")
         runtime_cell = self.runtime_binding.runtime_identity()
         binary = self.runtime_binding.binary_identity()
+        leased_cell = self.runtime_cell_manifest
         cell_source = self._mapping(
             runtime_cell.get("source"),
             "runtime-cell source",
+        )
+        leased_cell_source = self._mapping(
+            leased_cell.get("source"),
+            "leased runtime-cell source",
         )
         source_commit = str(source.get("commit") or "")
         binary_sha256 = str(binary.get("sha256") or "")
@@ -203,16 +226,23 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             and runtime_cell.get("cellId") == "desktop-macos-native"
             and runtime_cell.get("gateId") == self.gate_id
             and runtime_cell.get("state") == "LEASED"
+            and leased_cell.get("cellId") == "desktop-macos-native"
+            and leased_cell.get("gateId") == self.gate_id
+            and leased_cell.get("state") == "LEASED"
             and cell_source.get("commit") == source_commit
             and cell_source.get("workspaceDigest") == "clean"
+            and leased_cell_source.get("commit") == source_commit
+            and leased_cell_source.get("workspaceDigest") == "clean"
             and binary.get("sourceCommit") == source_commit
             and re.fullmatch(r"[0-9a-f]{64}", binary_sha256) is not None
             and cell_source.get("binarySha256") == binary_sha256
+            and leased_cell_source.get("binarySha256") == binary_sha256
         )
         return {
             "orchestrator": source,
             "station": station,
             "runtimeCell": runtime_cell,
+            "leasedRuntimeCell": leased_cell,
             "binary": binary,
             "verified": verified,
         }
