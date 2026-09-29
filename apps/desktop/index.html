@@ -78,6 +78,18 @@
           var entry = '[' + ts + 'ms] ' + msg;
           bootLog.push(entry);
           try { console.log('[pt-boot] ' + entry); } catch(e) {}
+          try {
+            var invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
+            if (typeof invoke === 'function') {
+              Promise.resolve(invoke('frontend_log', {
+                input: {
+                  level: msg.indexOf('ERROR') >= 0 || msg.indexOf('TIMEOUT') >= 0 ? 'error' : 'info',
+                  tag: 'boot-raw',
+                  message: entry
+                }
+              })).catch(function() {});
+            }
+          } catch(e) {}
         }
 
         function setBootStatus(text) {
