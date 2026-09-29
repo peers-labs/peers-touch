@@ -31114,6 +31114,7 @@ async function runMarketplaceCatalogDevelopmentJourney(
 
 const CLI_PRIMARY_PROVIDER_ID = 'trae-cli';
 const CLI_PRIMARY_MODEL_ID = 'default';
+const CLI_FAILURE_PROVIDER_ID = 'codex-cli';
 
 async function prepareCliProviderPrimaryJourney(
   sampleId: string,
@@ -31424,6 +31425,232 @@ async function executeCliProviderPrimaryTurn(input: {
   }) as Record<string, unknown>;
 }
 
+async function executeCliProviderFailureJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const modelId = `acceptance-missing-${sampleId}`;
+  const providerBefore = await api.getProvider(CLI_FAILURE_PROVIDER_ID);
+  if (
+    providerBefore.enabled
+    || Number(providerBefore.version ?? 0) !== 0
+    || providerBefore.models.some((model) => model.id === modelId)
+  ) {
+    throw new Error('agent.acceptance.cliFailureFixtureConflict');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  let agentId = '';
+  let conversationId = '';
+  let providerCreated = false;
+  let modelCreated = false;
+  let capture: Record<string, unknown> | null = null;
+  const cleanupFailures: string[] = [];
+
+  try {
+    await api.updateProvider(CLI_FAILURE_PROVIDER_ID, {
+      base_url: '',
+      enabled: true,
+      version: Number(providerBefore.version ?? 0),
+    });
+    providerCreated = true;
+    await api.addModel(CLI_FAILURE_PROVIDER_ID, {
+      id: modelId,
+      display_name: 'Missing CLI acceptance model',
+      type: 'chat',
+      context_window: 8_192,
+      enabled: true,
+      streaming: true,
+      function_call: false,
+    });
+    modelCreated = true;
+    await useProviderStore.getState().loadProviders();
+
+    const agent = await agentStore.createAgent({
+      name: `cli-primary-${sampleId}-failure-${crypto.randomUUID()}`,
+      title: `CLI Provider failure ${sampleId}`,
+      description: 'Disposable native CLI Provider failure Agent',
+      provider: CLI_FAILURE_PROVIDER_ID,
+      model: modelId,
+      thinkingMode: 'auto',
+    });
+    agentId = agent.id || agent.name;
+    await api.setSelectedAgent(agent.name);
+    useAgentStore.getState().setSelectedAgent(agent.name);
+    useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+
+    const conversation = await api.createAgentConversation({
+      agent_id: agentId,
+      title: `CLI Provider failure ${sampleId}`,
+      provider_id: CLI_FAILURE_PROVIDER_ID,
+      model_name: modelId,
+    });
+    conversationId = conversation.conversation_id;
+    await useAgentTopicStore.getState().loadTopicsForAgent(
+      agentId,
+      'acceptance-cli-provider-failure',
+    );
+    await useChatStore.getState().loadSessions();
+    await useChatStore.getState().selectSession(conversationId);
+    await useChatStore.getState().syncMessages();
+
+    const accepted = useChatStore.getState().sendMessage(
+      `CLI failure ${sampleId}`,
+      [],
+      { clientIdempotencyKey: crypto.randomUUID() },
+    );
+    if (!accepted) {
+      throw new Error('agent.acceptance.cliFailureSendRejected');
+    }
+    let failedAssistant = [...useChatStore.getState().messages]
+      .reverse()
+      .find((message) => message.role === 'assistant');
+    await waitFor(
+      () => {
+        failedAssistant = [...useChatStore.getState().messages]
+          .reverse()
+          .find((message) => (
+            message.role === 'assistant'
+            && message.loading !== true
+            && message.typedError?.error_type === 'RUNTIME_UNAVAILABLE'
+            && message.typedError.details.reason_code === 'cli_binary_missing'
+          ));
+        return Boolean(failedAssistant);
+      },
+      'typed CLI Provider failure',
+      30_000,
+    );
+    await useChatStore.getState().syncMessages();
+    const readback = await foundationConversationReadback(conversationId);
+    const stationAssistant = [...readback.messages].reverse().find(
+      (message) => (
+        message.role === 'assistant'
+        && Boolean(message.errorJson)
+      ),
+    );
+    if (!failedAssistant || !stationAssistant) {
+      throw new Error('agent.acceptance.cliFailureProjectionMissing');
+    }
+    const persistedError = evidenceRecord(
+      JSON.parse(stationAssistant.errorJson),
+      'cliFailurePersistedError',
+    );
+    const persistedDetails = evidenceRecord(
+      persistedError.details,
+      'cliFailurePersistedDetails',
+    );
+    const completedAssistants = readback.messages.filter(
+      (message) => (
+        message.role === 'assistant'
+        && String(message.status).toLowerCase() === 'completed'
+      ),
+    );
+    const errorSurface = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]'
+        + '[data-pt-agent-error-type="RUNTIME_UNAVAILABLE"]'
+        + '[data-pt-agent-error-reason-code="cli_binary_missing"]',
+      ),
+    ).reverse().find((element) => element.getClientRects().length > 0);
+    if (
+      persistedError.error_type !== 'RUNTIME_UNAVAILABLE'
+      || persistedDetails.runtime_kind !== 'direct_model'
+      || persistedDetails.reason_code !== 'cli_binary_missing'
+      || String(stationAssistant.status).toLowerCase() !== 'failed'
+      || completedAssistants.length !== 0
+      || !errorSurface
+    ) {
+      throw new Error('agent.acceptance.cliFailureContractMismatch');
+    }
+
+    capture = evidenceValue({
+      fixture: {
+        agentId,
+        conversationId,
+        providerId: CLI_FAILURE_PROVIDER_ID,
+        modelId,
+      },
+      station: {
+        assistantMessageId: stationAssistant.messageId,
+        assistantStatus: stationAssistant.status,
+        errorType: persistedError.error_type,
+        runtimeKind: persistedDetails.runtime_kind,
+        reasonCode: persistedDetails.reason_code,
+        completedAssistantCount: completedAssistants.length,
+      },
+      receiver: {
+        visible: true,
+        assistantMessageId: failedAssistant.id,
+        terminalStatus: failedAssistant.terminalStatus,
+        errorType: failedAssistant.typedError?.error_type ?? '',
+        reasonCode:
+          failedAssistant.typedError?.details.reason_code ?? '',
+      },
+    }) as Record<string, unknown>;
+  } finally {
+    if (conversationId) {
+      clearFoundationLocalConversationProjection(conversationId);
+      try {
+        await deleteFoundationConversation(conversationId);
+      } catch (error) {
+        cleanupFailures.push(`conversation:${observedErrorCode(error)}`);
+      }
+    }
+    if (agentId) {
+      try {
+        await api.deleteAgent(agentId);
+      } catch (error) {
+        if (!isFoundationResourceNotFound(error)) {
+          cleanupFailures.push(`agent:${observedErrorCode(error)}`);
+        }
+      }
+    }
+    if (modelCreated) {
+      try {
+        await api.deleteModel(CLI_FAILURE_PROVIDER_ID, modelId);
+      } catch (error) {
+        if (!isFoundationResourceNotFound(error)) {
+          cleanupFailures.push(`model:${observedErrorCode(error)}`);
+        }
+      }
+    }
+    if (providerCreated) {
+      try {
+        await api.deleteProvider(CLI_FAILURE_PROVIDER_ID);
+      } catch (error) {
+        if (!isFoundationResourceNotFound(error)) {
+          cleanupFailures.push(`provider:${observedErrorCode(error)}`);
+        }
+      }
+    }
+    await useAgentStore.getState().loadAgents();
+    if (priorSelection) {
+      useAgentStore.getState().setSelectedAgent(priorSelection);
+      useAgentStore.getState().setAgentSurface(
+        priorSelection,
+        priorSurface,
+      );
+      await api.setSelectedAgent(priorSelection);
+    }
+    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  }
+
+  if (!capture || cleanupFailures.length > 0) {
+    throw new Error(
+      `agent.acceptance.cliFailureCleanupFailed:${cleanupFailures.join(',')}`,
+    );
+  }
+  return evidenceValue({
+    ...capture,
+    cleanup: {
+      status: 'clean',
+      failures: cleanupFailures,
+    },
+  }) as Record<string, unknown>;
+}
+
 async function restoreCliProviderPrimaryJourney(input: {
   agentId: string;
   agentName: string;
@@ -31568,6 +31795,8 @@ async function cleanupCliProviderPrimaryResidue(
   sampleId: string,
 ): Promise<Record<string, unknown>> {
   const failures: string[] = [];
+  const failureModelId = `acceptance-missing-${sampleId}`;
+  let failureProviderRemoved = false;
   await useAgentStore.getState().loadAgents();
   const prefix = `cli-primary-${sampleId}-`;
   const targets = useAgentStore.getState().agents.filter(
@@ -31594,11 +31823,38 @@ async function cleanupCliProviderPrimaryResidue(
   const remaining = useAgentStore.getState().agents.filter(
     (candidate) => candidate.name.startsWith(prefix),
   );
+  try {
+    const provider = await api.getProvider(CLI_FAILURE_PROVIDER_ID);
+    const ownsFailureModel = provider.models.some(
+      (model) => model.id === failureModelId,
+    );
+    if (Number(provider.version ?? 0) > 0 && ownsFailureModel) {
+      await api.deleteModel(
+        CLI_FAILURE_PROVIDER_ID,
+        failureModelId,
+      ).catch((error: unknown) => {
+        if (!isFoundationResourceNotFound(error)) throw error;
+      });
+      await api.deleteProvider(CLI_FAILURE_PROVIDER_ID);
+    }
+    failureProviderRemoved = true;
+  } catch (error) {
+    if (isFoundationResourceNotFound(error)) {
+      failureProviderRemoved = true;
+    } else {
+      failures.push(`failure-provider:${observedErrorCode(error)}`);
+    }
+  }
   return {
     status:
-      failures.length === 0 && remaining.length === 0 ? 'clean' : 'failed',
+      failures.length === 0
+      && remaining.length === 0
+      && failureProviderRemoved
+        ? 'clean'
+        : 'failed',
     removedCount: targets.length - remaining.length,
     remainingCount: remaining.length,
+    failureProviderRemoved,
     failures,
   };
 }
@@ -31931,6 +32187,14 @@ export function installAcceptanceHarness(): void {
       assistantContentHash: string;
     }) {
       return restoreCliProviderPrimaryJourney(input);
+    },
+
+    async executeCliProviderFailure({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return executeCliProviderFailureJourney(sampleId);
     },
 
     async cleanupCliProviderPrimary(input: {

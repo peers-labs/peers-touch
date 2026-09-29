@@ -210,6 +210,7 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
             "send_stream_and_persist",
             "restart_native_client",
             "restore_station_conversation_after_restart",
+            "typed_failure_without_fabricated_completion",
             "cleanup_cli_provider_fixture",
         ):
             with self.subTest(step=step):
@@ -218,6 +219,7 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
             "prepareCliProviderPrimary",
             "executeCliProviderPrimary",
             "restoreCliProviderPrimary",
+            "executeCliProviderFailure",
             "cleanupCliProviderPrimary",
         ):
             with self.subTest(method=method):
@@ -225,10 +227,17 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
         self.assertIn("cleanupCliProviderPrimaryResidue", self.source)
         self.assertIn('"agent.cli-provider.stream.delta-observed"', journey)
         self.assertIn('"agent.cli-provider.restart.restored"', journey)
+        self.assertIn('"agent.cli-provider.failure.typed-visible"', journey)
+        self.assertIn(
+            '"agent.cli-provider.failure.no-fabricated-completion"',
+            journey,
+        )
         self.assertIn('prepared_receiver.get("messageCount", -1)', journey)
         self.assertIn('prepared_station.get("messageCount", -1)', journey)
         self.assertNotIn('get("messageCount") or -1', journey)
         self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", journey)
+        self.assertIn("CLI_FAILURE_PROVIDER_ID = 'codex-cli'", self.harness_source)
+        self.assertIn("cli_binary_missing", self.harness_source)
 
     def test_state_preserving_restart_does_not_require_the_initial_route(
         self,

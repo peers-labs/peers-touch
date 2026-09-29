@@ -28,13 +28,15 @@
       "creating an Agent bound to trae-cli persists the Provider and model identity in Station",
       "sending from an empty topic invokes the CLI adapter and emits at least one durable provider delta",
       "Station persists one user message, one completed Assistant message, and their shared Turn identity",
-      "restarting the native client restores the same Agent, conversation, and completed response from Station"
+      "restarting the native client restores the same Agent, conversation, and completed response from Station",
+      "a missing built-in CLI binary persists one failed Assistant with RUNTIME_UNAVAILABLE and cli_binary_missing without a completed Assistant"
     ],
     "visible": [
       "the native Agent composer exposes trae-cli and default as its selected runtime",
       "the empty topic is visible before the first send",
       "the streamed Assistant response becomes visible and terminal",
-      "the same terminal Assistant response remains visible after a native process restart"
+      "the same terminal Assistant response remains visible after a native process restart",
+      "the missing CLI binary failure is visible with the typed runtime-unavailable reason"
     ]
   },
   "negative": [

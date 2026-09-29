@@ -1729,6 +1729,46 @@ class AgentNativeJourney:
             "CLI Provider response was not restored in the native client",
         )
 
+        failed = self.step(
+            "typed_failure_without_fabricated_completion",
+            lambda: self.harness(
+                "executeCliProviderFailure",
+                {"sampleId": sample_id},
+                timeout=120,
+            ),
+        )
+        require(
+            isinstance(failed, Mapping),
+            "CLI Provider failure journey returned invalid evidence",
+        )
+        failed_station = failed.get("station")
+        failed_receiver = failed.get("receiver")
+        failed_cleanup = failed.get("cleanup")
+        require(
+            isinstance(failed_station, Mapping)
+            and isinstance(failed_receiver, Mapping)
+            and isinstance(failed_cleanup, Mapping),
+            "CLI Provider failure evidence is incomplete",
+        )
+        require(
+            failed_station.get("assistantStatus") == "failed"
+            and failed_station.get("errorType") == "RUNTIME_UNAVAILABLE"
+            and failed_station.get("runtimeKind") == "direct_model"
+            and failed_station.get("reasonCode") == "cli_binary_missing"
+            and int(failed_station.get("completedAssistantCount", -1)) == 0,
+            "CLI Provider failure was not Station-authoritative",
+        )
+        require(
+            failed_receiver.get("visible") is True
+            and failed_receiver.get("errorType") == "RUNTIME_UNAVAILABLE"
+            and failed_receiver.get("reasonCode") == "cli_binary_missing",
+            "CLI Provider typed failure was not visible",
+        )
+        require(
+            failed_cleanup.get("status") == "clean",
+            "CLI Provider failure fixture cleanup failed",
+        )
+
         product_cleanup = self.step(
             "cleanup_cli_provider_fixture",
             lambda: self.harness(
@@ -1756,15 +1796,18 @@ class AgentNativeJourney:
             "prepared": dict(prepared_receiver),
             "completed": dict(executed_receiver),
             "restored": dict(restored_receiver),
+            "failure": dict(failed_receiver),
         }
         self.station_readback["cliProvider"] = {
             "prepared": dict(prepared_station),
             "completed": dict(executed_station),
             "restored": dict(restored_station),
+            "failure": dict(failed_station),
         }
         self.journey_evidence["cliProvider"] = {
             "provider": dict(provider),
             "stream": dict(stream),
+            "failure": dict(failed),
             "productCleanup": dict(product_cleanup),
         }
         for assertion_id in (
@@ -1777,6 +1820,9 @@ class AgentNativeJourney:
             "agent.cli-provider.terminal.station-backed",
             "agent.cli-provider.terminal.visible",
             "agent.cli-provider.restart.restored",
+            "agent.cli-provider.failure.typed-visible",
+            "agent.cli-provider.failure.station-backed",
+            "agent.cli-provider.failure.no-fabricated-completion",
             "agent.cli-provider.cleanup.clean",
         ):
             self.assertions.append({"id": assertion_id, "status": "pass"})

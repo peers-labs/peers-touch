@@ -1,6 +1,6 @@
 {
   "id": "agent-cli-provider-primary-native-matrix",
-  "version": "2026-09-29.1",
+  "version": "2026-09-29.2",
   "status": "reviewed",
   "gate": "agent-cli-provider-primary-native-e2e",
   "command_argv": [
@@ -33,12 +33,17 @@
     },
     {
       "id": "native-restart",
-      "actions": ["restart-native-client", "restore-topic", "cleanup"],
+      "actions": ["restart-native-client", "restore-topic"],
+      "required_evidence": ["receiver-dom", "station-readback", "cleanup"]
+    },
+    {
+      "id": "typed-cli-failure",
+      "actions": ["select-missing-cli-provider", "send-message", "observe-typed-failure", "cleanup"],
       "required_evidence": ["receiver-dom", "station-readback", "cleanup"]
     }
   ],
-  "expected_tuple_count": 4,
-  "expected_assertion_count": 10,
+  "expected_tuple_count": 5,
+  "expected_assertion_count": 13,
   "unexpected_action": "reject",
   "missing_evidence": "reject"
 }
