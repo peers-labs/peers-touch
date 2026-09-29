@@ -184,7 +184,8 @@
   "completion": [
     "station-access-desktop-oauth-layout-e2e",
     "station-access-desktop-oauth-native-e2e",
-    "desktop-check"
+    "desktop-check",
+    "machine-dev-registry-self"
   ],
   "full": [
     "acceptance-infra-validation",
@@ -213,7 +214,8 @@
     "station-access-lifecycle-aggregate-e2e",
     "station-access-scope-isolation-e2e",
     "station-api-ownership",
-    "desktop-check"
+    "desktop-check",
+    "machine-dev-registry-self"
   ]
 }
 ```
