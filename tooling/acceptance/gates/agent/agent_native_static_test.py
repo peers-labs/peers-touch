@@ -3381,6 +3381,13 @@ class AgentCapabilitySessionStaticTest(unittest.TestCase):
             "GatewayWorkerLane::AgentStream => &agent_stream_pool",
             gateway,
         )
+        connection_close = 'writer.write_all(b"Connection: close\\r\\n")?;'
+        chunked_branch = "if chunked {"
+        self.assertIn(connection_close, gateway)
+        self.assertLess(
+            gateway.index(connection_close),
+            gateway.index(chunked_branch, gateway.index("fn respond_agent_stream")),
+        )
 
     def test_executor_supervisor_control_is_acceptance_gated(self) -> None:
         runtime_evidence = DESKTOP_RUNTIME_EVIDENCE.read_text(encoding="utf-8")
