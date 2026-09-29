@@ -51,6 +51,8 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
         lifecycle = self.source.split("    def run_core_lifecycle(self)", 1)[1]
         lifecycle = lifecycle.split("    def run_attachment(self)", 1)[0]
         self.assertNotIn('"configure_created_agent"', lifecycle)
+        self.assertIn('"getCoreLifecycleAgentState"', lifecycle)
+        self.assertNotIn('"getFoundationAgentState"', lifecycle)
 
     def test_lifecycle_selectors_are_isolated_as_an_integration_contract(
         self,

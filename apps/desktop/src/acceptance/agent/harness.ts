@@ -35536,6 +35536,29 @@ export function installAcceptanceHarness(): void {
       };
     },
 
+    async getCoreLifecycleAgentState() {
+      const agent = selectedAgent();
+      if (!agent) throw new Error('agent.acceptance.agentMissing');
+      const agentId = agent.id || agent.name;
+      const conversations = await api.listAgentConversations(agentId, {
+        page: 1,
+        pageSize: 200,
+      });
+      return {
+        agent: {
+          id: agentId,
+          name: agent.name,
+          title: agent.title,
+          provider: agent.provider ?? null,
+          model: agent.model ?? null,
+          isDefault: agent.isDefault,
+          version: agent.version ?? 0,
+        },
+        conversations,
+        selectedConversationKey: useChatStore.getState().currentSessionKey,
+      };
+    },
+
     async getFoundationAgentState() {
       const agent = selectedAgent();
       if (!agent) throw new Error('agent.acceptance.agentMissing');
