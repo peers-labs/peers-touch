@@ -31112,6 +31112,497 @@ async function runMarketplaceCatalogDevelopmentJourney(
   return evidenceValue({ ...capture, cleanup }) as Record<string, unknown>;
 }
 
+const CLI_PRIMARY_PROVIDER_ID = 'trae-cli';
+const CLI_PRIMARY_MODEL_ID = 'default';
+
+async function prepareCliProviderPrimaryJourney(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const providers = await api.listProviders();
+  const provider = providers.find(
+    (candidate) => candidate.id === CLI_PRIMARY_PROVIDER_ID,
+  );
+  if (
+    !provider
+    || !provider.enabled
+    || provider.runtime_kind !== 'cli'
+    || provider.requires_api_key
+    || provider.has_api_key
+  ) {
+    throw new Error('agent.acceptance.cliProviderUnavailable');
+  }
+  const detail = await api.getProvider(CLI_PRIMARY_PROVIDER_ID);
+  const model = detail.models.find(
+    (candidate) =>
+      candidate.id === CLI_PRIMARY_MODEL_ID
+      && candidate.enabled
+      && candidate.type === 'chat',
+  );
+  if (!model) {
+    throw new Error('agent.acceptance.cliProviderModelUnavailable');
+  }
+
+  const agentStore = useAgentStore.getState();
+  const priorSelection = agentStore.selectedAgent;
+  const priorSurface = agentStore.getAgentSurface(priorSelection);
+  const agent = await agentStore.createAgent({
+    name: `cli-primary-${sampleId}-${crypto.randomUUID()}`,
+    title: `CLI Provider ${sampleId}`,
+    description: 'Disposable native CLI Provider acceptance Agent',
+    provider: CLI_PRIMARY_PROVIDER_ID,
+    model: CLI_PRIMARY_MODEL_ID,
+    thinkingMode: 'disabled',
+  });
+  const agentId = agent.id || agent.name;
+
+  await api.setSelectedAgent(agent.name);
+  useAgentStore.getState().setSelectedAgent(agent.name);
+  useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await waitFor(
+    () => Boolean(
+      document.querySelector('[data-pt-agent-composer]')
+        ?.getClientRects().length,
+    ),
+    'CLI Provider Agent composer',
+    30_000,
+  );
+
+  const conversation = await api.createAgentConversation({
+    agent_id: agentId,
+    title: `CLI Provider topic ${sampleId}`,
+    provider_id: CLI_PRIMARY_PROVIDER_ID,
+    model_name: CLI_PRIMARY_MODEL_ID,
+  });
+  const conversationId = conversation.conversation_id;
+  await useAgentTopicStore.getState().loadTopicsForAgent(
+    agentId,
+    'acceptance-cli-provider',
+  );
+  await useChatStore.getState().loadSessions();
+  await useChatStore.getState().selectSession(conversationId);
+  await useChatStore.getState().syncMessages();
+
+  const emptyReadback = await foundationConversationReadback(conversationId);
+  if (emptyReadback.messages.length !== 0) {
+    throw new Error('agent.acceptance.cliProviderTopicNotEmpty');
+  }
+  const authoritativeAgent = await api.getAgent(agentId);
+  const composer = document.querySelector<HTMLElement>(
+    '[data-pt-agent-composer] [data-pt-agent-selected-provider]',
+  );
+  const receiver = {
+    visible: Boolean(composer?.getClientRects().length),
+    providerId: composer?.dataset.ptAgentSelectedProvider ?? '',
+    modelId: composer?.dataset.ptAgentSelectedModel ?? '',
+    messageCount: useChatStore.getState().messages.length,
+  };
+  if (
+    !receiver.visible
+    || receiver.providerId !== CLI_PRIMARY_PROVIDER_ID
+    || receiver.modelId !== CLI_PRIMARY_MODEL_ID
+    || receiver.messageCount !== 0
+    || authoritativeAgent.provider !== CLI_PRIMARY_PROVIDER_ID
+    || authoritativeAgent.model !== CLI_PRIMARY_MODEL_ID
+    || conversation.provider_id !== CLI_PRIMARY_PROVIDER_ID
+    || conversation.model_name !== CLI_PRIMARY_MODEL_ID
+  ) {
+    throw new Error('agent.acceptance.cliProviderSelectionMismatch');
+  }
+
+  return evidenceValue({
+    fixture: {
+      agentId,
+      agentName: agent.name,
+      conversationId,
+      priorSelection,
+      priorSurface,
+    },
+    provider: {
+      id: provider.id,
+      runtimeKind: provider.runtime_kind,
+      enabled: provider.enabled,
+      requiresApiKey: provider.requires_api_key,
+      hasApiKey: provider.has_api_key,
+      modelId: model.id,
+      streaming: model.streaming === true,
+    },
+    station: {
+      agentId: authoritativeAgent.id,
+      providerId: authoritativeAgent.provider,
+      modelId: authoritativeAgent.model,
+      conversationId,
+      conversationVersion: conversation.version,
+      messageCount: emptyReadback.messages.length,
+    },
+    receiver,
+  }) as Record<string, unknown>;
+}
+
+async function executeCliProviderPrimaryTurn(input: {
+  agentId: string;
+  agentName: string;
+  conversationId: string;
+  sampleId: string;
+}): Promise<Record<string, unknown>> {
+  const observedEvents: Array<{
+    event: string;
+    stage: string;
+    text: string;
+    turnId: string;
+    sequence: number;
+    transport: string;
+  }> = [];
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      if (payload.conversationId !== input.conversationId) return;
+      const sourceDelivery = (
+        payload as typeof payload & {
+          sourceDelivery?: AgentTurnSourceDelivery;
+        }
+      ).sourceDelivery;
+      observedEvents.push({
+        event: payload.event,
+        stage: String(payload.data.stage ?? ''),
+        text: String(payload.data.text ?? ''),
+        turnId: String(
+          payload.data.turnId
+          ?? payload.data.turn_id
+          ?? sourceDelivery?.turnId
+          ?? '',
+        ),
+        sequence: Number(
+          payload.data.seq
+          ?? payload.data.sequence
+          ?? sourceDelivery?.sequence
+          ?? 0,
+        ),
+        transport: sourceDelivery?.transport ?? '',
+      });
+    },
+  );
+
+  try {
+    const chatStore = useChatStore.getState();
+    const prompt = `Reply with one short sentence containing CLI-OK-${input.sampleId}.`;
+    const accepted = chatStore.sendMessage(prompt, [], {
+      clientIdempotencyKey: crypto.randomUUID(),
+    });
+    if (!accepted) {
+      throw new Error('agent.acceptance.cliProviderSendRejected');
+    }
+    await waitFor(
+      () => {
+        const current = useChatStore.getState();
+        const assistant = [...current.messages].reverse().find(
+          (message) => message.role === 'assistant',
+        );
+        if (assistant?.error) {
+          throw new Error(
+            `agent.acceptance.cliProviderTurnFailed:${assistant.error}`,
+          );
+        }
+        return Boolean(
+          assistant
+          && assistant.loading !== true
+          && assistant.terminalStatus === 'completed'
+          && assistant.content.trim(),
+        );
+      },
+      'CLI Provider terminal Assistant response',
+      300_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  await useChatStore.getState().syncMessages();
+  const readback = await foundationConversationReadback(input.conversationId);
+  const userMessages = readback.messages.filter(
+    (message) => message.role === 'user',
+  );
+  const assistantMessages = readback.messages.filter(
+    (message) =>
+      message.role === 'assistant'
+      && String(message.status).toLowerCase() === 'completed'
+      && message.content.trim(),
+  );
+  const assistant = assistantMessages[assistantMessages.length - 1];
+  const user = userMessages[userMessages.length - 1];
+  if (
+    !assistant
+    || !user
+    || !assistant.turnId
+    || assistant.turnId !== user.turnId
+  ) {
+    throw new Error('agent.acceptance.cliProviderStationTerminalMissing');
+  }
+  const turnEvents = observedEvents.filter(
+    (event) => !event.turnId || event.turnId === assistant.turnId,
+  );
+  const providerStarts = turnEvents.filter(
+    (event) => event.stage === 'provider_call_started',
+  );
+  const providerDeltas = turnEvents.filter(
+    (event) =>
+      event.event === 'text'
+      && event.stage === 'provider_delta'
+      && event.text.length > 0,
+  );
+  if (providerStarts.length === 0 || providerDeltas.length === 0) {
+    throw new Error('agent.acceptance.cliProviderStreamEvidenceMissing');
+  }
+  const assistantElement = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[data-pt-agent-message="assistant"]',
+    ),
+  ).find(
+    (element) =>
+      element.dataset.ptAgentMessageId === assistant.messageId
+      && element.getClientRects().length > 0,
+  );
+  if (!assistantElement) {
+    throw new Error('agent.acceptance.cliProviderAssistantNotVisible');
+  }
+
+  const runtimeBinding = readback.conversation.runtime_binding;
+  if (
+    readback.conversation.agent_id !== input.agentId
+    || readback.conversation.provider_id !== CLI_PRIMARY_PROVIDER_ID
+    || readback.conversation.model_name !== CLI_PRIMARY_MODEL_ID
+    || runtimeBinding?.provider_id !== CLI_PRIMARY_PROVIDER_ID
+    || runtimeBinding?.model_id !== CLI_PRIMARY_MODEL_ID
+    || runtimeBinding?.runtime_kind !== 1
+  ) {
+    throw new Error('agent.acceptance.cliProviderRuntimeBindingMismatch');
+  }
+
+  return evidenceValue({
+    fixture: {
+      agentId: input.agentId,
+      agentName: input.agentName,
+      conversationId: input.conversationId,
+      turnId: assistant.turnId,
+      assistantMessageId: assistant.messageId,
+      assistantContentHash: await sha256Hex(assistant.content),
+    },
+    stream: {
+      providerStartCount: providerStarts.length,
+      providerDeltaCount: providerDeltas.length,
+      textLength: providerDeltas.reduce(
+        (length, event) => length + event.text.length,
+        0,
+      ),
+      allStationDelivered: providerDeltas.every(
+        (event) => event.transport === 'station-sse',
+      ),
+      sequences: providerDeltas.map((event) => event.sequence),
+    },
+    station: {
+      conversationId: input.conversationId,
+      agentId: readback.conversation.agent_id,
+      providerId: readback.conversation.provider_id,
+      modelId: readback.conversation.model_name,
+      runtimeKind: runtimeBinding.runtime_kind,
+      userMessageId: user.messageId,
+      assistantMessageId: assistant.messageId,
+      turnId: assistant.turnId,
+      userStatus: user.status,
+      assistantStatus: assistant.status,
+      userContentHash: await sha256Hex(user.content),
+      assistantContentHash: await sha256Hex(assistant.content),
+    },
+    receiver: {
+      visible: true,
+      assistantMessageId: assistant.messageId,
+      terminalStatus:
+        assistantElement.dataset.ptAgentTerminalStatus ?? '',
+      contentHash: await sha256Hex(assistant.content),
+      contentLength: assistant.content.length,
+    },
+  }) as Record<string, unknown>;
+}
+
+async function restoreCliProviderPrimaryJourney(input: {
+  agentId: string;
+  agentName: string;
+  conversationId: string;
+  turnId: string;
+  assistantMessageId: string;
+  assistantContentHash: string;
+}): Promise<Record<string, unknown>> {
+  await useAgentStore.getState().loadAgents();
+  const agent = useAgentStore.getState().agents.find(
+    (candidate) => candidate.id === input.agentId,
+  );
+  if (
+    !agent
+    || agent.name !== input.agentName
+    || agent.provider !== CLI_PRIMARY_PROVIDER_ID
+    || agent.model !== CLI_PRIMARY_MODEL_ID
+  ) {
+    throw new Error('agent.acceptance.cliProviderAgentRestoreMissing');
+  }
+  await api.setSelectedAgent(agent.name);
+  useAgentStore.getState().setSelectedAgent(agent.name);
+  useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await useAgentTopicStore.getState().loadTopicsForAgent(
+    input.agentId,
+    'acceptance-cli-provider-restart',
+  );
+  await useChatStore.getState().loadSessions();
+  await useChatStore.getState().selectSession(input.conversationId);
+  await useChatStore.getState().syncMessages();
+
+  const readback = await foundationConversationReadback(input.conversationId);
+  const assistant = readback.messages.find(
+    (message) =>
+      message.messageId === input.assistantMessageId
+      && message.turnId === input.turnId
+      && message.role === 'assistant'
+      && String(message.status).toLowerCase() === 'completed',
+  );
+  if (
+    !assistant
+    || await sha256Hex(assistant.content) !== input.assistantContentHash
+  ) {
+    throw new Error('agent.acceptance.cliProviderStationRestoreMismatch');
+  }
+  await waitFor(
+    () => Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '[data-pt-agent-message="assistant"]',
+      ),
+    ).some(
+      (element) =>
+        element.dataset.ptAgentMessageId === input.assistantMessageId
+        && element.dataset.ptAgentTerminalStatus === 'completed'
+        && element.getClientRects().length > 0,
+    ),
+    'restored CLI Provider Assistant response',
+    30_000,
+  );
+  const chatAssistant = useChatStore.getState().messages.find(
+    (message) => message.id === input.assistantMessageId,
+  );
+  if (
+    !chatAssistant
+    || chatAssistant.loading
+    || chatAssistant.terminalStatus !== 'completed'
+    || await sha256Hex(chatAssistant.content) !== input.assistantContentHash
+  ) {
+    throw new Error('agent.acceptance.cliProviderReceiverRestoreMismatch');
+  }
+
+  return evidenceValue({
+    station: {
+      agentId: agent.id,
+      providerId: agent.provider,
+      modelId: agent.model,
+      conversationId: readback.conversation.conversation_id,
+      turnId: assistant.turnId,
+      assistantMessageId: assistant.messageId,
+      assistantContentHash: await sha256Hex(assistant.content),
+    },
+    receiver: {
+      visible: true,
+      currentSessionKey: useChatStore.getState().currentSessionKey,
+      assistantMessageId: chatAssistant.id,
+      terminalStatus: chatAssistant.terminalStatus,
+      contentHash: await sha256Hex(chatAssistant.content),
+    },
+  }) as Record<string, unknown>;
+}
+
+async function cleanupCliProviderPrimaryJourney(input: {
+  agentId: string;
+  conversationId: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+}): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  clearFoundationLocalConversationProjection(input.conversationId);
+  try {
+    await deleteFoundationConversation(input.conversationId);
+  } catch (error) {
+    failures.push(`conversation:${observedErrorCode(error)}`);
+  }
+  try {
+    await api.deleteAgent(input.agentId);
+  } catch (error) {
+    if (!isFoundationResourceNotFound(error)) {
+      failures.push(`agent:${observedErrorCode(error)}`);
+    }
+  }
+  await useAgentStore.getState().loadAgents();
+  const remaining = useAgentStore.getState().agents;
+  const prior = remaining.find(
+    (candidate) => candidate.name === input.priorSelection,
+  );
+  if (prior) {
+    useAgentStore.getState().setSelectedAgent(prior.name);
+    useAgentStore.getState().setAgentSurface(prior.name, input.priorSurface);
+    await api.setSelectedAgent(prior.name);
+  }
+  const agentRemoved = !remaining.some(
+    (candidate) => candidate.id === input.agentId,
+  );
+  if (!agentRemoved) failures.push('agent:still-present');
+
+  return {
+    status: failures.length === 0 && agentRemoved ? 'clean' : 'failed',
+    agentRemoved,
+    conversationRemoved: failures.every(
+      (failure) => !failure.startsWith('conversation:'),
+    ),
+    selectionRestored: !prior || (
+      useAgentStore.getState().selectedAgent === prior.name
+    ),
+    failures,
+  };
+}
+
+async function cleanupCliProviderPrimaryResidue(
+  sampleId: string,
+): Promise<Record<string, unknown>> {
+  const failures: string[] = [];
+  await useAgentStore.getState().loadAgents();
+  const prefix = `cli-primary-${sampleId}-`;
+  const targets = useAgentStore.getState().agents.filter(
+    (candidate) => candidate.name.startsWith(prefix),
+  );
+  for (const agent of targets) {
+    try {
+      const conversations = await api.listAgentConversations(agent.id, {
+        page: 1,
+        pageSize: 200,
+      });
+      for (const conversation of conversations) {
+        clearFoundationLocalConversationProjection(
+          conversation.conversation_id,
+        );
+        await deleteFoundationConversation(conversation.conversation_id);
+      }
+      await api.deleteAgent(agent.id);
+    } catch (error) {
+      failures.push(`${agent.id}:${observedErrorCode(error)}`);
+    }
+  }
+  await useAgentStore.getState().loadAgents();
+  const remaining = useAgentStore.getState().agents.filter(
+    (candidate) => candidate.name.startsWith(prefix),
+  );
+  return {
+    status:
+      failures.length === 0 && remaining.length === 0 ? 'clean' : 'failed',
+    removedCount: targets.length - remaining.length,
+    remainingCount: remaining.length,
+    failures,
+  };
+}
+
 export function installAcceptanceHarness(): void {
   installFoundationF06Observation();
   registerAcceptanceHarness('agent', {
@@ -31412,6 +31903,51 @@ export function installAcceptanceHarness(): void {
       sampleId: string;
     }) {
       return runMarketplaceCatalogDevelopmentJourney(sampleId);
+    },
+
+    async prepareCliProviderPrimary({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return prepareCliProviderPrimaryJourney(sampleId);
+    },
+
+    async executeCliProviderPrimary(input: {
+      agentId: string;
+      agentName: string;
+      conversationId: string;
+      sampleId: string;
+    }) {
+      return executeCliProviderPrimaryTurn(input);
+    },
+
+    async restoreCliProviderPrimary(input: {
+      agentId: string;
+      agentName: string;
+      conversationId: string;
+      turnId: string;
+      assistantMessageId: string;
+      assistantContentHash: string;
+    }) {
+      return restoreCliProviderPrimaryJourney(input);
+    },
+
+    async cleanupCliProviderPrimary(input: {
+      agentId: string;
+      conversationId: string;
+      priorSelection: string;
+      priorSurface: 'chat' | 'profile';
+    }) {
+      return cleanupCliProviderPrimaryJourney(input);
+    },
+
+    async cleanupCliProviderPrimaryResidue({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      return cleanupCliProviderPrimaryResidue(sampleId);
     },
 
     async runCapabilityIncompatibleDevelopment({

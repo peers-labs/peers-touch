@@ -40,6 +40,7 @@ from tooling.acceptance.provisioners.remote_source_identity import (
 
 GATE_ROLES = {
     "agent-attachment-e2e": ("alice",),
+    "agent-cli-provider-primary-native-e2e": ("alice",),
     "agent-core-lifecycle-native-e2e": ("alice",),
     "agent-stream-resilience-e2e": ("alice",),
     "agent-v2-capability-binding-e2e": ("alice", "bob"),
@@ -69,10 +70,12 @@ AGENT_V2_MCP_GATE = "agent-v2-mcp-lifecycle-e2e"
 AGENT_V2_CONNECTOR_GATE = "agent-v2-connector-invocation-e2e"
 AGENT_V2_EVALUATION_GATE = "agent-v2-evaluation-lab-e2e"
 AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
+AGENT_CLI_PROVIDER_GATE = "agent-cli-provider-primary-native-e2e"
 AGENT_CORE_LIFECYCLE_GATE = "agent-core-lifecycle-native-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
+        AGENT_CLI_PROVIDER_GATE,
         "agent-core-lifecycle-native-e2e",
         "agent-stream-resilience-e2e",
     }
@@ -81,6 +84,7 @@ AGENT_V2_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 AGENT_V2_BINDING_PROFILE = "two"
 AGENT_V2_BINDING_GATES = frozenset(
     {
+        AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
         AGENT_V2_HOME_GATE,
         AGENT_V2_BINDING_GATE,
@@ -119,11 +123,17 @@ def agent_profile_for_gate(gate_id: str) -> str:
 
 
 def agent_native_requires_disposable_fixture(gate_id: str) -> bool:
-    return gate_id != AGENT_CORE_LIFECYCLE_GATE
+    return gate_id not in {
+        AGENT_CLI_PROVIDER_GATE,
+        AGENT_CORE_LIFECYCLE_GATE,
+    }
 
 
 def agent_native_requires_provider(gate_id: str) -> bool:
-    return gate_id != AGENT_CORE_LIFECYCLE_GATE
+    return gate_id not in {
+        AGENT_CLI_PROVIDER_GATE,
+        AGENT_CORE_LIFECYCLE_GATE,
+    }
 
 
 def resolve_existing_actor(
@@ -755,6 +765,24 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             webdriver_port_variable="PT_AGENT_ATTACHMENT_WEBDRIVER_PORT",
         )
 
+    def _agent_cli_provider_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        return self._agent_native_client(
+            run_id,
+            slot,
+            profile_env,
+            journey="cli-provider",
+            profile=AGENT_V2_BINDING_PROFILE,
+            worktree_variable="PT_AGENT_CLI_PROVIDER_WORKTREE",
+            gateway_port_variable="PT_AGENT_CLI_PROVIDER_GATEWAY_PORT",
+            renderer_port_variable="PT_AGENT_CLI_PROVIDER_RENDERER_PORT",
+            webdriver_port_variable="PT_AGENT_CLI_PROVIDER_WEBDRIVER_PORT",
+        )
+
     def _export_profile_credential_refs(
         self,
         profile_env: dict[str, str],
@@ -1115,20 +1143,25 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     target_verified=True,
                 )
             )
-        client = (
-            self._agent_attachment_client(
+        if gate_id == "agent-attachment-e2e":
+            client = self._agent_attachment_client(
                 manifest.run_id,
                 manifest.profile_slot,
                 profile_env,
             )
-            if gate_id == "agent-attachment-e2e"
-            else self._agent_stream_client(
+        elif gate_id == AGENT_CLI_PROVIDER_GATE:
+            client = self._agent_cli_provider_client(
+                manifest.run_id,
+                manifest.profile_slot,
+                profile_env,
+            )
+        else:
+            client = self._agent_stream_client(
                 manifest.run_id,
                 manifest.profile_slot,
                 profile_env,
                 profile=agent_profile_for_gate(gate_id),
             )
-        )
         return dataclasses.replace(
             manifest,
             actor_manifest_ref=actor_ref,

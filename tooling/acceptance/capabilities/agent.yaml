@@ -40,6 +40,43 @@
       }
     },
     {
+      "id": "agent-cli-provider-primary",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "features": [
+        "agent-cli-provider-primary"
+      ],
+      "required_gates": [
+        "agent-cli-provider-primary-native-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/catalog/providers.default.yaml",
+        "apps/station/app/subserver/agent/service/cli",
+        "apps/station/app/subserver/agent/service/provider_service.go",
+        "apps/station/app/subserver/agent/service/turn_service.go",
+        "apps/desktop/src/acceptance/agent/harness.ts"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station built-in Provider catalog",
+          "Station Agent, conversation, message, Turn, and runtime binding persistence"
+        ],
+        "surfaces": [
+          "Native Tauri Agent composer and streamed Assistant message"
+        ],
+        "proven_by": [
+          "agent-cli-provider-primary-native-e2e"
+        ],
+        "proven_scope": [
+          "Built-in CLI Provider discovery without HTTP credentials",
+          "Native Agent creation, empty topic, send, provider delta, terminal Station readback, and native restart restoration"
+        ],
+        "unproven_scope": [
+          "Stateful EXTERNAL_AGENT runtimes and cross-device CLI execution"
+        ]
+      }
+    },
+    {
       "id": "agent-mention-composer",
       "domain": "agent",
       "direction": "acceptance_validates_product",

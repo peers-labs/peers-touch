@@ -1578,6 +1578,34 @@
       ]
     },
     {
+      "id": "agent-cli-provider-primary",
+      "features": [
+        "agent-cli-provider-primary"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/agent/catalog/providers.default.yaml",
+          "apps/station/app/subserver/agent/service/cli/**",
+          "apps/station/app/subserver/agent/service/provider_config_service.go",
+          "apps/station/app/subserver/agent/service/provider_service.go",
+          "apps/station/app/subserver/agent/service/runtime_admission_service.go",
+          "apps/station/app/subserver/agent/service/turn_service.go",
+          "apps/desktop/src/acceptance/agent/harness.ts",
+          "tooling/acceptance/features/agent-cli-provider-primary.yaml",
+          "tooling/acceptance/gates/agent/native_agent_runner.py",
+          "tooling/acceptance/gates/agent/native_agent_runner_test.py",
+          "tooling/acceptance/matrices/agent-cli-provider-primary-native.yaml",
+          "tooling/acceptance/provisioners/home_station.py",
+          "tooling/scripts/deploy/deploy.sh"
+        ]
+      },
+      "require": [
+        "desktop-check",
+        "station-agent-unit",
+        "agent-cli-provider-primary-native-e2e"
+      ]
+    },
+    {
       "id": "agent-mention-composer",
       "features": [
         "agent-mention-composer"

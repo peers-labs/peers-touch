@@ -174,6 +174,58 @@ ssh_run() {
   ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$@"
 }
 
+remote_cli_runtime_env_prefix() {
+  if [[ "$PT_DEPLOY_ROLE" != "station" ]]; then
+    return
+  fi
+
+  local cli_bin="${PEERS_HOST_CLI_BIN_MOUNT:-}"
+  local cli_home="${PEERS_HOST_CLI_HOME_MOUNT:-}"
+  if [[ -z "$cli_bin" || -z "$cli_home" ]]; then
+    local detected
+    if ! detected="$(ssh_run '
+      # PT_CLI_MOUNT_DISCOVERY
+      set -eu
+      resolved_bin=""
+      PATH="$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
+      for candidate in "$(command -v traecli 2>/dev/null || true)" \
+        "$HOME/.local/bin/traecli" \
+        "$HOME/.local/bin/traex" \
+        "$HOME/.trae/bin/traecli" \
+        "$HOME/.trae/bin/traex" \
+        /usr/local/bin/traecli \
+        /usr/local/bin/traex; do
+        if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+          resolved_bin="$(readlink -f "$candidate" 2>/dev/null || printf "%s" "$candidate")"
+          break
+        fi
+      done
+      resolved_home=""
+      if [ -d "$HOME/.trae" ]; then
+        resolved_home="$(readlink -f "$HOME/.trae" 2>/dev/null || printf "%s" "$HOME/.trae")"
+      fi
+      printf "%s|%s\n" "$resolved_bin" "$resolved_home"
+    ')"; then
+      echo "[WARN] Remote CLI provider discovery failed; deploying without a CLI mount." >&2
+      return
+    fi
+    local detected_bin="${detected%%|*}"
+    local detected_home="${detected#*|}"
+    [[ -n "$cli_bin" ]] || cli_bin="$detected_bin"
+    [[ -n "$cli_home" ]] || cli_home="$detected_home"
+  fi
+
+  if [[ -z "$cli_bin" ]]; then
+    echo "[INFO] No remote CLI provider binary detected." >&2
+    return
+  fi
+  echo "[INFO] Remote CLI provider mount detected." >&2
+  printf 'PEERS_HOST_CLI_BIN_MOUNT=%q PEERS_HOST_CLI_BIN=/usr/local/bin/traecli ' "$cli_bin"
+  if [[ -n "$cli_home" ]]; then
+    printf 'PEERS_HOST_CLI_HOME_MOUNT=%q PEERS_HOST_CLI_HOME=/root/.trae ' "$cli_home"
+  fi
+}
+
 case "$cmd" in
   status)
     echo "[$env_name] Checking status on $SSH_TARGET ..."
@@ -245,7 +297,8 @@ case "$cmd" in
 
     echo "[4/5] Restarting $PT_DEPLOY_ROLE ..."
     if [[ -n "${PT_DEPLOY_RESTART_CMD:-}" ]]; then
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && ${ACCEPTANCE_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}"
+      CLI_RUNTIME_ENV_PREFIX="$(remote_cli_runtime_env_prefix)"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && ${ACCEPTANCE_RUNTIME_ENV_PREFIX}${CLI_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}"
     else
       ssh_run "cd \$HOME/$PT_DEPLOY_PATH && systemctl --user restart peers-${PT_DEPLOY_ROLE}"
     fi

@@ -51,6 +51,7 @@ from tooling.acceptance.gates.agent.tcp_fault_proxy import TcpFaultProxy
 
 GATE_BY_JOURNEY = {
     "turn": "agent-native-turn-e2e",
+    "cli-provider": "agent-cli-provider-primary-native-e2e",
     "core-lifecycle": "agent-core-lifecycle-native-e2e",
     "stream-resilience": "agent-stream-resilience-e2e",
     "attachment": "agent-attachment-e2e",
@@ -90,6 +91,7 @@ CORE_LIFECYCLE_SELECTORS = {
 }
 APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 CORE_LIFECYCLE_PROFILE = "two"
+CLI_PROVIDER_PROFILE = "two"
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("PT_AGENT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 
@@ -149,11 +151,13 @@ def require(condition: bool, message: str) -> None:
 def approved_profile_for_journey(journey: str) -> str:
     if journey == "core-lifecycle":
         return CORE_LIFECYCLE_PROFILE
+    if journey == "cli-provider":
+        return CLI_PROVIDER_PROFILE
     return APPROVED_PROFILE
 
 
 def provider_configuration_required_for_journey(journey: str) -> bool:
-    return journey != "core-lifecycle"
+    return journey not in {"cli-provider", "core-lifecycle"}
 
 
 def now_iso() -> str:
@@ -345,6 +349,8 @@ class AgentNativeJourney:
         self.journey_evidence: dict[str, Any] = {}
         self.cleanup_evidence: dict[str, Any] = {"status": "not-run"}
         self.lifecycle_fixture_ids: list[str] = []
+        self.cli_provider_fixture: dict[str, str] | None = None
+        self.cli_provider_sample_id = ""
 
     def step(self, name: str, operation: Callable[[], Any]) -> Any:
         started = time.monotonic()
@@ -473,6 +479,32 @@ class AgentNativeJourney:
             ),
             "Agent acceptance Harness namespace is unavailable",
         )
+
+    def restart_native_runtime(self) -> dict[str, Any]:
+        require(
+            self.tauri_driver is not None,
+            "native runtime is not started",
+        )
+        self.tauri_driver.stop()
+        self.tauri_driver = None
+        self.driver = None
+        wait_until(
+            lambda: all(
+                not port_open(port)
+                for port in (
+                    self.gateway_port,
+                    self.renderer_port,
+                    self.webdriver_port,
+                )
+            ),
+            "native runtime ports to close",
+            timeout=30,
+        )
+        self.start()
+        return {
+            "restarted": True,
+            "storageRootPreserved": self.storage_root.exists(),
+        }
 
     def login(self) -> dict[str, Any]:
         result = self.harness(
@@ -1516,6 +1548,238 @@ class AgentNativeJourney:
         ):
             self.assertions.append({"id": assertion_id, "status": "pass"})
 
+    def run_cli_provider(self) -> None:
+        self.step("login", self.login)
+        self.step("navigate_to_agent", self.navigate_and_configure)
+        sample_id = f"cli-{self.runtime_manifest.get('runId', '')}"
+        self.cli_provider_sample_id = sample_id
+        prepared = self.step(
+            "discover_create_and_open_empty_topic",
+            lambda: self.harness(
+                "prepareCliProviderPrimary",
+                {"sampleId": sample_id},
+                timeout=120,
+            ),
+        )
+        require(
+            isinstance(prepared, Mapping),
+            "CLI Provider preparation returned invalid evidence",
+        )
+        fixture = prepared.get("fixture")
+        provider = prepared.get("provider")
+        prepared_station = prepared.get("station")
+        prepared_receiver = prepared.get("receiver")
+        require(
+            isinstance(fixture, Mapping)
+            and isinstance(provider, Mapping)
+            and isinstance(prepared_station, Mapping)
+            and isinstance(prepared_receiver, Mapping),
+            "CLI Provider preparation evidence is incomplete",
+        )
+        agent_id = str(fixture.get("agentId") or "")
+        agent_name = str(fixture.get("agentName") or "")
+        conversation_id = str(fixture.get("conversationId") or "")
+        require(
+            bool(agent_id and agent_name and conversation_id),
+            "CLI Provider fixture identity is incomplete",
+        )
+        self.cli_provider_fixture = {
+            "agentId": agent_id,
+            "agentName": agent_name,
+            "conversationId": conversation_id,
+            "priorSelection": str(fixture.get("priorSelection") or ""),
+            "priorSurface": str(fixture.get("priorSurface") or "chat"),
+        }
+        self.lifecycle_fixture_ids.append(agent_id)
+        require(
+            provider.get("id") == "trae-cli"
+            and provider.get("runtimeKind") == "cli"
+            and provider.get("enabled") is True
+            and provider.get("requiresApiKey") is False
+            and provider.get("hasApiKey") is False
+            and provider.get("modelId") == "default",
+            "built-in CLI Provider is not selectable without credentials",
+        )
+        require(
+            prepared_receiver.get("visible") is True
+            and prepared_receiver.get("providerId") == "trae-cli"
+            and prepared_receiver.get("modelId") == "default"
+            and int(prepared_receiver.get("messageCount") or -1) == 0,
+            "CLI Provider empty topic is not visible",
+        )
+        require(
+            prepared_station.get("agentId") == agent_id
+            and prepared_station.get("providerId") == "trae-cli"
+            and prepared_station.get("modelId") == "default"
+            and prepared_station.get("conversationId") == conversation_id
+            and int(prepared_station.get("messageCount") or -1) == 0,
+            "CLI Provider Agent or empty topic is not Station-backed",
+        )
+
+        executed = self.step(
+            "send_stream_and_persist",
+            lambda: self.harness(
+                "executeCliProviderPrimary",
+                {
+                    "agentId": agent_id,
+                    "agentName": agent_name,
+                    "conversationId": conversation_id,
+                    "sampleId": sample_id,
+                },
+                timeout=360,
+            ),
+        )
+        require(
+            isinstance(executed, Mapping),
+            "CLI Provider execution returned invalid evidence",
+        )
+        executed_fixture = executed.get("fixture")
+        stream = executed.get("stream")
+        executed_station = executed.get("station")
+        executed_receiver = executed.get("receiver")
+        require(
+            isinstance(executed_fixture, Mapping)
+            and isinstance(stream, Mapping)
+            and isinstance(executed_station, Mapping)
+            and isinstance(executed_receiver, Mapping),
+            "CLI Provider execution evidence is incomplete",
+        )
+        turn_id = str(executed_fixture.get("turnId") or "")
+        assistant_message_id = str(
+            executed_fixture.get("assistantMessageId") or ""
+        )
+        assistant_content_hash = str(
+            executed_fixture.get("assistantContentHash") or ""
+        )
+        require(
+            bool(turn_id and assistant_message_id and assistant_content_hash),
+            "CLI Provider terminal identity is incomplete",
+        )
+        require(
+            int(stream.get("providerStartCount") or 0) >= 1
+            and int(stream.get("providerDeltaCount") or 0) >= 1
+            and int(stream.get("textLength") or 0) > 0
+            and stream.get("allStationDelivered") is True,
+            "CLI Provider did not deliver a Station-backed stream",
+        )
+        require(
+            executed_station.get("providerId") == "trae-cli"
+            and executed_station.get("modelId") == "default"
+            and int(executed_station.get("runtimeKind") or 0) == 1
+            and executed_station.get("assistantStatus") == "completed"
+            and executed_station.get("turnId") == turn_id
+            and executed_station.get("assistantContentHash")
+            == assistant_content_hash,
+            "CLI Provider terminal response is not Station-authoritative",
+        )
+        require(
+            executed_receiver.get("visible") is True
+            and executed_receiver.get("terminalStatus") == "completed"
+            and executed_receiver.get("contentHash") == assistant_content_hash,
+            "CLI Provider terminal response is not visible",
+        )
+
+        self.step("restart_native_client", self.restart_native_runtime)
+        self.step(
+            "station_transport_health_after_restart",
+            self.verify_station_transport_health,
+        )
+        self.step("configure_station_after_restart", self.configure_station)
+        self.step("login_after_restart", self.login)
+        self.step("navigate_after_restart", self.navigate_and_configure)
+        restored = self.step(
+            "restore_station_conversation_after_restart",
+            lambda: self.harness(
+                "restoreCliProviderPrimary",
+                {
+                    "agentId": agent_id,
+                    "agentName": agent_name,
+                    "conversationId": conversation_id,
+                    "turnId": turn_id,
+                    "assistantMessageId": assistant_message_id,
+                    "assistantContentHash": assistant_content_hash,
+                },
+                timeout=120,
+            ),
+        )
+        require(
+            isinstance(restored, Mapping),
+            "CLI Provider restart restoration returned invalid evidence",
+        )
+        restored_station = restored.get("station")
+        restored_receiver = restored.get("receiver")
+        require(
+            isinstance(restored_station, Mapping)
+            and isinstance(restored_receiver, Mapping)
+            and restored_station.get("conversationId") == conversation_id
+            and restored_station.get("turnId") == turn_id
+            and restored_station.get("assistantContentHash")
+            == assistant_content_hash,
+            "CLI Provider Station state changed across native restart",
+        )
+        require(
+            restored_receiver.get("visible") is True
+            and restored_receiver.get("currentSessionKey") == conversation_id
+            and restored_receiver.get("assistantMessageId")
+            == assistant_message_id
+            and restored_receiver.get("terminalStatus") == "completed"
+            and restored_receiver.get("contentHash")
+            == assistant_content_hash,
+            "CLI Provider response was not restored in the native client",
+        )
+
+        product_cleanup = self.step(
+            "cleanup_cli_provider_fixture",
+            lambda: self.harness(
+                "cleanupCliProviderPrimary",
+                {
+                    "agentId": agent_id,
+                    "conversationId": conversation_id,
+                    "priorSelection": self.cli_provider_fixture[
+                        "priorSelection"
+                    ],
+                    "priorSurface": self.cli_provider_fixture["priorSurface"],
+                },
+                timeout=120,
+            ),
+        )
+        require(
+            isinstance(product_cleanup, Mapping)
+            and product_cleanup.get("status") == "clean",
+            "CLI Provider product fixture cleanup failed",
+        )
+        self.lifecycle_fixture_ids.remove(agent_id)
+        self.cli_provider_fixture = None
+
+        self.dom_evidence["cliProvider"] = {
+            "prepared": dict(prepared_receiver),
+            "completed": dict(executed_receiver),
+            "restored": dict(restored_receiver),
+        }
+        self.station_readback["cliProvider"] = {
+            "prepared": dict(prepared_station),
+            "completed": dict(executed_station),
+            "restored": dict(restored_station),
+        }
+        self.journey_evidence["cliProvider"] = {
+            "provider": dict(provider),
+            "stream": dict(stream),
+            "productCleanup": dict(product_cleanup),
+        }
+        for assertion_id in (
+            "agent.cli-provider.catalog.discoverable",
+            "agent.cli-provider.credentials.not-required",
+            "agent.cli-provider.agent.persisted",
+            "agent.cli-provider.empty-topic.visible",
+            "agent.cli-provider.send.accepted",
+            "agent.cli-provider.stream.delta-observed",
+            "agent.cli-provider.terminal.station-backed",
+            "agent.cli-provider.terminal.visible",
+            "agent.cli-provider.restart.restored",
+            "agent.cli-provider.cleanup.clean",
+        ):
+            self.assertions.append({"id": assertion_id, "status": "pass"})
+
     def conversation_readback(self, conversation_id: str) -> dict[str, Any]:
         result = self.harness(
             "getConversationReadback",
@@ -1910,6 +2174,25 @@ class AgentNativeJourney:
         failures: list[str] = []
         if self.driver is None:
             return failures
+        if self.journey == "cli-provider" and self.cli_provider_sample_id:
+            try:
+                residue = self.harness(
+                    "cleanupCliProviderPrimaryResidue",
+                    {"sampleId": self.cli_provider_sample_id},
+                    timeout=120,
+                )
+                if (
+                    not isinstance(residue, Mapping)
+                    or residue.get("status") != "clean"
+                ):
+                    failures.append(
+                        f"CLI Provider residue cleanup: {residue}"
+                    )
+                else:
+                    self.lifecycle_fixture_ids.clear()
+                    self.cli_provider_fixture = None
+            except Exception as error:  # noqa: BLE001
+                failures.append(f"CLI Provider residue cleanup: {error}")
         if self.visible_element_state(
             self.lifecycle_selector("profile_back")
         ) is not None:
@@ -2007,6 +2290,8 @@ def run_journey(journey_name: str) -> int:
                 runner.run_attachment()
             elif journey_name == "core-lifecycle":
                 runner.run_core_lifecycle()
+            elif journey_name == "cli-provider":
+                runner.run_cli_provider()
             else:
                 runner.run_turn()
             status = "passed"
@@ -2028,6 +2313,7 @@ def run_journey(journey_name: str) -> int:
                 )
 
         attachment_journey = journey_name == "attachment"
+        cli_provider_journey = journey_name == "cli-provider"
         lifecycle_journey = journey_name == "core-lifecycle"
         if attachment_journey:
             phase = "F3 Context And Resource Intelligence"
@@ -2041,6 +2327,21 @@ def run_journey(journey_name: str) -> int:
                 "C08 requires opaque authorized refs, admission before provider "
                 "execution, persisted attribution, visible attachment projection, "
                 "authorized download, and cleanup."
+            )
+        elif cli_provider_journey:
+            phase = "CLI Provider Primary Journey"
+            bom = ["agent-cli-provider-primary"]
+            spec = [
+                "tooling/acceptance/features/agent-cli-provider-primary.yaml",
+                "tooling/acceptance/matrices/"
+                "agent-cli-provider-primary-native.yaml",
+                "docs/architecture/agent/execution-plans/"
+                "20260917-modern-chat-agent-v2-alignment/tasks/MCA-P04.md",
+            ]
+            gate_claim = (
+                "The built-in CLI Provider must be selectable without HTTP "
+                "credentials and complete a Station-backed native Agent turn "
+                "that survives native process restart."
             )
         elif lifecycle_journey:
             phase = "Agent Core Lifecycle"

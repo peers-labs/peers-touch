@@ -14,6 +14,10 @@ MATRIX = (
     ROOT
     / "tooling/acceptance/matrices/agent-core-lifecycle-native.yaml"
 )
+CLI_MATRIX = (
+    ROOT
+    / "tooling/acceptance/matrices/agent-cli-provider-primary-native.yaml"
+)
 
 
 class AgentCoreLifecycleRunnerTest(unittest.TestCase):
@@ -41,7 +45,7 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
 
     def test_core_lifecycle_does_not_require_provider_configuration(self) -> None:
         self.assertIn(
-            'return journey != "core-lifecycle"',
+            'return journey not in {"cli-provider", "core-lifecycle"}',
             self.source,
         )
         self.assertIn(
@@ -173,6 +177,74 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
         self.assertIn('"evidence/receiver-dom.json"', self.source)
         self.assertIn('"evidence/station-readback.json"', self.source)
         self.assertIn('"evidence/cleanup.json"', self.source)
+
+
+class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = RUNNER.read_text(encoding="utf-8")
+        cls.gate = json.loads(GATES.read_text(encoding="utf-8"))["gates"][
+            "agent-cli-provider-primary-native-e2e"
+        ]
+        cls.matrix_bytes = CLI_MATRIX.read_bytes()
+        cls.matrix = json.loads(cls.matrix_bytes)
+
+    def test_cli_provider_dispatches_without_http_provider_configuration(
+        self,
+    ) -> None:
+        self.assertIn(
+            '"cli-provider": "agent-cli-provider-primary-native-e2e"',
+            self.source,
+        )
+        self.assertIn('CLI_PROVIDER_PROFILE = "two"', self.source)
+        self.assertIn('return journey not in {"cli-provider", "core-lifecycle"}', self.source)
+        self.assertIn("runner.run_cli_provider()", self.source)
+
+    def test_cli_provider_journey_covers_primary_flow_and_restart(self) -> None:
+        journey = self.source.split("    def run_cli_provider(self)", 1)[1]
+        journey = journey.split("    def conversation_readback", 1)[0]
+        for step in (
+            "discover_create_and_open_empty_topic",
+            "send_stream_and_persist",
+            "restart_native_client",
+            "restore_station_conversation_after_restart",
+            "cleanup_cli_provider_fixture",
+        ):
+            with self.subTest(step=step):
+                self.assertIn(step, journey)
+        for method in (
+            "prepareCliProviderPrimary",
+            "executeCliProviderPrimary",
+            "restoreCliProviderPrimary",
+            "cleanupCliProviderPrimary",
+        ):
+            with self.subTest(method=method):
+                self.assertIn(method, journey)
+        self.assertIn("cleanupCliProviderPrimaryResidue", self.source)
+        self.assertIn('"agent.cli-provider.stream.delta-observed"', journey)
+        self.assertIn('"agent.cli-provider.restart.restored"', journey)
+        self.assertNotIn("PT_AGENT_PROVIDER_API_KEY", journey)
+
+    def test_cli_provider_gate_and_reviewed_matrix_are_identical(self) -> None:
+        self.assertEqual(self.gate["argv"], self.matrix["command_argv"])
+        self.assertEqual(self.gate["environment"], self.matrix["environment"])
+        self.assertEqual(self.matrix["runtime"]["profile"], "two")
+        self.assertEqual(
+            self.gate["runtime_matrix"],
+            {
+                "id": self.matrix["id"],
+                "version": self.matrix["version"],
+                "sha256": hashlib.sha256(self.matrix_bytes).hexdigest(),
+                "expected_tuple_count": self.matrix["expected_tuple_count"],
+                "expected_assertion_count": self.matrix[
+                    "expected_assertion_count"
+                ],
+            },
+        )
+        self.assertEqual(
+            self.gate["required_artifact_roles"],
+            ["receiver-dom", "station-readback", "cleanup"],
+        )
 
 
 if __name__ == "__main__":
