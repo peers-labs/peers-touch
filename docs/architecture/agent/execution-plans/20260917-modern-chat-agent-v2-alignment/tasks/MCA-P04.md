@@ -30,6 +30,8 @@
     "apps/station/app/subserver/agent/handler/provider_handler_readiness_test.go",
     "apps/station/app/subserver/agent/handler/turn_handler.go",
     "apps/station/app/subserver/agent/handler/turn_runtime_profile_test.go",
+    "apps/desktop/src-tauri/src/application/provider/mod.rs",
+    "apps/desktop/src-tauri/src/application/provider/station_api.rs",
     "apps/desktop/src/acceptance/agent/harness.ts",
     "tooling/acceptance/capabilities/agent.yaml",
     "tooling/acceptance/domains/agent.yaml",
@@ -57,8 +59,7 @@
     "apps/desktop/src/store/agent.ts",
     "apps/desktop/src/store/agentTopics.ts",
     "apps/desktop/src/store/chat.ts",
-    "apps/desktop/src-tauri/src/application/agent_turn",
-    "apps/desktop/src-tauri/src/application/provider"
+    "apps/desktop/src-tauri/src/application/agent_turn"
   ],
   "budgets": {
     "focusedCheckSeconds": 1800,
@@ -68,7 +69,7 @@
   "checks": [
     {
       "id": "agent-cli-provider-source",
-      "command": "cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler -count=1 && cd ../.. && pnpm --dir apps/desktop check && python3 -m unittest tooling.acceptance.gates.agent.native_agent_runner_test tooling.acceptance.tests.test_provisioner_runtime && node --test tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/dev-session.test.mjs && node --test --test-name-pattern='planctl advance records typed exhaustion' tooling/scripts/plan/planctl.test.mjs",
+      "command": "cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler -count=1 && cd ../.. && cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml && pnpm --dir apps/desktop check && python3 -m unittest tooling.acceptance.gates.agent.native_agent_runner_test tooling.acceptance.tests.test_provisioner_runtime && node --test tooling/scripts/local-dev/completion-review.test.mjs tooling/scripts/local-dev/dev-session.test.mjs && node --test --test-name-pattern='planctl advance records typed exhaustion' tooling/scripts/plan/planctl.test.mjs",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -97,7 +98,7 @@
     "Do not require HTTP provider credentials for CLI execution",
     "Do not log CLI credentials, prompts, or unrestricted local paths"
   ],
-  "updatedAt": "2026-09-29T06:45:00Z",
+  "updatedAt": "2026-09-29T07:52:00Z",
   "durableEvidence": []
 }
 ```
