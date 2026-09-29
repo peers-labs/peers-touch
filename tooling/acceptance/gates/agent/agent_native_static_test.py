@@ -1366,6 +1366,26 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("agentRestored,", scenario)
         self.assertNotIn("recovery.click()", scenario)
 
+    def test_tool_conversation_cleanup_settles_all_turn_dependencies(self) -> None:
+        start = self.source.index("async function cleanupFoundationToolConversation")
+        end = self.source.index(
+            "function clearFoundationLocalConversationProjection",
+            start,
+        )
+        cleanup = self.source[start:end]
+
+        cancel_turn = cleanup.index("await api.cancelAgentTurn(turnId)")
+        cancel_queue = cleanup.index(
+            "await cancelFoundationQueuedTurns(conversationId)"
+        )
+        delete_conversation = cleanup.index(
+            "await deleteFoundationConversation("
+        )
+        self.assertLess(cancel_turn, cancel_queue)
+        self.assertLess(cancel_queue, delete_conversation)
+        self.assertIn("queueCancellationError", cleanup)
+        self.assertIn("cleanupCode", cleanup)
+
     def test_loop_budget_development_journey_reuses_f04_tool_loop(self) -> None:
         start = self.source.index("async runDevelopmentLoopBudget")
         end = self.source.index("async runDevelopmentUnknownTool", start)
