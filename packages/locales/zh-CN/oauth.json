@@ -1,5 +1,6 @@
 {
   "oauth.callback.autoCloseHint": "本页面会尝试自动关闭，若未关闭可直接手动关闭。",
+  "oauth.callback.cancelled": "本次登录已取消，请返回 Peers 重新开始。",
   "oauth.callback.loginComplete": "登录已完成，你可以回到 Peers。",
   "oauth.callback.missingFields": "授权回调缺少必要字段，请重试授权。",
   "oauth.callback.providerMismatch": "授权提供方不匹配，请重试。",

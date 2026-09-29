@@ -41,7 +41,7 @@
     ],
     "surface": [
       "Desktop and Mobile leave the Access Gate only after the canonical decision is granted",
-      "Desktop GitHub and Google actions expose a complete provider-specific side card without clipping or covering the login card at wide and narrow window sizes",
+      "Desktop GitHub and Google actions expose opening, waiting, cancellation, initialization, success, and retry inside the original fixed-size provider action at wide and narrow window sizes",
       "native Desktop GitHub and Google login starts return an authorization URL and loopback session while the Access Gate is unauthenticated"
     ]
   },
@@ -50,6 +50,6 @@
     "unknown gate, identity mismatch, and expired attempt must fail closed",
     "authentication failure must not invoke a direct-login fallback",
     "OAuth identity bootstrap must not require an existing authenticated actor session",
-    "the Desktop OAuth side card must not cross the viewport boundary or intersect the login card"
+    "Desktop OAuth state changes must not resize or move the auth card or provider action, and must not render a detached progress panel"
   ]
 }

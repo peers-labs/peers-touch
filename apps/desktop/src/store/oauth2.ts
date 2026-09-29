@@ -4,6 +4,29 @@ import { EVENT, eventBus } from '../kernel/events';
 
 let loadAllPromise: Promise<void> | null = null;
 
+export interface OAuth2StartAuthOptions {
+  signal?: AbortSignal;
+  onBrowserOpened?: () => void;
+}
+
+export function isOAuthAuthorizationCancelled(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function oauthAuthorizationCancelled(): Error {
+  const error = new Error('oauth authorization cancelled');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw oauthAuthorizationCancelled();
+}
+
+async function cancelLoopbackSession(sessionId: string): Promise<void> {
+  await api.oauth2CancelLoopback(sessionId);
+}
+
 interface OAuth2Store {
   providers: OAuth2ProviderSummary[];
   connections: OAuth2Connection[];
@@ -14,7 +37,11 @@ interface OAuth2Store {
   loadProviders: () => Promise<void>;
   loadConnections: () => Promise<void>;
   loadAll: () => Promise<void>;
-  startAuth: (id: string, environment?: string) => Promise<void>;
+  startAuth: (
+    id: string,
+    environment?: string,
+    options?: OAuth2StartAuthOptions,
+  ) => Promise<void>;
 }
 
 export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, get) => ({
@@ -66,28 +93,57 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
     return loadAllPromise;
   },
 
-  startAuth: async (id, environment) => {
+  startAuth: async (id, environment, options) => {
+    throwIfCancelled(options?.signal);
     set({ completedLoopbackSessionId: null });
     const { auth_url, session_id } = await api.oauth2StartLoopback(id, environment);
-    await api.openExternalUrl(auth_url);
+    if (options?.signal?.aborted) {
+      await cancelLoopbackSession(session_id);
+      throw oauthAuthorizationCancelled();
+    }
+    try {
+      await api.openExternalUrl(auth_url);
+    } catch (error) {
+      await cancelLoopbackSession(session_id);
+      throwIfCancelled(options?.signal);
+      throw error;
+    }
+    if (options?.signal?.aborted) {
+      await cancelLoopbackSession(session_id);
+      throw oauthAuthorizationCancelled();
+    }
+    options?.onBrowserOpened?.();
     return new Promise<void>((resolve, reject) => {
       let settled = false;
-      let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-      let poller: ReturnType<typeof setInterval> | undefined;
-      const finish = async (errorMessage?: string) => {
+      const timers: {
+        timeout?: ReturnType<typeof setTimeout>;
+        poller?: ReturnType<typeof setInterval>;
+      } = {};
+      const handleAbort = () => {
+        void cancelLoopbackSession(session_id).then(
+          () => finish(oauthAuthorizationCancelled()),
+          error => finish(
+            error instanceof Error ? error : oauthAuthorizationCancelled(),
+          ),
+        );
+      };
+      const finish = async (error?: Error) => {
         if (settled) return;
         settled = true;
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        if (poller) clearInterval(poller);
-        await get().loadAll();
+        if (timers.timeout) clearTimeout(timers.timeout);
+        if (timers.poller) clearInterval(timers.poller);
+        options?.signal?.removeEventListener('abort', handleAbort);
+        if (!isOAuthAuthorizationCancelled(error)) {
+          await get().loadAll();
+        }
 
-        if (errorMessage) {
-          reject(new Error(errorMessage));
+        if (error) {
+          reject(error);
           return;
         }
         resolve();
       };
-      poller = setInterval(async () => {
+      timers.poller = setInterval(async () => {
         try {
           const polled = await api.oauth2PollLoopback(session_id);
           if (polled.completed) {
@@ -95,13 +151,21 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
             if (!errorMessage) {
               set({ completedLoopbackSessionId: session_id });
             }
-            void finish(errorMessage);
+            void finish(errorMessage ? new Error(errorMessage) : undefined);
           }
-        } catch {}
+        } catch {
+          // Transient poll failures are retried until completion or timeout.
+        }
       }, 1000);
-      timeoutTimer = setTimeout(() => {
-        void finish('oauth authorization timeout');
+      timers.timeout = setTimeout(() => {
+        const timeoutError = new Error('oauth authorization timeout');
+        void cancelLoopbackSession(session_id).then(
+          () => finish(timeoutError),
+          error => finish(error instanceof Error ? error : timeoutError),
+        );
       }, 120000);
+      options?.signal?.addEventListener('abort', handleAbort, { once: true });
+      if (options?.signal?.aborted) handleAbort();
     });
   },
 }));
