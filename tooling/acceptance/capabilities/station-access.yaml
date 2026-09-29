@@ -50,10 +50,13 @@
       "features": ["station-access-authentication"],
       "required_gates": [
         "station-access-capability-contract",
+        "station-access-desktop-oauth-layout-e2e",
         "station-access-auth-e2e"
       ],
       "synthetic_paths": [
+        "apps/desktop/src/index.css",
         "apps/desktop/src/pages/login/LoginPage.tsx",
+        "apps/desktop/src/pages/login/views/LoginFormView.tsx",
         "apps/desktop/src/services/accessGate.ts",
         "apps/desktop/src-tauri/src/application/station_binding/mod.rs",
         "apps/mobile/src/features/auth/authSession.ts",
@@ -67,11 +70,16 @@
           "native client binding proofs"
         ],
         "surfaces": [
+          "exact-source Desktop browser Access Gate at wide and narrow window sizes",
           "native macOS Desktop Access Gate",
           "native iOS Simulator Access Gate"
         ],
-        "proven_by": ["station-access-auth-e2e"],
+        "proven_by": [
+          "station-access-desktop-oauth-layout-e2e",
+          "station-access-auth-e2e"
+        ],
         "proven_scope": [
+          "GitHub and Google actions open complete provider-specific OAuth side cards without viewport overflow or login-card intersection",
           "Desktop and Mobile bind a signed Station identity before authentication",
           "both native clients obtain an actor session through the canonical Access Gate",
           "authenticated Station and actor identities match source-bound runtime manifests"
