@@ -15,6 +15,7 @@ from tooling.acceptance.core import (
     AcceptanceGate,
     GateError,
     REPO_ROOT,
+    call_async_harness,
     load_runtime_manifest,
 )
 from tooling.acceptance.drivers.native import resolve_native_desktop_runtime
@@ -124,10 +125,24 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         try:
             session = self.runtime_binding.create_bound_session(CLIENT_ID)
             login_card = session.wait_for_element("[data-pt-login-card]", timeout=30)
+            identity = self._mapping(
+                call_async_harness(
+                    session,
+                    "identityState",
+                    {},
+                    namespace="stationAccess",
+                    script_timeout=10,
+                ),
+                "Desktop pre-authentication identity",
+            )
+            self.save_screenshot(session, "desktop-oauth-pre-auth")
+            self.save_dom(session, "desktop-oauth-pre-auth")
             self.assert_condition(
                 "native_login_surface_is_unauthenticated",
                 login_card.is_displayed()
-                and not self._authenticated_session_present(session),
+                and identity.get("authenticated") is False
+                and not identity.get("actorPtid"),
+                json.dumps(identity, sort_keys=True),
             )
 
             providers = {
@@ -149,8 +164,6 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 and source_identity["verified"] is True,
                 json.dumps(source_identity, sort_keys=True),
             )
-            self.save_screenshot(session, "desktop-oauth-pre-auth")
-            self.save_dom(session, "desktop-oauth-pre-auth")
         finally:
             if session is not None:
                 session.stop()
@@ -246,21 +259,6 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             "binary": binary,
             "verified": verified,
         }
-
-    @staticmethod
-    def _authenticated_session_present(session: TauriSession) -> bool:
-        result = session.execute_async_script(
-            """
-            const done = arguments[arguments.length - 1];
-            Promise.resolve(
-              window.__TAURI_INTERNALS__.invoke('auth_restore_session', {}),
-            ).then(
-              (value) => done(Boolean(value?.ok)),
-              () => done(false),
-            );
-            """
-        )
-        return result is True
 
     @staticmethod
     def _start_oauth(
