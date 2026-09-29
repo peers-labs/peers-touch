@@ -439,6 +439,8 @@ class FoundationClientSpecTest(unittest.TestCase):
             client.process = Mock()
             client.process.poll.return_value = None
             driver = Mock()
+            failed_connection = Mock()
+            connected_connection = Mock()
             with (
                 patch.object(
                     foundation_runtime_client,
@@ -449,6 +451,11 @@ class FoundationClientSpecTest(unittest.TestCase):
                     foundation_runtime_client.WAIT_TICK,
                     "wait",
                 ) as wait,
+                patch.object(
+                    foundation_runtime_client,
+                    "RemoteConnection",
+                    side_effect=[failed_connection, connected_connection],
+                ),
                 patch.object(
                     foundation_runtime_client.webdriver,
                     "Remote",
@@ -462,6 +469,8 @@ class FoundationClientSpecTest(unittest.TestCase):
 
             self.assertIs(driver, client.driver)
             self.assertEqual(2, remote.call_count)
+            failed_connection.close.assert_called_once_with()
+            connected_connection.close.assert_not_called()
             wait.assert_called_once()
             client.process = None
             client.stop()
@@ -813,6 +822,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             client._managed_runtime_started = True
             with (
                 patch.object(
@@ -871,6 +881,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             client._managed_runtime_started = True
             with (
                 patch.object(
@@ -908,6 +919,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             process = Mock(pid=17321)
             process.poll.return_value = 0
             client.process = process
@@ -952,6 +964,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             process = Mock(pid=17322)
             process.poll.return_value = None
             client.process = process
@@ -1064,6 +1077,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             child_code = (
                 "import signal,socket,time;"
                 "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
