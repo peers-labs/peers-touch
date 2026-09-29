@@ -1347,6 +1347,58 @@ def _require_mobile_private_runtime(
     )
 
 
+def _require_mobile_write_admission(
+    session: Any,
+    *,
+    client_id: str,
+    timeout_seconds: float = 60.0,
+    poll_interval_seconds: float = 0.25,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Mapping[str, Any]:
+    deadline = monotonic() + timeout_seconds
+    last_reason = "unknown"
+    while True:
+        snapshot = _mobile_mapping(
+            _mobile_call(session, "recovery.snapshot"),
+            "write admission snapshot",
+            client_id=client_id,
+        )
+        admission = _mobile_mapping(
+            snapshot.get("writeAdmission"),
+            "write admission",
+            client_id=client_id,
+        )
+        if admission.get("open") is True:
+            return snapshot
+        if admission.get("open") is not False:
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE",
+                f"Mobile client {client_id!r} returned invalid write admission",
+                resource=f"client:{client_id}",
+            )
+        reason = admission.get("reason")
+        if not isinstance(reason, str) or not reason:
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE",
+                f"Mobile client {client_id!r} returned invalid write admission reason",
+                resource=f"client:{client_id}",
+            )
+        last_reason = reason
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_interval_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "CLIENT_RUNTIME_UNAVAILABLE",
+        (
+            f"Mobile client {client_id!r} write admission did not reopen "
+            f"(last reason: {last_reason})"
+        ),
+        resource=f"client:{client_id}",
+    )
+
+
 def _mobile_service_for_client(
     client_id: str,
     profiles: Sequence[str],
@@ -1661,6 +1713,10 @@ def _start_mobile_client(
         )
     finally:
         recovery_phrase = ""
+    _require_mobile_write_admission(
+        session,
+        client_id=client_id,
+    )
     build = _mobile_mapping(
         _mobile_call(session, "build.identity"),
         "build identity",

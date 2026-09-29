@@ -60,6 +60,7 @@ from tooling.development.secure_content.runtime_owner import (
     _provision_runtime_accounts,
     _register_runtime_account,
     _require_mobile_private_runtime,
+    _require_mobile_write_admission,
     _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
     _restart_lease,
@@ -1479,6 +1480,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                         "recoveryPrekeysAvailable": 100,
                     },
                 }
+            if action == "recovery.snapshot":
+                return {
+                    "writeAdmission": {
+                        "open": True,
+                        "reason": None,
+                    },
+                }
             if action == "build.identity":
                 return {
                     "identity": {
@@ -1524,16 +1532,17 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "moments.private.snapshot",
                 "moments.private.storeRecoveryPhrase",
                 "moments.private.reconcile",
+                "recovery.snapshot",
                 "build.identity",
             ],
-            [action for action, _payload in calls[-4:]],
+            [action for action, _payload in calls[-5:]],
         )
         self.assertEqual(
             {
                 "recoveryPhrase": RECOVERY_PHRASE,
                 "recoveryEpoch": 1,
             },
-            calls[-3][1],
+            calls[-4][1],
         )
         self.assertNotIn(
             RECOVERY_PHRASE,
@@ -1731,6 +1740,79 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
         self.assertEqual("client:ios-alice", raised.exception.resource)
         self.assertIn("did not become active", str(raised.exception))
+        self.assertEqual([0.25, 0.25], sleeps)
+        self.assertEqual(3, session.call_action.call_count)
+
+    def test_mobile_write_admission_retries_until_open(self) -> None:
+        session = MagicMock()
+        session.call_action.side_effect = (
+            {
+                "writeAdmission": {
+                    "open": False,
+                    "reason": "session_refreshing",
+                },
+            },
+            {
+                "writeAdmission": {
+                    "open": True,
+                    "reason": None,
+                },
+            },
+        )
+        now = [0.0]
+        sleeps: list[float] = []
+
+        def sleep(duration: float) -> None:
+            sleeps.append(duration)
+            now[0] += duration
+
+        snapshot = _require_mobile_write_admission(
+            session,
+            client_id="ios-alice",
+            timeout_seconds=1.0,
+            poll_interval_seconds=0.25,
+            monotonic=lambda: now[0],
+            sleep=sleep,
+        )
+
+        self.assertTrue(snapshot["writeAdmission"]["open"])
+        self.assertEqual([0.25], sleeps)
+        self.assertEqual(
+            [
+                call("recovery.snapshot", {}),
+                call("recovery.snapshot", {}),
+            ],
+            session.call_action.call_args_list,
+        )
+
+    def test_mobile_write_admission_timeout_preserves_last_reason(self) -> None:
+        session = MagicMock()
+        session.call_action.return_value = {
+            "writeAdmission": {
+                "open": False,
+                "reason": "session_refreshing",
+            },
+        }
+        now = [0.0]
+        sleeps: list[float] = []
+
+        def sleep(duration: float) -> None:
+            sleeps.append(duration)
+            now[0] += duration
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _require_mobile_write_admission(
+                session,
+                client_id="ios-alice",
+                timeout_seconds=0.5,
+                poll_interval_seconds=0.25,
+                monotonic=lambda: now[0],
+                sleep=sleep,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertEqual("client:ios-alice", raised.exception.resource)
+        self.assertIn("session_refreshing", str(raised.exception))
         self.assertEqual([0.25, 0.25], sleeps)
         self.assertEqual(3, session.call_action.call_count)
 
