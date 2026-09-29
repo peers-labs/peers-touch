@@ -48,6 +48,8 @@
     "tooling/scripts/local-dev/completion-review.test.mjs",
     "tooling/scripts/local-dev/dev-session.mjs",
     "tooling/scripts/local-dev/dev-session.test.mjs",
+    "tooling/scripts/plan/plan-package.mjs",
+    "tooling/scripts/plan/planctl.test.mjs",
     "docs/architecture/agent/modern-chat-agent",
     "docs/architecture/agent/execution-plans/20260917-modern-chat-agent-v2-alignment"
   ],
@@ -95,7 +97,7 @@
     "Do not require HTTP provider credentials for CLI execution",
     "Do not log CLI credentials, prompts, or unrestricted local paths"
   ],
-  "updatedAt": "2026-09-29T06:20:00Z",
+  "updatedAt": "2026-09-29T06:45:00Z",
   "durableEvidence": []
 }
 ```
