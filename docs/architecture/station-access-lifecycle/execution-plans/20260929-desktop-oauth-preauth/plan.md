@@ -47,6 +47,22 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "tooling/devctl/desktop.mjs",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/devctl/test/desktop.test.mjs",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs/knowledge/invariants/desktop-vite-entry-readiness.md",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs/knowledge/README.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "docs/architecture/station-access-lifecycle/README.md",
         "mode": "exclusive-write"
       },
