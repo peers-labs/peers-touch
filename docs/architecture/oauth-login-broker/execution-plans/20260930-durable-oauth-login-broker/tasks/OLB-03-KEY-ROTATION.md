@@ -33,7 +33,7 @@
     },
     {
       "id": "olb-rotation-command",
-      "command": "cd apps/oauth2-client && go test ./internal/integration -run TestRotateEveryRecordClass",
+      "command": "cd apps/oauth2-client && go test ./cmd/rotate-records ./internal/infrastructure/persistence/github -run 'TestRotateRecordsRun|TestRotateEncryption'",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -62,8 +62,10 @@
 
 ## Current Snapshot
 
-- State: pending on `OLB-02-REFRESH-IDEMPOTENCY`.
-- The envelope version and maintenance owner are specified but not implemented.
+- State: in progress.
+- The versioned envelope and maintenance store exist.
+- Full-prefix batching, the command entry point, and failure/no-op coverage are
+  pending exact-source verification.
 
 ## Closure
 

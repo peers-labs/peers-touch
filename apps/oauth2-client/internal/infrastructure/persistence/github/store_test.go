@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -281,6 +282,102 @@ func TestGitDataRetriesConflictAndRefreshesInstallationToken(t *testing.T) {
 	}
 	if !fixture.forceValuesValid {
 		t.Fatal("branch update did not keep force=false")
+	}
+}
+
+func TestRotateEncryptionCoversEveryRecordClass(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldKey := bytes.Repeat([]byte{1}, 32)
+	newKey := bytes.Repeat([]byte{2}, 32)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{"v1": oldKey})
+	now := time.Date(2026, 9, 30, 4, 0, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "rotation-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := oldStore.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := oldStore.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:        session.State,
+		CompletionID: "completion",
+		Identity:     entity.ProviderIdentity{ProviderUserID: "42"},
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-secret",
+			RefreshToken: "refresh-secret",
+			ObtainedAt:   now,
+		},
+		CompletedAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v1": oldKey,
+		"v2": newKey,
+	})
+	totalRotated := 0
+	for pass := 0; pass < 10; pass++ {
+		result, err := rotatingStore.RotateEncryption(context.Background(), 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		totalRotated += result.Rotated
+		if result.Rotated < 2 {
+			break
+		}
+	}
+	if totalRotated != 5 {
+		t.Fatalf("expected five rotated records, got %d", totalRotated)
+	}
+	commitsAfterRotation := fixture.commitCount()
+	second, err := rotatingStore.RotateEncryption(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Rotated != 0 || fixture.commitCount() != commitsAfterRotation {
+		t.Fatalf("second rotation was not a no-op: %#v", second)
+	}
+	for path, payload := range fixture.files() {
+		var envelope recordcrypto.Envelope
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.KeyID != "v2" {
+			t.Fatalf("record %s still uses key %s", path, envelope.KeyID)
+		}
+	}
+}
+
+func TestRotateEncryptionUnknownKeyFailsClosed(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	now := time.Date(2026, 9, 30, 5, 0, 0, 0, time.UTC)
+	if err := oldStore.CreateAuthorization(context.Background(), entity.AuthSession{
+		State:     "unknown-key-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v2": bytes.Repeat([]byte{2}, 32),
+	})
+	result, err := rotatingStore.RotateEncryption(context.Background(), 100)
+	if !errors.Is(err, repository.ErrKeyUnavailable) {
+		t.Fatalf("expected unknown-key failure, got result=%#v err=%v", result, err)
+	}
+	if result.Failed == 0 || result.Rotated != 0 {
+		t.Fatalf("unexpected failure counts: %#v", result)
 	}
 }
 
