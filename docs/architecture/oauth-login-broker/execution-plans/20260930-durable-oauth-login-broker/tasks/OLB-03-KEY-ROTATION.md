@@ -35,6 +35,11 @@
       "id": "olb-rotation-command",
       "command": "cd apps/oauth2-client && go test ./internal/integration -run TestRotateEveryRecordClass",
       "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "olb-key-rotation-acceptance",
+      "command": "make acceptance-run",
+      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [

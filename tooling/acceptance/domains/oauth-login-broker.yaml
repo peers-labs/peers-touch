@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "oauth-login-broker",
+  "description": "Managed domain for durable serverless OAuth login, encrypted credential custody, key rotation, and read-only operator inspection.",
+  "capabilities": [
+    "acceptance-framework-self-consistency",
+    "oauth-login-broker-durability"
+  ],
+  "validation_gate_id": "oauth-login-broker-contract"
+}

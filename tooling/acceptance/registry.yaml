@@ -2,6 +2,30 @@
   "version": 1,
   "rules": [
     {
+      "id": "oauth-login-broker-durability",
+      "features": [
+        "oauth2-client-durability"
+      ],
+      "when": {
+        "paths": [
+          "apps/oauth2-client/**",
+          "docs/architecture/oauth-login-broker/**",
+          "tooling/acceptance/capabilities/oauth-login-broker.yaml",
+          "tooling/acceptance/domains/oauth-login-broker.yaml",
+          "tooling/acceptance/environments/oauth2-client-local-*.yaml",
+          "tooling/acceptance/features/oauth2-client-durability.yaml",
+          "tooling/acceptance/gates/oauth2_client/**",
+          "tooling/acceptance/provisioners/oauth2_client_local.py"
+        ]
+      },
+      "require": [
+        "oauth-login-broker-durable-login",
+        "oauth-login-broker-refresh-idempotency",
+        "oauth-login-broker-key-rotation",
+        "oauth-login-broker-operator"
+      ]
+    },
+    {
       "id": "development-workflow-host-neutral",
       "features": [
         "development-workflow-control-plane"

@@ -35,6 +35,10 @@ from .native_tauri_embedded_webdriver import (
 from .native_tauri_current_profile import (
     NativeTauriCurrentProfileProvisioner,
 )
+from .oauth2_client_local import (
+    OAuth2ClientLocalBrowserProvisioner,
+    OAuth2ClientLocalServiceProvisioner,
+)
 
 
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
@@ -65,6 +69,12 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
+    OAuth2ClientLocalBrowserProvisioner.environment_id: (
+        OAuth2ClientLocalBrowserProvisioner
+    ),
+    OAuth2ClientLocalServiceProvisioner.environment_id: (
+        OAuth2ClientLocalServiceProvisioner
+    ),
 }
 
 _RUNTIME_CELL_LIFECYCLES: dict[str, type[RuntimeCellLifecycle]] = {
@@ -146,6 +156,8 @@ __all__ = [
     "NativeDesktopWindowsProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",
     "NativeTauriCurrentProfileProvisioner",
+    "OAuth2ClientLocalBrowserProvisioner",
+    "OAuth2ClientLocalServiceProvisioner",
     "get_provisioner",
     "get_runtime_cell_lifecycle",
 ]
