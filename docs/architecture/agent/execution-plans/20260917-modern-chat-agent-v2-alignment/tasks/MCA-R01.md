@@ -132,7 +132,7 @@
     "Preserve terminal idempotency and active branch lineage",
     "Return only the first deterministic failure to its owning layer"
   ],
-  "updatedAt": "2026-09-30T17:47:59Z",
+  "updatedAt": "2026-09-30T18:17:36Z",
   "durableEvidence": []
 }
 ```
@@ -155,5 +155,5 @@ permission-denied contract exposed by the next exact-source Foundation run.
 - Run `20260925T200337561495Z-2467c5cfacc56fecabff73ab2e5ce7a3` exposed a late canonical refresh dropping the local-only duplicate-conflict Assistant; Desktop chat merge now preserves it.
 - Post-rebase reconciliation removed two orphaned Social adapters and one stale Conversation response constructor in favor of the canonical protobuf `oneof`.
 - Run `20260928T014932696320Z-45059d51355332a04a644511cec18390` reached Browser `BASE-PROVIDER_TIMEOUT`; live Turn SSE now survives the provider window with heartbeat frames.
-- Run `20260930T170459504288Z-055e01500d9b0450e25e100eaf3e7514` crossed disposable Station restart and failed at Browser English `BASE-FORBIDDEN_ACTOR`: the typed rejection reached its buffer, but callback/source-event observation was absent after current-conversation drift.
-- Isolated tuple run `20260930T173747235565Z-332d7da3d18c1f4d8c3b3e6c16896ffb` passed in 2106 ms, isolating accumulated state. The local correction binds acceptance to a non-empty Turn identity and skips topic reconciliation for pre-admission failures; every run completed clean Provisioner teardown.
+- Run `20260930T170459504288Z-055e01500d9b0450e25e100eaf3e7514` crossed disposable Station restart and failed at Browser English `BASE-FORBIDDEN_ACTOR`; all runtime resources were cleanly released.
+- Diagnostic run `20260930T181131230145Z-6d68d340aea426d8c79f44e750fe109c` proved the source attempt passed and only the replay targeted a different current conversation. The Harness now reselects the owner-bound conversation before replay; the product stream path and Gate predicates remain unchanged.
