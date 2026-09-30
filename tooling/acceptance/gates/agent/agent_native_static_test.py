@@ -1486,6 +1486,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
         prepare_start = self.source.index(
             "async function runFoundationF12Prepare",
         )
+        regenerate_start = self.source.index(
+            "async function regenerateFoundationTurnWithDiagnostics",
+        )
+        regenerate_end = self.source.index(
+            "async function runFoundationF12Prepare",
+            regenerate_start,
+        )
+        regenerate = self.source[regenerate_start:regenerate_end]
         complete_start = self.source.index(
             "async function runFoundationF12Complete",
             prepare_start,
@@ -1518,7 +1526,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertNotIn("key: topic.key", snapshot)
         self.assertIn("runFoundationF12Turn({", prepare)
         self.assertEqual(prepare.count("runFoundationF12Turn({"), 4)
-        self.assertIn("await api.regenerateAgentTurn({", prepare)
+        self.assertIn("await api.regenerateAgentTurn({", regenerate)
+        self.assertIn("foundationF12MessageListErrorDebug(error)", regenerate)
+        self.assertIn("await api.getAgentConversation(input.conversationId)", regenerate)
+        self.assertIn("`expected=${input.expectedVersion}`", regenerate)
+        self.assertIn("`actual=${actual.version}`", regenerate)
+        self.assertEqual(
+            prepare.count("await regenerateFoundationTurnWithDiagnostics({"),
+            2,
+        )
+        self.assertNotIn("await api.regenerateAgentTurn({", prepare)
         self.assertIn("await api.selectAgentActiveBranch({", prepare)
         self.assertIn("staleExpectedVersion", prepare)
         self.assertIn("foundationF12TopicSnapshot(", prepare)

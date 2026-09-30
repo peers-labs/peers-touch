@@ -13275,6 +13275,48 @@ async function selectFoundationBranchWithDiagnostics(input: {
   }
 }
 
+async function regenerateFoundationTurnWithDiagnostics(input: {
+  label: string;
+  conversationId: string;
+  messageId: string;
+  expectedVersion: number;
+}): Promise<Record<string, unknown>> {
+  try {
+    return evidenceRecord(
+      await api.regenerateAgentTurn({
+        conversation_id: input.conversationId,
+        source_assistant_message_id: input.messageId,
+        client_idempotency_key: crypto.randomUUID(),
+        expected_conversation_version: input.expectedVersion,
+      }),
+      `foundation${input.label}Regeneration`,
+    );
+  } catch (error) {
+    const commandError = foundationF12MessageListErrorDebug(error);
+    const actual = await api.getAgentConversation(input.conversationId).then(
+      (conversation) => ({
+        version: conversation.version,
+        readbackErrorCode: '',
+      }),
+      (readbackError: unknown) => ({
+        version: 0,
+        readbackErrorCode: observedErrorCode(readbackError),
+      }),
+    );
+    throw new Error([
+      'agent.acceptance.foundationRegenerateFailed',
+      input.label,
+      `observed=${String(commandError.observedCode ?? '')}`,
+      `rust=${String(commandError.code ?? '')}`,
+      `detail=${String(commandError.detailCode ?? '')}`,
+      `station=${String(commandError.stationStatus ?? '')}`,
+      `expected=${input.expectedVersion}`,
+      `actual=${actual.version}`,
+      `actualReadback=${actual.readbackErrorCode}`,
+    ].join(':'));
+  }
+}
+
 async function runFoundationF12Prepare(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   capabilitySessionId: string;
@@ -13403,15 +13445,13 @@ async function runFoundationF12Prepare(input: {
           );
         }
 
-        const alphaRegeneration = evidenceRecord(
-          await api.regenerateAgentTurn({
-            conversation_id: alpha.conversation_id,
-            source_assistant_message_id: alphaAssistant.messageId,
-            client_idempotency_key: crypto.randomUUID(),
-            expected_conversation_version: alphaSource.conversation.version,
-          }),
-          'foundationF12AlphaRegeneration',
-        );
+        const alphaRegeneration =
+          await regenerateFoundationTurnWithDiagnostics({
+            label: 'F12Alpha',
+            conversationId: alpha.conversation_id,
+            messageId: alphaAssistant.messageId,
+            expectedVersion: alphaSource.conversation.version,
+          });
         const alphaSibling = await foundationRevisionMessageFact(
           evidenceField(
             alphaRegeneration,
@@ -13447,15 +13487,13 @@ async function runFoundationF12Prepare(input: {
           ),
         });
 
-        const betaRegeneration = evidenceRecord(
-          await api.regenerateAgentTurn({
-            conversation_id: beta.conversation_id,
-            source_assistant_message_id: betaAssistant.messageId,
-            client_idempotency_key: crypto.randomUUID(),
-            expected_conversation_version: betaSource.conversation.version,
-          }),
-          'foundationF12BetaRegeneration',
-        );
+        const betaRegeneration =
+          await regenerateFoundationTurnWithDiagnostics({
+            label: 'F12Beta',
+            conversationId: beta.conversation_id,
+            messageId: betaAssistant.messageId,
+            expectedVersion: betaSource.conversation.version,
+          });
         const betaSibling = await foundationRevisionMessageFact(
           evidenceField(
             betaRegeneration,
