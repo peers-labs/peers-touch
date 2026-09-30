@@ -685,11 +685,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             group_conversation_id=remote_group_id,
         )
 
-        alice.call("clearLocalState")
-        bob.call("clearLocalState")
-        eve.call("clearLocalState")
-        remote.call("clearLocalState")
-
     return {
         "supportedAudiences": (
             "FRIENDS",
