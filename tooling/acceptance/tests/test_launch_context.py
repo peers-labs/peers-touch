@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pickle
+import shutil
 import signal
 import socket
 import struct
@@ -12,10 +13,12 @@ import tempfile
 import threading
 import time
 import unittest
+import venv
 from pathlib import Path
 from typing import Mapping
 from unittest.mock import MagicMock, call, patch
 
+import tooling.acceptance.core._gate_bootstrap as gate_bootstrap_module
 import tooling.acceptance.core.launch_context as launch_context_module
 from tooling.acceptance.core import (
     EPHEMERAL_CONTEXT_FD_ENV,
@@ -1159,6 +1162,62 @@ class LaunchContextProtocolTests(unittest.TestCase):
 
 @unittest.skipUnless(os.name == "posix", "POSIX socketpair contract")
 class LaunchContextProcessTests(unittest.TestCase):
+    def test_bootstrap_rejects_non_socket_context_descriptor(self) -> None:
+        read_descriptor, write_descriptor = os.pipe()
+        try:
+            with patch.dict(
+                os.environ,
+                {EPHEMERAL_CONTEXT_FD_ENV: str(read_descriptor)},
+                clear=True,
+            ), self.assertRaisesRegex(RuntimeError, "descriptor locator is invalid"):
+                gate_bootstrap_module._context_descriptor()
+        finally:
+            os.close(read_descriptor)
+            os.close(write_descriptor)
+
+    def _create_synthetic_venv(
+        self,
+        directory: str,
+    ) -> tuple[Path, Path, Path]:
+        venv_root = Path(directory) / "acceptance-venv"
+        venv.EnvBuilder(with_pip=False).create(venv_root)
+        executable = venv_root / "bin" / "python"
+        site_packages = (
+            venv_root
+            / "lib"
+            / f"python{sys.version_info.major}.{sys.version_info.minor}"
+            / "site-packages"
+        )
+        self.assertTrue(executable.is_file())
+        self.assertTrue(site_packages.is_dir())
+        return venv_root, executable, site_packages
+
+    def _run_venv_gate(
+        self,
+        executable: Path,
+        script: str,
+        *,
+        environment: Mapping[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        context = new_context(SyntheticHandler())
+        binding = context.bind_child()
+        context.activate()
+        try:
+            return GateProcessLauncher(
+                cwd=REPO_ROOT,
+                environment=dict(environment or {}),
+            ).run(
+                GateLaunchSpec(
+                    argv=(str(executable), "-c", script),
+                    timeout_seconds=10,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
+        finally:
+            context.quiesce()
+            self.assertTrue(context.close().succeeded)
+
     def test_real_child_normal_close_is_acknowledged(self) -> None:
         context = new_context(SyntheticHandler())
         binding = context.bind_child()
@@ -1332,7 +1391,7 @@ print(json.dumps({
             environment={"SYNTHETIC": "1"},
         )
         spec = GateLaunchSpec(
-            argv=(sys.executable, "synthetic_gate.py", "--run"),
+            argv=("python3", "synthetic_gate.py", "--run"),
             timeout_seconds=3,
             required_capabilities=("synthetic.echo",),
         )
@@ -1394,6 +1453,22 @@ print(json.dumps({
             os.fstat(inherited_descriptor)
         context.quiesce()
         self.assertTrue(context.close().succeeded)
+
+    def test_isolated_launcher_binds_generic_python_to_current_runner(self) -> None:
+        for executable in ("python", "python3"):
+            with self.subTest(executable=executable):
+                launch_argv = launch_context_module._isolated_python_argv(
+                    (executable, "-c", "pass")
+                )
+                self.assertEqual(launch_argv[0], sys.executable)
+
+    def test_isolated_launcher_preserves_explicit_or_versioned_python(self) -> None:
+        for executable in ("./python3", "/trusted/bin/python3", "python3.11"):
+            with self.subTest(executable=executable):
+                launch_argv = launch_context_module._isolated_python_argv(
+                    (executable, "-c", "pass")
+                )
+                self.assertEqual(launch_argv[0], executable)
 
     def test_context_launcher_rejects_parent_redaction_values_before_spawn(
         self,
@@ -1477,6 +1552,162 @@ with EphemeralGateClient.from_environment():
         self.assertNotIn(credential_canary, completed.stderr)
         self.assertNotIn(redaction_canary, completed.stderr)
         self.assertTrue(close_context(context).succeeded)
+
+    def test_context_launcher_loads_only_invoked_venv_site_packages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            _venv_root, venv_python, site_packages = (
+                self._create_synthetic_venv(directory)
+            )
+            sitecustomize_marker = Path(directory) / "sitecustomize-loaded"
+            usercustomize_marker = Path(directory) / "usercustomize-loaded"
+            pth_marker = Path(directory) / "pth-loaded"
+            pythonpath_marker = Path(directory) / "pythonpath-loaded"
+
+            (site_packages / "sitecustomize.py").write_text(
+                "from pathlib import Path\n"
+                f"Path({str(sitecustomize_marker)!r}).write_text("
+                "'loaded', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+            (site_packages / "synthetic_gate_dependency.py").write_text(
+                "import os\n"
+                "CONTEXT_FD_INHERITABLE = os.get_inheritable("
+                "int(os.environ['PT_ACCEPTANCE_EPHEMERAL_CONTEXT_FD']))\n"
+                "VALUE = 'trusted-venv-dependency'\n",
+                encoding="utf-8",
+            )
+            (site_packages / "synthetic-execution.pth").write_text(
+                "import pathlib; "
+                f"pathlib.Path({str(pth_marker)!r}).write_text("
+                "'loaded', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+
+            user_site = (
+                Path(directory)
+                / "user-base"
+                / "lib"
+                / f"python{sys.version_info.major}.{sys.version_info.minor}"
+                / "site-packages"
+            )
+            user_site.mkdir(parents=True)
+            (user_site / "usercustomize.py").write_text(
+                "from pathlib import Path\n"
+                f"Path({str(usercustomize_marker)!r}).write_text("
+                "'loaded', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+
+            pythonpath = Path(directory) / "pythonpath"
+            pythonpath.mkdir()
+            (pythonpath / "synthetic_pythonpath_dependency.py").write_text(
+                "from pathlib import Path\n"
+                f"Path({str(pythonpath_marker)!r}).write_text("
+                "'loaded', encoding='utf-8')\n",
+                encoding="utf-8",
+            )
+
+            script = """
+import json
+import sys
+from pathlib import Path
+from synthetic_gate_dependency import CONTEXT_FD_INHERITABLE, VALUE
+from tooling.acceptance.core import EphemeralGateClient
+
+try:
+    import synthetic_pythonpath_dependency
+except ModuleNotFoundError:
+    pythonpath_dependency_loaded = False
+else:
+    pythonpath_dependency_loaded = True
+
+with EphemeralGateClient.from_environment():
+    print(json.dumps({
+        "contextFdInheritableAtDependencyImport": CONTEXT_FD_INHERITABLE,
+        "dependency": VALUE,
+        "dependencyPath": str(
+            Path(sys.modules["synthetic_gate_dependency"].__file__).resolve()
+        ),
+        "pythonpathDependencyLoaded": pythonpath_dependency_loaded,
+        "siteLoaded": "site" in sys.modules,
+        "sitecustomizeLoaded": "sitecustomize" in sys.modules,
+        "usercustomizeLoaded": "usercustomize" in sys.modules,
+        "sitePackagePaths": [
+            str(Path(value).resolve())
+            for value in sys.path
+            if Path(value).name == "site-packages"
+        ],
+    }))
+"""
+            completed = self._run_venv_gate(
+                venv_python,
+                script,
+                environment={
+                    "PYTHONPATH": str(pythonpath),
+                    "PYTHONUSERBASE": str(Path(directory) / "user-base"),
+                },
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                json.loads(completed.stdout),
+                {
+                    "contextFdInheritableAtDependencyImport": False,
+                    "dependency": "trusted-venv-dependency",
+                    "dependencyPath": str(
+                        (
+                            site_packages / "synthetic_gate_dependency.py"
+                        ).resolve()
+                    ),
+                    "pythonpathDependencyLoaded": False,
+                    "siteLoaded": False,
+                    "sitecustomizeLoaded": False,
+                    "usercustomizeLoaded": False,
+                    "sitePackagePaths": [str(site_packages.resolve())],
+                },
+            )
+            for marker in (
+                sitecustomize_marker,
+                usercustomize_marker,
+                pth_marker,
+                pythonpath_marker,
+            ):
+                self.assertFalse(marker.exists(), marker)
+
+    def test_context_launcher_rejects_unsafe_venv_layouts(self) -> None:
+        cases = (
+            ("site-packages-symlink-escape", "package path is unsafe"),
+            ("wrong-pyvenv-version", "config is invalid"),
+            ("site-packages-file", "package path is invalid"),
+        )
+        for case, expected_error in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                venv_root, venv_python, site_packages = (
+                    self._create_synthetic_venv(directory)
+                )
+                if case == "site-packages-symlink-escape":
+                    outside = Path(directory) / "outside-site-packages"
+                    outside.mkdir()
+                    shutil.rmtree(site_packages)
+                    site_packages.symlink_to(outside, target_is_directory=True)
+                elif case == "wrong-pyvenv-version":
+                    config = venv_root / "pyvenv.cfg"
+                    config.write_text(
+                        config.read_text(encoding="utf-8").replace(
+                            f"version = {sys.version_info.major}."
+                            f"{sys.version_info.minor}",
+                            "version = 0.0",
+                        ),
+                        encoding="utf-8",
+                    )
+                else:
+                    shutil.rmtree(site_packages)
+                    site_packages.write_text("not a directory", encoding="utf-8")
+
+                completed = self._run_venv_gate(venv_python, "pass")
+
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(expected_error, completed.stderr)
 
     def test_context_launcher_rejects_non_python_argv_before_spawn(self) -> None:
         context = new_context(SyntheticHandler())

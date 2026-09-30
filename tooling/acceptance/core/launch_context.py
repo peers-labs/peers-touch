@@ -11,6 +11,7 @@ import signal
 import socket
 import struct
 import subprocess
+import sys
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -1446,7 +1447,8 @@ def _isolated_python_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
             "context-enabled Gate must use a Python module, script, or -c argv",
             operation="gate_process",
         )
-    return (argv[0], "-I", "-S", bootstrap, *target)
+    executable = sys.executable if argv[0] in {"python", "python3"} else argv[0]
+    return (executable, "-I", "-S", bootstrap, *target)
 
 
 def _project_handler_response(
