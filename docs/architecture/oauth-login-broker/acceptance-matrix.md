@@ -64,6 +64,8 @@
 - Reusing a completed refresh idempotency key, including after another refresh,
   returns the current credential without another provider call, credential
   generation, or audit event.
+- Credential replacement is fenced by the generation observed before the
+  provider call; a stale result is discarded and retried from current state.
 
 ### OLB-G04: Operator Readback
 

@@ -14,6 +14,7 @@ var (
 	ErrAuthorizationExpired     = errors.New("state_expired")
 	ErrCredentialNotFound       = errors.New("credential_not_found")
 	ErrCredentialNotRefreshable = errors.New("credential_not_refreshable")
+	ErrCredentialGeneration     = errors.New("credential_generation_conflict")
 	ErrStorageConflict          = errors.New("oauth_storage_conflict")
 	ErrStorageUnavailable       = errors.New("oauth_storage_unavailable")
 	ErrRecordCorrupt            = errors.New("oauth_record_corrupt")

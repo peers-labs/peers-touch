@@ -214,8 +214,9 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 
 	fixture.abortAfterNextRefUpdate()
 	refreshed, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
-		IdentityID:  identity.IdentityID,
-		OperationID: "refresh-operation",
+		IdentityID:         identity.IdentityID,
+		OperationID:        "refresh-operation",
+		ExpectedGeneration: 1,
 		Tokens: entity.TokenSet{
 			AccessToken: "access-new",
 			ObtainedAt:  now.Add(2 * time.Minute),
@@ -232,8 +233,9 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 	}
 	commitsAfterRefresh := fixture.commitCount()
 	duplicate, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
-		IdentityID:  identity.IdentityID,
-		OperationID: "refresh-operation",
+		IdentityID:         identity.IdentityID,
+		OperationID:        "refresh-operation",
+		ExpectedGeneration: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -242,8 +244,9 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 		t.Fatalf("duplicate refresh mutated storage: %#v", duplicate)
 	}
 	secondOperation, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
-		IdentityID:  identity.IdentityID,
-		OperationID: "refresh-operation-2",
+		IdentityID:         identity.IdentityID,
+		OperationID:        "refresh-operation-2",
+		ExpectedGeneration: 2,
 		Tokens: entity.TokenSet{
 			AccessToken: "access-newer",
 			ObtainedAt:  now.Add(3 * time.Minute),
@@ -257,9 +260,40 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 		t.Fatalf("second refresh did not advance generation: %#v", secondOperation)
 	}
 	commitsAfterSecondOperation := fixture.commitCount()
+	if _, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         identity.IdentityID,
+		OperationID:        "stale-refresh",
+		ExpectedGeneration: 2,
+		Tokens: entity.TokenSet{
+			AccessToken: "must-not-commit",
+			ObtainedAt:  now.Add(4 * time.Minute),
+		},
+		RefreshedAt: now.Add(4 * time.Minute),
+	}); !errors.Is(err, repository.ErrCredentialGeneration) {
+		t.Fatalf("expected stale generation rejection, got %v", err)
+	}
+	if fixture.commitCount() != commitsAfterSecondOperation {
+		t.Fatal("stale refresh created a repository commit")
+	}
+	if _, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+		IdentityID:         identity.IdentityID,
+		OperationID:        "stale-refresh",
+		ExpectedGeneration: 2,
+		Tokens: entity.TokenSet{
+			AccessToken: "must-not-commit",
+			ObtainedAt:  now.Add(4 * time.Minute),
+		},
+		RefreshedAt: now.Add(4 * time.Minute),
+	}); !errors.Is(err, repository.ErrCredentialGeneration) {
+		t.Fatalf("expected stale generation rejection, got %v", err)
+	}
+	if fixture.commitCount() != commitsAfterSecondOperation {
+		t.Fatal("stale refresh created a repository commit")
+	}
 	olderDuplicate, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
-		IdentityID:  identity.IdentityID,
-		OperationID: "refresh-operation",
+		IdentityID:         identity.IdentityID,
+		OperationID:        "refresh-operation",
+		ExpectedGeneration: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -344,8 +378,9 @@ func TestRotateEncryptionCoversEveryRecordClass(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := oldStore.ReplaceCredential(context.Background(), entity.CredentialRefresh{
-		IdentityID:  oldStore.identityID("main", string(valueobject.ProviderGitHub), "42"),
-		OperationID: "rotation-refresh",
+		IdentityID:         oldStore.identityID("main", string(valueobject.ProviderGitHub), "42"),
+		OperationID:        "rotation-refresh",
+		ExpectedGeneration: 1,
 		Tokens: entity.TokenSet{
 			AccessToken:  "access-rotated",
 			RefreshToken: "refresh-rotated",

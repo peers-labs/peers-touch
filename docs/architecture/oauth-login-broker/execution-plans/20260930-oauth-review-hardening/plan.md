@@ -78,7 +78,7 @@
       "workstreamId": "OLB-SERVICE",
       "path": "tasks/OLB-HARDEN-01.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -88,7 +88,7 @@
       "dependsOn": [
         "OLB-HARDEN-01"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {
