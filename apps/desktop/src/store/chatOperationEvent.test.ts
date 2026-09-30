@@ -238,6 +238,10 @@ describe('Agent turn event identity projection', () => {
         data: { conversationId },
       });
       callbacks?.onEvent({
+        event: 'admission_replayed',
+        data: { conversationId, admission: {} },
+      });
+      callbacks?.onEvent({
         event: 'error',
         data: {
           ...forbiddenActorData(),
