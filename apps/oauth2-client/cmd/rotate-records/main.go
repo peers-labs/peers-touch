@@ -57,10 +57,11 @@ func runRotation(ctx context.Context, store repository.OAuthMaintenanceStore, li
 		total.Rotated += result.Rotated
 		total.Unchanged = result.Unchanged
 		total.Failed += result.Failed
+		total.Complete = result.Complete
 		if err != nil {
 			return total, err
 		}
-		if result.Rotated < limit {
+		if result.Complete {
 			return total, nil
 		}
 	}

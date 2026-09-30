@@ -1,11 +1,33 @@
 package bootstrap
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func setCompleteGitHubStorageEnvironment(t *testing.T) {
+	t.Helper()
+	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	t.Setenv("VERCEL", "1")
+	t.Setenv("OAUTH_STORAGE_DRIVER", "github")
+	t.Setenv("OAUTH_GITHUB_API_BASE_URL", "https://api.github.com")
+	t.Setenv("OAUTH_GITHUB_STORAGE_OWNER", "owner")
+	t.Setenv("OAUTH_GITHUB_STORAGE_REPO", "repository")
+	t.Setenv("OAUTH_GITHUB_STORAGE_BRANCH", "main")
+	t.Setenv("OAUTH_GITHUB_APP_ID", "1")
+	t.Setenv("OAUTH_GITHUB_APP_INSTALLATION_ID", "2")
+	t.Setenv(
+		"OAUTH_GITHUB_APP_PRIVATE_KEY_B64",
+		base64.StdEncoding.EncodeToString([]byte("invalid-pem-for-config-only")),
+	)
+	t.Setenv("OAUTH_CREDENTIAL_ACTIVE_KEY_ID", "v1")
+	t.Setenv("OAUTH_CREDENTIAL_KEY_V1", key)
+	t.Setenv("OAUTH_STORAGE_INDEX_HMAC_KEY", key)
+	t.Setenv("OAUTH_AUDIT_HMAC_KEY", key)
+}
 
 func TestVercelRequiresBridgeSecretAndReturnAllowlist(t *testing.T) {
 	t.Setenv("VERCEL", "1")
@@ -192,6 +214,89 @@ func TestVercelRequiresValidAdminAuthentication(t *testing.T) {
 	)
 	if auth, err := LoadAdminAuthenticator(); err != nil || auth == nil {
 		t.Fatalf("valid admin auth rejected: auth=%#v err=%v", auth, err)
+	}
+}
+
+func TestGitHubStorageRejectsIncompleteProductionBootstrap(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+		want  string
+	}{
+		{
+			name: "repository owner",
+			key:  "OAUTH_GITHUB_STORAGE_OWNER",
+			want: "github_storage_configuration_required",
+		},
+		{
+			name: "repository name",
+			key:  "OAUTH_GITHUB_STORAGE_REPO",
+			want: "github_storage_configuration_required",
+		},
+		{
+			name: "repository branch",
+			key:  "OAUTH_GITHUB_STORAGE_BRANCH",
+			want: "github_storage_configuration_required",
+		},
+		{
+			name: "app id",
+			key:  "OAUTH_GITHUB_APP_ID",
+			want: "github_storage_configuration_required",
+		},
+		{
+			name:  "installation id",
+			key:   "OAUTH_GITHUB_APP_INSTALLATION_ID",
+			value: "0",
+			want:  "invalid_github_app_installation_id",
+		},
+		{
+			name: "private key",
+			key:  "OAUTH_GITHUB_APP_PRIVATE_KEY_B64",
+			want: "invalid_oauth_github_app_private_key_b64",
+		},
+		{
+			name: "active encryption key id",
+			key:  "OAUTH_CREDENTIAL_ACTIVE_KEY_ID",
+			want: "oauth_active_encryption_key_required",
+		},
+		{
+			name:  "encryption key ring",
+			key:   "OAUTH_CREDENTIAL_KEY_V1",
+			value: base64.StdEncoding.EncodeToString(make([]byte, 31)),
+			want:  "invalid_oauth_encryption_key",
+		},
+		{
+			name: "storage index hmac",
+			key:  "OAUTH_STORAGE_INDEX_HMAC_KEY",
+			want: "invalid_oauth_storage_index_hmac_key",
+		},
+		{
+			name: "audit hmac",
+			key:  "OAUTH_AUDIT_HMAC_KEY",
+			want: "invalid_oauth_audit_hmac_key",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			setCompleteGitHubStorageEnvironment(t)
+			t.Setenv(test.key, test.value)
+			if _, err := LoadStorageConfig(); err == nil || err.Error() != test.want {
+				t.Fatalf("expected %s, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+func TestBuildOAuthStoreRejectsInvalidGitHubPrivateKey(t *testing.T) {
+	setCompleteGitHubStorageEnvironment(t)
+	config, err := LoadStorageConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := BuildOAuthStore(config, nil); err == nil ||
+		err.Error() != "invalid_github_app_private_key" {
+		t.Fatalf("expected invalid private key rejection, got %v", err)
 	}
 }
 

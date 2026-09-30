@@ -45,7 +45,8 @@
       "OLB-D06",
       "OLB-D07",
       "OLB-D08",
-      "OLB-D09"
+      "OLB-D09",
+      "OLB-D10"
     ]
   },
   "scope": {
@@ -57,6 +58,10 @@
       { "pathPrefix": "apps/dev/server/index.test.mjs", "mode": "exclusive-write" },
       {
         "pathPrefix": "docs/architecture/oauth-login-broker",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs/architecture/architecture-module-governance/architecture-modules.json",
         "mode": "exclusive-write"
       },
       {
@@ -119,7 +124,8 @@
     "nonGoals": [
       "Create or mutate live provider, GitHub App, repository, or Vercel resources",
       "Change OAuth product journeys or public credential API scope",
-      "Redesign admin audit indexing or key-rotation continuation protocols",
+      "Introduce a separate admin audit index or key-rotation continuation protocol",
+      "Migrate HMAC-only audit paths in a live repository",
       "Modify or merge the peers-touch-git target worktree",
       "Push, open a pull request, release, or rewrite history"
     ]
@@ -274,8 +280,9 @@ OLB-FINAL-01
   the documented return-destination override.
 - GitHub response bounds fail explicitly and large trees remain readable.
 - Duplicate refresh calls converge after a concurrent winner commits.
-- Admin readback and key rotation avoid repeated full-history reads, and
-  rotation counts only confirmed commits.
+- Chronologically sortable audit paths let admin readback select the newest
+  bounded event set before blob reads; rotation reuses one bounded candidate
+  set across retries and counts only confirmed commits.
 - Acceptance metadata selects every required governance Gate and publishes
   only directly witnessed claims.
 

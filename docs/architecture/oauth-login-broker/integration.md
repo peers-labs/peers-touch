@@ -1,8 +1,8 @@
 # OAuth Login Broker - Integration
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
 ---
@@ -94,8 +94,12 @@ Local development defaults to memory when `OAUTH_STORAGE_DRIVER` is unset.
 - For lists, use the recursive tree when it fits the bounded response budget;
   on overflow or GitHub `truncated=true`, walk non-recursive trees with explicit
   depth and entry limits before fetching matching encrypted blobs.
-- Admin audit readback applies its requested event limit to descending audit
-  paths before fetching encrypted audit blobs.
+- Audit filenames begin with a fixed-width UTC occurrence key. Admin readback
+  applies its requested event limit to descending paths before fetching
+  encrypted audit blobs, including when the newest events share one month.
+- HMAC-only legacy audit filenames fail closed. A repository containing that
+  pre-release layout must use a separately authorized migration or a fresh data
+  branch before rollout; key rotation does not rename records.
 
 ### Write
 
@@ -124,7 +128,8 @@ Provider errors map to stable codes without returning response bodies.
 4. Run `go run ./cmd/rotate-records` with the same environment.
 5. Each pass stops after staging its configured number of old-key envelopes;
    the command reports them as rotated only after the branch update succeeds.
-6. Rerun until it reports zero rotated and zero failed records.
+6. The command reruns passes until the store returns `complete=true`; it does
+   not infer completion from a retry-affected rotated count.
 7. Remove the old environment key in a later deployment.
 
 Git history retains old ciphertext. Rotation does not erase repository history.

@@ -1,8 +1,8 @@
 # OAuth Login Broker
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 > **Module**: `apps/oauth2-client/`
 
@@ -77,7 +77,7 @@ so a dedicated service or database can take over without changing OAuth use case
 ## 6. Current Status
 
 - Product: accepted for capabilities OLB-C01 through OLB-C09.
-- Architecture: accepted through decisions OLB-D01 through OLB-D09.
+- Architecture: accepted through decisions OLB-D01 through OLB-D10.
 - Delivery: `OLB-20260930` and `OLB-HARDEN-20260930` are completed;
   `OLB-FINAL-20260930` tracks final code-review remediation.
 - Proof: deterministic local source, HTTP, browser, and repository-fixture

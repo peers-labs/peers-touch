@@ -54,6 +54,11 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                     "TestVercelRequiresBridgeSecretAndReturnAllowlist",
                     "TestVercelRejectsHTTPProviderRedirect",
                     "TestVercelRejectsMissingOrMemoryStorage",
+                    "TestVercelRequiresValidAdminAuthentication",
+                    "TestGitHubStorageRejectsIncompleteProductionBootstrap",
+                    "TestBuildOAuthStoreRejectsInvalidGitHubPrivateKey",
+                    "TestBuildContainerRejectsIncompleteProductionBootstrap",
+                    "TestBuildContainerValidatesCompleteProductionBootstrap",
                     "TestConfigFileAllowedReturnToCanBeOverridden",
                     "TestGitHubAPIBaseRequiresHTTPSOnVercel",
                     "TestBuildContainerInLocalMemoryMode",
@@ -146,11 +151,17 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                 (
                     "TestRotateEncryptionCoversEveryRecordClass",
                     "TestRotateEncryptionUnknownKeyFailsClosed",
+                    "TestRotateEncryptionCountsCandidateCorruptionAfterConflict",
+                    "TestRotateEncryptionRetriesWithIncompleteResultAfterConcurrentInsert",
+                    "TestRotateEncryptionConfirmsLostRefUpdateResponse",
                 ),
             ),
             TestGroup(
                 "./cmd/rotate-records",
-                ("TestRotateRecordsRun",),
+                (
+                    "TestRotateRecordsRun",
+                    "TestRotateRecordsRunUsesExplicitCompletion",
+                ),
             ),
         ),
     ),
@@ -180,6 +191,18 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
             TestGroup(
                 "./internal/integration",
                 ("TestOAuthLoginBrokerJourney",),
+            ),
+            TestGroup(
+                "./internal/infrastructure/persistence/github",
+                (
+                    "TestAdminSnapshotReturnsNewestSameMonthEventsWithBoundedReads",
+                    "TestAdminSnapshotRejectsLegacyAuditPathBeforeBlobRead",
+                    "TestRecordAuthorizationFailureDistinguishesOccurrences",
+                ),
+            ),
+            TestGroup(
+                "./internal/infrastructure/persistence/memory",
+                ("TestRecordAuthorizationFailureDistinguishesOccurrences",),
             ),
         ),
     ),

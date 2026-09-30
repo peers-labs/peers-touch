@@ -1,8 +1,8 @@
 # OAuth Login Broker - Design Decisions
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
 ---
@@ -20,6 +20,7 @@
 | OLB-D07 | Domain ports isolate the GitHub backend | accepted |
 | OLB-D08 | Provider-supported PKCE is mandatory | accepted |
 | OLB-D09 | Redirects are restricted to site-owned destinations | accepted |
+| OLB-D10 | Audit paths are chronologically sortable | accepted |
 
 ## OLB-D01: Durable Store Is Mandatory On Vercel
 
@@ -308,3 +309,46 @@ origin or emitted unsigned in production.
 
 Deployments using custom schemes must add their callback destination to the
 site allowlist before rollout.
+
+## OLB-D10: Audit Paths Are Chronologically Sortable
+
+**Status**: accepted
+
+**Date**: 2026-10-01
+
+### Context
+
+The operator contract returns the newest bounded audit events and applies the
+limit before fetching encrypted blobs. A month bucket followed only by an HMAC
+event ID cannot order events within the same month.
+
+### Decision
+
+Prefix each audit filename with its fixed-width UTC occurrence timestamp and
+retain the HMAC event ID as the opaque uniqueness suffix. Failure-event
+fingerprints include the occurrence timestamp so distinct failed requests do
+not reuse one event ID. Descending path order must therefore match descending
+`occurred_at` order before any blob is fetched.
+
+### Rationale
+
+This preserves one append-only audit record tree and makes bounded readback
+correct without introducing a separate index or reading an unbounded month.
+
+### Alternatives Considered
+
+- Read every event in the newest month before sorting: rejected because one
+  active month becomes an unbounded read.
+- Add a separate time index: rejected because it creates another atomic record
+  and source of truth.
+- Keep HMAC-only names and return an arbitrary bounded subset: rejected because
+  it violates the accepted recent-event operator contract.
+
+### Consequences
+
+Repository readers can infer the exact UTC occurrence time from an audit path,
+in addition to the already exposed record class and month. Event identity,
+state, provider subject, codes, tokens, and payload fields remain opaque or
+encrypted. HMAC-only legacy audit paths are rejected before blob reads; this is
+a hard cut, so a repository containing that pre-release layout requires a
+separately authorized migration or a fresh data branch before rollout.

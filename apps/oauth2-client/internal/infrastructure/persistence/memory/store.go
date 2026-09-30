@@ -164,7 +164,8 @@ func (s *Store) RecordAuthorizationFailure(_ context.Context, failure entity.Aut
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	transactionID := digest(failure.State)
-	eventID := digest("failure\x00" + transactionID + "\x00" + failure.CodeFingerprint + "\x00" + failure.ErrorCode)
+	occurredAt := failure.OccurredAt.UTC()
+	eventID := digest("failure\x00" + transactionID + "\x00" + failure.CodeFingerprint + "\x00" + failure.ErrorCode + "\x00" + occurredAt.Format(time.RFC3339Nano))
 	if _, exists := s.events[eventID]; exists {
 		return nil
 	}
@@ -178,7 +179,7 @@ func (s *Store) RecordAuthorizationFailure(_ context.Context, failure entity.Aut
 		SchemaVersion:   1,
 		EventID:         eventID,
 		EventType:       entity.AuditLoginFailed,
-		OccurredAt:      failure.OccurredAt.UTC(),
+		OccurredAt:      occurredAt,
 		SiteID:          siteID,
 		Provider:        provider,
 		TransactionID:   transactionID,

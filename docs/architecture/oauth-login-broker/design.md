@@ -1,8 +1,8 @@
 # OAuth Login Broker - Architecture Design
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 > **Module**: `apps/oauth2-client/`
 
@@ -133,12 +133,14 @@ oauth-data/
 ├── identities/<identity-fingerprint>.json
 ├── credentials/<identity-fingerprint>.json
 ├── refresh-operations/<identity-fingerprint>/<operation-fingerprint>.json
-└── audits/YYYY/MM/<event-id>.json
+└── audits/YYYY/MM/<utc-sort-key>-<event-id>.json
 ```
 
-Every file is a versioned encrypted envelope. Directory names reveal record
-class and audit month only. State and provider subject values do not appear in
-paths.
+Every file is a versioned encrypted envelope. Audit paths expose record class,
+month, and the event occurrence timestamp needed for bounded newest-first
+readback. State, provider subject, and event payload values do not appear in
+paths. HMAC-only legacy audit paths are not a second supported layout and fail
+closed before blob reads.
 
 ## 7. Atomicity And Concurrency
 
@@ -189,7 +191,11 @@ upstream bodies.
 
 Key rotation is an explicit server-side maintenance operation. It scans all
 five record prefixes, rewrites old-key envelopes through the same CAS adapter,
-and reports only counts and opaque paths. Admin GETs never mutate repository
+reuses one bounded candidate set across CAS or lost-response retries, and
+reports only records confirmed by the successful commit or subsequent exact
+ciphertext readback. The result carries an explicit completion flag, so callers
+never infer exhaustion from a retry-affected count; any retry forces a
+subsequent fresh pass before completion. Admin GETs never mutate repository
 state.
 
 ## 9. Provider Semantics

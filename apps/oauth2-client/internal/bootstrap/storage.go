@@ -34,15 +34,16 @@ type StorageConfig struct {
 
 func LoadStorageConfig() (StorageConfig, error) {
 	driver := strings.ToLower(strings.TrimSpace(os.Getenv("OAUTH_STORAGE_DRIVER")))
+	production := strings.TrimSpace(os.Getenv("VERCEL")) != ""
 	if driver == "" {
-		if strings.TrimSpace(os.Getenv("VERCEL")) != "" {
+		if production {
 			return StorageConfig{}, errors.New("oauth_storage_driver_required")
 		}
 		driver = "memory"
 	}
 	config := StorageConfig{Driver: driver}
 	if driver == "memory" {
-		if strings.TrimSpace(os.Getenv("VERCEL")) != "" {
+		if production {
 			return StorageConfig{}, errors.New("memory_storage_forbidden_on_vercel")
 		}
 		return config, nil
@@ -52,7 +53,7 @@ func LoadStorageConfig() (StorageConfig, error) {
 	}
 
 	config.GitHubAPIBase = envOrDefault("OAUTH_GITHUB_API_BASE_URL", defaultGitHubAPIBase)
-	if strings.TrimSpace(os.Getenv("VERCEL")) != "" {
+	if production {
 		apiBase, err := url.Parse(config.GitHubAPIBase)
 		if err != nil || apiBase.Scheme != "https" || apiBase.Host == "" || apiBase.User != nil {
 			return StorageConfig{}, errors.New("production_github_api_https_required")
@@ -100,7 +101,10 @@ func LoadStorageConfig() (StorageConfig, error) {
 	if err != nil {
 		return StorageConfig{}, err
 	}
-	if config.GitHubOwner == "" || config.GitHubRepository == "" || config.GitHubAppID == "" {
+	if config.GitHubOwner == "" ||
+		config.GitHubRepository == "" ||
+		config.GitHubAppID == "" ||
+		(production && strings.TrimSpace(os.Getenv("OAUTH_GITHUB_STORAGE_BRANCH")) == "") {
 		return StorageConfig{}, errors.New("github_storage_configuration_required")
 	}
 	return config, nil

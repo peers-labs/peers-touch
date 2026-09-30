@@ -1,6 +1,7 @@
 package githubstore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,8 @@ const (
 	auditKind            = "oauth-audit"
 	recordSchema         = 1
 	defaultAdminLimit    = 100
+	auditPathTimeLayout  = "20060102T150405.000000000Z"
+	auditPathTimeLength  = len(auditPathTimeLayout)
 )
 
 type Store struct {
@@ -278,11 +281,12 @@ func (s *Store) RecordAuthorizationFailure(ctx context.Context, failure entity.A
 			siteID = tx.SiteID
 			provider = valueProvider(tx.Provider)
 		}
+		occurredAt := failure.OccurredAt.UTC()
 		event := entity.AuditEvent{
 			SchemaVersion:   recordSchema,
-			EventID:         s.auditFingerprint.Fingerprint("failure\x00" + stateID + "\x00" + failure.CodeFingerprint + "\x00" + failure.ErrorCode),
+			EventID:         s.auditFingerprint.Fingerprint("failure\x00" + stateID + "\x00" + failure.CodeFingerprint + "\x00" + failure.ErrorCode + "\x00" + occurredAt.Format(time.RFC3339Nano)),
 			EventType:       entity.AuditLoginFailed,
-			OccurredAt:      failure.OccurredAt.UTC(),
+			OccurredAt:      occurredAt,
 			SiteID:          siteID,
 			Provider:        provider,
 			TransactionID:   stateID,
@@ -480,6 +484,16 @@ func (s *Store) AdminSnapshot(ctx context.Context, limit int) (entity.AdminSnaps
 	}
 	result := entity.AdminSnapshot{GeneratedAt: s.now()}
 	err := s.repository.View(ctx, func(snapshot *Snapshot) error {
+		auditPaths := snapshot.Paths(recordRoot + "/audits/")
+		for _, path := range auditPaths {
+			if !validAuditPath(path) {
+				return repository.ErrRecordCorrupt
+			}
+		}
+		sort.Sort(sort.Reverse(sort.StringSlice(auditPaths)))
+		if len(auditPaths) > limit {
+			auditPaths = auditPaths[:limit]
+		}
 		for _, path := range snapshot.Paths(recordRoot + "/identities/") {
 			identity, found, err := s.readIdentity(ctx, snapshot, path)
 			if err != nil {
@@ -509,11 +523,6 @@ func (s *Store) AdminSnapshot(ctx context.Context, limit int) (entity.AdminSnaps
 				admin.RefreshExpiresAt = credential.RefreshExpiresAt
 			}
 			result.Identities = append(result.Identities, admin)
-		}
-		auditPaths := snapshot.Paths(recordRoot + "/audits/")
-		sort.Sort(sort.Reverse(sort.StringSlice(auditPaths)))
-		if len(auditPaths) > limit {
-			auditPaths = auditPaths[:limit]
 		}
 		for _, path := range auditPaths {
 			var event entity.AuditEvent
@@ -557,20 +566,60 @@ func (s *Store) RotateEncryption(ctx context.Context, limit int) (entity.Rotatio
 		limit = 1000
 	}
 	var result entity.RotationResult
-	var stagedRotations int
+	var candidates map[string][]byte
+	var confirmedRotations int
+	var finalStagedRotations int
 	var recordFailure error
 	err := s.repository.Update(ctx, "oauth: rotate encrypted records", func(snapshot *Snapshot) (map[string][]byte, error) {
+		if candidates != nil {
+			result.Complete = false
+			changes := make(map[string][]byte)
+			confirmedRotations = 0
+			for path, candidate := range candidates {
+				payload, found, err := snapshot.Read(ctx, path)
+				if err != nil {
+					return nil, err
+				}
+				if !found {
+					result.Failed++
+					return nil, repository.ErrRecordCorrupt
+				}
+				if bytes.Equal(payload, candidate) {
+					confirmedRotations++
+					continue
+				}
+				kind, ok := recordKindForPath(path)
+				if !ok {
+					result.Failed++
+					return nil, repository.ErrRecordCorrupt
+				}
+				plaintext, needsRotation, err := s.codec.Decrypt(kind, path, payload)
+				if err != nil {
+					result.Failed++
+					return nil, err
+				}
+				if !needsRotation {
+					continue
+				}
+				rotated, err := s.codec.Encrypt(kind, path, plaintext)
+				if err != nil {
+					return nil, err
+				}
+				candidates[path] = rotated
+				changes[path] = rotated
+			}
+			finalStagedRotations = len(changes)
+			return changes, nil
+		}
+
 		attempt := entity.RotationResult{}
+		attempt.Complete = true
 		attemptFailure := error(nil)
 		changes := make(map[string][]byte)
-		defer func() {
-			result = attempt
-			stagedRotations = len(changes)
-			recordFailure = attemptFailure
-		}()
 		paths := snapshot.Paths(recordRoot + "/")
 		for _, path := range paths {
 			if len(changes) >= limit {
+				attempt.Complete = false
 				break
 			}
 			kind, ok := recordKindForPath(path)
@@ -607,13 +656,20 @@ func (s *Store) RotateEncryption(ctx context.Context, limit int) (entity.Rotatio
 			}
 			changes[path] = rotated
 		}
+		result = attempt
+		recordFailure = attemptFailure
+		candidates = make(map[string][]byte, len(changes))
+		for path, payload := range changes {
+			candidates[path] = payload
+		}
+		finalStagedRotations = len(changes)
 		return changes, nil
 	})
 	if err != nil {
-		result.Rotated = 0
+		result.Rotated = confirmedRotations
 		return result, err
 	}
-	result.Rotated = stagedRotations
+	result.Rotated = confirmedRotations + finalStagedRotations
 	if result.Failed > 0 {
 		if recordFailure != nil {
 			return result, recordFailure
@@ -763,13 +819,36 @@ func recordKindForPath(path string) (string, bool) {
 }
 
 func auditPath(event entity.AuditEvent) string {
+	occurredAt := event.OccurredAt.UTC()
 	return fmt.Sprintf(
-		"%s/audits/%04d/%02d/%s.json",
+		"%s/audits/%04d/%02d/%s-%s.json",
 		recordRoot,
-		event.OccurredAt.UTC().Year(),
-		event.OccurredAt.UTC().Month(),
+		occurredAt.Year(),
+		occurredAt.Month(),
+		occurredAt.Format(auditPathTimeLayout),
 		event.EventID,
 	)
+}
+
+func validAuditPath(recordPath string) bool {
+	relative, found := strings.CutPrefix(recordPath, recordRoot+"/audits/")
+	if !found {
+		return false
+	}
+	parts := strings.Split(relative, "/")
+	if len(parts) != 3 || !strings.HasSuffix(parts[2], ".json") {
+		return false
+	}
+	filename := strings.TrimSuffix(parts[2], ".json")
+	if len(filename) <= auditPathTimeLength+1 || filename[auditPathTimeLength] != '-' {
+		return false
+	}
+	occurredAt, err := time.Parse(auditPathTimeLayout, filename[:auditPathTimeLength])
+	if err != nil {
+		return false
+	}
+	return parts[0] == fmt.Sprintf("%04d", occurredAt.Year()) &&
+		parts[1] == fmt.Sprintf("%02d", occurredAt.Month())
 }
 
 func sameTransaction(left, right transactionRecord) bool {
