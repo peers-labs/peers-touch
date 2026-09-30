@@ -2142,6 +2142,7 @@ class FoundationForbiddenActorCoordinator:
                     "BASE-FORBIDDEN_ACTOR owner fixture is invalid"
                 )
 
+            self._login(receiver, "alice@p.t")
             receiver_is_alice = False
             rejected = receiver.harness(
                 "rejectFoundationForbiddenActor",
