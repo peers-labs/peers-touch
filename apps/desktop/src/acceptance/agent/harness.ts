@@ -16645,6 +16645,8 @@ async function runFoundationForbiddenActorAttempt(input: {
       const actorHash = await sha256Hex(authenticatedFoundationActorPtid());
       const chatState = useChatStore.getState();
       const operation = chatState.operations[input.conversationId];
+      const bufferedMessages =
+        chatState.sessionBuffers[input.conversationId] ?? [];
       const readback = await api.getAgentConversation(input.conversationId).then(
         () => ({ code: '', visible: true }),
         (readbackError: unknown) => ({
@@ -16657,6 +16659,12 @@ async function runFoundationForbiddenActorAttempt(input: {
         + stableJson({
           actorMatchesOwner: actorHash === input.ownerActorHash,
           actorMatchesReceiver: actorHash === input.receiverActorHash,
+          bufferedMessageErrorTypes: bufferedMessages
+            .map((message) => message.typedError?.error_type ?? '')
+            .filter(Boolean),
+          bufferedMessageErrors: bufferedMessages
+            .map((message) => message.error ?? '')
+            .filter(Boolean),
           currentSessionMatches:
             chatState.currentSessionKey === input.conversationId,
           errorEventPresent: errorEventRef.current !== null,
@@ -16668,6 +16676,8 @@ async function runFoundationForbiddenActorAttempt(input: {
             .map((message) => message.typedError?.error_type ?? '')
             .filter(Boolean),
           observationSequence,
+          operationErrorDetail: operation?.error?.detail ?? '',
+          operationErrorMessage: operation?.error?.message ?? '',
           operationRunState: operation?.runState ?? 'absent',
           operationStatus: operation?.status ?? 'absent',
           readback,
