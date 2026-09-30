@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	minimumPBKDF2Iterations              = 100_000
-	maximumPBKDF2Iterations              = 10_000_000
+	minimumPBKDF2Iterations             = 100_000
+	maximumPBKDF2Iterations             = 10_000_000
 	maximumConcurrentPasswordDerivations = 2
 )
 

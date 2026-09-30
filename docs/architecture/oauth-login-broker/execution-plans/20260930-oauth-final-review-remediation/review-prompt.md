@@ -10,6 +10,8 @@ Verify:
   endpoints;
 - GitHub response and tree handling remains bounded without silent truncation;
 - concurrent refresh duplicates converge after a winner commits;
+- admin readback and key rotation scale without repeated full-history reads;
+- rotation counts describe confirmed commits;
 - cross-instance HTTP proof uses distinct adapters over durable shared state;
 - G05B, architecture, domain validation, race, and actor contracts are directly
   exercised;
