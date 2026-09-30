@@ -255,6 +255,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                 self.action = Element("p")
                 self.comments = Element("button")
                 self.receiver = Element("p")
+                self.xpath_selectors: list[str] = []
 
             def find_elements(self, using: str, selector: str) -> list[Element]:
                 self.assert_locator(using)
@@ -264,6 +265,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                     if "data-moments-comments-toggle" in selector:
                         return [self.comments]
                 if using == "xpath":
+                    self.xpath_selectors.append(selector)
                     if "'parent'" in selector:
                         return [self.action]
                     if "'comment'" in selector:
@@ -309,6 +311,16 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertTrue(driver.nav.clicked)
         self.assertTrue(driver.action.clicked)
         self.assertTrue(driver.comments.clicked)
+        action_selector = next(
+            selector
+            for selector in driver.xpath_selectors
+            if "'parent'" in selector
+        )
+        self.assertIn(
+            "[not(.//*[contains(string(.), 'parent')])]",
+            action_selector,
+        )
+        self.assertNotIn("[not(*)]", action_selector)
 
     def test_w9_suite_contract_is_single_entry(self) -> None:
         self.assertEqual(
