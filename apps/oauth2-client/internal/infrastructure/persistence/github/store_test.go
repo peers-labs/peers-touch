@@ -141,6 +141,62 @@ func TestStoreCompletesAuthorizationAcrossInstances(t *testing.T) {
 	if !snapshot.Identities[0].HasRefreshToken {
 		t.Fatal("refresh-token presence was not projected")
 	}
+	t.Run("oversized successful response", assertGitHubResponseOverflow)
+	t.Run("truncated recursive tree", assertTruncatedTreeTraversal)
+	t.Run("oversized recursive tree", assertOversizedRecursiveTreeTraversal)
+}
+
+func assertGitHubResponseOverflow(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	client := fixture.newClient(t)
+	var output map[string]any
+	err := client.request(
+		context.Background(),
+		http.MethodGet,
+		client.repoPath("/oversized"),
+		nil,
+		&output,
+	)
+	if !errors.Is(err, errGitHubResponseTooLarge) ||
+		!errors.Is(err, repository.ErrStorageUnavailable) {
+		t.Fatalf("expected bounded overflow error, got %v", err)
+	}
+}
+
+func assertTruncatedTreeTraversal(t *testing.T) {
+	assertTreeTraversalFallback(t, true, false)
+}
+
+func assertOversizedRecursiveTreeTraversal(t *testing.T) {
+	assertTreeTraversalFallback(t, false, true)
+}
+
+func assertTreeTraversalFallback(t *testing.T, truncated, oversized bool) {
+	fixture := newGitDataFixture(t)
+	fixture.mu.Lock()
+	fixture.truncateRecursive = truncated
+	fixture.oversizeRecursive = oversized
+	fixture.trees["tree-0"] = map[string]string{"oauth-data": "tree-1"}
+	fixture.treeTypes["tree-0"] = map[string]string{"oauth-data": "tree"}
+	fixture.trees["tree-1"] = map[string]string{"records": "tree-2"}
+	fixture.treeTypes["tree-1"] = map[string]string{"records": "tree"}
+	fixture.trees["tree-2"] = map[string]string{"identity.json": "blob-existing"}
+	fixture.blobs["blob-existing"] = []byte("encrypted-record")
+	fixture.mu.Unlock()
+
+	snapshot, err := fixture.newClient(t).snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.entries["oauth-data/records/identity.json"] != "blob-existing" {
+		t.Fatalf("nested tree entry missing: %#v", snapshot.entries)
+	}
+	fixture.mu.Lock()
+	nonRecursiveRequests := fixture.nonRecursiveTreeRequests
+	fixture.mu.Unlock()
+	if nonRecursiveRequests != 3 {
+		t.Fatalf("expected three bounded tree requests, got %d", nonRecursiveRequests)
+	}
 }
 
 func TestStoreConvergesAfterLostRefUpdateResponse(t *testing.T) {
@@ -460,20 +516,24 @@ type gitDataFixture struct {
 	t      *testing.T
 	server *httptest.Server
 
-	mu                   sync.Mutex
-	head                 string
-	commitTrees          map[string]string
-	commitParents        map[string]string
-	trees                map[string]map[string]string
-	blobs                map[string][]byte
-	sequence             int
-	commitTotal          int
-	abortNextPatch       bool
-	conflictNextPatch    bool
-	failNextRepoAuth     bool
-	installationRequests int
-	patchRequests        int
-	forceValuesValid     bool
+	mu                       sync.Mutex
+	head                     string
+	commitTrees              map[string]string
+	commitParents            map[string]string
+	trees                    map[string]map[string]string
+	treeTypes                map[string]map[string]string
+	blobs                    map[string][]byte
+	sequence                 int
+	commitTotal              int
+	truncateRecursive        bool
+	oversizeRecursive        bool
+	nonRecursiveTreeRequests int
+	abortNextPatch           bool
+	conflictNextPatch        bool
+	failNextRepoAuth         bool
+	installationRequests     int
+	patchRequests            int
+	forceValuesValid         bool
 }
 
 func newGitDataFixture(t *testing.T) *gitDataFixture {
@@ -484,6 +544,7 @@ func newGitDataFixture(t *testing.T) *gitDataFixture {
 		commitTrees:      map[string]string{"commit-0": "tree-0"},
 		commitParents:    map[string]string{"commit-0": ""},
 		trees:            map[string]map[string]string{"tree-0": {}},
+		treeTypes:        map[string]map[string]string{"tree-0": {}},
 		blobs:            make(map[string][]byte),
 		forceValuesValid: true,
 	}
@@ -504,7 +565,7 @@ func (f *gitDataFixture) conflictAfterNextCommit() {
 	f.conflictNextPatch = true
 }
 
-func (f *gitDataFixture) newStore(t *testing.T, activeKey string, keys map[string][]byte) *Store {
+func (f *gitDataFixture) newClient(t *testing.T) *Client {
 	t.Helper()
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -516,16 +577,21 @@ func (f *gitDataFixture) newStore(t *testing.T, activeKey string, keys map[strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	codec, err := recordcrypto.NewCodec(activeKey, keys)
-	if err != nil {
-		t.Fatal(err)
-	}
 	client, err := NewClient(f.server.URL, "owner", "repo", "data", auth, f.server.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
+	return client
+}
+
+func (f *gitDataFixture) newStore(t *testing.T, activeKey string, keys map[string][]byte) *Store {
+	t.Helper()
+	codec, err := recordcrypto.NewCodec(activeKey, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
 	store, err := NewStore(
-		client,
+		f.newClient(t),
 		codec,
 		recordcrypto.NewFingerprinter(bytes.Repeat([]byte{3}, 32)),
 		recordcrypto.NewFingerprinter(bytes.Repeat([]byte{4}, 32)),
@@ -588,6 +654,8 @@ func (f *gitDataFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case path == "/oversized" && r.Method == http.MethodGet:
+		_, _ = w.Write(bytes.Repeat([]byte("x"), maxGitHubResponseBytes+1))
 	case path == "/git/ref/heads/data" && r.Method == http.MethodGet:
 		writeFixtureJSON(w, map[string]any{"object": map[string]string{"sha": f.head}})
 	case strings.HasPrefix(path, "/git/commits/") && r.Method == http.MethodGet:
@@ -595,11 +663,26 @@ func (f *gitDataFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		writeFixtureJSON(w, map[string]any{"tree": map[string]string{"sha": f.commitTrees[sha]}})
 	case strings.HasPrefix(path, "/git/trees/") && r.Method == http.MethodGet:
 		treeSHA := strings.TrimPrefix(path, "/git/trees/")
+		if r.URL.Query().Get("recursive") == "1" && f.oversizeRecursive {
+			_, _ = w.Write(bytes.Repeat([]byte("x"), maxGitHubResponseBytes+1))
+			return
+		}
+		if r.URL.Query().Get("recursive") == "1" && f.truncateRecursive {
+			writeFixtureJSON(w, map[string]any{"truncated": true, "tree": []any{}})
+			return
+		}
+		if r.URL.Query().Get("recursive") == "" {
+			f.nonRecursiveTreeRequests++
+		}
 		entries := make([]map[string]string, 0)
 		for recordPath, sha := range f.trees[treeSHA] {
+			entryType := f.treeTypes[treeSHA][recordPath]
+			if entryType == "" {
+				entryType = "blob"
+			}
 			entries = append(entries, map[string]string{
 				"path": recordPath,
-				"type": "blob",
+				"type": entryType,
 				"mode": "100644",
 				"sha":  sha,
 			})
@@ -641,6 +724,10 @@ func (f *gitDataFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		sha := f.next("tree")
 		f.trees[sha] = next
+		f.treeTypes[sha] = make(map[string]string, len(next))
+		for recordPath := range next {
+			f.treeTypes[sha][recordPath] = "blob"
+		}
 		writeFixtureJSON(w, map[string]string{"sha": sha})
 	case path == "/git/commits" && r.Method == http.MethodPost:
 		var input struct {

@@ -10,12 +10,21 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/repository"
 )
+
+const (
+	maxGitHubResponseBytes = 8 << 20
+	maxGitHubTreeDepth     = 64
+	maxGitHubTreeEntries   = 1_000_000
+)
+
+var errGitHubResponseTooLarge = errors.New("github_response_too_large")
 
 type Client struct {
 	apiBase    string
@@ -35,6 +44,17 @@ type Snapshot struct {
 }
 
 type Mutation func(snapshot *Snapshot) (map[string][]byte, error)
+
+type gitTreeEntry struct {
+	Path string `json:"path"`
+	Type string `json:"type"`
+	SHA  string `json:"sha"`
+}
+
+type gitTreeResponse struct {
+	Truncated bool           `json:"truncated"`
+	Tree      []gitTreeEntry `json:"tree"`
+}
 
 func NewClient(apiBase, owner, repositoryName, branch string, auth *AppAuthenticator, httpClient *http.Client) (*Client, error) {
 	if strings.TrimSpace(owner) == "" || strings.TrimSpace(repositoryName) == "" || strings.TrimSpace(branch) == "" || auth == nil {
@@ -163,26 +183,9 @@ func (c *Client) snapshot(ctx context.Context) (*Snapshot, error) {
 	if commit.Tree.SHA == "" {
 		return nil, repository.ErrRecordCorrupt
 	}
-	var tree struct {
-		Truncated bool `json:"truncated"`
-		Tree      []struct {
-			Path string `json:"path"`
-			Type string `json:"type"`
-			SHA  string `json:"sha"`
-		} `json:"tree"`
-	}
-	treePath := c.repoPath("/git/trees/"+url.PathEscape(commit.Tree.SHA)) + "?recursive=1"
-	if err := c.request(ctx, http.MethodGet, treePath, nil, &tree); err != nil {
+	entries, err := c.loadTreeEntries(ctx, commit.Tree.SHA)
+	if err != nil {
 		return nil, err
-	}
-	if tree.Truncated {
-		return nil, repository.ErrStorageUnavailable
-	}
-	entries := make(map[string]string)
-	for _, entry := range tree.Tree {
-		if entry.Type == "blob" && entry.Path != "" && entry.SHA != "" {
-			entries[entry.Path] = entry.SHA
-		}
 	}
 	return &Snapshot{
 		client:  c,
@@ -190,6 +193,85 @@ func (c *Client) snapshot(ctx context.Context) (*Snapshot, error) {
 		treeSHA: commit.Tree.SHA,
 		entries: entries,
 	}, nil
+}
+
+func (c *Client) loadTreeEntries(ctx context.Context, rootSHA string) (map[string]string, error) {
+	tree, err := c.readTree(ctx, rootSHA, true)
+	if err == nil && !tree.Truncated {
+		if len(tree.Tree) > maxGitHubTreeEntries {
+			return nil, repository.ErrStorageUnavailable
+		}
+		return blobEntries(tree.Tree, ""), nil
+	}
+	if err != nil && !errors.Is(err, errGitHubResponseTooLarge) {
+		return nil, err
+	}
+
+	type pendingTree struct {
+		sha    string
+		prefix string
+		depth  int
+	}
+	pending := []pendingTree{{sha: rootSHA}}
+	entries := make(map[string]string)
+	visitedEntries := 0
+	for len(pending) > 0 {
+		current := pending[0]
+		pending = pending[1:]
+		tree, err := c.readTree(ctx, current.sha, false)
+		if err != nil {
+			return nil, err
+		}
+		if tree.Truncated {
+			return nil, repository.ErrStorageUnavailable
+		}
+		visitedEntries += len(tree.Tree)
+		if visitedEntries > maxGitHubTreeEntries {
+			return nil, repository.ErrStorageUnavailable
+		}
+		for _, entry := range tree.Tree {
+			if entry.Path == "" || entry.SHA == "" {
+				return nil, repository.ErrRecordCorrupt
+			}
+			recordPath := path.Join(current.prefix, entry.Path)
+			switch entry.Type {
+			case "blob":
+				entries[recordPath] = entry.SHA
+			case "tree":
+				if current.depth >= maxGitHubTreeDepth {
+					return nil, repository.ErrStorageUnavailable
+				}
+				pending = append(pending, pendingTree{
+					sha:    entry.SHA,
+					prefix: recordPath,
+					depth:  current.depth + 1,
+				})
+			}
+		}
+	}
+	return entries, nil
+}
+
+func (c *Client) readTree(ctx context.Context, sha string, recursive bool) (gitTreeResponse, error) {
+	var tree gitTreeResponse
+	treePath := c.repoPath("/git/trees/" + url.PathEscape(sha))
+	if recursive {
+		treePath += "?recursive=1"
+	}
+	if err := c.request(ctx, http.MethodGet, treePath, nil, &tree); err != nil {
+		return gitTreeResponse{}, err
+	}
+	return tree, nil
+}
+
+func blobEntries(tree []gitTreeEntry, prefix string) map[string]string {
+	entries := make(map[string]string)
+	for _, entry := range tree {
+		if entry.Type == "blob" && entry.Path != "" && entry.SHA != "" {
+			entries[path.Join(prefix, entry.Path)] = entry.SHA
+		}
+	}
+	return entries
 }
 
 func (c *Client) commit(ctx context.Context, snapshot *Snapshot, message string, changes map[string][]byte) error {
@@ -293,10 +375,18 @@ func (c *Client) request(ctx context.Context, method, endpoint string, body, out
 		if err != nil {
 			return repository.ErrStorageUnavailable
 		}
-		responseBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+		responseBody, readErr := io.ReadAll(
+			io.LimitReader(resp.Body, maxGitHubResponseBytes+1),
+		)
 		_ = resp.Body.Close()
 		if readErr != nil {
 			return repository.ErrStorageUnavailable
+		}
+		if len(responseBody) > maxGitHubResponseBytes {
+			return errors.Join(
+				repository.ErrStorageUnavailable,
+				errGitHubResponseTooLarge,
+			)
 		}
 		if resp.StatusCode == http.StatusUnauthorized && authAttempt == 0 {
 			c.auth.Invalidate()

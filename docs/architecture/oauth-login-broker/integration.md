@@ -91,7 +91,9 @@ Local development defaults to memory when `OAUTH_STORAGE_DRIVER` is unset.
 
 - Resolve `git/ref/heads/{branch}`.
 - Read record contents at that immutable commit SHA.
-- For lists, load the recursive tree and fetch only matching encrypted blobs.
+- For lists, use the recursive tree when it fits the bounded response budget;
+  on overflow or GitHub `truncated=true`, walk non-recursive trees with explicit
+  depth and entry limits before fetching matching encrypted blobs.
 
 ### Write
 
@@ -144,6 +146,8 @@ cutover. Use cases and HTTP routes do not change.
 - Missing production bridge signing or return-destination policy blocks Vercel
   startup.
 - GitHub 401/403/404/409/422/429/5xx responses become typed storage errors.
+- Oversized successful responses fail explicitly; tree discovery may fall back
+  to bounded non-recursive traversal instead of decoding truncated JSON.
 - Retry only transport failures, rate-limit/server responses, and ref conflicts
   within bounded attempts.
 - A callback never redirects success after an incomplete durable commit.
