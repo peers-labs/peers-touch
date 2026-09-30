@@ -62,11 +62,25 @@ func TestVercelRejectsHTTPProviderRedirect(t *testing.T) {
 	}
 }
 
-func TestVercelRejectsMemoryStorage(t *testing.T) {
-	t.Setenv("VERCEL", "1")
-	t.Setenv("OAUTH_STORAGE_DRIVER", "memory")
-	if _, err := LoadStorageConfig(); err == nil || err.Error() != "memory_storage_forbidden_on_vercel" {
-		t.Fatalf("expected Vercel memory rejection, got %v", err)
+func TestVercelRejectsMissingOrMemoryStorage(t *testing.T) {
+	for name, driver := range map[string]string{
+		"missing": "",
+		"memory":  "memory",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("VERCEL", "1")
+			t.Setenv("OAUTH_STORAGE_DRIVER", driver)
+			_, err := LoadStorageConfig()
+			if name == "missing" {
+				if err == nil || err.Error() != "oauth_storage_driver_required" {
+					t.Fatalf("expected missing-driver rejection, got %v", err)
+				}
+				return
+			}
+			if err == nil || err.Error() != "memory_storage_forbidden_on_vercel" {
+				t.Fatalf("expected Vercel memory rejection, got %v", err)
+			}
+		})
 	}
 }
 

@@ -53,7 +53,7 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                 (
                     "TestVercelRequiresBridgeSecretAndReturnAllowlist",
                     "TestVercelRejectsHTTPProviderRedirect",
-                    "TestVercelRejectsMemoryStorage",
+                    "TestVercelRejectsMissingOrMemoryStorage",
                     "TestSitesJSONStoresNormalizedValues",
                     "TestStorageHTTPClientIsBounded",
                 ),

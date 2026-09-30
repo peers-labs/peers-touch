@@ -61,7 +61,10 @@ func TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet(t *testing.T) {
 		t.Fatalf("exchange omitted verifier: %v", tokenForm)
 	}
 	if grant.Identity.ProviderUserID != "subject" ||
+		grant.Tokens.AccessToken != "access-secret" ||
 		grant.Tokens.RefreshToken != "refresh-secret" ||
+		grant.Tokens.TokenType != "Bearer" ||
+		grant.Tokens.Scope != "openid email" ||
 		grant.Tokens.AccessExpiresAt == nil ||
 		!grant.Tokens.AccessExpiresAt.Equal(now.Add(30*time.Minute)) {
 		t.Fatalf("unexpected grant: %#v", grant)

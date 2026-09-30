@@ -158,7 +158,8 @@ idempotency key so a retry after a lost branch-update response converges.
 
 ### Context
 
-Current provider adapters discard refresh token, expiry, type, and scope.
+Before the durable broker cutover, provider adapters discarded refresh token,
+expiry, type, and scope.
 
 ### Decision
 
@@ -251,7 +252,8 @@ completion semantics.
 
 ### Context
 
-The current service creates a verifier but does not use it.
+Before this decision was implemented, the service created a verifier but did
+not use it.
 
 ### Decision
 
