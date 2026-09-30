@@ -7081,9 +7081,14 @@ function foundationApprovalRetryStarted(
       !== toolCallId
     && String(evidenceField(fact, 'approvalId', 'approval_id') ?? '')
   ));
-  if (attempts.length === attemptsBefore + 1 && retryToolPresent) {
-    return true;
+  if (attempts.length <= attemptsBefore) return false;
+  if (attempts.length !== attemptsBefore + 1) {
+    throw new Error(
+      'agent.acceptance.foundationApprovalRetryAttemptCountInvalid:'
+      + `before=${attemptsBefore}:after=${attempts.length}`,
+    );
   }
+  if (retryToolPresent) return true;
   if (!diagnosticReplayTerminal(replay)) return false;
 
   const latestAttempt = attempts.length > 0
@@ -7303,7 +7308,7 @@ async function runFoundationApprovalExpiredScenario(input: {
           attemptsBefore,
         ),
         'approval-expired request-again attempt',
-        120_000,
+        FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
       );
     } catch (error) {
       throw await foundationApprovalRetryAttemptFailure({
