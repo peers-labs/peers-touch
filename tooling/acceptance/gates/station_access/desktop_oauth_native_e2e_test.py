@@ -51,19 +51,18 @@ class _FakeRuntimeBinding:
 
 class _FakeNativeAdapter:
     def __init__(self) -> None:
-        self.mouse_calls: list[tuple[int, tuple[MouseAction, ...], tuple[float, float]]] = []
+        self.mouse_calls: list[tuple[tuple[MouseAction, ...], tuple[float, float]]] = []
 
     def content_origin(self, process_id: int) -> tuple[float, float]:
         self.process_id = process_id
         return 100.0, 200.0
 
-    def post_mouse_to_process(
+    def post_mouse(
         self,
-        process_id: int,
         actions: tuple[MouseAction, ...],
         point: tuple[float, float],
     ) -> None:
-        self.mouse_calls.append((process_id, actions, point))
+        self.mouse_calls.append((actions, point))
 
 
 class _FakeHoverElement:
@@ -184,8 +183,8 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(
             adapter.mouse_calls,
             [
-                (42, (MouseAction.MOVE,), (102.0, 202.0)),
-                (42, (MouseAction.MOVE,), (105.0, 207.0)),
+                ((MouseAction.MOVE,), (102.0, 202.0)),
+                ((MouseAction.MOVE,), (105.0, 207.0)),
             ],
         )
 
