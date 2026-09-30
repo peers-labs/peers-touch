@@ -80,6 +80,7 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, _ string, cfg port.Pr
 	if err != nil {
 		return nil, err
 	}
+	obtainedAt := p.now()
 	userEndpoint := p.endpoints.UserInfo + "?" + url.Values{
 		"access_token": []string{tokenBody.AccessToken},
 		"openid":       []string{tokenBody.OpenID},
@@ -110,7 +111,6 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, _ string, cfg port.Pr
 	if unionID == "" {
 		unionID = tokenBody.UnionID
 	}
-	now := p.now()
 	return &entity.AuthorizationGrant{
 		Identity: entity.ProviderIdentity{
 			ProviderUserID: tokenBody.OpenID,
@@ -124,8 +124,8 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, _ string, cfg port.Pr
 			RefreshToken:    tokenBody.RefreshToken,
 			TokenType:       "Bearer",
 			Scope:           tokenBody.Scope,
-			ObtainedAt:      now,
-			AccessExpiresAt: expiry(now, tokenBody.ExpiresIn),
+			ObtainedAt:      obtainedAt,
+			AccessExpiresAt: expiry(obtainedAt, tokenBody.ExpiresIn),
 		},
 	}, nil
 }

@@ -54,6 +54,9 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                     "TestVercelRequiresBridgeSecretAndReturnAllowlist",
                     "TestVercelRejectsHTTPProviderRedirect",
                     "TestVercelRejectsMissingOrMemoryStorage",
+                    "TestConfigFileAllowedReturnToCanBeOverridden",
+                    "TestGitHubAPIBaseRequiresHTTPSOnVercel",
+                    "TestBuildContainerInLocalMemoryMode",
                     "TestSitesJSONStoresNormalizedValues",
                     "TestStorageHTTPClientIsBounded",
                 ),
@@ -87,7 +90,10 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
             ),
             TestGroup(
                 "./internal/integration",
-                ("TestOAuthLoginBrokerCrossInstanceHTTPJourney",),
+                (
+                    "TestOAuthLoginBrokerCrossInstanceHTTPJourney",
+                    "TestOAuthVercelRoutesMatchHandlers",
+                ),
             ),
         ),
     ),
@@ -182,7 +188,7 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
 CLAIMS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "durable-login": (
         ("OLB-C01", "OLB-C03", "OLB-C04", "OLB-C06", "OLB-C08", "OLB-C09"),
-        ("OLB-G01", "OLB-G02", "OLB-G03A", "OLB-G05A"),
+        ("OLB-G01", "OLB-G02", "OLB-G03A", "OLB-G05A", "OLB-G05B"),
     ),
     "refresh-idempotency": (
         ("OLB-C05", "OLB-C06", "OLB-C08"),
@@ -213,7 +219,7 @@ def commands_for_scope(scope: str) -> tuple[tuple[str, ...], ...]:
         pattern = test_pattern(group.tests)
         commands.append(("go", "test", group.package, "-list", pattern))
         commands.append(
-            ("go", "test", group.package, "-run", pattern, "-count=1")
+            ("go", "test", "-race", group.package, "-run", pattern, "-count=1")
         )
     return tuple(commands)
 
@@ -266,7 +272,7 @@ class OAuth2ClientContractGate(AcceptanceGate):
                 f"missing tests: {', '.join(missing)}" if missing else None,
             )
             completed = self._run(
-                ("go", "test", group.package, "-run", pattern, "-count=1")
+                ("go", "test", "-race", group.package, "-run", pattern, "-count=1")
             )
             logs.extend(
                 (

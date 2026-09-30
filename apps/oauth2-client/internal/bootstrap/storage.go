@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -51,6 +52,12 @@ func LoadStorageConfig() (StorageConfig, error) {
 	}
 
 	config.GitHubAPIBase = envOrDefault("OAUTH_GITHUB_API_BASE_URL", defaultGitHubAPIBase)
+	if strings.TrimSpace(os.Getenv("VERCEL")) != "" {
+		apiBase, err := url.Parse(config.GitHubAPIBase)
+		if err != nil || apiBase.Scheme != "https" || apiBase.Host == "" || apiBase.User != nil {
+			return StorageConfig{}, errors.New("production_github_api_https_required")
+		}
+	}
 	config.GitHubOwner = strings.TrimSpace(os.Getenv("OAUTH_GITHUB_STORAGE_OWNER"))
 	config.GitHubRepository = strings.TrimSpace(os.Getenv("OAUTH_GITHUB_STORAGE_REPO"))
 	config.GitHubBranch = envOrDefault("OAUTH_GITHUB_STORAGE_BRANCH", "main")

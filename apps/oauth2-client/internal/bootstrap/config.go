@@ -146,6 +146,7 @@ func loadFromConfigFile() (usecase.SiteRegistry, bool, error) {
 
 func buildFromLite(rawSites []rawSiteLite) (usecase.SiteRegistry, error) {
 	baseURL := normalizeBaseURL(strings.TrimSpace(os.Getenv("OAUTH_BASE_URL")))
+	allowedReturnToOverride := strings.TrimSpace(os.Getenv("OAUTH_ALLOWED_RETURN_TO"))
 	sites := make(map[string]usecase.SiteConfig, len(rawSites))
 	for _, s := range rawSites {
 		siteID := strings.TrimSpace(s.SiteID)
@@ -203,11 +204,15 @@ func buildFromLite(rawSites []rawSiteLite) (usecase.SiteRegistry, error) {
 			len(providers) == 0 {
 			continue
 		}
+		allowedReturnTo := s.AllowedReturnTo
+		if allowedReturnToOverride != "" {
+			allowedReturnTo = strings.Split(allowedReturnToOverride, ",")
+		}
 		sites[siteID] = usecase.SiteConfig{
 			SiteID:          siteID,
 			SuccessURL:      successURL,
 			ErrorURL:        errorURL,
-			AllowedReturnTo: normalizeAllowedReturnTo(s.AllowedReturnTo),
+			AllowedReturnTo: normalizeAllowedReturnTo(allowedReturnTo),
 			BridgeSecret:    firstNonEmpty(strings.TrimSpace(s.BridgeSecret), strings.TrimSpace(os.Getenv("PEERS_OAUTH_BRIDGE_SECRET"))),
 			Providers:       providers,
 		}
