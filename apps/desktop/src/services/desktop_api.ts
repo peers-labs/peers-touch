@@ -8900,7 +8900,35 @@ export function streamAgentTurn(
           );
         }
         if (!controller.signal.aborted && !settled) {
-          onError(err instanceof Error ? err : new Error(String(err)));
+          const normalized = normalizeAgentTurnStreamError(err);
+          if (normalized.typedError) {
+            const sourceData: Record<string, unknown> = {
+              ...normalized.typedError,
+              conversationId: input.conversation_id,
+              agentId: input.agent_id,
+            };
+            const event: StreamEvent = {
+              event: 'error',
+              data: { ...sourceData, streamGeneration },
+              ptid: sourcePtid,
+              sourceDelivery: createAgentTurnSourceDelivery(
+                'error',
+                sourceData,
+                sourcePtid,
+                input.conversation_id,
+              ),
+            };
+            publishAgentTurnRuntimeEvent(
+              streamId,
+              streamGeneration,
+              sourcePtid,
+              input.conversation_id,
+              input.agent_id,
+              event,
+            );
+            onEvent(event);
+          }
+          onError(normalized);
         }
       }
     })();
