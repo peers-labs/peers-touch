@@ -14,6 +14,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from urllib.request import ProxyHandler, build_opener
 
+from selenium.webdriver import ActionChains
+
 from tooling.acceptance.core import (
     AcceptanceGate,
     GateError,
@@ -40,6 +42,7 @@ REQUIRED_ASSERTIONS = frozenset(
         "oauth_callback_restores_authenticated_identity",
         "oauth_identity_projection_is_consistent",
         "account_identity_ui_shows_provider_and_ptid",
+        "find_people_scope_labels_and_tooltips_are_distinct",
         "native_runtime_is_source_bound",
         "native_runtime_cleanup",
     }
@@ -58,6 +61,28 @@ def is_native_tauri_url(value: str) -> bool:
         and parsed.username is None
         and parsed.password is None
         and port is None
+    )
+
+
+def find_people_scopes_are_distinct(evidence: Mapping[str, object]) -> bool:
+    federation = evidence.get("federation")
+    station = evidence.get("station")
+    if not isinstance(federation, Mapping) or not isinstance(station, Mapping):
+        return False
+    federation_label = str(federation.get("label") or "").strip()
+    station_label = str(station.get("label") or "").strip()
+    federation_aria = str(federation.get("ariaLabel") or "").strip()
+    station_aria = str(station.get("ariaLabel") or "").strip()
+    return (
+        federation.get("name") == station.get("name") == "local"
+        and federation_label == "Federation: local"
+        and station_label == "Station: local"
+        and federation_label != station_label
+        and bool(federation_aria)
+        and bool(station_aria)
+        and federation_aria != station_aria
+        and federation.get("tooltip") == federation_aria
+        and station.get("tooltip") == station_aria
     )
 
 
@@ -183,6 +208,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         client = self._client()
         session: TauriSession | None = None
         cleanup: dict[str, Any] = {}
+        find_people_scopes: dict[str, Any] = {}
         try:
             session = self.runtime_binding.create_bound_session(CLIENT_ID)
             login_card = self._wait_for_displayed(
@@ -343,6 +369,15 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             self.save_screenshot(session, "desktop-oauth-authenticated")
             self.save_dom(session, "desktop-oauth-authenticated")
 
+            find_people_scopes = self._find_people_scope_evidence(session)
+            self.assert_condition(
+                "find_people_scope_labels_and_tooltips_are_distinct",
+                find_people_scopes_are_distinct(find_people_scopes),
+                json.dumps(find_people_scopes, sort_keys=True),
+            )
+            self.save_screenshot(session, "desktop-oauth-find-people-scopes")
+            self.save_dom(session, "desktop-oauth-find-people-scopes")
+
             source_identity = self._source_identity()
             document_url = session.get_current_url()
             self.assert_condition(
@@ -386,6 +421,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             "runtimeCell": "desktop-macos-native",
             "journey": "station-access-desktop-oauth-preauth",
             "providers": providers,
+            "findPeopleScopes": find_people_scopes,
             "sourceIdentity": source_identity,
             "cleanup": cleanup,
         }
@@ -423,6 +459,114 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         suffix = f"; last error: {last_error}" if last_error else ""
         raise GateError(
             f"Desktop OAuth element did not become visible: {selector}{suffix}"
+        )
+
+    @classmethod
+    def _find_people_scope_evidence(
+        cls,
+        session: TauriSession,
+    ) -> dict[str, Any]:
+        session.find_element(
+            '[data-pt-primary-nav="chat"] button',
+            timeout=20,
+        ).click()
+        cls._wait_for_displayed(
+            session,
+            "[data-chat-new-menu]",
+            timeout=20,
+        ).click()
+        cls._wait_for_displayed(
+            session,
+            "[data-chat-find-people-menu]",
+            timeout=10,
+        ).click()
+        cls._wait_for_displayed(
+            session,
+            "[data-chat-find-people]",
+            timeout=20,
+        )
+
+        federation = cls._wait_for_displayed_with_text(
+            session,
+            '[data-chat-find-people-scope="federation"]',
+            "Federation: local",
+            timeout=20,
+        )
+        federation.click()
+        station = cls._wait_for_displayed_with_text(
+            session,
+            '[data-chat-find-people-scope="station"]',
+            "Station: local",
+            timeout=30,
+        )
+
+        federation_aria = str(federation.get_attribute("aria-label") or "").strip()
+        station_aria = str(station.get_attribute("aria-label") or "").strip()
+        return {
+            "federation": {
+                "name": "local",
+                "label": federation.text.strip(),
+                "ariaLabel": federation_aria,
+                "tooltip": cls._hover_tooltip(
+                    session,
+                    federation,
+                    federation_aria,
+                    timeout=10,
+                ),
+            },
+            "station": {
+                "name": "local",
+                "label": station.text.strip(),
+                "ariaLabel": station_aria,
+                "tooltip": cls._hover_tooltip(
+                    session,
+                    station,
+                    station_aria,
+                    timeout=10,
+                ),
+            },
+        }
+
+    @staticmethod
+    def _wait_for_displayed_with_text(
+        session: TauriSession,
+        selector: str,
+        expected_text: str,
+        *,
+        timeout: float,
+    ) -> Any:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for element in session.find_elements(selector):
+                if element.is_displayed() and element.text.strip() == expected_text:
+                    return element
+            time.sleep(0.1)
+        raise GateError(
+            "Desktop OAuth element did not become visible with expected text: "
+            f"{selector}={expected_text!r}"
+        )
+
+    @staticmethod
+    def _hover_tooltip(
+        session: TauriSession,
+        element: Any,
+        expected_text: str,
+        *,
+        timeout: float,
+    ) -> str:
+        if not expected_text:
+            raise GateError("Find People scope aria-label is empty")
+        ActionChains(session.driver).move_to_element(element).perform()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for tooltip in session.find_elements(".ant-tooltip-inner"):
+                tooltip_text = tooltip.text.strip()
+                if tooltip.is_displayed() and tooltip_text == expected_text:
+                    return tooltip_text
+            time.sleep(0.1)
+        raise GateError(
+            "Find People scope tooltip did not become visible with expected text: "
+            f"{expected_text!r}"
         )
 
     def _source_identity(self) -> dict[str, Any]:
