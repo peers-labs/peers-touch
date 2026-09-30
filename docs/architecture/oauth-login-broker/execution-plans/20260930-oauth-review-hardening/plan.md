@@ -154,7 +154,11 @@
     "oauth-login-broker-key-rotation",
     "oauth-login-broker-operator",
     "oauth-login-broker-architecture",
-    "oauth-login-broker-contract"
+    "oauth-login-broker-contract",
+    "acceptance-infra-validation",
+    "acceptance-plan-self",
+    "acceptance-runtime-provisioning-self",
+    "acceptance-workflow-contract"
   ]
 }
 ```
