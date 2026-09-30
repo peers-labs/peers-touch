@@ -62,9 +62,9 @@
 
 ## Current Snapshot
 
-- State: pending.
-- A duplicate that loses the provider-call race can return the provider error
-  even after another request commits the same operation.
+- Duplicate refresh requests recheck the durable operation marker after a
+  provider failure and converge to a concurrently committed credential without
+  another provider call.
 
 ## Closure
 

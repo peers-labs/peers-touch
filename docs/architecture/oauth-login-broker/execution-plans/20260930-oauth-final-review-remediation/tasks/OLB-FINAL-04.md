@@ -68,7 +68,7 @@
     },
     {
       "id": "olb-final-proof-functional",
-      "command": "make dev-functional-result WORK_ITEM=OLB-FINAL-04-R1 RUNTIME_CELL=oauth2-client-local-browser REASON='verify complete OAuth proof contract'",
+      "command": "make dev-functional-result WORK_ITEM=OLB-FINAL-04-R2 RUNTIME_CELL=oauth2-client-local-browser REASON='verify complete OAuth proof contract'",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -106,12 +106,9 @@
 
 ## Current Snapshot
 
-- State: in progress.
-- Final review found that HMAC-only same-month audit paths are not
-  chronological, lost successful ref-update responses undercount rotations,
-  and OLB-G05B lacks complete bootstrap witnesses. The accepted remediation
-  adds a sortable audit key, retry-stable rotation candidates, and explicit
-  negative bootstrap tests.
+- Audit paths are chronologically sortable and reject the legacy layout.
+  Rotation uses retry-stable candidates plus explicit completion, and OLB-G05B
+  selects direct negative production-bootstrap witnesses.
 
 ## Closure
 
