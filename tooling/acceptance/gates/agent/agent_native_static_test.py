@@ -2986,6 +2986,14 @@ class AgentHarnessStaticTest(unittest.TestCase):
             failure,
         )
         self.assertIn(
+            "if (attempts.length <= attemptsBefore) return false",
+            failure,
+        )
+        self.assertIn(
+            "'agent.acceptance.foundationApprovalRetryAttemptCountInvalid:'",
+            failure,
+        )
+        self.assertIn(
             "'agent.acceptance.foundationApprovalRetryTerminal:'",
             failure,
         )
@@ -3002,6 +3010,11 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertEqual(scenario.count("recovery.click()"), 2)
         self.assertIn("foundationApprovalRetryAttemptFailure({", scenario)
+        self.assertIn(
+            "'approval-expired request-again attempt',\n"
+            "        FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,",
+            scenario,
+        )
         self.assertIn("api.cancelAgentTurn(turn.turnId)", scenario)
         self.assertEqual(
             scenario.count("foundationToolSideEffectCount("),
