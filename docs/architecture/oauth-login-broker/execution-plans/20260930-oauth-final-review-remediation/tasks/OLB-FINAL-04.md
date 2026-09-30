@@ -17,6 +17,7 @@
   "runtimeClass": "browser",
   "writeSet": [
     "apps/oauth2-client/internal/infrastructure/persistence/github",
+    "apps/dev/server/index.test.mjs",
     "docs/architecture/oauth-login-broker",
     "tooling/acceptance/capabilities/oauth-login-broker.yaml",
     "tooling/acceptance/domains/index.yaml",
@@ -49,6 +50,11 @@
       "verificationClass": "SOURCE_CHECK"
     },
     {
+      "id": "olb-final-proof-dev-server-test",
+      "command": "node --test apps/dev/server/index.test.mjs",
+      "verificationClass": "SOURCE_CHECK"
+    },
+    {
       "id": "olb-final-proof-functional",
       "command": "make dev-functional-result WORK_ITEM=OLB-FINAL-04 RUNTIME_CELL=oauth2-client-local-browser REASON='verify complete OAuth proof contract'",
       "verificationClass": "FUNCTIONAL_CHECK"
@@ -67,6 +73,7 @@
     "Acceptance-tooling changes select all required self-validation Gates",
     "Provisioned actor identities match environment contracts",
     "Review-skill freshness covers the registered OAuth architecture source",
+    "Peers Dev HTTP tests inject a deterministic status snapshot",
     "Full-range completion review and code review contain no P1/P2 finding"
   ],
   "failureBehavior": [
