@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-28
-covered_docs_hash: 3531a2f88629f40dddbdc7028a666085d9ae6ce2d4cb943305e674c72110f074
+last_verified_at: 2026-10-01
+covered_docs_hash: 5ba532bbf07ff903ddf898a6eca7b203ebbc594a1bcd7c0e6f434c189068f2cd
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,13 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-01 Review
+
+The documentation index now registers the OAuth Login Broker architecture.
+Existing review rules already cover architecture ownership, encrypted
+credential storage, exact-source Acceptance, and evidence freshness, so no
+`SKILL.md`, review fixture, or knowledge entry is required.
 
 ## 2026-09-28 Review
 
