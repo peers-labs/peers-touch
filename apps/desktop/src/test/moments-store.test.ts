@@ -327,6 +327,48 @@ describe('moments store: syncProjection', () => {
     expect(state.postsById['private-author-post']?.content.case).toBeUndefined();
   });
 
+  it('composes authorized recipient Native private projections into HOME', async () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:viewer', 7);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-recipient-post': {
+          postId: 'private-recipient-post',
+          contentId: 'private-recipient-post',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          content: {
+            kind: 'TEXT',
+            text: 'private recipient plaintext',
+          },
+          createdAtMillis: 2_000,
+          updatedAtMillis: 2_000,
+        },
+      },
+    });
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: { posts: [], nextCursor: '', hasMore: false },
+        publicTimeline: { posts: [], nextCursor: '', hasMore: false },
+      }),
+    );
+
+    await useMomentsStore.getState().syncProjection('private-recipient-recovery');
+
+    const state = useMomentsStore.getState();
+    expect(state.feeds.home.postIds).toEqual(['private-recipient-post']);
+    expect(state.postsById['private-recipient-post']).toMatchObject({
+      id: 'private-recipient-post',
+      authorPtid: 'ptid:author',
+      type: PostType.TEXT,
+      audience: { kind: Audience_Kind.FRIENDS },
+      content: { case: undefined },
+    });
+    expect(state.postsById['private-recipient-post']?.content.case).toBeUndefined();
+  });
+
   it('drops a projection response that completes after actor reset', async () => {
     let resolveResponse:
       | ((value: ReturnType<typeof bytesOk<typeof SyncMomentsProjectionResponseSchema>>) => void)
