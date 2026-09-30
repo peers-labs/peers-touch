@@ -76,8 +76,13 @@ class _FakeHoverElement:
 class _FakeHoverSession:
     process_id = 42
 
+    def __init__(self, *, focused: bool = True) -> None:
+        self.focused = focused
+
     def execute_script(self, script: str, *args: object) -> object:
         del args
+        if "document.hasFocus" in script:
+            return self.focused
         if "getBoundingClientRect" in script:
             return {"x": 5.0, "y": 7.0}
         return None
@@ -85,6 +90,21 @@ class _FakeHoverSession:
     def find_elements(self, selector: str) -> list[_FakeHoverElement]:
         self.selector = selector
         return [_FakeHoverElement()]
+
+
+class _FakeHoverRuntimeBinding:
+    def __init__(self, adapter: _FakeNativeAdapter) -> None:
+        self.native_adapter = adapter
+        self.activation_requested = False
+
+    def request_cooperative_activation(
+        self,
+        target: _FakeHoverSession,
+        sessions: tuple[_FakeHoverSession, ...],
+    ) -> bool:
+        self.activation_requested = sessions == (target,)
+        target.focused = True
+        return True
 
 
 class DesktopOAuthNativeGateTest(unittest.TestCase):
@@ -145,11 +165,7 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
     def test_hover_tooltip_uses_native_pointer_coordinates(self) -> None:
         gate = object.__new__(DesktopOAuthNativeGate)
         adapter = _FakeNativeAdapter()
-        gate.runtime_binding = type(
-            "RuntimeBinding",
-            (),
-            {"native_adapter": adapter},
-        )()
+        gate.runtime_binding = _FakeHoverRuntimeBinding(adapter)
         session = _FakeHoverSession()
 
         tooltip = gate._hover_tooltip(
@@ -165,6 +181,23 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
             adapter.mouse_calls,
             [(42, (MouseAction.MOVE,), (105.0, 207.0))],
         )
+
+    def test_hover_tooltip_focuses_native_window_before_pointer_move(self) -> None:
+        gate = object.__new__(DesktopOAuthNativeGate)
+        adapter = _FakeNativeAdapter()
+        runtime_binding = _FakeHoverRuntimeBinding(adapter)
+        gate.runtime_binding = runtime_binding
+        session = _FakeHoverSession(focused=False)
+
+        tooltip = gate._hover_tooltip(
+            session,
+            object(),
+            "tooltip",
+            timeout=0.1,
+        )
+
+        self.assertEqual(tooltip, "tooltip")
+        self.assertTrue(runtime_binding.activation_requested)
 
     def test_accepts_routed_native_tauri_url(self) -> None:
         self.assertTrue(is_native_tauri_url("tauri://localhost"))
