@@ -6961,6 +6961,96 @@ async function runFoundationApprovalDeniedScenario(input: {
   return result;
 }
 
+async function foundationApprovalRetryAttemptFailure(input: {
+  conversationId: string;
+  turnId: string;
+  toolCallId: string;
+  attemptsBefore: number;
+  cause: unknown;
+}): Promise<Error> {
+  const state = useChatStore.getState();
+  const sourceMessage = state.messages.find((message) =>
+    message.toolCalls?.some((toolCall) => toolCall.id === input.toolCallId));
+  const operation = state.operations[input.conversationId];
+  const projectedVersion = state.sessions.find(
+    (session) => session.key === input.conversationId,
+  )?.version ?? 0;
+  const revisionFailure = state.revisionCommandFailure;
+  let authoritativeVersion = 0;
+  let authoritativeReadError = '';
+  let replay: Record<string, unknown> | null = null;
+  let replayReadError = '';
+
+  try {
+    authoritativeVersion = (
+      await api.getAgentConversation(input.conversationId)
+    ).version;
+  } catch (error) {
+    authoritativeReadError = observedErrorCode(error);
+  }
+  try {
+    replay = await foundationDiagnosticReplay(input.turnId);
+  } catch (error) {
+    replayReadError = observedErrorCode(error);
+  }
+
+  const attempts = replay
+    ? optionalEvidenceArray(
+        replay.attempts,
+        'foundationApprovalExpiredRetryFailureAttempts',
+      )
+    : [];
+  const toolFacts = replay ? foundationDiagnosticToolFacts(replay) : [];
+  const retryFacts = toolFacts.filter((fact) =>
+    String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+      !== input.toolCallId);
+  const toolCallElement = Array.from(
+    document.querySelectorAll<HTMLElement>('[data-pt-agent-tool-call]'),
+  ).find((element) => element.dataset.ptAgentToolCall === input.toolCallId);
+  const recovery = toolCallElement?.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-tool-recovery="request-again"]',
+  );
+
+  return Object.assign(
+    new Error(
+      'agent.acceptance.foundationApprovalRetryAttemptFailed:'
+      + stableJson({
+        cause: foundationFailureSummary(input.cause),
+        currentSessionMatches:
+          state.currentSessionKey === input.conversationId,
+        isStreaming: state.isStreaming,
+        operationPresent: Boolean(operation),
+        operationRunState: operation?.runState ?? null,
+        operationTurnMatches: operation?.turnId === input.turnId,
+        sourceMessagePresent: Boolean(sourceMessage),
+        sourceTurnMatches: sourceMessage?.turnId === input.turnId,
+        sourceTerminalStatus: sourceMessage?.terminalStatus ?? null,
+        projectedVersion,
+        authoritativeVersion,
+        authoritativeReadError,
+        revisionFailure: revisionFailure
+          ? {
+              errorType: revisionFailure.typedError.error_type,
+              expectedRevision: revisionFailure.expectedRevision,
+              actualRevision: revisionFailure.actualRevision,
+            }
+          : null,
+        replayStatus: replay ? Number(replay.status ?? 0) : 0,
+        replayReadError,
+        attemptsBefore: input.attemptsBefore,
+        attemptsAfter: attempts.length,
+        toolFactCount: toolFacts.length,
+        retryToolFactCount: retryFacts.length,
+        retryApprovalCount: retryFacts.filter((fact) =>
+          Boolean(evidenceField(fact, 'approvalId', 'approval_id'))).length,
+        recoveryActionPresent: Boolean(recovery),
+        recoveryActionDisabled: recovery?.disabled ?? null,
+      }),
+    ),
+    { cause: input.cause },
+  );
+}
+
 async function runFoundationApprovalExpiredScenario(input: {
   agent: NonNullable<ReturnType<typeof selectedAgent>>;
   platform: string;
@@ -7149,22 +7239,33 @@ async function runFoundationApprovalExpiredScenario(input: {
 
     recovery.click();
     recovery.click();
-    const retryStarted = await waitForFoundationToolFacts(
-      turn.turnId,
-      (facts, replay) => (
-        evidenceArray(
-          replay.attempts,
-          'foundationApprovalExpiredRetryAttempts',
-        ).length === attemptsBefore + 1
-        && facts.some((fact) => (
-          String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
-            !== toolCallId
-          && String(evidenceField(fact, 'approvalId', 'approval_id') ?? '')
-        ))
-      ),
-      'approval-expired request-again attempt',
-      120_000,
-    );
+    let retryStarted: Awaited<ReturnType<typeof waitForFoundationToolFacts>>;
+    try {
+      retryStarted = await waitForFoundationToolFacts(
+        turn.turnId,
+        (facts, replay) => (
+          evidenceArray(
+            replay.attempts,
+            'foundationApprovalExpiredRetryAttempts',
+          ).length === attemptsBefore + 1
+          && facts.some((fact) => (
+            String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+              !== toolCallId
+            && String(evidenceField(fact, 'approvalId', 'approval_id') ?? '')
+          ))
+        ),
+        'approval-expired request-again attempt',
+        120_000,
+      );
+    } catch (error) {
+      throw await foundationApprovalRetryAttemptFailure({
+        conversationId: turn.conversationId,
+        turnId: turn.turnId,
+        toolCallId,
+        attemptsBefore,
+        cause: error,
+      });
+    }
     const retryToolFact = retryStarted.facts.find((fact) =>
       String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
         !== toolCallId
