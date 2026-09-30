@@ -292,8 +292,8 @@ SAL-OAUTH-01
   failure/retry states.
 - The canonical Desktop prototype exposes the same fixed-size inline OAuth
   state model.
-- `make desktop` starts the exact checkpoint source.
-- Secret scanning passes and the native Gate releases its runtime resources.
+- Current-source completion evidence covers layout, native OAuth, Desktop checks, machine registry, explicit `6aeb1bfc0c9031498d51990280918ff43d1ac399..HEAD` changed-file inventory, quality evidence, and runtime cleanup.
+- Task and Plan remain open pending a fresh independent Completion Review.
 
 ## Non-Claims
 - The plan does not claim completion of a real third-party authorization grant.
