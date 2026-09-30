@@ -2211,6 +2211,10 @@ class AgentHarnessStaticTest(unittest.TestCase):
         replay = scenario.index(
             "const replayed = await runFoundationForbiddenActorAttempt"
         )
+        receiver_replay_restore = scenario.index(
+            "await useChatStore.getState().selectSession(resourceId);",
+            scenario.index("const first = await runFoundationForbiddenActorAttempt"),
+        )
         receiver_restore = scenario.index(
             "await useChatStore.getState().selectSession(resourceId);",
             replay,
@@ -2219,6 +2223,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "'forbidden actor receiver'",
             receiver_restore,
         )
+        self.assertLess(receiver_replay_restore, replay)
         self.assertLess(replay, receiver_restore)
         self.assertLess(receiver_restore, receiver_wait)
         self.assertNotIn("mock", scenario.lower())
