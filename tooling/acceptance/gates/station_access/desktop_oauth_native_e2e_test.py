@@ -183,7 +183,10 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(session.selector, '[role="tooltip"]')
         self.assertEqual(
             adapter.mouse_calls,
-            [(42, (MouseAction.MOVE,), (105.0, 207.0))],
+            [
+                (42, (MouseAction.MOVE,), (102.0, 202.0)),
+                (42, (MouseAction.MOVE,), (105.0, 207.0)),
+            ],
         )
 
     def test_hover_tooltip_focuses_native_window_before_pointer_move(self) -> None:
