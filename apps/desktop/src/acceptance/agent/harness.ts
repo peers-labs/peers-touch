@@ -6998,7 +6998,11 @@ async function foundationApprovalRetryAttemptFailure(input: {
     ? optionalEvidenceArray(
         replay.attempts,
         'foundationApprovalExpiredRetryFailureAttempts',
-      )
+      ).map((attempt) =>
+        evidenceRecord(
+          attempt,
+          'foundationApprovalExpiredRetryFailureAttempt',
+        ))
     : [];
   const toolFacts = replay ? foundationDiagnosticToolFacts(replay) : [];
   const retryFacts = toolFacts.filter((fact) =>
@@ -7036,9 +7040,20 @@ async function foundationApprovalRetryAttemptFailure(input: {
             }
           : null,
         replayStatus: replay ? Number(replay.status ?? 0) : 0,
+        replayTerminalReason: replay
+          ? String(
+              evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+            )
+          : '',
         replayReadError,
         attemptsBefore: input.attemptsBefore,
         attemptsAfter: attempts.length,
+        attemptStatuses: attempts.map((attempt) =>
+          foundationTurnStatusName(
+            evidenceField(attempt, 'status', 'status'),
+          )),
+        attemptErrorCodes: attempts.map((attempt) =>
+          String(evidenceField(attempt, 'errorCode', 'error_code') ?? '')),
         toolFactCount: toolFacts.length,
         retryToolFactCount: retryFacts.length,
         retryApprovalCount: retryFacts.filter((fact) =>
@@ -7048,6 +7063,44 @@ async function foundationApprovalRetryAttemptFailure(input: {
       }),
     ),
     { cause: input.cause },
+  );
+}
+
+function foundationApprovalRetryStarted(
+  facts: Record<string, unknown>[],
+  replay: Record<string, unknown>,
+  toolCallId: string,
+  attemptsBefore: number,
+): boolean {
+  const attempts = evidenceArray(
+    replay.attempts,
+    'foundationApprovalExpiredRetryAttempts',
+  );
+  const retryToolPresent = facts.some((fact) => (
+    String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
+      !== toolCallId
+    && String(evidenceField(fact, 'approvalId', 'approval_id') ?? '')
+  ));
+  if (attempts.length === attemptsBefore + 1 && retryToolPresent) {
+    return true;
+  }
+  if (!diagnosticReplayTerminal(replay)) return false;
+
+  const latestAttempt = attempts.length > 0
+    ? evidenceRecord(
+        attempts[attempts.length - 1],
+        'foundationApprovalExpiredTerminalAttempt',
+      )
+    : {};
+  const errorCode = String(
+    evidenceField(latestAttempt, 'errorCode', 'error_code') ?? '',
+  );
+  const terminalReason = String(
+    evidenceField(replay, 'terminalReason', 'terminal_reason') ?? '',
+  );
+  throw new Error(
+    'agent.acceptance.foundationApprovalRetryTerminal:'
+    + (errorCode || terminalReason || foundationTurnStatusName(replay.status)),
   );
 }
 
@@ -7243,16 +7296,11 @@ async function runFoundationApprovalExpiredScenario(input: {
     try {
       retryStarted = await waitForFoundationToolFacts(
         turn.turnId,
-        (facts, replay) => (
-          evidenceArray(
-            replay.attempts,
-            'foundationApprovalExpiredRetryAttempts',
-          ).length === attemptsBefore + 1
-          && facts.some((fact) => (
-            String(evidenceField(fact, 'toolCallId', 'tool_call_id') ?? '')
-              !== toolCallId
-            && String(evidenceField(fact, 'approvalId', 'approval_id') ?? '')
-          ))
+        (facts, replay) => foundationApprovalRetryStarted(
+          facts,
+          replay,
+          toolCallId,
+          attemptsBefore,
         ),
         'approval-expired request-again attempt',
         120_000,

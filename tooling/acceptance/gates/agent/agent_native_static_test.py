@@ -2973,8 +2973,22 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("projectedVersion", failure)
         self.assertIn("authoritativeVersion", failure)
         self.assertIn("attemptsAfter: attempts.length", failure)
+        self.assertIn("attemptErrorCodes: attempts.map", failure)
+        self.assertIn("replayTerminalReason:", failure)
         self.assertIn("retryToolFactCount: retryFacts.length", failure)
         self.assertIn("recoveryActionDisabled:", failure)
+        self.assertIn(
+            "function foundationApprovalRetryStarted",
+            failure,
+        )
+        self.assertIn(
+            "if (!diagnosticReplayTerminal(replay)) return false",
+            failure,
+        )
+        self.assertIn(
+            "'agent.acceptance.foundationApprovalRetryTerminal:'",
+            failure,
+        )
         self.assertIn("CapabilityApprovalPolicy.MANUAL", scenario)
         self.assertIn("waitForToolApprovalEvent(turn)", scenario)
         self.assertIn("ToolCallStatus.EXPIRED", scenario)
