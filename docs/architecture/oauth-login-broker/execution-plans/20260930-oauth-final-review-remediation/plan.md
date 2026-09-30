@@ -1,6 +1,6 @@
 # OAuth Final Review Remediation
 
-> **Status**: prepared
+> **Status**: active
 > **Branch**: work/station-access-lifecycle
 > **Workspace ID**: 95620934d3348d95
 > **Initial HEAD**: aa1f691b4d282e9b651277cc721705a6bd286457
@@ -18,7 +18,7 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "OLB-FINAL-20260930",
-  "status": "prepared",
+  "status": "active",
   "binding": {
     "branch": "work/station-access-lifecycle",
     "workspaceId": "95620934d3348d95",
@@ -129,7 +129,7 @@
       "workstreamId": "OLB-SERVICE",
       "path": "tasks/OLB-FINAL-01.md",
       "dependsOn": [],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {
@@ -244,9 +244,9 @@
 
 ## Goal
 
-Close the five merge-blocking findings from the final OAuth report plus the
-cross-instance, race, and runtime-identity proof prerequisites needed to make
-those fixes reviewable.
+Close the merge-blocking findings from the final OAuth report plus the
+cross-instance, race, runtime-identity, admin-read, and rotation-accounting
+prerequisites needed to make those fixes reviewable.
 
 ## Dependency DAG
 
@@ -264,16 +264,10 @@ OLB-FINAL-01
   the documented return-destination override.
 - GitHub response bounds fail explicitly and large trees remain readable.
 - Duplicate refresh calls converge after a concurrent winner commits.
+- Admin readback and key rotation avoid repeated full-history reads, and
+  rotation counts only confirmed commits.
 - Acceptance metadata selects every required governance Gate and publishes
   only directly witnessed claims.
-
-## Binding Advancement
-
-1. Commit this prepared Plan Package and the OAuth README navigation update.
-2. Advance the completed, quiescent workspace binding with
-   `EXPECTED_GENERATION=5`, creating generation 6 for this Plan.
-3. Only after generation 6 resolves to `OLB-FINAL-20260930`, activate and start
-   `OLB-FINAL-01`.
 
 ## Completion
 

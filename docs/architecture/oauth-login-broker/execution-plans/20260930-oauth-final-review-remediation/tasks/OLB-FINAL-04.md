@@ -8,7 +8,7 @@
   "planId": "OLB-FINAL-20260930",
   "taskId": "OLB-FINAL-04",
   "workstreamId": "OLB-SERVICE",
-  "title": "Close Acceptance selection and runtime identity gaps",
+  "title": "Close persistence scaling and Acceptance proof gaps",
   "workClass": "product-behavior",
   "completionClass": "functional",
   "executionMode": "build",
@@ -16,6 +16,7 @@
   "journeyId": "OLB-J01",
   "runtimeClass": "browser",
   "writeSet": [
+    "apps/oauth2-client/internal/infrastructure/persistence/github",
     "docs/architecture/oauth-login-broker",
     "tooling/acceptance/capabilities/oauth-login-broker.yaml",
     "tooling/acceptance/domains/index.yaml",
@@ -58,15 +59,19 @@
     }
   ],
   "doneWhen": [
+    "Admin readback applies its limit before fetching encrypted audit blobs",
+    "Rotation avoids repeated full-history reads within one bounded pass",
+    "Rotation counts only records confirmed by successful commits",
     "OAuth source changes select architecture and domain-contract Gates",
     "Acceptance-tooling changes select all required self-validation Gates",
     "Provisioned actor identities match environment contracts",
     "Full-range completion review and code review contain no P1/P2 finding"
   ],
   "failureBehavior": [
+    "Do not introduce a new audit index or rotation continuation protocol",
+    "Do not count attempted rotations as committed records",
     "Do not publish an unwitnessed capability or specification claim",
-    "Do not omit required governance, provisioning, or workflow checks",
-    "Do not rewrite product code from the final proof closure"
+    "Do not omit required governance, provisioning, or workflow checks"
   ],
   "updatedAt": "2026-09-30T00:00:00.000Z",
   "durableEvidence": []
@@ -76,14 +81,15 @@
 ## Current Snapshot
 
 - State: pending.
-- OAuth path rules omit architecture and domain Gates, Acceptance changes omit
-  self-validation Gates, and the service provisioner actor differs from its
-  environment contract.
+- Admin and rotation scans perform avoidable repeated reads, OAuth path rules
+  omit architecture and domain Gates, Acceptance changes omit self-validation
+  Gates, and the service provisioner actor differs from its environment
+  contract.
 
 ## Closure
 
-Every final OAuth claim is selected, source-bound, and traceable to the
-declared runtime identity.
+Persistence maintenance remains bounded, and every final OAuth claim is
+selected, source-bound, and traceable to the declared runtime identity.
 
 ## Concurrency Decision
 
