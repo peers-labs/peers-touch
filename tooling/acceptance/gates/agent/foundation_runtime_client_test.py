@@ -512,6 +512,43 @@ class FoundationClientSpecTest(unittest.TestCase):
             client.process = None
             client.stop()
 
+    def test_native_harness_readiness_accepts_ambiguous_navigation_error(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            client.driver = Mock()
+            client.driver.get.side_effect = RuntimeError(
+                "JavaScript execution returned a result of an unsupported "
+                "type (code 5)"
+            )
+            driver = client.driver
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "harness_ready",
+                    side_effect=[False, True],
+                ) as harness_ready,
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=True,
+                ),
+            ):
+                client._wait_for_acceptance_harness()
+
+            self.assertEqual(2, harness_ready.call_count)
+            driver.get.assert_called_once_with("http://127.0.0.1:23210")
+            client.driver = None
+            client.process = None
+            client.stop()
+
     def test_native_harness_readiness_fails_after_one_navigation_recovery(
         self,
     ) -> None:

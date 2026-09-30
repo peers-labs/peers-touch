@@ -322,15 +322,13 @@ class FoundationRuntimeClient:
                     "native-tauri renderer became unavailable before "
                     f"{self.harness_namespace} acceptance Harness recovery"
                 )
+            navigation_error: Exception | None = None
             try:
                 self.driver.get(
                     f"http://127.0.0.1:{self.spec.renderer_port}"
                 )
             except Exception as error:
-                raise FoundationClientError(
-                    "native-tauri acceptance Harness navigation recovery failed: "
-                    f"{error}"
-                ) from error
+                navigation_error = error
             if harness_ready(
                 self.driver,
                 namespace=self.harness_namespace,
@@ -340,6 +338,11 @@ class FoundationRuntimeClient:
                 ),
             ):
                 return
+            if navigation_error is not None:
+                raise FoundationClientError(
+                    "native-tauri acceptance Harness navigation recovery failed: "
+                    f"{navigation_error}"
+                ) from navigation_error
         raise FoundationClientError(
             f"{self.spec.runtime} {self.harness_namespace} acceptance "
             "Harness is unavailable"
