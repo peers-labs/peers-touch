@@ -65,7 +65,7 @@
     "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
     "tooling/acceptance/registry.yaml",
     "tooling/acceptance/core/launch_context.py", "tooling/acceptance/core/_gate_bootstrap.py", "tooling/acceptance/tests/test_launch_context.py",
-    "tooling/acceptance/requirements.txt"
+    "tooling/acceptance/requirements.txt", "tooling/scripts/acceptance-gap-detect.py", "tooling/scripts/acceptance-gap-detect-test.py", "tooling/skills/pt-acceptance-gap-detector"
   ],
   "readSet": [
     "docs/architecture/station-access-lifecycle/experience-contract.md",
@@ -196,5 +196,5 @@
   callback restores an authenticated identity.
 - Product correction implemented: Station Profile owns the OAuth avatar,
   Desktop preserves provider and PTID, and search scopes expose their type.
-- Current-source remediation evidence covers focused regression, layout, Desktop checks, machine registry, native OAuth, explicit changed-file inventory, and quality evidence; the layout Gate trust defect is fixed without weakening checks.
+- Current-source remediation covers focused regression, layout, Desktop checks, machine registry, native OAuth, explicit Session/run Gap Detector inputs, complete changed-file inventory, and quality evidence; the layout Gate trust defect is fixed without weakening checks.
 - Review state: pending a fresh independent Completion Review; Task and Plan remain open until that review returns a current PASS receipt.

@@ -32,6 +32,19 @@ def proven_result(gate_id: str) -> dict[str, Any]:
 
 
 class AcceptanceGapDetectorTests(unittest.TestCase):
+    def test_session_and_acceptance_run_are_distinct_inputs(self) -> None:
+        args = MODULE.parse_arguments(
+            [
+                "--session",
+                "/tmp/development-session.json",
+                "--run",
+                "/tmp/acceptance-run.json",
+            ]
+        )
+
+        self.assertEqual(args.session, "/tmp/development-session.json")
+        self.assertEqual(args.run, "/tmp/acceptance-run.json")
+
     def test_main_rejects_before_loading_evidence_without_a_session(self) -> None:
         with patch.object(
             sys,
