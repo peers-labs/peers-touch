@@ -199,6 +199,43 @@ func assertTreeTraversalFallback(t *testing.T, truncated, oversized bool) {
 	}
 }
 
+func TestAdminSnapshotLimitsAuditReadsBeforeFetchingBlobs(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	for index, occurredAt := range []time.Time{
+		time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC),
+		time.Date(2026, 2, 1, 2, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 1, 3, 0, 0, 0, time.UTC),
+	} {
+		if err := store.CreateAuthorization(context.Background(), entity.AuthSession{
+			State:     fmt.Sprintf("bounded-admin-state-%d", index),
+			SiteID:    "main",
+			Provider:  valueobject.ProviderGitHub,
+			Verifier:  "verifier",
+			CreatedAt: occurredAt,
+			ExpiresAt: occurredAt.Add(10 * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fixture.resetBlobReads()
+	snapshot, err := store.AdminSnapshot(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fixture.blobReads() != 2 {
+		t.Fatalf("expected two bounded audit blob reads, got %d", fixture.blobReads())
+	}
+	if len(snapshot.Events) != 2 ||
+		!snapshot.Events[0].OccurredAt.Equal(time.Date(2026, 3, 1, 3, 0, 0, 0, time.UTC)) ||
+		!snapshot.Events[1].OccurredAt.Equal(time.Date(2026, 2, 1, 2, 0, 0, 0, time.UTC)) {
+		t.Fatalf("unexpected bounded recent events: %#v", snapshot.Events)
+	}
+}
+
 func TestStoreConvergesAfterLostRefUpdateResponse(t *testing.T) {
 	fixture := newGitDataFixture(t)
 	store := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
@@ -451,8 +488,20 @@ func TestRotateEncryptionCoversEveryRecordClass(t *testing.T) {
 		"v1": oldKey,
 		"v2": newKey,
 	})
-	totalRotated := 0
-	for pass := 0; pass < 10; pass++ {
+	fixture.resetBlobReads()
+	first, err := rotatingStore.RotateEncryption(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Scanned != 2 || first.Rotated != 2 || fixture.blobReads() != 2 {
+		t.Fatalf(
+			"first rotation pass exceeded its bounded scan: result=%#v blob_reads=%d",
+			first,
+			fixture.blobReads(),
+		)
+	}
+	totalRotated := first.Rotated
+	for pass := 1; pass < 10; pass++ {
 		result, err := rotatingStore.RotateEncryption(context.Background(), 2)
 		if err != nil {
 			t.Fatal(err)
@@ -512,6 +561,46 @@ func TestRotateEncryptionUnknownKeyFailsClosed(t *testing.T) {
 	}
 }
 
+func TestRotateEncryptionDoesNotCountUncommittedRecords(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	oldKey := bytes.Repeat([]byte{1}, 32)
+	newKey := bytes.Repeat([]byte{2}, 32)
+	oldStore := fixture.newStore(t, "v1", map[string][]byte{"v1": oldKey})
+	now := time.Date(2026, 9, 30, 5, 30, 0, 0, time.UTC)
+	if err := oldStore.CreateAuthorization(context.Background(), entity.AuthSession{
+		State:     "failed-rotation-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rotatingStore := fixture.newStore(t, "v2", map[string][]byte{
+		"v1": oldKey,
+		"v2": newKey,
+	})
+	fixture.rejectNextRefUpdates(rotatingStore.repository.maxRetries)
+	result, err := rotatingStore.RotateEncryption(context.Background(), 1)
+	if !errors.Is(err, repository.ErrStorageConflict) {
+		t.Fatalf("expected exhausted ref conflicts, got result=%#v err=%v", result, err)
+	}
+	if result.Rotated != 0 {
+		t.Fatalf("uncommitted rotations were reported as committed: %#v", result)
+	}
+	for path, payload := range fixture.files() {
+		var envelope recordcrypto.Envelope
+		if err := json.Unmarshal(payload, &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.KeyID != "v1" {
+			t.Fatalf("failed rotation changed %s to key %s", path, envelope.KeyID)
+		}
+	}
+}
+
 type gitDataFixture struct {
 	t      *testing.T
 	server *httptest.Server
@@ -528,8 +617,9 @@ type gitDataFixture struct {
 	truncateRecursive        bool
 	oversizeRecursive        bool
 	nonRecursiveTreeRequests int
+	blobReadTotal            int
 	abortNextPatch           bool
-	conflictNextPatch        bool
+	conflictPatchRemaining   int
 	failNextRepoAuth         bool
 	installationRequests     int
 	patchRequests            int
@@ -560,9 +650,13 @@ func (f *gitDataFixture) rejectNextRepositoryAuth() {
 }
 
 func (f *gitDataFixture) conflictAfterNextCommit() {
+	f.rejectNextRefUpdates(1)
+}
+
+func (f *gitDataFixture) rejectNextRefUpdates(count int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.conflictNextPatch = true
+	f.conflictPatchRemaining = count
 }
 
 func (f *gitDataFixture) newClient(t *testing.T) *Client {
@@ -606,6 +700,18 @@ func (f *gitDataFixture) abortAfterNextRefUpdate() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.abortNextPatch = true
+}
+
+func (f *gitDataFixture) resetBlobReads() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.blobReadTotal = 0
+}
+
+func (f *gitDataFixture) blobReads() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.blobReadTotal
 }
 
 func (f *gitDataFixture) commitCount() int {
@@ -690,6 +796,7 @@ func (f *gitDataFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		writeFixtureJSON(w, map[string]any{"truncated": false, "tree": entries})
 	case strings.HasPrefix(path, "/git/blobs/") && r.Method == http.MethodGet:
 		sha := strings.TrimPrefix(path, "/git/blobs/")
+		f.blobReadTotal++
 		writeFixtureJSON(w, map[string]string{
 			"encoding": "base64",
 			"content":  base64.StdEncoding.EncodeToString(f.blobs[sha]),
@@ -748,8 +855,8 @@ func (f *gitDataFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		decodeFixtureJSON(f.t, r, &input)
 		f.patchRequests++
 		f.forceValuesValid = f.forceValuesValid && !input.Force
-		if f.conflictNextPatch {
-			f.conflictNextPatch = false
+		if f.conflictPatchRemaining > 0 {
+			f.conflictPatchRemaining--
 			http.Error(w, "conflict", http.StatusUnprocessableEntity)
 			return
 		}

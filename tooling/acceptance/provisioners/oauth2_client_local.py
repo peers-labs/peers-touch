@@ -8,6 +8,7 @@ from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core.provisioner import EnvironmentProvisioner
 from tooling.acceptance.core.provisioning import (
     ClientRuntime,
+    EnvironmentClient,
     EnvironmentContract,
     ProvisioningState,
     RuntimeManifest,
@@ -20,6 +21,23 @@ class _OAuth2ClientLocalProvisioner(EnvironmentProvisioner):
 
     def __init__(self, contract: EnvironmentContract) -> None:
         super().__init__(contract)
+
+    def _declared_client(self) -> EnvironmentClient:
+        clients = [
+            client
+            for client in self.contract.clients
+            if client.id == self.client_id
+        ]
+        if len(clients) != 1 or clients[0].runtime != self.client_runtime:
+            raise BlockedError(
+                reason=(
+                    f"Environment {self.environment_id!r} must declare "
+                    f"client {self.client_id!r} with runtime "
+                    f"{self.client_runtime!r}"
+                ),
+                resource=f"gate-environment:{self.environment_id}",
+            )
+        return clients[0]
 
     def provision(self, gate_id: str) -> RuntimeManifest:
         self._manifest = self._new_base_manifest(gate_id)
@@ -48,22 +66,23 @@ class _OAuth2ClientLocalProvisioner(EnvironmentProvisioner):
                     reason="OAuth2 client source is not a clean exact-source module",
                     resource="oauth2-client:source",
                 )
+            client = self._declared_client()
             manifest = dataclasses.replace(
                 manifest,
                 state=ProvisioningState.PROVISIONED,
                 clients=(
                     ClientRuntime(
-                        id=self.client_id,
-                        actor="operator",
-                        runtime=self.client_runtime,
+                        id=client.id,
+                        actor=client.actor,
+                        runtime=client.runtime,
                         worktree=str(REPO_ROOT),
                         gateway_port=0,
                         renderer_port=0,
                         webdriver_port=0,
                         profile="oauth2-client-local",
                         storage_root="<ephemeral-test-runtime>",
-                        required_service_roles=(),
-                        service_bindings={},
+                        required_service_roles=client.required_service_roles,
+                        service_bindings=client.service_bindings,
                     ),
                 ),
                 cleanup_resources=(),
