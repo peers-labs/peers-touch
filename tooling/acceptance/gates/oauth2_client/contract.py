@@ -52,8 +52,10 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                 "./internal/bootstrap",
                 (
                     "TestVercelRequiresBridgeSecretAndReturnAllowlist",
+                    "TestVercelRejectsHTTPProviderRedirect",
                     "TestVercelRejectsMemoryStorage",
                     "TestSitesJSONStoresNormalizedValues",
+                    "TestStorageHTTPClientIsBounded",
                 ),
             ),
             TestGroup(

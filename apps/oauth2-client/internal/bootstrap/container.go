@@ -9,6 +9,7 @@ import (
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/repository"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/valueobject"
 	recordcrypto "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/crypto"
+	githubstore "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/persistence/github"
 	providergithub "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/provider/github"
 	providergoogle "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/provider/google"
 	providerweixin "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/provider/weixin"
@@ -31,7 +32,7 @@ func BuildContainer() (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	store, maintenance, err := BuildOAuthStore(storageConfig, http.DefaultClient)
+	store, maintenance, err := BuildOAuthStore(storageConfig, storageHTTPClient())
 	if err != nil {
 		return nil, err
 	}
@@ -76,4 +77,8 @@ func BuildContainer() (*Container, error) {
 		Store:       store,
 		Maintenance: maintenance,
 	}, nil
+}
+
+func storageHTTPClient() *http.Client {
+	return githubstore.NewDefaultHTTPClient()
 }

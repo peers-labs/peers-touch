@@ -42,6 +42,26 @@ func TestVercelRequiresBridgeSecretAndReturnAllowlist(t *testing.T) {
 	}
 }
 
+func TestVercelRejectsHTTPProviderRedirect(t *testing.T) {
+	t.Setenv("VERCEL", "1")
+	t.Setenv("PEERS_OAUTH_BRIDGE_SECRET", "bridge-secret")
+	t.Setenv("OAUTH_SITES_JSON", `[{
+		"site_id":"main",
+		"success_url":"https://app.example/success",
+		"error_url":"https://app.example/error",
+		"allowed_return_to":["peers-touch://oauth/callback"],
+		"providers":{"github":{
+			"client_id":"client",
+			"client_secret":"secret",
+			"redirect_uri":"http://broker.example/api/oauth/github/callback"
+		}}
+	}]`)
+	if _, err := LoadSiteRegistry(); err == nil ||
+		err.Error() != "production_provider_redirect_https_required" {
+		t.Fatalf("expected production HTTPS failure, got %v", err)
+	}
+}
+
 func TestVercelRejectsMemoryStorage(t *testing.T) {
 	t.Setenv("VERCEL", "1")
 	t.Setenv("OAUTH_STORAGE_DRIVER", "memory")
