@@ -1,8 +1,8 @@
 # OAuth Login Broker - Data Model
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
 ---
@@ -171,8 +171,14 @@ credential and audit event and never exposes the caller-supplied operation ID.
 Repository path:
 
 ```text
-oauth-data/audits/YYYY/MM/<event-id>.json
+oauth-data/audits/YYYY/MM/<YYYYMMDDTHHMMSS.NNNNNNNNNZ>-<event-id>.json
 ```
+
+The UTC timestamp is fixed-width, so descending path order is identical to
+descending event occurrence order before encrypted blobs are fetched. The
+HMAC-derived event ID remains an opaque uniqueness suffix; failure event IDs
+also bind the occurrence timestamp so separate failed requests remain separate
+events. HMAC-only legacy audit filenames are invalid in the active schema.
 
 Encrypted payload:
 
@@ -267,16 +273,18 @@ newer credential has already committed.
 | `provider_exchange_failed` | provider rejected exchange | restart login |
 | `provider_refresh_failed` | provider rejected refresh | retry or new login |
 
-## 9. Rotation Result
+## 10. Rotation Result
 
 ```json
 {
   "scanned": 42,
   "rotated": 8,
   "unchanged": 34,
-  "failed": 0
+  "failed": 0,
+  "complete": false
 }
 ```
 
-The maintenance command scans every record prefix. It exits non-zero when
-`failed` is non-zero and never prints record plaintext or key material.
+`complete` is true only when the pass exhausted every record path. The
+maintenance command continues until that explicit flag is true, exits non-zero
+when `failed` is non-zero, and never prints record plaintext or key material.

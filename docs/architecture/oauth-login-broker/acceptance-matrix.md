@@ -1,8 +1,8 @@
 # OAuth Login Broker - Acceptance Matrix
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
 ---
@@ -86,6 +86,10 @@
 - Invalid credentials produce `401` before storage reads.
 - HTML and JSON expose only identity, aggregate credential metadata, and typed
   audit fields.
+- A bounded read returns the newest events when more than the requested limit
+  share one month, without fetching blobs outside the selected path set.
+- HMAC-only legacy audit paths fail closed before any audit blob is fetched,
+  and separate failed requests retain separate event identities.
 - Security, cache, frame, MIME, and robot headers are present.
 - Bootstrap failures return the same generic unavailable response and security
   headers as authenticated handler failures.
@@ -114,6 +118,10 @@
   operation, and audit prefixes.
 - Every old-key envelope is rewritten with the active key while plaintext
   remains unchanged.
+- CAS retries reuse one bounded candidate set; a lost successful ref-update
+  response is confirmed by exact ciphertext readback and counted once.
+- Completion is explicit; callers never infer exhaustion from a retry-affected
+  committed count, and any retry requires one subsequent fresh pass.
 - A second run performs no writes.
 - Unknown keys and per-record failures are reported without leaking encrypted
   or decrypted payloads.

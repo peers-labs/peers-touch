@@ -13,7 +13,7 @@ func TestRotateRecordsRun(t *testing.T) {
 		results: []entity.RotationResult{
 			{Scanned: 5, Rotated: 2, Unchanged: 3},
 			{Scanned: 5, Rotated: 2, Unchanged: 3},
-			{Scanned: 5, Rotated: 1, Unchanged: 4},
+			{Scanned: 5, Rotated: 1, Unchanged: 4, Complete: true},
 		},
 	}
 	result, err := runRotation(context.Background(), store, 2)
@@ -26,6 +26,23 @@ func TestRotateRecordsRun(t *testing.T) {
 		result.Unchanged != 4 ||
 		result.Failed != 0 {
 		t.Fatalf("unexpected aggregate rotation result: %#v calls=%d", result, store.calls)
+	}
+}
+
+func TestRotateRecordsRunUsesExplicitCompletion(t *testing.T) {
+	store := &rotationStore{
+		results: []entity.RotationResult{
+			{Scanned: 2, Rotated: 0},
+			{Scanned: 4, Rotated: 2},
+			{Scanned: 6, Rotated: 0, Unchanged: 6, Complete: true},
+		},
+	}
+	result, err := runRotation(context.Background(), store, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.calls != 3 || result.Rotated != 2 || !result.Complete {
+		t.Fatalf("rotation stopped before explicit completion: %#v calls=%d", result, store.calls)
 	}
 }
 

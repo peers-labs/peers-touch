@@ -112,7 +112,8 @@
         "OLB-D06",
         "OLB-D07",
         "OLB-D08",
-        "OLB-D09"
+        "OLB-D09",
+        "OLB-D10"
       ],
       "governedPaths": [
         "apps/oauth2-client",

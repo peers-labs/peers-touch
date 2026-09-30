@@ -16,8 +16,13 @@
   "journeyId": "OLB-J01",
   "runtimeClass": "browser",
   "writeSet": [
+    "apps/oauth2-client/cmd/rotate-records",
+    "apps/oauth2-client/internal/bootstrap",
+    "apps/oauth2-client/internal/domain/oauth/entity",
     "apps/oauth2-client/internal/infrastructure/persistence/github",
+    "apps/oauth2-client/internal/infrastructure/persistence/memory",
     "apps/dev/server/index.test.mjs",
+    "docs/architecture/architecture-module-governance/architecture-modules.json",
     "docs/architecture/oauth-login-broker",
     "tooling/acceptance/capabilities/oauth-login-broker.yaml",
     "tooling/acceptance/domains/index.yaml",
@@ -63,7 +68,7 @@
     },
     {
       "id": "olb-final-proof-functional",
-      "command": "make dev-functional-result WORK_ITEM=OLB-FINAL-04 RUNTIME_CELL=oauth2-client-local-browser REASON='verify complete OAuth proof contract'",
+      "command": "make dev-functional-result WORK_ITEM=OLB-FINAL-04-R1 RUNTIME_CELL=oauth2-client-local-browser REASON='verify complete OAuth proof contract'",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -73,11 +78,15 @@
     }
   ],
   "doneWhen": [
-    "Admin readback applies its limit before fetching encrypted audit blobs",
-    "Rotation avoids repeated full-history reads within one bounded pass",
+    "Admin readback selects the newest same-month events from chronologically sortable paths before fetching encrypted audit blobs",
+    "Legacy HMAC-only audit paths fail closed before blob reads",
+    "Distinct failure occurrences retain distinct event identities in durable and local stores",
+    "Rotation reuses one bounded candidate set across retries",
     "Rotation counts only records confirmed by successful commits",
+    "Rotation completion is explicit and cannot be inferred from the committed count",
     "OAuth source changes select architecture and domain-contract Gates",
     "Acceptance-tooling changes select all required self-validation Gates",
+    "OLB-G05B selects negative bootstrap witnesses for admin auth, GitHub App credentials, repository coordinates, encryption keys, and HMAC keys",
     "Provisioned actor identities match environment contracts",
     "Review-skill freshness covers the registered OAuth architecture source",
     "Peers Dev HTTP tests inject a deterministic status snapshot",
@@ -85,24 +94,24 @@
     "Full-range completion review and code review contain no P1/P2 finding"
   ],
   "failureBehavior": [
-    "Do not introduce a new audit index or rotation continuation protocol",
+    "Do not introduce a separate audit index or rotation continuation protocol",
     "Do not count attempted rotations as committed records",
     "Do not publish an unwitnessed capability or specification claim",
     "Do not omit required governance, provisioning, or workflow checks"
   ],
-  "updatedAt": "2026-09-30T00:00:00.000Z",
+  "updatedAt": "2026-10-01T00:00:00.000Z",
   "durableEvidence": []
 }
 ```
 
 ## Current Snapshot
 
-- State: pending.
-- Admin and rotation scans perform avoidable repeated reads, OAuth path rules
-  omit architecture and domain Gates, Acceptance changes omit self-validation
-  Gates, the service provisioner actor differs from its environment contract,
-  and the newly selected workflow Gate exposes a stale review-skill freshness
-  digest after OAuth architecture registration.
+- State: in progress.
+- Final review found that HMAC-only same-month audit paths are not
+  chronological, lost successful ref-update responses undercount rotations,
+  and OLB-G05B lacks complete bootstrap witnesses. The accepted remediation
+  adds a sortable audit key, retry-stable rotation candidates, and explicit
+  negative bootstrap tests.
 
 ## Closure
 

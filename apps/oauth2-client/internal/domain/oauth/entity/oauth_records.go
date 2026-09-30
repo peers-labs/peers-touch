@@ -145,8 +145,9 @@ type AdminSnapshot struct {
 }
 
 type RotationResult struct {
-	Scanned   int `json:"scanned"`
-	Rotated   int `json:"rotated"`
-	Unchanged int `json:"unchanged"`
-	Failed    int `json:"failed"`
+	Scanned   int  `json:"scanned"`
+	Rotated   int  `json:"rotated"`
+	Unchanged int  `json:"unchanged"`
+	Failed    int  `json:"failed"`
+	Complete  bool `json:"complete"`
 }

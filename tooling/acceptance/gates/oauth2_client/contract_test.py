@@ -118,6 +118,26 @@ class OAuth2ClientContractTests(unittest.TestCase):
                         "TestBuildContainerInLocalMemoryMode",
                     ),
                     (
+                        "./internal/bootstrap",
+                        "TestVercelRequiresValidAdminAuthentication",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestGitHubStorageRejectsIncompleteProductionBootstrap",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestBuildOAuthStoreRejectsInvalidGitHubPrivateKey",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestBuildContainerRejectsIncompleteProductionBootstrap",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestBuildContainerValidatesCompleteProductionBootstrap",
+                    ),
+                    (
                         "./internal/integration",
                         "TestOAuthVercelRoutesMatchHandlers",
                     ),
@@ -136,6 +156,46 @@ class OAuth2ClientContractTests(unittest.TestCase):
                     (
                         "./internal/application/oauth/usecase",
                         "TestRefreshCredentialPreservesOmittedRefreshToken",
+                    ),
+                },
+            },
+            "key-rotation": {
+                "OLB-G06": {
+                    (
+                        "./internal/infrastructure/persistence/github",
+                        "TestRotateEncryptionConfirmsLostRefUpdateResponse",
+                    ),
+                    (
+                        "./internal/infrastructure/persistence/github",
+                        "TestRotateEncryptionCountsCandidateCorruptionAfterConflict",
+                    ),
+                    (
+                        "./internal/infrastructure/persistence/github",
+                        "TestRotateEncryptionRetriesWithIncompleteResultAfterConcurrentInsert",
+                    ),
+                    (
+                        "./cmd/rotate-records",
+                        "TestRotateRecordsRunUsesExplicitCompletion",
+                    ),
+                },
+            },
+            "operator": {
+                "OLB-G04": {
+                    (
+                        "./internal/infrastructure/persistence/github",
+                        "TestAdminSnapshotReturnsNewestSameMonthEventsWithBoundedReads",
+                    ),
+                    (
+                        "./internal/infrastructure/persistence/github",
+                        "TestAdminSnapshotRejectsLegacyAuditPathBeforeBlobRead",
+                    ),
+                    (
+                        "./internal/infrastructure/persistence/github",
+                        "TestRecordAuthorizationFailureDistinguishesOccurrences",
+                    ),
+                    (
+                        "./internal/infrastructure/persistence/memory",
+                        "TestRecordAuthorizationFailureDistinguishesOccurrences",
                     ),
                 },
             },
