@@ -4,6 +4,7 @@ import { CapabilityReadinessSnapshotSchema } from '../gen/proto/domain/agent/cap
 import { agentService } from '../services/agent-service';
 import type {
   Agent,
+  AgentTypedErrorPayload,
   AgentTurnStreamController,
   AgentTurnStreamError,
   StreamEvent,
@@ -21,6 +22,7 @@ import {
 } from './chat';
 import { useAgentStore } from './agent';
 import { useAgentCapabilityStore } from './agentCapabilities';
+import { useAgentTopicStore } from './agentTopics';
 import { isTerminalEvent, reduceStreamEvent } from './streaming';
 
 function operation(): ChatOperation {
@@ -37,7 +39,7 @@ function operation(): ChatOperation {
   };
 }
 
-function forbiddenActorData(): Record<string, unknown> {
+function forbiddenActorData(): AgentTypedErrorPayload & Record<string, unknown> {
   return {
     error: 'agent.errors.forbiddenActor',
     error_type: 'OWNERSHIP_FORBIDDEN_ACTOR',
@@ -177,6 +179,96 @@ describe('Agent turn event identity projection', () => {
       streamSpy.mockRestore();
       useChatStore.getState().reset();
       useAgentCapabilityStore.getState().reset();
+      useAgentStore.setState(previousAgentState);
+    }
+  });
+
+  it('keeps transport control frames from admitting a rejected turn', () => {
+    const previousAgentState = useAgentStore.getState();
+    const onAccepted = vi.fn();
+    const onRejected = vi.fn();
+    const reconcileSpy = vi
+      .spyOn(
+        useAgentTopicStore.getState(),
+        'reconcileSelectedAgentTopics',
+      )
+      .mockResolvedValue(undefined);
+    let callbacks: {
+      onEvent: (event: StreamEvent) => void;
+      onError: (error: AgentTurnStreamError) => void;
+    } | undefined;
+    const streamSpy = vi.spyOn(agentService, 'streamTurn').mockImplementation(
+      (_input, onEvent, _onDone, onError) => {
+        callbacks = { onEvent, onError };
+        const controller = new AbortController() as AgentTurnStreamController;
+        Object.defineProperty(controller, 'streamGeneration', {
+          value: 1,
+          enumerable: true,
+        });
+        return controller;
+      },
+    );
+    const conversationId = 'conversation-owned-by-bob';
+    const typedError = forbiddenActorData();
+    const streamError = new Error(
+      'agent.errors.forbiddenActor',
+    ) as AgentTurnStreamError;
+    streamError.typedError = typedError;
+
+    useChatStore.getState().reset();
+    useChatStore.setState({ currentSessionKey: conversationId });
+    useAgentStore.setState({
+      selectedAgent: 'assistant',
+      agents: [{
+        id: 'agent-1',
+        name: 'assistant',
+        provider: 'provider-1',
+        model: 'model-1',
+      } as Agent],
+    });
+
+    try {
+      expect(useChatStore.getState().sendMessage(
+        'forbidden',
+        [],
+        { onAccepted, onRejected },
+      )).toBe(true);
+      callbacks?.onEvent({
+        event: 'connected',
+        data: { conversationId },
+      });
+      callbacks?.onEvent({
+        event: 'error',
+        data: {
+          ...forbiddenActorData(),
+          conversationId,
+          streamGeneration: 1,
+        },
+      });
+      callbacks?.onError(streamError);
+
+      const state = useChatStore.getState();
+      expect(onAccepted).not.toHaveBeenCalled();
+      expect(onRejected).toHaveBeenCalledOnce();
+      expect(onRejected).toHaveBeenCalledWith(typedError);
+      expect(reconcileSpy).not.toHaveBeenCalled();
+      expect(state.isStreaming).toBe(false);
+      expect(state.operations[conversationId]).toMatchObject({
+        runState: 'failed',
+        status: 'failed',
+        turnId: undefined,
+      });
+      expect(state.sessionBuffers[conversationId]).toContainEqual(
+        expect.objectContaining({
+          role: 'assistant',
+          loading: false,
+          typedError,
+        }),
+      );
+    } finally {
+      streamSpy.mockRestore();
+      reconcileSpy.mockRestore();
+      useChatStore.getState().reset();
       useAgentStore.setState(previousAgentState);
     }
   });
