@@ -14,20 +14,14 @@ export interface ParsedDeepLink {
 }
 
 const PRIMARY_SCHEME = 'pt://';
-const LEGACY_SCHEME = 'Peers-Touch://';
 
 export function isDeepLink(uri: string): boolean {
-  return uri.startsWith(PRIMARY_SCHEME) || uri.startsWith(LEGACY_SCHEME);
+  return uri.startsWith(PRIMARY_SCHEME);
 }
 
 export function parseDeepLink(uri: string): ParsedDeepLink | null {
-  const scheme = uri.startsWith(PRIMARY_SCHEME)
-    ? PRIMARY_SCHEME
-    : uri.startsWith(LEGACY_SCHEME)
-      ? LEGACY_SCHEME
-      : '';
-  if (!scheme) return null;
-  const path = uri.slice(scheme.length);
+  if (!uri.startsWith(PRIMARY_SCHEME)) return null;
+  const path = uri.slice(PRIMARY_SCHEME.length);
   const parts = path.split('/').filter(Boolean);
   if (parts.length === 0) return null;
 

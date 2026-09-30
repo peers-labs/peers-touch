@@ -32,7 +32,7 @@
 
 | 文档 | 定位 |
 |---|---|
-| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub/Peers-Touch benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前处于正式 execution-plan review |
+| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前处于正式 execution-plan review |
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [provider-station-ownership/](./provider-station-ownership/) | **Provider Station Ownership** — Station 是所有 AI Provider 的唯一执行者和配置所有者；Desktop/Mobile 是编辑入口 + SSE 消费端；per-actor 凭证隔离；版本号防脑裂 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |
