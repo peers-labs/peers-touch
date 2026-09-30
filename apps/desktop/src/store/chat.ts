@@ -1152,13 +1152,18 @@ function reconcileTopicsAfterTurn(sessionKey: string): void {
 
 function streamEventConfirmsAdmission(event: StreamEvent): boolean {
   if (event.event === 'error') return false;
-  const turnId = String(
+  const admission = (
+    event.data?.admission
+    && typeof event.data.admission === 'object'
+    && !Array.isArray(event.data.admission)
+  )
+    ? event.data.admission as Record<string, unknown>
+    : {};
+  return Boolean(String(
     event.data?.turnId ?? event.data?.turn_id ?? '',
-  ).trim();
-  return Boolean(turnId)
-    || event.event === 'conversation_created'
-    || event.event === 'queued'
-    || event.event === 'admission_replayed';
+  ).trim() || String(
+    admission.turnId ?? admission.turn_id ?? '',
+  ).trim());
 }
 
 function clearOperation(operations: Record<string, ChatOperation>, sessionKey: string): Record<string, ChatOperation> {
@@ -2162,8 +2167,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       },
       (err: AgentTurnStreamError) => {
         const failedOperation = get().operations[resolvedSessionKey];
-        const rejectedBeforeAdmission =
-          !acceptedByStation && !failedOperation?.turnId;
+        const rejectedBeforeAdmission = !failedOperation?.turnId;
         const attachmentRejected =
           err.typedError?.error_type === 'CONTEXT_ATTACHMENT_REJECTED';
         if (attachmentDiagnostic && attachmentRejected) {
