@@ -7,9 +7,9 @@
 
 ---
 
-## 1. Current-To-Target Mapping
+## 1. Delivered Cutover Mapping
 
-| Concern | Current | Target |
+| Concern | Pre-cutover | Delivered |
 |---|---|---|
 | Authorization session | process-local map | encrypted durable transaction |
 | State lookup | raw map key | HMAC-derived repository path |
@@ -36,9 +36,9 @@ GET /api/healthz
 ```
 
 The callback continues to redirect with the existing identity fields and bridge
-signature. Durable completion becomes a prerequisite for that redirect.
+signature. Durable completion is a prerequisite for that redirect.
 
-New routes:
+Added routes:
 
 ```text
 GET /api/admin

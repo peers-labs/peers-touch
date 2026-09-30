@@ -83,8 +83,8 @@ confidentiality or integrity.
 
 ### Consequences
 
-Backups and history hold ciphertext. Old keys must remain available until lazy
-rotation is complete.
+Backups and history hold ciphertext. Old keys must remain available until the
+explicit maintenance rotation has rewritten every live record.
 
 ## OLB-D03: Raw Code And Raw State Are Never Persisted
 
@@ -281,8 +281,9 @@ Provider fixture tests must assert challenge and verifier behavior.
 
 ### Context
 
-The current start endpoint accepts any HTTP(S) `return_to`, callback errors use
-callback-supplied `site_id`, and bridge signing is optional.
+Before this decision was implemented, the start endpoint accepted any HTTP(S)
+`return_to`, callback errors used callback-supplied `site_id`, and bridge
+signing was optional.
 
 ### Decision
 
