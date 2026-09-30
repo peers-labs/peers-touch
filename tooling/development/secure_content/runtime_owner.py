@@ -2689,6 +2689,7 @@ def _wait_for_moments_snapshot(
                 for marker in (
                     "moments.acceptance.nativeRuntimeIdentityMissing",
                     "moments.acceptance.browserRuntimeIdentityMissing",
+                    "Script execution timed out",
                 )
             ):
                 return None
