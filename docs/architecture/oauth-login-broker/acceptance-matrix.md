@@ -73,6 +73,9 @@
   generation, or audit event.
 - Credential replacement is fenced by the generation observed before the
   provider call; a stale result is discarded and retried from current state.
+- After a provider failure, the loser rechecks the same durable operation ID;
+  an already committed winner is returned, while no-winner failures remain
+  failures.
 
 ### OLB-G04: Operator Readback
 

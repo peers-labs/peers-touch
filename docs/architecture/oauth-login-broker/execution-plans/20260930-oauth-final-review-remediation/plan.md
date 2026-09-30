@@ -139,7 +139,7 @@
       "dependsOn": [
         "OLB-FINAL-01"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -149,7 +149,7 @@
       "dependsOn": [
         "OLB-FINAL-01"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {
