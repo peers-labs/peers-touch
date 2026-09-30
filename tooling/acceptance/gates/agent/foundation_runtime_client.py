@@ -32,6 +32,8 @@ PROCESS_TERMINATION_TIMEOUT_SECONDS = 15.0
 PROCESS_KILL_TIMEOUT_SECONDS = 5.0
 WEBDRIVER_SESSION_TIMEOUT_SECONDS = 30.0
 WEBDRIVER_SESSION_RETRY_INTERVAL_SECONDS = 0.25
+HARNESS_READY_TIMEOUT_SECONDS = 60.0
+NATIVE_HARNESS_RELOAD_AFTER_SECONDS = 30.0
 
 
 class FoundationClientError(RuntimeError):
@@ -272,16 +274,7 @@ class FoundationRuntimeClient:
                 self.process.pid if os.name == "posix" else None
             )
             self._connect_driver()
-            agent_harness_ready = harness_ready(
-                self.driver,
-                namespace=self.harness_namespace,
-                timeout=60,
-            )
-            if not agent_harness_ready:
-                raise FoundationClientError(
-                    f"{self.spec.runtime} {self.harness_namespace} acceptance "
-                    "Harness is unavailable"
-                )
+            self._wait_for_acceptance_harness()
         except BaseException as error:
             rollback_failures: list[str] = []
             try:
@@ -303,6 +296,54 @@ class FoundationRuntimeClient:
                     f"faultPortsReleased={fault_ports}"
                 ) from error
             raise
+
+    def _wait_for_acceptance_harness(self) -> None:
+        if self.driver is None:
+            raise FoundationClientError(
+                f"{self.spec.runtime} client is not connected"
+            )
+        initial_timeout = (
+            NATIVE_HARNESS_RELOAD_AFTER_SECONDS
+            if self.spec.runtime == "native-tauri"
+            else HARNESS_READY_TIMEOUT_SECONDS
+        )
+        if harness_ready(
+            self.driver,
+            namespace=self.harness_namespace,
+            timeout=initial_timeout,
+        ):
+            return
+        if self.spec.runtime == "native-tauri":
+            if (
+                not self._process_alive()
+                or not port_open(self.spec.renderer_port)
+            ):
+                raise FoundationClientError(
+                    "native-tauri renderer became unavailable before "
+                    f"{self.harness_namespace} acceptance Harness recovery"
+                )
+            try:
+                self.driver.get(
+                    f"http://127.0.0.1:{self.spec.renderer_port}"
+                )
+            except Exception as error:
+                raise FoundationClientError(
+                    "native-tauri acceptance Harness navigation recovery failed: "
+                    f"{error}"
+                ) from error
+            if harness_ready(
+                self.driver,
+                namespace=self.harness_namespace,
+                timeout=(
+                    HARNESS_READY_TIMEOUT_SECONDS
+                    - NATIVE_HARNESS_RELOAD_AFTER_SECONDS
+                ),
+            ):
+                return
+        raise FoundationClientError(
+            f"{self.spec.runtime} {self.harness_namespace} acceptance "
+            "Harness is unavailable"
+        )
 
     def _connect_driver(self) -> None:
         if self.spec.runtime == "native-tauri":

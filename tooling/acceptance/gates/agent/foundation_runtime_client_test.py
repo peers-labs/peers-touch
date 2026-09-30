@@ -475,6 +475,149 @@ class FoundationClientSpecTest(unittest.TestCase):
             client.process = None
             client.stop()
 
+    def test_native_harness_readiness_reloads_manifest_renderer_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            client.driver = Mock()
+            driver = client.driver
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "harness_ready",
+                    side_effect=[False, True],
+                ) as harness_ready,
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=True,
+                ),
+            ):
+                client._wait_for_acceptance_harness()
+
+            self.assertEqual(
+                [30.0, 30.0],
+                [
+                    call.kwargs["timeout"]
+                    for call in harness_ready.call_args_list
+                ],
+            )
+            driver.get.assert_called_once_with("http://127.0.0.1:23210")
+            client.driver = None
+            client.process = None
+            client.stop()
+
+    def test_native_harness_readiness_fails_after_one_navigation_recovery(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            client.driver = Mock()
+            driver = client.driver
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "harness_ready",
+                    return_value=False,
+                ) as harness_ready,
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=True,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    FoundationClientError,
+                    "native-tauri agent acceptance Harness is unavailable",
+                ):
+                    client._wait_for_acceptance_harness()
+
+            self.assertEqual(2, harness_ready.call_count)
+            driver.get.assert_called_once_with("http://127.0.0.1:23210")
+            client.driver = None
+            client.process = None
+            client.stop()
+
+    def test_native_harness_readiness_does_not_navigate_a_closed_renderer(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            client.driver = Mock()
+            driver = client.driver
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "harness_ready",
+                    return_value=False,
+                ) as harness_ready,
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=False,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    FoundationClientError,
+                    "renderer became unavailable",
+                ):
+                    client._wait_for_acceptance_harness()
+
+            harness_ready.assert_called_once_with(
+                driver,
+                namespace="agent",
+                timeout=30.0,
+            )
+            driver.get.assert_not_called()
+            client.driver = None
+            client.process = None
+            client.stop()
+
+    def test_browser_harness_readiness_does_not_navigate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.driver = Mock()
+            driver = client.driver
+            with patch.object(
+                foundation_runtime_client,
+                "harness_ready",
+                return_value=False,
+            ) as harness_ready:
+                with self.assertRaisesRegex(
+                    FoundationClientError,
+                    "browser agent acceptance Harness is unavailable",
+                ):
+                    client._wait_for_acceptance_harness()
+
+            self.assertEqual(
+                60.0,
+                harness_ready.call_args.kwargs["timeout"],
+            )
+            driver.get.assert_not_called()
+            client.driver = None
+            client.stop()
+
     def test_unmanaged_launcher_clean_exit_still_fails_fast(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
