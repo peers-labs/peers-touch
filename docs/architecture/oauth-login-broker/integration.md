@@ -94,6 +94,8 @@ Local development defaults to memory when `OAUTH_STORAGE_DRIVER` is unset.
 - For lists, use the recursive tree when it fits the bounded response budget;
   on overflow or GitHub `truncated=true`, walk non-recursive trees with explicit
   depth and entry limits before fetching matching encrypted blobs.
+- Admin audit readback applies its requested event limit to descending audit
+  paths before fetching encrypted audit blobs.
 
 ### Write
 
@@ -120,7 +122,8 @@ Provider errors map to stable codes without returning response bodies.
 2. Change `OAUTH_CREDENTIAL_ACTIVE_KEY_ID`.
 3. Redeploy.
 4. Run `go run ./cmd/rotate-records` with the same environment.
-5. The command scans every record class and rewrites old-key envelopes.
+5. Each pass stops after staging its configured number of old-key envelopes;
+   the command reports them as rotated only after the branch update succeeds.
 6. Rerun until it reports zero rotated and zero failed records.
 7. Remove the old environment key in a later deployment.
 

@@ -22,7 +22,9 @@
         "oauth-login-broker-durable-login",
         "oauth-login-broker-refresh-idempotency",
         "oauth-login-broker-key-rotation",
-        "oauth-login-broker-operator"
+        "oauth-login-broker-operator",
+        "oauth-login-broker-architecture",
+        "oauth-login-broker-contract"
       ]
     },
     {

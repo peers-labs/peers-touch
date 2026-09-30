@@ -154,6 +154,56 @@ class EnvironmentContractTests(unittest.TestCase):
         self.assertTrue(contract.credentials[0].generated_if_missing)
         self.assertIn("processes", contract.cleanup.resources)
 
+    def test_oauth2_local_provisioners_publish_declared_client_identity(self):
+        from tooling.acceptance.provisioners import oauth2_client_local
+
+        cases = (
+            (
+                "oauth2-client-local-service.yaml",
+                oauth2_client_local.OAuth2ClientLocalServiceProvisioner,
+            ),
+            (
+                "oauth2-client-local-browser.yaml",
+                oauth2_client_local.OAuth2ClientLocalBrowserProvisioner,
+            ),
+        )
+        for contract_file, provisioner_type in cases:
+            with self.subTest(contract_file=contract_file):
+                contract = EnvironmentContract.from_yaml(
+                    ENVIRONMENTS_DIR / contract_file
+                )
+                provisioner = provisioner_type(contract)
+                with (
+                    mock.patch.object(
+                        provisioner,
+                        "_git_workspace_digest",
+                        return_value="clean",
+                    ),
+                    mock.patch.object(
+                        oauth2_client_local.shutil,
+                        "which",
+                        return_value="/usr/bin/tool",
+                    ),
+                ):
+                    manifest = provisioner.provision("test-gate")
+
+                self.assertTrue(manifest.is_ready())
+                self.assertEqual(len(contract.clients), 1)
+                self.assertEqual(len(manifest.clients), 1)
+                declared = contract.clients[0]
+                provisioned = manifest.clients[0]
+                self.assertEqual(provisioned.id, declared.id)
+                self.assertEqual(provisioned.actor, declared.actor)
+                self.assertEqual(provisioned.runtime, declared.runtime)
+                self.assertEqual(
+                    provisioned.required_service_roles,
+                    declared.required_service_roles,
+                )
+                self.assertEqual(
+                    provisioned.service_bindings,
+                    declared.service_bindings,
+                )
+
     def test_load_local_desktop_gateway_contract(self):
         contract = EnvironmentContract.from_yaml(ENVIRONMENTS_DIR / "local-desktop-gateway.yaml")
         self.assertEqual(contract.id, "local-desktop-gateway")
