@@ -21,11 +21,20 @@
     "apps/station/frame/touch/oauth_handler.go",
     "apps/station/frame/touch/auth/oauth_bridge.go",
     "apps/station/frame/touch/auth/oauth_bridge_test.go",
+    "apps/desktop/src-tauri/src/application/auth/service.rs",
     "apps/desktop/src-tauri/src/application/oauth2/mod.rs",
+    "apps/desktop/src-tauri/src/application/profile/mod.rs",
+    "apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
     "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
     "apps/desktop/src-tauri/src/main.rs",
     "apps/desktop/src/acceptance/station_access/harness.ts",
+    "apps/desktop/src/components/chat/FindPeopleModal.tsx",
+    "apps/desktop/src/components/chat/findPeopleIdentity.ts",
+    "apps/desktop/src/components/chat/findPeopleIdentity.test.ts",
+    "apps/desktop/src/components/settings/AccountTab.tsx",
+    "apps/desktop/src/components/settings/accountIdentityPresentation.ts",
+    "apps/desktop/src/components/settings/accountIdentityPresentation.test.ts",
     "apps/desktop/src/pages/login",
     "apps/desktop/src/services/desktop_api.ts",
     "apps/desktop/src/store/oauth2.ts",
@@ -33,9 +42,13 @@
     "apps/desktop/index.html",
     "apps/desktop/vite.config.ts",
     "packages/locales/en/auth.json",
+    "packages/locales/en/chat.json",
     "packages/locales/en/oauth.json",
+    "packages/locales/en/provider.json",
     "packages/locales/zh-CN/auth.json",
+    "packages/locales/zh-CN/chat.json",
     "packages/locales/zh-CN/oauth.json",
+    "packages/locales/zh-CN/provider.json",
     "packages/prototypes/desktop/shell",
     "docs/client/common/ui-identity/modules/auth/desktop.md",
     "docs/architecture/desktop/prototype/README.md",
@@ -58,6 +71,7 @@
     "docs/architecture/station-access-lifecycle/design.md",
     "docs/architecture/station-access-lifecycle/decisions.md",
     "docs/client/desktop/identity-lifecycle.md",
+    "apps/desktop/src/store/accountIdentity.ts",
     "docs/client/common/ui-identity/README.md",
     "docs/client/common/ui-identity/foundations.md",
     "docs/client/common/ui-identity/tokens.md",
@@ -72,12 +86,17 @@
   "checks": [
     {
       "id": "station-oauth-route-regression",
-      "command": "go test ./apps/station/frame/touch ./apps/station/frame/touch/auth -run 'Test(GetActorHandlersRegistersOAuthBridge|OAuthBridgeRequestAcceptsProtobuf|GenerateOAuthPasswordPassesActorValidation)' -count=1",
+      "command": "go test ./apps/station/frame/touch ./apps/station/frame/touch/auth -run 'Test(GetActorHandlersRegistersOAuthBridge|OAuthBridgeRequestAcceptsProtobuf|GenerateOAuthPasswordPassesActorValidation|OAuthProfileBootstrap)' -count=1",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
       "id": "desktop-oauth-rust-regression",
       "command": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop loopback",
+      "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "desktop-oauth-identity-projection-regression",
+      "command": "pnpm --dir apps/desktop exec vitest run src/components/settings/accountIdentityPresentation.test.ts src/components/chat/findPeopleIdentity.test.ts && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --bin peers-touch-desktop application::",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
@@ -140,7 +159,10 @@
     "OAuth opening, waiting, cancellation, initialization, success, and failure/retry remain inside the original fixed-size provider action",
     "The auth card and provider action keep identical geometry across OAuth states with no detached result panel",
     "The canonical Desktop prototype exposes the same inline OAuth state model",
-    "The native proof is source-bound and cleanup completes"
+    "The native proof is source-bound and cleanup completes",
+    "OAuth avatar bootstrap produces one Station-owned avatar across shell and Account without overwriting an existing Station avatar",
+    "Account shows the concrete sign-in provider and canonical PTID",
+    "Find People distinguishes Federation and Station scopes by text and tooltip even when both names are local"
   ],
   "failureBehavior": [
     "Do not restore the authenticated-session guard on login bootstrap",
@@ -148,7 +170,9 @@
     "Do not treat the browser mock layout Gate as OAuth functional proof",
     "Do not weaken connector owner validation or add a fallback login path",
     "Do not resize the auth card or provider action when OAuth state changes",
-    "Do not reintroduce a detached OAuth progress or recovery panel"
+    "Do not reintroduce a detached OAuth progress or recovery panel",
+    "Do not make Desktop local account metadata a competing public-profile source",
+    "Do not overwrite an existing user-managed Station avatar during OAuth login"
   ],
   "updatedAt": "2026-09-29T15:31:00.000Z",
   "durableEvidence": []
@@ -168,5 +192,7 @@
 - Runtime defect amendment: register the existing Station OAuth bridge route,
   propagate bridge failures through the Desktop loopback state, and prove the
   callback restores an authenticated identity.
-- Next boundary: implement the Station/Desktop fixes, strengthen native
-  callback proof, refresh exact-source Acceptance, then close.
+- Product correction implemented: Station Profile owns the OAuth avatar,
+  Desktop preserves provider and PTID, and search scopes expose their type.
+- Focused Station, Rust, TypeScript, UI projection, and Gate checks pass.
+- Next boundary: checkpoint, exact-source deploy, native Acceptance, then close.

@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlparse
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     DesktopOAuthNativeGate,
+    OAUTH_AVATAR_URL,
 )
 
 
@@ -93,6 +94,7 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(query["provider"], ["github"])
         self.assertEqual(query["provider_user_id"], ["fixture-user"])
         self.assertEqual(query["email"], ["fixture@test.invalid"])
+        self.assertEqual(query["avatar_url"], [OAUTH_AVATAR_URL])
         self.assertEqual(query["ts"], ["2026-09-29T15:30:00Z"])
         self.assertNotIn("sig", query)
 

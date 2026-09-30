@@ -28,6 +28,7 @@ from tooling.acceptance.drivers.tauri import TauriSession
 GATE_ID = "station-access-desktop-oauth-native-e2e"
 CLIENT_ID = "oauth-login"
 PROVIDERS = ("github", "google")
+OAUTH_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4"
 REQUIRED_ASSERTIONS = frozenset(
     {
         "native_login_surface_is_unauthenticated",
@@ -37,6 +38,8 @@ REQUIRED_ASSERTIONS = frozenset(
         "google_loopback_cancels_before_authentication",
         "oauth_callback_creates_station_session",
         "oauth_callback_restores_authenticated_identity",
+        "oauth_identity_projection_is_consistent",
+        "account_identity_ui_shows_provider_and_ptid",
         "native_runtime_is_source_bound",
         "native_runtime_cleanup",
     }
@@ -258,6 +261,67 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 and actor_ptid.startswith("ptid:")
                 and not login_surface_visible,
                 json.dumps(authenticated_identity, sort_keys=True),
+            )
+            identity_projection = self._mapping(
+                call_async_harness(
+                    session,
+                    "oauthIdentityProjection",
+                    {},
+                    namespace="stationAccess",
+                    script_timeout=30,
+                ),
+                "Desktop OAuth identity projection",
+            )
+            providers["github"]["identityProjection"] = identity_projection
+            projected_avatar = str(identity_projection.get("profileAvatarUrl") or "")
+            self.assert_condition(
+                "oauth_identity_projection_is_consistent",
+                identity_projection.get("actorPtid") == actor_ptid
+                and identity_projection.get("profilePtid") == actor_ptid
+                and identity_projection.get("sessionProvider") == "github"
+                and identity_projection.get("accountProvider") == "github"
+                and bool(projected_avatar)
+                and identity_projection.get("sessionAvatarUrl") == projected_avatar
+                and identity_projection.get("accountAvatarUrl") == projected_avatar,
+                json.dumps(identity_projection, sort_keys=True),
+            )
+
+            call_async_harness(
+                session,
+                "openAccountIdentity",
+                {},
+                namespace="stationAccess",
+                script_timeout=10,
+            )
+            account_avatar = self._wait_for_displayed(
+                session,
+                "[data-pt-account-avatar-url]",
+                timeout=20,
+            )
+            account_ptid = self._wait_for_displayed(
+                session,
+                '[data-pt-account-identity="ptid"]',
+                timeout=20,
+            )
+            account_provider = self._wait_for_displayed(
+                session,
+                '[data-pt-account-identity="login-provider"]',
+                timeout=20,
+            )
+            account_ui = {
+                "avatarUrl": account_avatar.get_attribute(
+                    "data-pt-account-avatar-url"
+                ),
+                "ptid": account_ptid.text,
+                "provider": account_provider.text,
+            }
+            providers["github"]["accountUi"] = account_ui
+            self.assert_condition(
+                "account_identity_ui_shows_provider_and_ptid",
+                account_ui["avatarUrl"] == projected_avatar
+                and actor_ptid in account_ui["ptid"]
+                and "GitHub" in account_ui["provider"],
+                json.dumps(account_ui, sort_keys=True),
             )
             self.save_screenshot(session, "desktop-oauth-authenticated")
             self.save_dom(session, "desktop-oauth-authenticated")
@@ -491,6 +555,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 "username": "oauthacceptance",
                 "display_name": "OAuth Acceptance",
                 "email": email,
+                "avatar_url": OAUTH_AVATAR_URL,
                 "ts": timestamp,
             }
         )

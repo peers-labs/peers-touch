@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
 import { Button, Input } from '@lobehub/ui';
-import { Alert, Spin, Tag, theme, Modal, Typography, message } from 'antd';
+import { Alert, Spin, Tag, theme, Modal, Tooltip, Typography, message } from 'antd';
 import { Search, ShieldCheck, Globe, Server } from 'lucide-react';
 import {
   api,
@@ -21,6 +21,7 @@ import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { FederatedHandle } from '../FederatedHandle';
 import {
   catalogEntryToSearchResult,
+  findPeopleScopePresentation,
   friendRequestFederationId,
   resolvedProfileToSearchResult,
   type ActorSearchResult,
@@ -542,29 +543,39 @@ export function FindPeopleModal({ open, onClose }: Props) {
 
           {federationOptions.map((fed) => {
             const isActive = searchScope === 'federation' && selectedFederationId === fed.federationId;
+            const presentation = findPeopleScopePresentation(
+              'federation',
+              fed.federationName,
+              fed.federationId,
+            );
             return (
-              <Tag.CheckableTag
-                data-chat-find-people-scope="federation"
-                data-chat-find-people-federation-id={fed.federationId}
+              <Tooltip
                 key={fed.federationId}
-                checked={isActive}
-                onChange={(checked) => {
-                  if (checked) void handleScopeChange('federation', fed.federationId);
-                  else void handleScopeChange('all');
-                }}
-                style={isActive ? {
-                  background: token.colorPrimaryBg,
-                  color: token.colorPrimary,
-                  borderColor: token.colorPrimary,
-                } : {
-                  background: 'transparent',
-                  color: token.colorTextSecondary,
-                  borderColor: token.colorBorder,
-                }}
+                title={t(presentation.tooltipKey, { name: presentation.name })}
               >
-                <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
-                {fed.federationName || fed.federationId.slice(0, 8)}
-              </Tag.CheckableTag>
+                <Tag.CheckableTag
+                  aria-label={t(presentation.tooltipKey, { name: presentation.name })}
+                  data-chat-find-people-scope="federation"
+                  data-chat-find-people-federation-id={fed.federationId}
+                  checked={isActive}
+                  onChange={(checked) => {
+                    if (checked) void handleScopeChange('federation', fed.federationId);
+                    else void handleScopeChange('all');
+                  }}
+                  style={isActive ? {
+                    background: token.colorPrimaryBg,
+                    color: token.colorPrimary,
+                    borderColor: token.colorPrimary,
+                  } : {
+                    background: 'transparent',
+                    color: token.colorTextSecondary,
+                    borderColor: token.colorBorder,
+                  }}
+                >
+                  <Globe size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
+                  {t(presentation.labelKey, { name: presentation.name })}
+                </Tag.CheckableTag>
+              </Tooltip>
             );
           })}
 
@@ -572,36 +583,46 @@ export function FindPeopleModal({ open, onClose }: Props) {
           {selectedFederationId && memberStations.map((station) => {
             const isActive = searchScope === 'station'
               && selectedStationId === station.stationPeerId;
+            const presentation = findPeopleScopePresentation(
+              'station',
+              station.stationName,
+              station.stationPeerId,
+            );
             return (
-              <Tag.CheckableTag
-                data-chat-find-people-scope="station"
-                data-chat-find-people-station-id={station.stationPeerId}
+              <Tooltip
                 key={station.stationPeerId}
-                checked={isActive}
-                onChange={(checked) => {
-                  if (checked) {
-                    void handleScopeChange(
-                      'station',
-                      selectedFederationId,
-                      station.stationPeerId,
-                    );
-                  } else {
-                    void handleScopeChange('federation', selectedFederationId);
-                  }
-                }}
-                style={isActive ? {
-                  background: token.colorPrimaryBg,
-                  color: token.colorPrimary,
-                  borderColor: token.colorPrimary,
-                } : {
-                  background: 'transparent',
-                  color: token.colorTextSecondary,
-                  borderColor: token.colorBorder,
-                }}
+                title={t(presentation.tooltipKey, { name: presentation.name })}
               >
-                <Server size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
-                {station.stationName || station.stationPeerId.slice(0, 8)}
-              </Tag.CheckableTag>
+                <Tag.CheckableTag
+                  aria-label={t(presentation.tooltipKey, { name: presentation.name })}
+                  data-chat-find-people-scope="station"
+                  data-chat-find-people-station-id={station.stationPeerId}
+                  checked={isActive}
+                  onChange={(checked) => {
+                    if (checked) {
+                      void handleScopeChange(
+                        'station',
+                        selectedFederationId,
+                        station.stationPeerId,
+                      );
+                    } else {
+                      void handleScopeChange('federation', selectedFederationId);
+                    }
+                  }}
+                  style={isActive ? {
+                    background: token.colorPrimaryBg,
+                    color: token.colorPrimary,
+                    borderColor: token.colorPrimary,
+                  } : {
+                    background: 'transparent',
+                    color: token.colorTextSecondary,
+                    borderColor: token.colorBorder,
+                  }}
+                >
+                  <Server size={10} style={{ marginRight: 3, verticalAlign: -1 }} />
+                  {t(presentation.labelKey, { name: presentation.name })}
+                </Tag.CheckableTag>
+              </Tooltip>
             );
           })}
 

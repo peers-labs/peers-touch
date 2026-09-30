@@ -40,11 +40,20 @@
       {"pathPrefix":"apps/station/frame/touch/oauth_handler.go","mode":"exclusive-write"},
       {"pathPrefix":"apps/station/frame/touch/auth/oauth_bridge.go","mode":"exclusive-write"},
       {"pathPrefix":"apps/station/frame/touch/auth/oauth_bridge_test.go","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src-tauri/src/application/auth/service.rs","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src-tauri/src/application/oauth2/mod.rs","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src-tauri/src/application/profile/mod.rs","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src-tauri/src/interface/http_gateway/mod.rs","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src-tauri/src/main.rs","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src/acceptance/station_access/harness.ts","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/components/chat/FindPeopleModal.tsx","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/components/chat/findPeopleIdentity.ts","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/components/chat/findPeopleIdentity.test.ts","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/components/settings/AccountTab.tsx","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/components/settings/accountIdentityPresentation.ts","mode":"exclusive-write"},
+      {"pathPrefix":"apps/desktop/src/components/settings/accountIdentityPresentation.test.ts","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src/pages/login","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src/services/desktop_api.ts","mode":"exclusive-write"},
       {"pathPrefix":"apps/desktop/src/store/oauth2.ts","mode":"exclusive-write"},
@@ -59,9 +68,13 @@
       {"pathPrefix":"docs/architecture/desktop/prototype/README.md","mode":"exclusive-write"},
       {"pathPrefix":"packages/prototypes/desktop/shell","mode":"exclusive-write"},
       {"pathPrefix":"packages/locales/en/auth.json","mode":"exclusive-write"},
+      {"pathPrefix":"packages/locales/en/chat.json","mode":"exclusive-write"},
       {"pathPrefix":"packages/locales/en/oauth.json","mode":"exclusive-write"},
+      {"pathPrefix":"packages/locales/en/provider.json","mode":"exclusive-write"},
       {"pathPrefix":"packages/locales/zh-CN/auth.json","mode":"exclusive-write"},
+      {"pathPrefix":"packages/locales/zh-CN/chat.json","mode":"exclusive-write"},
       {"pathPrefix":"packages/locales/zh-CN/oauth.json","mode":"exclusive-write"},
+      {"pathPrefix":"packages/locales/zh-CN/provider.json","mode":"exclusive-write"},
       {"pathPrefix":"docs/architecture/station-access-lifecycle/README.md","mode":"exclusive-write"},
       {"pathPrefix":"docs/architecture/station-access-lifecycle/execution-plans/20260929-desktop-oauth-preauth","mode":"exclusive-write"},
       {"pathPrefix":"tooling/acceptance/capabilities/station-access.yaml","mode":"exclusive-write"},
@@ -77,6 +90,7 @@
       {"pathPrefix":"docs/architecture/station-access-lifecycle/design.md","mode":"shared-read"},
       {"pathPrefix":"docs/architecture/station-access-lifecycle/decisions.md","mode":"shared-read"},
       {"pathPrefix":"docs/client/desktop/identity-lifecycle.md","mode":"shared-read"},
+      {"pathPrefix":"apps/desktop/src/store/accountIdentity.ts","mode":"shared-read"},
       {"pathPrefix":"docs/client/common/ui-identity/README.md","mode":"shared-read"},
       {"pathPrefix":"docs/client/common/ui-identity/foundations.md","mode":"shared-read"},
       {"pathPrefix":"docs/client/common/ui-identity/tokens.md","mode":"shared-read"},
@@ -85,7 +99,7 @@
     ],
     "nonGoals": [
       "Complete an external GitHub or Google authorization grant with a real user account",
-      "Change provider credentials, callback endpoints, or the verified Station OAuth bridge payload and session semantics",
+      "Change provider credentials, callback endpoints, or the Station OAuth bridge wire schema",
       "Change Mobile OAuth behavior",
       "Change the Desktop auth card or OAuth action dimensions",
       "Use browser mocks as native OAuth functional proof"
@@ -197,13 +211,12 @@
 ```
 
 ## Goal
-
 Restore GitHub and Google login from the unauthenticated Desktop Access Gate
-without weakening authenticated connector ownership, and keep the complete
-OAuth progress and recovery flow inside the fixed-size provider action.
+without weakening authenticated connector ownership, keep the complete OAuth
+progress and recovery flow inside the fixed-size provider action, and preserve
+one canonical post-login identity across shell, Account, and search surfaces.
 
 ## Traceability
-
 - The Desktop identity lifecycle defines OAuth bridge login as an authenticated
   edge that begins from the account gate.
 - `save_oauth_callback` already distinguishes login bootstrap (`None`) from an
@@ -226,19 +239,28 @@ OAuth progress and recovery flow inside the fixed-size provider action.
 - Native proof must complete the production OAuth store and identity-runtime
   transition, not merely persist a backend session while the visible Desktop
   remains on the Access Gate.
+- OAuth provider identity already carries `provider` and `avatar_url`; Station
+  Actor Profile is the canonical post-login profile and must bootstrap missing
+  avatar data without overwriting a user-managed profile.
+- Desktop auth payloads and Account rendering must preserve the concrete local
+  account provider (`github`, `google`, or local password) instead of reducing
+  every OAuth login to the generic string `oauth`.
+- Find People Federation and Station scopes may share the same operator name;
+  their labels and hover descriptions must expose the scope type.
 
 ## Execution DAG
-
 ```text
 SAL-OAUTH-01
 ```
 
 ## Atomic Cutover
-
 - Tauri and HTTP Gateway resolve an actor only when one already exists.
 - The application loopback owner is optional and validated when present.
 - The callback uses no owner for login bootstrap and the current actor for an
   authenticated connector flow.
+- OAuth login backfills only missing canonical Station profile data from the
+  verified provider identity; subsequent user-managed profile values remain
+  authoritative.
 - The existing Station OAuth bridge is registered as the public
   `POST /actor/oauth-bridge` endpoint and preserves its signature, actor,
   access-gate, token, and session behavior.
@@ -248,6 +270,9 @@ SAL-OAUTH-01
   rendered inside the original fixed-size provider action.
 - The auth card and provider action keep identical geometry across OAuth states;
   no detached OAuth result panel participates in layout.
+- Session and Account projections expose the concrete sign-in provider.
+- Find People scope chips remain distinct when Federation and Station have the
+  same configured name, with localized hover explanations.
 - No compatibility command, fallback login, or duplicate OAuth path is added.
 
 ## Completion
@@ -258,6 +283,9 @@ SAL-OAUTH-01
   Tauri window before password authentication.
 - Deterministic native callback proof reaches Station session restoration and
   an authenticated Desktop identity instead of stopping at browser launch.
+- Native OAuth proof verifies that the Station profile, shell avatar, Account
+  avatar, canonical PTID, and concrete provider agree after login.
+- Desktop UI checks verify typed Federation/Station scope labels and tooltips.
 - Wide and narrow layout evidence proves stable card and provider-action
   geometry across idle, waiting, cancelled, initialization, success, and
   failure/retry states.

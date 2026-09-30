@@ -231,6 +231,14 @@ pub fn find_profile_by_actor_ptid(actor_ptid: &str) -> Option<AccountIdentity> {
         .find(|account| account.actor_ptid == actor_ptid)
 }
 
+pub fn find_account_by_id(account_id: &str) -> Option<AccountIdentity> {
+    let state = read_state().ok()?;
+    state
+        .accounts
+        .into_iter()
+        .find(|account| account.id == account_id)
+}
+
 /// Resolve the canonical `account_id` (e.g. `password:123`, `github:456`) for a
 /// Station `actor_ptid`. Used by token-bound writers (profile sync, avatar sync)
 /// to pick the correct LocalAccount record without trusting the volatile
