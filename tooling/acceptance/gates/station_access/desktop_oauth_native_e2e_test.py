@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import threading
+import time
 import unittest
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
-from tooling.acceptance.core import GateError
+from tooling.acceptance.core import BlockedError, GateError
 from tooling.acceptance.drivers.native import MouseAction
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
@@ -15,6 +20,12 @@ from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     OAUTH_AVATAR_URL,
     find_people_scopes_are_distinct,
     is_native_tauri_url,
+)
+from tooling.acceptance.provisioners.station_access_desktop_oauth_native import (
+    OAuthBridgeSignerCapabilityHandler,
+    StationAccessDesktopOAuthNativeProvisioner,
+    _station_restart_script,
+    oauth_bridge_signature_message,
 )
 
 
@@ -50,6 +61,25 @@ class _FakeRuntimeBinding:
             "sha256": "b" * 64,
             "sourceCommit": "a" * 40,
         }
+
+
+class _FakeCapabilityClient:
+    def __init__(self, response: dict[str, object]) -> None:
+        self.response = response
+
+    def invoke(
+        self,
+        capability_id: str,
+        operation: str,
+        payload: dict[str, object],
+        *,
+        timeout_seconds: float,
+    ) -> dict[str, object]:
+        self.capability_id = capability_id
+        self.operation = operation
+        self.payload = payload
+        self.timeout_seconds = timeout_seconds
+        return self.response
 
 
 class _FakeNativeAdapter:
@@ -296,6 +326,7 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
             provider_user_id="fixture-user",
             email="fixture@test.invalid",
             timestamp="2026-09-29T15:30:00Z",
+            signature="a" * 64,
         )
 
         query = parse_qs(urlparse(callback_url).query)
@@ -305,7 +336,118 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(query["email"], ["fixture@test.invalid"])
         self.assertEqual(query["avatar_url"], [OAUTH_AVATAR_URL])
         self.assertEqual(query["ts"], ["2026-09-29T15:30:00Z"])
-        self.assertNotIn("sig", query)
+        self.assertEqual(query["sig"], ["a" * 64])
+
+    def test_omits_missing_loopback_signature(self) -> None:
+        callback_url = DesktopOAuthNativeGate._build_callback_url(
+            "http://127.0.0.1:49152/callback?session_id=lp-123&sig=stale",
+            provider_id="github",
+            provider_user_id="fixture-user",
+            email="fixture@test.invalid",
+            timestamp="2026-09-29T15:30:00Z",
+            signature=None,
+        )
+
+        self.assertNotIn("sig", parse_qs(urlparse(callback_url).query))
+
+    def test_signer_matches_oauth_client_canonical_message(self) -> None:
+        secret = "isolated-native-oauth-secret"
+        timestamp = "2026-09-29T15:30:00Z"
+        handler = OAuthBridgeSignerCapabilityHandler(secret)
+        response = handler.invoke(
+            "sign",
+            {
+                "provider": "github",
+                "providerUserId": "fixture-user",
+                "email": "fixture@test.invalid",
+                "timestamp": timestamp,
+            },
+            deadline_monotonic=time.monotonic() + 1,
+            cancellation=threading.Event(),
+        )
+        expected_message = "github:fixture-user:fixture@test.invalid:" + timestamp
+        expected = hmac.new(
+            secret.encode(),
+            expected_message.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+        self.assertEqual(
+            oauth_bridge_signature_message(
+                "github",
+                "fixture-user",
+                "fixture@test.invalid",
+                timestamp,
+            ),
+            expected_message,
+        )
+        self.assertEqual(response["signature"], expected)
+        self.assertTrue(handler.close().secrets_zeroized)
+
+    def test_gate_requests_signature_without_receiving_secret(self) -> None:
+        gate = object.__new__(DesktopOAuthNativeGate)
+        client = _FakeCapabilityClient(
+            {"algorithm": "HMAC-SHA256", "signature": "b" * 64}
+        )
+        gate.capability_client = client
+
+        signed = gate._sign_callback(
+            provider_id="google",
+            provider_user_id="fixture-user",
+            email="fixture@test.invalid",
+        )
+
+        self.assertEqual(signed["signature"], "b" * 64)
+        self.assertEqual(client.capability_id, "station-access.oauth-bridge-signer")
+        self.assertEqual(client.operation, "sign")
+        self.assertNotIn("secret", client.payload)
+
+    def test_signer_capability_rejects_mismatched_run_identity(self) -> None:
+        provisioner = object.__new__(
+            StationAccessDesktopOAuthNativeProvisioner
+        )
+        provisioner._bridge_secret = "isolated-native-oauth-secret"
+        provisioner._evidence_run = SimpleNamespace(run_id="evidence-run")
+        provisioner._manifest = SimpleNamespace(
+            run_id="provisioning-run",
+            is_ready=lambda: True,
+        )
+
+        with self.assertRaisesRegex(
+            BlockedError,
+            "authorities are not ready",
+        ):
+            provisioner.create_gate_launch_context(
+                gate_id="station-access-desktop-oauth-native-e2e",
+                evidence_run_id="wrong-evidence-run",
+                provisioning_run_id="provisioning-run",
+                required_capabilities=(
+                    "station-access.oauth-bridge-signer",
+                ),
+            )
+
+    def test_station_restart_injects_secret_only_through_stdin_override(self) -> None:
+        command = (
+            "docker compose --env-file $HOME/station.env -p pt-station "
+            "-f $HOME/repo/tooling/docker/compose.yml --profile station "
+            "--profile infra up -d station"
+        )
+        enabled = _station_restart_script(
+            "repo",
+            command,
+            enable_bridge_secret=True,
+        )
+        disabled = _station_restart_script(
+            "repo",
+            command,
+            enable_bridge_secret=False,
+        )
+
+        self.assertIn("IFS= read -r PEERS_OAUTH_BRIDGE_SECRET", enabled)
+        self.assertIn("PEERS_OAUTH_BRIDGE_SECRET: ${PEERS_OAUTH_BRIDGE_SECRET:?}", enabled)
+        self.assertNotIn("isolated-native-oauth-secret", enabled)
+        self.assertIn("unset PEERS_OAUTH_BRIDGE_SECRET", disabled)
+        self.assertNotIn("-f - up -d station", disabled)
 
     def test_rejects_unauthorized_pre_authentication_start(self) -> None:
         session = _FakeSession(

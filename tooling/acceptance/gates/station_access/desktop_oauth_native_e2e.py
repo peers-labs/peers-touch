@@ -16,6 +16,7 @@ from urllib.request import ProxyHandler, build_opener
 
 from tooling.acceptance.core import (
     AcceptanceGate,
+    EphemeralGateClient,
     GateError,
     REPO_ROOT,
     call_async_harness,
@@ -30,6 +31,8 @@ from tooling.acceptance.drivers.tauri import TauriSession
 
 GATE_ID = "station-access-desktop-oauth-native-e2e"
 CLIENT_ID = "oauth-login"
+SIGNER_CAPABILITY_ID = "station-access.oauth-bridge-signer"
+SIGN_OPERATION = "sign"
 PROVIDERS = ("github", "google")
 OAUTH_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4"
 CHAT_NAV_SELECTOR = '[data-pt-primary-nav="chat"] [role="button"]'
@@ -45,6 +48,9 @@ REQUIRED_ASSERTIONS = frozenset(
         "google_loopback_starts_before_authentication",
         "github_loopback_cancels_before_authentication",
         "google_loopback_cancels_before_authentication",
+        "oauth_callback_rejects_missing_signature",
+        "oauth_callback_rejects_incorrect_signature",
+        "oauth_failure_allows_retry",
         "oauth_callback_creates_station_session",
         "oauth_callback_restores_authenticated_identity",
         "oauth_identity_projection_is_consistent",
@@ -167,8 +173,9 @@ class DesktopOAuthNativeGate(AcceptanceGate):
     bom = ("SAL-OAUTH-01",)
     spec = ("station-access-desktop-oauth-preauth",)
 
-    def __init__(self) -> None:
+    def __init__(self, capability_client: EphemeralGateClient) -> None:
         super().__init__()
+        self.capability_client = capability_client
         manifest_path = os.environ.get(
             "PT_ACCEPTANCE_RUNTIME_MANIFEST",
             "",
@@ -269,14 +276,57 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                     json.dumps(cancellation, sort_keys=True),
                 )
 
+            signature_failures: dict[str, Any] = {}
+            for failure_name, signature in (
+                ("missing", None),
+                ("incorrect", "0" * 64),
+            ):
+                failed_start = self._start_oauth_via_product(session, "github")
+                failed_callback = self._send_callback(
+                    failed_start["callbackUrl"],
+                    provider_id="github",
+                    provider_user_id="acceptance-native-oauth",
+                    email="oauth.acceptance@test.invalid",
+                    signature=signature,
+                )
+                failed_result = self._poll_oauth_terminal(
+                    session,
+                    failed_start["sessionId"],
+                )
+                product_failure = self._complete_oauth_failure_via_product(
+                    session,
+                    "github",
+                )
+                signature_failures[failure_name] = {
+                    "callback": failed_callback,
+                    "loopback": failed_result,
+                    "productFlow": product_failure,
+                }
+                self.assert_condition(
+                    f"oauth_callback_rejects_{failure_name}_signature",
+                    failed_callback["statusCode"] == 200
+                    and failed_result["completed"] is True
+                    and failed_result["status"] == "failed"
+                    and bool(failed_result["error"])
+                    and product_failure["rejected"] is True,
+                    json.dumps(signature_failures[failure_name], sort_keys=True),
+                )
+
             login_start = self._start_oauth_via_product(session, "github")
+            signed_callback = self._sign_callback(
+                provider_id="github",
+                provider_user_id="acceptance-native-oauth",
+                email="oauth.acceptance@test.invalid",
+            )
             callback = self._send_callback(
                 login_start["callbackUrl"],
                 provider_id="github",
                 provider_user_id="acceptance-native-oauth",
                 email="oauth.acceptance@test.invalid",
+                timestamp=signed_callback["timestamp"],
+                signature=signed_callback["signature"],
             )
-            callback_result = self._poll_oauth(
+            callback_result = self._poll_oauth_terminal(
                 session,
                 login_start["sessionId"],
             )
@@ -293,8 +343,19 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 "loopback": callback_result,
                 "identity": authenticated_identity,
                 "loginSurfaceVisible": login_surface_visible,
+                "signatureFailures": signature_failures,
             }
             actor_ptid = str(authenticated_identity.get("actorPtid") or "")
+            self.assert_condition(
+                "oauth_failure_allows_retry",
+                all(
+                    failure["productFlow"]["rejected"] is True
+                    for failure in signature_failures.values()
+                )
+                and callback_result["completed"] is True
+                and callback_result["status"] == "completed",
+                json.dumps(providers["github"]["loginProof"], sort_keys=True),
+            )
             self.assert_condition(
                 "oauth_callback_creates_station_session",
                 callback["statusCode"] == 200
@@ -905,6 +966,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         provider_user_id: str,
         email: str,
         timestamp: str,
+        signature: str | None,
     ) -> str:
         parsed = urlparse(callback_url)
         query = {
@@ -923,6 +985,10 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 "ts": timestamp,
             }
         )
+        if signature is None:
+            query.pop("sig", None)
+        else:
+            query["sig"] = signature
         return urlunparse(parsed._replace(query=urlencode(query)))
 
     @classmethod
@@ -933,17 +999,19 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         provider_id: str,
         provider_user_id: str,
         email: str,
+        signature: str | None,
+        timestamp: str | None = None,
     ) -> dict[str, Any]:
-        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds").replace(
-            "+00:00",
-            "Z",
-        )
+        timestamp = timestamp or datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        ).replace("+00:00", "Z")
         target = cls._build_callback_url(
             callback_url,
             provider_id=provider_id,
             provider_user_id=provider_user_id,
             email=email,
             timestamp=timestamp,
+            signature=signature,
         )
         try:
             opener = build_opener(ProxyHandler({}))
@@ -983,7 +1051,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             raise GateError(f"{label} returned invalid status JSON") from error
 
     @classmethod
-    def _poll_oauth(
+    def _poll_oauth_terminal(
         cls,
         session: TauriSession,
         session_id: str,
@@ -998,21 +1066,61 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 label="OAuth callback poll",
             )
             if latest.get("completed") is True:
-                result = {
+                return {
                     "completed": True,
                     "status": str(latest.get("status") or ""),
                     "error": str(latest.get("error") or ""),
                 }
-                if result["status"] != "completed":
-                    raise GateError(
-                        "OAuth callback failed: "
-                        f"{json.dumps(result, sort_keys=True)}"
-                    )
-                return result
             time.sleep(0.1)
         raise GateError(
             f"OAuth callback did not complete: {json.dumps(latest, sort_keys=True)}"
         )
+
+    def _sign_callback(
+        self,
+        *,
+        provider_id: str,
+        provider_user_id: str,
+        email: str,
+    ) -> dict[str, str]:
+        timestamp = datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        ).replace("+00:00", "Z")
+        response = self.capability_client.invoke(
+            SIGNER_CAPABILITY_ID,
+            SIGN_OPERATION,
+            {
+                "provider": provider_id,
+                "providerUserId": provider_user_id,
+                "email": email,
+                "timestamp": timestamp,
+            },
+            timeout_seconds=10,
+        )
+        signature = str(response.get("signature") or "")
+        if (
+            response.get("algorithm") != "HMAC-SHA256"
+            or re.fullmatch(r"[0-9a-f]{64}", signature) is None
+        ):
+            raise GateError("OAuth bridge signer returned an invalid signature")
+        return {"timestamp": timestamp, "signature": signature}
+
+    @staticmethod
+    def _complete_oauth_failure_via_product(
+        session: TauriSession,
+        provider_id: str,
+    ) -> dict[str, Any]:
+        try:
+            call_async_harness(
+                session,
+                "completeOAuthLogin",
+                {"providerId": provider_id},
+                namespace="stationAccess",
+                script_timeout=45,
+            )
+        except GateError as error:
+            return {"rejected": True, "error": str(error)}
+        raise GateError("Desktop OAuth failure unexpectedly completed")
 
     @staticmethod
     def _complete_oauth_via_product(
@@ -1069,7 +1177,11 @@ class DesktopOAuthNativeGate(AcceptanceGate):
 
 
 def main() -> int:
-    return DesktopOAuthNativeGate().execute()
+    capability_client = EphemeralGateClient.from_environment()
+    if capability_client is None:
+        raise GateError("Desktop OAuth bridge signer capability is required")
+    with capability_client:
+        return DesktopOAuthNativeGate(capability_client).execute()
 
 
 if __name__ == "__main__":
