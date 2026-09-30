@@ -14,8 +14,6 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from urllib.request import ProxyHandler, build_opener
 
-from selenium.webdriver import ActionChains
-
 from tooling.acceptance.core import (
     AcceptanceGate,
     GateError,
@@ -23,7 +21,10 @@ from tooling.acceptance.core import (
     call_async_harness,
     load_runtime_manifest,
 )
-from tooling.acceptance.drivers.native import resolve_native_desktop_runtime
+from tooling.acceptance.drivers.native import (
+    MouseAction,
+    resolve_native_desktop_runtime,
+)
 from tooling.acceptance.drivers.tauri import TauriSession
 
 
@@ -462,46 +463,45 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             f"Desktop OAuth element did not become visible: {selector}{suffix}"
         )
 
-    @classmethod
     def _find_people_scope_evidence(
-        cls,
+        self,
         session: TauriSession,
     ) -> dict[str, Any]:
         session.find_element(
             CHAT_NAV_SELECTOR,
             timeout=20,
         ).click()
-        cls._wait_for_displayed(
+        self._wait_for_displayed(
             session,
             "[data-chat-new-menu]",
             timeout=20,
         ).click()
-        cls._wait_for_displayed(
+        self._wait_for_displayed(
             session,
             "[data-chat-find-people-menu]",
             timeout=10,
         ).click()
-        cls._wait_for_displayed(
+        self._wait_for_displayed(
             session,
             "[data-chat-find-people]",
             timeout=20,
         )
 
-        federation = cls._wait_for_displayed_with_text(
+        federation = self._wait_for_displayed_with_text(
             session,
             '[data-chat-find-people-scope="federation"]',
             "Federation: local",
             timeout=20,
         )
         federation_aria = str(federation.get_attribute("aria-label") or "").strip()
-        federation_tooltip = cls._hover_tooltip(
+        federation_tooltip = self._hover_tooltip(
             session,
             federation,
             federation_aria,
             timeout=10,
         )
         federation.click()
-        station = cls._wait_for_displayed_with_text(
+        station = self._wait_for_displayed_with_text(
             session,
             '[data-chat-find-people-scope="station"]',
             "Station: local",
@@ -509,7 +509,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         )
 
         station_aria = str(station.get_attribute("aria-label") or "").strip()
-        station_tooltip = cls._hover_tooltip(
+        station_tooltip = self._hover_tooltip(
             session,
             station,
             station_aria,
@@ -549,8 +549,8 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             f"{selector}={expected_text!r}"
         )
 
-    @staticmethod
     def _hover_tooltip(
+        self,
         session: TauriSession,
         element: Any,
         expected_text: str,
@@ -559,7 +559,56 @@ class DesktopOAuthNativeGate(AcceptanceGate):
     ) -> str:
         if not expected_text:
             raise GateError("Find People scope aria-label is empty")
-        ActionChains(session.driver).move_to_element(element).perform()
+        process_id = session.process_id
+        if process_id is None:
+            raise GateError("Find People tooltip proof has no native process")
+        element_center = self._mapping(
+            session.execute_script(
+                """
+                const rect = arguments[0].getBoundingClientRect();
+                return {
+                  x: rect.left + rect.width / 2,
+                  y: rect.top + rect.height / 2,
+                };
+                """,
+                element,
+            ),
+            "Find People scope element center",
+        )
+        content_origin = self.runtime_binding.native_adapter.content_origin(
+            process_id
+        )
+        if content_origin is None:
+            window = session.driver.get_window_rect()
+            viewport = self._mapping(
+                session.execute_script(
+                    "return { width: innerWidth, height: innerHeight };"
+                ),
+                "Desktop viewport",
+            )
+            scale = float(
+                session.execute_script("return window.devicePixelRatio || 1")
+            )
+            if scale <= 0:
+                raise GateError(f"Desktop window scale is invalid: {scale}")
+            window_left = float(window["x"]) / scale
+            window_top = float(window["y"]) / scale
+            window_width = float(window["width"]) / scale
+            window_height = float(window["height"]) / scale
+            content_origin = (
+                window_left
+                + max(0.0, (window_width - float(viewport["width"])) / 2),
+                window_top
+                + max(0.0, window_height - float(viewport["height"])),
+            )
+        self.runtime_binding.native_adapter.post_mouse_to_process(
+            process_id,
+            (MouseAction.MOVE,),
+            (
+                content_origin[0] + float(element_center["x"]),
+                content_origin[1] + float(element_center["y"]),
+            ),
+        )
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             for tooltip in session.find_elements(".ant-tooltip-inner"):
