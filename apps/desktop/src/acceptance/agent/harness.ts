@@ -16559,6 +16559,7 @@ async function cleanupFoundationForbiddenActorOwner(
 }
 
 async function runFoundationForbiddenActorAttempt(input: {
+  attemptLabel: 'source' | 'replay';
   conversationId: string;
   idempotencyKey: string;
   content: string;
@@ -16578,11 +16579,14 @@ async function runFoundationForbiddenActorAttempt(input: {
     current: FoundationPreAdmissionErrorEvent | null;
   } = { current: null };
   let observationSequence = 0;
+  let acceptanceCallbackCount = 0;
   let rejectionCallbackCount = 0;
   let rejectionCallbackErrorCode = '';
   let lastEventType = '';
   let lastEventErrorType = '';
   let lastSourceTransport = '';
+  const sessionBefore = useSessionStore.getState();
+  const eventCursor = eventDebugBuffer.list().length;
   const unsubscribe = eventBus.subscribe(
     EVENT.AGENT_TURN_STREAM_EVENT,
     (payload) => {
@@ -16619,6 +16623,9 @@ async function runFoundationForbiddenActorAttempt(input: {
       [],
       {
         clientIdempotencyKey: input.idempotencyKey,
+        onAccepted: () => {
+          acceptanceCallbackCount += 1;
+        },
         onRejected: (error) => {
           rejectionCallbackCount += 1;
           rejectionCallbackErrorCode = observedErrorCode(error);
@@ -16657,6 +16664,7 @@ async function runFoundationForbiddenActorAttempt(input: {
       throw new Error(
         'agent.acceptance.foundationForbiddenActorWaitFailed:'
         + stableJson({
+          acceptanceCallbackCount,
           actorMatchesOwner: actorHash === input.ownerActorHash,
           actorMatchesReceiver: actorHash === input.receiverActorHash,
           bufferedMessageErrorTypes: bufferedMessages
@@ -16667,6 +16675,7 @@ async function runFoundationForbiddenActorAttempt(input: {
             .filter(Boolean),
           currentSessionMatches:
             chatState.currentSessionKey === input.conversationId,
+          attemptLabel: input.attemptLabel,
           errorEventPresent: errorEventRef.current !== null,
           isStreaming: chatState.isStreaming,
           lastEventErrorType,
@@ -16676,6 +16685,7 @@ async function runFoundationForbiddenActorAttempt(input: {
             .map((message) => message.typedError?.error_type ?? '')
             .filter(Boolean),
           observationSequence,
+          operationTurnId: operation?.turnId ?? '',
           operationErrorDetail: operation?.error?.detail ?? '',
           operationErrorMessage: operation?.error?.message ?? '',
           operationRunState: operation?.runState ?? 'absent',
@@ -16684,6 +16694,37 @@ async function runFoundationForbiddenActorAttempt(input: {
           rejectedPresent: rejectedRef.current !== null,
           rejectionCallbackCount,
           rejectionCallbackErrorCode,
+          sessionAuthenticatedAfter:
+            useSessionStore.getState().authenticated,
+          sessionAuthenticatedBefore: sessionBefore.authenticated,
+          sessionActorPresentBefore: Boolean(sessionBefore.currentUser?.actorPtid),
+          streamEvents: eventDebugBuffer.list().slice(eventCursor)
+            .filter((record) => record.type === EVENT.AGENT_TURN_STREAM_EVENT)
+            .map((record) => {
+              const payload = evidenceRecord(
+                record.payload,
+                'foundationForbiddenActorDebugEvent',
+              );
+              const delivery = payload.sourceDelivery
+                && typeof payload.sourceDelivery === 'object'
+                && !Array.isArray(payload.sourceDelivery)
+                ? payload.sourceDelivery as Record<string, unknown>
+                : {};
+              return {
+                conversationMatches:
+                  payload.conversationId === input.conversationId,
+                errorType: String(
+                  evidenceRecord(
+                    payload.data,
+                    'foundationForbiddenActorDebugData',
+                  ).error_type ?? '',
+                ),
+                event: String(payload.event ?? ''),
+                sourceConversationMatches:
+                  delivery.conversationId === input.conversationId,
+                sourcePtidPresent: Boolean(delivery.ptid),
+              };
+            }),
         }),
       );
     }
@@ -16860,6 +16901,7 @@ async function rejectFoundationForbiddenActor(input: {
   );
   // #endregion
   const first = await runFoundationForbiddenActorAttempt({
+    attemptLabel: 'source',
     conversationId: resourceId,
     idempotencyKey,
     content,
@@ -16874,6 +16916,7 @@ async function rejectFoundationForbiddenActor(input: {
   );
   // #endregion
   const replayed = await runFoundationForbiddenActorAttempt({
+    attemptLabel: 'replay',
     conversationId: resourceId,
     idempotencyKey,
     content,
