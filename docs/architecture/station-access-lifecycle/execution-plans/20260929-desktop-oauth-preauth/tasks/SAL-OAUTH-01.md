@@ -63,7 +63,9 @@
     "tooling/acceptance/gates/station_access",
     "tooling/acceptance/provisioners/__init__.py",
     "tooling/acceptance/provisioners/station_access_desktop_oauth_native.py",
-    "tooling/acceptance/registry.yaml"
+    "tooling/acceptance/registry.yaml",
+    "tooling/acceptance/core/launch_context.py", "tooling/acceptance/core/_gate_bootstrap.py", "tooling/acceptance/tests/test_launch_context.py",
+    "tooling/acceptance/requirements.txt"
   ],
   "readSet": [
     "docs/architecture/station-access-lifecycle/experience-contract.md",

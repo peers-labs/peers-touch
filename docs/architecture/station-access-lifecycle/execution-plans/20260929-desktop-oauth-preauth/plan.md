@@ -84,7 +84,7 @@
       {"pathPrefix":"tooling/acceptance/gates/station_access","mode":"exclusive-write"},
       {"pathPrefix":"tooling/acceptance/provisioners/__init__.py","mode":"exclusive-write"},
       {"pathPrefix":"tooling/acceptance/provisioners/station_access_desktop_oauth_native.py","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/registry.yaml","mode":"exclusive-write"},
+      {"pathPrefix":"tooling/acceptance/registry.yaml","mode":"exclusive-write"}, {"pathPrefix":"tooling/acceptance/core/launch_context.py","mode":"exclusive-write"}, {"pathPrefix":"tooling/acceptance/core/_gate_bootstrap.py","mode":"exclusive-write"}, {"pathPrefix":"tooling/acceptance/tests/test_launch_context.py","mode":"exclusive-write"}, {"pathPrefix":"tooling/acceptance/requirements.txt","mode":"exclusive-write"},
       {"pathPrefix":"docs/architecture/station-access-lifecycle/experience-contract.md","mode":"shared-read"},
       {"pathPrefix":"docs/architecture/station-access-lifecycle/product-state-model.md","mode":"shared-read"},
       {"pathPrefix":"docs/architecture/station-access-lifecycle/design.md","mode":"shared-read"},
