@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from typing import Callable, Mapping
 from unittest.mock import MagicMock, call, patch
 
-from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.fixtures.secure_content_w7 import (
     W7FixtureBinding,
     W7FixtureCapabilityHandler,
@@ -150,6 +150,8 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_w8_suite_provisions_before_attach_only_scenario_loop(self) -> None:
         source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
         scenario_loop = source.index("for spec in W8_SCENARIOS:")
+        execution_loop = source.rindex("for spec in W8_SCENARIOS:")
+        execution_source = source[execution_loop:]
 
         self.assertEqual(1, source.count("_provision_runtime_accounts("))
         self.assertLess(
@@ -165,6 +167,10 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn(
             "SuiteRuntimeAction.CLEANUP_COMPLETE",
             source,
+        )
+        self.assertLess(
+            execution_source.index("station_endpoints.refresh()"),
+            execution_source.index("SuiteRuntimeAction.SCENARIO_START"),
         )
 
     def test_w8_suite_cli_is_the_only_w8_entry(self) -> None:
@@ -1647,11 +1653,26 @@ class RuntimeOwnerTest(unittest.TestCase):
         primary.is_alive.return_value = False
         secondary = MagicMock(local_port=4102)
         secondary.is_alive.return_value = False
+        renewed_primary = MagicMock(local_port=4101)
+        renewed_primary.is_alive.return_value = False
+        renewed_secondary = MagicMock(local_port=4102)
+        renewed_secondary.is_alive.return_value = False
+        primary_transport = MagicMock()
+        primary_transport.start_local_forward.return_value = renewed_primary
+        secondary_transport = MagicMock()
+        secondary_transport.start_local_forward.return_value = renewed_secondary
         with patch(
             "tooling.development.secure_content.runtime_owner."
             "open_reviewed_remote_tunnel",
             side_effect=(primary, secondary),
-        ) as open_tunnel:
+        ) as open_tunnel, patch(
+            "tooling.development.secure_content.runtime_owner."
+            "reviewed_remote_transport",
+            side_effect=(
+                (primary_transport, {}),
+                (secondary_transport, {}),
+            ),
+        ) as reviewed_transport:
             stack, endpoints = _open_station_tunnels(
                 (
                     (
@@ -1672,6 +1693,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                     ),
                 )
             )
+            endpoints.refresh()
             stack.close()
 
         self.assertEqual(
@@ -1703,6 +1725,102 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         primary.stop.assert_called_once_with()
         secondary.stop.assert_called_once_with()
+        self.assertEqual(
+            [call("station-four"), call("station-five-arm")],
+            reviewed_transport.call_args_list,
+        )
+        primary_transport.start_local_forward.assert_called_once_with(
+            remote_port=18080,
+            local_port=4101,
+        )
+        secondary_transport.start_local_forward.assert_called_once_with(
+            remote_port=18080,
+            local_port=4102,
+        )
+        renewed_primary.stop.assert_called_once_with()
+        renewed_secondary.stop.assert_called_once_with()
+
+    def test_station_tunnel_refresh_failure_is_typed_and_cleanup_safe(
+        self,
+    ) -> None:
+        primary = MagicMock(local_port=4101)
+        primary.is_alive.return_value = False
+        transport = MagicMock()
+        transport.start_local_forward.side_effect = ProvisioningError(
+            "forward unavailable"
+        )
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "open_reviewed_remote_tunnel",
+            return_value=primary,
+        ), patch(
+            "tooling.development.secure_content.runtime_owner."
+            "reviewed_remote_transport",
+            return_value=(transport, {}),
+        ):
+            stack, endpoints = _open_station_tunnels(
+                (
+                    (
+                        "station-four",
+                        {
+                            "PT_STATION_DEPLOY_ENV": "station-four",
+                            "PT_STATION_PORT": "18080",
+                            "PT_STATION_URL": "https://four.example",
+                        },
+                    ),
+                )
+            )
+            with self.assertRaises(RuntimeOwnerBlocked) as raised:
+                endpoints.refresh()
+            stack.close()
+
+        self.assertEqual(
+            "SERVICE_TRANSPORT_UNAVAILABLE",
+            raised.exception.code,
+        )
+        self.assertIn("forward unavailable", str(raised.exception))
+        self.assertEqual(
+            "station-tunnel:station-four",
+            raised.exception.resource,
+        )
+        self.assertEqual(2, primary.stop.call_count)
+
+    def test_w7_refreshes_station_tunnels_at_long_running_boundaries(
+        self,
+    ) -> None:
+        source = inspect.getsource(W7RuntimeOwner.run)
+        refreshes = [
+            match.start()
+            for match in re.finditer(
+                re.escape("station_endpoints.refresh()"),
+                source,
+            )
+        ]
+
+        self.assertEqual(3, len(refreshes))
+        self.assertLess(
+            source.index("parent_path = write_attached_runtime_manifest("),
+            source.index("blocked_result_path: Path | None = None"),
+        )
+        self.assertLess(
+            source.index("blocked_result_path: Path | None = None"),
+            refreshes[0],
+        )
+        self.assertLess(
+            source.index("_stage_continuation_evidence("),
+            refreshes[1],
+        )
+        self.assertLess(
+            refreshes[1],
+            source.index("desktop_result = execute_scenario("),
+        )
+        self.assertLess(source.index("desktop.clear()"), refreshes[2])
+        self.assertLess(
+            refreshes[2],
+            source.index(
+                "_activate_scenario_journey(self.repo_root, BROWSER_JOURNEY)"
+            ),
+        )
 
     def test_mobile_station_binding_uses_canonical_origin_not_tunnel(self) -> None:
         session = MagicMock()

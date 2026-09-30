@@ -29,7 +29,7 @@ from tooling.acceptance.core.attestation import (
     produce_station_attestation,
     source_proto_digest,
 )
-from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
 from tooling.acceptance.core.provisioning import EnvironmentContract
 from tooling.acceptance.core.launch_context import (
@@ -57,6 +57,7 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
     open_reviewed_remote_tunnel,
+    reviewed_remote_transport,
     resolve_remote_source_identity,
 )
 from tooling.acceptance.provisioners.mobile_simulator import (
@@ -165,6 +166,77 @@ _BIP39_CHECKSUM_BITS = 8
 class _StationEndpoint:
     transport_url: str
     canonical_origin: str
+
+
+class _RefreshableStationTunnel:
+    def __init__(
+        self,
+        *,
+        service_id: str,
+        deployment_environment: str,
+        remote_port: int,
+        tunnel: SshTunnel,
+    ) -> None:
+        self.service_id = service_id
+        self.deployment_environment = deployment_environment
+        self.remote_port = remote_port
+        self._tunnel = tunnel
+
+    @property
+    def local_port(self) -> int:
+        return self._tunnel.local_port
+
+    def is_alive(self) -> bool:
+        return self._tunnel.is_alive()
+
+    def stop(self) -> None:
+        self._tunnel.stop()
+
+    def refresh(self) -> None:
+        local_port = self.local_port
+        _stop_station_tunnel_or_raise(
+            self._tunnel,
+            service_id=self.service_id,
+        )
+        try:
+            transport, _environment = reviewed_remote_transport(
+                self.deployment_environment
+            )
+            replacement = transport.start_local_forward(
+                remote_port=self.remote_port,
+                local_port=local_port,
+            )
+        except (BlockedError, ProvisioningError) as error:
+            reason = (
+                error.reason
+                if isinstance(error, BlockedError)
+                else str(error)
+            )
+            resource = (
+                error.resource
+                if isinstance(error, BlockedError)
+                else f"station-tunnel:{self.service_id}"
+            )
+            raise RuntimeOwnerBlocked(
+                "SERVICE_TRANSPORT_UNAVAILABLE",
+                f"cannot refresh Station tunnel for {self.service_id}: {reason}",
+                resource=resource,
+            ) from error
+        self._tunnel = replacement
+
+
+class _StationEndpoints(dict[str, _StationEndpoint]):
+    def __init__(
+        self,
+        endpoints: Mapping[str, _StationEndpoint],
+        tunnels: Mapping[str, _RefreshableStationTunnel],
+    ) -> None:
+        super().__init__(endpoints)
+        self._tunnels = dict(tunnels)
+
+    def refresh(self) -> None:
+        for tunnel in self._tunnels.values():
+            tunnel.refresh()
 
 
 @dataclass(frozen=True)
@@ -929,7 +1001,7 @@ def _resolve_secondary_profile(
 
 
 def _stop_station_tunnel_or_raise(
-    tunnel: SshTunnel,
+    tunnel: SshTunnel | _RefreshableStationTunnel,
     *,
     service_id: str,
 ) -> None:
@@ -951,9 +1023,10 @@ def _stop_station_tunnel_or_raise(
 
 def _open_station_tunnels(
     bindings: Sequence[tuple[str, Mapping[str, str]]],
-) -> tuple[ExitStack, dict[str, _StationEndpoint]]:
+) -> tuple[ExitStack, _StationEndpoints]:
     stack = ExitStack()
     endpoints: dict[str, _StationEndpoint] = {}
+    managed_tunnels: dict[str, _RefreshableStationTunnel] = {}
     try:
         for service_id, profile_env in bindings:
             deployment_environment = str(
@@ -989,11 +1062,18 @@ def _open_station_tunnels(
                     error.reason,
                     resource=error.resource,
                 ) from error
+            managed_tunnel = _RefreshableStationTunnel(
+                service_id=service_id,
+                deployment_environment=deployment_environment,
+                remote_port=remote_port,
+                tunnel=tunnel,
+            )
             stack.callback(
                 _stop_station_tunnel_or_raise,
-                tunnel,
+                managed_tunnel,
                 service_id=service_id,
             )
+            managed_tunnels[service_id] = managed_tunnel
             endpoints[service_id] = _StationEndpoint(
                 transport_url=f"http://127.0.0.1:{tunnel.local_port}",
                 canonical_origin=canonical_origin,
@@ -1001,7 +1081,7 @@ def _open_station_tunnels(
     except BaseException as error:
         _close_runtime_stack(stack, primary_error=error)
         raise
-    return stack, endpoints
+    return stack, _StationEndpoints(endpoints, managed_tunnels)
 
 
 def _activate_scenario_journey(
@@ -4086,6 +4166,7 @@ class W7RuntimeOwner:
                 repo_root=self.repo_root,
             )
             blocked_result_path: Path | None = None
+            station_endpoints.refresh()
             try:
                 execute_scenario(
                     runtime="desktop",
@@ -4256,6 +4337,7 @@ class W7RuntimeOwner:
                     client_id=current["id"],
                     acknowledgement=acknowledgement,
                 )
+                station_endpoints.refresh()
                 desktop_result = execute_scenario(
                     runtime="desktop",
                     scenario_id="desktop-pilot",
@@ -4284,6 +4366,7 @@ class W7RuntimeOwner:
                 )
             desktop.clear()
 
+            station_endpoints.refresh()
             _activate_scenario_journey(self.repo_root, BROWSER_JOURNEY)
             browser: dict[str, FoundationRuntimeClient] = {}
             browser_payloads: list[dict[str, Any]] = []
@@ -5613,6 +5696,7 @@ class W7RuntimeOwner:
                 fixture_action_client,
             )
             for spec in W8_SCENARIOS:
+                station_endpoints.refresh()
                 ledger.record(
                     SuiteRuntimeAction.SCENARIO_START,
                     scenario_id=spec.scenario_id,
