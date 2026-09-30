@@ -32,11 +32,12 @@ import {
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
 import { identityRuntime } from '../../kernel/identityRuntime';
 import { useAccountIdentityStore } from '../../store/accountIdentity';
+import { useSessionStore } from '../../store/session';
 import { useTranslation } from 'react-i18next';
 import { SettingsContainer, SettingsSection } from './SettingsLayout';
 import {
   accountLoginProviderLocaleKey,
-  normalizeAccountLoginProvider,
+  resolveAccountLoginProvider,
 } from './accountIdentityPresentation';
 import { log } from '../../utils/logger';
 
@@ -390,6 +391,9 @@ export function AccountTab() {
   const activeAccount = useAccountIdentityStore((state) => (
     state.accounts.find((account) => account.id === state.activeAccountId) ?? null
   ));
+  const sessionLoginProvider = useSessionStore((state) => (
+    state.currentUser?.loginProvider ?? state.currentUser?.loginMethod
+  ));
   const [profile, setProfile] = useState<AccountProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -398,7 +402,10 @@ export function AccountTab() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const timezoneOptions = useMemo(() => buildTimezoneOptions(t), [t]);
-  const loginProvider = normalizeAccountLoginProvider(activeAccount?.provider);
+  const loginProvider = resolveAccountLoginProvider({
+    accountProvider: activeAccount?.provider,
+    sessionProvider: sessionLoginProvider,
+  });
   const loginProviderKey = accountLoginProviderLocaleKey(loginProvider);
   const loginProviderLabel = loginProviderKey ? t(loginProviderKey) : loginProvider;
 
@@ -597,13 +604,24 @@ export function AccountTab() {
           </div>
 
           <Flexbox gap={8} style={{ flex: 1, minWidth: 0, paddingTop: 44 }}>
-            <Flexbox horizontal align="center" gap={10} style={{ flexWrap: 'wrap' }}>
+            <Flexbox
+              data-pt-account-identity-summary
+              horizontal
+              align="center"
+              gap={10}
+              style={{ flexWrap: 'wrap' }}
+            >
               <Title level={4} style={{ margin: 0 }}>
                 {profile.display_name || profile.username}
               </Title>
               <Tag color="processing" style={{ margin: 0 }}>
                 @{profile.username}
               </Tag>
+              {loginProviderLabel ? (
+                <Tag data-pt-account-login-provider style={{ margin: 0 }}>
+                  {loginProviderLabel}
+                </Tag>
+              ) : null}
             </Flexbox>
 
             <Flexbox horizontal gap={16} style={{ flexWrap: 'wrap' }}>
@@ -624,12 +642,6 @@ export function AccountTab() {
             label={t('provider.account.identity.ptid')}
             value={profile.peers_touch.network_id}
             copiable
-            t={t}
-          />
-          <IdentityField
-            identityKey="login-provider"
-            label={t('provider.account.identity.loginProvider')}
-            value={loginProviderLabel}
             t={t}
           />
         </Flexbox>

@@ -4,6 +4,21 @@ export function normalizeAccountLoginProvider(provider?: string | null): string 
   return normalized;
 }
 
+export function resolveAccountLoginProvider({
+  accountProvider,
+  sessionProvider,
+  loginMethod,
+}: {
+  accountProvider?: string | null;
+  sessionProvider?: string | null;
+  loginMethod?: string | null;
+}): string {
+  const provider = [accountProvider, sessionProvider, loginMethod].find(
+    (candidate) => Boolean(candidate?.trim()),
+  );
+  return normalizeAccountLoginProvider(provider);
+}
+
 export function accountLoginProviderLocaleKey(
   provider?: string | null,
 ):
