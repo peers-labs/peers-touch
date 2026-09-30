@@ -272,28 +272,27 @@ function postCreatedAtMillis(post: Post | undefined): number {
     + Math.floor(post.createdAt.nanos / 1_000_000);
 }
 
-function projectPrivateAuthorMoments(
+function projectPrivateMoments(
   state: MomentsState,
   actorPtid: string | null,
   projections: readonly PrivateMomentProjection[],
 ): Partial<MomentsState> {
   if (!actorPtid) return {};
-  const authored = projections
+  const visible = projections
     .filter((projection) => (
       projection.state === 'CONTENT_READY'
-      && projection.authorPtid === actorPtid
       && projection.audienceKind !== 'UNKNOWN'
     ))
     .map(privateMomentPostShell);
-  if (authored.length === 0) return {};
+  if (visible.length === 0) return {};
 
   const postsById = { ...state.postsById };
-  for (const post of authored) {
+  for (const post of visible) {
     postsById[post.id] = post;
   }
   const postIds = [
     ...new Set([
-      ...authored.map((post) => post.id),
+      ...visible.map((post) => post.id),
       ...state.feeds.home.postIds,
     ]),
   ];
@@ -548,7 +547,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         const mergedHome = ingestPosts(s, home?.posts ?? [], home?.explanations ?? []);
         const mergedExplore = ingestPosts(mergedHome, explore?.posts ?? [], explore?.explanations ?? []);
         const privateState = usePrivateMomentsStore.getState();
-        const withPrivateAuthorMoments = projectPrivateAuthorMoments(
+        const withPrivateMoments = projectPrivateMoments(
           {
             ...s,
             postsById: mergedExplore.postsById,
@@ -600,7 +599,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
               sort: currentExploreSort,
             },
           },
-          ...withPrivateAuthorMoments,
+          ...withPrivateMoments,
         };
       });
     } catch (err) {
@@ -758,7 +757,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       if (projection) {
         set((state) => ({
           ...state,
-          ...projectPrivateAuthorMoments(
+          ...projectPrivateMoments(
             state,
             projection.authorPtid,
             [projection],
