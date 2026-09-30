@@ -76,9 +76,11 @@ class _FakeHoverElement:
 class _FakeHoverSession:
     process_id = 42
 
-    def execute_script(self, script: str, element: object) -> object:
-        del script, element
-        return {"x": 5.0, "y": 7.0}
+    def execute_script(self, script: str, *args: object) -> object:
+        del args
+        if "getBoundingClientRect" in script:
+            return {"x": 5.0, "y": 7.0}
+        return None
 
     def find_elements(self, selector: str) -> list[_FakeHoverElement]:
         self.selector = selector
