@@ -81,10 +81,11 @@ class _FakeHoverSession:
         self.rendered = rendered
 
     def execute_script(self, script: str, *args: object) -> object:
-        del args
         if "document.hasFocus" in script:
             return self.focused
         if "style.visibility" in script:
+            self.visibility_script = script
+            self.visibility_args = args
             return self.rendered
         if "getBoundingClientRect" in script:
             return {"x": 5.0, "y": 7.0}
@@ -204,13 +205,19 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
 
     def test_tooltip_visibility_uses_rendered_layout(self) -> None:
         session = _FakeHoverSession(rendered=False)
+        trigger = object()
+        tooltip = object()
 
         self.assertFalse(
             DesktopOAuthNativeGate._element_is_visibly_rendered(
                 session,
-                object(),
+                trigger,
+                tooltip,
             )
         )
+        self.assertEqual(session.visibility_args, (trigger, tooltip))
+        self.assertIn("aria-describedby", session.visibility_script)
+        self.assertIn("effectiveOpacity >= 0.99", session.visibility_script)
 
     def test_accepts_routed_native_tauri_url(self) -> None:
         self.assertTrue(is_native_tauri_url("tauri://localhost"))
