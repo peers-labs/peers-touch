@@ -2159,6 +2159,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "rejectedRef.current !== null || errorEventRef.current !== null",
             scenario,
         )
+        self.assertIn(
+            "agent.acceptance.foundationForbiddenActorWaitFailed",
+            scenario,
+        )
+        self.assertIn("actorMatchesOwner", scenario)
+        self.assertIn("actorMatchesReceiver", scenario)
+        self.assertIn("rejectionCallbackErrorCode", scenario)
+        self.assertIn("lastSourceTransport", scenario)
+        self.assertIn("operationRunState", scenario)
+        self.assertIn("api.getAgentConversation(input.conversationId)", scenario)
         self.assertIn("requireRuntimeEvent: false", scenario)
         self.assertIn(
             "? projectAgentTypedErrorPayload(outcome)",
