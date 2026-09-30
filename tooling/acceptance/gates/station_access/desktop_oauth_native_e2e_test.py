@@ -8,6 +8,7 @@ from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     DesktopOAuthNativeGate,
     OAUTH_AVATAR_URL,
+    find_people_scopes_are_distinct,
     is_native_tauri_url,
 )
 
@@ -47,6 +48,54 @@ class _FakeRuntimeBinding:
 
 
 class DesktopOAuthNativeGateTest(unittest.TestCase):
+    def test_accepts_distinct_same_name_scope_evidence(self) -> None:
+        self.assertTrue(
+            find_people_scopes_are_distinct(
+                {
+                    "federation": {
+                        "name": "local",
+                        "label": "Federation: local",
+                        "ariaLabel": (
+                            "Search every discoverable person in the local federation."
+                        ),
+                        "tooltip": (
+                            "Search every discoverable person in the local federation."
+                        ),
+                    },
+                    "station": {
+                        "name": "local",
+                        "label": "Station: local",
+                        "ariaLabel": (
+                            "Search only people whose Home Station is local."
+                        ),
+                        "tooltip": (
+                            "Search only people whose Home Station is local."
+                        ),
+                    },
+                }
+            )
+        )
+
+    def test_rejects_ambiguous_same_name_scope_evidence(self) -> None:
+        self.assertFalse(
+            find_people_scopes_are_distinct(
+                {
+                    "federation": {
+                        "name": "local",
+                        "label": "local",
+                        "ariaLabel": "local",
+                        "tooltip": "local",
+                    },
+                    "station": {
+                        "name": "local",
+                        "label": "local",
+                        "ariaLabel": "local",
+                        "tooltip": "local",
+                    },
+                }
+            )
+        )
+
     def test_accepts_routed_native_tauri_url(self) -> None:
         self.assertTrue(is_native_tauri_url("tauri://localhost"))
         self.assertTrue(
