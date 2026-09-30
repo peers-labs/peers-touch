@@ -86,7 +86,7 @@ class _FakeHoverSession:
         if "style.visibility" in script:
             self.visibility_script = script
             self.visibility_args = args
-            return self.rendered
+            return {"visible": self.rendered}
         if "getBoundingClientRect" in script:
             return {"x": 5.0, "y": 7.0}
         return None
