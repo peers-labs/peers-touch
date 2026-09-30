@@ -493,6 +493,13 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             "Federation: local",
             timeout=20,
         )
+        federation_aria = str(federation.get_attribute("aria-label") or "").strip()
+        federation_tooltip = cls._hover_tooltip(
+            session,
+            federation,
+            federation_aria,
+            timeout=10,
+        )
         federation.click()
         station = cls._wait_for_displayed_with_text(
             session,
@@ -501,30 +508,25 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             timeout=30,
         )
 
-        federation_aria = str(federation.get_attribute("aria-label") or "").strip()
         station_aria = str(station.get_attribute("aria-label") or "").strip()
+        station_tooltip = cls._hover_tooltip(
+            session,
+            station,
+            station_aria,
+            timeout=10,
+        )
         return {
             "federation": {
                 "name": "local",
                 "label": federation.text.strip(),
                 "ariaLabel": federation_aria,
-                "tooltip": cls._hover_tooltip(
-                    session,
-                    federation,
-                    federation_aria,
-                    timeout=10,
-                ),
+                "tooltip": federation_tooltip,
             },
             "station": {
                 "name": "local",
                 "label": station.text.strip(),
                 "ariaLabel": station_aria,
-                "tooltip": cls._hover_tooltip(
-                    session,
-                    station,
-                    station_aria,
-                    timeout=10,
-                ),
+                "tooltip": station_tooltip,
             },
         }
 
