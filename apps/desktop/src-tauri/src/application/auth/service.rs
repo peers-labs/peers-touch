@@ -91,6 +91,17 @@ fn string_field(value: &Value, snake_case: &str, camel_case: &str) -> String {
         .to_string()
 }
 
+fn login_method_from_profile(
+    profile: Option<&crate::infrastructure::auth_identity::AccountIdentity>,
+    fallback: &str,
+) -> String {
+    profile
+        .map(|account| account.provider.trim())
+        .filter(|provider| !provider.is_empty())
+        .unwrap_or(fallback)
+        .to_string()
+}
+
 pub(crate) fn canonical_ptid_for_token(token: &str) -> Option<String> {
     if let Ok(profile) = station_client::request_proto::<(), ActorProfile>(
         reqwest::Method::GET,
@@ -1074,7 +1085,9 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         );
     }
 
-    let profile = crate::infrastructure::auth_identity::find_profile_by_actor_ptid(&actor_ptid);
+    let profile = crate::infrastructure::auth_identity::find_account_by_id(&account_id)
+        .filter(|account| account.actor_ptid == actor_ptid);
+    let login_method = login_method_from_profile(profile.as_ref(), "oauth");
     let (p_name, p_email, p_avatar, p_local_avatar) = match &profile {
         Some(p) => (
             Some(p.name.clone()).filter(|v| !v.is_empty()),
@@ -1100,7 +1113,7 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         email: p_email,
         avatar_url: p_avatar,
         avatar_local_path: p_local_avatar,
-        login_method: Some("oauth".to_string()),
+        login_method: Some(login_method),
     })
 }
 
@@ -1180,9 +1193,13 @@ fn station_verification_rejects_session(error: &station_client::StationClientErr
 
 #[cfg(test)]
 mod tests {
-    use super::{run_required_logout_cleanup, station_verification_rejects_session};
+    use super::{
+        login_method_from_profile, run_required_logout_cleanup,
+        station_verification_rejects_session,
+    };
     use crate::contracts::AuthSessionPayload;
     use crate::error::ErrorCode;
+    use crate::infrastructure::auth_identity::AccountIdentity;
     use crate::infrastructure::station_client::{StationClientError, StationClientErrorKind};
     use std::cell::Cell;
 
@@ -1296,6 +1313,16 @@ mod tests {
                 None,
             )
         ));
+    }
+
+    #[test]
+    fn oauth_session_uses_concrete_account_provider() {
+        let github = AccountIdentity {
+            provider: "github".to_string(),
+            ..AccountIdentity::default()
+        };
+        assert_eq!(login_method_from_profile(Some(&github), "oauth"), "github");
+        assert_eq!(login_method_from_profile(None, "oauth"), "oauth");
     }
 
     fn assert_logout_cleanup_failure(

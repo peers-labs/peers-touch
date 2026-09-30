@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strings"
 	"time"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -113,7 +114,7 @@ func ResolveOAuthIdentityActor(
 	if err := identityStore.BindActor(ctx, uint64(actorRow.ID), identity, isPrimary); err != nil {
 		return nil, fmt.Errorf("bind OAuth identity: %w", err)
 	}
-	return actorRow, nil
+	return bootstrapMissingOAuthProfile(ctx, actorRow, identity, baseURL)
 }
 
 // OAuthBridgeLogin preserves the external bridge flow while sharing the
@@ -137,6 +138,52 @@ func loadActor(ctx context.Context, actorID uint64) (*db.Actor, error) {
 		return nil, err
 	}
 	return &row, nil
+}
+
+func oauthProfileBootstrapRequest(
+	actorRow *db.Actor,
+	identity *coreauth.OAuth2Identity,
+	observedRevision uint64,
+) (actor.UpdateProfileRequest, bool) {
+	if actorRow == nil || identity == nil || strings.TrimSpace(actorRow.Icon) != "" {
+		return actor.UpdateProfileRequest{}, false
+	}
+	avatarURL := strings.TrimSpace(identity.AvatarURL)
+	if avatarURL == "" {
+		return actor.UpdateProfileRequest{}, false
+	}
+	return actor.UpdateProfileRequest{
+		Avatar:           &avatarURL,
+		ObservedRevision: observedRevision,
+	}, true
+}
+
+func bootstrapMissingOAuthProfile(
+	ctx context.Context,
+	actorRow *db.Actor,
+	identity *coreauth.OAuth2Identity,
+	baseURL string,
+) (*db.Actor, error) {
+	if actorRow == nil || identity == nil || strings.TrimSpace(actorRow.Icon) != "" ||
+		strings.TrimSpace(identity.AvatarURL) == "" {
+		return actorRow, nil
+	}
+	profile, err := actor.GetWebProfileByID(ctx, actorRow.ID, baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("load OAuth actor profile: %w", err)
+	}
+	request, ok := oauthProfileBootstrapRequest(actorRow, identity, profile.ProfileRevision)
+	if !ok {
+		return actorRow, nil
+	}
+	result, err := actor.UpdateProfileByID(ctx, actorRow.ID, baseURL, request)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap OAuth actor profile: %w", err)
+	}
+	if result.Profile != nil {
+		actorRow.Icon = result.Profile.Avatar
+	}
+	return actorRow, nil
 }
 
 func findOrRegisterOAuthActor(ctx context.Context, identity *coreauth.OAuth2Identity, baseURL string) (*db.Actor, error) {

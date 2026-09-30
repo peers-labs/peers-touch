@@ -2,6 +2,7 @@ import { identityRuntime } from '../../kernel/identityRuntime';
 import { api } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { useSessionStore } from '../../store/session';
+import { EVENT, eventBus } from '../../kernel/events';
 import { registerAcceptanceHarness } from '../registry';
 import { configureCurrentAcceptanceStation } from '../stationAccess';
 import {
@@ -76,6 +77,32 @@ export function installAcceptanceHarness(): void {
 
     async identityState() {
       return identityState();
+    },
+
+    async oauthIdentityProjection() {
+      const [profile, account] = await Promise.all([
+        api.profileGet(),
+        api.accountGetActive(),
+      ]);
+      const currentUser = useSessionStore.getState().currentUser;
+      return {
+        actorPtid: currentUser?.actorPtid ?? '',
+        sessionAvatarUrl: currentUser?.avatarUrl ?? '',
+        sessionProvider: currentUser?.loginProvider ?? currentUser?.loginMethod ?? '',
+        accountAvatarUrl: account?.avatar_url ?? '',
+        accountProvider: account?.provider ?? '',
+        profileAvatarUrl: profile.avatar ?? '',
+        profilePtid: profile.peers_touch?.network_id ?? '',
+      };
+    },
+
+    async openAccountIdentity() {
+      window.location.hash = '#/settings';
+      eventBus.publish(EVENT.NAVIGATION_REQUESTED, {
+        resource: 'settings',
+        id: 'account',
+      });
+      return { opened: true };
     },
 
     async beginOAuthLogin({ providerId }: OAuthLoginInput) {
