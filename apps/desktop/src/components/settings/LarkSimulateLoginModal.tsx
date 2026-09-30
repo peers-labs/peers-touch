@@ -19,7 +19,7 @@ interface Props {
   onClose: () => void;
   /** oauth = OAuth simulate only; bot = create app + return credentials, also upserts lark_simulate */
   intent?: LarkQRIntent;
-  /** App name when creating bot (default: "Agent Box Bot") */
+  /** App name when creating bot (default: "Peers Touch Bot") */
   appName?: string;
   /** Called on success. For bot intent, receives credentials + channel_id when persisted */
   onSuccess?: (result: { connection?: OAuth2Connection; bot?: LarkBotCredentials; channel_id?: string }) => void;
