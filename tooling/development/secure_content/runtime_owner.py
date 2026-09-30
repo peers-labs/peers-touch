@@ -2765,14 +2765,20 @@ def _w8_receiver_ui_probe(
         quoted_parts = (f"'{part}'" for part in parts)
         return "concat(" + ", \"'\", ".join(quoted_parts) + ")"
 
-    def find_visible_text(value: str, *, leaf_only: bool) -> Any:
-        leaf_predicate = "[not(*)]" if leaf_only else ""
+    def find_visible_text(value: str, *, deepest_match: bool) -> Any:
+        literal = xpath_literal(value)
+        deepest_predicate = (
+            f"[not(.//*[contains(string(.), {literal})])]"
+            if deepest_match
+            else ""
+        )
         return find_visible(
             "xpath",
             (
                 "//*[self::p or self::span or self::div or self::a "
-                f"or self::button]{leaf_predicate}"
-                f"[contains(string(.), {xpath_literal(value)})]"
+                "or self::button]"
+                f"[contains(string(.), {literal})]"
+                f"{deepest_predicate}"
             ),
         )
 
@@ -2811,7 +2817,7 @@ def _w8_receiver_ui_probe(
         ) from error
 
     def click_action_text() -> Any:
-        target = find_visible_text(action_text, leaf_only=True)
+        target = find_visible_text(action_text, deepest_match=True)
         if target is None:
             return None
         try:
@@ -2863,14 +2869,14 @@ def _w8_receiver_ui_probe(
                 ) from error
 
         receiver_target = wait_until(
-            lambda: find_visible_text(visible_text, leaf_only=False),
+            lambda: find_visible_text(visible_text, deepest_match=False),
             f"W8 {scenario_id} receiver-visible assertion",
             timeout=90,
             interval=0.25,
         )
         absence = wait_until(
             lambda: all(
-                find_visible_text(value, leaf_only=False) is None
+                find_visible_text(value, deepest_match=False) is None
                 for value in absent_texts
             ),
             f"W8 {scenario_id} receiver-visible negative assertion",
