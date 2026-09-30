@@ -30,7 +30,14 @@
     }
   ],
   "fixtures": [],
-  "credentials": [],
+  "credentials": [
+    {
+      "id": "oauth-bridge-secret",
+      "source_ref": "auto:station-access-oauth-bridge-secret",
+      "required": true,
+      "generated_if_missing": true
+    }
+  ],
   "cleanup": {
     "resources": ["processes", "ports", "storage", "sessions"]
   }

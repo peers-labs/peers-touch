@@ -24,6 +24,7 @@ import (
 )
 
 var (
+	ErrBridgeSecretMissing    = errors.New("OAuth bridge secret is not configured")
 	ErrBridgeSignatureInvalid = errors.New("invalid HMAC signature")
 	ErrBridgeTimestampExpired = errors.New("timestamp expired")
 	ErrBridgeTimestampInvalid = errors.New("invalid timestamp format")
@@ -32,11 +33,13 @@ var (
 const bridgeTimestampWindow = 5 * time.Minute
 
 // VerifyBridgeSignature validates the HMAC-SHA256 signature and timestamp window.
-// When no secret is configured (dev mode), verification is skipped.
 func VerifyBridgeSignature(req *model.OAuthBridgeRequest) error {
 	secret := os.Getenv("PEERS_OAUTH_BRIDGE_SECRET")
-	if secret == "" {
-		return nil
+	if strings.TrimSpace(secret) == "" {
+		return ErrBridgeSecretMissing
+	}
+	if req == nil {
+		return ErrBridgeSignatureInvalid
 	}
 
 	ts, err := time.Parse(time.RFC3339, req.GetTs())
@@ -52,9 +55,12 @@ func VerifyBridgeSignature(req *model.OAuthBridgeRequest) error {
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(message))
-	expected := hex.EncodeToString(mac.Sum(nil))
+	provided, err := hex.DecodeString(req.GetSig())
+	if err != nil {
+		return ErrBridgeSignatureInvalid
+	}
 
-	if !hmac.Equal([]byte(expected), []byte(req.GetSig())) {
+	if !hmac.Equal(mac.Sum(nil), provided) {
 		return ErrBridgeSignatureInvalid
 	}
 	return nil
