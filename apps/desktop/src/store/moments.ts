@@ -1,5 +1,13 @@
+import { create } from '@bufbuild/protobuf';
+import { timestampFromDate } from '@bufbuild/protobuf/wkt';
 import { createDesktopStore } from './createDesktopStore';
-import { Audience_Kind } from '../gen/proto/domain/social/post_pb';
+import {
+  AudienceSchema,
+  Audience_Kind,
+  PostAuthorSchema,
+  PostSchema,
+  PostType,
+} from '../gen/proto/domain/social/post_pb';
 import type {
   Audience,
   FeedObjectExplanation,
@@ -37,6 +45,7 @@ import {
 import type {
   PrivateMomentAudience,
   PrivateMomentLocalFileIntent,
+  PrivateMomentProjection,
   PrivateMomentPublishIntent,
 } from '../services/privateMomentsNative';
 import { usePrivateMomentsStore } from './privateMoments';
@@ -197,6 +206,113 @@ function privateMomentFiles(
   return draft.kind === 'image' || draft.kind === 'video'
     ? draft.localFiles ?? []
     : [];
+}
+
+const PRIVATE_AUDIENCE_KINDS: Record<
+  PrivateMomentProjection['audienceKind'],
+  Audience_Kind
+> = {
+  FRIENDS: Audience_Kind.FRIENDS,
+  FOLLOWERS: Audience_Kind.FOLLOWERS,
+  CIRCLE: Audience_Kind.CIRCLE,
+  GROUP: Audience_Kind.GROUP,
+  SELF: Audience_Kind.SELF,
+  CUSTOM_ALLOW: Audience_Kind.CUSTOM_ALLOW,
+  CUSTOM_DENY: Audience_Kind.CUSTOM_DENY,
+  UNKNOWN: Audience_Kind.KIND_UNSPECIFIED,
+};
+
+function privateMomentPostType(
+  projection: PrivateMomentProjection,
+): PostType {
+  switch (projection.content?.kind) {
+    case 'IMAGE':
+      return PostType.IMAGE;
+    case 'VIDEO':
+      return PostType.VIDEO;
+    case 'LINK':
+      return PostType.LINK;
+    case 'POLL':
+      return PostType.POLL;
+    case 'REPOST':
+      return PostType.REPOST;
+    case 'LOCATION':
+      return PostType.LOCATION;
+    case 'TEXT':
+    default:
+      return PostType.TEXT;
+  }
+}
+
+function privateMomentTimestamp(value: number | undefined) {
+  return value !== undefined && Number.isFinite(value)
+    ? timestampFromDate(new Date(value))
+    : undefined;
+}
+
+function privateMomentPostShell(
+  projection: PrivateMomentProjection,
+): Post {
+  return create(PostSchema, {
+    id: projection.postId,
+    authorPtid: projection.authorPtid,
+    type: privateMomentPostType(projection),
+    createdAt: privateMomentTimestamp(projection.createdAtMillis),
+    updatedAt: privateMomentTimestamp(projection.updatedAtMillis),
+    author: create(PostAuthorSchema, { id: projection.authorPtid }),
+    audience: create(AudienceSchema, {
+      kind: PRIVATE_AUDIENCE_KINDS[projection.audienceKind],
+    }),
+  });
+}
+
+function postCreatedAtMillis(post: Post | undefined): number {
+  if (!post?.createdAt) return 0;
+  return Number(post.createdAt.seconds) * 1000
+    + Math.floor(post.createdAt.nanos / 1_000_000);
+}
+
+function projectPrivateAuthorMoments(
+  state: MomentsState,
+  actorPtid: string | null,
+  projections: readonly PrivateMomentProjection[],
+): Partial<MomentsState> {
+  if (!actorPtid) return {};
+  const authored = projections
+    .filter((projection) => (
+      projection.state === 'CONTENT_READY'
+      && projection.authorPtid === actorPtid
+      && projection.audienceKind !== 'UNKNOWN'
+    ))
+    .map(privateMomentPostShell);
+  if (authored.length === 0) return {};
+
+  const postsById = { ...state.postsById };
+  for (const post of authored) {
+    postsById[post.id] = post;
+  }
+  const postIds = [
+    ...new Set([
+      ...authored.map((post) => post.id),
+      ...state.feeds.home.postIds,
+    ]),
+  ];
+  postIds.sort(
+    (left, right) => (
+      postCreatedAtMillis(postsById[right])
+      - postCreatedAtMillis(postsById[left])
+    ),
+  );
+  return {
+    postsById,
+    feeds: {
+      ...state.feeds,
+      home: {
+        ...state.feeds.home,
+        postIds,
+      },
+    },
+  };
 }
 
 export function selectMomentComments(
@@ -431,6 +547,36 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
         const explore = resp.publicTimeline;
         const mergedHome = ingestPosts(s, home?.posts ?? [], home?.explanations ?? []);
         const mergedExplore = ingestPosts(mergedHome, explore?.posts ?? [], explore?.explanations ?? []);
+        const privateState = usePrivateMomentsStore.getState();
+        const withPrivateAuthorMoments = projectPrivateAuthorMoments(
+          {
+            ...s,
+            postsById: mergedExplore.postsById,
+            authorsById: mergedExplore.authorsById,
+            reactions: mergedExplore.reactions,
+            feedExplanations: mergedExplore.feedExplanations,
+            feeds: {
+              home: {
+                postIds: mergedHome.ids,
+                nextCursor: home?.nextCursor ?? '',
+                hasMore: home?.hasMore ?? false,
+                loading: false,
+                loadedAt: Date.now(),
+                sort: 'recent',
+              },
+              explore: {
+                postIds: mergedExplore.ids,
+                nextCursor: explore?.nextCursor ?? '',
+                hasMore: explore?.hasMore ?? false,
+                loading: false,
+                loadedAt: Date.now(),
+                sort: currentExploreSort,
+              },
+            },
+          },
+          privateState.scope.actorPtid,
+          Object.values(privateState.postsById),
+        );
         return {
           postsById: mergedExplore.postsById,
           authorsById: mergedExplore.authorsById,
@@ -454,6 +600,7 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
               sort: currentExploreSort,
             },
           },
+          ...withPrivateAuthorMoments,
         };
       });
     } catch (err) {
@@ -606,6 +753,17 @@ export const useMomentsStore = createDesktopStore<MomentsState>('moments', (set,
       const postId = result.postId ?? result.projection?.postId;
       if (result.state !== 'PUBLISHED' || !postId) {
         throw new Error('UNKNOWN_COMMIT');
+      }
+      const projection = result.projection;
+      if (projection) {
+        set((state) => ({
+          ...state,
+          ...projectPrivateAuthorMoments(
+            state,
+            projection.authorPtid,
+            [projection],
+          ),
+        }));
       }
       refreshProjectionBestEffort(get(), 'action:createPrivatePost');
       return postId;
