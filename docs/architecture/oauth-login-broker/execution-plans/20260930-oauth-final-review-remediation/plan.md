@@ -220,7 +220,10 @@
       "acceptance-infra-validation",
       "acceptance-plan-self",
       "acceptance-runtime-provisioning-self",
-      "acceptance-workflow-contract"
+      "acceptance-workflow-contract",
+      "dev-ui-browser-e2e",
+      "peers-dev-product",
+      "peers-dev-ui-browser-e2e"
     ]
   },
   "completion": [
@@ -233,7 +236,10 @@
     "acceptance-infra-validation",
     "acceptance-plan-self",
     "acceptance-runtime-provisioning-self",
-    "acceptance-workflow-contract"
+    "acceptance-workflow-contract",
+    "dev-ui-browser-e2e",
+    "peers-dev-product",
+    "peers-dev-ui-browser-e2e"
   ],
   "full": [
     "oauth-login-broker-durable-login",
@@ -245,7 +251,10 @@
     "acceptance-infra-validation",
     "acceptance-plan-self",
     "acceptance-runtime-provisioning-self",
-    "acceptance-workflow-contract"
+    "acceptance-workflow-contract",
+    "dev-ui-browser-e2e",
+    "peers-dev-product",
+    "peers-dev-ui-browser-e2e"
   ]
 }
 ```
