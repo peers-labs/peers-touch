@@ -55,6 +55,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/dev/server/index.test.mjs",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "docs/architecture/oauth-login-broker",
         "mode": "exclusive-write"
       },
