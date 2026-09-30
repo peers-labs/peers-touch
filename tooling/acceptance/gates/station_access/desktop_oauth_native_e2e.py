@@ -44,6 +44,23 @@ REQUIRED_ASSERTIONS = frozenset(
         "native_runtime_cleanup",
     }
 )
+
+
+def is_native_tauri_url(value: str) -> bool:
+    try:
+        parsed = urlparse(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "tauri"
+        and parsed.hostname == "localhost"
+        and parsed.username is None
+        and parsed.password is None
+        and port is None
+    )
+
+
 OAUTH_START_SCRIPT = """
 const providerId = arguments[0];
 const done = arguments[arguments.length - 1];
@@ -327,11 +344,18 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             self.save_dom(session, "desktop-oauth-authenticated")
 
             source_identity = self._source_identity()
+            document_url = session.get_current_url()
             self.assert_condition(
                 "native_runtime_is_source_bound",
-                session.get_current_url() == "tauri://localhost"
+                is_native_tauri_url(document_url)
                 and source_identity["verified"] is True,
-                json.dumps(source_identity, sort_keys=True),
+                json.dumps(
+                    {
+                        "documentUrl": document_url,
+                        "sourceIdentity": source_identity,
+                    },
+                    sort_keys=True,
+                ),
             )
         finally:
             if session is not None:
