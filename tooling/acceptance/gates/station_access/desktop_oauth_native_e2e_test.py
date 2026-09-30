@@ -5,6 +5,7 @@ import unittest
 from urllib.parse import parse_qs, urlparse
 
 from tooling.acceptance.core import GateError
+from tooling.acceptance.drivers.native import MouseAction
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     CHAT_NAV_SELECTOR,
     DesktopOAuthNativeGate,
@@ -46,6 +47,42 @@ class _FakeRuntimeBinding:
             "sha256": "b" * 64,
             "sourceCommit": "a" * 40,
         }
+
+
+class _FakeNativeAdapter:
+    def __init__(self) -> None:
+        self.mouse_calls: list[tuple[int, tuple[MouseAction, ...], tuple[float, float]]] = []
+
+    def content_origin(self, process_id: int) -> tuple[float, float]:
+        self.process_id = process_id
+        return 100.0, 200.0
+
+    def post_mouse_to_process(
+        self,
+        process_id: int,
+        actions: tuple[MouseAction, ...],
+        point: tuple[float, float],
+    ) -> None:
+        self.mouse_calls.append((process_id, actions, point))
+
+
+class _FakeHoverElement:
+    text = "tooltip"
+
+    def is_displayed(self) -> bool:
+        return True
+
+
+class _FakeHoverSession:
+    process_id = 42
+
+    def execute_script(self, script: str, element: object) -> object:
+        del script, element
+        return {"x": 5.0, "y": 7.0}
+
+    def find_elements(self, selector: str) -> list[_FakeHoverElement]:
+        self.selector = selector
+        return [_FakeHoverElement()]
 
 
 class DesktopOAuthNativeGateTest(unittest.TestCase):
@@ -101,6 +138,30 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
                     },
                 }
             )
+        )
+
+    def test_hover_tooltip_uses_native_pointer_coordinates(self) -> None:
+        gate = object.__new__(DesktopOAuthNativeGate)
+        adapter = _FakeNativeAdapter()
+        gate.runtime_binding = type(
+            "RuntimeBinding",
+            (),
+            {"native_adapter": adapter},
+        )()
+        session = _FakeHoverSession()
+
+        tooltip = gate._hover_tooltip(
+            session,
+            object(),
+            "tooltip",
+            timeout=0.1,
+        )
+
+        self.assertEqual(tooltip, "tooltip")
+        self.assertEqual(session.selector, ".ant-tooltip-inner")
+        self.assertEqual(
+            adapter.mouse_calls,
+            [(42, (MouseAction.MOVE,), (105.0, 207.0))],
         )
 
     def test_accepts_routed_native_tauri_url(self) -> None:
