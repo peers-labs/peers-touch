@@ -529,6 +529,11 @@ class FoundationClientSpecTest(unittest.TestCase):
                 "type (code 5)"
             )
             driver = client.driver
+            reconnected_driver = Mock()
+
+            def reconnect() -> None:
+                client.driver = reconnected_driver
+
             with (
                 patch.object(
                     foundation_runtime_client,
@@ -540,13 +545,53 @@ class FoundationClientSpecTest(unittest.TestCase):
                     "port_open",
                     return_value=True,
                 ),
+                patch.object(
+                    client,
+                    "_reconnect_native_driver",
+                    side_effect=reconnect,
+                ) as reconnect_driver,
             ):
                 client._wait_for_acceptance_harness()
 
             self.assertEqual(2, harness_ready.call_count)
+            self.assertIs(harness_ready.call_args_list[0].args[0], driver)
+            self.assertIs(
+                harness_ready.call_args_list[1].args[0],
+                reconnected_driver,
+            )
             driver.get.assert_called_once_with("http://127.0.0.1:23210")
+            reconnect_driver.assert_called_once_with()
             client.driver = None
             client.process = None
+            client.stop()
+
+    def test_native_driver_reconnect_replaces_poisoned_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            stale_driver = Mock()
+            stale_driver.quit.side_effect = RuntimeError("unsupported type")
+            replacement_driver = Mock()
+            client.driver = stale_driver
+
+            def reconnect() -> None:
+                client.driver = replacement_driver
+
+            with patch.object(
+                client,
+                "_connect_driver",
+                side_effect=reconnect,
+            ) as connect_driver:
+                client._reconnect_native_driver()
+
+            stale_driver.quit.assert_called_once_with()
+            stale_driver.command_executor.close.assert_called_once_with()
+            connect_driver.assert_called_once_with()
+            self.assertIs(client.driver, replacement_driver)
+            client.driver = None
             client.stop()
 
     def test_native_harness_readiness_fails_after_one_navigation_recovery(

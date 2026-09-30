@@ -329,6 +329,8 @@ class FoundationRuntimeClient:
                 )
             except Exception as error:
                 navigation_error = error
+                if "unsupported type (code 5)" in str(error):
+                    self._reconnect_native_driver()
             if harness_ready(
                 self.driver,
                 namespace=self.harness_namespace,
@@ -347,6 +349,26 @@ class FoundationRuntimeClient:
             f"{self.spec.runtime} {self.harness_namespace} acceptance "
             "Harness is unavailable"
         )
+
+    def _reconnect_native_driver(self) -> None:
+        stale_driver = self.driver
+        self.driver = None
+        if stale_driver is not None:
+            try:
+                stale_driver.quit()
+            except Exception:
+                command_executor = getattr(
+                    stale_driver,
+                    "command_executor",
+                    None,
+                )
+                close = getattr(command_executor, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
+        self._connect_driver()
 
     def _connect_driver(self) -> None:
         if self.spec.runtime == "native-tauri":
