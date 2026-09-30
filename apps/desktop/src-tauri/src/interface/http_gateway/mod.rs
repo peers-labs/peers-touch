@@ -133,6 +133,23 @@ fn gateway_worker_lane(method: &tiny_http::Method, url: &str) -> GatewayWorkerLa
 }
 
 const AGENT_STREAM_PREAMBLE: &[u8] = b": gateway-connected\n\n";
+const AGENT_STREAM_ERROR_HEADERS: [(&str, &str); 6] = [
+    ("x-peers-error-code", "X-Peers-Error-Code"),
+    ("x-peers-error-locale-key", "X-Peers-Error-Locale-Key"),
+    ("x-peers-error-retryable", "X-Peers-Error-Retryable"),
+    ("x-peers-error-terminal", "X-Peers-Error-Terminal"),
+    ("x-peers-error-details", "X-Peers-Error-Details"),
+    ("x-peers-required-gate", "X-Peers-Required-Gate"),
+];
+const AGENT_STREAM_EXPOSED_HEADERS: &str = concat!(
+    "X-Agent-Turn-ID, ",
+    "X-Peers-Error-Code, ",
+    "X-Peers-Error-Locale-Key, ",
+    "X-Peers-Error-Retryable, ",
+    "X-Peers-Error-Terminal, ",
+    "X-Peers-Error-Details, ",
+    "X-Peers-Required-Gate",
+);
 
 struct AgentStreamBody<R> {
     inner: R,
@@ -142,14 +159,32 @@ struct AgentStreamBody<R> {
 }
 
 impl<R> AgentStreamBody<R> {
-    fn new(inner: R, station_path: &'static str) -> Self {
+    fn new(inner: R, station_path: &'static str, include_preamble: bool) -> Self {
         Self {
             inner,
             station_path,
             closed: false,
-            preamble_offset: 0,
+            preamble_offset: if include_preamble {
+                0
+            } else {
+                AGENT_STREAM_PREAMBLE.len()
+            },
         }
     }
+}
+
+fn forwarded_agent_stream_error_headers(
+    headers: &reqwest::header::HeaderMap,
+) -> Vec<(&'static str, String)> {
+    AGENT_STREAM_ERROR_HEADERS
+        .iter()
+        .filter_map(|(source, response)| {
+            headers
+                .get(*source)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| (*response, value.to_string()))
+        })
+        .collect()
 }
 
 impl<R: Read> Read for AgentStreamBody<R> {
@@ -216,23 +251,35 @@ fn respond_agent_stream<R: Read>(
     request: tiny_http::Request,
     status: u16,
     turn_id: Option<&str>,
+    forwarded_headers: &[(&str, String)],
     mut body: R,
 ) -> io::Result<()> {
     let version = request.http_version().clone();
     let chunked = version > tiny_http::HTTPVersion(1, 0);
     let status_code = tiny_http::StatusCode(status);
+    let successful = (200..300).contains(&status);
     let mut writer = request.into_writer();
     write!(
         writer,
         "HTTP/{version} {status} {}\r\n",
         status_code.default_reason_phrase()
     )?;
-    writer.write_all(b"Content-Type: text/event-stream; charset=utf-8\r\n")?;
-    writer.write_all(b"Cache-Control: no-cache\r\n")?;
+    if successful {
+        writer.write_all(b"Content-Type: text/event-stream; charset=utf-8\r\n")?;
+        writer.write_all(b"Cache-Control: no-cache\r\n")?;
+    } else {
+        writer.write_all(b"Content-Type: application/json; charset=utf-8\r\n")?;
+    }
     writer.write_all(b"Access-Control-Allow-Origin: *\r\n")?;
-    writer.write_all(b"Access-Control-Expose-Headers: X-Agent-Turn-ID\r\n")?;
+    write!(
+        writer,
+        "Access-Control-Expose-Headers: {AGENT_STREAM_EXPOSED_HEADERS}\r\n"
+    )?;
     if let Some(turn_id) = turn_id {
         write!(writer, "X-Agent-Turn-ID: {turn_id}\r\n")?;
+    }
+    for (name, value) in forwarded_headers {
+        write!(writer, "{name}: {value}\r\n")?;
     }
     if chunked {
         writer.write_all(b"Transfer-Encoding: chunked\r\n")?;
@@ -789,6 +836,8 @@ fn handle_agent_stream_proxy(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned);
+    let forwarded_headers = forwarded_agent_stream_error_headers(upstream.headers());
+    let include_preamble = upstream.status().is_success();
     if fault_request {
         report_foundation_fault_stream_debug(
             "gateway-upstream-admitted",
@@ -815,7 +864,8 @@ fn handle_agent_stream_proxy(
         request,
         status,
         turn_id.as_deref(),
-        AgentStreamBody::new(upstream, station_path),
+        &forwarded_headers,
+        AgentStreamBody::new(upstream, station_path, include_preamble),
     );
     if lease_replay_request {
         report_lease_replay_gateway_debug(
@@ -8413,7 +8463,7 @@ mod tests {
             body: Cursor::new(b"data: partial\n\n".to_vec()),
             failed: false,
         };
-        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream");
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream", true);
         let mut received = Vec::new();
 
         body.read_to_end(&mut received)
@@ -8424,6 +8474,60 @@ mod tests {
             body.read(&mut [0_u8; 1])
                 .expect("terminated body should stay at EOF"),
             0
+        );
+    }
+
+    #[test]
+    fn agent_stream_error_body_preserves_upstream_json_without_preamble() {
+        let upstream = Cursor::new(br#"{"error":"agent.errors.forbiddenActor"}"#.to_vec());
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream", false);
+        let mut received = Vec::new();
+
+        body.read_to_end(&mut received)
+            .expect("error response body should remain readable");
+
+        assert_eq!(received, br#"{"error":"agent.errors.forbiddenActor"}"#);
+    }
+
+    #[test]
+    fn agent_stream_error_headers_forward_only_typed_public_metadata() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "x-peers-error-code",
+            reqwest::header::HeaderValue::from_static("OWNERSHIP_FORBIDDEN_ACTOR"),
+        );
+        headers.insert(
+            "x-peers-error-locale-key",
+            reqwest::header::HeaderValue::from_static("agent.errors.forbiddenActor"),
+        );
+        headers.insert(
+            "x-peers-error-details",
+            reqwest::header::HeaderValue::from_static(
+                r#"{"resource_kind":"conversation","resource_id":"conversation-1"}"#,
+            ),
+        );
+        headers.insert(
+            "authorization",
+            reqwest::header::HeaderValue::from_static("Bearer private"),
+        );
+
+        assert_eq!(
+            forwarded_agent_stream_error_headers(&headers),
+            vec![
+                (
+                    "X-Peers-Error-Code",
+                    "OWNERSHIP_FORBIDDEN_ACTOR".to_string(),
+                ),
+                (
+                    "X-Peers-Error-Locale-Key",
+                    "agent.errors.forbiddenActor".to_string(),
+                ),
+                (
+                    "X-Peers-Error-Details",
+                    r#"{"resource_kind":"conversation","resource_id":"conversation-1"}"#
+                        .to_string(),
+                ),
+            ]
         );
     }
 
@@ -8451,7 +8555,7 @@ mod tests {
             body: Cursor::new(b"data: partial\n\n".to_vec()),
             failed: false,
         };
-        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream");
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream", true);
         let mut writer = FlushRecordingWriter::default();
 
         copy_agent_stream_body(&mut body, &mut writer, true)
