@@ -1,7 +1,7 @@
 import React, { memo, useState, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Flexbox } from 'react-layout-kit';
-import { Alert, Button, Input, Typography, theme } from 'antd';
+import { Alert, Button, Input, Tooltip, Typography, theme } from 'antd';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -13,7 +13,9 @@ import {
   Loader2,
   Lock,
   Mail,
+  RotateCcw,
   ShieldCheck,
+  X,
 } from 'lucide-react';
 import { UserSquareAvatar } from '../../../components/common/UserSquareAvatar';
 import { BRANDING } from '../../../branding';
@@ -23,7 +25,12 @@ import {
   type AccessDecision,
 } from '../../../services/accessGate';
 import { LOGIN_FORM_LAYOUT } from '../constants';
-import type { SessionUser, LoginTab, OAuth2ProviderSummary } from '../types';
+import type {
+  AuthState,
+  SessionUser,
+  LoginTab,
+  OAuth2ProviderSummary,
+} from '../types';
 
 const { Text } = Typography;
 
@@ -53,11 +60,13 @@ export interface LoginFormViewProps {
   reauthReason: 'revoked' | 'continue';
   hasBackButton: boolean;
   oauth2Providers: OAuth2ProviderSummary[];
-  connections: any[];
-  highlightProviderId?: string | null;
+  oauthActionProviderId?: string | null;
+  oauthActionState: AuthState;
+  oauthActionError?: string;
   onBack: () => void;
   onEmailLogin: (email: string, password: string) => Promise<void>;
-  onOAuthLogin: (provider: OAuth2ProviderSummary, buttonEl: HTMLElement | null) => void;
+  onOAuthLogin: (provider: OAuth2ProviderSummary) => void;
+  onOAuthCancel: () => void;
   onTabChange: (tab: LoginTab) => void;
   gateState?: GateState | null;
   backContent?: React.ReactNode;
@@ -71,10 +80,13 @@ export const LoginFormView = memo(function LoginFormView({
   reauthReason,
   hasBackButton,
   oauth2Providers,
-  highlightProviderId,
+  oauthActionProviderId,
+  oauthActionState,
+  oauthActionError,
   onBack,
   onEmailLogin,
   onOAuthLogin,
+  onOAuthCancel,
   onTabChange,
   gateState,
   backContent,
@@ -88,6 +100,10 @@ export const LoginFormView = memo(function LoginFormView({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
+  const oauthActionRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+  const oauthButtonRefs = React.useRef<Record<string, HTMLElement | null>>({});
+  const oauthCancelRefs = React.useRef<Record<string, HTMLElement | null>>({});
+  const previousOAuthProviderRef = React.useRef<string | null>(null);
 
   // Keep internal email in sync when expiredAccount changes
   React.useEffect(() => {
@@ -96,7 +112,22 @@ export const LoginFormView = memo(function LoginFormView({
     }
   }, [expiredAccount]);
 
-  const buttonRefs = React.useRef<Record<string, HTMLElement | null>>({});
+  React.useEffect(() => {
+    const previousProviderId = previousOAuthProviderRef.current;
+    previousOAuthProviderRef.current = oauthActionProviderId ?? null;
+    const frame = window.requestAnimationFrame(() => {
+      if (!oauthActionProviderId) {
+        if (previousProviderId) oauthButtonRefs.current[previousProviderId]?.focus();
+        return;
+      }
+      if (['opening', 'waiting', 'error'].includes(oauthActionState)) {
+        oauthCancelRefs.current[oauthActionProviderId]?.focus();
+        return;
+      }
+      oauthActionRefs.current[oauthActionProviderId]?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [oauthActionProviderId, oauthActionState]);
 
   const handleEmailSubmit = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -119,6 +150,9 @@ export const LoginFormView = memo(function LoginFormView({
     gateState?.onCancel();
   }, [gateState]);
 
+  const oauthFlowLocked = !!oauthActionProviderId
+    && ['opening', 'waiting', 'initializing', 'success'].includes(oauthActionState);
+
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1,
     padding: '8px 0',
@@ -126,7 +160,8 @@ export const LoginFormView = memo(function LoginFormView({
     fontWeight: 500,
     borderRadius: 8,
     border: 'none',
-    cursor: 'pointer',
+    cursor: oauthFlowLocked ? 'default' : 'pointer',
+    opacity: oauthFlowLocked ? 0.62 : 1,
     transition: 'all 0.2s ease',
     background: active ? token.colorBgContainer : 'transparent',
     color: active ? token.colorText : token.colorTextSecondary,
@@ -137,10 +172,11 @@ export const LoginFormView = memo(function LoginFormView({
     width: '100%',
     height: 44,
     borderRadius: 12,
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: '24px minmax(0, 1fr) 24px',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
+    gap: 8,
+    padding: '0 12px',
     fontSize: 14,
     fontWeight: 500,
   };
@@ -279,10 +315,20 @@ export const LoginFormView = memo(function LoginFormView({
           border: `1px solid ${token.colorBorderSecondary}`,
         }}
       >
-        <button style={tabStyle(tab === 'quick')} onClick={() => onTabChange('quick')} data-login-tab="quick">
+        <button
+          data-login-tab="quick"
+          disabled={oauthFlowLocked}
+          onClick={() => onTabChange('quick')}
+          style={tabStyle(tab === 'quick')}
+        >
           {t('auth.login.tab.quick')}
         </button>
-        <button data-login-tab="email" style={tabStyle(tab === 'email')} onClick={() => onTabChange('email')}>
+        <button
+          data-login-tab="email"
+          disabled={oauthFlowLocked}
+          onClick={() => onTabChange('email')}
+          style={tabStyle(tab === 'email')}
+        >
           {t('auth.login.tab.email')}
         </button>
       </div>
@@ -291,36 +337,101 @@ export const LoginFormView = memo(function LoginFormView({
         {tab === 'quick' ? (
           <Flexbox gap={10}>
             {oauth2AccountProviders.map(provider => {
+              const active = oauthActionProviderId === provider.id;
+              const actionState = active ? oauthActionState : 'idle';
+              const anotherProviderActive = !!oauthActionProviderId && !active;
+              const actionPending = ['opening', 'waiting', 'initializing', 'success'].includes(actionState);
+              const cancellable = active && ['opening', 'waiting', 'error'].includes(actionState);
               const isExpiredProvider =
                 expiredAccount?.provider?.toLowerCase() === provider.id.toLowerCase();
-              const highlight = highlightProviderId === provider.id || isExpiredProvider;
-              return (
-                <Button
-                  key={provider.id}
-                  data-pt-login-oauth-provider={provider.id}
-                  ref={(el) => { buttonRefs.current[provider.id] = el; }}
-                  style={{
-                    ...oauthButtonStyle,
-                    ...(highlight
-                      ? { borderColor: provider.color || token.colorPrimary, color: provider.color || token.colorPrimary }
-                      : {}),
-                  }}
-                  icon={
-                    provider.id === 'github'
+              const highlight = active || isExpiredProvider;
+              const label = actionState === 'opening'
+                ? t('auth.login.openingBrowser', { provider: provider.name })
+                : actionState === 'waiting'
+                  ? t('auth.login.waiting')
+                  : actionState === 'initializing'
+                    ? t('auth.login.initializing')
+                    : actionState === 'success'
+                      ? t('auth.login.success')
+                      : actionState === 'error'
+                        ? t('auth.login.retryWith', { provider: provider.name })
+                        : t('auth.login.continueWith', { provider: provider.name });
+              const icon = actionState === 'opening'
+                || actionState === 'waiting'
+                || actionState === 'initializing'
+                ? <Loader2 className="spin" size={18} />
+                : actionState === 'success'
+                  ? <Check size={18} />
+                  : actionState === 'error'
+                    ? <RotateCcw size={18} />
+                    : provider.id === 'github'
                       ? <Github size={18} />
-                      : <GoogleIcon />
-                  }
-                  onClick={() => onOAuthLogin(provider, buttonRefs.current[provider.id])}
+                      : <GoogleIcon />;
+              return (
+                <div
+                  aria-live={active ? 'polite' : undefined}
+                  className="login-oauth-action"
+                  data-pt-login-oauth-action={provider.id}
+                  key={provider.id}
+                  ref={(element) => { oauthActionRefs.current[provider.id] = element; }}
+                  role={active ? 'status' : undefined}
+                  tabIndex={active ? -1 : undefined}
                 >
-                  {t('auth.login.continueWith', { provider: provider.name })}
-                </Button>
+                  <Button
+                    aria-label={actionState === 'error' && oauthActionError
+                      ? `${label}. ${oauthActionError}`
+                      : label}
+                    className="login-oauth-action__button"
+                    data-pt-login-oauth-provider={provider.id}
+                    data-pt-login-oauth-state={actionState}
+                    disabled={anotherProviderActive || actionPending}
+                    onClick={() => onOAuthLogin(provider)}
+                    ref={(element) => { oauthButtonRefs.current[provider.id] = element; }}
+                    style={{
+                      ...oauthButtonStyle,
+                      ...(highlight
+                        ? {
+                            borderColor: actionState === 'error'
+                              ? token.colorError
+                              : actionState === 'success'
+                                ? token.colorSuccess
+                                : provider.color || token.colorPrimary,
+                            color: actionState === 'error'
+                              ? token.colorError
+                              : actionState === 'success'
+                                ? token.colorSuccess
+                                : provider.color || token.colorPrimary,
+                          }
+                        : {}),
+                    }}
+                    title={actionState === 'error' ? oauthActionError : undefined}
+                  >
+                    <span className="login-oauth-action__icon">{icon}</span>
+                    <span className="login-oauth-action__label">{label}</span>
+                    <span aria-hidden="true" />
+                  </Button>
+                  {cancellable && (
+                    <Tooltip title={t('auth.login.cancelAction')}>
+                      <Button
+                        aria-label={t('auth.login.cancelAction')}
+                        className="login-oauth-action__cancel"
+                        data-pt-login-oauth-cancel={provider.id}
+                        icon={<X size={15} />}
+                        onClick={onOAuthCancel}
+                        ref={(element) => { oauthCancelRefs.current[provider.id] = element; }}
+                        size="small"
+                        type="text"
+                      />
+                    </Tooltip>
+                  )}
+                </div>
               );
             })}
             {oauth2AccountProviders.length === 0 && (
               <>
                 <Button
                   data-pt-login-oauth-provider="github"
-                  style={oauthButtonStyle}
+                  style={{ ...oauthButtonStyle, display: 'flex', justifyContent: 'center' }}
                   icon={<Github size={18} />}
                   disabled
                 >
@@ -328,7 +439,7 @@ export const LoginFormView = memo(function LoginFormView({
                 </Button>
                 <Button
                   data-pt-login-oauth-provider="google"
-                  style={oauthButtonStyle}
+                  style={{ ...oauthButtonStyle, display: 'flex', justifyContent: 'center' }}
                   icon={<GoogleIcon />}
                   disabled
                 >

@@ -271,7 +271,14 @@
       "description": "Prove source-bound native macOS Desktop and iOS Simulator clients bind signed Station identity before authenticating through the canonical Access Gate."
     },
     "station-access-desktop-oauth-native-e2e": {
-      "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.station_access.desktop_oauth_native_e2e",
+      "argv": [
+        "python3",
+        "-m",
+        "tooling.acceptance.gates.station_access.desktop_oauth_native_e2e"
+      ],
+      "ephemeralCapabilities": [
+        "station-access.oauth-bridge-signer"
+      ],
       "timeout_seconds": 1200,
       "environment": "station-access-desktop-oauth-native",
       "provisioner": "station-access-desktop-oauth-native",
@@ -279,7 +286,7 @@
         "desktop-macos-native"
       ],
       "tier": "env-evidence",
-      "description": "Launch one clean source-bound native macOS Desktop at the unauthenticated login surface and prove GitHub and Google return authorization URLs and loopback session IDs without an existing actor session."
+      "description": "Launch one clean source-bound native macOS Desktop, prove GitHub and Google can start and cancel before authentication, then complete a deterministic OAuth callback through Station and restore the canonical authenticated actor."
     },
     "station-access-desktop-oauth-layout-e2e": {
       "command": "python3 -m tooling.acceptance.gates.station_access.desktop_oauth_layout_e2e",
@@ -287,7 +294,7 @@
       "environment": "station-access-login-browser",
       "provisioner": "station-access-login-browser",
       "tier": "env-evidence",
-      "description": "Render the exact-source Desktop login in Chromium at 1200x800 and 640x800, prove GitHub and Google actions open the provider-specific OAuth side card without viewport overflow or login-card intersection, and save DOM and screenshot evidence."
+      "description": "Render the exact-source Desktop login in Chromium at 1200x800 and 640x800, prove GitHub and Google opening, waiting, cancellation, initialization, success, and retry remain inside fixed-size provider actions without moving the auth card, and save DOM and screenshot evidence."
     },
     "station-access-scope-isolation-e2e": {
       "argv": [

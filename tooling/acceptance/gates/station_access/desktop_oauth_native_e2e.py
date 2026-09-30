@@ -8,33 +8,97 @@ import os
 import re
 import time
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.request import ProxyHandler, build_opener
 
 from tooling.acceptance.core import (
     AcceptanceGate,
+    EphemeralGateClient,
     GateError,
     REPO_ROOT,
     call_async_harness,
     load_runtime_manifest,
 )
-from tooling.acceptance.drivers.native import resolve_native_desktop_runtime
+from tooling.acceptance.drivers.native import (
+    MouseAction,
+    resolve_native_desktop_runtime,
+)
 from tooling.acceptance.drivers.tauri import TauriSession
 
 
 GATE_ID = "station-access-desktop-oauth-native-e2e"
 CLIENT_ID = "oauth-login"
+SIGNER_CAPABILITY_ID = "station-access.oauth-bridge-signer"
+SIGN_OPERATION = "sign"
 PROVIDERS = ("github", "google")
+OAUTH_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4"
+CHAT_NAV_SELECTOR = '[data-pt-primary-nav="chat"] [role="button"]'
+ACCOUNT_IDENTITY_SUMMARY_SELECTOR = "[data-pt-account-identity-summary]"
+ACCOUNT_LOGIN_PROVIDER_SELECTOR = "[data-pt-account-login-provider]"
+LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR = (
+    '[data-pt-account-identity="login-provider"]'
+)
 REQUIRED_ASSERTIONS = frozenset(
     {
         "native_login_surface_is_unauthenticated",
         "github_loopback_starts_before_authentication",
         "google_loopback_starts_before_authentication",
+        "github_loopback_cancels_before_authentication",
+        "google_loopback_cancels_before_authentication",
+        "oauth_callback_rejects_missing_signature",
+        "oauth_callback_rejects_incorrect_signature",
+        "oauth_failure_allows_retry",
+        "oauth_callback_creates_station_session",
+        "oauth_callback_restores_authenticated_identity",
+        "oauth_identity_projection_is_consistent",
+        "account_identity_ui_shows_provider_and_ptid",
+        "find_people_scope_labels_and_tooltips_are_distinct",
         "native_runtime_is_source_bound",
         "native_runtime_cleanup",
     }
 )
+
+
+def is_native_tauri_url(value: str) -> bool:
+    try:
+        parsed = urlparse(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "tauri"
+        and parsed.hostname == "localhost"
+        and parsed.username is None
+        and parsed.password is None
+        and port is None
+    )
+
+
+def find_people_scopes_are_distinct(evidence: Mapping[str, object]) -> bool:
+    federation = evidence.get("federation")
+    station = evidence.get("station")
+    if not isinstance(federation, Mapping) or not isinstance(station, Mapping):
+        return False
+    federation_label = str(federation.get("label") or "").strip()
+    station_label = str(station.get("label") or "").strip()
+    federation_aria = str(federation.get("ariaLabel") or "").strip()
+    station_aria = str(station.get("ariaLabel") or "").strip()
+    return (
+        federation.get("name") == station.get("name") == "local"
+        and federation_label == "Federation: local"
+        and station_label == "Station: local"
+        and federation_label != station_label
+        and bool(federation_aria)
+        and bool(station_aria)
+        and federation_aria != station_aria
+        and federation.get("tooltip") == federation_aria
+        and station.get("tooltip") == station_aria
+    )
+
+
 OAUTH_START_SCRIPT = """
 const providerId = arguments[0];
 const done = arguments[arguments.length - 1];
@@ -67,6 +131,40 @@ Promise.resolve(internals.invoke('oauth2_start_loopback', {
   }),
 );
 """
+OAUTH_CANCEL_SCRIPT = """
+const sessionId = arguments[0];
+const done = arguments[arguments.length - 1];
+const internals = window.__TAURI_INTERNALS__;
+Promise.resolve(internals.invoke('oauth2_cancel_loopback', {
+  input: { session_id: sessionId },
+})).then(
+  (value) => done({ transport: 'resolved', value }),
+  (error) => done({
+    transport: 'rejected',
+    error: {
+      code: error?.code || error?.error?.code || '',
+      message: error?.message || error?.error?.message || String(error),
+    },
+  }),
+);
+"""
+OAUTH_POLL_SCRIPT = """
+const sessionId = arguments[0];
+const done = arguments[arguments.length - 1];
+const internals = window.__TAURI_INTERNALS__;
+Promise.resolve(internals.invoke('oauth2_poll_loopback', {
+  input: { session_id: sessionId },
+})).then(
+  (value) => done({ transport: 'resolved', value }),
+  (error) => done({
+    transport: 'rejected',
+    error: {
+      code: error?.code || error?.error?.code || '',
+      message: error?.message || error?.error?.message || String(error),
+    },
+  }),
+);
+"""
 
 
 class DesktopOAuthNativeGate(AcceptanceGate):
@@ -75,8 +173,9 @@ class DesktopOAuthNativeGate(AcceptanceGate):
     bom = ("SAL-OAUTH-01",)
     spec = ("station-access-desktop-oauth-preauth",)
 
-    def __init__(self) -> None:
+    def __init__(self, capability_client: EphemeralGateClient) -> None:
         super().__init__()
+        self.capability_client = capability_client
         manifest_path = os.environ.get(
             "PT_ACCEPTANCE_RUNTIME_MANIFEST",
             "",
@@ -123,6 +222,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         client = self._client()
         session: TauriSession | None = None
         cleanup: dict[str, Any] = {}
+        find_people_scopes: dict[str, Any] = {}
         try:
             session = self.runtime_binding.create_bound_session(CLIENT_ID)
             login_card = self._wait_for_displayed(
@@ -159,15 +259,233 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                     f"{provider_id}_loopback_starts_before_authentication",
                     providers[provider_id]["transport"] == "resolved"
                     and providers[provider_id]["hasAuthorizationUrl"] is True
-                    and providers[provider_id]["hasLoopbackSession"] is True,
+                    and providers[provider_id]["hasLoopbackSession"] is True
+                    and providers[provider_id]["hasLoopbackCallback"] is True,
                     json.dumps(providers[provider_id], sort_keys=True),
                 )
+                cancellation = self._cancel_oauth(
+                    session,
+                    providers[provider_id]["sessionId"],
+                )
+                providers[provider_id]["cancellation"] = cancellation
+                self.assert_condition(
+                    f"{provider_id}_loopback_cancels_before_authentication",
+                    cancellation["transport"] == "resolved"
+                    and cancellation["cancelled"] is True
+                    and cancellation["status"] == "cancelled",
+                    json.dumps(cancellation, sort_keys=True),
+                )
+
+            signature_failures: dict[str, Any] = {}
+            for failure_name, signature in (
+                ("missing", None),
+                ("incorrect", "0" * 64),
+            ):
+                failed_start = self._start_oauth_via_product(session, "github")
+                failed_callback = self._send_callback(
+                    failed_start["callbackUrl"],
+                    provider_id="github",
+                    provider_user_id="acceptance-native-oauth",
+                    email="oauth.acceptance@test.invalid",
+                    signature=signature,
+                )
+                failed_result = self._poll_oauth_terminal(
+                    session,
+                    failed_start["sessionId"],
+                )
+                product_failure = self._complete_oauth_failure_via_product(
+                    session,
+                    "github",
+                )
+                signature_failures[failure_name] = {
+                    "callback": failed_callback,
+                    "loopback": failed_result,
+                    "productFlow": product_failure,
+                }
+                self.assert_condition(
+                    f"oauth_callback_rejects_{failure_name}_signature",
+                    failed_callback["statusCode"] == 200
+                    and failed_result["completed"] is True
+                    and failed_result["status"] == "failed"
+                    and bool(failed_result["error"])
+                    and product_failure["rejected"] is True,
+                    json.dumps(signature_failures[failure_name], sort_keys=True),
+                )
+
+            login_start = self._start_oauth_via_product(session, "github")
+            signed_callback = self._sign_callback(
+                provider_id="github",
+                provider_user_id="acceptance-native-oauth",
+                email="oauth.acceptance@test.invalid",
+            )
+            callback = self._send_callback(
+                login_start["callbackUrl"],
+                provider_id="github",
+                provider_user_id="acceptance-native-oauth",
+                email="oauth.acceptance@test.invalid",
+                timestamp=signed_callback["timestamp"],
+                signature=signed_callback["signature"],
+            )
+            callback_result = self._poll_oauth_terminal(
+                session,
+                login_start["sessionId"],
+            )
+            authenticated_identity = self._complete_oauth_via_product(
+                session,
+                "github",
+            )
+            login_surface_visible = any(
+                element.is_displayed()
+                for element in session.find_elements("[data-pt-login-card]")
+            )
+            providers["github"]["loginProof"] = {
+                "callback": callback,
+                "loopback": callback_result,
+                "identity": authenticated_identity,
+                "loginSurfaceVisible": login_surface_visible,
+                "signatureFailures": signature_failures,
+            }
+            actor_ptid = str(authenticated_identity.get("actorPtid") or "")
+            self.assert_condition(
+                "oauth_failure_allows_retry",
+                all(
+                    failure["productFlow"]["rejected"] is True
+                    for failure in signature_failures.values()
+                )
+                and callback_result["completed"] is True
+                and callback_result["status"] == "completed",
+                json.dumps(providers["github"]["loginProof"], sort_keys=True),
+            )
+            self.assert_condition(
+                "oauth_callback_creates_station_session",
+                callback["statusCode"] == 200
+                and callback_result["completed"] is True
+                and callback_result["status"] == "completed"
+                and actor_ptid.startswith("ptid:"),
+                json.dumps(providers["github"]["loginProof"], sort_keys=True),
+            )
+            self.assert_condition(
+                "oauth_callback_restores_authenticated_identity",
+                authenticated_identity.get("authenticated") is True
+                and authenticated_identity.get("lifecycleState") == "ready"
+                and authenticated_identity.get("phaseKind") != "accountGate"
+                and actor_ptid.startswith("ptid:")
+                and not login_surface_visible,
+                json.dumps(authenticated_identity, sort_keys=True),
+            )
+            identity_projection = self._mapping(
+                call_async_harness(
+                    session,
+                    "oauthIdentityProjection",
+                    {},
+                    namespace="stationAccess",
+                    script_timeout=30,
+                ),
+                "Desktop OAuth identity projection",
+            )
+            providers["github"]["identityProjection"] = identity_projection
+            projected_avatar = str(identity_projection.get("profileAvatarUrl") or "")
+            self.assert_condition(
+                "oauth_identity_projection_is_consistent",
+                identity_projection.get("actorPtid") == actor_ptid
+                and identity_projection.get("profilePtid") == actor_ptid
+                and identity_projection.get("sessionProvider") == "github"
+                and identity_projection.get("accountProvider") == "github"
+                and bool(projected_avatar)
+                and identity_projection.get("sessionAvatarUrl") == projected_avatar
+                and identity_projection.get("accountAvatarUrl") == projected_avatar,
+                json.dumps(identity_projection, sort_keys=True),
+            )
+
+            call_async_harness(
+                session,
+                "openAccountIdentity",
+                {},
+                namespace="stationAccess",
+                script_timeout=10,
+            )
+            account_avatar = self._wait_for_displayed(
+                session,
+                "[data-pt-account-avatar-url]",
+                timeout=20,
+            )
+            account_ptid = self._wait_for_displayed(
+                session,
+                '[data-pt-account-identity="ptid"]',
+                timeout=20,
+            )
+            account_provider = self._wait_for_displayed(
+                session,
+                ACCOUNT_LOGIN_PROVIDER_SELECTOR,
+                timeout=20,
+            )
+            account_provider_summary = self._mapping(
+                session.execute_script(
+                    """
+                    const provider = arguments[0];
+                    return {
+                      inIdentitySummary: Boolean(
+                        provider.closest(arguments[1])
+                      ),
+                      legacyFieldCount: document.querySelectorAll(
+                        arguments[2]
+                      ).length,
+                    };
+                    """,
+                    account_provider,
+                    ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
+                    LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR,
+                ),
+                "Desktop Account provider summary",
+            )
+            account_ui = {
+                "avatarUrl": account_avatar.get_attribute(
+                    "data-pt-account-avatar-url"
+                ),
+                "ptid": account_ptid.text,
+                "provider": account_provider.text,
+                "providerInIdentitySummary": account_provider_summary.get(
+                    "inIdentitySummary"
+                ),
+                "legacyProviderFieldCount": account_provider_summary.get(
+                    "legacyFieldCount"
+                ),
+            }
+            providers["github"]["accountUi"] = account_ui
+            self.assert_condition(
+                "account_identity_ui_shows_provider_and_ptid",
+                account_ui["avatarUrl"] == projected_avatar
+                and actor_ptid in account_ui["ptid"]
+                and account_ui["provider"] == "GitHub"
+                and account_ui["providerInIdentitySummary"] is True
+                and account_ui["legacyProviderFieldCount"] == 0,
+                json.dumps(account_ui, sort_keys=True),
+            )
+            self.save_screenshot(session, "desktop-oauth-authenticated")
+            self.save_dom(session, "desktop-oauth-authenticated")
+
+            find_people_scopes = self._find_people_scope_evidence(session)
+            self.assert_condition(
+                "find_people_scope_labels_and_tooltips_are_distinct",
+                find_people_scopes_are_distinct(find_people_scopes),
+                json.dumps(find_people_scopes, sort_keys=True),
+            )
+            self.save_screenshot(session, "desktop-oauth-find-people-scopes")
+            self.save_dom(session, "desktop-oauth-find-people-scopes")
+
             source_identity = self._source_identity()
+            document_url = session.get_current_url()
             self.assert_condition(
                 "native_runtime_is_source_bound",
-                session.get_current_url() == "tauri://localhost"
+                is_native_tauri_url(document_url)
                 and source_identity["verified"] is True,
-                json.dumps(source_identity, sort_keys=True),
+                json.dumps(
+                    {
+                        "documentUrl": document_url,
+                        "sourceIdentity": source_identity,
+                    },
+                    sort_keys=True,
+                ),
             )
         finally:
             if session is not None:
@@ -198,6 +516,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             "runtimeCell": "desktop-macos-native",
             "journey": "station-access-desktop-oauth-preauth",
             "providers": providers,
+            "findPeopleScopes": find_people_scopes,
             "sourceIdentity": source_identity,
             "cleanup": cleanup,
         }
@@ -236,6 +555,276 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         raise GateError(
             f"Desktop OAuth element did not become visible: {selector}{suffix}"
         )
+
+    def _find_people_scope_evidence(
+        self,
+        session: TauriSession,
+    ) -> dict[str, Any]:
+        session.find_element(
+            CHAT_NAV_SELECTOR,
+            timeout=20,
+        ).click()
+        self._wait_for_displayed(
+            session,
+            "[data-chat-new-menu]",
+            timeout=20,
+        ).click()
+        self._wait_for_displayed(
+            session,
+            "[data-chat-find-people-menu]",
+            timeout=10,
+        ).click()
+        self._wait_for_displayed(
+            session,
+            "[data-chat-find-people]",
+            timeout=20,
+        )
+
+        federation = self._wait_for_displayed_with_text(
+            session,
+            '[data-chat-find-people-scope="federation"]',
+            "Federation: local",
+            timeout=20,
+        )
+        federation_aria = str(federation.get_attribute("aria-label") or "").strip()
+        federation_tooltip = self._hover_tooltip(
+            session,
+            federation,
+            federation_aria,
+            timeout=10,
+        )
+        federation.click()
+        station = self._wait_for_displayed_with_text(
+            session,
+            '[data-chat-find-people-scope="station"]',
+            "Station: local",
+            timeout=30,
+        )
+
+        station_aria = str(station.get_attribute("aria-label") or "").strip()
+        station_tooltip = self._hover_tooltip(
+            session,
+            station,
+            station_aria,
+            timeout=10,
+        )
+        return {
+            "federation": {
+                "name": "local",
+                "label": federation.text.strip(),
+                "ariaLabel": federation_aria,
+                "tooltip": federation_tooltip,
+            },
+            "station": {
+                "name": "local",
+                "label": station.text.strip(),
+                "ariaLabel": station_aria,
+                "tooltip": station_tooltip,
+            },
+        }
+
+    @staticmethod
+    def _wait_for_displayed_with_text(
+        session: TauriSession,
+        selector: str,
+        expected_text: str,
+        *,
+        timeout: float,
+    ) -> Any:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for element in session.find_elements(selector):
+                if element.is_displayed() and element.text.strip() == expected_text:
+                    return element
+            time.sleep(0.1)
+        raise GateError(
+            "Desktop OAuth element did not become visible with expected text: "
+            f"{selector}={expected_text!r}"
+        )
+
+    def _hover_tooltip(
+        self,
+        session: TauriSession,
+        element: Any,
+        expected_text: str,
+        *,
+        timeout: float,
+    ) -> str:
+        if not expected_text:
+            raise GateError("Find People scope aria-label is empty")
+        process_id = session.process_id
+        if process_id is None:
+            raise GateError("Find People tooltip proof has no native process")
+        if not bool(session.execute_script("return document.hasFocus()")):
+            cooperatively_activated = self.runtime_binding.request_cooperative_activation(
+                session,
+                (session,),
+            )
+            if not cooperatively_activated:
+                self.runtime_binding.native_adapter.activate_process(process_id)
+            focus_deadline = time.monotonic() + 5
+            while time.monotonic() < focus_deadline:
+                if bool(session.execute_script("return document.hasFocus()")):
+                    break
+                time.sleep(0.05)
+            else:
+                raise GateError(
+                    "Find People tooltip proof could not focus the native "
+                    "Desktop document"
+                )
+        element_center = self._mapping(
+            session.execute_script(
+                """
+                const rect = arguments[0].getBoundingClientRect();
+                return {
+                  x: rect.left + rect.width / 2,
+                  y: rect.top + rect.height / 2,
+                };
+                """,
+                element,
+            ),
+            "Find People scope element center",
+        )
+        content_origin = self.runtime_binding.native_adapter.content_origin(
+            process_id
+        )
+        if content_origin is None:
+            window = session.driver.get_window_rect()
+            viewport = self._mapping(
+                session.execute_script(
+                    "return { width: innerWidth, height: innerHeight };"
+                ),
+                "Desktop viewport",
+            )
+            scale = float(
+                session.execute_script("return window.devicePixelRatio || 1")
+            )
+            if scale <= 0:
+                raise GateError(f"Desktop window scale is invalid: {scale}")
+            window_left = float(window["x"]) / scale
+            window_top = float(window["y"]) / scale
+            window_width = float(window["width"]) / scale
+            window_height = float(window["height"]) / scale
+            content_origin = (
+                window_left
+                + max(0.0, (window_width - float(viewport["width"])) / 2),
+                window_top
+                + max(0.0, window_height - float(viewport["height"])),
+            )
+        self.runtime_binding.native_adapter.post_mouse(
+            (MouseAction.MOVE,),
+            (content_origin[0] + 2.0, content_origin[1] + 2.0),
+        )
+        time.sleep(0.1)
+        self.runtime_binding.native_adapter.post_mouse(
+            (MouseAction.MOVE,),
+            (
+                content_origin[0] + float(element_center["x"]),
+                content_origin[1] + float(element_center["y"]),
+            ),
+        )
+        deadline = time.monotonic() + timeout
+        latest_render_states: list[dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            latest_render_states = []
+            for tooltip in session.find_elements('[role="tooltip"]'):
+                tooltip_text = tooltip.text.strip()
+                if tooltip_text != expected_text:
+                    continue
+                render_state = self._element_render_state(
+                    session,
+                    element,
+                    tooltip,
+                )
+                latest_render_states.append(render_state)
+                if render_state.get("visible") is True:
+                    return tooltip_text
+            time.sleep(0.1)
+        raise GateError(
+            "Find People scope tooltip did not become visible with expected text: "
+            f"{expected_text!r}; render states: "
+            f"{json.dumps(latest_render_states, sort_keys=True)}"
+        )
+
+    @staticmethod
+    def _element_render_state(
+        session: TauriSession,
+        trigger: Any,
+        element: Any,
+    ) -> dict[str, Any]:
+        state = session.execute_script(
+                """
+                const trigger = arguments[0];
+                const tooltip = arguments[1];
+                const describedBy = (trigger.getAttribute('aria-describedby') || '')
+                  .split(/\\s+/)
+                  .filter(Boolean);
+                const rect = tooltip.getBoundingClientRect();
+                let effectiveOpacity = 1;
+                const ancestors = [];
+                let stylesVisible = true;
+                for (
+                  let current = tooltip;
+                  current instanceof Element;
+                  current = current.parentElement
+                ) {
+                  const style = getComputedStyle(current);
+                  ancestors.push({
+                    tag: current.tagName,
+                    id: current.id || '',
+                    className: String(current.className || ''),
+                    display: style.display,
+                    visibility: style.visibility,
+                    opacity: style.opacity,
+                  });
+                  if (style.display === 'none' || style.visibility === 'hidden') {
+                    stylesVisible = false;
+                  }
+                  effectiveOpacity *= Number.parseFloat(style.opacity || '1');
+                  if (current === document.body) break;
+                }
+                const associated = Boolean(
+                  tooltip.id && describedBy.includes(tooltip.id)
+                );
+                const visible = Boolean(
+                  associated
+                  &&
+                  rect.width > 0
+                  && rect.height > 0
+                  && stylesVisible
+                  && effectiveOpacity >= 0.99
+                );
+                return {
+                  ancestors,
+                  associated,
+                  describedBy,
+                  effectiveOpacity,
+                  rect: {
+                    height: rect.height,
+                    width: rect.width,
+                  },
+                  tooltipId: tooltip.id || '',
+                  visible,
+                };
+                """,
+                trigger,
+                element,
+            )
+        if not isinstance(state, Mapping):
+            return {"visible": False, "error": "render state is not an object"}
+        return dict(state)
+
+    @staticmethod
+    def _element_is_visibly_rendered(
+        session: TauriSession,
+        trigger: Any,
+        element: Any,
+    ) -> bool:
+        return DesktopOAuthNativeGate._element_render_state(
+            session,
+            trigger,
+            element,
+        ).get("visible") is True
 
     def _source_identity(self) -> dict[str, Any]:
         source = self._mapping(self.manifest.get("source"), "runtime source")
@@ -288,6 +877,34 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         }
 
     @staticmethod
+    def _oauth_start_evidence(
+        provider_id: str,
+        auth_url: str,
+        session_id: str,
+    ) -> dict[str, Any]:
+        parsed_url = urlparse(auth_url)
+        return_to = parse_qs(parsed_url.query).get("return_to", [""])[0]
+        parsed_callback = urlparse(return_to)
+        return {
+            "provider": provider_id,
+            "transport": "resolved",
+            "authorizationOrigin": (
+                f"{parsed_url.scheme}://{parsed_url.netloc}"
+                if parsed_url.scheme and parsed_url.netloc
+                else ""
+            ),
+            "hasAuthorizationUrl": parsed_url.scheme in {"http", "https"},
+            "hasLoopbackSession": session_id.startswith("lp-"),
+            "hasLoopbackCallback": (
+                parsed_callback.scheme == "http"
+                and parsed_callback.hostname in {"127.0.0.1", "localhost", "::1"}
+                and parse_qs(parsed_callback.query).get("session_id") == [session_id]
+            ),
+            "callbackUrl": return_to,
+            "sessionId": session_id,
+        }
+
+    @staticmethod
     def _start_oauth(
         session: TauriSession,
         provider_id: str,
@@ -314,19 +931,242 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             raise GateError(
                 f"{provider_id} OAuth start returned invalid status JSON"
             ) from error
-        auth_url = str(status.get("auth_url") or "")
-        session_id = str(status.get("session_id") or "")
-        parsed_url = urlparse(auth_url)
+        return DesktopOAuthNativeGate._oauth_start_evidence(
+            provider_id,
+            str(status.get("auth_url") or ""),
+            str(status.get("session_id") or ""),
+        )
+
+    @staticmethod
+    def _start_oauth_via_product(
+        session: TauriSession,
+        provider_id: str,
+    ) -> dict[str, Any]:
+        start = DesktopOAuthNativeGate._mapping(
+            call_async_harness(
+                session,
+                "beginOAuthLogin",
+                {"providerId": provider_id},
+                namespace="stationAccess",
+                script_timeout=15,
+            ),
+            "Desktop product OAuth start",
+        )
+        return DesktopOAuthNativeGate._oauth_start_evidence(
+            provider_id,
+            str(start.get("authUrl") or ""),
+            str(start.get("sessionId") or ""),
+        )
+
+    @staticmethod
+    def _build_callback_url(
+        callback_url: str,
+        *,
+        provider_id: str,
+        provider_user_id: str,
+        email: str,
+        timestamp: str,
+        signature: str | None,
+    ) -> str:
+        parsed = urlparse(callback_url)
+        query = {
+            key: values[-1]
+            for key, values in parse_qs(parsed.query, keep_blank_values=True).items()
+            if values
+        }
+        query.update(
+            {
+                "provider": provider_id,
+                "provider_user_id": provider_user_id,
+                "username": "oauthacceptance",
+                "display_name": "OAuth Acceptance",
+                "email": email,
+                "avatar_url": OAUTH_AVATAR_URL,
+                "ts": timestamp,
+            }
+        )
+        if signature is None:
+            query.pop("sig", None)
+        else:
+            query["sig"] = signature
+        return urlunparse(parsed._replace(query=urlencode(query)))
+
+    @classmethod
+    def _send_callback(
+        cls,
+        callback_url: str,
+        *,
+        provider_id: str,
+        provider_user_id: str,
+        email: str,
+        signature: str | None,
+        timestamp: str | None = None,
+    ) -> dict[str, Any]:
+        timestamp = timestamp or datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        ).replace("+00:00", "Z")
+        target = cls._build_callback_url(
+            callback_url,
+            provider_id=provider_id,
+            provider_user_id=provider_user_id,
+            email=email,
+            timestamp=timestamp,
+            signature=signature,
+        )
+        try:
+            opener = build_opener(ProxyHandler({}))
+            with opener.open(target, timeout=15) as response:
+                response.read()
+                status_code = int(response.status)
+        except OSError as error:
+            raise GateError(f"OAuth loopback callback failed: {error}") from error
         return {
             "provider": provider_id,
-            "transport": "resolved",
-            "authorizationOrigin": (
-                f"{parsed_url.scheme}://{parsed_url.netloc}"
-                if parsed_url.scheme and parsed_url.netloc
-                else ""
+            "statusCode": status_code,
+        }
+
+    @staticmethod
+    def _invoke_status(
+        session: TauriSession,
+        script: str,
+        *args: str,
+        label: str,
+    ) -> dict[str, Any]:
+        raw = session.execute_async_script(script, *args)
+        if not isinstance(raw, Mapping) or raw.get("transport") != "resolved":
+            raise GateError(f"{label} transport failed: {json.dumps(raw, sort_keys=True)}")
+        result = raw.get("value")
+        if not isinstance(result, Mapping) or result.get("ok") is not True:
+            raise GateError(f"{label} failed: {json.dumps(result, sort_keys=True)}")
+        data = result.get("data")
+        status_raw = data.get("status") if isinstance(data, Mapping) else None
+        if not isinstance(status_raw, str):
+            raise GateError(f"{label} omitted status")
+        try:
+            return DesktopOAuthNativeGate._mapping(
+                json.loads(status_raw),
+                f"{label} status",
+            )
+        except json.JSONDecodeError as error:
+            raise GateError(f"{label} returned invalid status JSON") from error
+
+    @classmethod
+    def _poll_oauth_terminal(
+        cls,
+        session: TauriSession,
+        session_id: str,
+    ) -> dict[str, Any]:
+        deadline = time.monotonic() + 20
+        latest: dict[str, Any] = {}
+        while time.monotonic() < deadline:
+            latest = cls._invoke_status(
+                session,
+                OAUTH_POLL_SCRIPT,
+                session_id,
+                label="OAuth callback poll",
+            )
+            if latest.get("completed") is True:
+                return {
+                    "completed": True,
+                    "status": str(latest.get("status") or ""),
+                    "error": str(latest.get("error") or ""),
+                }
+            time.sleep(0.1)
+        raise GateError(
+            f"OAuth callback did not complete: {json.dumps(latest, sort_keys=True)}"
+        )
+
+    def _sign_callback(
+        self,
+        *,
+        provider_id: str,
+        provider_user_id: str,
+        email: str,
+    ) -> dict[str, str]:
+        timestamp = datetime.now(timezone.utc).isoformat(
+            timespec="seconds"
+        ).replace("+00:00", "Z")
+        response = self.capability_client.invoke(
+            SIGNER_CAPABILITY_ID,
+            SIGN_OPERATION,
+            {
+                "provider": provider_id,
+                "providerUserId": provider_user_id,
+                "email": email,
+                "timestamp": timestamp,
+            },
+            timeout_seconds=10,
+        )
+        signature = str(response.get("signature") or "")
+        if (
+            response.get("algorithm") != "HMAC-SHA256"
+            or re.fullmatch(r"[0-9a-f]{64}", signature) is None
+        ):
+            raise GateError("OAuth bridge signer returned an invalid signature")
+        return {"timestamp": timestamp, "signature": signature}
+
+    @staticmethod
+    def _complete_oauth_failure_via_product(
+        session: TauriSession,
+        provider_id: str,
+    ) -> dict[str, Any]:
+        try:
+            call_async_harness(
+                session,
+                "completeOAuthLogin",
+                {"providerId": provider_id},
+                namespace="stationAccess",
+                script_timeout=45,
+            )
+        except GateError as error:
+            return {"rejected": True, "error": str(error)}
+        raise GateError("Desktop OAuth failure unexpectedly completed")
+
+    @staticmethod
+    def _complete_oauth_via_product(
+        session: TauriSession,
+        provider_id: str,
+    ) -> dict[str, Any]:
+        return DesktopOAuthNativeGate._mapping(
+            call_async_harness(
+                session,
+                "completeOAuthLogin",
+                {"providerId": provider_id},
+                namespace="stationAccess",
+                script_timeout=45,
             ),
-            "hasAuthorizationUrl": parsed_url.scheme in {"http", "https"},
-            "hasLoopbackSession": session_id.startswith("lp-"),
+            "Desktop completed OAuth identity",
+        )
+
+    @staticmethod
+    def _cancel_oauth(
+        session: TauriSession,
+        session_id: str,
+    ) -> dict[str, Any]:
+        raw = session.execute_async_script(OAUTH_CANCEL_SCRIPT, session_id)
+        if not isinstance(raw, Mapping) or raw.get("transport") != "resolved":
+            raise GateError(
+                "OAuth cancellation failed before authentication: "
+                f"{json.dumps(raw, sort_keys=True)}"
+            )
+        result = raw.get("value")
+        if not isinstance(result, Mapping) or result.get("ok") is not True:
+            raise GateError(
+                "OAuth cancellation was rejected before authentication: "
+                f"{json.dumps(result, sort_keys=True)}"
+            )
+        data = result.get("data")
+        status_raw = data.get("status") if isinstance(data, Mapping) else None
+        if not isinstance(status_raw, str):
+            raise GateError("OAuth cancellation omitted status")
+        try:
+            status = json.loads(status_raw)
+        except json.JSONDecodeError as error:
+            raise GateError("OAuth cancellation returned invalid status JSON") from error
+        return {
+            "transport": "resolved",
+            "cancelled": status.get("cancelled") is True,
+            "status": str(status.get("status") or ""),
         }
 
     @staticmethod
@@ -337,7 +1177,11 @@ class DesktopOAuthNativeGate(AcceptanceGate):
 
 
 def main() -> int:
-    return DesktopOAuthNativeGate().execute()
+    capability_client = EphemeralGateClient.from_environment()
+    if capability_client is None:
+        raise GateError("Desktop OAuth bridge signer capability is required")
+    with capability_client:
+        return DesktopOAuthNativeGate(capability_client).execute()
 
 
 if __name__ == "__main__":

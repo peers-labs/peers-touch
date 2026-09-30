@@ -5,11 +5,13 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"os"
+	"strings"
 	"time"
 
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
@@ -22,6 +24,7 @@ import (
 )
 
 var (
+	ErrBridgeSecretMissing    = errors.New("OAuth bridge secret is not configured")
 	ErrBridgeSignatureInvalid = errors.New("invalid HMAC signature")
 	ErrBridgeTimestampExpired = errors.New("timestamp expired")
 	ErrBridgeTimestampInvalid = errors.New("invalid timestamp format")
@@ -30,11 +33,13 @@ var (
 const bridgeTimestampWindow = 5 * time.Minute
 
 // VerifyBridgeSignature validates the HMAC-SHA256 signature and timestamp window.
-// When no secret is configured (dev mode), verification is skipped.
 func VerifyBridgeSignature(req *model.OAuthBridgeRequest) error {
 	secret := os.Getenv("PEERS_OAUTH_BRIDGE_SECRET")
-	if secret == "" {
-		return nil
+	if strings.TrimSpace(secret) == "" {
+		return ErrBridgeSecretMissing
+	}
+	if req == nil {
+		return ErrBridgeSignatureInvalid
 	}
 
 	ts, err := time.Parse(time.RFC3339, req.GetTs())
@@ -50,9 +55,12 @@ func VerifyBridgeSignature(req *model.OAuthBridgeRequest) error {
 
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(message))
-	expected := hex.EncodeToString(mac.Sum(nil))
+	provided, err := hex.DecodeString(req.GetSig())
+	if err != nil {
+		return ErrBridgeSignatureInvalid
+	}
 
-	if !hmac.Equal([]byte(expected), []byte(req.GetSig())) {
+	if !hmac.Equal(mac.Sum(nil), provided) {
 		return ErrBridgeSignatureInvalid
 	}
 	return nil
@@ -112,7 +120,7 @@ func ResolveOAuthIdentityActor(
 	if err := identityStore.BindActor(ctx, uint64(actorRow.ID), identity, isPrimary); err != nil {
 		return nil, fmt.Errorf("bind OAuth identity: %w", err)
 	}
-	return actorRow, nil
+	return bootstrapMissingOAuthProfile(ctx, actorRow, identity, baseURL)
 }
 
 // OAuthBridgeLogin preserves the external bridge flow while sharing the
@@ -138,6 +146,52 @@ func loadActor(ctx context.Context, actorID uint64) (*db.Actor, error) {
 	return &row, nil
 }
 
+func oauthProfileBootstrapRequest(
+	actorRow *db.Actor,
+	identity *coreauth.OAuth2Identity,
+	observedRevision uint64,
+) (actor.UpdateProfileRequest, bool) {
+	if actorRow == nil || identity == nil || strings.TrimSpace(actorRow.Icon) != "" {
+		return actor.UpdateProfileRequest{}, false
+	}
+	avatarURL := strings.TrimSpace(identity.AvatarURL)
+	if avatarURL == "" {
+		return actor.UpdateProfileRequest{}, false
+	}
+	return actor.UpdateProfileRequest{
+		Avatar:           &avatarURL,
+		ObservedRevision: observedRevision,
+	}, true
+}
+
+func bootstrapMissingOAuthProfile(
+	ctx context.Context,
+	actorRow *db.Actor,
+	identity *coreauth.OAuth2Identity,
+	baseURL string,
+) (*db.Actor, error) {
+	if actorRow == nil || identity == nil || strings.TrimSpace(actorRow.Icon) != "" ||
+		strings.TrimSpace(identity.AvatarURL) == "" {
+		return actorRow, nil
+	}
+	profile, err := actor.GetWebProfileByID(ctx, actorRow.ID, baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("load OAuth actor profile: %w", err)
+	}
+	request, ok := oauthProfileBootstrapRequest(actorRow, identity, profile.ProfileRevision)
+	if !ok {
+		return actorRow, nil
+	}
+	result, err := actor.UpdateProfileByID(ctx, actorRow.ID, baseURL, request)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap OAuth actor profile: %w", err)
+	}
+	if result.Profile != nil {
+		actorRow.Icon = result.Profile.Avatar
+	}
+	return actorRow, nil
+}
+
 func findOrRegisterOAuthActor(ctx context.Context, identity *coreauth.OAuth2Identity, baseURL string) (*db.Actor, error) {
 	if identity.Email != "" {
 		existing, err := actor.GetActorByEmail(ctx, identity.Email)
@@ -151,7 +205,10 @@ func findOrRegisterOAuthActor(ctx context.Context, identity *coreauth.OAuth2Iden
 		return nil, fmt.Errorf("ensure unique username: %w", err)
 	}
 
-	password := generateRandomHex(32)
+	password, err := generateOAuthPassword()
+	if err != nil {
+		return nil, err
+	}
 
 	email := identity.Email
 	if email == "" {
@@ -209,8 +266,10 @@ func ensureUniqueUsername(ctx context.Context, base string) (string, error) {
 	return "", err
 }
 
-func generateRandomHex(n int) string {
-	b := make([]byte, n)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+func generateOAuthPassword() (string, error) {
+	random := make([]byte, 12)
+	if _, err := rand.Read(random); err != nil {
+		return "", fmt.Errorf("generate OAuth account password: %w", err)
+	}
+	return "A1!" + base64.RawURLEncoding.EncodeToString(random), nil
 }

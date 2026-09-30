@@ -4,6 +4,7 @@
 
 - Exact completion or proof claim.
 - Git range or explicit changed paths.
+- Explicit Development Session in `ACCEPTANCE_PASS | DELIVERY_READY`.
 - External Evidence Store role `acceptance-plan` / `plan`.
 - External Evidence Store role `acceptance-run` / `run`.
 - Feature, Capability, Domain, Registry, Gate, Runtime Manifest, and source
@@ -85,13 +86,15 @@ Do not retry, downgrade, substitute, or edit evidence to change the state.
 ```bash
 python3 tooling/scripts/acceptance-gap-detect.py \
   --claim "<claim>" \
-  --range <range>
+  --range <range> \
+  --session <development-session.json>
 
 python3 tooling/scripts/acceptance-gap-detect-test.py
 ```
 
-The default detector execution is read-only and writes no artifact. Use
-`--output` only when a review workflow explicitly requires a report file.
+The detector is read-only with respect to product and repository state. A
+successful admitted run writes an immutable `acceptance-gap-report` to the
+external Evidence Store.
 
 ## Artifacts
 

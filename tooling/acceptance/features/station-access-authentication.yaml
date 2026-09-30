@@ -37,12 +37,14 @@
     "service": [
       "each native client verifies its bound Station before submitting credentials",
       "Desktop GitHub and Google loopback authorization starts before an actor session exists",
+      "a completed Desktop OAuth callback creates and persists a Station session for the canonical actor",
       "a granted decision activates exactly the actor and Station named by the bound runtime"
     ],
     "surface": [
       "Desktop and Mobile leave the Access Gate only after the canonical decision is granted",
-      "Desktop GitHub and Google actions expose a complete provider-specific side card without clipping or covering the login card at wide and narrow window sizes",
-      "native Desktop GitHub and Google login starts return an authorization URL and loopback session while the Access Gate is unauthenticated"
+      "Desktop GitHub and Google actions expose opening, waiting, cancellation, initialization, success, and retry inside the original fixed-size provider action at wide and narrow window sizes",
+      "native Desktop GitHub and Google login starts return an authorization URL and loopback session while the Access Gate is unauthenticated",
+      "a native Desktop OAuth callback restores the authenticated actor identity"
     ]
   },
   "negative": [
@@ -50,6 +52,7 @@
     "unknown gate, identity mismatch, and expired attempt must fail closed",
     "authentication failure must not invoke a direct-login fallback",
     "OAuth identity bootstrap must not require an existing authenticated actor session",
-    "the Desktop OAuth side card must not cross the viewport boundary or intersect the login card"
+    "OAuth callback failure must not be reported as completed or enter the authenticated Desktop surface",
+    "Desktop OAuth state changes must not resize or move the auth card or provider action, and must not render a detached progress panel"
   ]
 }
