@@ -64,6 +64,7 @@ so a dedicated service or database can take over without changing OAuth use case
 | [integration.md](./integration.md) | Existing-route cutover and deployment configuration |
 | [delivery plan](./execution-plans/20260930-durable-oauth-login-broker/plan.md) | Completed durable broker delivery |
 | [hardening plan](./execution-plans/20260930-oauth-review-hardening/plan.md) | Completed source-backed review closure |
+| [final review remediation](./execution-plans/20260930-oauth-final-review-remediation/plan.md) | Open code-review closure |
 | [review 01](./reviews/review-01-product-architecture-plan.md) | Independent product, architecture, and plan review |
 
 ## 5. Upstream Sources
@@ -77,7 +78,8 @@ so a dedicated service or database can take over without changing OAuth use case
 
 - Product: accepted for capabilities OLB-C01 through OLB-C09.
 - Architecture: accepted through decisions OLB-D01 through OLB-D09.
-- Delivery: `OLB-20260930` and `OLB-HARDEN-20260930` are completed.
+- Delivery: `OLB-20260930` and `OLB-HARDEN-20260930` are completed;
+  `OLB-FINAL-20260930` tracks final code-review remediation.
 - Proof: deterministic local source, HTTP, browser, and repository-fixture
   evidence only; live provider, GitHub App, and Vercel deployment remain
   unproven.
