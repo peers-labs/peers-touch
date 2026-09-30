@@ -63,9 +63,12 @@
 
 ## Current Snapshot
 
-- State: pending.
-- Missing Basic credentials still trigger PBKDF2, and completed OAuth task/module
-  status projections remain stale.
+- State: done.
+- Missing Basic credentials return before PBKDF2, concurrent derivations are
+  bounded per instance, and supplied wrong credentials retain the normal
+  constant-time comparison path.
+- OAuth task and module status projections match the completed implementation,
+  and exact-source operator and completion Acceptance checks pass.
 
 ## Closure
 

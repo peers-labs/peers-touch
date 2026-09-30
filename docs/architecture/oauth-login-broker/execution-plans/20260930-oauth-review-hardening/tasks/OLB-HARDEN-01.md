@@ -63,10 +63,11 @@
 
 ## Current Snapshot
 
-- State: pending.
-- Production permits HTTP provider redirects and the GitHub storage client has
-  no explicit timeout.
-- No source mutation has started.
+- State: done.
+- Production rejects non-HTTPS provider redirects and requires signed,
+  allowlisted callback destinations.
+- GitHub storage uses a bounded HTTP client, and the exact-source login and
+  architecture Gates pass.
 
 ## Closure
 
