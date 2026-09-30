@@ -278,6 +278,55 @@ describe('moments store: syncProjection', () => {
     );
   });
 
+  it('composes authored Native private projections into HOME without copying plaintext', async () => {
+    usePrivateMomentsStore.getState().activateActor('ptid:author', 7);
+    usePrivateMomentsStore.setState({
+      postsById: {
+        'private-author-post': {
+          postId: 'private-author-post',
+          contentId: 'private-author-post',
+          generation: '1',
+          authorPtid: 'ptid:author',
+          audienceKind: 'FRIENDS',
+          state: 'CONTENT_READY',
+          mentions: [],
+          content: {
+            kind: 'TEXT',
+            text: 'private author plaintext',
+          },
+          createdAtMillis: 2_000,
+          updatedAtMillis: 2_000,
+        },
+      },
+    });
+    enqueue('social_sync_moments_projection',
+      bytesOk(SyncMomentsProjectionResponseSchema, {
+        homeTimeline: {
+          posts: [{ id: 'public-home-post', authorPtid: 'ptid:author', type: PostType.TEXT }],
+          nextCursor: '',
+          hasMore: false,
+        },
+        publicTimeline: { posts: [], nextCursor: '', hasMore: false },
+      }),
+    );
+
+    await useMomentsStore.getState().syncProjection('private-author-recovery');
+
+    const state = useMomentsStore.getState();
+    expect(state.feeds.home.postIds).toEqual([
+      'private-author-post',
+      'public-home-post',
+    ]);
+    expect(state.postsById['private-author-post']).toMatchObject({
+      id: 'private-author-post',
+      authorPtid: 'ptid:author',
+      type: PostType.TEXT,
+      audience: { kind: Audience_Kind.FRIENDS },
+      content: { case: undefined },
+    });
+    expect(state.postsById['private-author-post']?.content.case).toBeUndefined();
+  });
+
   it('drops a projection response that completes after actor reset', async () => {
     let resolveResponse:
       | ((value: ReturnType<typeof bytesOk<typeof SyncMomentsProjectionResponseSchema>>) => void)
@@ -426,6 +475,16 @@ describe('moments store: createPost / deletePost', () => {
       'oss_upload_encrypted_attachment_social',
       expect.anything(),
     );
+    expect(useMomentsStore.getState().feeds.home.postIds[0]).toBe('pPRIVATE');
+    expect(useMomentsStore.getState().postsById.pPRIVATE).toMatchObject({
+      id: 'pPRIVATE',
+      authorPtid,
+      type: PostType.IMAGE,
+      audience: { kind: Audience_Kind.FRIENDS },
+      content: { case: undefined },
+    });
+    expect(useMomentsStore.getState().postsById.pPRIVATE?.content.case)
+      .toBeUndefined();
   });
 
   it('createPost(private repost) delegates the source identity to Native', async () => {
