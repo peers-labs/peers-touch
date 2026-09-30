@@ -14920,89 +14920,149 @@ async function runFoundationF07Scenario(input: {
     platform: input.platform,
     sampleId: input.sampleId,
   });
-  const retryConversation = await api.createAgentConversation({
-    agent_id: agentId,
-    title: `Foundation retry ${input.sampleId}`,
-    provider_id: input.agent.provider,
-    model_name: input.agent.model,
-  });
-  await useChatStore.getState().selectSession(retryConversation.conversation_id);
-  const retryCapabilitySession = await resolveFoundationToolTurnSession();
-  const retrySourceNonce = crypto.randomUUID();
+  const maxCancellationAttempts = 3;
+  const terminalRaceStatuses: string[] = [];
+  let preparedRetrySource: {
+    retryConversation: Awaited<ReturnType<typeof api.createAgentConversation>>;
+    cancellationAttempt: {
+      turnId: string;
+      result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+    };
+    retrySourceResult: ObservedFoundationTurnResult;
+    sourceCancellationStatus: string;
+    sourceStreamCancellationObserved: boolean;
+  } | null = null;
 
-  let cancellationRequested = false;
-  let resolveCancellation!: (value: {
-    turnId: string;
-    result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
-  }) => void;
-  const cancellation = new Promise<{
-    turnId: string;
-    result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
-  }>((resolve) => {
-    resolveCancellation = resolve;
-  });
-  const retrySource = startObservedFoundationTurn({
-    conversationId: retryConversation.conversation_id,
-    agentId,
-    content:
-      `Reply with 20 short numbered items for retry sample ${input.sampleId}. `
-      + `Include nonce ${retrySourceNonce} in every item.`,
-    idempotencyKey: crypto.randomUUID(),
-    provider: input.agent.provider || undefined,
-    model: input.agent.model || undefined,
-    effort: 'low',
-    thinkingMode: 'disabled',
-    clientCapabilitySessionId: retryCapabilitySession.capabilitySessionId,
-    onEvent: (event, events) => {
-      if (
-        cancellationRequested
-        || event.event !== 'progress'
-        || event.data.stage !== 'provider_call_started'
-      ) {
-        return;
-      }
-      const turnId = observedTurnId(events);
-      if (!turnId) return;
-      cancellationRequested = true;
-      reportFoundationF07Debug('A', 'retry-source-cancel-requested', {
-        elapsedMs: performance.now() - scenarioStartedAt,
-        sequence: Number(event.data.seq ?? 0),
-      });
-      resolveCancellation({
-        turnId,
-        result: api.cancelAgentTurn(turnId),
-      });
-    },
-  });
-  const cancellationAttempt = await Promise.race([
-    cancellation,
-    retrySource.result.then((result) => {
-      throw new Error(
-        result.error || 'agent.acceptance.foundationRevisionRetrySourceMissing',
-      );
-    }),
-  ]);
-  const cancellationResponse = await cancellationAttempt.result;
-  const sourceCancellationStatus = String(
-    cancellationResponse?.status ?? '',
-  ).toLowerCase();
-  await reportFoundationF07Debug('S-U', 'retry-source-cancel-response', {
-    elapsedMs: performance.now() - scenarioStartedAt,
-    sourceCancellationStatus,
-    sourceCancellationStatusType: typeof cancellationResponse?.status,
-    responseTurnPresent: Boolean(cancellationResponse?.turn_id),
-    responseTurnMatchesTarget:
-      cancellationResponse?.turn_id === cancellationAttempt.turnId,
-    responseFields: Object.keys(cancellationResponse ?? {}).sort(),
-  });
-  if (sourceCancellationStatus !== 'cancelled') {
+  for (
+    let cancellationAttemptIndex = 1;
+    cancellationAttemptIndex <= maxCancellationAttempts;
+    cancellationAttemptIndex += 1
+  ) {
+    const retryConversation = await api.createAgentConversation({
+      agent_id: agentId,
+      title: `Foundation retry ${input.sampleId}`,
+      provider_id: input.agent.provider,
+      model_name: input.agent.model,
+    });
+    await useChatStore.getState().selectSession(
+      retryConversation.conversation_id,
+    );
+    const retryCapabilitySession = await resolveFoundationToolTurnSession();
+    const retrySourceNonce = crypto.randomUUID();
+
+    let cancellationRequested = false;
+    let resolveCancellation!: (value: {
+      turnId: string;
+      result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+    }) => void;
+    const cancellation = new Promise<{
+      turnId: string;
+      result: Promise<Awaited<ReturnType<typeof api.cancelAgentTurn>>>;
+    }>((resolve) => {
+      resolveCancellation = resolve;
+    });
+    const retrySource = startObservedFoundationTurn({
+      conversationId: retryConversation.conversation_id,
+      agentId,
+      content:
+        `Reply with 20 short numbered items for retry sample ${input.sampleId}. `
+        + `Include nonce ${retrySourceNonce} in every item.`,
+      idempotencyKey: crypto.randomUUID(),
+      provider: input.agent.provider || undefined,
+      model: input.agent.model || undefined,
+      effort: 'low',
+      thinkingMode: 'disabled',
+      clientCapabilitySessionId: retryCapabilitySession.capabilitySessionId,
+      onEvent: (event, events) => {
+        if (
+          cancellationRequested
+          || event.event !== 'progress'
+          || event.data.stage !== 'provider_call_started'
+        ) {
+          return;
+        }
+        const turnId = observedTurnId(events);
+        if (!turnId) return;
+        cancellationRequested = true;
+        reportFoundationF07Debug('A', 'retry-source-cancel-requested', {
+          cancellationAttemptIndex,
+          elapsedMs: performance.now() - scenarioStartedAt,
+          sequence: Number(event.data.seq ?? 0),
+        });
+        resolveCancellation({
+          turnId,
+          result: api.cancelAgentTurn(turnId),
+        });
+      },
+    });
+    const cancellationAttempt = await Promise.race([
+      cancellation,
+      retrySource.result.then((result) => {
+        throw new Error(
+          result.error || 'agent.acceptance.foundationRevisionRetrySourceMissing',
+        );
+      }),
+    ]);
+    const cancellationResponse = await cancellationAttempt.result;
+    const sourceCancellationStatus = String(
+      cancellationResponse?.status ?? '',
+    ).toLowerCase();
+    await reportFoundationF07Debug('S-U', 'retry-source-cancel-response', {
+      cancellationAttemptIndex,
+      elapsedMs: performance.now() - scenarioStartedAt,
+      sourceCancellationStatus,
+      sourceCancellationStatusType: typeof cancellationResponse?.status,
+      responseTurnPresent: Boolean(cancellationResponse?.turn_id),
+      responseTurnMatchesTarget:
+        cancellationResponse?.turn_id === cancellationAttempt.turnId,
+      responseFields: Object.keys(cancellationResponse ?? {}).sort(),
+    });
+    const retrySourceResult = await retrySource.result;
+    const sourceStreamCancellationObserved = retrySourceResult.events.some(
+      (event) => classifyAgentTurnTerminalEvent(event) === 'cancelled',
+    );
+    if (sourceCancellationStatus === 'cancelled') {
+      preparedRetrySource = {
+        retryConversation,
+        cancellationAttempt,
+        retrySourceResult,
+        sourceCancellationStatus,
+        sourceStreamCancellationObserved,
+      };
+      break;
+    }
+
     retrySource.controller.abort();
-    throw new Error('agent.acceptance.foundationRevisionRetrySourceNotCancelled');
+    terminalRaceStatuses.push(sourceCancellationStatus || 'missing');
+    await cleanupFoundationToolConversation(
+      retryConversation.conversation_id,
+      cancellationAttempt.turnId,
+    );
+    if (
+      sourceCancellationStatus !== 'completed'
+      || cancellationAttemptIndex === maxCancellationAttempts
+    ) {
+      throw new Error(
+        'agent.acceptance.foundationRevisionRetrySourceNotCancelled:'
+        + terminalRaceStatuses.join(','),
+      );
+    }
+    await reportFoundationF07Debug('A', 'retry-source-terminal-race', {
+      cancellationAttemptIndex,
+      elapsedMs: performance.now() - scenarioStartedAt,
+      sourceCancellationStatus,
+    });
   }
-  const retrySourceResult = await retrySource.result;
-  const sourceStreamCancellationObserved = retrySourceResult.events.some(
-    (event) => classifyAgentTurnTerminalEvent(event) === 'cancelled',
-  );
+  if (!preparedRetrySource) {
+    throw new Error('agent.acceptance.foundationRevisionRetrySourceMissing');
+  }
+  const {
+    retryConversation,
+    cancellationAttempt,
+    retrySourceResult,
+    sourceCancellationStatus,
+    sourceStreamCancellationObserved,
+  } = preparedRetrySource;
   reportFoundationF07Debug('A-B', 'retry-source-finished', {
     elapsedMs: performance.now() - scenarioStartedAt,
     sourceCancellationStatus,
