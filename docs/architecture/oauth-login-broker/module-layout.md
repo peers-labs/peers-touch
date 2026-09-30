@@ -8,7 +8,7 @@
 
 ---
 
-## 1. Target Layout
+## 1. Delivered Layout
 
 ```text
 apps/oauth2-client/
