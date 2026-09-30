@@ -129,7 +129,7 @@
       "workstreamId": "OLB-SERVICE",
       "path": "tasks/OLB-FINAL-01.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -139,7 +139,7 @@
       "dependsOn": [
         "OLB-FINAL-01"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {

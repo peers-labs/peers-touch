@@ -121,7 +121,7 @@
 |---|---|
 | Go source | unit, race-free repository behavior, provider fixtures, config validation |
 | Local HTTP | start/callback across separate GitHub-backed adapters and read-only admin surface |
-| Fake GitHub API | GitHub App token, ref/tree/blob/commit flow, CAS retry |
+| Fake GitHub API | GitHub App token, bounded response reads, truncated-tree traversal, ref/tree/blob/commit flow, CAS retry |
 | Vercel build shape | every route compiles as an independent function |
 
 ## 5. Completion Claim
