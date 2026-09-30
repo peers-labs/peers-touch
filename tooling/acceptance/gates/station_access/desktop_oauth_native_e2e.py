@@ -562,6 +562,23 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         process_id = session.process_id
         if process_id is None:
             raise GateError("Find People tooltip proof has no native process")
+        if not bool(session.execute_script("return document.hasFocus()")):
+            cooperatively_activated = self.runtime_binding.request_cooperative_activation(
+                session,
+                (session,),
+            )
+            if not cooperatively_activated:
+                self.runtime_binding.native_adapter.activate_process(process_id)
+            focus_deadline = time.monotonic() + 5
+            while time.monotonic() < focus_deadline:
+                if bool(session.execute_script("return document.hasFocus()")):
+                    break
+                time.sleep(0.05)
+            else:
+                raise GateError(
+                    "Find People tooltip proof could not focus the native "
+                    "Desktop document"
+                )
         session.execute_script(
             """
             const target = arguments[0];
