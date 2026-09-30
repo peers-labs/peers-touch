@@ -31,6 +31,7 @@ GATE_ID = "station-access-desktop-oauth-native-e2e"
 CLIENT_ID = "oauth-login"
 PROVIDERS = ("github", "google")
 OAUTH_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4"
+CHAT_NAV_SELECTOR = '[data-pt-primary-nav="chat"] [role="button"]'
 REQUIRED_ASSERTIONS = frozenset(
     {
         "native_login_surface_is_unauthenticated",
@@ -467,7 +468,7 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         session: TauriSession,
     ) -> dict[str, Any]:
         session.find_element(
-            '[data-pt-primary-nav="chat"] button',
+            CHAT_NAV_SELECTOR,
             timeout=20,
         ).click()
         cls._wait_for_displayed(
