@@ -30,7 +30,8 @@
     "tooling/acceptance/provisioners/oauth2_client_local.py",
     "tooling/acceptance/registry.yaml",
     "tooling/acceptance/tests/test_provisioning_model.py",
-    "tooling/scripts/acceptance-plan-test.py"
+    "tooling/scripts/acceptance-plan-test.py",
+    "tooling/skills/pt-github-review/FRESHNESS.md"
   ],
   "readSet": [
     "apps/oauth2-client",
@@ -65,6 +66,7 @@
     "OAuth source changes select architecture and domain-contract Gates",
     "Acceptance-tooling changes select all required self-validation Gates",
     "Provisioned actor identities match environment contracts",
+    "Review-skill freshness covers the registered OAuth architecture source",
     "Full-range completion review and code review contain no P1/P2 finding"
   ],
   "failureBehavior": [
@@ -83,8 +85,9 @@
 - State: pending.
 - Admin and rotation scans perform avoidable repeated reads, OAuth path rules
   omit architecture and domain Gates, Acceptance changes omit self-validation
-  Gates, and the service provisioner actor differs from its environment
-  contract.
+  Gates, the service provisioner actor differs from its environment contract,
+  and the newly selected workflow Gate exposes a stale review-skill freshness
+  digest after OAuth architecture registration.
 
 ## Closure
 

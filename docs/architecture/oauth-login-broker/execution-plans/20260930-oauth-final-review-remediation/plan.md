@@ -111,6 +111,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "tooling/skills/pt-github-review/FRESHNESS.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "docs/knowledge",
         "mode": "shared-read"
       }
