@@ -2944,15 +2944,26 @@ class AgentHarnessStaticTest(unittest.TestCase):
 
     def test_approval_expired_uses_station_expiry_and_retry_action(self) -> None:
         self.assertNotIn("BASE-APPROVAL-EXPIRED", self.source)
-        scenario_start = self.source.index(
-            "async function runFoundationApprovalExpiredScenario"
+        failure_start = self.source.index(
+            "async function foundationApprovalRetryAttemptFailure"
         )
+        scenario_start = self.source.index(
+            "async function runFoundationApprovalExpiredScenario",
+            failure_start,
+        )
+        failure = self.source[failure_start:scenario_start]
         scenario_end = self.source.index(
             "const FOUNDATION_PNG_BYTES",
             scenario_start,
         )
         scenario = self.source[scenario_start:scenario_end]
 
+        self.assertIn("revisionFailure: revisionFailure", failure)
+        self.assertIn("projectedVersion", failure)
+        self.assertIn("authoritativeVersion", failure)
+        self.assertIn("attemptsAfter: attempts.length", failure)
+        self.assertIn("retryToolFactCount: retryFacts.length", failure)
+        self.assertIn("recoveryActionDisabled:", failure)
         self.assertIn("CapabilityApprovalPolicy.MANUAL", scenario)
         self.assertIn("waitForToolApprovalEvent(turn)", scenario)
         self.assertIn("ToolCallStatus.EXPIRED", scenario)
@@ -2965,6 +2976,7 @@ class AgentHarnessStaticTest(unittest.TestCase):
             2,
         )
         self.assertEqual(scenario.count("recovery.click()"), 2)
+        self.assertIn("foundationApprovalRetryAttemptFailure({", scenario)
         self.assertIn("api.cancelAgentTurn(turn.turnId)", scenario)
         self.assertEqual(
             scenario.count("foundationToolSideEffectCount("),
