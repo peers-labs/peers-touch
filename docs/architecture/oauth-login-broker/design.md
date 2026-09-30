@@ -166,6 +166,9 @@ completion for the same authorization transaction.
 Refresh replacement is optimistic: the use case supplies the credential
 generation observed before calling the provider. A generation conflict discards
 the stale provider response and retries from the current credential.
+If a provider call fails, the use case performs one durable readback for the
+same operation ID so a concurrent committed winner is returned without another
+provider call; otherwise the original provider failure is preserved.
 
 ## 8. Cryptographic Boundary
 

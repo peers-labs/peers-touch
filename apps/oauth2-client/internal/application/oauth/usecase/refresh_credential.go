@@ -63,10 +63,15 @@ func (u RefreshCredentialUseCase) Execute(ctx context.Context, input RefreshCred
 		}
 		tokens, err := provider.RefreshToken(ctx, current.RefreshToken, config)
 		if err != nil {
-			return nil, err
+			return u.resolveRefreshFailure(ctx, identityID, operationID, err)
 		}
 		if tokens == nil || strings.TrimSpace(tokens.AccessToken) == "" {
-			return nil, errors.New("provider_refresh_failed")
+			return u.resolveRefreshFailure(
+				ctx,
+				identityID,
+				operationID,
+				errors.New("provider_refresh_failed"),
+			)
 		}
 		replaced, err := u.Store.ReplaceCredential(ctx, entity.CredentialRefresh{
 			IdentityID:         identityID,
@@ -81,4 +86,24 @@ func (u RefreshCredentialUseCase) Execute(ctx context.Context, input RefreshCred
 		return replaced, err
 	}
 	return nil, repository.ErrCredentialGeneration
+}
+
+func (u RefreshCredentialUseCase) resolveRefreshFailure(
+	ctx context.Context,
+	identityID string,
+	operationID string,
+	providerErr error,
+) (*entity.OAuthCredential, error) {
+	current, completed, err := u.Store.LoadCredentialForRefresh(
+		ctx,
+		identityID,
+		operationID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if completed {
+		return current, nil
+	}
+	return nil, providerErr
 }

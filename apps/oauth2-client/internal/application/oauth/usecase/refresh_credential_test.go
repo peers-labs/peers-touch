@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -58,6 +59,70 @@ func TestRefreshCredentialReturnsCommittedDuplicateWithoutProviderCall(t *testin
 	}
 	if refreshEvents != 1 {
 		t.Fatalf("expected one refresh audit event, got %d", refreshEvents)
+	}
+	t.Run(
+		"returns concurrent winner after provider failure",
+		assertRefreshCredentialReturnsConcurrentWinnerAfterProviderFailure,
+	)
+	t.Run(
+		"preserves provider failure without winner",
+		assertRefreshCredentialReturnsProviderFailureWithoutWinner,
+	)
+}
+
+func assertRefreshCredentialReturnsConcurrentWinnerAfterProviderFailure(t *testing.T) {
+	store, identityID, now := seededRefreshStore(t)
+	providerErr := errors.New("provider_temporarily_unavailable")
+	provider := &refreshProvider{err: providerErr}
+	provider.onRefresh = func() {
+		_, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
+			IdentityID:         identityID,
+			OperationID:        "refresh-race",
+			ExpectedGeneration: 1,
+			Tokens: entity.TokenSet{
+				AccessToken:  "access-winner",
+				RefreshToken: "refresh-winner",
+				ObtainedAt:   now.Add(time.Hour),
+			},
+			RefreshedAt: now.Add(time.Hour),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	credential, err := refreshUseCase(store, provider, now.Add(time.Hour)).Execute(
+		context.Background(),
+		RefreshCredentialInput{
+			IdentityID:  identityID,
+			OperationID: "refresh-race",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 ||
+		credential.Generation != 2 ||
+		credential.AccessToken != "access-winner" ||
+		credential.LastRefreshOperationID != "refresh-race" {
+		t.Fatalf("losing refresh did not converge to winner: %#v", credential)
+	}
+}
+
+func assertRefreshCredentialReturnsProviderFailureWithoutWinner(t *testing.T) {
+	store, identityID, now := seededRefreshStore(t)
+	providerErr := errors.New("provider_temporarily_unavailable")
+	provider := &refreshProvider{err: providerErr}
+
+	credential, err := refreshUseCase(store, provider, now.Add(time.Hour)).Execute(
+		context.Background(),
+		RefreshCredentialInput{
+			IdentityID:  identityID,
+			OperationID: "refresh-without-winner",
+		},
+	)
+	if credential != nil || !errors.Is(err, providerErr) || provider.calls != 1 {
+		t.Fatalf("provider failure changed without a winner: credential=%#v err=%v calls=%d", credential, err, provider.calls)
 	}
 }
 
@@ -232,6 +297,8 @@ type refreshProvider struct {
 	calls         int
 	refreshTokens []string
 	tokens        entity.TokenSet
+	err           error
+	onRefresh     func()
 }
 
 func (*refreshProvider) Provider() valueobject.Provider {
@@ -249,6 +316,12 @@ func (*refreshProvider) ExchangeCode(context.Context, string, string, port.Provi
 func (p *refreshProvider) RefreshToken(_ context.Context, refreshToken string, _ port.ProviderConfig) (*entity.TokenSet, error) {
 	p.calls++
 	p.refreshTokens = append(p.refreshTokens, refreshToken)
+	if p.onRefresh != nil {
+		p.onRefresh()
+	}
+	if p.err != nil {
+		return nil, p.err
+	}
 	tokens := p.tokens
 	return &tokens, nil
 }
