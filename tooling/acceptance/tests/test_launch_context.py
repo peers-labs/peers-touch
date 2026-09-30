@@ -1194,7 +1194,7 @@ class LaunchContextProcessTests(unittest.TestCase):
 
     def _run_venv_gate(
         self,
-        executable: Path,
+        executable: str | Path,
         script: str,
         *,
         environment: Mapping[str, str] | None = None,
@@ -1391,7 +1391,7 @@ print(json.dumps({
             environment={"SYNTHETIC": "1"},
         )
         spec = GateLaunchSpec(
-            argv=("python3", "synthetic_gate.py", "--run"),
+            argv=(sys.executable, "synthetic_gate.py", "--run"),
             timeout_seconds=3,
             required_capabilities=("synthetic.echo",),
         )
@@ -1454,21 +1454,61 @@ print(json.dumps({
         context.quiesce()
         self.assertTrue(context.close().succeeded)
 
-    def test_isolated_launcher_binds_generic_python_to_current_runner(self) -> None:
-        for executable in ("python", "python3"):
-            with self.subTest(executable=executable):
-                launch_argv = launch_context_module._isolated_python_argv(
-                    (executable, "-c", "pass")
-                )
-                self.assertEqual(launch_argv[0], sys.executable)
+    def test_isolated_launcher_resolves_generic_python_from_child_path(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bin_directory = Path(directory) / "bin"
+            bin_directory.mkdir()
+            for executable in ("python", "python3"):
+                with self.subTest(executable=executable):
+                    expected = bin_directory / executable
+                    expected.symlink_to(sys.executable)
+                    launch_argv = launch_context_module._isolated_python_argv(
+                        (executable, "-c", "pass"),
+                        environment={"PATH": str(bin_directory)},
+                    )
+                    self.assertEqual(launch_argv[0], str(expected))
 
     def test_isolated_launcher_preserves_explicit_or_versioned_python(self) -> None:
         for executable in ("./python3", "/trusted/bin/python3", "python3.11"):
             with self.subTest(executable=executable):
                 launch_argv = launch_context_module._isolated_python_argv(
-                    (executable, "-c", "pass")
+                    (executable, "-c", "pass"),
+                    environment={},
                 )
                 self.assertEqual(launch_argv[0], executable)
+
+    def test_context_launcher_rejects_missing_generic_python_before_spawn(
+        self,
+    ) -> None:
+        context = new_context(SyntheticHandler())
+        binding = context.bind_child()
+        inherited_descriptor = binding.pass_fds[0]
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "tooling.acceptance.core.launch_context.subprocess.Popen",
+        ) as popen, self.assertRaisesRegex(
+            EphemeralLaunchBindFailed,
+            "unavailable in child PATH",
+        ):
+            GateProcessLauncher(
+                cwd=str(REPO_ROOT),
+                environment={"PATH": directory},
+            ).run(
+                GateLaunchSpec(
+                    argv=("python3", "-c", "pass"),
+                    timeout_seconds=3,
+                    required_capabilities=("synthetic.echo",),
+                ),
+                binding,
+            )
+
+        popen.assert_not_called()
+        with self.assertRaises(OSError):
+            os.fstat(inherited_descriptor)
+        context.quiesce()
+        self.assertTrue(context.close().succeeded)
 
     def test_context_launcher_rejects_parent_redaction_values_before_spawn(
         self,
@@ -1552,6 +1592,69 @@ with EphemeralGateClient.from_environment():
         self.assertNotIn(credential_canary, completed.stderr)
         self.assertNotIn(redaction_canary, completed.stderr)
         self.assertTrue(close_context(context).succeeded)
+
+    def test_context_launcher_uses_child_path_venv_for_generic_python(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            venv_root, venv_python, site_packages = (
+                self._create_synthetic_venv(directory)
+            )
+            (site_packages / "synthetic_gate_dependency.py").write_text(
+                "VALUE = 'trusted-venv-dependency'\n",
+                encoding="utf-8",
+            )
+            environment = {
+                "PATH": os.pathsep.join(
+                    (str(venv_python.parent), "/usr/bin", "/bin")
+                ),
+            }
+            script = """
+import json
+import os
+import sys
+from synthetic_gate_dependency import VALUE
+from tooling.acceptance.core import EphemeralGateClient
+
+context_fd = int(os.environ["PT_ACCEPTANCE_EPHEMERAL_CONTEXT_FD"])
+with EphemeralGateClient.from_environment():
+    print(json.dumps({
+        "contextFdInheritable": os.get_inheritable(context_fd),
+        "dependency": VALUE,
+        "executable": sys.executable,
+        "siteLoaded": "site" in sys.modules,
+    }))
+"""
+            with patch.object(
+                launch_context_module.sys,
+                "executable",
+                "/non-venv-runner/bin/python3",
+            ):
+                launch_argv = launch_context_module._isolated_python_argv(
+                    ("python", "-c", script),
+                    environment=environment,
+                )
+                completed = self._run_venv_gate(
+                    "python",
+                    script,
+                    environment=environment,
+                )
+
+            self.assertEqual(launch_argv[0], str(venv_python))
+            self.assertEqual(launch_argv[1:3], ("-I", "-S"))
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            child_result = json.loads(completed.stdout)
+            child_executable = Path(child_result.pop("executable"))
+            self.assertTrue(child_executable.samefile(venv_python))
+            self.assertEqual(
+                child_result,
+                {
+                    "contextFdInheritable": False,
+                    "dependency": "trusted-venv-dependency",
+                    "siteLoaded": False,
+                },
+            )
+            self.assertEqual(venv_root, venv_python.parent.parent)
 
     def test_context_launcher_loads_only_invoked_venv_site_packages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

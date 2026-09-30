@@ -8,6 +8,7 @@ import math
 import os
 import re
 import signal
+import shutil
 import socket
 import struct
 import subprocess
@@ -263,7 +264,10 @@ class GateProcessLauncher:
 
         try:
             launch_argv = (
-                _isolated_python_argv(spec.argv)
+                _isolated_python_argv(
+                    spec.argv,
+                    environment=environment,
+                )
                 if binding is not None
                 else spec.argv
             )
@@ -1412,7 +1416,11 @@ def _validate_unique_names(
     return validated
 
 
-def _isolated_python_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
+def _isolated_python_argv(
+    argv: tuple[str, ...],
+    *,
+    environment: Mapping[str, str],
+) -> tuple[str, ...]:
     if len(argv) < 2 or not re.fullmatch(
         r"python(?:\d+(?:\.\d+)*)?",
         Path(argv[0]).name,
@@ -1447,7 +1455,23 @@ def _isolated_python_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
             "context-enabled Gate must use a Python module, script, or -c argv",
             operation="gate_process",
         )
-    executable = sys.executable if argv[0] in {"python", "python3"} else argv[0]
+    executable = argv[0]
+    if executable in {"python", "python3"}:
+        child_path = environment.get("PATH")
+        resolved_executable = (
+            shutil.which(executable, path=child_path)
+            if child_path
+            else None
+        )
+        if (
+            resolved_executable is None
+            or not Path(resolved_executable).is_absolute()
+        ):
+            raise EphemeralLaunchBindFailed(
+                "context Gate Python executable is unavailable in child PATH",
+                operation="gate_process",
+            )
+        executable = resolved_executable
     return (executable, "-I", "-S", bootstrap, *target)
 
 
