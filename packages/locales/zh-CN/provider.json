@@ -498,6 +498,8 @@
   "provider.account.profile.links": "链接",
   "provider.account.profile.linksDesc": "— 外部资料与网站",
   "provider.account.profile.addLink": "添加",
+  "provider.account.profile.linkLabelPlaceholder": "标签（例如 GitHub）",
+  "provider.account.profile.linkUrlPlaceholder": "https://...",
   "provider.account.profile.noLinks": "暂无公开链接。点击「添加」分享你的网站或社交资料。",
   "provider.account.relationship.title": "关系控制",
   "provider.account.relationship.subtitle": "管理私聊屏蔽关系，所有 Desktop 和 Mobile 会话都会从 Station 同步。",

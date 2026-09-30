@@ -769,14 +769,14 @@ export function AccountTab() {
               <Input
                 value={link.label}
                 onChange={(e) => onLinkChange(index, 'label', e.target.value)}
-                placeholder="Label (e.g. GitHub)"
+                placeholder={t('provider.account.profile.linkLabelPlaceholder')}
                 style={{ flex: 1, fontSize: 12 }}
                 size="small"
               />
               <Input
                 value={link.url}
                 onChange={(e) => onLinkChange(index, 'url', e.target.value)}
-                placeholder="https://..."
+                placeholder={t('provider.account.profile.linkUrlPlaceholder')}
                 style={{ flex: 2, fontSize: 12 }}
                 size="small"
               />
