@@ -4199,6 +4199,8 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 "desktop_app:loginWithPassword",
                 "desktop_app:navigateToAgent",
                 "desktop_app:prepareFoundationForbiddenActorOwner",
+                "browser:loginWithPassword",
+                "browser:navigateToAgent",
                 "browser:rejectFoundationForbiddenActor",
                 "desktop_app:readFoundationForbiddenActorOwner",
                 "desktop_app:cleanupFoundationForbiddenActorOwner",
