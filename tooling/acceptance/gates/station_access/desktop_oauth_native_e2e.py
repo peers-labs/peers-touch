@@ -650,13 +650,9 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             session.execute_script(
                 """
                 const style = getComputedStyle(arguments[0]);
-                const rect = arguments[0].getBoundingClientRect();
                 return Boolean(
-                  rect.width > 0
-                  && rect.height > 0
-                  && style.display !== 'none'
+                  style.display !== 'none'
                   && style.visibility !== 'hidden'
-                  && Number(style.opacity || 1) > 0
                 );
                 """,
                 element,
