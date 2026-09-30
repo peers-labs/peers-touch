@@ -163,6 +163,10 @@ The store treats an already committed identical event as success, remembers
 completed refresh IDs across later refreshes, and rejects a different second
 completion for the same authorization transaction.
 
+Refresh replacement is optimistic: the use case supplies the credential
+generation observed before calling the provider. A generation conflict discards
+the stale provider response and retries from the current credential.
+
 ## 8. Cryptographic Boundary
 
 - Algorithm: AES-256-GCM with a fresh 96-bit nonce per envelope.

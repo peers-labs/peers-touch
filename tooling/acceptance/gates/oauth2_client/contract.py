@@ -100,6 +100,7 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                 (
                     "TestRefreshCredentialReturnsCommittedDuplicateWithoutProviderCall",
                     "TestRefreshCredentialRemembersEarlierOperation",
+                    "TestRefreshCredentialRetriesAfterGenerationConflict",
                     "TestRefreshCredentialPreservesOmittedRefreshToken",
                 ),
             ),

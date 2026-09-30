@@ -11,6 +11,8 @@ import (
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/valueobject"
 )
 
+const maxCredentialRefreshAttempts = 3
+
 type RefreshCredentialInput struct {
 	IdentityID  string
 	OperationID string
@@ -32,43 +34,51 @@ func (u RefreshCredentialUseCase) Execute(ctx context.Context, input RefreshCred
 	if operationID == "" {
 		return nil, errors.New("refresh_operation_id_required")
 	}
-	current, completed, err := u.Store.LoadCredentialForRefresh(
-		ctx,
-		identityID,
-		operationID,
-	)
-	if err != nil {
-		return nil, err
+	for attempt := 0; attempt < maxCredentialRefreshAttempts; attempt++ {
+		current, completed, err := u.Store.LoadCredentialForRefresh(
+			ctx,
+			identityID,
+			operationID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if completed {
+			return current, nil
+		}
+		if current.RefreshToken == "" {
+			return nil, repository.ErrCredentialNotRefreshable
+		}
+		site, ok := u.Sites.Get(current.SiteID)
+		if !ok {
+			return nil, errors.New("unknown_site")
+		}
+		config, ok := site.Providers[current.Provider]
+		if !ok {
+			return nil, errors.New("provider_not_enabled")
+		}
+		provider, ok := u.Providers[current.Provider]
+		if !ok {
+			return nil, errors.New("provider_gateway_missing")
+		}
+		tokens, err := provider.RefreshToken(ctx, current.RefreshToken, config)
+		if err != nil {
+			return nil, err
+		}
+		if tokens == nil || strings.TrimSpace(tokens.AccessToken) == "" {
+			return nil, errors.New("provider_refresh_failed")
+		}
+		replaced, err := u.Store.ReplaceCredential(ctx, entity.CredentialRefresh{
+			IdentityID:         identityID,
+			OperationID:        operationID,
+			ExpectedGeneration: current.Generation,
+			Tokens:             *tokens,
+			RefreshedAt:        u.Clock.Now(),
+		})
+		if errors.Is(err, repository.ErrCredentialGeneration) {
+			continue
+		}
+		return replaced, err
 	}
-	if completed {
-		return current, nil
-	}
-	if current.RefreshToken == "" {
-		return nil, repository.ErrCredentialNotRefreshable
-	}
-	site, ok := u.Sites.Get(current.SiteID)
-	if !ok {
-		return nil, errors.New("unknown_site")
-	}
-	config, ok := site.Providers[current.Provider]
-	if !ok {
-		return nil, errors.New("provider_not_enabled")
-	}
-	provider, ok := u.Providers[current.Provider]
-	if !ok {
-		return nil, errors.New("provider_gateway_missing")
-	}
-	tokens, err := provider.RefreshToken(ctx, current.RefreshToken, config)
-	if err != nil {
-		return nil, err
-	}
-	if tokens == nil || strings.TrimSpace(tokens.AccessToken) == "" {
-		return nil, errors.New("provider_refresh_failed")
-	}
-	return u.Store.ReplaceCredential(ctx, entity.CredentialRefresh{
-		IdentityID:  identityID,
-		OperationID: operationID,
-		Tokens:      *tokens,
-		RefreshedAt: u.Clock.Now(),
-	})
+	return nil, repository.ErrCredentialGeneration
 }

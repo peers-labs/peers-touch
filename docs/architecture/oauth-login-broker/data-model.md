@@ -212,7 +212,9 @@ type TokenSet struct {
 Provider adapters normalize integer `expires_in` values against the injected
 clock. Refresh replacement increments credential generation. Repeating the
 same non-empty refresh operation ID returns the committed credential without a
-second mutation or audit event.
+second mutation or audit event. A replacement also carries the generation read
+before the provider call and fails with `credential_generation_conflict` when a
+newer credential has already committed.
 
 ## 8. Administration Projection
 

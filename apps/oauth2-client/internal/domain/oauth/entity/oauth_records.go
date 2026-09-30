@@ -103,10 +103,11 @@ type AuthorizationFailure struct {
 }
 
 type CredentialRefresh struct {
-	IdentityID  string
-	OperationID string
-	Tokens      TokenSet
-	RefreshedAt time.Time
+	IdentityID         string
+	OperationID        string
+	ExpectedGeneration uint64
+	Tokens             TokenSet
+	RefreshedAt        time.Time
 }
 
 type AdminIdentity struct {

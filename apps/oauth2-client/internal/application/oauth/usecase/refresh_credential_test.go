@@ -7,6 +7,7 @@ import (
 
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/port"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/entity"
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/repository"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/valueobject"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/persistence/memory"
 )
@@ -138,6 +139,40 @@ func TestRefreshCredentialPreservesOmittedRefreshToken(t *testing.T) {
 	}
 }
 
+func TestRefreshCredentialRetriesAfterGenerationConflict(t *testing.T) {
+	baseStore, identityID, now := seededRefreshStore(t)
+	store := &generationConflictStore{
+		Store:      baseStore,
+		identityID: identityID,
+		now:        now.Add(90 * time.Minute),
+	}
+	provider := &refreshProvider{tokens: entity.TokenSet{
+		AccessToken: "access-final",
+		ObtainedAt:  now.Add(2 * time.Hour),
+	}}
+	credential, err := refreshUseCase(store, provider, now.Add(2*time.Hour)).Execute(
+		context.Background(),
+		RefreshCredentialInput{
+			IdentityID:  identityID,
+			OperationID: "refresh-after-conflict",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 2 ||
+		len(provider.refreshTokens) != 2 ||
+		provider.refreshTokens[0] != "refresh-old" ||
+		provider.refreshTokens[1] != "refresh-newer" {
+		t.Fatalf("refresh did not retry with latest credential: %#v", provider.refreshTokens)
+	}
+	if credential.Generation != 3 ||
+		credential.AccessToken != "access-final" ||
+		credential.RefreshToken != "refresh-newer" {
+		t.Fatalf("unexpected credential after retry: %#v", credential)
+	}
+}
+
 func seededRefreshStore(t *testing.T) (*memory.Store, string, time.Time) {
 	t.Helper()
 	store := memory.NewStore()
@@ -174,7 +209,7 @@ func seededRefreshStore(t *testing.T) (*memory.Store, string, time.Time) {
 	return store, identity.IdentityID, now
 }
 
-func refreshUseCase(store *memory.Store, provider *refreshProvider, now time.Time) RefreshCredentialUseCase {
+func refreshUseCase(store repository.OAuthStore, provider *refreshProvider, now time.Time) RefreshCredentialUseCase {
 	return RefreshCredentialUseCase{
 		Sites: staticSites{"main": {
 			SiteID: "main",
@@ -194,8 +229,9 @@ func refreshUseCase(store *memory.Store, provider *refreshProvider, now time.Tim
 }
 
 type refreshProvider struct {
-	calls  int
-	tokens entity.TokenSet
+	calls         int
+	refreshTokens []string
+	tokens        entity.TokenSet
 }
 
 func (*refreshProvider) Provider() valueobject.Provider {
@@ -210,8 +246,39 @@ func (*refreshProvider) ExchangeCode(context.Context, string, string, port.Provi
 	panic("not used")
 }
 
-func (p *refreshProvider) RefreshToken(context.Context, string, port.ProviderConfig) (*entity.TokenSet, error) {
+func (p *refreshProvider) RefreshToken(_ context.Context, refreshToken string, _ port.ProviderConfig) (*entity.TokenSet, error) {
 	p.calls++
+	p.refreshTokens = append(p.refreshTokens, refreshToken)
 	tokens := p.tokens
 	return &tokens, nil
+}
+
+type generationConflictStore struct {
+	*memory.Store
+	identityID string
+	now        time.Time
+	injected   bool
+}
+
+func (s *generationConflictStore) ReplaceCredential(
+	ctx context.Context,
+	refresh entity.CredentialRefresh,
+) (*entity.OAuthCredential, error) {
+	if !s.injected {
+		s.injected = true
+		if _, err := s.Store.ReplaceCredential(ctx, entity.CredentialRefresh{
+			IdentityID:         s.identityID,
+			OperationID:        "competing-refresh",
+			ExpectedGeneration: refresh.ExpectedGeneration,
+			Tokens: entity.TokenSet{
+				AccessToken:  "access-competing",
+				RefreshToken: "refresh-newer",
+				ObtainedAt:   s.now,
+			},
+			RefreshedAt: s.now,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return s.Store.ReplaceCredential(ctx, refresh)
 }

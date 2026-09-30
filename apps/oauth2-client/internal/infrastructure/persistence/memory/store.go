@@ -223,7 +223,9 @@ func (s *Store) LoadCredentialForRefresh(_ context.Context, identityID, operatio
 func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRefresh) (*entity.OAuthCredential, error) {
 	refresh.IdentityID = strings.TrimSpace(refresh.IdentityID)
 	refresh.OperationID = strings.TrimSpace(refresh.OperationID)
-	if refresh.IdentityID == "" || refresh.OperationID == "" {
+	if refresh.IdentityID == "" ||
+		refresh.OperationID == "" ||
+		refresh.ExpectedGeneration == 0 {
 		return nil, repository.ErrRecordCorrupt
 	}
 	s.mu.Lock()
@@ -236,6 +238,9 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 		credential.LastRefreshOperationID == refresh.OperationID {
 		out := credential
 		return &out, nil
+	}
+	if credential.Generation != refresh.ExpectedGeneration {
+		return nil, repository.ErrCredentialGeneration
 	}
 	if strings.TrimSpace(refresh.Tokens.AccessToken) == "" {
 		return nil, repository.ErrRecordCorrupt
