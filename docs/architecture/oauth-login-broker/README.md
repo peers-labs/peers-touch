@@ -28,11 +28,11 @@ This document set does not define:
 
 ## 2. Background
 
-`apps/oauth2-client` currently stores OAuth state only in process memory. Vercel
-routes may execute in different function instances, so a callback cannot rely on
-the instance that handled `/start`. Provider token responses are used transiently
-and access or refresh credentials are discarded, leaving no durable login history
-or refresh path.
+The original `apps/oauth2-client` stored OAuth state only in process memory,
+which could not support callbacks routed to a different Vercel function
+instance. The delivered broker now persists authorization transactions,
+provider identities, encrypted credentials, and typed audit history through
+the configured `OAuthStore`.
 
 The immediate operating context is one trusted operator, Vercel Hobby, and a
 dedicated private GitHub repository. The storage boundary must remain replaceable

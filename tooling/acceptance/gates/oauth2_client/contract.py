@@ -182,11 +182,11 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
 CLAIMS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "durable-login": (
         ("OLB-C01", "OLB-C03", "OLB-C04", "OLB-C06", "OLB-C08", "OLB-C09"),
-        ("OLB-G01", "OLB-G02", "OLB-G05"),
+        ("OLB-G01", "OLB-G02", "OLB-G03A", "OLB-G05A"),
     ),
     "refresh-idempotency": (
         ("OLB-C05", "OLB-C06", "OLB-C08"),
-        ("OLB-G03",),
+        ("OLB-G03B",),
     ),
     "key-rotation": (
         ("OLB-C03",),

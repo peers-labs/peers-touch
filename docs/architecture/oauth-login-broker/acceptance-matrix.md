@@ -56,9 +56,14 @@
 
 ### OLB-G03: Provider Tokens And Refresh
 
+#### OLB-G03A: Provider Token Exchange
+
 - GitHub, Google, and Weixin parse access token, refresh token, type, scope, and
   expiry when supplied.
 - Google and GitHub send PKCE verifier during authorization-code exchange.
+
+#### OLB-G03B: Credential Refresh
+
 - Refresh uses the provider-specific endpoint and retains the old refresh token
   when the response omits it.
 - Reusing a completed refresh idempotency key, including after another refresh,
@@ -82,9 +87,15 @@
 
 ### OLB-G05: Configuration And Deployment
 
+#### OLB-G05A: Production Safety Bounds
+
 - Vercel refuses an unset or memory storage driver.
 - Vercel refuses any site without bridge signing or an explicit return
-  destination allowlist.
+  destination allowlist, and provider callbacks require HTTPS.
+- GitHub storage uses an explicitly bounded HTTP client.
+
+#### OLB-G05B: Complete Bootstrap And Route Compatibility
+
 - GitHub App private key, repository coordinates, key ring, HMAC keys, and
   admin digest are validated at bootstrap.
 - Local memory mode remains available for development.
@@ -111,9 +122,10 @@
 
 ## 5. Completion Claim
 
-`OAUTH_LOGIN_BROKER_ACCEPTED` requires OLB-G01 through OLB-G06, the registered
-`oauth-login-broker-contract` Gate, architecture governance validation, and the
-exact-source local HTTP journey.
+`OAUTH_LOGIN_BROKER_ACCEPTED` requires OLB-G01, OLB-G02, OLB-G03A,
+OLB-G03B, OLB-G04, OLB-G05A, OLB-G05B, and OLB-G06, plus the registered
+`oauth-login-broker-contract` Gate, architecture governance validation, and
+the exact-source local HTTP journey.
 
 The claim excludes live GitHub App installation, live provider consent, Vercel
 deployment, production scale, and migration of historical plaintext records.
