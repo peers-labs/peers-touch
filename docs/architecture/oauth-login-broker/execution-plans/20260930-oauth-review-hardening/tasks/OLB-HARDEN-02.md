@@ -62,9 +62,10 @@
 
 ## Current Snapshot
 
-- State: pending.
-- Refresh reads credential generation before an external provider call but does
-  not fence replacement against a newer generation.
+- State: done.
+- Refresh replacement is fenced by the generation observed before the provider
+  call; stale results are discarded and retried from current state.
+- Exact-source race, journey, and refresh-idempotency Acceptance checks pass.
 
 ## Closure
 

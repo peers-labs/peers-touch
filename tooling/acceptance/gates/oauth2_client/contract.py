@@ -179,6 +179,25 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
     ),
 }
 
+CLAIMS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "durable-login": (
+        ("OLB-C01", "OLB-C03", "OLB-C04", "OLB-C06", "OLB-C08", "OLB-C09"),
+        ("OLB-G01", "OLB-G02", "OLB-G05"),
+    ),
+    "refresh-idempotency": (
+        ("OLB-C05", "OLB-C06", "OLB-C08"),
+        ("OLB-G03",),
+    ),
+    "key-rotation": (
+        ("OLB-C03",),
+        ("OLB-G06",),
+    ),
+    "operator": (
+        ("OLB-C02", "OLB-C04", "OLB-C07"),
+        ("OLB-G04",),
+    ),
+}
+
 
 def test_pattern(names: Sequence[str]) -> str:
     return "^(" + "|".join(re.escape(name) for name in names) + ")$"
@@ -203,12 +222,13 @@ class OAuth2ClientContractGate(AcceptanceGate):
     def __init__(self, scope: str) -> None:
         try:
             gate_id, journey_id, groups = SCOPES[scope]
+            bom, spec = CLAIMS[scope]
         except KeyError as error:
             raise GateError(f"unknown OAuth contract scope: {scope}") from error
         self.gate_id = gate_id
         self.phase = journey_id
-        self.bom = ("OLB-C01-C09",)
-        self.spec = ("OLB-G01-G06",)
+        self.bom = bom
+        self.spec = spec
         self.scope = scope
         self.groups = groups
         super().__init__()
