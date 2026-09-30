@@ -177,7 +177,7 @@
     "Do not overwrite an existing user-managed Station avatar during OAuth login"
   ],
   "updatedAt": "2026-09-29T15:31:00.000Z",
-  "durableEvidence": []
+  "durableEvidence": [{"verificationClass":"SOURCE_CHECK","result":"PASS","ref":"command://python-unittest/desktop-oauth-layout-evidence-trust/PASS@current-source"},{"verificationClass":"FUNCTIONAL_CHECK","result":"PASS","ref":"evidence://station-access-desktop-oauth-layout-e2e/latest@current-source"},{"verificationClass":"STRUCTURAL_CHECK","result":"PASS","ref":"evidence://desktop-check/latest@current-source"},{"verificationClass":"STRUCTURAL_CHECK","result":"PASS","ref":"evidence://machine-dev-registry-self/latest@current-source"},{"verificationClass":"ACCEPTANCE_PROOF","result":"PASS","ref":"evidence://station-access-desktop-oauth-native-e2e/latest@current-source"},{"verificationClass":"STRUCTURAL_CHECK","result":"PASS","ref":"evidence://acceptance-gap-detect/latest@current-source#changedPaths"},{"verificationClass":"STRUCTURAL_CHECK","result":"PASS","ref":"evidence://quality-evidence/latest@current-source"}]
 }
 ```
 
@@ -196,5 +196,5 @@
   callback restores an authenticated identity.
 - Product correction implemented: Station Profile owns the OAuth avatar,
   Desktop preserves provider and PTID, and search scopes expose their type.
-- Focused Station, Rust, TypeScript, UI projection, and Gate checks pass.
-- Next boundary: checkpoint, exact-source deploy, native Acceptance, then close.
+- Current-source remediation evidence covers focused regression, layout, Desktop checks, machine registry, native OAuth, explicit changed-file inventory, and quality evidence; the layout Gate trust defect is fixed without weakening checks.
+- Review state: pending a fresh independent Completion Review; Task and Plan remain open until that review returns a current PASS receipt.
