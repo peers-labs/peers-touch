@@ -82,6 +82,7 @@ class _FakeProductClient:
     staged_payloads: list[dict[str, Any]] = []
     posts: dict[str, dict[str, Any]] = {}
     group_count = 0
+    cleared_clients: list[str] = []
 
     def __init__(
         self,
@@ -117,11 +118,10 @@ class _FakeProductClient:
                 "federationId": "federation",
                 "homeStationPeerId": "station-four-peer",
             }
-        if method in {
-            "followActor",
-            "addAudienceCircleMember",
-            "clearLocalState",
-        }:
+        if method == "clearLocalState":
+            type(self).cleared_clients.append(self.client_id)
+            return {"ok": True}
+        if method in {"followActor", "addAudienceCircleMember"}:
             return {"ok": True}
         if method == "createAudienceCircle":
             return {"circleId": "42"}
@@ -205,6 +205,7 @@ class SocialExpansionScenarioTest(unittest.TestCase):
         _FakeProductClient.staged_payloads = []
         _FakeProductClient.posts = {}
         _FakeProductClient.group_count = 0
+        _FakeProductClient.cleared_clients = []
 
     def test_executes_typed_local_and_remote_boundary_matrix(self) -> None:
         with (
@@ -265,6 +266,7 @@ class SocialExpansionScenarioTest(unittest.TestCase):
         self.assertTrue(
             all(payload["groupConversationId"] for payload in groups)
         )
+        self.assertEqual([], _FakeProductClient.cleared_clients)
 
     def test_rejected_publish_requires_zero_claim_and_row_evidence(self) -> None:
         client = _FakeProductClient(_Context(), social_expansion.LOCAL_CLIENTS[0])

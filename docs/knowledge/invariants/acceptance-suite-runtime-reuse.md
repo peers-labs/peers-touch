@@ -43,6 +43,11 @@ One Suite Runtime report binds:
 - lifecycle events and reuse metrics;
 - a terminal cleanup result.
 
+Scenario-owned state must remain available until the Suite owner has captured
+the required UI action and receiver-visible assertion. Scenarios must not clear
+client state before returning; the Suite owner performs inter-scenario reset
+after evidence capture and final cleanup after the last Scenario.
+
 Harness and API observations are supporting evidence only. A required UI action
 or receiver-visible assertion cannot be satisfied by directly invoking a
 Harness action, reading a private Store, or checking only an API response.
@@ -78,6 +83,7 @@ For a completed runtime Suite, pass every immutable report through
 - no expensive event follows the first `scenario-start`;
 - every declared Scenario has `ui-action`, `receiver-assertion`, and
   `scenario-end`;
+- no Scenario clears client state before its UI evidence is captured;
 - the final event is `cleanup-complete`.
 
 Any missing or invalid runtime report keeps lifecycle proof `UNPROVEN`.
