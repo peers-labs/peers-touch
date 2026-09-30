@@ -43,7 +43,13 @@ class OAuth2ClientContractTests(unittest.TestCase):
                         "OLB-C08",
                         "OLB-C09",
                     ),
-                    ("OLB-G01", "OLB-G02", "OLB-G03A", "OLB-G05A"),
+                    (
+                        "OLB-G01",
+                        "OLB-G02",
+                        "OLB-G03A",
+                        "OLB-G05A",
+                        "OLB-G05B",
+                    ),
                 ),
                 "refresh-idempotency": (
                     ("OLB-C05", "OLB-C06", "OLB-C08"),
@@ -60,6 +66,12 @@ class OAuth2ClientContractTests(unittest.TestCase):
     def test_split_claims_have_selected_test_witnesses(self) -> None:
         witnesses = {
             "durable-login": {
+                "OLB-G01": {
+                    (
+                        "./internal/integration",
+                        "TestOAuthLoginBrokerCrossInstanceHTTPJourney",
+                    ),
+                },
                 "OLB-G03A": {
                     (
                         "./internal/infrastructure/provider/github",
@@ -90,6 +102,24 @@ class OAuth2ClientContractTests(unittest.TestCase):
                     (
                         "./internal/bootstrap",
                         "TestStorageHTTPClientIsBounded",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestConfigFileAllowedReturnToCanBeOverridden",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestGitHubAPIBaseRequiresHTTPSOnVercel",
+                    ),
+                },
+                "OLB-G05B": {
+                    (
+                        "./internal/bootstrap",
+                        "TestBuildContainerInLocalMemoryMode",
+                    ),
+                    (
+                        "./internal/integration",
+                        "TestOAuthVercelRoutesMatchHandlers",
                     ),
                 },
             },
@@ -132,6 +162,17 @@ class OAuth2ClientContractTests(unittest.TestCase):
     def test_patterns_are_exact(self) -> None:
         pattern = test_pattern(("TestOne", "TestTwo"))
         self.assertEqual(pattern, "^(TestOne|TestTwo)$")
+
+    def test_execution_commands_enable_race_detector(self) -> None:
+        for scope in SCOPES:
+            with self.subTest(scope=scope):
+                commands = commands_for_scope(scope)
+                execution_commands = [
+                    command for command in commands if "-run" in command
+                ]
+                self.assertTrue(execution_commands)
+                for command in execution_commands:
+                    self.assertIn("-race", command)
 
     def test_unknown_scope_fails_closed(self) -> None:
         with self.assertRaises(GateError):

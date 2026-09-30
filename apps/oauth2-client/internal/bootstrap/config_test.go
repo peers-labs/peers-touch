@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -81,6 +83,55 @@ func TestVercelRejectsMissingOrMemoryStorage(t *testing.T) {
 				t.Fatalf("expected Vercel memory rejection, got %v", err)
 			}
 		})
+	}
+}
+
+func TestConfigFileAllowedReturnToCanBeOverridden(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "sites.json")
+	if err := os.WriteFile(configPath, []byte(`{
+		"sites":[{
+			"site_id":"main",
+			"success_url":"https://app.example/success",
+			"error_url":"https://app.example/error",
+			"allowed_return_to":["https://stale.example/oauth/callback"],
+			"providers":{"github":{"enabled":true}}
+		}]
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VERCEL", "")
+	t.Setenv("OAUTH_SITES_JSON", "")
+	t.Setenv("OAUTH_CONFIG_FILE", configPath)
+	t.Setenv("OAUTH_GITHUB_CLIENT_ID", "client")
+	t.Setenv("OAUTH_GITHUB_CLIENT_SECRET", "secret")
+	t.Setenv("OAUTH_GITHUB_REDIRECT_URI", "https://broker.example/api/oauth/github/callback")
+	t.Setenv(
+		"OAUTH_ALLOWED_RETURN_TO",
+		" peers-touch://oauth/callback?ignored=1 , https://app.example/oauth/callback ",
+	)
+
+	registry, err := LoadSiteRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	site, ok := registry.Get("main")
+	if !ok {
+		t.Fatal("configured site not found")
+	}
+	if len(site.AllowedReturnTo) != 2 ||
+		site.AllowedReturnTo[0] != "peers-touch://oauth/callback" ||
+		site.AllowedReturnTo[1] != "https://app.example/oauth/callback" {
+		t.Fatalf("environment allowlist did not override file values: %#v", site.AllowedReturnTo)
+	}
+}
+
+func TestGitHubAPIBaseRequiresHTTPSOnVercel(t *testing.T) {
+	t.Setenv("VERCEL", "1")
+	t.Setenv("OAUTH_STORAGE_DRIVER", "github")
+	t.Setenv("OAUTH_GITHUB_API_BASE_URL", "http://github.example")
+	if _, err := LoadStorageConfig(); err == nil ||
+		err.Error() != "production_github_api_https_required" {
+		t.Fatalf("expected production GitHub HTTPS failure, got %v", err)
 	}
 }
 

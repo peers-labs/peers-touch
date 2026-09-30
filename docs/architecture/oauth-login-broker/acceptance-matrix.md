@@ -61,6 +61,8 @@
 - GitHub, Google, and Weixin parse access token, refresh token, type, scope, and
   expiry when supplied.
 - Google and GitHub send PKCE verifier during authorization-code exchange.
+- Provider expiry is measured from token receipt, before any follow-up userinfo
+  request.
 
 #### OLB-G03B: Credential Refresh
 
@@ -92,6 +94,8 @@
 - Vercel refuses an unset or memory storage driver.
 - Vercel refuses any site without bridge signing or an explicit return
   destination allowlist, and provider callbacks require HTTPS.
+- File-backed sites honor the environment return-destination override, and
+  Vercel rejects a plaintext GitHub API base URL.
 - GitHub storage uses an explicitly bounded HTTP client.
 
 #### OLB-G05B: Complete Bootstrap And Route Compatibility
@@ -116,7 +120,7 @@
 | Cell | Required proof |
 |---|---|
 | Go source | unit, race-free repository behavior, provider fixtures, config validation |
-| Local HTTP | start/callback across separate containers and read-only admin surface |
+| Local HTTP | start/callback across separate GitHub-backed adapters and read-only admin surface |
 | Fake GitHub API | GitHub App token, ref/tree/blob/commit flow, CAS retry |
 | Vercel build shape | every route compiles as an independent function |
 

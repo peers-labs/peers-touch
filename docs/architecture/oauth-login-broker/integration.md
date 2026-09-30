@@ -67,6 +67,10 @@ PEERS_OAUTH_BRIDGE_SECRET=<site result-signing secret>
 OAUTH_ALLOWED_RETURN_TO=peers-touch://oauth/callback,https://app.example/oauth/callback
 ```
 
+`OAUTH_ALLOWED_RETURN_TO` overrides `allowed_return_to` values from file-backed
+site configuration. `OAUTH_GITHUB_API_BASE_URL` defaults to GitHub's public API
+and must use HTTPS on Vercel; local deterministic fixtures may use HTTP.
+
 The GitHub App installation requires repository `Contents: Read and write`.
 The data repository and branch must already exist.
 

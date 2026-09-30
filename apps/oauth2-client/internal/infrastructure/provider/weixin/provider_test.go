@@ -11,6 +11,8 @@ import (
 )
 
 func TestExchangeReturnsRefreshableTokenSet(t *testing.T) {
+	tokenReceivedAt := time.Date(2026, 9, 30, 1, 0, 0, 0, time.UTC)
+	currentTime := tokenReceivedAt
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/token":
@@ -20,6 +22,7 @@ func TestExchangeReturnsRefreshableTokenSet(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"access_token":"access-secret","refresh_token":"refresh-secret","openid":"openid","unionid":"unionid","scope":"snsapi_login","expires_in":7200}`))
 		case "/userinfo":
+			currentTime = tokenReceivedAt.Add(30 * time.Minute)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"openid":"openid","unionid":"unionid","nickname":"Alice"}`))
 		default:
@@ -33,8 +36,7 @@ func TestExchangeReturnsRefreshableTokenSet(t *testing.T) {
 		Token:     server.URL + "/token",
 		UserInfo:  server.URL + "/userinfo",
 	})
-	now := time.Date(2026, 9, 30, 1, 0, 0, 0, time.UTC)
-	provider.now = func() time.Time { return now }
+	provider.now = func() time.Time { return currentTime }
 	grant, err := provider.ExchangeCode(context.Background(), "code", "unused", port.ProviderConfig{
 		ClientID:     "client",
 		ClientSecret: "provider-secret",
@@ -49,8 +51,9 @@ func TestExchangeReturnsRefreshableTokenSet(t *testing.T) {
 		grant.Tokens.RefreshToken != "refresh-secret" ||
 		grant.Tokens.TokenType != "Bearer" ||
 		grant.Tokens.Scope != "snsapi_login" ||
+		!grant.Tokens.ObtainedAt.Equal(tokenReceivedAt) ||
 		grant.Tokens.AccessExpiresAt == nil ||
-		!grant.Tokens.AccessExpiresAt.Equal(now.Add(2*time.Hour)) {
+		!grant.Tokens.AccessExpiresAt.Equal(tokenReceivedAt.Add(2*time.Hour)) {
 		t.Fatalf("unexpected grant: %#v", grant)
 	}
 }
