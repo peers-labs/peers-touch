@@ -68,10 +68,9 @@
 
 ## Current Snapshot
 
-- State: pending.
-- The default file-backed deployment ignores the environment allowlist,
-  production accepts an HTTP GitHub API base, Weixin expiry begins late, and
-  login proof omits assembled-route and true cross-instance witnesses.
+- Production bootstrap honors the environment return allowlist and rejects an
+  insecure GitHub API base. Provider expiry starts at token receipt, and the
+  durable-login Gate includes assembled-route and cross-instance witnesses.
 
 ## Closure
 

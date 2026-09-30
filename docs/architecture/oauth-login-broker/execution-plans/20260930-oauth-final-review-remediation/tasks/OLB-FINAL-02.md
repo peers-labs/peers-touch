@@ -61,9 +61,9 @@
 
 ## Current Snapshot
 
-- State: pending.
-- The GitHub client silently truncates successful responses at 4 MiB before
-  JSON decoding, which can disable all store operations as the tree grows.
+- GitHub response bodies are bounded explicitly, oversized responses fail
+  closed, and oversized or truncated recursive trees fall back to bounded
+  non-recursive traversal.
 
 ## Closure
 
