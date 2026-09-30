@@ -51,6 +51,95 @@ func TestAdminRejectsUnauthorizedBeforeStorage(t *testing.T) {
 	}
 }
 
+func TestBasicAuthenticatorRejectsMissingCredentialsWithoutPasswordDerivation(t *testing.T) {
+	auth := testAdminAuthenticator(t, false)
+	var derivations atomic.Int32
+	auth.derivePassword = func(_, _ []byte, _, keyLength int) []byte {
+		derivations.Add(1)
+		return make([]byte, keyLength)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "http://broker.example/api/admin", nil)
+	if auth.Authorized(request) {
+		t.Fatal("missing credentials were authorized")
+	}
+	if derivations.Load() != 0 {
+		t.Fatalf("missing credentials triggered %d password derivations", derivations.Load())
+	}
+}
+
+func TestBasicAuthenticatorDerivesSuppliedWrongCredentials(t *testing.T) {
+	auth := testAdminAuthenticator(t, false)
+	var derivations atomic.Int32
+	auth.derivePassword = func(_, _ []byte, _, keyLength int) []byte {
+		derivations.Add(1)
+		return make([]byte, keyLength)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "http://broker.example/api/admin", nil)
+	request.SetBasicAuth("operator", "wrong-password")
+	if auth.Authorized(request) {
+		t.Fatal("wrong credentials were authorized")
+	}
+	if derivations.Load() != 1 {
+		t.Fatalf("supplied credentials triggered %d password derivations", derivations.Load())
+	}
+}
+
+func TestBasicAuthenticatorBoundsConcurrentPasswordDerivations(t *testing.T) {
+	auth := testAdminAuthenticator(t, false)
+	started := make(chan struct{}, maximumConcurrentPasswordDerivations)
+	release := make(chan struct{})
+	var derivations atomic.Int32
+	auth.derivePassword = func(_, _ []byte, _, _ int) []byte {
+		derivations.Add(1)
+		started <- struct{}{}
+		<-release
+		return append([]byte(nil), auth.passwordHash...)
+	}
+
+	results := make(chan bool, maximumConcurrentPasswordDerivations)
+	for range maximumConcurrentPasswordDerivations {
+		go func() {
+			request := httptest.NewRequest(http.MethodGet, "http://broker.example/api/admin", nil)
+			request.SetBasicAuth("operator", "correct-password")
+			results <- auth.Authorized(request)
+		}()
+	}
+	for range maximumConcurrentPasswordDerivations {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("password derivation did not start")
+		}
+	}
+
+	overflow := httptest.NewRequest(http.MethodGet, "http://broker.example/api/admin", nil)
+	overflow.SetBasicAuth("operator", "correct-password")
+	if auth.Authorized(overflow) {
+		t.Fatal("overflow request was authorized")
+	}
+	if derivations.Load() != maximumConcurrentPasswordDerivations {
+		t.Fatalf(
+			"started %d password derivations, want %d",
+			derivations.Load(),
+			maximumConcurrentPasswordDerivations,
+		)
+	}
+
+	close(release)
+	for range maximumConcurrentPasswordDerivations {
+		select {
+		case authorized := <-results:
+			if !authorized {
+				t.Fatal("admitted credentials were rejected")
+			}
+		case <-time.After(time.Second):
+			t.Fatal("password derivation did not complete")
+		}
+	}
+}
+
 func TestAdminUnavailableIncludesSecurityHeaders(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	WriteAdminUnavailable(recorder)

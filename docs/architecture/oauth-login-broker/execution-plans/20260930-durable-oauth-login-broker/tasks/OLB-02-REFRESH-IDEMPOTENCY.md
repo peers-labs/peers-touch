@@ -62,11 +62,12 @@
 
 ## Current Snapshot
 
-- State: in progress.
+- State: done.
 - Provider refresh, omitted refresh-token retention, duplicate-operation
-  short-circuiting, and lost Git ref response convergence are implemented.
-- Review-requested provider metadata and error-redaction assertions are pending
-  exact-source verification.
+  short-circuiting, generation fencing, and lost Git ref response convergence
+  are implemented.
+- Provider metadata, stale-response retry, and error-redaction assertions pass
+  on the completed source.
 
 ## Closure
 

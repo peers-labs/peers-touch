@@ -70,6 +70,9 @@
 ### OLB-G04: Operator Readback
 
 - Basic auth uses a constant-time password-digest comparison.
+- Missing or malformed Basic credentials return before password derivation.
+- Supplied credentials use a bounded per-instance password-derivation pool;
+  saturation fails closed without starting additional PBKDF2 work.
 - Invalid credentials produce `401` before storage reads.
 - HTML and JSON expose only identity, aggregate credential metadata, and typed
   audit fields.

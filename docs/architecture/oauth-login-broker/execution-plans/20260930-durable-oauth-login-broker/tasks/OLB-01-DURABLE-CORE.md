@@ -84,11 +84,11 @@
 
 ## Current Snapshot
 
-- State: ready.
-- Existing session storage is process-local and provider token metadata is
-  discarded.
-- Product and architecture contracts are accepted.
-- Implementation and focused source evidence remain.
+- State: done.
+- Durable cross-instance authorization, encrypted GitHub persistence, PKCE,
+  redirect allowlisting, and provider token normalization are implemented.
+- The original Plan's exact-source cross-instance journey and durable-login
+  Acceptance Gate passed before Plan completion.
 
 ## Closure
 
