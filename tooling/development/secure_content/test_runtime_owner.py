@@ -255,11 +255,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                 self.action = Element("p")
                 self.comments = Element("button")
                 self.receiver = Element("p")
+                self.css_selectors: list[str] = []
                 self.xpath_selectors: list[str] = []
 
             def find_elements(self, using: str, selector: str) -> list[Element]:
                 self.assert_locator(using)
                 if using == "css selector":
+                    self.css_selectors.append(selector)
                     if 'data-pt-primary-nav="moments"' in selector:
                         return [self.nav]
                     if "data-moments-comments-toggle" in selector:
@@ -311,6 +313,13 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertTrue(driver.nav.clicked)
         self.assertTrue(driver.action.clicked)
         self.assertTrue(driver.comments.clicked)
+        self.assertEqual(
+            (
+                '[data-pt-primary-nav="moments"] button, '
+                '[data-pt-primary-nav="moments"] [role="button"]'
+            ),
+            driver.css_selectors[0],
+        )
         action_selector = next(
             selector
             for selector in driver.xpath_selectors
