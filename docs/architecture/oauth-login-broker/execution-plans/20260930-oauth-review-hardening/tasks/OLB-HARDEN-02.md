@@ -17,10 +17,10 @@
   "runtimeClass": "service",
   "writeSet": [
     "apps/oauth2-client",
+    "docs/architecture/oauth-login-broker",
     "tooling/acceptance/gates/oauth2_client"
   ],
   "readSet": [
-    "docs/architecture/oauth-login-broker",
     "docs/knowledge"
   ],
   "budgets": {
