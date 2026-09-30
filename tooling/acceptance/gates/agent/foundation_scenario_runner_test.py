@@ -600,10 +600,15 @@ class ForbiddenActorHarnessClient:
         *,
         call_log: list[str],
         fail_rejection: bool = False,
+        actor_id: str | None = "ptid:alice@p.t",
     ) -> None:
         self.platform = platform
+        self.spec = SimpleNamespace(
+            runtime="native-tauri" if platform == "desktop_app" else platform
+        )
         self.call_log = call_log
         self.fail_rejection = fail_rejection
+        self.actor_id = actor_id
 
     def harness(
         self,
@@ -616,11 +621,20 @@ class ForbiddenActorHarnessClient:
         self.call_log.append(f"{self.platform}:{method}")
         if method == "setFoundationLocale":
             return {"locale": request["locale"]}
+        if method == "getRuntimeSnapshot":
+            return {
+                "authenticated": self.actor_id is not None,
+                "actorId": self.actor_id,
+                "identityState": (
+                    "ready" if self.actor_id is not None else "onboarding"
+                ),
+            }
         if method == "loginWithPassword":
             account = str(request["account"])
+            self.actor_id = f"ptid:{account}"
             return {
                 "authenticated": True,
-                "actorId": f"ptid:{account}",
+                "actorId": self.actor_id,
             }
         if method == "navigateToAgent":
             return {"navigated": True}
@@ -635,6 +649,7 @@ class ForbiddenActorHarnessClient:
                 "beforeVersion": 1,
             }
         if method == "rejectFoundationForbiddenActor":
+            self.actor_id = None
             if self.fail_rejection:
                 raise RuntimeError("forbidden rejection failed")
             facts = valid_forbidden_actor_capture()
@@ -1339,7 +1354,7 @@ class SessionHarnessClient:
         if method == "getFoundationCapabilitySessions":
             return {"selectedStationSession": {"session_id": "capability-session"}}
         if method == "loginWithPassword":
-            return {"authenticated": True}
+            return {"authenticated": True, "actorId": "ptid:test"}
         raise AssertionError(f"unexpected method: {method}")
 
 
@@ -4176,6 +4191,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         coordinator = foundation_scenario_runner.FoundationForbiddenActorCoordinator(
             SimpleNamespace(native=native, browser=browser),
             {"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+            {
+                "native-tauri": "ptid:alice@p.t",
+                "browser": "ptid:alice@p.t",
+            },
         )
         probe = foundation_scenario_runner._make_direct_probe(
             browser,
@@ -4199,13 +4218,15 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
                 "desktop_app:loginWithPassword",
                 "desktop_app:navigateToAgent",
                 "desktop_app:prepareFoundationForbiddenActorOwner",
-                "browser:loginWithPassword",
+                "browser:getRuntimeSnapshot",
                 "browser:navigateToAgent",
                 "browser:rejectFoundationForbiddenActor",
                 "desktop_app:readFoundationForbiddenActorOwner",
                 "desktop_app:cleanupFoundationForbiddenActorOwner",
+                "desktop_app:getRuntimeSnapshot",
                 "desktop_app:loginWithPassword",
                 "desktop_app:navigateToAgent",
+                "browser:getRuntimeSnapshot",
                 "browser:loginWithPassword",
                 "browser:navigateToAgent",
                 "browser:completeFoundationForbiddenActorRecovery",
@@ -4230,6 +4251,10 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         coordinator = foundation_scenario_runner.FoundationForbiddenActorCoordinator(
             SimpleNamespace(native=native, browser=browser),
             {"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+            {
+                "native-tauri": "ptid:alice@p.t",
+                "browser": "ptid:alice@p.t",
+            },
         )
 
         with self.assertRaisesRegex(RuntimeError, "forbidden rejection failed"):
@@ -4243,12 +4268,14 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
             )
 
         self.assertEqual(
-            call_log[-7:],
+            call_log[-9:],
             [
                 "browser:rejectFoundationForbiddenActor",
                 "desktop_app:cleanupFoundationForbiddenActorOwner",
+                "desktop_app:getRuntimeSnapshot",
                 "desktop_app:loginWithPassword",
                 "desktop_app:navigateToAgent",
+                "browser:getRuntimeSnapshot",
                 "browser:loginWithPassword",
                 "browser:navigateToAgent",
                 "browser:abortFoundationForbiddenActor",

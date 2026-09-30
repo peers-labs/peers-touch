@@ -2039,9 +2039,11 @@ class FoundationForbiddenActorCoordinator:
         self,
         runtime_pair: "FoundationRuntimePair",
         profile_env: Mapping[str, str],
+        alice_actor_ids: Mapping[str, str],
     ) -> None:
         self._runtime_pair = runtime_pair
         self._password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
+        self._alice_actor_ids = dict(alice_actor_ids)
 
     @staticmethod
     def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
@@ -2072,7 +2074,18 @@ class FoundationForbiddenActorCoordinator:
             f"BASE-FORBIDDEN_ACTOR has no owner client for {platform}"
         )
 
-    def _login(self, client: Any, account: str) -> None:
+    @staticmethod
+    def _navigate(client: Any, account: str) -> None:
+        navigation = client.harness("navigateToAgent", {}, timeout=60)
+        if (
+            not isinstance(navigation, Mapping)
+            or navigation.get("navigated") is not True
+        ):
+            raise ScenarioRunnerError(
+                f"BASE-FORBIDDEN_ACTOR {account} navigation is invalid"
+            )
+
+    def _login(self, client: Any, account: str) -> str:
         login = client.harness(
             "loginWithPassword",
             {"account": account, "password": self._password},
@@ -2086,13 +2099,29 @@ class FoundationForbiddenActorCoordinator:
             raise ScenarioRunnerError(
                 f"BASE-FORBIDDEN_ACTOR {account} login is invalid"
             )
-        navigation = client.harness("navigateToAgent", {}, timeout=60)
-        if (
-            not isinstance(navigation, Mapping)
-            or navigation.get("navigated") is not True
-        ):
+        self._navigate(client, account)
+        return str(login["actorId"])
+
+    def _ensure_alice(self, client: Any) -> None:
+        runtime = str(client.spec.runtime)
+        expected_actor_id = self._alice_actor_ids.get(runtime, "")
+        if not expected_actor_id:
             raise ScenarioRunnerError(
-                f"BASE-FORBIDDEN_ACTOR {account} navigation is invalid"
+                f"BASE-FORBIDDEN_ACTOR {runtime} Alice identity is missing"
+            )
+        snapshot = client.harness("getRuntimeSnapshot", {}, timeout=30)
+        if (
+            isinstance(snapshot, Mapping)
+            and snapshot.get("authenticated") is True
+            and snapshot.get("identityState") == "ready"
+            and snapshot.get("actorId") == expected_actor_id
+        ):
+            self._navigate(client, "alice@p.t")
+            return
+        actual_actor_id = self._login(client, "alice@p.t")
+        if actual_actor_id != expected_actor_id:
+            raise ScenarioRunnerError(
+                f"BASE-FORBIDDEN_ACTOR {runtime} Alice identity mismatch"
             )
 
     def capture(
@@ -2142,7 +2171,7 @@ class FoundationForbiddenActorCoordinator:
                     "BASE-FORBIDDEN_ACTOR owner fixture is invalid"
                 )
 
-            self._login(receiver, "alice@p.t")
+            self._ensure_alice(receiver)
             receiver_is_alice = False
             rejected = receiver.harness(
                 "rejectFoundationForbiddenActor",
@@ -2186,9 +2215,9 @@ class FoundationForbiddenActorCoordinator:
                 )
             owner_cleaned = True
 
-            self._login(owner, "alice@p.t")
+            self._ensure_alice(owner)
             owner_is_bob = False
-            self._login(receiver, "alice@p.t")
+            self._ensure_alice(receiver)
             receiver_is_alice = True
 
             recovered = receiver.harness(
@@ -2241,13 +2270,13 @@ class FoundationForbiddenActorCoordinator:
                     cleanup_errors.append(f"owner resource cleanup: {error}")
             if owner_is_bob:
                 try:
-                    self._login(owner, "alice@p.t")
+                    self._ensure_alice(owner)
                     owner_is_bob = False
                 except BaseException as error:
                     cleanup_errors.append(f"owner identity restore: {error}")
             if not receiver_is_alice:
                 try:
-                    self._login(receiver, "alice@p.t")
+                    self._ensure_alice(receiver)
                     receiver_is_alice = True
                 except BaseException as error:
                     cleanup_errors.append(f"receiver identity restore: {error}")
@@ -3751,7 +3780,7 @@ def _authenticate_clients(
     require_existing_session: bool = False,
     session_deadline: float | None = None,
     recovery_boundary: str = "session-recovery",
-) -> None:
+) -> dict[str, str]:
     """Prepare authenticated clients without masking recovery failures.
 
     Initial setup logs in with the profile fixture. Recovery paths set
@@ -3763,6 +3792,7 @@ def _authenticate_clients(
     password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
     provider_config = _agent_provider_config(profile_env)
     selected_clients = clients or (runtime_pair.native, runtime_pair.browser)
+    actor_ids: dict[str, str] = {}
 
     for client in selected_clients:
         # Step 0: Warm-up — wait for Rust backend to finish initializing
@@ -3846,10 +3876,15 @@ def _authenticate_clients(
             if (
                 not isinstance(login_result, Mapping)
                 or not login_result.get("authenticated")
+                or not isinstance(login_result.get("actorId"), str)
+                or not login_result.get("actorId")
             ):
                 raise ScenarioRunnerError(
                     f"{client.spec.runtime} login failed: {login_result}"
                 )
+            session_state = login_result
+
+        actor_ids[client.spec.runtime] = str(session_state["actorId"])
 
         # Step 2: Navigate to agent surface
         nav_result = client.harness("navigateToAgent", {}, timeout=60)
@@ -4018,6 +4053,7 @@ def _authenticate_clients(
                 "pollCount": poll_count,
             },
         )
+    return actor_ids
 
 
 def _capability_isolation_restoration_error(
@@ -4213,7 +4249,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         runtime_pair.start()
 
         # --- Authenticate and configure both clients ---
-        _authenticate_clients(runtime_pair, profile_env)
+        alice_actor_ids = _authenticate_clients(runtime_pair, profile_env)
 
         # --- Build adapters ---
         provider_cooldown_seconds = (
@@ -4252,6 +4288,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         forbidden_actor_coordinator = FoundationForbiddenActorCoordinator(
             runtime_pair,
             profile_env,
+            alice_actor_ids,
         )
         deployment_environment = profile_env.get(
             "PT_STATION_DEPLOY_ENV",
