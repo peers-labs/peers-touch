@@ -1,6 +1,6 @@
 # OAuth Review Hardening
 
-> **Status**: active
+> **Status**: completed
 > **Branch**: work/station-access-lifecycle
 > **Workspace ID**: 95620934d3348d95
 > **Initial HEAD**: 87ab060037b9179efe6274868cad6d964e8e3ee9
@@ -18,7 +18,7 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "OLB-HARDEN-20260930",
-  "status": "active",
+  "status": "completed",
   "binding": {
     "branch": "work/station-access-lifecycle",
     "workspaceId": "95620934d3348d95",
@@ -98,7 +98,7 @@
       "dependsOn": [
         "OLB-HARDEN-02"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     }
   ],
