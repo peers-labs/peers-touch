@@ -132,7 +132,7 @@
     "Preserve terminal idempotency and active branch lineage",
     "Return only the first deterministic failure to its owning layer"
   ],
-  "updatedAt": "2026-09-29T22:32:00Z",
+  "updatedAt": "2026-09-30T17:47:59Z",
   "durableEvidence": []
 }
 ```
@@ -175,3 +175,18 @@ permission-denied contract exposed by the next exact-source Foundation run.
   reached Browser `BASE-PROVIDER_TIMEOUT`; source inspection found that live
   Turn SSE lacked heartbeat frames, so the 30-second Browser idle deadline
   preceded the 120-second provider terminal. Cleanup passed.
+- Exact-source run
+  `20260930T170459504288Z-055e01500d9b0450e25e100eaf3e7514`
+  crossed the authorized disposable Station restart path and failed first at
+  Browser English `BASE-FORBIDDEN_ACTOR`. The typed rejection reached the
+  conversation buffer, while its lifecycle callback and source event were not
+  observed after the current conversation changed; the stale global stream
+  projection remained active. Isolated exact-source
+  tuple run
+  `20260930T173747235565Z-332d7da3d18c1f4d8c3b3e6c16896ffb`
+  passed all forbidden-actor assertions in 2106 ms, proving accumulated
+  cross-scenario state rather than a Station ownership failure. The local
+  correction now treats only Turn/admission-bearing stream events as accepted
+  and prevents pre-admission failures from triggering asynchronous topic
+  reconciliation. Both failed full runs and the isolated diagnostic completed
+  clean Provisioner teardown.

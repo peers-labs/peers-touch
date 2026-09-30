@@ -1150,6 +1150,17 @@ function reconcileTopicsAfterTurn(sessionKey: string): void {
   });
 }
 
+function streamEventConfirmsAdmission(event: StreamEvent): boolean {
+  if (event.event === 'error') return false;
+  const turnId = String(
+    event.data?.turnId ?? event.data?.turn_id ?? '',
+  ).trim();
+  return Boolean(turnId)
+    || event.event === 'conversation_created'
+    || event.event === 'queued'
+    || event.event === 'admission_replayed';
+}
+
 function clearOperation(operations: Record<string, ChatOperation>, sessionKey: string): Record<string, ChatOperation> {
   const op = operations[sessionKey];
   if (!op) return operations;
@@ -2028,7 +2039,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         lifecycle?.clientIdempotencyKey,
       ),
       (event: StreamEvent) => {
-        if (event.event !== 'error') notifyAccepted();
+        if (streamEventConfirmsAdmission(event)) notifyAccepted();
         if (event.event === 'conversation_created' && typeof event.data?.conversation_id === 'string' && isDraft) {
           const realConvId = event.data.conversation_id.trim();
           let promotedSession: Session | undefined;
@@ -2150,6 +2161,9 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         reconcileTopicsAfterTurn(resolvedSessionKey);
       },
       (err: AgentTurnStreamError) => {
+        const failedOperation = get().operations[resolvedSessionKey];
+        const rejectedBeforeAdmission =
+          !acceptedByStation && !failedOperation?.turnId;
         const attachmentRejected =
           err.typedError?.error_type === 'CONTEXT_ATTACHMENT_REJECTED';
         if (attachmentDiagnostic && attachmentRejected) {
@@ -2175,7 +2189,7 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             },
           );
         }
-        if (!acceptedByStation) lifecycle?.onRejected?.(err.typedError);
+        if (rejectedBeforeAdmission) lifecycle?.onRejected?.(err.typedError);
         log.error('chat', 'Send message failed', { error: err.message });
         const mappedResolution = resolveAgentTypedErrorAction(err.typedError);
         const resolution = mappedResolution ?? (
@@ -2211,13 +2225,13 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             messages: isCurrent ? state.messages.map(applyError) : state.messages,
             // Pre-admission rejection has no Station message to reload, so its
             // editable draft and recovery surface remain conversation-scoped.
-            sessionBuffers: acceptedByStation
-              ? clearBuffer(state.sessionBuffers, resolvedSessionKey)
-              : setBuffer(
+            sessionBuffers: rejectedBeforeAdmission
+              ? setBuffer(
                   state.sessionBuffers,
                   resolvedSessionKey,
                   (messages) => messages.map(applyError),
-                ),
+                )
+              : clearBuffer(state.sessionBuffers, resolvedSessionKey),
             isStreaming: isCurrent ? false : state.isStreaming,
             streamingStartedAt: isCurrent ? null : state.streamingStartedAt,
             abortController: isCurrent ? null : state.abortController,
@@ -2253,7 +2267,9 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
             },
           );
         }
-        reconcileTopicsAfterTurn(resolvedSessionKey);
+        if (!rejectedBeforeAdmission) {
+          reconcileTopicsAfterTurn(resolvedSessionKey);
+        }
       },
       currentAuthenticatedActorPtid() || '',
     );
