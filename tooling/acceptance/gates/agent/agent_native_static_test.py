@@ -920,6 +920,17 @@ class AgentHarnessStaticTest(unittest.TestCase):
             "Include nonce ${retrySourceNonce} in every item.",
             scenario,
         )
+        self.assertIn("const maxCancellationAttempts = 3", scenario)
+        self.assertIn("terminalRaceStatuses.push", scenario)
+        self.assertIn(
+            "await cleanupFoundationToolConversation(",
+            scenario,
+        )
+        self.assertIn(
+            "sourceCancellationStatus !== 'completed'",
+            scenario,
+        )
+        self.assertIn("'retry-source-terminal-race'", scenario)
         self.assertNotIn(
             "100 short items",
             scenario,
