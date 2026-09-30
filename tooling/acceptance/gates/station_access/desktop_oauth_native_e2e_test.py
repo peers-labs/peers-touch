@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
+    CHAT_NAV_SELECTOR,
     DesktopOAuthNativeGate,
     OAUTH_AVATAR_URL,
     find_people_scopes_are_distinct,
@@ -48,6 +49,12 @@ class _FakeRuntimeBinding:
 
 
 class DesktopOAuthNativeGateTest(unittest.TestCase):
+    def test_chat_navigation_targets_the_production_role_button(self) -> None:
+        self.assertEqual(
+            CHAT_NAV_SELECTOR,
+            '[data-pt-primary-nav="chat"] [role="button"]',
+        )
+
     def test_accepts_distinct_same_name_scope_evidence(self) -> None:
         self.assertTrue(
             find_people_scopes_are_distinct(
