@@ -16562,6 +16562,8 @@ async function runFoundationForbiddenActorAttempt(input: {
   conversationId: string;
   idempotencyKey: string;
   content: string;
+  ownerActorHash: string;
+  receiverActorHash: string;
   requireRuntimeEvent?: boolean;
 }): Promise<{
   outcome: Record<string, unknown>;
@@ -16576,6 +16578,11 @@ async function runFoundationForbiddenActorAttempt(input: {
     current: FoundationPreAdmissionErrorEvent | null;
   } = { current: null };
   let observationSequence = 0;
+  let rejectionCallbackCount = 0;
+  let rejectionCallbackErrorCode = '';
+  let lastEventType = '';
+  let lastEventErrorType = '';
+  let lastSourceTransport = '';
   const unsubscribe = eventBus.subscribe(
     EVENT.AGENT_TURN_STREAM_EVENT,
     (payload) => {
@@ -16586,6 +16593,9 @@ async function runFoundationForbiddenActorAttempt(input: {
       ).sourceDelivery;
       if (payload.conversationId !== input.conversationId) return;
       observationSequence += 1;
+      lastEventType = payload.event;
+      lastEventErrorType = String(payload.data.error_type ?? '');
+      lastSourceTransport = sourceDelivery?.transport ?? '';
       if (
         payload.event !== 'error'
         || payload.data.error_type !== 'OWNERSHIP_FORBIDDEN_ACTOR'
@@ -16610,6 +16620,8 @@ async function runFoundationForbiddenActorAttempt(input: {
       {
         clientIdempotencyKey: input.idempotencyKey,
         onRejected: (error) => {
+          rejectionCallbackCount += 1;
+          rejectionCallbackErrorCode = observedErrorCode(error);
           if (error) {
             rejectedRef.current = evidenceValue(error) as Record<string, unknown>;
           }
@@ -16619,15 +16631,52 @@ async function runFoundationForbiddenActorAttempt(input: {
     if (!sent) {
       throw new Error('agent.acceptance.foundationForbiddenActorSendRejected');
     }
-    await waitFor(
-      () => (
-        input.requireRuntimeEvent === false
-          ? rejectedRef.current !== null || errorEventRef.current !== null
-          : rejectedRef.current !== null && errorEventRef.current !== null
-      ),
-      'typed forbidden actor rejection',
-      60_000,
-    );
+    try {
+      await waitFor(
+        () => (
+          input.requireRuntimeEvent === false
+            ? rejectedRef.current !== null || errorEventRef.current !== null
+            : rejectedRef.current !== null && errorEventRef.current !== null
+        ),
+        'typed forbidden actor rejection',
+        60_000,
+      );
+    } catch {
+      const actorHash = await sha256Hex(authenticatedFoundationActorPtid());
+      const chatState = useChatStore.getState();
+      const operation = chatState.operations[input.conversationId];
+      const readback = await api.getAgentConversation(input.conversationId).then(
+        () => ({ code: '', visible: true }),
+        (readbackError: unknown) => ({
+          code: observedErrorCode(readbackError),
+          visible: false,
+        }),
+      );
+      throw new Error(
+        'agent.acceptance.foundationForbiddenActorWaitFailed:'
+        + stableJson({
+          actorMatchesOwner: actorHash === input.ownerActorHash,
+          actorMatchesReceiver: actorHash === input.receiverActorHash,
+          currentSessionMatches:
+            chatState.currentSessionKey === input.conversationId,
+          errorEventPresent: errorEventRef.current !== null,
+          isStreaming: chatState.isStreaming,
+          lastEventErrorType,
+          lastEventType,
+          lastSourceTransport,
+          messageErrorTypes: chatState.messages
+            .map((message) => message.typedError?.error_type ?? '')
+            .filter(Boolean),
+          observationSequence,
+          operationRunState: operation?.runState ?? 'absent',
+          operationStatus: operation?.status ?? 'absent',
+          readback,
+          rejectedPresent: rejectedRef.current !== null,
+          rejectionCallbackCount,
+          rejectionCallbackErrorCode,
+        }),
+      );
+    }
   } finally {
     unsubscribe();
   }
@@ -16804,6 +16853,8 @@ async function rejectFoundationForbiddenActor(input: {
     conversationId: resourceId,
     idempotencyKey,
     content,
+    ownerActorHash,
+    receiverActorHash,
   });
   // #region debug-point F-J:forbidden-actor-receiver
   await reportFoundationForbiddenActorAccountGateDebug(
@@ -16816,6 +16867,8 @@ async function rejectFoundationForbiddenActor(input: {
     conversationId: resourceId,
     idempotencyKey,
     content,
+    ownerActorHash,
+    receiverActorHash,
     requireRuntimeEvent: false,
   });
   if (!first.runtimeEvent) {
