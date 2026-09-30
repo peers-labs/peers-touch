@@ -37,6 +37,8 @@
     "apps/desktop/src-tauri/src/application/desktop_executor_worker/supervisor.rs",
     "apps/desktop/src-tauri/src/application/runtime_evidence.rs",
     "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+    "apps/desktop/src/runtimes/agentCapabilityRuntime.ts",
+    "apps/desktop/src/runtimes/agentCapabilityRuntime.test.ts",
     "apps/desktop/src/services/appRuntime.ts",
     "apps/desktop/src/services/desktop_api.ts",
     "apps/desktop/src/services/desktop_api.clientPermissionDenied.test.ts",
