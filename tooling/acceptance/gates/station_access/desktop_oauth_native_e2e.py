@@ -618,14 +618,12 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 window_top
                 + max(0.0, window_height - float(viewport["height"])),
             )
-        self.runtime_binding.native_adapter.post_mouse_to_process(
-            process_id,
+        self.runtime_binding.native_adapter.post_mouse(
             (MouseAction.MOVE,),
             (content_origin[0] + 2.0, content_origin[1] + 2.0),
         )
         time.sleep(0.1)
-        self.runtime_binding.native_adapter.post_mouse_to_process(
-            process_id,
+        self.runtime_binding.native_adapter.post_mouse(
             (MouseAction.MOVE,),
             (
                 content_origin[0] + float(element_center["x"]),
