@@ -386,6 +386,12 @@ func validateProductionSites(sites map[string]usecase.SiteConfig) error {
 		if len(site.AllowedReturnTo) == 0 {
 			return errors.New("production_return_to_allowlist_required")
 		}
+		for _, provider := range site.Providers {
+			redirect, err := url.Parse(provider.RedirectURI)
+			if err != nil || redirect.Scheme != "https" {
+				return errors.New("production_provider_redirect_https_required")
+			}
+		}
 	}
 	return nil
 }
