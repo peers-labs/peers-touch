@@ -3,8 +3,15 @@ from __future__ import annotations
 import json
 import unittest
 
-from tooling.acceptance.core import ENVIRONMENTS_DIR, EnvironmentContract
+from tooling.acceptance.core import (
+    ENVIRONMENTS_DIR,
+    EnvironmentContract,
+    GateError,
+)
 from tooling.acceptance.core.provisioning import ProvisioningState
+from tooling.acceptance.gates.station_access.desktop_oauth_layout_e2e import (
+    StationAccessDesktopOAuthLayoutGate,
+)
 from tooling.acceptance.provisioners import (
     StationAccessLoginBrowserProvisioner,
     get_provisioner,
@@ -53,6 +60,29 @@ class StationAccessDesktopOAuthLayoutAcceptanceTests(unittest.TestCase):
         self.assertEqual(gate["environment"], ENVIRONMENT_ID)
         self.assertEqual(gate["provisioner"], ENVIRONMENT_ID)
 
+    def test_summary_assertion_detail_does_not_contradict_success(self) -> None:
+        gate = StationAccessDesktopOAuthLayoutGate()
+
+        gate._record_summary_assertions({"layout_is_stable": True})
+
+        self.assertTrue(gate.report.assertions[0].passed)
+        self.assertIsNone(gate.report.assertions[0].detail)
+
+    def test_summary_assertion_failure_retains_diagnostic(self) -> None:
+        gate = StationAccessDesktopOAuthLayoutGate()
+
+        with self.assertRaisesRegex(
+            GateError,
+            "journey assertion layout_is_stable was not proven",
+        ):
+            gate._record_summary_assertions({"layout_is_stable": False})
+
+        self.assertFalse(gate.report.assertions[0].passed)
+        self.assertEqual(
+            gate.report.assertions[0].detail,
+            "journey assertion layout_is_stable was not proven",
+        )
+
     def test_journey_covers_both_providers_viewports_and_geometry(self) -> None:
         driver = (
             ENVIRONMENTS_DIR.parent
@@ -67,11 +97,22 @@ class StationAccessDesktopOAuthLayoutAcceptanceTests(unittest.TestCase):
             "const providers = ['github', 'google'];",
             "[data-pt-login-card]",
             "[data-pt-login-oauth-provider=",
-            "[data-pt-login-oauth-panel=",
-            "rectanglesIntersect(geometry.card, geometry.panel)",
+            "[data-pt-login-oauth-action=",
+            "[data-pt-login-oauth-cancel=",
+            "[data-pt-login-oauth-state=\"waiting\"]",
+            "[data-pt-login-oauth-state=\"error\"]",
+            "[data-pt-login-oauth-state=\"initializing\"]",
+            "[data-pt-login-oauth-state=\"success\"]",
+            "document.querySelectorAll('[data-pt-login-oauth-panel]').length",
+            "assertStableRect(geometries.idle.card, geometry.card",
+            "assertStableRect(geometries.idle.action, geometry.action",
+            "document.activeElement?.getAttribute('data-pt-login-oauth-cancel')",
+            "document.activeElement?.getAttribute('data-pt-login-oauth-provider')",
+            "document.activeElement?.getAttribute('data-pt-login-oauth-action')",
             "page.screenshot({ path: screenshotPath })",
             "writeFileSync(domPath, await page.content()",
             "invocation.command === 'oauth2_start_loopback'",
+            "invocation.command === 'oauth2_cancel_loopback'",
         ):
             with self.subTest(required_source=required_source):
                 self.assertIn(required_source, driver)

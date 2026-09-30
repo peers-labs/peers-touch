@@ -21,13 +21,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
@@ -137,6 +137,13 @@ fn loopback_sessions() -> &'static Mutex<HashMap<String, LoopbackSessionState>> 
     LOOPBACK_SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn lock_loopback_sessions() -> std::sync::MutexGuard<'static, HashMap<String, LoopbackSessionState>>
+{
+    loopback_sessions()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn lock_connection_mutations() -> std::sync::MutexGuard<'static, ()> {
     CONNECTION_MUTATIONS
         .get_or_init(|| Mutex::new(()))
@@ -155,17 +162,28 @@ fn update_loopback_session(
     status: &str,
     callback_url: Option<String>,
     error: Option<String>,
-) {
-    if let Ok(mut sessions) = loopback_sessions().lock() {
-        if let Some(item) = sessions.get_mut(session_id) {
-            item.status = status.to_string();
-            item.callback_url = callback_url;
-            item.error = error;
-            if status == "completed" || status == "failed" || status == "expired" {
-                item.completed_at = Some(chrono_like_now_unix());
-            }
-        }
+) -> bool {
+    let mut sessions = lock_loopback_sessions();
+    let Some(item) = sessions.get_mut(session_id) else {
+        return false;
+    };
+    if item.status != "pending" {
+        return false;
     }
+    item.status = status.to_string();
+    item.callback_url = callback_url;
+    item.error = error;
+    if status == "completed" || status == "failed" || status == "expired" || status == "cancelled" {
+        item.completed_at = Some(chrono_like_now_unix());
+    }
+    true
+}
+
+fn loopback_session_is_pending(session_id: &str) -> bool {
+    lock_loopback_sessions()
+        .get(session_id)
+        .map(|item| item.status == "pending")
+        .unwrap_or(false)
 }
 
 fn parse_query_params(raw_path: &str) -> HashMap<String, String> {
@@ -199,6 +217,23 @@ fn resolve_loopback_connector_owner(actor_ptid: Option<&str>) -> CmdResult<Optio
         ));
     }
     Ok(Some(actor_ptid.to_string()))
+}
+
+fn validate_oauth_bridge_response(bridge: &OAuthBridgeResponse) -> CmdResult<&str> {
+    if bridge.session_id.trim().is_empty() {
+        return Err(internal_error(
+            "OAuth bridge response missing Station session",
+        ));
+    }
+    if bridge.access_token.trim().is_empty() {
+        return Err(internal_error("OAuth bridge response missing access token"));
+    }
+    bridge
+        .actor_ref
+        .as_ref()
+        .map(|actor| actor.ptid.trim())
+        .filter(|ptid| ptid.starts_with("ptid:"))
+        .ok_or_else(|| internal_error("OAuth bridge response missing canonical actor PTID"))
 }
 
 fn save_oauth_callback(
@@ -318,49 +353,35 @@ fn save_oauth_callback(
         sig: sig.clone().unwrap_or_default(),
     };
     if connector_owner_ptid.is_none() {
-        match station_client::post_peers_proto_no_auth::<OAuthBridgeRequest, OAuthBridgeResponse>(
-            "/actor/oauth-bridge",
-            &bridge_req,
-        ) {
-            Ok(bridge) => {
-                if !bridge.access_token.is_empty() {
-                    let actor_ptid = bridge
-                        .actor_ref
-                        .as_ref()
-                        .map(|actor| actor.ptid.trim())
-                        .filter(|ptid| ptid.starts_with("ptid:"))
-                        .ok_or_else(|| {
-                            internal_error("OAuth bridge response missing canonical actor PTID")
-                        })?;
-                    let account_id = auth_identity::upsert_oauth(
-                        actor_ptid,
-                        provider_id,
-                        provider_user_id.as_str(),
-                        user_name.as_str(),
-                        input.created_at.as_deref(),
-                        Some(email.as_str()),
-                        Some(avatar_url.as_str()),
-                        Some(profile_url.as_str()),
-                    )
-                    .map_err(internal_error)?;
-                    session_vault::persist_raw_session_for_account(
-                        &account_id,
-                        actor_ptid,
-                        &bridge.access_token,
-                        SessionSource::OauthBridge,
-                    )
-                    .map_err(|error| internal_error(&error.to_string()))?;
-                    let mut connections = read_connections()?;
-                    if let Some(connection) = connections.get_mut(provider_id) {
-                        connection.owner_ptid = actor_ptid.to_string();
-                    }
-                    write_connections(&connections)?;
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "station oauth-bridge call failed, continuing without station session");
-            }
+        let bridge = station_client::post_peers_proto_no_auth::<
+            OAuthBridgeRequest,
+            OAuthBridgeResponse,
+        >("/actor/oauth-bridge", &bridge_req)
+        .map_err(|error| error.into_app_result("OAuth login failed to create Station session"))?;
+        let actor_ptid = validate_oauth_bridge_response(&bridge)?;
+        let account_id = auth_identity::upsert_oauth(
+            actor_ptid,
+            provider_id,
+            provider_user_id.as_str(),
+            user_name.as_str(),
+            input.created_at.as_deref(),
+            Some(email.as_str()),
+            Some(avatar_url.as_str()),
+            Some(profile_url.as_str()),
+        )
+        .map_err(internal_error)?;
+        session_vault::persist_raw_session_for_account(
+            &account_id,
+            actor_ptid,
+            &bridge.access_token,
+            SessionSource::OauthBridge,
+        )
+        .map_err(|error| internal_error(&error.to_string()))?;
+        let mut connections = read_connections()?;
+        if let Some(connection) = connections.get_mut(provider_id) {
+            connection.owner_ptid = actor_ptid.to_string();
         }
+        write_connections(&connections)?;
     }
 
     advance_connector_projection_epoch();
@@ -1442,25 +1463,56 @@ pub fn oauth2_start_loopback(
         Ok(addr) => addr.port(),
         Err(err) => return internal_error(format!("failed to read loopback listener addr: {err}")),
     };
+    if let Err(err) = listener.set_nonblocking(true) {
+        return internal_error(format!("failed to configure loopback listener: {err}"));
+    }
 
     let session_id = next_loopback_session_id();
-    if let Ok(mut sessions) = loopback_sessions().lock() {
-        sessions.insert(
-            session_id.clone(),
-            LoopbackSessionState {
-                status: "pending".to_string(),
-                callback_url: None,
-                error: None,
-                created_at: chrono_like_now_unix(),
-                completed_at: None,
-            },
-        );
-    }
+    lock_loopback_sessions().insert(
+        session_id.clone(),
+        LoopbackSessionState {
+            status: "pending".to_string(),
+            callback_url: None,
+            error: None,
+            created_at: chrono_like_now_unix(),
+            completed_at: None,
+        },
+    );
 
     let session_id_for_thread = session_id.clone();
     let provider_id_for_thread = provider_id.to_string();
     thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
+        let started_at = Instant::now();
+        loop {
+            if !loopback_session_is_pending(&session_id_for_thread) {
+                return;
+            }
+            if started_at.elapsed() >= Duration::from_secs(600) {
+                update_loopback_session(
+                    &session_id_for_thread,
+                    "expired",
+                    None,
+                    Some("authorization timeout".to_string()),
+                );
+                return;
+            }
+
+            let (mut stream, _) = match listener.accept() {
+                Ok(connection) => connection,
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+                Err(error) => {
+                    update_loopback_session(
+                        &session_id_for_thread,
+                        "failed",
+                        None,
+                        Some(format!("loopback listener failed: {error}")),
+                    );
+                    return;
+                }
+            };
             let mut buffer = [0_u8; 8192];
             let read_size = stream.read(&mut buffer).unwrap_or(0);
             let request = String::from_utf8_lossy(&buffer[..read_size]).to_string();
@@ -1482,7 +1534,9 @@ pub fn oauth2_start_loopback(
             let provider_user_id = params.get("provider_user_id").cloned().unwrap_or_default();
             let mut ok = false;
             let message: String;
-            if request_session_id != session_id_for_thread {
+            if !loopback_session_is_pending(&session_id_for_thread) {
+                message = i18n.resolve_key(&lang, "oauth", "oauth.callback.cancelled");
+            } else if request_session_id != session_id_for_thread {
                 update_loopback_session(
                     &session_id_for_thread,
                     "failed",
@@ -1580,6 +1634,7 @@ pub fn oauth2_start_loopback(
             );
             let _ = stream.write_all(response.as_bytes());
             let _ = stream.flush();
+            return;
         }
     });
 
@@ -1610,33 +1665,62 @@ pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayl
     let mut callback_url: Option<String> = None;
     let mut status = "pending".to_string();
     let mut error: Option<String> = None;
-    if let Ok(mut sessions) = loopback_sessions().lock() {
-        for session in sessions.values_mut() {
-            if now - session.created_at > 600 && session.status == "pending" {
-                session.status = "expired".to_string();
-                session.error = Some("authorization timeout".to_string());
-                session.completed_at = Some(now);
-            }
+    let mut sessions = lock_loopback_sessions();
+    for session in sessions.values_mut() {
+        if now - session.created_at > 600 && session.status == "pending" {
+            session.status = "expired".to_string();
+            session.error = Some("authorization timeout".to_string());
+            session.completed_at = Some(now);
         }
-        if let Some(item) = sessions.get(session_id) {
-            status = item.status.clone();
-            callback_url = item.callback_url.clone();
-            error = item.error.clone();
-            if item.status == "completed" || item.status == "failed" || item.status == "expired" {
-                completed = true;
-            }
-        }
-        sessions.retain(|_, v| {
-            if v.status == "pending" {
-                return now - v.created_at <= 600;
-            }
-            let done_at = v.completed_at.unwrap_or(v.created_at);
-            now - done_at <= 60
-        });
     }
+    if let Some(item) = sessions.get(session_id) {
+        status = item.status.clone();
+        callback_url = item.callback_url.clone();
+        error = item.error.clone();
+        if item.status == "completed"
+            || item.status == "failed"
+            || item.status == "expired"
+            || item.status == "cancelled"
+        {
+            completed = true;
+        }
+    }
+    sessions.retain(|_, v| {
+        if v.status == "pending" {
+            return now - v.created_at <= 600;
+        }
+        let done_at = v.completed_at.unwrap_or(v.created_at);
+        now - done_at <= 60
+    });
     success_payload(
         "oauth2_poll_loopback",
         json!({ "completed": completed, "status": status, "callback_url": callback_url, "error": error }),
+    )
+}
+
+pub fn oauth2_cancel_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
+    let session_id = input.session_id.trim();
+    if session_id.is_empty() {
+        return invalid_argument("session_id is required");
+    }
+    let mut sessions = lock_loopback_sessions();
+    let Some(item) = sessions.get_mut(session_id) else {
+        return AppResult::fail(
+            ErrorCode::NotFound,
+            "oauth loopback session not found",
+            None,
+        );
+    };
+    let cancelled = item.status == "pending";
+    if cancelled {
+        item.status = "cancelled".to_string();
+        item.error = Some("authorization cancelled".to_string());
+        item.completed_at = Some(chrono_like_now_unix());
+    }
+    let status = item.status.clone();
+    success_payload(
+        "oauth2_cancel_loopback",
+        json!({ "cancelled": cancelled, "status": status }),
     )
 }
 
@@ -1933,6 +2017,127 @@ mod tests {
             resolve_loopback_connector_owner(Some("not-a-ptid")).is_err(),
             "an invalid authenticated owner must fail closed",
         );
+    }
+
+    #[test]
+    fn loopback_login_rejects_incomplete_station_bridge_response_bits_ut() {
+        let actor_ref = crate::model::actor::ActorRef {
+            ptid: "ptid:person:oauth-user".to_string(),
+            ..Default::default()
+        };
+        let cases = [
+            (
+                OAuthBridgeResponse {
+                    access_token: "access-token".to_string(),
+                    actor_ref: Some(actor_ref.clone()),
+                    ..Default::default()
+                },
+                "OAuth bridge response missing Station session",
+            ),
+            (
+                OAuthBridgeResponse {
+                    session_id: "session-id".to_string(),
+                    actor_ref: Some(actor_ref),
+                    ..Default::default()
+                },
+                "OAuth bridge response missing access token",
+            ),
+            (
+                OAuthBridgeResponse {
+                    session_id: "session-id".to_string(),
+                    access_token: "access-token".to_string(),
+                    ..Default::default()
+                },
+                "OAuth bridge response missing canonical actor PTID",
+            ),
+        ];
+
+        for (bridge, expected_message) in cases {
+            let error = validate_oauth_bridge_response(&bridge)
+                .expect_err("an incomplete bridge response must fail");
+            assert_eq!(
+                error.error.as_ref().map(|error| error.message.as_str()),
+                Some(expected_message),
+            );
+        }
+    }
+
+    #[test]
+    fn loopback_login_accepts_complete_station_bridge_response_bits_ut() {
+        let bridge = OAuthBridgeResponse {
+            session_id: "session-id".to_string(),
+            access_token: "access-token".to_string(),
+            actor_ref: Some(crate::model::actor::ActorRef {
+                ptid: "ptid:person:oauth-user".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            validate_oauth_bridge_response(&bridge)
+                .expect("a complete Station bridge response must be accepted"),
+            "ptid:person:oauth-user",
+        );
+    }
+
+    #[test]
+    fn loopback_cancellation_is_terminal_and_idempotent_bits_ut() {
+        let session_id = format!("test-cancel-{}", ulid::Ulid::new());
+        lock_loopback_sessions().insert(
+            session_id.clone(),
+            LoopbackSessionState {
+                status: "pending".to_string(),
+                callback_url: None,
+                error: None,
+                created_at: chrono_like_now_unix(),
+                completed_at: None,
+            },
+        );
+
+        let first = oauth2_cancel_loopback(OAuthLoopbackPollInput {
+            session_id: session_id.clone(),
+        });
+        assert!(first.ok);
+        let first_status: Value =
+            serde_json::from_str(&first.data.expect("cancel response payload").status)
+                .expect("cancel response status JSON");
+        assert_eq!(first_status["cancelled"], true);
+        assert_eq!(first_status["status"], "cancelled");
+
+        assert!(
+            !update_loopback_session(
+                &session_id,
+                "completed",
+                Some("http://127.0.0.1/callback".to_string()),
+                None,
+            ),
+            "a late callback must not replace the cancelled terminal state",
+        );
+
+        let polled = oauth2_poll_loopback(OAuthLoopbackPollInput {
+            session_id: session_id.clone(),
+        });
+        let polled_status: Value =
+            serde_json::from_str(&polled.data.expect("poll response payload").status)
+                .expect("poll response status JSON");
+        assert_eq!(polled_status["completed"], true);
+        assert_eq!(polled_status["status"], "cancelled");
+
+        let second = oauth2_cancel_loopback(OAuthLoopbackPollInput {
+            session_id: session_id.clone(),
+        });
+        let second_status: Value = serde_json::from_str(
+            &second
+                .data
+                .expect("idempotent cancel response payload")
+                .status,
+        )
+        .expect("idempotent cancel response status JSON");
+        assert_eq!(second_status["cancelled"], false);
+        assert_eq!(second_status["status"], "cancelled");
+
+        lock_loopback_sessions().remove(&session_id);
     }
 
     #[test]

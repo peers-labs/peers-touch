@@ -2,7 +2,7 @@ import type { AccountIdentity, OAuth2ProviderSummary } from '../../services/desk
 
 export type LoginState = 'logged_out' | 'welcome_back' | 'account_picker' | 'pin_entry' | 'relink_pin' | 'set_pin' | 'pin_recovery_auth' | 'pin_recovery_new_pin';
 export type LoginTab = 'quick' | 'email';
-export type AuthState = 'idle' | 'waiting' | 'success' | 'error';
+export type AuthState = 'idle' | 'opening' | 'waiting' | 'initializing' | 'success' | 'error';
 
 export interface SessionUser {
   name: string;

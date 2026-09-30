@@ -321,6 +321,12 @@ fn actor_profile_to_value(p: &ActorProfile) -> Value {
         "message_permission": p.message_permission,
         "auto_expire_days": p.auto_expire_days,
         "profile_revision": p.profile_revision,
+        "peers_touch": {
+            "network_id": p.peers_touch
+                .as_ref()
+                .map(|info| info.network_id.as_str())
+                .unwrap_or_default(),
+        },
     });
     resolve_profile_urls(&mut data);
     data
@@ -736,7 +742,7 @@ pub fn account_sync_avatar(input: &AccountSyncAvatarInput, token: &str) -> AppRe
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_profile_ptid, profile_matches_actor};
+    use super::{actor_profile_to_value, canonical_profile_ptid, profile_matches_actor};
     use crate::model::actor::{ActorProfile, PeersTouchInfo};
 
     #[test]
@@ -794,5 +800,21 @@ mod tests {
             "ptid:v1:actor:peers:p:alice:1220abc"
         ));
         assert!(!profile_matches_actor(&profile, "350519971299721220"));
+    }
+
+    #[test]
+    fn account_profile_projection_includes_canonical_ptid() {
+        let profile = ActorProfile {
+            id: "350519971299721219".to_string(),
+            peers_touch: Some(PeersTouchInfo {
+                network_id: "ptid:v1:actor:peers:p:alice:1220abc".to_string(),
+            }),
+            ..ActorProfile::default()
+        };
+
+        assert_eq!(
+            actor_profile_to_value(&profile)["peers_touch"]["network_id"],
+            "ptid:v1:actor:peers:p:alice:1220abc"
+        );
     }
 }

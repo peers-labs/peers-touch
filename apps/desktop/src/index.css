@@ -125,41 +125,47 @@ input, textarea, [contenteditable="true"] {
   max-width: 100%;
 }
 
-.login-card-cluster--panel-open {
-  width: calc(
-    var(--login-card-width)
-    + var(--login-panel-gap)
-    + var(--login-arrow-size)
-    + var(--login-panel-width)
-  );
-}
-
 .login-card {
   flex: 0 0 var(--login-card-width);
 }
 
-.login-oauth-panel-slot {
-  position: absolute;
-  top: 0;
-  left: calc(var(--login-card-width) + var(--login-panel-gap));
-  width: calc(var(--login-arrow-size) + var(--login-panel-width));
-  height: 100%;
-  pointer-events: none;
+.login-oauth-action {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  flex: 0 0 44px;
 }
 
-.login-oauth-panel-arrow {
+.login-oauth-action__button {
   position: absolute;
-  left: 0;
+  inset: 0;
+}
+
+.login-oauth-action__icon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-oauth-action__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.login-oauth-action__cancel {
+  position: absolute !important;
+  top: 6px;
+  right: 6px;
   z-index: 1;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-
-.login-oauth-panel {
-  position: absolute;
-  left: var(--login-arrow-size);
-  width: var(--login-panel-width);
-  pointer-events: auto;
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
 }
 
 .pt-network-intro {
@@ -409,37 +415,14 @@ input, textarea, [contenteditable="true"] {
     min-height: 100%;
   }
 
-  .login-card-cluster,
-  .login-card-cluster--panel-open {
-    flex-direction: column;
+  .login-card-cluster {
     width: min(var(--login-card-width), 100%);
     margin-block: auto;
-    gap: 12px;
   }
 
   .login-card {
     flex-basis: auto;
     width: 100% !important;
-  }
-
-  .login-oauth-panel-slot {
-    position: relative;
-    top: auto;
-    left: auto;
-    width: 100%;
-    height: auto;
-    pointer-events: auto;
-  }
-
-  .login-oauth-panel-arrow {
-    display: none;
-  }
-
-  .login-oauth-panel {
-    position: relative;
-    top: auto !important;
-    left: auto;
-    width: 100%;
   }
 }
 

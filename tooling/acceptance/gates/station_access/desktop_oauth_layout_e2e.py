@@ -93,7 +93,8 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
                     [
                         "Desktop GitHub and Google OAuth actions at 1200x800",
                         "Desktop GitHub and Google OAuth actions at 640x800",
-                        "OAuth panel viewport containment and login-card separation",
+                        "Inline OAuth waiting, cancellation, retry, initialization, and success",
+                        "Stable auth-card and provider-action geometry across OAuth states",
                     ]
                     if status == "PASS"
                     else []
@@ -160,6 +161,18 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
             raise GateError("Desktop OAuth layout Runtime Manifest is invalid")
         return manifest
 
+    def _record_summary_assertions(self, assertions: dict[str, Any]) -> None:
+        for name, passed in assertions.items():
+            self.assert_condition(
+                str(name),
+                passed is True,
+                (
+                    None
+                    if passed is True
+                    else f"journey assertion {name} was not proven"
+                ),
+            )
+
     def run(self) -> dict[str, Any]:
         manifest = self._manifest()
         with tempfile.TemporaryDirectory(prefix="pt-desktop-oauth-layout-") as temp:
@@ -187,12 +200,7 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
             assertions = summary.get("assertions")
             if not isinstance(assertions, dict):
                 raise GateError("Desktop OAuth layout journey omitted assertions")
-            for name, passed in assertions.items():
-                self.assert_condition(
-                    str(name),
-                    passed is True,
-                    f"journey assertion {name} was not proven",
-                )
+            self._record_summary_assertions(assertions)
 
             artifacts = summary.get("artifacts")
             if not isinstance(artifacts, dict):
@@ -209,7 +217,8 @@ class StationAccessDesktopOAuthLayoutGate(AcceptanceGate):
 
             for artifact_group in ("doms", "screenshots"):
                 values = artifacts.get(artifact_group)
-                if not isinstance(values, dict) or len(values) != 4:
+                expected_count = 4 if artifact_group == "doms" else 24
+                if not isinstance(values, dict) or len(values) != expected_count:
                     raise GateError(
                         f"Desktop OAuth layout {artifact_group} evidence is incomplete"
                     )

@@ -170,6 +170,7 @@ Pick one based on intent:
 - [`invariants/user-skill-overlays-are-interaction-only.md`](invariants/user-skill-overlays-are-interaction-only.md) — machine-local user overlays may shape interaction only and cannot alter project execution semantics.
 - [`invariants/conversation-bound-workflow-kernel.md`](invariants/conversation-bound-workflow-kernel.md) — one host conversation has one immutable execution root; tool subject roots cannot silently change write authority.
 - [`invariants/worktree-observation-is-diagnostic.md`](invariants/worktree-observation-is-diagnostic.md) — each worktree owns its opportunity report while Dev UI discovery and freshness remain non-authoritative.
+- [`invariants/desktop-vite-entry-readiness.md`](invariants/desktop-vite-entry-readiness.md) — Desktop startup and reuse require the Vite renderer entry module to respond successfully.
 
 ### Pitfalls
 

@@ -84,8 +84,9 @@
           "station-access-auth-e2e"
         ],
         "proven_scope": [
-          "GitHub and Google actions open complete provider-specific OAuth side cards without viewport overflow or login-card intersection",
+          "GitHub and Google opening, waiting, cancellation, initialization, success, and retry stay inside fixed-size provider actions without moving the auth card",
           "native macOS Desktop starts GitHub and Google loopback authorization before an actor session exists",
+          "native macOS Desktop completes an OAuth callback through the Station bridge, persists the Station session, and restores the canonical authenticated actor",
           "Desktop and Mobile bind a signed Station identity before authentication",
           "both native clients obtain an actor session through the canonical Access Gate",
           "authenticated Station and actor identities match source-bound runtime manifests"

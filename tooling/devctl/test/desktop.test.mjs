@@ -5,11 +5,17 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  desktopFrontendLogState,
   desktopRuntimeIdentity,
   desktopTauriArguments,
+  desktopViteEntryUrl,
+  desktopViteReadinessUrl,
   ensureDesktopDependencies,
   ensureDesktopGeneratedSources,
   reconcileDesktopRuntime,
+  waitForDesktopFrontend,
+  waitForDesktopVite,
+  warmDesktopViteModuleGraph,
 } from '../desktop.mjs';
 import { ERROR_CODES } from '../errors.mjs';
 
@@ -56,6 +62,98 @@ test('desktop development keeps the default Tauri feature set', () => {
     desktopTauriArguments('/tmp/tauri.conf.json', {}),
     ['dev', '--no-watch', '--config', '/tmp/tauri.conf.json'],
   );
+});
+
+test('desktop waits for the Vite dependency canary before launching Tauri', async () => {
+  assert.equal(
+    desktopViteReadinessUrl(3210),
+    'http://127.0.0.1:3210/src/services/desktop_api.ts',
+  );
+  const processAlive = () => true;
+  const calls = [];
+  const warmups = [];
+  const stabilizationDurations = [];
+  const result = await waitForDesktopVite(
+    3210,
+    'app',
+    processAlive,
+    async (url, options) => {
+      calls.push({ url, options });
+      return { ok: true, status: 200 };
+    },
+    async (webPort) => {
+      warmups.push(webPort);
+      return { ok: true, modules: 2 };
+    },
+    async (durationMs) => {
+      stabilizationDurations.push(durationMs);
+    },
+  );
+  assert.deepEqual(result, { ok: true, status: 200 });
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.deepEqual(call, {
+      url: 'http://127.0.0.1:3210/src/services/desktop_api.ts',
+      options: {
+        label: 'Desktop app Vite',
+        processAlive,
+      },
+    });
+  }
+  assert.deepEqual(warmups, [3210]);
+  assert.deepEqual(stabilizationDurations, [3_000]);
+});
+
+test('desktop warms the transformed Vite module graph', async () => {
+  assert.equal(
+    desktopViteEntryUrl(3210),
+    'http://127.0.0.1:3210/src/main.tsx',
+  );
+  const modules = new Map([
+    [
+      'http://127.0.0.1:3210/src/main.tsx',
+      "import App from \"/src/App.tsx\"; import \"/src/index.css\"; const note = 'import \":\"';",
+    ],
+    ['http://127.0.0.1:3210/src/App.tsx', 'export default {};'],
+    ['http://127.0.0.1:3210/src/index.css', 'export default \"\";'],
+  ]);
+  const result = await warmDesktopViteModuleGraph(3210, async (url) => ({
+    ok: modules.has(url),
+    status: modules.has(url) ? 200 : 404,
+    text: async () => modules.get(url) ?? '',
+  }));
+  assert.deepEqual(result, {
+    ok: true,
+    url: 'http://127.0.0.1:3210/src/main.tsx',
+    modules: 3,
+  });
+});
+
+test('desktop frontend readiness distinguishes mount from boot failure', async () => {
+  assert.deepEqual(
+    desktopFrontendLogState(
+      '[frontend] [500ms] React app mounted — dismissing boot fallback',
+    ),
+    { ready: true },
+  );
+  assert.deepEqual(
+    desktopFrontendLogState(
+      '[frontend] [400ms] RESOURCE LOAD ERROR: http://127.0.0.1/main.tsx',
+    ),
+    {
+      ready: false,
+      failure:
+        '[frontend] [400ms] RESOURCE LOAD ERROR: http://127.0.0.1/main.tsx',
+    },
+  );
+
+  const result = await waitForDesktopFrontend('/tmp/desktop.log', {
+    processAlive: () => true,
+    readLog: () =>
+      '[frontend] [500ms] React app mounted — dismissing boot fallback',
+    wait: async () => {},
+  });
+  assert.deepEqual(result, { ready: true });
 });
 
 test('desktop acceptance enables the embedded WebDriver feature', () => {
