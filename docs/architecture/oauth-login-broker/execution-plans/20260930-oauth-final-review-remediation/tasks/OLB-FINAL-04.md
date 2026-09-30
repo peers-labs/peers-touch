@@ -32,6 +32,8 @@
     "tooling/acceptance/registry.yaml",
     "tooling/acceptance/tests/test_provisioning_model.py",
     "tooling/scripts/acceptance-plan-test.py",
+    "tooling/scripts/acceptance-run.py",
+    "tooling/scripts/acceptance-run-test.py",
     "tooling/skills/pt-github-review/FRESHNESS.md"
   ],
   "readSet": [
@@ -55,6 +57,11 @@
       "verificationClass": "SOURCE_CHECK"
     },
     {
+      "id": "olb-final-proof-runner-test",
+      "command": "python3 tooling/scripts/acceptance-run-test.py",
+      "verificationClass": "SOURCE_CHECK"
+    },
+    {
       "id": "olb-final-proof-functional",
       "command": "make dev-functional-result WORK_ITEM=OLB-FINAL-04 RUNTIME_CELL=oauth2-client-local-browser REASON='verify complete OAuth proof contract'",
       "verificationClass": "FUNCTIONAL_CHECK"
@@ -74,6 +81,7 @@
     "Provisioned actor identities match environment contracts",
     "Review-skill freshness covers the registered OAuth architecture source",
     "Peers Dev HTTP tests inject a deterministic status snapshot",
+    "Static Gate auxiliary artifacts remain distinct from canonical Gate evidence",
     "Full-range completion review and code review contain no P1/P2 finding"
   ],
   "failureBehavior": [

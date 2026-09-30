@@ -54,10 +54,7 @@
         "pathPrefix": "apps/oauth2-client",
         "mode": "exclusive-write"
       },
-      {
-        "pathPrefix": "apps/dev/server/index.test.mjs",
-        "mode": "exclusive-write"
-      },
+      { "pathPrefix": "apps/dev/server/index.test.mjs", "mode": "exclusive-write" },
       {
         "pathPrefix": "docs/architecture/oauth-login-broker",
         "mode": "exclusive-write"
@@ -110,14 +107,10 @@
         "pathPrefix": "tooling/acceptance/tests/test_provisioning_model.py",
         "mode": "exclusive-write"
       },
-      {
-        "pathPrefix": "tooling/scripts/acceptance-plan-test.py",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/skills/pt-github-review/FRESHNESS.md",
-        "mode": "exclusive-write"
-      },
+      { "pathPrefix": "tooling/scripts/acceptance-plan-test.py", "mode": "exclusive-write" },
+      { "pathPrefix": "tooling/scripts/acceptance-run.py", "mode": "exclusive-write" },
+      { "pathPrefix": "tooling/scripts/acceptance-run-test.py", "mode": "exclusive-write" },
+      { "pathPrefix": "tooling/skills/pt-github-review/FRESHNESS.md", "mode": "exclusive-write" },
       {
         "pathPrefix": "docs/knowledge",
         "mode": "shared-read"
