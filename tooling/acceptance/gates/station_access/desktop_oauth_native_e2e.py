@@ -632,7 +632,11 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 tooltip_text = tooltip.text.strip()
                 if (
                     tooltip_text == expected_text
-                    and self._element_is_visibly_rendered(session, tooltip)
+                    and self._element_is_visibly_rendered(
+                        session,
+                        element,
+                        tooltip,
+                    )
                 ):
                     return tooltip_text
             time.sleep(0.1)
@@ -644,17 +648,40 @@ class DesktopOAuthNativeGate(AcceptanceGate):
     @staticmethod
     def _element_is_visibly_rendered(
         session: TauriSession,
+        trigger: Any,
         element: Any,
     ) -> bool:
         return bool(
             session.execute_script(
                 """
-                const style = getComputedStyle(arguments[0]);
+                const trigger = arguments[0];
+                const tooltip = arguments[1];
+                const describedBy = (trigger.getAttribute('aria-describedby') || '')
+                  .split(/\\s+/)
+                  .filter(Boolean);
+                if (!tooltip.id || !describedBy.includes(tooltip.id)) return false;
+
+                const rect = tooltip.getBoundingClientRect();
+                let effectiveOpacity = 1;
+                for (
+                  let current = tooltip;
+                  current instanceof Element;
+                  current = current.parentElement
+                ) {
+                  const style = getComputedStyle(current);
+                  if (style.display === 'none' || style.visibility === 'hidden') {
+                    return false;
+                  }
+                  effectiveOpacity *= Number.parseFloat(style.opacity || '1');
+                  if (current === document.body) break;
+                }
                 return Boolean(
-                  style.display !== 'none'
-                  && style.visibility !== 'hidden'
+                  rect.width > 0
+                  && rect.height > 0
+                  && effectiveOpacity >= 0.99
                 );
                 """,
+                trigger,
                 element,
             )
         )
