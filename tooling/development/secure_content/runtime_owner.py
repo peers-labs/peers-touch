@@ -2788,7 +2788,7 @@ def _w8_receiver_ui_probe(
                 "css selector",
                 (
                     '[data-pt-primary-nav="moments"] button, '
-                    '[data-pt-primary-nav="moments"]'
+                    '[data-pt-primary-nav="moments"] [role="button"]'
                 ),
             ),
             f"W8 {scenario_id} Moments product navigation",
