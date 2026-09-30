@@ -2167,6 +2167,8 @@ class AgentHarnessStaticTest(unittest.TestCase):
         self.assertIn("actorMatchesReceiver", scenario)
         self.assertIn("rejectionCallbackErrorCode", scenario)
         self.assertIn("lastSourceTransport", scenario)
+        self.assertIn("bufferedMessageErrors", scenario)
+        self.assertIn("operationErrorMessage", scenario)
         self.assertIn("operationRunState", scenario)
         self.assertIn("api.getAgentConversation(input.conversationId)", scenario)
         self.assertIn("requireRuntimeEvent: false", scenario)
