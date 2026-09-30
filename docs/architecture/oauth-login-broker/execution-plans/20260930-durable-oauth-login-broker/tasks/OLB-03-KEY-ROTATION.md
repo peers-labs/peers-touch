@@ -62,10 +62,11 @@
 
 ## Current Snapshot
 
-- State: in progress.
-- The versioned envelope and maintenance store exist.
-- Full-prefix batching, the command entry point, and failure/no-op coverage are
-  pending exact-source verification.
+- State: done.
+- Versioned envelopes, full-prefix batching, the maintenance command, and
+  idempotent second-run behavior are implemented.
+- Unknown-key, partial-failure, and no-op coverage pass on the completed
+  source.
 
 ## Closure
 

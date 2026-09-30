@@ -62,7 +62,8 @@ so a dedicated service or database can take over without changing OAuth use case
 | [data-model.md](./data-model.md) | Envelopes and persisted records |
 | [module-layout.md](./module-layout.md) | Source ownership and dependency direction |
 | [integration.md](./integration.md) | Existing-route cutover and deployment configuration |
-| [execution plan](./execution-plans/20260930-durable-oauth-login-broker/plan.md) | Bound delivery plan |
+| [delivery plan](./execution-plans/20260930-durable-oauth-login-broker/plan.md) | Completed durable broker delivery |
+| [hardening plan](./execution-plans/20260930-oauth-review-hardening/plan.md) | Active source-backed review closure |
 | [review 01](./reviews/review-01-product-architecture-plan.md) | Independent product, architecture, and plan review |
 
 ## 5. Upstream Sources
@@ -74,6 +75,10 @@ so a dedicated service or database can take over without changing OAuth use case
 
 ## 6. Current Status
 
-- Product: `PRODUCT_READY_FOR_ARCHITECTURE`
-- Architecture: `DESIGN_READY_FOR_EXECUTION`
-- Plan: prepared for workspace generation 4
+- Product: accepted for capabilities OLB-C01 through OLB-C09.
+- Architecture: accepted through decisions OLB-D01 through OLB-D09.
+- Delivery: `OLB-20260930` is completed; `OLB-HARDEN-20260930` is active on
+  its final operator-hardening Task.
+- Proof: deterministic local source, HTTP, browser, and repository-fixture
+  evidence only; live provider, GitHub App, and Vercel deployment remain
+  unproven.

@@ -18,20 +18,25 @@ import (
 )
 
 const (
-	minimumPBKDF2Iterations = 100_000
-	maximumPBKDF2Iterations = 10_000_000
+	minimumPBKDF2Iterations              = 100_000
+	maximumPBKDF2Iterations              = 10_000_000
+	maximumConcurrentPasswordDerivations = 2
 )
 
 type AdminStore interface {
 	AdminSnapshot(ctx context.Context, limit int) (entity.AdminSnapshot, error)
 }
 
+type passwordDeriver func(password, salt []byte, iterations, keyLength int) []byte
+
 type BasicAuthenticator struct {
-	usernameHash [sha256.Size]byte
-	iterations   int
-	salt         []byte
-	passwordHash []byte
-	requireHTTPS bool
+	usernameHash    [sha256.Size]byte
+	iterations      int
+	salt            []byte
+	passwordHash    []byte
+	requireHTTPS    bool
+	derivationSlots chan struct{}
+	derivePassword  passwordDeriver
 }
 
 func NewBasicAuthenticator(username, encodedHash string, requireHTTPS bool) (*BasicAuthenticator, error) {
@@ -63,6 +68,11 @@ func NewBasicAuthenticator(username, encodedHash string, requireHTTPS bool) (*Ba
 		salt:         append([]byte(nil), salt...),
 		passwordHash: append([]byte(nil), passwordHash...),
 		requireHTTPS: requireHTTPS,
+		derivationSlots: make(
+			chan struct{},
+			maximumConcurrentPasswordDerivations,
+		),
+		derivePassword: pbkdf2SHA256,
 	}, nil
 }
 
@@ -71,8 +81,13 @@ func (a *BasicAuthenticator) Authorized(r *http.Request) bool {
 		return false
 	}
 	username, password, ok := r.BasicAuth()
+	if !ok || !a.acquirePasswordDerivation() {
+		return false
+	}
+	defer a.releasePasswordDerivation()
+
 	actualUsernameHash := sha256.Sum256([]byte(username))
-	actualPasswordHash := pbkdf2SHA256(
+	actualPasswordHash := a.derivePassword(
 		[]byte(password),
 		a.salt,
 		a.iterations,
@@ -86,7 +101,23 @@ func (a *BasicAuthenticator) Authorized(r *http.Request) bool {
 		actualPasswordHash,
 		a.passwordHash,
 	)
-	return ok && usernameMatches == 1 && passwordMatches == 1
+	return usernameMatches == 1 && passwordMatches == 1
+}
+
+func (a *BasicAuthenticator) acquirePasswordDerivation() bool {
+	if a.derivePassword == nil || a.derivationSlots == nil {
+		return false
+	}
+	select {
+	case a.derivationSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *BasicAuthenticator) releasePasswordDerivation() {
+	<-a.derivationSlots
 }
 
 type AdminHandler struct {

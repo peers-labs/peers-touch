@@ -177,7 +177,9 @@ the stale provider response and retries from the current credential.
 - Code audit fingerprint: HMAC-SHA256 with a separate audit key.
 - Bridge signatures remain site-specific and are not reused for storage.
 - Admin password comparison uses a configured PBKDF2-SHA256 digest and
-  constant-time comparison; HTTPS is mandatory outside local development.
+  constant-time comparison; missing credentials bypass derivation, concurrent
+  derivations are bounded per instance, and HTTPS is mandatory outside local
+  development.
 
 Decryption errors are typed and never include ciphertext, nonce, key bytes, or
 upstream bodies.

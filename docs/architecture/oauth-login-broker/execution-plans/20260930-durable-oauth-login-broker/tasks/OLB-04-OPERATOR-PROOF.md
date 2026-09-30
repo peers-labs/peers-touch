@@ -69,10 +69,11 @@
 
 ## Current Snapshot
 
-- State: in progress.
+- State: done.
 - The administration handler, Basic authentication, Vercel routes, and browser
   Gate are implemented.
-- Exact-source browser, completion Acceptance, and final review remain.
+- Exact-source browser, completion Acceptance, and final review passed before
+  the original Plan was marked completed.
 
 ## Closure
 

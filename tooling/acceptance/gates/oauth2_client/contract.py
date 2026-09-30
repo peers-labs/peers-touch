@@ -156,6 +156,9 @@ SCOPES: dict[str, tuple[str, str, tuple[TestGroup, ...]]] = {
                 "./internal/interfaces/http/handler",
                 (
                     "TestAdminRejectsUnauthorizedBeforeStorage",
+                    "TestBasicAuthenticatorRejectsMissingCredentialsWithoutPasswordDerivation",
+                    "TestBasicAuthenticatorDerivesSuppliedWrongCredentials",
+                    "TestBasicAuthenticatorBoundsConcurrentPasswordDerivations",
                     "TestAdminUnavailableIncludesSecurityHeaders",
                     "TestAdminJSONAndHTMLAreSanitized",
                 ),
