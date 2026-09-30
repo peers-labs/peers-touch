@@ -1,6 +1,6 @@
 # Desktop OAuth Pre-Authentication Regression
 
-> **Status**: active
+> **Status**: completed
 > **Branch**: master
 > **Workspace ID**: 872e6a11e6df33b5
 > **Initial HEAD**: 6aeb1bfc0c9031498d51990280918ff43d1ac399
@@ -8,134 +8,7 @@
 ## Plan Package
 
 ```json
-{
-  "kind": "peers-touch-plan-package",
-  "planId": "SAL-OAUTH-20260929",
-  "status": "active",
-  "binding": {
-    "branch": "master",
-    "workspaceId": "872e6a11e6df33b5",
-    "initialHead": "6aeb1bfc0c9031498d51990280918ff43d1ac399"
-  },
-  "workClass": "product-behavior",
-  "architecture": {
-    "sources": [
-      "docs/architecture/station-access-lifecycle/experience-contract.md",
-      "docs/architecture/station-access-lifecycle/product-state-model.md",
-      "docs/architecture/station-access-lifecycle/design.md",
-      "docs/architecture/station-access-lifecycle/decisions.md",
-      "docs/client/desktop/identity-lifecycle.md",
-      "docs/client/common/ui-identity/modules/auth/desktop.md"
-    ],
-    "decisions": [
-      "SAL-D01",
-      "SAL-D03",
-      "SAL-D06"
-    ]
-  },
-  "scope": {
-    "sourceClaims": [
-      {"pathPrefix":"apps/station/frame/touch/actor_handler.go","mode":"exclusive-write"},
-      {"pathPrefix":"apps/station/frame/touch/actor_handler_test.go","mode":"exclusive-write"},
-      {"pathPrefix":"apps/station/frame/touch/oauth_handler.go","mode":"exclusive-write"},
-      {"pathPrefix":"apps/station/frame/touch/auth/oauth_bridge.go","mode":"exclusive-write"},
-      {"pathPrefix":"apps/station/frame/touch/auth/oauth_bridge_test.go","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src-tauri/src/application/auth/service.rs","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src-tauri/src/application/oauth2/mod.rs","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src-tauri/src/application/profile/mod.rs","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src-tauri/src/interface/http_gateway/mod.rs","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src-tauri/src/main.rs","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/acceptance/station_access/harness.ts","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/components/chat/FindPeopleModal.tsx","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/components/chat/findPeopleIdentity.ts","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/components/chat/findPeopleIdentity.test.ts","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/components/settings/AccountTab.tsx","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/components/settings/accountIdentityPresentation.ts","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/components/settings/accountIdentityPresentation.test.ts","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/pages/login","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/services/desktop_api.ts","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/store/oauth2.ts","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/src/index.css","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/index.html","mode":"exclusive-write"},
-      {"pathPrefix":"apps/desktop/vite.config.ts","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/devctl/desktop.mjs","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/devctl/test/desktop.test.mjs","mode":"exclusive-write"},
-      {"pathPrefix":"docs/knowledge/invariants/desktop-vite-entry-readiness.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/knowledge/README.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/client/common/ui-identity/modules/auth/desktop.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/desktop/prototype/README.md","mode":"exclusive-write"},
-      {"pathPrefix":"packages/prototypes/desktop/shell","mode":"exclusive-write"},
-      {"pathPrefix":"packages/locales/en/auth.json","mode":"exclusive-write"},
-      {"pathPrefix":"packages/locales/en/chat.json","mode":"exclusive-write"},
-      {"pathPrefix":"packages/locales/en/oauth.json","mode":"exclusive-write"},
-      {"pathPrefix":"packages/locales/en/provider.json","mode":"exclusive-write"},
-      {"pathPrefix":"packages/locales/zh-CN/auth.json","mode":"exclusive-write"},
-      {"pathPrefix":"packages/locales/zh-CN/chat.json","mode":"exclusive-write"},
-      {"pathPrefix":"packages/locales/zh-CN/oauth.json","mode":"exclusive-write"},
-      {"pathPrefix":"packages/locales/zh-CN/provider.json","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/station-access-lifecycle/README.md","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/station-access-lifecycle/execution-plans/20260929-desktop-oauth-preauth","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/capabilities/station-access.yaml","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/environments/station-access-desktop-oauth-native.yaml","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/features/station-access-authentication.yaml","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/gates.yaml","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/gates/station_access","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/provisioners/__init__.py","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/provisioners/station_access_desktop_oauth_native.py","mode":"exclusive-write"},
-      {"pathPrefix":"tooling/acceptance/registry.yaml","mode":"exclusive-write"}, {"pathPrefix":"tooling/acceptance/core/launch_context.py","mode":"exclusive-write"}, {"pathPrefix":"tooling/acceptance/core/_gate_bootstrap.py","mode":"exclusive-write"}, {"pathPrefix":"tooling/acceptance/tests/test_launch_context.py","mode":"exclusive-write"}, {"pathPrefix":"tooling/acceptance/requirements.txt","mode":"exclusive-write"}, {"pathPrefix":"tooling/scripts/acceptance-gap-detect.py","mode":"exclusive-write"}, {"pathPrefix":"tooling/scripts/acceptance-gap-detect-test.py","mode":"exclusive-write"}, {"pathPrefix":"tooling/skills/pt-acceptance-gap-detector","mode":"exclusive-write"},
-      {"pathPrefix":"docs/architecture/station-access-lifecycle/experience-contract.md","mode":"shared-read"},
-      {"pathPrefix":"docs/architecture/station-access-lifecycle/product-state-model.md","mode":"shared-read"},
-      {"pathPrefix":"docs/architecture/station-access-lifecycle/design.md","mode":"shared-read"},
-      {"pathPrefix":"docs/architecture/station-access-lifecycle/decisions.md","mode":"shared-read"},
-      {"pathPrefix":"docs/client/desktop/identity-lifecycle.md","mode":"shared-read"},
-      {"pathPrefix":"apps/desktop/src/store/accountIdentity.ts","mode":"shared-read"},
-      {"pathPrefix":"docs/client/common/ui-identity/README.md","mode":"shared-read"},
-      {"pathPrefix":"docs/client/common/ui-identity/foundations.md","mode":"shared-read"},
-      {"pathPrefix":"docs/client/common/ui-identity/tokens.md","mode":"shared-read"},
-      {"pathPrefix":"docs/client/common/ui-identity/layout.md","mode":"shared-read"},
-      {"pathPrefix":"docs/client/common/ui-identity/components.md","mode":"shared-read"}
-    ],
-    "nonGoals": [
-      "Complete an external GitHub or Google authorization grant with a real user account",
-      "Change provider credentials, callback endpoints, or the Station OAuth bridge wire schema",
-      "Change Mobile OAuth behavior",
-      "Change the Desktop auth card or OAuth action dimensions",
-      "Use browser mocks as native OAuth functional proof"
-    ]
-  },
-  "tasks": [
-    {
-      "id": "SAL-OAUTH-01",
-      "workstreamId": "SAL-OAUTH-W01",
-      "path": "tasks/SAL-OAUTH-01.md",
-      "dependsOn": [],
-      "status": "in_progress",
-      "blocker": null
-    }
-  ],
-  "exhaustion": null,
-  "authorization": {
-    "checkpoint": {
-      "localCommit": "allowed",
-      "amend": "allowed"
-    },
-    "delivery": {
-      "push": "allowed",
-      "pullRequest": "denied"
-    },
-    "runtime": {
-      "deployProfiles": [
-        "corpstable"
-      ],
-      "destructiveResetScopes": []
-    },
-    "history": {
-      "rewrite": "denied"
-    }
-  }
-}
+{"kind":"peers-touch-plan-package","planId":"SAL-OAUTH-20260929","status":"completed","binding":{"branch":"master","workspaceId":"872e6a11e6df33b5","initialHead":"6aeb1bfc0c9031498d51990280918ff43d1ac399"},"workClass":"product-behavior","architecture":{"sources":["docs/architecture/station-access-lifecycle/experience-contract.md","docs/architecture/station-access-lifecycle/product-state-model.md","docs/architecture/station-access-lifecycle/design.md","docs/architecture/station-access-lifecycle/decisions.md","docs/client/desktop/identity-lifecycle.md","docs/client/common/ui-identity/modules/auth/desktop.md"],"decisions":["SAL-D01","SAL-D03","SAL-D06"]},"scope":{"sourceClaims":[{"pathPrefix":"apps/station/frame/touch/actor_handler.go","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/actor_handler_test.go","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/oauth_handler.go","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/auth/oauth_bridge.go","mode":"exclusive-write"},{"pathPrefix":"apps/station/frame/touch/auth/oauth_bridge_test.go","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/application/auth/service.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/application/oauth2/mod.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/application/profile/mod.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/infrastructure/auth_identity/mod.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/interface/http_gateway/mod.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src-tauri/src/main.rs","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/acceptance/station_access/harness.ts","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/components/chat/FindPeopleModal.tsx","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/components/chat/findPeopleIdentity.ts","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/components/chat/findPeopleIdentity.test.ts","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/components/settings/AccountTab.tsx","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/components/settings/accountIdentityPresentation.ts","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/components/settings/accountIdentityPresentation.test.ts","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/pages/login","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/services/desktop_api.ts","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/store/oauth2.ts","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/src/index.css","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/index.html","mode":"exclusive-write"},{"pathPrefix":"apps/desktop/vite.config.ts","mode":"exclusive-write"},{"pathPrefix":"tooling/devctl/desktop.mjs","mode":"exclusive-write"},{"pathPrefix":"tooling/devctl/test/desktop.test.mjs","mode":"exclusive-write"},{"pathPrefix":"docs/knowledge/invariants/desktop-vite-entry-readiness.md","mode":"exclusive-write"},{"pathPrefix":"docs/knowledge/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/client/common/ui-identity/modules/auth/desktop.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/desktop/prototype/README.md","mode":"exclusive-write"},{"pathPrefix":"packages/prototypes/desktop/shell","mode":"exclusive-write"},{"pathPrefix":"packages/locales/en/auth.json","mode":"exclusive-write"},{"pathPrefix":"packages/locales/en/chat.json","mode":"exclusive-write"},{"pathPrefix":"packages/locales/en/oauth.json","mode":"exclusive-write"},{"pathPrefix":"packages/locales/en/provider.json","mode":"exclusive-write"},{"pathPrefix":"packages/locales/zh-CN/auth.json","mode":"exclusive-write"},{"pathPrefix":"packages/locales/zh-CN/chat.json","mode":"exclusive-write"},{"pathPrefix":"packages/locales/zh-CN/oauth.json","mode":"exclusive-write"},{"pathPrefix":"packages/locales/zh-CN/provider.json","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/station-access-lifecycle/README.md","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/station-access-lifecycle/execution-plans/20260929-desktop-oauth-preauth","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/capabilities/station-access.yaml","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/environments/station-access-desktop-oauth-native.yaml","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/features/station-access-authentication.yaml","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/gates.yaml","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/gates/station_access","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/provisioners/__init__.py","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/provisioners/station_access_desktop_oauth_native.py","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/registry.yaml","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/core/launch_context.py","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/core/_gate_bootstrap.py","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/tests/test_launch_context.py","mode":"exclusive-write"},{"pathPrefix":"tooling/acceptance/requirements.txt","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/acceptance-gap-detect.py","mode":"exclusive-write"},{"pathPrefix":"tooling/scripts/acceptance-gap-detect-test.py","mode":"exclusive-write"},{"pathPrefix":"tooling/skills/pt-acceptance-gap-detector","mode":"exclusive-write"},{"pathPrefix":"docs/architecture/station-access-lifecycle/experience-contract.md","mode":"shared-read"},{"pathPrefix":"docs/architecture/station-access-lifecycle/product-state-model.md","mode":"shared-read"},{"pathPrefix":"docs/architecture/station-access-lifecycle/design.md","mode":"shared-read"},{"pathPrefix":"docs/architecture/station-access-lifecycle/decisions.md","mode":"shared-read"},{"pathPrefix":"docs/client/desktop/identity-lifecycle.md","mode":"shared-read"},{"pathPrefix":"apps/desktop/src/store/accountIdentity.ts","mode":"shared-read"},{"pathPrefix":"docs/client/common/ui-identity/README.md","mode":"shared-read"},{"pathPrefix":"docs/client/common/ui-identity/foundations.md","mode":"shared-read"},{"pathPrefix":"docs/client/common/ui-identity/tokens.md","mode":"shared-read"},{"pathPrefix":"docs/client/common/ui-identity/layout.md","mode":"shared-read"},{"pathPrefix":"docs/client/common/ui-identity/components.md","mode":"shared-read"}],"nonGoals":["Complete an external GitHub or Google authorization grant with a real user account","Change provider credentials, callback endpoints, or the Station OAuth bridge wire schema","Change Mobile OAuth behavior","Change the Desktop auth card or OAuth action dimensions","Use browser mocks as native OAuth functional proof"]},"tasks":[{"id":"SAL-OAUTH-01","workstreamId":"SAL-OAUTH-W01","path":"tasks/SAL-OAUTH-01.md","dependsOn":[],"status":"done","blocker":null}],"exhaustion":null,"authorization":{"checkpoint":{"localCommit":"allowed","amend":"allowed"},"delivery":{"push":"allowed","pullRequest":"denied"},"runtime":{"deployProfiles":["corpstable"],"destructiveResetScopes":[]},"history":{"rewrite":"denied"}}}
 ```
 
 ## Acceptance Execution
