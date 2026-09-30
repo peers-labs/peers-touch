@@ -498,6 +498,8 @@
   "provider.account.profile.links": "Links",
   "provider.account.profile.linksDesc": "— external profiles & websites",
   "provider.account.profile.addLink": "Add",
+  "provider.account.profile.linkLabelPlaceholder": "Label (e.g. GitHub)",
+  "provider.account.profile.linkUrlPlaceholder": "https://...",
   "provider.account.profile.noLinks": "No public links yet. Click \"Add\" to share your website or social profiles.",
   "provider.account.relationship.title": "Relationship Control",
   "provider.account.relationship.subtitle": "Manage direct-message blocks. Desktop and Mobile sessions sync these relationships from Station.",
