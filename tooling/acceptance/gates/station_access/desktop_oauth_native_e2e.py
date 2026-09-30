@@ -627,23 +627,95 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             ),
         )
         deadline = time.monotonic() + timeout
+        latest_render_states: list[dict[str, Any]] = []
         while time.monotonic() < deadline:
+            latest_render_states = []
             for tooltip in session.find_elements('[role="tooltip"]'):
                 tooltip_text = tooltip.text.strip()
-                if (
-                    tooltip_text == expected_text
-                    and self._element_is_visibly_rendered(
-                        session,
-                        element,
-                        tooltip,
-                    )
-                ):
+                if tooltip_text != expected_text:
+                    continue
+                render_state = self._element_render_state(
+                    session,
+                    element,
+                    tooltip,
+                )
+                latest_render_states.append(render_state)
+                if render_state.get("visible") is True:
                     return tooltip_text
             time.sleep(0.1)
         raise GateError(
             "Find People scope tooltip did not become visible with expected text: "
-            f"{expected_text!r}"
+            f"{expected_text!r}; render states: "
+            f"{json.dumps(latest_render_states, sort_keys=True)}"
         )
+
+    @staticmethod
+    def _element_render_state(
+        session: TauriSession,
+        trigger: Any,
+        element: Any,
+    ) -> dict[str, Any]:
+        state = session.execute_script(
+                """
+                const trigger = arguments[0];
+                const tooltip = arguments[1];
+                const describedBy = (trigger.getAttribute('aria-describedby') || '')
+                  .split(/\\s+/)
+                  .filter(Boolean);
+                const rect = tooltip.getBoundingClientRect();
+                let effectiveOpacity = 1;
+                const ancestors = [];
+                let stylesVisible = true;
+                for (
+                  let current = tooltip;
+                  current instanceof Element;
+                  current = current.parentElement
+                ) {
+                  const style = getComputedStyle(current);
+                  ancestors.push({
+                    tag: current.tagName,
+                    id: current.id || '',
+                    className: String(current.className || ''),
+                    display: style.display,
+                    visibility: style.visibility,
+                    opacity: style.opacity,
+                  });
+                  if (style.display === 'none' || style.visibility === 'hidden') {
+                    stylesVisible = false;
+                  }
+                  effectiveOpacity *= Number.parseFloat(style.opacity || '1');
+                  if (current === document.body) break;
+                }
+                const associated = Boolean(
+                  tooltip.id && describedBy.includes(tooltip.id)
+                );
+                const visible = Boolean(
+                  associated
+                  &&
+                  rect.width > 0
+                  && rect.height > 0
+                  && stylesVisible
+                  && effectiveOpacity >= 0.99
+                );
+                return {
+                  ancestors,
+                  associated,
+                  describedBy,
+                  effectiveOpacity,
+                  rect: {
+                    height: rect.height,
+                    width: rect.width,
+                  },
+                  tooltipId: tooltip.id || '',
+                  visible,
+                };
+                """,
+                trigger,
+                element,
+            )
+        if not isinstance(state, Mapping):
+            return {"visible": False, "error": "render state is not an object"}
+        return dict(state)
 
     @staticmethod
     def _element_is_visibly_rendered(
@@ -651,40 +723,11 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         trigger: Any,
         element: Any,
     ) -> bool:
-        return bool(
-            session.execute_script(
-                """
-                const trigger = arguments[0];
-                const tooltip = arguments[1];
-                const describedBy = (trigger.getAttribute('aria-describedby') || '')
-                  .split(/\\s+/)
-                  .filter(Boolean);
-                if (!tooltip.id || !describedBy.includes(tooltip.id)) return false;
-
-                const rect = tooltip.getBoundingClientRect();
-                let effectiveOpacity = 1;
-                for (
-                  let current = tooltip;
-                  current instanceof Element;
-                  current = current.parentElement
-                ) {
-                  const style = getComputedStyle(current);
-                  if (style.display === 'none' || style.visibility === 'hidden') {
-                    return false;
-                  }
-                  effectiveOpacity *= Number.parseFloat(style.opacity || '1');
-                  if (current === document.body) break;
-                }
-                return Boolean(
-                  rect.width > 0
-                  && rect.height > 0
-                  && effectiveOpacity >= 0.99
-                );
-                """,
-                trigger,
-                element,
-            )
-        )
+        return DesktopOAuthNativeGate._element_render_state(
+            session,
+            trigger,
+            element,
+        ).get("visible") is True
 
     def _source_identity(self) -> dict[str, Any]:
         source = self._mapping(self.manifest.get("source"), "runtime source")
