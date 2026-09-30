@@ -8,6 +8,7 @@ from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
     DesktopOAuthNativeGate,
     OAUTH_AVATAR_URL,
+    is_native_tauri_url,
 )
 
 
@@ -46,6 +47,23 @@ class _FakeRuntimeBinding:
 
 
 class DesktopOAuthNativeGateTest(unittest.TestCase):
+    def test_accepts_routed_native_tauri_url(self) -> None:
+        self.assertTrue(is_native_tauri_url("tauri://localhost"))
+        self.assertTrue(
+            is_native_tauri_url("tauri://localhost/settings?tab=account#identity")
+        )
+
+    def test_rejects_non_native_or_credentialed_url(self) -> None:
+        for value in (
+            "http://localhost/settings",
+            "tauri://example.com/settings",
+            "tauri://user@localhost/settings",
+            "tauri://localhost:3410/settings",
+            "not a url",
+        ):
+            with self.subTest(value=value):
+                self.assertFalse(is_native_tauri_url(value))
+
     def test_accepts_pre_authentication_loopback_start(self) -> None:
         status = json.dumps(
             {
