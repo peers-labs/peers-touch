@@ -132,7 +132,7 @@
     "Preserve terminal idempotency and active branch lineage",
     "Return only the first deterministic failure to its owning layer"
   ],
-  "updatedAt": "2026-09-30T18:17:36Z",
+  "updatedAt": "2026-09-30T20:16:45Z",
   "durableEvidence": []
 }
 ```
@@ -157,3 +157,4 @@ permission-denied contract exposed by the next exact-source Foundation run.
 - Run `20260928T014932696320Z-45059d51355332a04a644511cec18390` reached Browser `BASE-PROVIDER_TIMEOUT`; live Turn SSE now survives the provider window with heartbeat frames.
 - Run `20260930T170459504288Z-055e01500d9b0450e25e100eaf3e7514` crossed disposable Station restart and failed at Browser English `BASE-FORBIDDEN_ACTOR`; all runtime resources were cleanly released.
 - Diagnostic run `20260930T181131230145Z-6d68d340aea426d8c79f44e750fe109c` proved the source attempt passed and only the replay targeted a different current conversation. The Harness now reselects the owner-bound conversation before replay; the product stream path and Gate predicates remain unchanged.
+- Exact-source run `20260930T193102500626Z-608146c5a247c33f1e99ea91a8756df5` crossed the repaired cells and stopped at Browser English `BASE-RESUME_UNAVAILABLE`; cleanup passed. P12 remains `NOT_ADVERTISED`, so its external-session reset Journey stays `PRODUCT_AMENDMENT_REQUIRED` and must not be replaced by a direct-model shim.
