@@ -176,7 +176,7 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         )
 
         self.assertEqual(tooltip, "tooltip")
-        self.assertEqual(session.selector, ".ant-tooltip-inner")
+        self.assertEqual(session.selector, '[role="tooltip"]')
         self.assertEqual(
             adapter.mouse_calls,
             [(42, (MouseAction.MOVE,), (105.0, 207.0))],

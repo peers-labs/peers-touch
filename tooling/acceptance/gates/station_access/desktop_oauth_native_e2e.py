@@ -579,34 +579,6 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                     "Find People tooltip proof could not focus the native "
                     "Desktop document"
                 )
-        session.execute_script(
-            """
-            const target = arguments[0];
-            const events = [];
-            const handlers = {};
-            for (const type of [
-              'pointerenter',
-              'pointerover',
-              'mouseenter',
-              'mouseover',
-              'mousemove',
-            ]) {
-              const handler = () => events.push(type);
-              handlers[type] = handler;
-              target.addEventListener(type, handler);
-            }
-            window.__PT_FIND_PEOPLE_HOVER_PROBE__?.cleanup?.();
-            window.__PT_FIND_PEOPLE_HOVER_PROBE__ = {
-              events,
-              cleanup: () => {
-                for (const [type, handler] of Object.entries(handlers)) {
-                  target.removeEventListener(type, handler);
-                }
-              },
-            };
-            """,
-            element,
-        )
         element_center = self._mapping(
             session.execute_script(
                 """
@@ -656,53 +628,14 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         )
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            for tooltip in session.find_elements(".ant-tooltip-inner"):
+            for tooltip in session.find_elements('[role="tooltip"]'):
                 tooltip_text = tooltip.text.strip()
                 if tooltip.is_displayed() and tooltip_text == expected_text:
-                    session.execute_script(
-                        """
-                        window.__PT_FIND_PEOPLE_HOVER_PROBE__?.cleanup?.();
-                        delete window.__PT_FIND_PEOPLE_HOVER_PROBE__;
-                        """
-                    )
                     return tooltip_text
             time.sleep(0.1)
-        diagnostic = self._mapping(
-            session.execute_script(
-                """
-                const target = arguments[0];
-                const center = arguments[1];
-                const hit = document.elementFromPoint(center.x, center.y);
-                return {
-                  documentFocused: document.hasFocus(),
-                  targetConnected: target.isConnected,
-                  targetHovered: target.matches(':hover'),
-                  hitTag: hit?.tagName || '',
-                  hitText: (hit?.textContent || '').trim(),
-                  hitScope: hit?.closest?.('[data-chat-find-people-scope]')
-                    ?.getAttribute('data-chat-find-people-scope') || '',
-                  events: window.__PT_FIND_PEOPLE_HOVER_PROBE__?.events || [],
-                  tooltips: Array.from(document.querySelectorAll(
-                    '[role="tooltip"], .ant-tooltip-inner',
-                  )).map((node) => ({
-                    className: String(node.className || ''),
-                    text: (node.textContent || '').trim(),
-                    display: getComputedStyle(node).display,
-                    visibility: getComputedStyle(node).visibility,
-                  })),
-                };
-                """,
-                element,
-                element_center,
-            ),
-            "Find People hover diagnostic",
-        )
-        diagnostic["contentOrigin"] = list(content_origin)
-        diagnostic["elementCenter"] = element_center
         raise GateError(
             "Find People scope tooltip did not become visible with expected text: "
-            f"{expected_text!r}; diagnostic="
-            f"{json.dumps(diagnostic, sort_keys=True)}"
+            f"{expected_text!r}"
         )
 
     def _source_identity(self) -> dict[str, Any]:
