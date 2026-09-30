@@ -85,7 +85,7 @@ class OAuth2ClientContractTests(unittest.TestCase):
                     ),
                     (
                         "./internal/bootstrap",
-                        "TestVercelRejectsMemoryStorage",
+                        "TestVercelRejectsMissingOrMemoryStorage",
                     ),
                     (
                         "./internal/bootstrap",

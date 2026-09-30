@@ -29,9 +29,9 @@
 | Claim | Class | Evidence | Confidence | Missing proof |
 |---|---|---|---|---|
 | Vercel routes can run in independent function instances | verified_fact | Vercel Functions runtime and filesystem documentation | high | live deployment smoke |
-| Current session store is process-local memory | verified_fact | `internal/bootstrap/container.go`, `persistence/memory/session_store.go` | high | none |
-| Current providers discard refresh token and expiry | verified_fact | provider implementations under `internal/infrastructure/provider` | high | none |
-| Current verifier is not used for PKCE | verified_fact | provider `AuthorizeURL` and `ExchangeCode` methods | high | none |
+| Durable deployments use the configured `OAuthStore`; memory is local-only | verified_fact | `internal/bootstrap/container.go`, GitHub and memory adapters | high | live deployment smoke |
+| Provider adapters retain normalized access and refresh metadata | verified_fact | provider implementations and fixture tests | high | live provider consent |
+| GitHub and Google exchange authorization codes with PKCE | verified_fact | provider `AuthorizeURL`, `ExchangeCode`, and fixture tests | high | live provider consent |
 | GitHub private repositories support authenticated Git Data writes | verified_fact | GitHub REST Git Data documentation | high | live App installation |
 | One private repository is sufficient for current single-operator volume | inference | accepted operating scope and GitHub App rate limits | medium | production traffic observation |
 | A domain store can later be replaced by a database | proposal | repository ports below | high | future adapter |
@@ -258,4 +258,6 @@ memory store -> Vercel production fallback
 - `go test -race ./...`, module governance, Plan validation, and registered
   OAuth Acceptance Gate.
 
-Current status: `DESIGN_READY_FOR_EXECUTION`.
+Current status: implemented and verified in deterministic local runtime cells.
+Live provider consent, GitHub App installation, and Vercel deployment remain
+unproven.

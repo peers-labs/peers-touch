@@ -101,19 +101,21 @@ benchmark disposition document is required.
 | Operator dashboard | required | required | out of scope |
 | Credential refresh use case | server-side | server-side | no public token API |
 
-## 8. Feasibility
+## 8. Delivery Evidence
 
-| Capability | Existing foundation | Missing closure | Executable proof |
-|---|---|---|---|
-| OLB-C01 | `AuthSession` and state validation | durable encrypted store and PKCE wiring | cross-container callback integration test |
-| OLB-C02-C04 | provider identity extraction | atomic completion records | fake GitHub Git Data API contract test |
-| OLB-C05 | provider token endpoints | token-set model and refresh methods | provider HTTP fixture tests |
-| OLB-C06/C08 | DDD package boundaries | GitHub App client and repository adapter | optimistic conflict/retry tests |
-| OLB-C07 | Go HTTP handlers | Basic auth and sanitized renderers | local HTTP handler tests and browser check |
+| Capability | Delivered behavior | Executable proof |
+|---|---|---|
+| OLB-C01 | durable encrypted authorization and PKCE wiring | cross-container callback integration test |
+| OLB-C02-C04 | atomic identity, credential, and audit records | fake GitHub Git Data API contract test |
+| OLB-C05 | normalized token sets and refresh methods | provider HTTP fixture tests |
+| OLB-C06/C08 | GitHub App repository adapter behind domain ports | optimistic conflict/retry tests |
+| OLB-C07 | authenticated and sanitized read-only administration | local HTTP handler tests and browser check |
 
 ## 9. Product Gate
 
-Current status: `PRODUCT_READY_FOR_ARCHITECTURE`.
+Current status: implemented and verified in deterministic local runtime cells.
+Live provider consent, GitHub App installation, and Vercel deployment remain
+unproven.
 
 No material UI prototype is required. The operator surface is a read-only table
 with no workflow decisions beyond authentication and filtering-free inspection;

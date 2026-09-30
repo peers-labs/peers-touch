@@ -45,7 +45,10 @@ func TestExchangeReturnsRefreshableTokenSet(t *testing.T) {
 	}
 	if grant.Identity.ProviderUserID != "openid" ||
 		grant.Identity.UnionID != "unionid" ||
+		grant.Tokens.AccessToken != "access-secret" ||
 		grant.Tokens.RefreshToken != "refresh-secret" ||
+		grant.Tokens.TokenType != "Bearer" ||
+		grant.Tokens.Scope != "snsapi_login" ||
 		grant.Tokens.AccessExpiresAt == nil ||
 		!grant.Tokens.AccessExpiresAt.Equal(now.Add(2*time.Hour)) {
 		t.Fatalf("unexpected grant: %#v", grant)
