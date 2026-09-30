@@ -630,12 +630,37 @@ class DesktopOAuthNativeGate(AcceptanceGate):
         while time.monotonic() < deadline:
             for tooltip in session.find_elements('[role="tooltip"]'):
                 tooltip_text = tooltip.text.strip()
-                if tooltip.is_displayed() and tooltip_text == expected_text:
+                if (
+                    tooltip_text == expected_text
+                    and self._element_is_visibly_rendered(session, tooltip)
+                ):
                     return tooltip_text
             time.sleep(0.1)
         raise GateError(
             "Find People scope tooltip did not become visible with expected text: "
             f"{expected_text!r}"
+        )
+
+    @staticmethod
+    def _element_is_visibly_rendered(
+        session: TauriSession,
+        element: Any,
+    ) -> bool:
+        return bool(
+            session.execute_script(
+                """
+                const style = getComputedStyle(arguments[0]);
+                const rect = arguments[0].getBoundingClientRect();
+                return Boolean(
+                  rect.width > 0
+                  && rect.height > 0
+                  && style.display !== 'none'
+                  && style.visibility !== 'hidden'
+                  && Number(style.opacity || 1) > 0
+                );
+                """,
+                element,
+            )
         )
 
     def _source_identity(self) -> dict[str, Any]:

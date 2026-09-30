@@ -76,13 +76,16 @@ class _FakeHoverElement:
 class _FakeHoverSession:
     process_id = 42
 
-    def __init__(self, *, focused: bool = True) -> None:
+    def __init__(self, *, focused: bool = True, rendered: bool = True) -> None:
         self.focused = focused
+        self.rendered = rendered
 
     def execute_script(self, script: str, *args: object) -> object:
         del args
         if "document.hasFocus" in script:
             return self.focused
+        if "style.visibility" in script:
+            return self.rendered
         if "getBoundingClientRect" in script:
             return {"x": 5.0, "y": 7.0}
         return None
@@ -198,6 +201,16 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
 
         self.assertEqual(tooltip, "tooltip")
         self.assertTrue(runtime_binding.activation_requested)
+
+    def test_tooltip_visibility_uses_rendered_layout(self) -> None:
+        session = _FakeHoverSession(rendered=False)
+
+        self.assertFalse(
+            DesktopOAuthNativeGate._element_is_visibly_rendered(
+                session,
+                object(),
+            )
+        )
 
     def test_accepts_routed_native_tauri_url(self) -> None:
         self.assertTrue(is_native_tauri_url("tauri://localhost"))
