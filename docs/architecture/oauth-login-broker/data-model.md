@@ -263,6 +263,7 @@ newer credential has already committed.
 | `state_consumed` | transaction already completed | none |
 | `provider_mismatch` | callback provider differs | restart login |
 | `credential_not_refreshable` | no refresh token | new login |
+| `credential_generation_conflict` | credential changed after refresh began | bounded reread and retry |
 | `provider_exchange_failed` | provider rejected exchange | restart login |
 | `provider_refresh_failed` | provider rejected refresh | retry or new login |
 

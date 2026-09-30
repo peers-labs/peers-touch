@@ -43,11 +43,11 @@ class OAuth2ClientContractTests(unittest.TestCase):
                         "OLB-C08",
                         "OLB-C09",
                     ),
-                    ("OLB-G01", "OLB-G02", "OLB-G05"),
+                    ("OLB-G01", "OLB-G02", "OLB-G03A", "OLB-G05A"),
                 ),
                 "refresh-idempotency": (
                     ("OLB-C05", "OLB-C06", "OLB-C08"),
-                    ("OLB-G03",),
+                    ("OLB-G03B",),
                 ),
                 "key-rotation": (("OLB-C03",), ("OLB-G06",)),
                 "operator": (
@@ -56,6 +56,78 @@ class OAuth2ClientContractTests(unittest.TestCase):
                 ),
             },
         )
+
+    def test_split_claims_have_selected_test_witnesses(self) -> None:
+        witnesses = {
+            "durable-login": {
+                "OLB-G03A": {
+                    (
+                        "./internal/infrastructure/provider/github",
+                        "TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet",
+                    ),
+                    (
+                        "./internal/infrastructure/provider/google",
+                        "TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet",
+                    ),
+                    (
+                        "./internal/infrastructure/provider/weixin",
+                        "TestExchangeReturnsRefreshableTokenSet",
+                    ),
+                },
+                "OLB-G05A": {
+                    (
+                        "./internal/bootstrap",
+                        "TestVercelRequiresBridgeSecretAndReturnAllowlist",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestVercelRejectsHTTPProviderRedirect",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestVercelRejectsMemoryStorage",
+                    ),
+                    (
+                        "./internal/bootstrap",
+                        "TestStorageHTTPClientIsBounded",
+                    ),
+                },
+            },
+            "refresh-idempotency": {
+                "OLB-G03B": {
+                    (
+                        "./internal/application/oauth/usecase",
+                        "TestRefreshCredentialReturnsCommittedDuplicateWithoutProviderCall",
+                    ),
+                    (
+                        "./internal/application/oauth/usecase",
+                        "TestRefreshCredentialRetriesAfterGenerationConflict",
+                    ),
+                    (
+                        "./internal/application/oauth/usecase",
+                        "TestRefreshCredentialPreservesOmittedRefreshToken",
+                    ),
+                },
+            },
+        }
+        for scope, claim_witnesses in witnesses.items():
+            selected = {
+                (group.package, test)
+                for group in SCOPES[scope][2]
+                for test in group.tests
+            }
+            with self.subTest(scope=scope):
+                self.assertTrue(set(claim_witnesses).issubset(CLAIMS[scope][1]))
+                for claim, required in claim_witnesses.items():
+                    self.assertTrue(
+                        required.issubset(selected),
+                        f"{scope} claim {claim} lacks selected witnesses",
+                    )
+
+        self.assertNotIn("OLB-G06", CLAIMS["durable-login"][1])
+        self.assertNotIn("OLB-G06", CLAIMS["refresh-idempotency"][1])
+        self.assertNotIn("OLB-G06", CLAIMS["operator"][1])
+        self.assertEqual(CLAIMS["key-rotation"][1], ("OLB-G06",))
 
     def test_patterns_are_exact(self) -> None:
         pattern = test_pattern(("TestOne", "TestTwo"))
