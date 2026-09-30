@@ -139,7 +139,6 @@
 ```
 
 ## Acceptance Execution
-
 ```json
 {
   "closures": {
@@ -164,7 +163,9 @@
     "agent-quick-completion-e2e",
     "agent-stream-resilience-e2e",
     "agent-v2-connector-invocation-e2e",
+    "chat-contact-message-resilience-e2e",
     "chat-desktop-gateway-e2e",
+    "chat-friend-request-gateway-e2e",
     "chat-lifecycle-call-resolution-e2e",
     "chat-lifecycle-direct-e2e",
     "chat-lifecycle-mixed-client-cross-station-e2e",
@@ -184,6 +185,7 @@
     "chat-storage-mobile-batch-clear-e2e",
     "chat-storage-zero-legacy-e2e",
     "desktop-release-build",
+    "federation-desktop-gateway-smoke",
     "federation-three-node-e2e",
     "messaging-platform-contract",
     "mobile-hard-cut-static",
@@ -276,7 +278,6 @@ SAL-OAUTH-01
 - No compatibility command, fallback login, or duplicate OAuth path is added.
 
 ## Completion
-
 - Rust regression tests cover login and connector owner modes.
 - Station registration tests prove the exact public POST OAuth bridge route.
 - GitHub and Google return `auth_url` and `session_id` in a source-bound native
@@ -295,6 +296,5 @@ SAL-OAUTH-01
 - Secret scanning passes and the native Gate releases its runtime resources.
 
 ## Non-Claims
-
 - The plan does not claim completion of a real third-party authorization grant.
 - The plan does not claim Linux, Windows, Mobile, or physical-device OAuth proof.
