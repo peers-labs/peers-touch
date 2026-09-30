@@ -147,46 +147,13 @@ permission-denied contract exposed by the next exact-source Foundation run.
 
 ## Current Snapshot
 
-- Run `20260924T200431539686Z-b02b1a38a66edf1e9af21f7bb280339e`
-  exposed missing Station persistence for the interrupted Assistant; the
-  startup-recovery owner now persists the typed projection.
-- A later exact-source retry reached a matching corrected-resend `done` event
-  and canonical store state, then sampled receiver visibility before DOM
-  convergence; the Harness must await exactly one visible canonical Assistant.
-- Exact-source run `20260925T001210202640Z-b7203aa045503c7a64a5b262fe7b1b66`
-  crossed the restart and receiver regressions, then failed closed at
-  `BASE-LOOP_BUDGET_EXHAUSTED` because the existing standalone product Journey
-  was not registered in the Foundation direct-runtime adapter.
-- Instrumented exact-source run
-  `20260925T022549650004Z-761c02bd8990c84fb3d44592c496975a`
-  proved the Browser `zh-CN` invalid-reference resend was admitted, emitted
-  more than 1,100 thinking events, and then terminated failed. The scenario now
-  pins thinking to disabled and restores the prior Agent setting during cleanup.
-- Exact-source run
-  `20260925T152835902356Z-827632478defe662b212875f3c2c487d`
-  crossed the prior repaired cells and failed closed at Browser
-  `BASE-PERMISSION_DENIED` because no direct-runtime scenario was registered.
-  MCA-D27 now defines the missing proto-first permission owner, Station
-  pre-dispatch rejection, receiver recovery action, Browser observer semantics,
-  and zero-execution proof boundary.
-- Run `20260925T200337561495Z-2467c5cfacc56fecabff73ab2e5ce7a3` exposed a late canonical refresh dropping the local-only `BASE-DUPLICATE_CONFLICT` Assistant; the owner is Desktop chat merge with focused regression coverage.
-- Exact-source redeploy after the sanitized-history rebase exposed two orphaned legacy Social adapters and one stale Conversation response constructor; reconciliation removes the adapters and uses the canonical protobuf `oneof`.
-- Ark run `20260928T014932696320Z-45059d51355332a04a644511cec18390`
-  reached Browser `BASE-PROVIDER_TIMEOUT`; source inspection found that live
-  Turn SSE lacked heartbeat frames, so the 30-second Browser idle deadline
-  preceded the 120-second provider terminal. Cleanup passed.
-- Exact-source run
-  `20260930T170459504288Z-055e01500d9b0450e25e100eaf3e7514`
-  crossed the authorized disposable Station restart path and failed first at
-  Browser English `BASE-FORBIDDEN_ACTOR`. The typed rejection reached the
-  conversation buffer, while its lifecycle callback and source event were not
-  observed after the current conversation changed; the stale global stream
-  projection remained active. Isolated exact-source
-  tuple run
-  `20260930T173747235565Z-332d7da3d18c1f4d8c3b3e6c16896ffb`
-  passed all forbidden-actor assertions in 2106 ms, proving accumulated
-  cross-scenario state rather than a Station ownership failure. The local
-  correction now treats only Turn/admission-bearing stream events as accepted
-  and prevents pre-admission failures from triggering asynchronous topic
-  reconciliation. Both failed full runs and the isolated diagnostic completed
-  clean Provisioner teardown.
+- Run `20260924T200431539686Z-b02b1a38a66edf1e9af21f7bb280339e` exposed missing Station persistence for an interrupted Assistant; startup recovery now persists the typed projection.
+- A later retry reached canonical corrected-resend state but sampled before DOM convergence; the Harness now awaits one visible canonical Assistant.
+- Run `20260925T001210202640Z-b7203aa045503c7a64a5b262fe7b1b66` reached the missing direct-runtime `BASE-LOOP_BUDGET_EXHAUSTED` registration.
+- Run `20260925T022549650004Z-761c02bd8990c84fb3d44592c496975a` showed Browser `zh-CN` invalid-reference resend emitted 1,100+ thinking events; the fixture now disables thinking and restores prior state.
+- Run `20260925T152835902356Z-827632478defe662b212875f3c2c487d` reached missing Browser `BASE-PERMISSION_DENIED`; MCA-D27 now defines its owner, typed rejection, recovery, and zero-execution proof.
+- Run `20260925T200337561495Z-2467c5cfacc56fecabff73ab2e5ce7a3` exposed a late canonical refresh dropping the local-only duplicate-conflict Assistant; Desktop chat merge now preserves it.
+- Post-rebase reconciliation removed two orphaned Social adapters and one stale Conversation response constructor in favor of the canonical protobuf `oneof`.
+- Run `20260928T014932696320Z-45059d51355332a04a644511cec18390` reached Browser `BASE-PROVIDER_TIMEOUT`; live Turn SSE now survives the provider window with heartbeat frames.
+- Run `20260930T170459504288Z-055e01500d9b0450e25e100eaf3e7514` crossed disposable Station restart and failed at Browser English `BASE-FORBIDDEN_ACTOR`: the typed rejection reached its buffer, but callback/source-event observation was absent after current-conversation drift.
+- Isolated tuple run `20260930T173747235565Z-332d7da3d18c1f4d8c3b3e6c16896ffb` passed in 2106 ms, isolating accumulated state. The local correction binds acceptance to Turn/admission events and skips topic reconciliation for pre-admission failures; every run completed clean Provisioner teardown.
