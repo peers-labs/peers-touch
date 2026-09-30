@@ -95,7 +95,7 @@ type OAuthStore interface {
     RecordAuthorizationFailure(context.Context, AuthorizationFailure) error
     LoadCredential(context.Context, identityID string) (*OAuthCredential, error)
     LoadCredentialForRefresh(context.Context, identityID, operationID string) (*OAuthCredential, bool, error)
-    ReplaceCredential(context.Context, CredentialRefresh) error
+    ReplaceCredential(context.Context, CredentialRefresh) (*OAuthCredential, error)
     AdminSnapshot(context.Context, int) (AdminSnapshot, error)
 }
 
