@@ -33,6 +33,11 @@ CLIENT_ID = "oauth-login"
 PROVIDERS = ("github", "google")
 OAUTH_AVATAR_URL = "https://avatars.githubusercontent.com/u/583231?v=4"
 CHAT_NAV_SELECTOR = '[data-pt-primary-nav="chat"] [role="button"]'
+ACCOUNT_IDENTITY_SUMMARY_SELECTOR = "[data-pt-account-identity-summary]"
+ACCOUNT_LOGIN_PROVIDER_SELECTOR = "[data-pt-account-login-provider]"
+LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR = (
+    '[data-pt-account-identity="login-provider"]'
+)
 REQUIRED_ASSERTIONS = frozenset(
     {
         "native_login_surface_is_unauthenticated",
@@ -350,8 +355,27 @@ class DesktopOAuthNativeGate(AcceptanceGate):
             )
             account_provider = self._wait_for_displayed(
                 session,
-                '[data-pt-account-identity="login-provider"]',
+                ACCOUNT_LOGIN_PROVIDER_SELECTOR,
                 timeout=20,
+            )
+            account_provider_summary = self._mapping(
+                session.execute_script(
+                    """
+                    const provider = arguments[0];
+                    return {
+                      inIdentitySummary: Boolean(
+                        provider.closest(arguments[1])
+                      ),
+                      legacyFieldCount: document.querySelectorAll(
+                        arguments[2]
+                      ).length,
+                    };
+                    """,
+                    account_provider,
+                    ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
+                    LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR,
+                ),
+                "Desktop Account provider summary",
             )
             account_ui = {
                 "avatarUrl": account_avatar.get_attribute(
@@ -359,13 +383,21 @@ class DesktopOAuthNativeGate(AcceptanceGate):
                 ),
                 "ptid": account_ptid.text,
                 "provider": account_provider.text,
+                "providerInIdentitySummary": account_provider_summary.get(
+                    "inIdentitySummary"
+                ),
+                "legacyProviderFieldCount": account_provider_summary.get(
+                    "legacyFieldCount"
+                ),
             }
             providers["github"]["accountUi"] = account_ui
             self.assert_condition(
                 "account_identity_ui_shows_provider_and_ptid",
                 account_ui["avatarUrl"] == projected_avatar
                 and actor_ptid in account_ui["ptid"]
-                and "GitHub" in account_ui["provider"],
+                and account_ui["provider"] == "GitHub"
+                and account_ui["providerInIdentitySummary"] is True
+                and account_ui["legacyProviderFieldCount"] == 0,
                 json.dumps(account_ui, sort_keys=True),
             )
             self.save_screenshot(session, "desktop-oauth-authenticated")

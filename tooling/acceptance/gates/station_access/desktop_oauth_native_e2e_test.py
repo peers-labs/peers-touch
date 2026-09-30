@@ -7,8 +7,11 @@ from urllib.parse import parse_qs, urlparse
 from tooling.acceptance.core import GateError
 from tooling.acceptance.drivers.native import MouseAction
 from tooling.acceptance.gates.station_access.desktop_oauth_native_e2e import (
+    ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
+    ACCOUNT_LOGIN_PROVIDER_SELECTOR,
     CHAT_NAV_SELECTOR,
     DesktopOAuthNativeGate,
+    LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR,
     OAUTH_AVATAR_URL,
     find_people_scopes_are_distinct,
     is_native_tauri_url,
@@ -115,6 +118,20 @@ class DesktopOAuthNativeGateTest(unittest.TestCase):
         self.assertEqual(
             CHAT_NAV_SELECTOR,
             '[data-pt-primary-nav="chat"] [role="button"]',
+        )
+
+    def test_account_provider_targets_the_compact_identity_summary(self) -> None:
+        self.assertEqual(
+            ACCOUNT_IDENTITY_SUMMARY_SELECTOR,
+            "[data-pt-account-identity-summary]",
+        )
+        self.assertEqual(
+            ACCOUNT_LOGIN_PROVIDER_SELECTOR,
+            "[data-pt-account-login-provider]",
+        )
+        self.assertEqual(
+            LEGACY_ACCOUNT_LOGIN_PROVIDER_FIELD_SELECTOR,
+            '[data-pt-account-identity="login-provider"]',
         )
 
     def test_accepts_distinct_same_name_scope_evidence(self) -> None:
