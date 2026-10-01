@@ -1,0 +1,24 @@
+{
+  "id": "peers-dev-fixture-browser",
+  "profile": {
+    "required": false,
+    "identity_match": false
+  },
+  "services": {},
+  "fixtures": [],
+  "credentials": [],
+  "clients": [
+    {
+      "id": "peers-dev-fixture-browser",
+      "actor": "developer",
+      "runtime": "browser",
+      "required_service_roles": [],
+      "service_bindings": {}
+    }
+  ],
+  "cleanup": {
+    "resources": [
+      "peers-dev-fixture-runtime"
+    ]
+  }
+}

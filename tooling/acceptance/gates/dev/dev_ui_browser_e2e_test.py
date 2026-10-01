@@ -19,6 +19,7 @@ from tooling.acceptance.gates.dev.peers_dev_ui_browser_e2e import (
 )
 from tooling.acceptance.provisioners import (
     DevUiLocalBrowserProvisioner,
+    PeersDevFixtureBrowserProvisioner,
     get_provisioner,
 )
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -167,9 +168,15 @@ class DevUiBrowserAcceptanceTests(unittest.TestCase):
     ) -> None:
         validate_runtime_manifest(
             {
-                "environmentId": "dev-ui-local-browser",
+                "environmentId": "peers-dev-fixture-browser",
                 "profile": {"resolvedName": "dev-ui-local"},
-                "clients": [{"runtime": "browser"}],
+                "clients": [
+                    {
+                        "id": "peers-dev-fixture-browser",
+                        "runtime": "browser",
+                        "renderer_port": 4177,
+                    }
+                ],
             }
         )
         with tempfile.TemporaryDirectory() as temp:
@@ -183,6 +190,8 @@ class DevUiBrowserAcceptanceTests(unittest.TestCase):
                     "screenshots": ["desktop.png", "narrow.png"],
                     "disconnectFallback": "PASS",
                     "sseRecovery": "PASS",
+                    "singletonReuse": "PASS",
+                    "unregisteredVisible": "PASS",
                 },
                 output_directory,
             )
@@ -192,6 +201,13 @@ class DevUiBrowserAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(Exception, "summary is invalid"):
                 validate_driver_summary({"ok": True}, Path(temp))
+
+    def test_progress_environment_resolves_owned_fixture_provisioner(self) -> None:
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "peers-dev-fixture-browser.yaml"
+        )
+        provisioner = get_provisioner(contract)
+        self.assertIsInstance(provisioner, PeersDevFixtureBrowserProvisioner)
 
 
 if __name__ == "__main__":
