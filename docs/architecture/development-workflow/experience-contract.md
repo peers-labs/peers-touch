@@ -1,7 +1,7 @@
 # Peers Dev 体验合同
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-30
+> **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`
 
@@ -10,12 +10,13 @@
 ## DEV-J01: 安装并绑定
 
 **Actor**：在明确选定的 worktree 中启动 Agent 的开发者。
-**Decision**：DWF-D26。
+**Decision**：DWF-D33。
 
 1. 开发者运行 `make skills IDE=trae`。
 2. 安装过程验证 canonical source，写入受支持的宿主投影，并通过已安装路径执行
    合成回调。
-3. 第一个真实且可阻断的 `PreToolUse` 创建一次 conversation binding。
+3. 第一个真实且可阻断的 `PreToolUse` 从宿主专用 root-chat identity 创建一次
+   OWNER binding；内部执行 session 不能创建并列 owner。
 4. 后续工具调用复用同一 binding，不受当前 shell 目录影响。
 
 成功结果必须同时证明已安装 Hook、回调可达、执行根不可变且 workspace identity
@@ -62,7 +63,7 @@ DWF-D24 定义的 Plan owner 路径执行。
 **Decision**：DWF-D30。
 
 1. 开发者调用唯一 Doctor 入口。
-2. Doctor 检查安装、conversation binding、Plan/Task/Session ownership、
+2. Doctor 检查安装、BindingProjection、Plan/Task/Session ownership、
    Action Receipt、Completion Review 和 Peers Dev server。
 3. 每条可执行 README 承诺映射到一个机器检查和 typed result。
 4. 任一 required promise 为假时，命令以非零状态退出。

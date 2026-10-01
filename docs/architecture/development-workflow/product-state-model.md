@@ -1,7 +1,7 @@
 # Peers Dev 产品状态模型
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-30
+> **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`
 
@@ -13,7 +13,7 @@
 - Source invalidation 和受影响 closure 的重开只由 DWF-D24 定义的 Plan owner
   执行。
 - DWF-D25 Overlay 不得改变任何状态或转换。
-- Execution root 由 DWF-D26 conversation binding 约束。
+- Execution root 由 DWF-D33 OWNER-rooted BindingProjection 约束。
 - Workflow Snapshot、Completion Review 和 Action Receipt 分别由
   DWF-D27、DWF-D28、DWF-D29 定义；accepted 不等于 implemented 或 proven。
 - DWF-D32 的 Resource Plan 只投影跨模块 target 和资源准备状态，不替代

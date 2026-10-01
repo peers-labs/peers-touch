@@ -1,7 +1,7 @@
 ---
 kind: invariant
 title: Workflow enforcement is bound to one conversation execution root
-status: active
+status: superseded-by:docs/knowledge/invariants/owner-rooted-workflow-binding.md
 owns:
   - tooling/plugins/pt-ew-plugin/
   - tooling/scripts/agent-integration-control.py
@@ -19,6 +19,10 @@ detected: 2026-09-23
 ---
 
 # Workflow enforcement is bound to one conversation execution root
+
+> Superseded by
+> `docs/knowledge/invariants/owner-rooted-workflow-binding.md`. Retained only
+> under the append-only knowledge policy.
 
 ## What must hold
 

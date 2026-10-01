@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Integration
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Created**: 2026-09-13 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -215,11 +215,18 @@ make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
 ```
 
 This is the only canonical project Skill projector. Codex also receives the
-worktree-local `pt-ew-plugin`; TRAE receives merged workspace hooks. The
-installer preserves unrelated host files, never edits global hooks, and cannot
-run while this workspace has a live Development declaration. There is no
-separate acknowledgement command; restart the IDE only when the host cannot
-reload changed hooks, then rerun the audit.
+worktree-local `pt-ew-plugin`; TRAE receives one descriptor-selected multi-root
+workspace bootstrap. The installer removes managed per-worktree TRAE hooks,
+preserves unrelated host files, never edits global hooks, and cannot run while
+the machine has a live workflow action or this workspace has a live
+Development declaration. There is no separate acknowledgement command;
+restart the IDE only when the host cannot reload changed hooks, then rerun the
+audit.
+
+The TRAE rollout is a machine-store hard cut: while holding the installation
+lock it deletes the old conversation and workflow-action stores, installs the
+new OWNER/child binding store contract, and then publishes the one bootstrap.
+No legacy binding/action reader or dual writer remains.
 
 ## 4. Skill Integration
 
@@ -265,16 +272,21 @@ reload changed hooks, then rerun the audit.
 - normalizes Codex, Cursor and TRAE lifecycle payloads into one Kernel event;
 - prewarms on Session/prompt hooks but creates authority only on the first
   blockable `PreToolUse`;
-- atomically binds one host conversation to one immutable `executionRoot`;
+- atomically binds one host root chat to one immutable OWNER
+  `executionRoot`;
+- accepts only preassigned WORKER/REVIEWER child sessions and projects their
+  root/parent lineage, lease and terminal state;
 - resolves each tool action's `subjectRoot` independently, allowing
   cross-worktree reads and denying cross-worktree writes;
 - parses shell structure before classifying owner/read/mutation intent;
 - denies inconsistent owner state and direct runtime-owner execution without
   mutating Plan, Task, Session, declaration, active-work or evidence;
-- renders a machine-owned Context Anchor and commits a create-once release
-  receipt at terminal or blocked Stop;
-- reports `OBSERVE_ONLY` when the host does not expose the identity or blocking
-  capability required for enforcement;
+- injects one canonical `BindingProjection` into prompts and revalidates it for
+  status, readiness, handoff and final claims;
+- renders a machine-owned Context Anchor and commits a create-once OWNER
+  release receipt at terminal or blocked Stop;
+- reports `OBSERVE_ONLY` when the host does not expose its required root-chat
+  identity or blocking capability;
 - no-ops outside a Peers-Touch worktree.
 
 ### `pt-architecture-execution-methodology`
