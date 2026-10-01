@@ -1626,8 +1626,9 @@ Rules:
 ├── owners/<host>/<rootChatHash>/
 │   ├── owner-binding.json
 │   ├── anchor-receipt.json
-│   ├── compact-lineage.json
+│   ├── compact-lineage/<bindingDigest>.json
 │   ├── assignments/<assignmentId>.json
+│   ├── assignment-claims/<assignmentDigest>.json
 │   └── releases/<anchorDigest>.json
 └── children/<rootBindingDigest>/<host>/<executionSessionHash>/
     ├── child-binding.json
