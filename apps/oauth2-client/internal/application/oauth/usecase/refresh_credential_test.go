@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +24,19 @@ func TestRefreshCredentialReturnsCommittedDuplicateWithoutProviderCall(t *testin
 			ObtainedAt:  now.Add(time.Hour),
 		},
 	}
+	claimObserved := false
+	provider.onRefresh = func() {
+		claim, err := store.ClaimCredentialRefresh(
+			context.Background(),
+			identityID,
+			"refresh-1",
+			now.Add(time.Hour),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		claimObserved = claim.State == entity.CredentialRefreshClaimUncertain
+	}
 	useCase := refreshUseCase(store, provider, now.Add(time.Hour))
 
 	first, err := useCase.Execute(context.Background(), RefreshCredentialInput{
@@ -41,6 +55,9 @@ func TestRefreshCredentialReturnsCommittedDuplicateWithoutProviderCall(t *testin
 	}
 	if provider.calls != 1 {
 		t.Fatalf("duplicate operation called provider %d times", provider.calls)
+	}
+	if !claimObserved {
+		t.Fatal("provider was called before the durable refresh claim")
 	}
 	if first.Generation != 2 || second.Generation != 2 ||
 		first.AccessToken != "access-new" ||
@@ -61,68 +78,106 @@ func TestRefreshCredentialReturnsCommittedDuplicateWithoutProviderCall(t *testin
 		t.Fatalf("expected one refresh audit event, got %d", refreshEvents)
 	}
 	t.Run(
-		"returns concurrent winner after provider failure",
-		assertRefreshCredentialReturnsConcurrentWinnerAfterProviderFailure,
-	)
-	t.Run(
-		"preserves provider failure without winner",
-		assertRefreshCredentialReturnsProviderFailureWithoutWinner,
+		"provider failure becomes durable uncertainty",
+		assertRefreshCredentialMarksProviderFailureUncertain,
 	)
 }
 
-func assertRefreshCredentialReturnsConcurrentWinnerAfterProviderFailure(t *testing.T) {
-	store, identityID, now := seededRefreshStore(t)
-	providerErr := errors.New("provider_temporarily_unavailable")
-	provider := &refreshProvider{err: providerErr}
-	provider.onRefresh = func() {
-		_, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
-			IdentityID:         identityID,
-			OperationID:        "refresh-race",
-			ExpectedGeneration: 1,
-			Tokens: entity.TokenSet{
-				AccessToken:  "access-winner",
-				RefreshToken: "refresh-winner",
-				ObtainedAt:   now.Add(time.Hour),
-			},
-			RefreshedAt: now.Add(time.Hour),
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	credential, err := refreshUseCase(store, provider, now.Add(time.Hour)).Execute(
-		context.Background(),
-		RefreshCredentialInput{
-			IdentityID:  identityID,
-			OperationID: "refresh-race",
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if provider.calls != 1 ||
-		credential.Generation != 2 ||
-		credential.AccessToken != "access-winner" ||
-		credential.LastRefreshOperationID != "refresh-race" {
-		t.Fatalf("losing refresh did not converge to winner: %#v", credential)
-	}
-}
-
-func assertRefreshCredentialReturnsProviderFailureWithoutWinner(t *testing.T) {
+func assertRefreshCredentialMarksProviderFailureUncertain(t *testing.T) {
 	store, identityID, now := seededRefreshStore(t)
 	providerErr := errors.New("provider_temporarily_unavailable")
 	provider := &refreshProvider{err: providerErr}
 
-	credential, err := refreshUseCase(store, provider, now.Add(time.Hour)).Execute(
+	useCase := refreshUseCase(store, provider, now.Add(time.Hour))
+	credential, err := useCase.Execute(
 		context.Background(),
 		RefreshCredentialInput{
 			IdentityID:  identityID,
 			OperationID: "refresh-without-winner",
 		},
 	)
-	if credential != nil || !errors.Is(err, providerErr) || provider.calls != 1 {
-		t.Fatalf("provider failure changed without a winner: credential=%#v err=%v calls=%d", credential, err, provider.calls)
+	if credential != nil ||
+		!errors.Is(err, repository.ErrCredentialRefreshUncertain) ||
+		provider.calls != 1 {
+		t.Fatalf("provider failure was not fenced: credential=%#v err=%v calls=%d", credential, err, provider.calls)
+	}
+	credential, err = useCase.Execute(context.Background(), RefreshCredentialInput{
+		IdentityID:  identityID,
+		OperationID: "refresh-without-winner",
+	})
+	if credential != nil ||
+		!errors.Is(err, repository.ErrCredentialRefreshUncertain) ||
+		provider.calls != 1 {
+		t.Fatalf("uncertain retry reached provider: credential=%#v err=%v calls=%d", credential, err, provider.calls)
+	}
+	snapshot, snapshotErr := store.AdminSnapshot(context.Background(), 10)
+	if snapshotErr != nil {
+		t.Fatal(snapshotErr)
+	}
+	uncertainEvents := 0
+	for _, event := range snapshot.Events {
+		if event.EventType == entity.AuditCredentialRefreshUncertain {
+			uncertainEvents++
+		}
+	}
+	if uncertainEvents != 1 {
+		t.Fatalf("expected one uncertain refresh audit, got %d", uncertainEvents)
+	}
+}
+
+func TestRefreshCredentialReleasesClaimBeforeProviderCall(t *testing.T) {
+	store, identityID, now := seededRefreshStore(t)
+	provider := &refreshProvider{tokens: entity.TokenSet{
+		AccessToken: "access-after-config-fix",
+		ObtainedAt:  now.Add(2 * time.Hour),
+	}}
+	input := RefreshCredentialInput{
+		IdentityID:  identityID,
+		OperationID: "refresh-after-config-fix",
+	}
+	misconfigured := RefreshCredentialUseCase{
+		Sites:     staticSites{},
+		Store:     store,
+		Providers: map[valueobject.Provider]port.ProviderGateway{},
+		Clock:     fixedClock{now: now.Add(time.Hour)},
+	}
+	if credential, err := misconfigured.Execute(context.Background(), input); credential != nil || err == nil || err.Error() != "unknown_site" {
+		t.Fatalf("unexpected pre-provider failure: credential=%#v err=%v", credential, err)
+	}
+	if provider.calls != 0 {
+		t.Fatalf("pre-provider failure called provider %d times", provider.calls)
+	}
+
+	credential, err := refreshUseCase(store, provider, now.Add(2*time.Hour)).Execute(
+		context.Background(),
+		input,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 ||
+		credential.AccessToken != "access-after-config-fix" ||
+		credential.LastRefreshOperationID != input.OperationID {
+		t.Fatalf("released refresh did not recover: credential=%#v calls=%d", credential, provider.calls)
+	}
+}
+
+func TestRefreshCredentialReportsUncertaintyPersistenceFailure(t *testing.T) {
+	baseStore, identityID, now := seededRefreshStore(t)
+	store := &markUncertainFailureStore{Store: baseStore}
+	provider := &refreshProvider{err: errors.New("provider_temporarily_unavailable")}
+
+	credential, err := refreshUseCase(store, provider, now.Add(time.Hour)).Execute(
+		context.Background(),
+		RefreshCredentialInput{
+			IdentityID:  identityID,
+			OperationID: "refresh-uncertainty-write-failed",
+		},
+	)
+	if credential != nil ||
+		!errors.Is(err, repository.ErrCredentialRefreshUncertain) ||
+		!strings.Contains(err.Error(), repository.ErrStorageUnavailable.Error()) {
+		t.Fatalf("uncertainty persistence failure was hidden: credential=%#v err=%v", credential, err)
 	}
 }
 
@@ -204,13 +259,9 @@ func TestRefreshCredentialPreservesOmittedRefreshToken(t *testing.T) {
 	}
 }
 
-func TestRefreshCredentialRetriesAfterGenerationConflict(t *testing.T) {
+func TestRefreshCredentialResolvesCommittedLostStoreResponseWithoutSecondProviderCall(t *testing.T) {
 	baseStore, identityID, now := seededRefreshStore(t)
-	store := &generationConflictStore{
-		Store:      baseStore,
-		identityID: identityID,
-		now:        now.Add(90 * time.Minute),
-	}
+	store := &lostReplacementResponseStore{Store: baseStore}
 	provider := &refreshProvider{tokens: entity.TokenSet{
 		AccessToken: "access-final",
 		ObtainedAt:  now.Add(2 * time.Hour),
@@ -225,16 +276,15 @@ func TestRefreshCredentialRetriesAfterGenerationConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.calls != 2 ||
-		len(provider.refreshTokens) != 2 ||
-		provider.refreshTokens[0] != "refresh-old" ||
-		provider.refreshTokens[1] != "refresh-newer" {
-		t.Fatalf("refresh did not retry with latest credential: %#v", provider.refreshTokens)
+	if provider.calls != 1 ||
+		len(provider.refreshTokens) != 1 ||
+		provider.refreshTokens[0] != "refresh-old" {
+		t.Fatalf("lost store response repeated provider refresh: %#v", provider.refreshTokens)
 	}
-	if credential.Generation != 3 ||
+	if credential.Generation != 2 ||
 		credential.AccessToken != "access-final" ||
-		credential.RefreshToken != "refresh-newer" {
-		t.Fatalf("unexpected credential after retry: %#v", credential)
+		credential.RefreshToken != "refresh-old" {
+		t.Fatalf("unexpected credential after lost response recovery: %#v", credential)
 	}
 }
 
@@ -326,32 +376,34 @@ func (p *refreshProvider) RefreshToken(_ context.Context, refreshToken string, _
 	return &tokens, nil
 }
 
-type generationConflictStore struct {
+type lostReplacementResponseStore struct {
 	*memory.Store
-	identityID string
-	now        time.Time
-	injected   bool
+	injected bool
 }
 
-func (s *generationConflictStore) ReplaceCredential(
+type markUncertainFailureStore struct {
+	*memory.Store
+}
+
+func (s *markUncertainFailureStore) MarkCredentialRefreshUncertain(
+	context.Context,
+	entity.CredentialRefreshClaim,
+	string,
+	time.Time,
+) error {
+	return repository.ErrStorageUnavailable
+}
+
+func (s *lostReplacementResponseStore) ReplaceCredential(
 	ctx context.Context,
 	refresh entity.CredentialRefresh,
 ) (*entity.OAuthCredential, error) {
 	if !s.injected {
 		s.injected = true
-		if _, err := s.Store.ReplaceCredential(ctx, entity.CredentialRefresh{
-			IdentityID:         s.identityID,
-			OperationID:        "competing-refresh",
-			ExpectedGeneration: refresh.ExpectedGeneration,
-			Tokens: entity.TokenSet{
-				AccessToken:  "access-competing",
-				RefreshToken: "refresh-newer",
-				ObtainedAt:   s.now,
-			},
-			RefreshedAt: s.now,
-		}); err != nil {
+		if _, err := s.Store.ReplaceCredential(ctx, refresh); err != nil {
 			return nil, err
 		}
+		return nil, repository.ErrStorageUnavailable
 	}
 	return s.Store.ReplaceCredential(ctx, refresh)
 }

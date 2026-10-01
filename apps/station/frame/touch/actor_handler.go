@@ -57,6 +57,18 @@ func GetActorHandlers() []ActorHandlerInfo {
 			Wrappers:  []server.Wrapper{actorWrapper},
 		},
 		{
+			RouterURL: RouterURLOAuthLogin,
+			Handler:   OAuthLogin,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper},
+		},
+		{
+			RouterURL: RouterURLOAuthConnectorLink,
+			Handler:   OAuthConnectorLink,
+			Method:    server.POST,
+			Wrappers:  []server.Wrapper{actorWrapper, jwtWrapper},
+		},
+		{
 			RouterURL: RouterURLAccessAttemptStart,
 			Handler:   StartAccessAttempt,
 			Method:    server.POST,

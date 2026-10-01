@@ -5430,13 +5430,6 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
             };
             to_json(app_oauth2::oauth2_authorize(input))
         }
-        "oauth2_handle_callback" => {
-            let input = match parse_args::<OAuthCallbackInput>(args) {
-                Ok(v) => v,
-                Err(e) => return e,
-            };
-            to_json(app_oauth2::oauth2_handle_callback(input))
-        }
         "oauth2_list_connections" => match gateway_mcp_identity(state) {
             Ok((actor_ptid, _)) => to_json(app_oauth2::oauth2_list_connections(&actor_ptid)),
             Err(error) => error,
@@ -5508,14 +5501,27 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            match gateway_mcp_identity(state) {
-                Ok((actor_ptid, _)) => to_json(app_oauth2::oauth2_start_loopback(
-                    input,
-                    state.i18n.clone(),
-                    &actor_ptid,
-                )),
-                Err(error) => error,
-            }
+            let connector_authorization = match input.purpose.as_str() {
+                "account_login" => None,
+                "connector_link" => match gateway_mcp_identity(state) {
+                    Ok((actor_ptid, token)) => {
+                        Some(app_oauth2::OAuthConnectorAuthorization { actor_ptid, token })
+                    }
+                    Err(error) => return error,
+                },
+                _ => {
+                    return to_json(AppResult::<StubPayload>::fail(
+                        ErrorCode::InvalidArgument,
+                        "purpose must be account_login or connector_link",
+                        None,
+                    ))
+                }
+            };
+            to_json(app_oauth2::oauth2_start_loopback(
+                input,
+                state.i18n.clone(),
+                connector_authorization,
+            ))
         }
         "oauth2_poll_loopback" => {
             let input = match parse_args::<OAuthLoopbackPollInput>(args) {
@@ -5523,6 +5529,20 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             to_json(app_oauth2::oauth2_poll_loopback(input))
+        }
+        "oauth2_resume_loopback" => {
+            let input = match parse_args::<OAuthLoopbackPollInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_oauth2::oauth2_resume_loopback(input))
+        }
+        "oauth2_cancel_loopback" => {
+            let input = match parse_args::<OAuthLoopbackPollInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            to_json(app_oauth2::oauth2_cancel_loopback(input))
         }
 
         // =================================================================
@@ -7940,6 +7960,24 @@ mod tests {
                 .and_then(Value::as_str),
             Some("UNAUTHORIZED")
         );
+    }
+
+    #[test]
+    fn oauth_loopback_lifecycle_commands_route_through_gateway() {
+        let state = test_state("oauth-loopback-lifecycle");
+        let runtime = GatewayRuntime::headless();
+
+        for command in ["oauth2_resume_loopback", "oauth2_cancel_loopback"] {
+            let result = dispatch(command, json!({ "session_id": "" }), &state, &runtime);
+            assert_eq!(
+                result
+                    .get("error")
+                    .and_then(|error| error.get("code"))
+                    .and_then(Value::as_str),
+                Some("INVALID_ARGUMENT"),
+                "{command} did not reach its typed handler: {result}",
+            );
+        }
     }
 
     #[test]

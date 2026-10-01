@@ -223,6 +223,26 @@ pub mod message {
 }
 
 pub mod oauth {
+    pub mod bridge {
+        pub mod v1 {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/peers_touch.model.oauth.bridge.v1.rs"
+            ));
+        }
+        pub use v1::*;
+    }
+
+    pub mod mobile {
+        pub mod v1 {
+            include!(concat!(
+                env!("OUT_DIR"),
+                "/peers_touch.model.oauth.mobile.v1.rs"
+            ));
+        }
+        pub use v1::*;
+    }
+
     pub mod v1 {
         include!(concat!(env!("OUT_DIR"), "/peers_touch.model.oauth.v1.rs"));
     }

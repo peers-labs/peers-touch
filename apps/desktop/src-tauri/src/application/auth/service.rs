@@ -244,25 +244,90 @@ fn access_scope<T: serde::Serialize>() -> Result<(String, String, u64), AppResul
     Ok((station_peer_id, device_id, generation))
 }
 
-fn start_access_attempt<T: serde::Serialize>() -> Result<StartAccessAttemptResponse, AppResult<T>> {
+fn start_access_attempt_with_scope<T: serde::Serialize>(
+) -> Result<(StartAccessAttemptResponse, (String, String, u64)), AppResult<T>> {
     let (station_peer_id, device_id, lifecycle_generation) = access_scope::<T>()?;
-    access_post::<_, StartAccessAttemptResponse, T>(
+    let response = access_post::<_, StartAccessAttemptResponse, T>(
         "/actor/access/start",
         &StartAccessAttemptRequest {
             station_url: station_client::station_base_url(),
             client: Some(AccessGateClientInfo {
                 platform: "desktop".to_string(),
                 app_version: env!("CARGO_PKG_VERSION").to_string(),
-                device_id,
+                device_id: device_id.clone(),
                 locale: String::new(),
                 lifecycle_generation,
             }),
             session_id: String::new(),
-            station_peer_id,
+            station_peer_id: station_peer_id.clone(),
         },
         ErrorCode::Unauthorized,
         "Access gate start failed",
-    )
+    )?;
+    Ok((response, (station_peer_id, device_id, lifecycle_generation)))
+}
+
+fn start_access_attempt<T: serde::Serialize>() -> Result<StartAccessAttemptResponse, AppResult<T>> {
+    start_access_attempt_with_scope::<T>().map(|(response, _)| response)
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct OAuthAccessAttemptBinding {
+    pub station_peer_id: String,
+    pub access_attempt_id: String,
+    pub gate_id: String,
+    pub device_id: String,
+    pub lifecycle_generation: u64,
+}
+
+pub(crate) fn start_oauth_access_attempt<T: serde::Serialize>(
+) -> Result<OAuthAccessAttemptBinding, AppResult<T>> {
+    let (response, (station_peer_id, device_id, lifecycle_generation)) =
+        start_access_attempt_with_scope::<T>()?;
+    let decision = response.decision.ok_or_else(|| {
+        AppResult::fail(
+            ErrorCode::InternalError,
+            "OAuth access start response is missing its decision",
+            None,
+        )
+    })?;
+    if decision.state != AccessDecisionState::ActionRequired as i32 {
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            decision_block_reason(&decision),
+            None,
+        ));
+    }
+    let gate = decision
+        .gates
+        .iter()
+        .find(|gate| gate.gate_id == decision.current_gate_id)
+        .ok_or_else(|| {
+            AppResult::fail(
+                ErrorCode::InternalError,
+                "OAuth access decision is missing its current gate",
+                None,
+            )
+        })?;
+    let supported = gate.alternative_actions.iter().any(|action| {
+        action.action_id == "auth.oauth"
+            && action.submit_action == "start_oauth"
+            && action.r#type == AccessGateType::AuthOauth as i32
+    });
+    if gate.r#type != AccessGateType::AuthLogin as i32 || !supported {
+        return Err(AppResult::fail(
+            ErrorCode::Forbidden,
+            "Station did not advertise OAuth for the current access gate",
+            None,
+        ));
+    }
+    Ok(OAuthAccessAttemptBinding {
+        station_peer_id,
+        access_attempt_id: decision.attempt_id,
+        gate_id: decision.current_gate_id,
+        device_id,
+        lifecycle_generation,
+    })
 }
 
 fn submit_request<T: serde::Serialize>(
@@ -445,7 +510,9 @@ fn decision_payload(
     }
 }
 
-fn project_access_decision(decision: &AccessDecision) -> Result<AccessDecisionProjection, String> {
+pub(crate) fn project_access_decision(
+    decision: &AccessDecision,
+) -> Result<AccessDecisionProjection, String> {
     let state = AccessDecisionState::try_from(decision.state)
         .map_err(|_| "Access decision has an unknown state".to_string())?;
     let gates = decision
@@ -882,6 +949,13 @@ pub(crate) fn auth_restore_session_for_device(
     state: &AppState,
     device_type: &str,
 ) -> AppResult<AuthSessionPayload> {
+    if let Err(error) = crate::application::oauth2::reconcile_broker_cancellations_after_restart() {
+        return AppResult::fail(
+            ErrorCode::InternalError,
+            "oauth cancellation recovery failed",
+            Some(json!({ "cause": error })),
+        );
+    }
     let Some(account_id) = session_vault::active_account_id() else {
         return unauthorized(
             "missing session",
@@ -905,6 +979,38 @@ pub(crate) fn auth_restore_session_for_device(
         }
         Err(error) => return session_vault_to_app(error),
     };
+    if blob.source == SessionSource::OauthBridge {
+        match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(&account_id)
+        {
+            Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Ready) => {}
+            Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Pending) => {
+                return unauthorized(
+                    "oauth session activation pending",
+                    json!({
+                        "command": "auth_restore_session",
+                        "reason": "oauth_acknowledgement_pending",
+                    }),
+                )
+            }
+            Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Rejected(reason)) => {
+                return unauthorized(
+                    "oauth session activation rejected",
+                    json!({
+                        "command": "auth_restore_session",
+                        "reason": "oauth_acknowledgement_rejected",
+                        "cause": reason,
+                    }),
+                )
+            }
+            Err(error) => {
+                return AppResult::fail(
+                    ErrorCode::InternalError,
+                    "oauth session activation recovery failed",
+                    Some(json!({ "cause": error })),
+                )
+            }
+        }
+    }
     let initial_session = match validate_token(&blob.token) {
         Ok(session) => session,
         Err(error) => return map_domain_error(error),
@@ -1129,6 +1235,35 @@ pub fn ensure_station_session(state: &AppState) -> AppResult<AuthSessionPayload>
         }
         Err(error) => return session_vault_to_app(error),
     };
+    match crate::application::oauth2::reconcile_broker_acknowledgement_for_account(&account_id) {
+        Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Ready) => {}
+        Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Pending) => {
+            return unauthorized(
+                "oauth session activation pending",
+                json!({
+                    "command": "ensure_station_session",
+                    "reason": "oauth_acknowledgement_pending",
+                }),
+            )
+        }
+        Ok(crate::application::oauth2::BrokerAcknowledgementRecovery::Rejected(reason)) => {
+            return unauthorized(
+                "oauth session activation rejected",
+                json!({
+                    "command": "ensure_station_session",
+                    "reason": "oauth_acknowledgement_rejected",
+                    "cause": reason,
+                }),
+            )
+        }
+        Err(error) => {
+            return AppResult::fail(
+                ErrorCode::InternalError,
+                "oauth session activation recovery failed",
+                Some(json!({ "cause": error })),
+            )
+        }
+    }
 
     let actor_ptid = blob.actor_ptid;
     let token = blob.token;

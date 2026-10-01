@@ -1,8 +1,8 @@
 # OAuth Login Broker - Product State Model
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
 ---
@@ -50,14 +50,21 @@ missing
   -> active
   -> expiring
   -> refreshable
-  -> refreshing
+  -> refresh_claimed
   -> active(rotated)
+  -> refresh_uncertain -> reauthorization_required
   -> expired_non_refreshable
 ```
 
 - Token values exist only in server memory and encrypted envelopes.
 - `refreshable` requires a non-empty refresh token after decryption.
 - Provider omission of a replacement refresh token retains the current one.
+- `refresh_claimed` is durable and binds one operation ID to one credential
+  generation before any provider call.
+- A retry that observes an unresolved claim never calls the provider again.
+- A provider success followed by a missing durable replacement is
+  `refresh_uncertain`; recovery requires a new authorization because the
+  provider may already have invalidated the old refresh token.
 - Authentication or decryption failure never degrades to plaintext or an empty
   credential.
 
@@ -103,3 +110,43 @@ authenticated -> loading -> ready
   rendered.
 
 All states are non-cacheable and non-indexable.
+
+## 7. Native Desktop Handoff
+
+```text
+idle
+  -> awaiting_provider
+  -> broker_committed
+  -> station_verifying
+  -> station_candidate_ready
+  -> local_credential_persisted
+  -> station_activated
+  -> local_session_active
+
+awaiting_provider -> denied | expired
+station_verifying -> rejected
+station_candidate_ready -> local_persist_failed | cancelled | expired
+local_credential_persisted -> acknowledgement_pending
+acknowledgement_pending -> station_activated | cancelled | expired
+```
+
+- `idle` and `awaiting_provider` require no existing Desktop actor.
+- `broker_committed` means provider identity and credential state are durable,
+  but it does not imply a Station session.
+- `station_candidate_ready` is an inactive, device-bound Station candidate
+  whose encrypted credential remains recoverable until acknowledgement.
+- `local_credential_persisted` is durable but not yet advertised as a completed
+  login. Its acknowledgement binding and prior local snapshot are also durable.
+- `acknowledgement_pending` retains the local credential while polling or
+  process restart resolves Station truth. It cannot enter the authenticated
+  shell until activation is confirmed.
+- `station_activated` is authoritative only after acknowledgement or canonical
+  readback proves activation.
+- `local_session_active` is the first successful Desktop login state.
+- Denied, expired, invalid-signature, bridge-unavailable, and local-persistence
+  failures remain visible terminal failures and never create an active local
+  OAuth connection.
+- The renderer timeout equals the native loopback expiry and first requests
+  cancellation. A concurrent activation winner is reported as completed.
+- Station startup and periodic sweeps terminalize abandoned attempts without
+  requiring request traffic.

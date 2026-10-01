@@ -113,7 +113,14 @@
         "OLB-D07",
         "OLB-D08",
         "OLB-D09",
-        "OLB-D10"
+        "OLB-D10",
+        "OLB-D11",
+        "OLB-D12",
+        "OLB-D13",
+        "OLB-D14",
+        "OLB-D15",
+        "OLB-D16",
+        "OLB-D17"
       ],
       "governedPaths": [
         "apps/oauth2-client",

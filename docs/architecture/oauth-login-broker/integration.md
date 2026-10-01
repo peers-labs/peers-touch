@@ -1,7 +1,7 @@
 # OAuth Login Broker - Integration
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.3
 > **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
@@ -71,11 +71,26 @@ OAUTH_ALLOWED_RETURN_TO=peers-touch://oauth/callback,https://app.example/oauth/c
 site configuration. `OAUTH_GITHUB_API_BASE_URL` defaults to GitHub's public API
 and must use HTTPS on Vercel; local deterministic fixtures may use HTTP.
 
+For native Desktop loopback, configure the explicit template:
+
+```text
+OAUTH_ALLOWED_RETURN_TO=http://127.0.0.1/callback
+```
+
+The template authorizes only an ephemeral non-zero port on literal
+`127.0.0.1`, fixed `/callback`, no userinfo, and no fragment. It does not
+authorize `localhost`, IPv6, alternate paths, or arbitrary HTTP destinations.
+
 The GitHub App installation requires repository `Contents: Read and write`.
 The data repository and branch must already exist.
 
 Local development defaults to memory when `OAUTH_STORAGE_DRIVER` is unset.
 `OAUTH_STORAGE_DRIVER=memory` is rejected when `VERCEL` is set.
+
+The Station deployment environment must define the same
+`PEERS_OAUTH_BRIDGE_SECRET`; `tooling/docker/compose.yml` explicitly injects it
+into the Station container. Missing values remain fail-closed at bridge
+verification.
 
 ## 4. GitHub API Flow
 
@@ -119,6 +134,8 @@ Local development defaults to memory when `OAUTH_STORAGE_DRIVER` is unset.
 
 Provider endpoint URLs remain package defaults but are injectable in tests.
 Provider errors map to stable codes without returning response bodies.
+GitHub calls `/user/emails` only when `/user` omits email and accepts only a
+verified address, preferring the primary entry.
 
 ## 6. Key Rotation
 
@@ -160,8 +177,79 @@ cutover. Use cases and HTTP routes do not change.
   within bounded attempts.
 - A callback never redirects success after an incomplete durable commit.
 - Admin rendering never includes upstream bodies or decryption details.
+- Provider denial with valid state is audited and redirected through the
+  transaction-owned return destination; missing state remains a JSON error.
+- A refresh operation is durably claimed before provider rotation. An
+  unresolved claim fails as `credential_refresh_uncertain` without a second
+  provider call.
 
-## 9. Rollback
+## 9. Desktop And Station Handoff
+
+Native Desktop account login uses one loopback attempt:
+
+```text
+Desktop logged out
+  -> signed Station identity + Access Attempt
+  -> broker /start
+  -> provider
+  -> broker /callback + durable commit
+  -> signed loopback redirect
+  -> Desktop Rust
+  -> Station /actor/oauth-bridge
+  -> Desktop local account/session commit
+  -> Station /oauth/mobile/acknowledge
+  -> Station session activation + prior-session replacement
+```
+
+- `oauth2_start_loopback` accepts an explicit `account_login` or
+  `connector_link` intent.
+- `account_login` is callable without an existing actor and requires a
+  current Access Attempt whose login gate advertises `auth.oauth`.
+- `connector_link` requires an existing actor and uses authenticated Station
+  assertion verification without issuing a login session.
+- The broker and Station share the `bridge_version=v1` canonical signature
+  defined in `data-model.md`.
+- `/actor/oauth-bridge` is public but signature-required and registered under
+  the Actor router.
+- Station rejects a route whose account-login or connector-link purpose does
+  not match the signed assertion and durably consumes `assertion_id` before any
+  actor or session mutation.
+- The account-login bridge delegates to the existing Station OAuth candidate
+  repository and Access Gate coordinator. It does not call direct session
+  issuance or perform a post-hoc allowlist check.
+- Desktop binds the bridge to `station_peer_id`, `access_attempt_id`,
+  `gate_id`, `device_id`, and `lifecycle_generation`, and supplies an X25519
+  credential-delivery key. The signed receiver challenge is the hash of the
+  attempt secret used by status, cancellation, and acknowledgement. Station
+  verifies the device and lifecycle generation against the referenced Access
+  Attempt before creating the OAuth candidate.
+- A granted candidate returns the canonical encrypted OAuth credential
+  envelope while its Station session remains revoked with
+  `credential_delivery_pending`.
+- Desktop first persists an encrypted, phase-marked acknowledgement recovery
+  record, including the receiver binding and prior local snapshot, then commits
+  its local session/account/connector projections before acknowledgement. A
+  local write failure rolls back those projections and cancels the pending
+  OAuth candidate.
+- A later actionable Gate remains attached to the same Access Attempt. Desktop
+  submits that action, resumes OAuth status, persists the granted credential,
+  and then acknowledges.
+- Acknowledgement atomically activates the candidate, deletes its recoverable
+  envelope, and revokes replaced sessions. Only then may Desktop mark the
+  Station binding complete.
+- A lost acknowledgement response preserves the local credential and recovery
+  record. Loopback polling and OAuth session restoration both recover through
+  idempotent acknowledgement replay and canonical status readback.
+- The renderer consumes the native receiver expiry and sends explicit
+  cancellation before reporting timeout; cancellation and final activation
+  serialize so an activation winner is reported as completed.
+- Station runs transactional OAuth expiry cleanup at startup and periodically;
+  abandoned candidate sessions and envelopes do not depend on a later request
+  for cleanup.
+- Missing `PEERS_OAUTH_BRIDGE_SECRET` on Station fails closed.
+- Desktop never reconstructs or verifies the HMAC secret.
+
+## 10. Rollback
 
 Rollback uses application deployment/version control. Existing ciphertext
 records remain compatible while all referenced key IDs remain configured.

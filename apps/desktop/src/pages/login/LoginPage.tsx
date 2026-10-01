@@ -74,6 +74,9 @@ export function LoginPage({
   const connections = useOAuth2Store(s => s.connections);
   const loadAll = useOAuth2Store(s => s.loadAll);
   const startAuth = useOAuth2Store(s => s.startAuth);
+  const pendingOAuthSessionId = useOAuth2Store(s => s.pendingLoopbackSessionId);
+  const completeOAuthAccountLogin = useOAuth2Store(s => s.completeAccountLogin);
+  const cancelOAuthAccountLogin = useOAuth2Store(s => s.cancelAccountLogin);
   const accessStart = useSessionStore(s => s.accessStart);
   const accessSubmitInviteCode = useSessionStore(s => s.accessSubmitInviteCode);
   const accessSubmitLogin = useSessionStore(s => s.accessSubmitLogin);
@@ -513,16 +516,15 @@ export function LoginPage({
     setAuthState('waiting');
     setAuthError('');
     try {
-      await startAuth(connectProvider.id);
-      const updatedConn = useOAuth2Store.getState().connections.find(
-        c => c.provider_id === connectProvider.id,
-      );
-      if (updatedConn) {
-        setAuthState('success');
-      } else {
-        setAuthState('error');
-        setAuthError(t('auth.login.incomplete'));
+      const decision = await startAuth(connectProvider.id, undefined, 'account_login');
+      if (decision) {
+        setConnectProvider(null);
+        setAuthState('idle');
+        setGateDecision(decision);
+        setGateInviteCode('');
+        return;
       }
+      setAuthState('success');
     } catch (err: any) {
       setAuthState('error');
       setAuthError(err?.message || t('auth.login.failedRetry'));
@@ -575,6 +577,18 @@ export function LoginPage({
         setGateDecision(decision);
         return;
       }
+      if (isAccessGranted(decision) && pendingOAuthSessionId) {
+        const nextDecision = await completeOAuthAccountLogin();
+        if (nextDecision) {
+          setGateDecision(nextDecision);
+          return;
+        }
+        setGateDecision(null);
+        setGateInviteCode('');
+        await onLoginWithOAuthBridge();
+        await continueAfterFreshAuth();
+        return;
+      }
       if (isAccessGranted(decision) || !isInviteCodeGate(currentGate(decision))) {
         await finishLoginGate(decision);
         return;
@@ -585,17 +599,49 @@ export function LoginPage({
     } finally {
       setGateLoading(false);
     }
-  }, [gateDecision, accessSubmitInviteCode, finishLoginGate, t]);
+  }, [
+    gateDecision,
+    accessSubmitInviteCode,
+    completeOAuthAccountLogin,
+    continueAfterFreshAuth,
+    finishLoginGate,
+    onLoginWithOAuthBridge,
+    pendingOAuthSessionId,
+    t,
+  ]);
 
-  const handleCancelGate = useCallback(() => {
-    if (gateDecision?.attemptId) {
-      void accessCancel(gateDecision.attemptId);
-    }
-    setGateDecision(null);
-    setGateInviteCode('');
+  const handleCancelGate = useCallback(async () => {
+    setGateLoading(true);
     setGateError('');
-    setGateLoading(false);
-  }, [accessCancel, gateDecision?.attemptId]);
+    try {
+      if (pendingOAuthSessionId) {
+        const status = await cancelOAuthAccountLogin();
+        if (status === 'completed') {
+          setGateDecision(null);
+          setGateInviteCode('');
+          await onLoginWithOAuthBridge();
+          await continueAfterFreshAuth();
+          return;
+        }
+      } else if (gateDecision?.attemptId) {
+        await accessCancel(gateDecision.attemptId);
+      }
+      setGateDecision(null);
+      setGateInviteCode('');
+    } catch (error) {
+      setGateError(errorMessage(error, t('auth.login.failedRetry')));
+    } finally {
+      setGateLoading(false);
+    }
+  }, [
+    accessCancel,
+    cancelOAuthAccountLogin,
+    continueAfterFreshAuth,
+    gateDecision?.attemptId,
+    onLoginWithOAuthBridge,
+    pendingOAuthSessionId,
+    t,
+  ]);
 
   // ── Tab change ──
 

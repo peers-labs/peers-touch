@@ -65,6 +65,37 @@ func TestStartAuthAcceptsOnlyConfiguredReturnDestination(t *testing.T) {
 	}
 }
 
+func TestSanitizeReturnToAcceptsOnlyExplicitNativeLoopbackTemplate(t *testing.T) {
+	allowed := []string{"http://127.0.0.1/callback"}
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "ephemeral port",
+			raw:  "http://127.0.0.1:43123/callback?session_id=lp-1",
+			want: "http://127.0.0.1:43123/callback?session_id=lp-1",
+		},
+		{name: "missing port", raw: "http://127.0.0.1/callback"},
+		{name: "zero port", raw: "http://127.0.0.1:0/callback"},
+		{name: "localhost alias", raw: "http://localhost:43123/callback"},
+		{name: "ipv6 loopback", raw: "http://[::1]:43123/callback"},
+		{name: "wrong path", raw: "http://127.0.0.1:43123/other"},
+		{name: "userinfo", raw: "http://user@127.0.0.1:43123/callback"},
+		{name: "fragment", raw: "http://127.0.0.1:43123/callback#fragment"},
+		{name: "https", raw: "https://127.0.0.1:43123/callback"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sanitizeReturnTo(test.raw, allowed); got != test.want {
+				t.Fatalf("sanitizeReturnTo(%q) = %q, want %q", test.raw, got, test.want)
+			}
+		})
+	}
+}
+
 type staticSites map[string]SiteConfig
 
 func (s staticSites) Get(siteID string) (SiteConfig, bool) {

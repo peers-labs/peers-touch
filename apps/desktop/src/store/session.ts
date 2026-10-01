@@ -175,6 +175,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   loginWithOAuth: async (_providerId: string) => {
     markLocalIdentityAction();
     const resp = await api.ensureStationSession();
+    await completeStationBindingOrRollback();
     get().activateAuthenticatedSession(resp);
     const method = (resp.login_method as string) || 'oauth';
     await runIdentityPipeline({
@@ -200,6 +201,10 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
       }));
     } catch (error) {
       if (error instanceof AuthCommandException && error.code === 'UNAUTHORIZED') {
+        if (error.details?.reason === 'oauth_acknowledgement_pending') {
+          set({ restoring: false });
+          throw error;
+        }
         set((state) => ({
           currentUser: null,
           authenticated: false,

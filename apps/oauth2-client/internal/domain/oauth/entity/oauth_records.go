@@ -7,10 +7,20 @@ import (
 )
 
 const (
-	AuditAuthorizationStarted = "authorization_started"
-	AuditLoginSucceeded       = "login_succeeded"
-	AuditLoginFailed          = "login_failed"
-	AuditCredentialRefreshed  = "credential_refreshed"
+	AuditAuthorizationStarted       = "authorization_started"
+	AuditLoginSucceeded             = "login_succeeded"
+	AuditLoginFailed                = "login_failed"
+	AuditCredentialRefreshed        = "credential_refreshed"
+	AuditCredentialRefreshUncertain = "credential_refresh_uncertain"
+)
+
+type CredentialRefreshClaimState string
+
+const (
+	CredentialRefreshClaimAcquired  CredentialRefreshClaimState = "claimed"
+	CredentialRefreshClaimCommitted CredentialRefreshClaimState = "committed"
+	CredentialRefreshClaimUncertain CredentialRefreshClaimState = "uncertain"
+	CredentialRefreshClaimReleased  CredentialRefreshClaimState = "released"
 )
 
 type ProviderIdentity struct {
@@ -100,11 +110,22 @@ type AuthorizationFailure struct {
 	CodeFingerprint string
 	ErrorCode       string
 	OccurredAt      time.Time
+	Terminal        bool
+}
+
+type CredentialRefreshClaim struct {
+	IdentityID           string
+	OperationID          string
+	ClaimID              string
+	CredentialGeneration uint64
+	State                CredentialRefreshClaimState
+	Credential           OAuthCredential
 }
 
 type CredentialRefresh struct {
 	IdentityID         string
 	OperationID        string
+	ClaimID            string
 	ExpectedGeneration uint64
 	Tokens             TokenSet
 	RefreshedAt        time.Time

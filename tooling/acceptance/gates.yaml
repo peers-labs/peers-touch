@@ -1,6 +1,20 @@
 {
   "version": 1,
   "gates": {
+    "oauth-login-broker-handoff-contract": {
+      "command": "sh -c 'cd apps/oauth2-client && go test ./internal/application/oauth/usecase && cd ../station && go test ./app/subserver/oauth ./frame/touch ./frame/touch/auth ./frame/touch/model/db && cd ../desktop && pnpm exec vitest run src/store/oauth2.test.ts && pnpm run check && cargo test --manifest-path src-tauri/Cargo.toml oauth'",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the Desktop loopback contract, durable acknowledgement recovery, timeout cancellation, versioned purpose-bound broker assertion, Station candidate lifecycle, periodic expiry cleanup, and account-login versus connector-link split without claiming a native user journey."
+    },
+    "oauth-login-broker-provider-identity": {
+      "command": "sh -c 'cd apps/oauth2-client && go test ./internal/application/oauth/usecase ./internal/infrastructure/provider/github ./internal/interfaces/http/handler && cd ../station && go test ./frame/touch/auth'",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate transaction-owned provider denial routing, GitHub verified-primary email normalization, provider-scoped no-email identity, and Station actor-binding conflict behavior."
+    },
     "oauth-login-broker-durable-login": {
       "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope durable-login",
       "timeout_seconds": 600,

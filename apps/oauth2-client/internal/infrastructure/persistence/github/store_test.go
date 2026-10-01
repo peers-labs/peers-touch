@@ -363,6 +363,42 @@ func TestRecordAuthorizationFailureDistinguishesOccurrences(t *testing.T) {
 	}
 }
 
+func TestTerminalAuthorizationFailureConsumesTransaction(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	store := fixture.newStore(t, "v1", map[string][]byte{
+		"v1": bytes.Repeat([]byte{1}, 32),
+	})
+	now := time.Date(2026, 10, 1, 2, 0, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "provider-denied-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGitHub,
+		ReturnTo:  "http://127.0.0.1:43123/callback?session_id=lp-123",
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := store.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordAuthorizationFailure(context.Background(), entity.AuthorizationFailure{
+		State:      session.State,
+		Provider:   session.Provider,
+		ErrorCode:  "provider_access_denied",
+		OccurredAt: now.Add(time.Minute),
+		Terminal:   true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.FindAuthorization(context.Background(), session.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || !loaded.IsConsumed() {
+		t.Fatalf("terminal provider denial did not consume transaction: %#v", loaded)
+	}
+}
+
 func TestStoreConvergesAfterLostRefUpdateResponse(t *testing.T) {
 	fixture := newGitDataFixture(t)
 	store := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
@@ -432,10 +468,23 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	claim, err := store.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-operation",
+		now.Add(2*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.State != entity.CredentialRefreshClaimAcquired {
+		t.Fatalf("refresh claim was not acquired: %#v", claim)
+	}
 	fixture.abortAfterNextRefUpdate()
 	refreshed, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
 		IdentityID:         identity.IdentityID,
 		OperationID:        "refresh-operation",
+		ClaimID:            claim.ClaimID,
 		ExpectedGeneration: 1,
 		Tokens: entity.TokenSet{
 			AccessToken: "access-new",
@@ -455,6 +504,7 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 	duplicate, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
 		IdentityID:         identity.IdentityID,
 		OperationID:        "refresh-operation",
+		ClaimID:            claim.ClaimID,
 		ExpectedGeneration: 1,
 	})
 	if err != nil {
@@ -463,9 +513,19 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 	if duplicate.Generation != 2 || fixture.commitCount() != commitsAfterRefresh {
 		t.Fatalf("duplicate refresh mutated storage: %#v", duplicate)
 	}
+	secondClaim, err := store.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-operation-2",
+		now.Add(3*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	secondOperation, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
 		IdentityID:         identity.IdentityID,
 		OperationID:        "refresh-operation-2",
+		ClaimID:            secondClaim.ClaimID,
 		ExpectedGeneration: 2,
 		Tokens: entity.TokenSet{
 			AccessToken: "access-newer",
@@ -480,39 +540,52 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 		t.Fatalf("second refresh did not advance generation: %#v", secondOperation)
 	}
 	commitsAfterSecondOperation := fixture.commitCount()
+	staleClaim, err := store.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"stale-refresh",
+		now.Add(4*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
 		IdentityID:         identity.IdentityID,
 		OperationID:        "stale-refresh",
+		ClaimID:            staleClaim.ClaimID,
 		ExpectedGeneration: 2,
 		Tokens: entity.TokenSet{
 			AccessToken: "must-not-commit",
 			ObtainedAt:  now.Add(4 * time.Minute),
 		},
 		RefreshedAt: now.Add(4 * time.Minute),
-	}); !errors.Is(err, repository.ErrCredentialGeneration) {
+	}); !errors.Is(err, repository.ErrCredentialRefreshUncertain) {
 		t.Fatalf("expected stale generation rejection, got %v", err)
 	}
-	if fixture.commitCount() != commitsAfterSecondOperation {
-		t.Fatal("stale refresh created a repository commit")
+	if fixture.commitCount() != commitsAfterSecondOperation+1 {
+		t.Fatal("stale refresh claim was not the only repository mutation")
 	}
+	commitsAfterStaleClaim := fixture.commitCount()
 	if _, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
 		IdentityID:         identity.IdentityID,
 		OperationID:        "stale-refresh",
+		ClaimID:            staleClaim.ClaimID,
 		ExpectedGeneration: 2,
 		Tokens: entity.TokenSet{
 			AccessToken: "must-not-commit",
 			ObtainedAt:  now.Add(4 * time.Minute),
 		},
 		RefreshedAt: now.Add(4 * time.Minute),
-	}); !errors.Is(err, repository.ErrCredentialGeneration) {
+	}); !errors.Is(err, repository.ErrCredentialRefreshUncertain) {
 		t.Fatalf("expected stale generation rejection, got %v", err)
 	}
-	if fixture.commitCount() != commitsAfterSecondOperation {
+	if fixture.commitCount() != commitsAfterStaleClaim {
 		t.Fatal("stale refresh created a repository commit")
 	}
 	olderDuplicate, err := store.ReplaceCredential(context.Background(), entity.CredentialRefresh{
 		IdentityID:         identity.IdentityID,
 		OperationID:        "refresh-operation",
+		ClaimID:            claim.ClaimID,
 		ExpectedGeneration: 1,
 	})
 	if err != nil {
@@ -520,7 +593,7 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 	}
 	if olderDuplicate.Generation != 3 ||
 		olderDuplicate.AccessToken != "access-newer" ||
-		fixture.commitCount() != commitsAfterSecondOperation {
+		fixture.commitCount() != commitsAfterStaleClaim {
 		t.Fatalf("older duplicate refresh mutated storage: %#v", olderDuplicate)
 	}
 	snapshot, err := store.AdminSnapshot(context.Background(), 10)
@@ -535,6 +608,136 @@ func TestStoreConvergesRefreshAfterLostRefUpdateResponse(t *testing.T) {
 	}
 	if refreshEvents != 2 {
 		t.Fatalf("expected two refresh events, got %d", refreshEvents)
+	}
+}
+
+func TestRefreshClaimSurvivesInstanceAndLostResponseBoundaries(t *testing.T) {
+	fixture := newGitDataFixture(t)
+	first := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	second := fixture.newStore(t, "v1", map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)})
+	now := time.Date(2026, 10, 1, 2, 30, 0, 0, time.UTC)
+	session := entity.AuthSession{
+		State:     "refresh-claim-state",
+		SiteID:    "main",
+		Provider:  valueobject.ProviderGoogle,
+		Verifier:  "verifier",
+		CreatedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute),
+	}
+	if err := first.CreateAuthorization(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := first.CompleteAuthorization(context.Background(), entity.AuthorizationCompletion{
+		State:        session.State,
+		CompletionID: "login-operation",
+		Identity:     entity.ProviderIdentity{ProviderUserID: "subject"},
+		Tokens: entity.TokenSet{
+			AccessToken:  "access-old",
+			RefreshToken: "refresh-old",
+			ObtainedAt:   now,
+		},
+		CompletedAt: now.Add(time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	commitsBeforeClaim := fixture.commitCount()
+	fixture.abortAfterNextRefUpdate()
+	claim, err := first.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-claim",
+		now.Add(2*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.State != entity.CredentialRefreshClaimAcquired ||
+		claim.ClaimID == "" ||
+		fixture.commitCount() != commitsBeforeClaim+1 {
+		t.Fatalf("lost claim response did not converge: %#v", claim)
+	}
+	if err := first.ReleaseCredentialRefreshClaim(context.Background(), *claim); err != nil {
+		t.Fatal(err)
+	}
+	reacquired, err := second.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-claim",
+		now.Add(3*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reacquired.State != entity.CredentialRefreshClaimAcquired ||
+		reacquired.ClaimID == "" ||
+		reacquired.ClaimID == claim.ClaimID ||
+		fixture.commitCount() != commitsBeforeClaim+3 {
+		t.Fatalf("released claim was not reacquired across instances: %#v", reacquired)
+	}
+	if err := first.ReleaseCredentialRefreshClaim(context.Background(), *claim); !errors.Is(err, repository.ErrCredentialRefreshUncertain) {
+		t.Fatalf("stale owner released reacquired operation: %v", err)
+	}
+	retry, err := first.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-claim",
+		now.Add(4*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry.State != entity.CredentialRefreshClaimUncertain ||
+		retry.ClaimID != "" ||
+		fixture.commitCount() != commitsBeforeClaim+3 {
+		t.Fatalf("cross-instance retry acquired an unresolved claim: %#v", retry)
+	}
+	competing, err := first.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"another-operation",
+		now.Add(4*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if competing.State != entity.CredentialRefreshClaimUncertain ||
+		fixture.commitCount() != commitsBeforeClaim+3 {
+		t.Fatalf("same-generation competing claim was accepted: %#v", competing)
+	}
+	if err := second.MarkCredentialRefreshUncertain(
+		context.Background(),
+		*reacquired,
+		"provider_refresh_failed",
+		now.Add(5*time.Minute),
+	); err != nil {
+		t.Fatal(err)
+	}
+	afterFailure, err := second.ClaimCredentialRefresh(
+		context.Background(),
+		identity.IdentityID,
+		"refresh-claim",
+		now.Add(6*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterFailure.State != entity.CredentialRefreshClaimUncertain {
+		t.Fatalf("uncertain state was not durable: %#v", afterFailure)
+	}
+	snapshot, err := second.AdminSnapshot(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncertainEvents := 0
+	for _, event := range snapshot.Events {
+		if event.EventType == entity.AuditCredentialRefreshUncertain {
+			uncertainEvents++
+		}
+	}
+	if uncertainEvents != 1 {
+		t.Fatalf("expected one uncertain refresh event, got %d", uncertainEvents)
 	}
 }
 
@@ -597,9 +800,19 @@ func TestRotateEncryptionCoversEveryRecordClass(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	claim, err := oldStore.ClaimCredentialRefresh(
+		context.Background(),
+		oldStore.identityID("main", string(valueobject.ProviderGitHub), "42"),
+		"rotation-refresh",
+		now.Add(2*time.Minute),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := oldStore.ReplaceCredential(context.Background(), entity.CredentialRefresh{
 		IdentityID:         oldStore.identityID("main", string(valueobject.ProviderGitHub), "42"),
 		OperationID:        "rotation-refresh",
+		ClaimID:            claim.ClaimID,
 		ExpectedGeneration: 1,
 		Tokens: entity.TokenSet{
 			AccessToken:  "access-rotated",

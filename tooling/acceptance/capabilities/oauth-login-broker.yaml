@@ -49,6 +49,55 @@
           "Vercel deployment and production traffic"
         ]
       }
+    },
+    {
+      "id": "oauth-login-broker-native-login",
+      "domain": "oauth-login-broker",
+      "direction": "acceptance_validates_product",
+      "initial_proof_status": "UNPROVEN",
+      "features": [
+        "oauth-live-login"
+      ],
+      "required_gates": [
+        "oauth-login-broker-handoff-contract",
+        "oauth-login-broker-provider-identity"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src-tauri/src/application/oauth2/mod.rs",
+        "apps/mobile/src/gen/proto/domain/oauth/broker_bridge_pb.ts",
+        "apps/station/app/subserver/oauth/service.go",
+        "apps/station/frame/touch/auth/oauth_bridge.go",
+        "apps/oauth2-client/internal/interfaces/http/handler/oauth_handler.go",
+        "model/domain/oauth/broker_bridge.proto"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "OAuth Login Broker durable authorization and provider identity records",
+          "Station OAuth assertion consumption, provider binding, Actor, token, and session records",
+          "Desktop account registry and session vault"
+        ],
+        "surfaces": [
+          "Desktop OAuth account login",
+          "Desktop connector settings",
+          "/api/oauth/{provider}/{start|callback}"
+        ],
+        "proven_by": [
+          "oauth-login-broker-handoff-contract",
+          "oauth-login-broker-provider-identity"
+        ],
+        "proven_scope": [
+          "versioned canonical broker-to-Station assertion and fail-closed verification",
+          "receiver-bound, purpose-bound one-time Station assertion consumption",
+          "idempotent acknowledgement recovery and expired candidate cleanup",
+          "separate account-login and authenticated connector-link session semantics",
+          "provider denial routing and verified-email identity normalization"
+        ],
+        "unproven_scope": [
+          "live provider consent and callback delivery",
+          "live GitHub verified-primary email fallback",
+          "Vercel deployment and external native Desktop runtime"
+        ]
+      }
     }
   ]
 }

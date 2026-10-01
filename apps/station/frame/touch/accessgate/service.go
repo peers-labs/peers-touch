@@ -150,7 +150,8 @@ func ValidateStationPeerID(stationPeerID string) error {
 // current actionable gate of the same Station access attempt.
 func ValidateOAuthBinding(
 	ctx context.Context,
-	accessAttemptID, stationPeerID, gateID string,
+	accessAttemptID, stationPeerID, gateID, deviceID string,
+	lifecycleGeneration uint64,
 	actionType pb.AccessGateType,
 ) error {
 	if actionType != pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH {
@@ -163,8 +164,10 @@ func ValidateOAuthBinding(
 	if !ok {
 		return errAttemptNotFound
 	}
-	if attempt.StationPeerID != stationPeerID {
-		return fmt.Errorf("OAuth access attempt Station mismatch")
+	if attempt.StationPeerID != stationPeerID ||
+		attempt.DeviceID != strings.TrimSpace(deviceID) ||
+		attempt.LifecycleGeneration != lifecycleGeneration {
+		return fmt.Errorf("OAuth access attempt client binding mismatch")
 	}
 	decision, err := decisionAndPersist(ctx, attempt)
 	if err != nil {
@@ -194,7 +197,8 @@ func ValidateOAuthBinding(
 // re-evaluates all later Station-owned gates.
 func BindOAuthCandidate(
 	ctx context.Context,
-	accessAttemptID, stationPeerID, gateID string,
+	accessAttemptID, stationPeerID, gateID, deviceID string,
+	lifecycleGeneration uint64,
 	actorRef *actormodel.ActorRef,
 	username, email string,
 ) (*pb.AccessDecision, error) {
@@ -206,6 +210,8 @@ func BindOAuthCandidate(
 		accessAttemptID,
 		stationPeerID,
 		gateID,
+		deviceID,
+		lifecycleGeneration,
 		pb.AccessGateType_ACCESS_GATE_TYPE_AUTH_OAUTH,
 	); err != nil {
 		return nil, err

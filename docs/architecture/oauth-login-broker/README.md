@@ -1,7 +1,7 @@
 # OAuth Login Broker
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.3
 > **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 > **Module**: `apps/oauth2-client/`
@@ -16,12 +16,14 @@ This document set defines the standalone OAuth Login Broker deployed on Vercel:
 - provider identity, login audit, and encrypted credential persistence;
 - GitHub private-repository storage through a replaceable domain adapter;
 - PKCE, refresh-token handling, key rotation, and failure semantics;
+- native Desktop callback handoff and Station assertion verification;
 - a read-only, operator-only administration surface.
 
 This document set does not define:
 
-- Station Access Gate or Station session issuance;
-- Desktop or Mobile OAuth UI and deep-link ownership;
+- Station Access Gate policy semantics, which remain owned by
+  `station-access-lifecycle`;
+- Mobile OAuth UI and callback ownership;
 - provider application registration or provider account lifecycle;
 - a multi-tenant administration product;
 - production-scale database topology.
@@ -64,7 +66,8 @@ so a dedicated service or database can take over without changing OAuth use case
 | [integration.md](./integration.md) | Existing-route cutover and deployment configuration |
 | [delivery plan](./execution-plans/20260930-durable-oauth-login-broker/plan.md) | Completed durable broker delivery |
 | [hardening plan](./execution-plans/20260930-oauth-review-hardening/plan.md) | Completed source-backed review closure |
-| [final review remediation](./execution-plans/20260930-oauth-final-review-remediation/plan.md) | Open code-review closure |
+| [final review remediation](./execution-plans/20260930-oauth-final-review-remediation/plan.md) | Completed broker-local review closure |
+| [live login integration](./execution-plans/20261001-live-login-integration/plan.md) | Native Desktop, Station bridge, provider identity, refresh uncertainty, and live-test preparation |
 | [review 01](./reviews/review-01-product-architecture-plan.md) | Independent product, architecture, and plan review |
 
 ## 5. Upstream Sources
@@ -76,10 +79,12 @@ so a dedicated service or database can take over without changing OAuth use case
 
 ## 6. Current Status
 
-- Product: accepted for capabilities OLB-C01 through OLB-C09.
-- Architecture: accepted through decisions OLB-D01 through OLB-D10.
+- Product: accepted for capabilities OLB-C01 through OLB-C09 and OLB-C12
+  through OLB-C13.
+- Architecture: accepted through decisions OLB-D01 through OLB-D17.
 - Delivery: `OLB-20260930` and `OLB-HARDEN-20260930` are completed;
-  `OLB-FINAL-20260930` tracks final code-review remediation.
-- Proof: deterministic local source, HTTP, browser, and repository-fixture
-  evidence only; live provider, GitHub App, and Vercel deployment remain
-  unproven.
+  `OLB-FINAL-20260930` is completed; `OLB-LIVE-20261001` tracks the native
+  handoff and live-readiness closure.
+- Proof: broker-local deterministic evidence is proven. Native
+  Desktop-to-Station and isolated live provider/Vercel evidence remain
+  unproven until `OLB-LIVE-20261001` completes.

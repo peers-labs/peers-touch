@@ -1,7 +1,7 @@
 # OAuth Login Broker - Acceptance Matrix
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.2
 > **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
@@ -17,6 +17,8 @@
 - Tests and evidence must never contain production credentials or raw tokens.
 - Real Vercel deployment and live provider authorization remain unproven unless
   separately authorized and executed.
+- Desktop account-login proof requires the native receiver, broker, and Station
+  perspectives. A broker-only callback fixture cannot prove login.
 
 ## 2. Capability Crosswalk
 
@@ -31,6 +33,8 @@
 | OLB-C07 | OLB-J03 | OLB-D06 | unauthenticated requests fail; authenticated payload is sanitized | handler/browser tests |
 | OLB-C08 | OLB-J01/J02 | OLB-D07 | use cases run against memory and GitHub adapters unchanged | interface/contract tests |
 | OLB-C09 | OLB-J01 | OLB-D09 | unapproved redirects and unsigned production startup fail closed | config and HTTP negative tests |
+| OLB-C12 | OLB-J05 | OLB-D11-D13 | logged-out Desktop receives a Station-issued session only after a valid signed callback | native Desktop plus Station readback |
+| OLB-C13 | OLB-J01/J05 | OLB-D14 | private-email GitHub and no-email providers produce safe identities without unverified email linking | provider fixtures plus Station identity tests |
 
 ## 3. Gates
 
@@ -76,6 +80,9 @@
 - After a provider failure, the loser rechecks the same durable operation ID;
   an already committed winner is returned, while no-winner failures remain
   failures.
+- A durable refresh claim commits before the provider call. A retry observing
+  an unresolved claim does not call the provider and reports an explicit
+  uncertain/reauthorization outcome.
 
 ### OLB-G04: Operator Readback
 
@@ -126,6 +133,59 @@
 - Unknown keys and per-record failures are reported without leaking encrypted
   or decrypted payloads.
 
+### OLB-G07A: Desktop/Station Handoff Contract
+
+- Logged-out Desktop starts account login without an existing actor or token.
+- The broker accepts only the explicitly configured loopback callback template;
+  arbitrary localhost hosts, paths, ports, userinfo, and fragments are rejected.
+- The broker and Station produce and verify the same versioned canonical
+  assertion bytes.
+- Desktop rejects a callback whose signed receiver or purpose differs from the
+  active loopback attempt, and Station rejects replayed assertion IDs.
+- Station rejects device or lifecycle-generation values that do not match the
+  referenced Access Attempt.
+- Missing Station secret, stale timestamp, unsupported version, modified
+  identity field, and malformed signature all fail before actor/session
+  mutation.
+- The Station OAuth bridge route is registered and reachable without JWT while
+  retaining common public-route controls.
+- Desktop persists neither an active account nor an OAuth connection before
+  Station returns a valid session.
+- Provider denial reaches the transaction-owned Desktop receiver as a typed
+  failure, consumes the authorization transaction, and creates no Station or
+  Desktop session.
+- Authenticated connector linking cannot use the account-login path.
+- Provider usernames and display names that do not satisfy the Station handle
+  grammar are normalized to a stable provider-scoped handle before signup.
+- Lost acknowledgement responses preserve a durable local recovery record and
+  converge through polling or process restart; the recovery journal is
+  encrypted and owner-readable only.
+- Renderer timeout uses the native loopback expiry and requests cancellation
+  before presenting failure. Cancellation clears candidates that are waiting
+  on a later gate, while an already activated session wins a late cancellation
+  race and remains active.
+- Station startup and periodic sweeps revoke abandoned candidate sessions and
+  delete credential envelopes without request traffic.
+
+This contract is enforced by `oauth-login-broker-handoff-contract`. It is
+source and service evidence, not native Desktop proof.
+
+### OLB-G07B: Native Desktop Station Handoff
+
+- The exact-source native Tauri window starts from a logged-out state.
+- A non-production provider authorization traverses the isolated broker,
+  Desktop loopback receiver, Station Access Attempt, credential envelope,
+  local persistence, acknowledgement, and authenticated shell.
+- Restart restores the same actor only after acknowledgement recovery confirms
+  Station activation.
+- Timeout cancellation produces no late authenticated shell.
+- Evidence identifies the native runtime, source, broker, Station, provider,
+  account, and cleanup without secret values.
+
+OLB-G07B remains `UNPROVEN` until OLB-LIVE-04 runs through
+`pt-dev-runtime-handoff` against the dedicated `oauth2-client-test`
+profile. No local source Gate may claim it.
+
 ## 4. Required Runtime Cells
 
 | Cell | Required proof |
@@ -134,13 +194,18 @@
 | Local HTTP | start/callback across separate GitHub-backed adapters and read-only admin surface |
 | Fake GitHub API | GitHub App token, bounded response reads, truncated-tree traversal, ref/tree/blob/commit flow, CAS retry |
 | Vercel build shape | every route compiles as an independent function |
+| Native Desktop + Station | system-browser callback, signed assertion, Station session, local durable account activation |
+| Live test deployment | isolated GitHub data repository, Vercel deployment, real provider consent and denial |
 
 ## 5. Completion Claim
 
 `OAUTH_LOGIN_BROKER_ACCEPTED` requires OLB-G01, OLB-G02, OLB-G03A,
-OLB-G03B, OLB-G04, OLB-G05A, OLB-G05B, and OLB-G06, plus the registered
-`oauth-login-broker-contract` Gate, architecture governance validation, and
-the exact-source local HTTP journey.
+OLB-G03B, OLB-G04, OLB-G05A, OLB-G05B, OLB-G06, OLB-G07A, and OLB-G07B,
+plus the registered `oauth-login-broker-contract` Gate, architecture governance
+validation, and the exact-source local HTTP and native Desktop-to-Station
+journeys.
 
-The claim excludes live GitHub App installation, live provider consent, Vercel
-deployment, production scale, and migration of historical plaintext records.
+The local claim excludes Vercel deployment, production scale, and migration of
+historical plaintext records. Live GitHub App installation and GitHub/Google
+provider consent require separate evidence from the isolated
+`oauth2-client-test` environment; they do not prove the Native Desktop cell.

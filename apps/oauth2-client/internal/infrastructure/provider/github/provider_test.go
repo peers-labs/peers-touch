@@ -28,6 +28,9 @@ func TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":42,"login":"alice","name":"Alice","email":"alice@example.com"}`))
+		case "/user/emails":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"email":"alice@example.com","primary":true,"verified":true}]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -38,6 +41,7 @@ func TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet(t *testing.T) {
 		Authorize: server.URL + "/authorize",
 		Token:     server.URL + "/token",
 		User:      server.URL + "/user",
+		Emails:    server.URL + "/user/emails",
 	})
 	now := time.Date(2026, 9, 30, 1, 0, 0, 0, time.UTC)
 	provider.now = func() time.Time { return now }
@@ -45,7 +49,7 @@ func TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet(t *testing.T) {
 		ClientID:     "client",
 		ClientSecret: "provider-secret",
 		RedirectURI:  "https://broker.example/callback",
-		Scope:        "read:user",
+		Scope:        "read:user user:email",
 	}
 	authorizeURL, err := provider.AuthorizeURL("state", "verifier", cfg)
 	if err != nil {
@@ -64,6 +68,8 @@ func TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet(t *testing.T) {
 		t.Fatalf("exchange omitted verifier: %v", tokenForm)
 	}
 	if grant.Identity.ProviderUserID != "42" ||
+		grant.Identity.Email != "alice@example.com" ||
+		!grant.Identity.EmailVerified ||
 		grant.Tokens.AccessToken != "access-secret" ||
 		grant.Tokens.RefreshToken != "refresh-secret" ||
 		grant.Tokens.TokenType != "bearer" ||
@@ -71,6 +77,91 @@ func TestAuthorizeAndExchangeUsePKCEAndReturnTokenSet(t *testing.T) {
 		grant.Tokens.AccessExpiresAt == nil ||
 		!grant.Tokens.AccessExpiresAt.Equal(now.Add(time.Hour)) {
 		t.Fatalf("unexpected grant: %#v", grant)
+	}
+}
+
+func TestExchangeUsesVerifiedPrimaryEmailWhenProfileEmailIsPrivate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/token":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"access-secret","token_type":"bearer","scope":"read:user user:email"}`))
+		case "/user":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":9007199254740993,"login":"alice","name":"Alice","email":null}`))
+		case "/user/emails":
+			if r.Header.Get("Authorization") != "Bearer access-secret" {
+				t.Fatalf("unexpected authorization header")
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[
+				{"email":"unverified@example.com","primary":true,"verified":false},
+				{"email":"verified@example.com","primary":false,"verified":true},
+				{"email":"primary@example.com","primary":true,"verified":true}
+			]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewWithEndpoints(server.Client(), Endpoints{
+		Token:  server.URL + "/token",
+		User:   server.URL + "/user",
+		Emails: server.URL + "/user/emails",
+	})
+	grant, err := provider.ExchangeCode(
+		context.Background(),
+		"code",
+		"verifier",
+		port.ProviderConfig{
+			ClientID:     "client",
+			ClientSecret: "provider-secret",
+			RedirectURI:  "https://broker.example/callback",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grant.Identity.ProviderUserID != "9007199254740993" ||
+		grant.Identity.Email != "primary@example.com" ||
+		!grant.Identity.EmailVerified {
+		t.Fatalf("verified primary email was not selected: %#v", grant.Identity)
+	}
+}
+
+func TestExchangeOmitsEmailWhenGitHubReturnsNoVerifiedAddress(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/token":
+			_, _ = w.Write([]byte(`{"access_token":"access-secret","token_type":"bearer"}`))
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":42,"login":"alice","email":null}`))
+		case "/user/emails":
+			_, _ = w.Write([]byte(`[{"email":"unverified@example.com","primary":true,"verified":false}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewWithEndpoints(server.Client(), Endpoints{
+		Token:  server.URL + "/token",
+		User:   server.URL + "/user",
+		Emails: server.URL + "/user/emails",
+	})
+	grant, err := provider.ExchangeCode(
+		context.Background(),
+		"code",
+		"verifier",
+		port.ProviderConfig{ClientID: "client", ClientSecret: "secret"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grant.Identity.Email != "" || grant.Identity.EmailVerified {
+		t.Fatalf("unverified email was trusted: %#v", grant.Identity)
 	}
 }
 
