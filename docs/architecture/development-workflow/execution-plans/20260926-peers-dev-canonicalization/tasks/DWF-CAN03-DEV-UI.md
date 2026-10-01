@@ -17,8 +17,11 @@
   "runtimeClass": "browser",
   "writeSet": [
     "apps/dev",
+    "tooling/acceptance/environments/peers-dev-fixture-browser.yaml",
     "tooling/acceptance/gates.yaml",
-    "tooling/acceptance/gates/dev"
+    "tooling/acceptance/gates/dev",
+    "tooling/acceptance/provisioners/__init__.py",
+    "tooling/acceptance/provisioners/peers_dev_fixture_browser.py"
   ],
   "readSet": [
     "tooling/scripts/local-dev",
