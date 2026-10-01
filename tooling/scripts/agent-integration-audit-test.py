@@ -930,6 +930,36 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertTrue(legacy.exists())
         self.assertTrue(action_store.exists())
 
+    def test_hard_cut_records_blocked_before_a_failed_purge(self) -> None:
+        self.seed_live_workflow_state("installer-authorized")
+        external = self.root / "external-conversations"
+        external.mkdir()
+        (self.machine / "conversations").symlink_to(
+            external,
+            target_is_directory=True,
+        )
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("LEGACY_BINDING_RESET_INVALID", completed.stdout)
+        receipt = next(
+            self.machine.glob("workspaces/*/workflow/agent-integration.json")
+        )
+        receipt_value = json.loads(receipt.read_text(encoding="utf-8"))
+        self.assertEqual(receipt_value["state"], "BLOCKED")
+        self.assertIn(
+            "LEGACY_BINDING_RESET_INVALID",
+            receipt_value["callbackProof"]["code"],
+        )
+
     def test_trae_audit_rejects_missing_pre_tool_use_matcher(self) -> None:
         installed = self.install_trae_fixture()
         self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)

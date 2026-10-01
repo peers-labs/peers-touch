@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-01
-covered_docs_hash: 308331ec090844d3c905c2298f6b3a49bd883202ac911948e36d52a5144ee6cf
+covered_docs_hash: caaf23bdcbadda92ec919bd0519604e42cbf263a720197bc6e6241ecc7e3fef3
 
 covered_docs:
   - AGENTS.md
@@ -35,12 +35,15 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 
 Owner-rooted workflow binding review now additionally requires atomic OWNER
 publication, exact current Development Session validation before child
-assignment, latest-per-action Completion Review selection, persisted
-PreCompact/PostCompact lineage continuity, and a one-time installer grant tied
-to the exact live OWNER `skills` action. `SKILL.md` and the owner-rooted
-invariant now carry these checks; dedicated workflow and installer regressions
-cover each failure mode. Completion Review schema v2 also uses a new canonical
-namespace, so pre-hard-cut requests are preserved but never loaded or migrated.
+assignment, one atomic execution-session claim per assignment,
+latest-per-action Completion Review selection, persisted PreCompact/PostCompact
+lineage continuity, and a one-time installer grant tied to the exact live OWNER
+`skills` action. Installer lifecycle state must be published before destructive
+reset and reset failure must remain observable as `BLOCKED`. `SKILL.md` and the
+owner-rooted invariant now carry these checks; dedicated workflow and installer
+regressions cover each failure mode. Completion Review schema v2 also uses a
+new canonical namespace, so pre-hard-cut requests are preserved but never
+loaded or migrated.
 
 Owner-rooted workflow binding replaced peer conversation bindings. Review now
 requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt

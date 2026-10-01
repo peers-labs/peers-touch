@@ -58,6 +58,15 @@ const ASSIGNMENT_KEYS = new Set([
   'rootBindingDigest',
   'workflowSessionId',
 ]);
+const ASSIGNMENT_CLAIM_KEYS = new Set([
+  'assignmentDigest',
+  'digest',
+  'executionSessionHash',
+  'host',
+  'kind',
+  'rootBindingDigest',
+  'workflowSessionId',
+]);
 const CHILD_KEYS = new Set([
   'assignmentDigest',
   'boundAt',
@@ -451,6 +460,32 @@ export function validateWorkflowBindingAssignment(value, expected = {}) {
     fail(
       'WORKFLOW_BINDING_ASSIGNMENT_INVALID',
       'Workflow binding assignment fields are invalid',
+    );
+  }
+  return value;
+}
+
+function validateWorkflowAssignmentClaim(value, expected = {}) {
+  validateDigestRecord(
+    value,
+    ASSIGNMENT_CLAIM_KEYS,
+    'peers-touch-workflow-assignment-claim',
+    'WORKFLOW_BINDING_ASSIGNMENT_CLAIM_INVALID',
+  );
+  if (
+    !SHA256.test(value.assignmentDigest) ||
+    !SHA256.test(value.rootBindingDigest) ||
+    !HOSTS.has(value.host) ||
+    !SHA256.test(value.executionSessionHash) ||
+    !IDENTIFIER.test(value.workflowSessionId) ||
+    (expected.assignmentDigest !== undefined &&
+      expected.assignmentDigest !== value.assignmentDigest) ||
+    (expected.rootBindingDigest !== undefined &&
+      expected.rootBindingDigest !== value.rootBindingDigest)
+  ) {
+    fail(
+      'WORKFLOW_BINDING_ASSIGNMENT_CLAIM_INVALID',
+      'Workflow assignment claim fields are invalid',
     );
   }
   return value;
@@ -900,6 +935,44 @@ export function readWorkflowBindingAssignmentByDigest(
   return matches[0] ?? null;
 }
 
+function assignmentClaimPath(
+  owner,
+  assignmentDigest,
+  options = {},
+  create = true,
+) {
+  if (!SHA256.test(assignmentDigest)) {
+    fail(
+      'WORKFLOW_BINDING_ASSIGNMENT_CLAIM_INVALID',
+      'Workflow assignment claim digest is invalid',
+    );
+  }
+  const directory = path.join(
+    ownerDirectory(owner.host, owner.rootChatHash, options, create),
+    'assignment-claims',
+  );
+  if (create) {
+    ensurePrivateDirectory(directory);
+  } else if (existsSync(directory)) {
+    assertPrivateDirectory(directory);
+  }
+  return path.join(directory, `${assignmentDigest}.json`);
+}
+
+function readWorkflowAssignmentClaim(owner, assignmentDigest, options = {}) {
+  const file = assignmentClaimPath(owner, assignmentDigest, options, false);
+  const value = readOwnedJson(
+    file,
+    'WORKFLOW_BINDING_ASSIGNMENT_CLAIM_INVALID',
+  );
+  return value === null
+    ? null
+    : validateWorkflowAssignmentClaim(value, {
+        assignmentDigest,
+        rootBindingDigest: owner.digest,
+      });
+}
+
 export function readWorkflowChildBinding(
   rootBindingDigest,
   host,
@@ -940,10 +1013,49 @@ export function claimWorkflowChild(
       'Child assignment is expired or its owner is released',
     );
   }
+  const childExecutionSessionHash = executionSessionHash(
+    host,
+    executionSessionId,
+  );
+  const claimUnsigned = {
+    kind: 'peers-touch-workflow-assignment-claim',
+    assignmentDigest: assignment.digest,
+    rootBindingDigest: owner.digest,
+    host,
+    executionSessionHash: childExecutionSessionHash,
+    workflowSessionId: assignment.workflowSessionId,
+  };
+  const claim = { ...claimUnsigned, digest: digest(claimUnsigned) };
+  validateWorkflowAssignmentClaim(claim, {
+    assignmentDigest: assignment.digest,
+    rootBindingDigest: owner.digest,
+  });
+  try {
+    publishCreateOnce(
+      assignmentClaimPath(owner, assignment.digest, options),
+      claim,
+      (value) =>
+        validateWorkflowAssignmentClaim(value, {
+          assignmentDigest: assignment.digest,
+          rootBindingDigest: owner.digest,
+        }),
+    );
+  } catch (error) {
+    if (
+      error instanceof WorkflowBindingError &&
+      error.code === 'WORKFLOW_BINDING_IMMUTABLE'
+    ) {
+      fail(
+        'WORKFLOW_BINDING_ASSIGNMENT_CLAIMED',
+        'Workflow assignment already belongs to another execution session',
+      );
+    }
+    throw error;
+  }
   const unsigned = {
     kind: 'peers-touch-workflow-child-binding',
     host,
-    executionSessionHash: executionSessionHash(host, executionSessionId),
+    executionSessionHash: childExecutionSessionHash,
     role: assignment.role,
     assignmentDigest: assignment.digest,
     rootBindingDigest: owner.digest,
@@ -1289,8 +1401,17 @@ export function readWorkflowBindingContextByActor(actor, options = {}) {
     binding.assignmentDigest,
     options,
   );
+  const assignmentClaim = readWorkflowAssignmentClaim(
+    owner,
+    binding.assignmentDigest,
+    options,
+  );
   if (
     assignment === null ||
+    assignmentClaim === null ||
+    assignmentClaim.host !== binding.host ||
+    assignmentClaim.executionSessionHash !== binding.executionSessionHash ||
+    assignmentClaim.workflowSessionId !== binding.workflowSessionId ||
     actor.rootBindingDigest !== binding.rootBindingDigest ||
     actor.parentBindingDigest !== binding.parentBindingDigest ||
     actor.assignmentDigest !== binding.assignmentDigest ||

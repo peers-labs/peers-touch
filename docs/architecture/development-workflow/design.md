@@ -264,13 +264,15 @@ owner. Cursor and Codex each use their one documented root-chat field. Generic
 alias probing and process-global environment fallbacks are forbidden.
 
 A WORKER or REVIEWER exists only after the OWNER creates a bounded assignment.
-The child claims that assignment with its execution-session hash; the resulting
-child binding records `rootBindingDigest`, `parentBindingDigest`, role,
-Development Session identity, lease, and terminal receipt. Unassigned internal
-sessions inherit the OWNER projection for admission but cannot claim worker or
-reviewer independence. Assignment creation first validates that
-`active-work.json` and the canonical `session.json` identify the same current
-workspace, Work Item, Plan, Task, Session, and Development state.
+The child first atomically publishes one assignment-keyed claim for its
+execution-session hash, then publishes the child binding. Only the winning
+execution session can retry or use that assignment. The resulting child binding
+records `rootBindingDigest`, `parentBindingDigest`, role, Development Session
+identity, lease, and terminal receipt. Unassigned internal sessions inherit the
+OWNER projection for admission but cannot claim worker or reviewer independence.
+Assignment creation first validates that `active-work.json` and the canonical
+`session.json` identify the same current workspace, Work Item, Plan, Task,
+Session, and Development state.
 
 The Kernel distinguishes identity from action:
 
@@ -286,10 +288,10 @@ The Kernel distinguishes identity from action:
 
 The Kernel does not mutate Plan, Task, declaration, Development Session,
 active-work, runtime, or evidence state. Its machine-local writes are limited
-to atomically published OWNER/child bindings, assignments, child terminal
-receipts, one current compaction-lineage receipt, exact installer-action grants,
-the latest rendered Anchor receipt, and OWNER release receipt. OWNER liveness
-is never inferred from a generic TTL. Child liveness is
+to atomically published OWNER bindings, assignments, assignment claims, child
+bindings, child terminal receipts, one current compaction-lineage receipt,
+exact installer-action grants, the latest rendered Anchor receipt, and OWNER
+release receipt. OWNER liveness is never inferred from a generic TTL. Child liveness is
 `ASSIGNED | LEASED | TERMINAL`; an expired or terminal child is diagnostic
 history and cannot participate in current ownership or Completion Review
 selection.
@@ -314,10 +316,11 @@ workspace root. Ambiguous or target-less selection returns
 `WORKTREE_SELECTION_REQUIRED`. Changing the workspace descriptor or writing
 that shared bootstrap is a separately declared cross-root rollout operation.
 
-This is a hard cut. Rollout first proves no live declaration/action, then
-deletes the old conversation and workflow-action stores and installs the
-current bootstrap. No old binding/action schema reader, importer, alias, or
-dual-write path exists.
+This is a hard cut. Rollout first proves no live declaration/action, consumes
+the exact installer grant, publishes `INSTALLING`, then deletes the old
+conversation and workflow-action stores and installs the current bootstrap.
+Any reset or installation failure publishes `BLOCKED`. No old binding/action
+schema reader, importer, alias, or dual-write path exists.
 
 ## 5. Plan Package Contract
 

@@ -19,7 +19,15 @@
     "docs/architecture/development-workflow/execution-plans/20261001-owner-rooted-workflow-binding",
     "tooling/acceptance/gates/dev",
     "tooling/scripts/agent-integration-audit-test.py",
-    "tooling/scripts/agent-integration-control.py"
+    "tooling/scripts/agent-integration-control.py",
+    "tooling/scripts/local-dev/workflow-binding-store.mjs",
+    "tooling/scripts/local-dev/workflow-binding-store.test.mjs",
+    "docs/architecture/development-workflow/design.md",
+    "docs/architecture/development-workflow/data-model.md",
+    "docs/architecture/development-workflow/host-neutral-agent-integration.md",
+    "docs/architecture/development-workflow/integration.md",
+    "docs/knowledge/invariants/owner-rooted-workflow-binding.md",
+    "tooling/skills/pt-github-review"
   ],
   "readSet": [
     "AGENTS.md",
@@ -86,6 +94,8 @@
   `ad36db87a1b5983dd5ec8309638b1bbdaa178d6c3d62d3690e9a7c8e24f5ba2c`.
 - The installer must require and consume an exact one-time OWNER `skills`
   action grant; zero live actions are not admissible.
+- One assignment must have exactly one atomic execution-session claimant, and
+  installer lifecycle state must precede destructive hard-cut cleanup.
 - Completion requires fresh full-range Gap Detector, code-structure, quality,
   seven-Gate, and Plan-scoped independent review evidence.
 - Actual shared-workspace bootstrap installation is not claimed by this Task.

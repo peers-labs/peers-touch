@@ -31,9 +31,11 @@ process-global identity fallbacks are forbidden.
 WORKER and REVIEWER sessions exist only through a create-once assignment that
 records role, root and parent binding digests, Development Session identity,
 operation identity, and lease. Assignment creation validates the exact current
-active-work and Development Session records. Child claim hashes the
-execution-session ID. Child liveness comes from assignment, lease, and terminal
-receipts. OWNER liveness never comes from a generic TTL.
+active-work and Development Session records. Child claim atomically publishes
+one assignment-keyed owner record before the child binding; only its winning
+execution-session hash may retry or use the assignment. Child liveness comes
+from assignment, lease, and terminal receipts. OWNER liveness never comes from
+a generic TTL.
 
 Every hook, Action Receipt, status, readiness, handoff, Stop, worker result,
 and Completion Review consumes one canonical `BindingProjection`. The
@@ -64,7 +66,9 @@ Rollout is a hard cut: after proving the workflow idle, delete prior
 conversation and workflow-action stores before installing the current
 bootstrap. No legacy reader, importer, alias, or dual writer is allowed.
 The sole live OWNER `skills` action is admissible only with its create-once
-Kernel grant, which the installer atomically consumes exactly once.
+Kernel grant, which the installer atomically consumes exactly once. Zero live
+actions are denied. After grant consumption, the installer persists
+`INSTALLING` before destructive reset and records `BLOCKED` if reset fails.
 
 ## Why this is non-negotiable
 
@@ -82,6 +86,7 @@ authority because a timer elapsed.
   tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs` passes.
 - TRAE accepts `chat_session_id`, never `session_id` alone as OWNER identity.
 - One OWNER plus WORKER and REVIEWER children retain exact root/parent lineage.
+- Concurrent execution sessions cannot claim the same assignment.
 - Assignment creation rejects a missing or non-current Development Session.
 - Interrupted and concurrent OWNER publication leaves one valid immutable file.
 - Expired and terminal children are excluded from current projections.
@@ -89,7 +94,9 @@ authority because a timer elapsed.
 - A FINISHED review action cannot authorize work through an older receipt.
 - Pre-hard-cut Completion Review records cannot block current status or review.
 - Compact restoration fails when any persisted lineage field differs.
-- A seeded or already-consumed installer action has no rollout authority.
+- A missing, seeded, or already-consumed installer action has no rollout
+  authority.
+- Failed destructive reset leaves a `BLOCKED` installation receipt.
 - BeforePrompt injects role, lineage, release, execution, subject, tool, and
   target roots; wrong-binding status/final claims fail closed.
 - Sibling-worktree reads pass and writes fail with
