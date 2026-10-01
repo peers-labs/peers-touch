@@ -62,7 +62,6 @@ class WorkItemProjectionTest(unittest.TestCase):
     def test_w12a_projections_bind_explicit_parent_task(self) -> None:
         cases = (
             ("W12A", "sc-dj-mobile-matrix", "W12A"),
-            ("W12B", "sc-dj-mobile-matrix", "W12B"),
             ("W12C", "sc-dj-runtime-manifest-v3", "W12C"),
             ("W12D", "sc-dj-canonical-schema-activation", "W12D"),
             ("W12A-FOUR", "sc-dj-canonical-schema-activation", "W12D"),
@@ -96,20 +95,10 @@ class WorkItemProjectionTest(unittest.TestCase):
                 ),
             ),
             (
-                "W12B",
-                "sc-dj-mobile-matrix",
-                (
-                    "shared-read:apps/desktop/src/acceptance/moments",
-                    "shared-read:docs/architecture/social",
-                    "shared-read:packages/secure-content-core",
-                ),
-            ),
-            (
                 "W12C",
                 "sc-dj-runtime-manifest-v3",
                 (
                     "shared-read:apps/desktop",
-                    "shared-read:apps/mobile",
                     "shared-read:apps/station",
                 ),
             ),
@@ -119,7 +108,6 @@ class WorkItemProjectionTest(unittest.TestCase):
                 (
                     "shared-read:apps/desktop",
                     "shared-read:apps/dev",
-                    "shared-read:apps/mobile",
                     "shared-read:apps/station",
                     "shared-read:docs/architecture",
                     "shared-read:tooling",
@@ -136,6 +124,57 @@ class WorkItemProjectionTest(unittest.TestCase):
                 )
                 for claim in claims:
                     self.assertIn(claim, projection.source_claim_arguments)
+
+    def test_desktop_usability_workstreams_exclude_other_product_runtimes(
+        self,
+    ) -> None:
+        forbidden_journeys = {
+            "sc-dj-browser-private-boundary",
+            "sc-dj-mobile-matrix",
+            "sc-dj-chat-attachment-atomic",
+            "sc-dj-chat-attachment-mobile",
+            "sc-dj-chat-revalidation",
+            "sc-dj-hardcut-regression",
+            "sc-dj-authorized-reset",
+            "sc-dj-acceptance-promotion",
+        }
+        forbidden_runtime_markers = (
+            "browser",
+            "ios",
+            "android",
+            "chat",
+            "final-cut",
+        )
+        for workstream, journey in (
+            ("W12C", "sc-dj-runtime-manifest-v3"),
+            ("W12D", "sc-dj-canonical-schema-activation"),
+            ("W7", "sc-dj-desktop-pilot"),
+            ("W8", "sc-dj-social-expansion"),
+        ):
+            with self.subTest(workstream=workstream):
+                projection = work_item.load_projection(
+                    MANIFEST,
+                    workstream=workstream,
+                    journey=journey,
+                    repo_root=REPO_ROOT,
+                )
+                self.assertFalse(
+                    any(
+                        claim.startswith("shared-read:apps/mobile")
+                        or claim.startswith("exclusive-write:apps/mobile")
+                        or "messaging-platform" in claim
+                        or "gates/mobile" in claim
+                        for claim in projection.source_claim_arguments
+                    )
+                )
+                self.assertNotIn(projection.journey_id, forbidden_journeys)
+                self.assertFalse(
+                    any(
+                        marker in claim
+                        for marker in forbidden_runtime_markers
+                        for claim in projection.runtime_claim_arguments
+                    )
+                )
 
     def test_w12d_projection_owns_the_source_freeze_contract(self) -> None:
         projection = work_item.load_projection(
@@ -244,63 +283,10 @@ class WorkItemProjectionTest(unittest.TestCase):
                     )
                 )
 
-    def test_loads_w2_source_and_single_suite_runtime_owner(self) -> None:
-        source = work_item.load_projection(
-            MANIFEST,
-            workstream="W2A",
-            journey=None,
-            repo_root=REPO_ROOT,
-        )
-        suite = work_item.load_projection(
-            MANIFEST,
-            workstream="W2",
-            journey="sc-dj-chat-attachment-atomic",
-            repo_root=REPO_ROOT,
-        )
-        mobile_journey = work_item.load_projection(
-            MANIFEST,
-            workstream="W2",
-            journey="sc-dj-chat-attachment-mobile",
-            repo_root=REPO_ROOT,
-        )
-
-        self.assertEqual("secure-content-w2a", source.work_item_id)
-        self.assertEqual("W2A", source.task_id)
-        self.assertEqual((), source.runtime_claim_arguments)
-        self.assertIn(
-            "exclusive-write:packages/secure-content-core",
-            source.source_claim_arguments,
-        )
-        self.assertEqual("secure-content-w2", suite.work_item_id)
-        self.assertEqual("W2", suite.task_id)
-        self.assertEqual(suite.work_item_id, mobile_journey.work_item_id)
-        self.assertEqual(
-            suite.runtime_claim_arguments,
-            mobile_journey.runtime_claim_arguments,
-        )
-        self.assertIn(
-            "exclusive:fixture:secure-content-chat-desktop",
-            suite.runtime_claim_arguments,
-        )
-        self.assertIn(
-            "exclusive:fixture:mobile-ios-simulator-native",
-            suite.runtime_claim_arguments,
-        )
-        self.assertNotIn(
-            "exclusive:station.deploy:station-four",
-            suite.runtime_claim_arguments,
-        )
-
     def test_product_suites_attach_without_station_deploy_ownership(self) -> None:
         cases = (
             ("W7", "sc-dj-desktop-pilot"),
             ("W8", "sc-dj-social-expansion"),
-            ("W9", "sc-dj-mobile-matrix"),
-            ("W2", "sc-dj-chat-attachment-atomic"),
-            ("W10", "sc-dj-chat-revalidation"),
-            ("W11", "sc-dj-hardcut-regression"),
-            ("W12", "sc-dj-authorized-reset"),
-            ("W13", "sc-dj-acceptance-promotion"),
         )
         for workstream, journey in cases:
             with self.subTest(workstream=workstream):
@@ -316,21 +302,6 @@ class WorkItemProjectionTest(unittest.TestCase):
                         for claim in projection.runtime_claim_arguments
                     )
                 )
-
-        acceptance = work_item.load_projection(
-            MANIFEST,
-            workstream="W13",
-            journey="sc-dj-acceptance-promotion",
-            repo_root=REPO_ROOT,
-        )
-        self.assertIn(
-            "shared:station.connect:four",
-            acceptance.runtime_claim_arguments,
-        )
-        self.assertIn(
-            "exclusive:fixture:secure-content-acceptance",
-            acceptance.runtime_claim_arguments,
-        )
 
     def test_rejects_unknown_fields_path_escape_and_runtime_kind(self) -> None:
         base = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
@@ -388,7 +359,21 @@ class WorkItemProjectionTest(unittest.TestCase):
             runtime_manifest.source_claim_arguments,
         )
 
-        for retired_workstream in ("W8S", "W9S"):
+        for retired_workstream in (
+            "W2A",
+            "W2",
+            "W2D",
+            "W8S",
+            "W9S",
+            "W9",
+            "W10",
+            "W11",
+            "W12",
+            "W12B",
+            "W12F-FOUR",
+            "W12F-FIVEARM",
+            "W13",
+        ):
             with self.subTest(workstream=retired_workstream):
                 with self.assertRaisesRegex(
                     work_item.ManifestError,
@@ -401,38 +386,15 @@ class WorkItemProjectionTest(unittest.TestCase):
                         repo_root=REPO_ROOT,
                     )
 
-        aggregate = work_item.load_projection(
-            MANIFEST,
-            workstream="W12",
-            journey="sc-dj-authorized-reset",
-            repo_root=REPO_ROOT,
-        )
-        self.assertEqual(
-            aggregate.authorization["runtime"]["destructiveResetScopes"],
-            [],
-        )
-        self.assertFalse(
-            any(
-                ":station.reset:" in claim
-                for claim in aggregate.runtime_claim_arguments
-            )
-        )
-
         for workstream, scope in (
             ("W12A-FOUR", "station-four-social-private"),
             ("W12A-FIVEARM", "station-five-arm-social-private"),
-            ("W12F-FOUR", "station-four-social-private"),
-            ("W12F-FIVEARM", "station-five-arm-social-private"),
         ):
             with self.subTest(workstream=workstream):
                 authorized = work_item.load_projection(
                     MANIFEST,
                     workstream=workstream,
-                    journey=(
-                        "sc-dj-canonical-schema-activation"
-                        if workstream.startswith("W12A")
-                        else "sc-dj-authorized-reset"
-                    ),
+                    journey="sc-dj-canonical-schema-activation",
                     repo_root=REPO_ROOT,
                 )
                 self.assertEqual(
