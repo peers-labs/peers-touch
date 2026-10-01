@@ -410,6 +410,12 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
         ...(overrides.sourceArtifact ?? {}),
       })
     : null;
+  const genericStaticArtifact = overrides.genericStaticArtifact
+    ? writeArtifact(gateId, runId, 'reports/static.json', {
+        artifactKind: 'acceptance-plan',
+        status: 'PASS',
+      })
+    : null;
   const manifestRef = runtimeEvidence
     ? writeArtifact(
         gateId,
@@ -451,6 +457,9 @@ async function commitStandardizedFunctionalPass(scope, overrides = {}) {
           evidenceGateId: gateId,
           evidenceStatus: 'PASS',
         }
+      : {}),
+    ...(genericStaticArtifact
+      ? { sourceArtifact: genericStaticArtifact }
       : {}),
     ...(runtimeEvidence
       ? {
@@ -1026,6 +1035,25 @@ test('static functional result accepts and seals an emitted acceptance report', 
         (artifact) => artifact.reference.path === 'reports/gate.json',
       ),
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('static functional result accepts a generic source artifact without evidence claims', async () => {
+  const scope = fixture({ gates: ['chat-gate'] });
+  try {
+    await start(scope);
+    await transition(scope, 'IMPLEMENTING');
+    await transition(scope, 'FOCUSED_CHECKING');
+    await transition(scope, 'FOCUSED_PASS', {
+      verification: verification('SOURCE_CHECK', 'PASS'),
+    });
+    await transition(scope, 'FUNCTIONAL_RUNNING');
+    const committed = await commitFunctionalPass(scope, {
+      genericStaticArtifact: true,
+    });
+    assert.equal(committed.state.state, 'FUNCTIONAL_PASS');
   } finally {
     scope.close();
   }
