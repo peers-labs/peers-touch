@@ -12,7 +12,8 @@
         "oauth-login-broker-durable-login",
         "oauth-login-broker-refresh-idempotency",
         "oauth-login-broker-key-rotation",
-        "oauth-login-broker-operator"
+        "oauth-login-broker-operator",
+        "oauth2-client-live-api-repository"
       ],
       "synthetic_paths": [
         "apps/oauth2-client/internal/application/oauth/usecase/handle_callback.go",
@@ -35,17 +36,17 @@
           "oauth-login-broker-durable-login",
           "oauth-login-broker-refresh-idempotency",
           "oauth-login-broker-key-rotation",
-          "oauth-login-broker-operator"
+          "oauth-login-broker-operator",
+          "oauth2-client-live-api-repository"
         ],
         "proven_scope": [
           "cross-instance durable OAuth completion and replay rejection",
           "provider refresh token retention and duplicate-operation convergence",
           "full-prefix encrypted-record key rotation",
-          "authenticated token-free operator HTML and JSON"
+          "authenticated token-free operator HTML and JSON",
+          "live GitHub and Google identity readback from encrypted GitHub repository records"
         ],
         "unproven_scope": [
-          "live provider consent",
-          "live GitHub App installation",
           "Vercel deployment and production traffic"
         ]
       }

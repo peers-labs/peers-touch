@@ -42,13 +42,13 @@
     },
     {
       "id": "olb-live-oauth2-acceptance",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate oauth-login-broker-durable-login --gate oauth-login-broker-refresh-idempotency --gate oauth-login-broker-key-rotation --gate oauth-login-broker-operator",
+      "command": "OAUTH2_CLIENT_TEST_ENV_FILE=../env/peers-touch/oauth2-client-test/runtime.env python3 tooling/scripts/acceptance-run.py --gate oauth-login-broker-durable-login --gate oauth-login-broker-refresh-idempotency --gate oauth-login-broker-key-rotation --gate oauth-login-broker-operator --gate oauth2-client-live-api-repository --gate oauth-login-broker-architecture --gate oauth-login-broker-contract",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [
     "All oauth2-client race-enabled tests pass",
-    "The four OAuth2 durability, refresh, rotation, and operator Gates are DONE and PROVEN",
+    "The OAuth2 durability, refresh, rotation, operator, architecture, contract, and live repository Gates are DONE and PROVEN",
     "Live GitHub and Google authorization callbacks return normalized signed identity data",
     "Transaction, identity, credential, refresh-operation, and audit records remain encrypted in the private GitHub repository",
     "The env handoff lists required variable names and probes without secret values"

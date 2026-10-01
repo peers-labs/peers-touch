@@ -133,6 +133,20 @@
 - Unknown keys and per-record failures are reported without leaking encrypted
   or decrypted payloads.
 
+### OLB-G06A: Live API And Repository
+
+- GitHub and Google authorization starts use HTTPS authorization endpoints,
+  PKCE S256, opaque state, exact callback URIs, and the accepted scopes.
+- Non-GET API requests return `405` with `Allow: GET`; callbacks containing
+  both `code` and `error` fail with `invalid_callback_result`.
+- A fresh broker process reads the real GitHub and Google identities from the
+  private GitHub repository through the configured GitHub App.
+- Transaction, identity, credential, refresh-operation, and audit paths exist
+  only as authenticated encrypted envelopes under the active key.
+- A refresh claim is visible to another store instance, cannot be acquired
+  twice, and can be released and reacquired without exposing its operation ID.
+- A second live rotation pass reports zero rewritten records.
+
 ### OLB-G07A: Desktop/Station Handoff Contract
 
 - Logged-out Desktop starts account login without an existing actor or token.
@@ -200,9 +214,9 @@ profile. No local source Gate may claim it.
 ## 5. Completion Claim
 
 `OAUTH2_CLIENT_ACCEPTED` requires OLB-G01, OLB-G02, OLB-G03A, OLB-G03B,
-OLB-G04, OLB-G05A, OLB-G05B, and OLB-G06 through the four registered
-oauth2-client durability, refresh, rotation, and operator Gates. It does not
-claim Desktop or Station behavior.
+OLB-G04, OLB-G05A, OLB-G05B, OLB-G06, and OLB-G06A through the registered
+oauth2-client durability, refresh, rotation, operator, architecture, contract,
+and live repository Gates. It does not claim Desktop or Station behavior.
 
 `OAUTH_LOGIN_BROKER_NATIVE_ACCEPTED` additionally requires OLB-G07A and
 OLB-G07B, the registered architecture and contract Gates, and the exact-source
