@@ -199,6 +199,14 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertTrue(W8_RUNTIME_REUSE.require_attach_only_scenarios)
         self.assertTrue(W8_RUNTIME_REUSE.require_receiver_visible_proof)
         self.assertFalse(W8_RUNTIME_REUSE.allow_client_replacement)
+        self.assertEqual(
+            {"private-comment"},
+            {
+                spec.scenario_id
+                for spec in W8_SCENARIOS
+                if spec.click_content
+            },
+        )
 
     def test_w8_suite_provisions_before_attach_only_scenario_loop(self) -> None:
         source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
