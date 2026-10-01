@@ -1241,14 +1241,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         slot: int,
         profile_env: dict[str, str],
     ) -> RuntimeManifest:
-        if profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
-            raise BlockedError(
-                reason=(
-                    "P12 external runtime actor Fixture reset requires "
-                    "CHAT_ACCEPTANCE_RESET=1 in Profile two"
-                ),
-                resource="fixture-reset:authorization",
-            )
         if not profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", ""):
             raise BlockedError(
                 reason=(
@@ -1257,19 +1249,28 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 ),
                 resource="profile:CHAT_NATIVE_DEMO_PASSWORD",
             )
-        _, _, actor_ref = produce_actor_manifest(
-            environment_id=self.environment_id,
-            run_id=manifest.run_id,
-            station_url=station_url,
-            deployment_environment=deployment_environment,
-            roles=("bob",),
-            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
-            reset_authorized=True,
+        credential_refs = ("profile:CHAT_NATIVE_DEMO_PASSWORD",)
+        actor = resolve_existing_actor(
+            station_url,
+            "bob",
+            profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
+        )
+        _, _, actor_ref = persist_actor_manifest(
+            ActorManifest(
+                fixture_id="agent-v2-external-runtime-existing-actor",
+                environment_id=self.environment_id,
+                run_id=manifest.run_id,
+                created_at=utc_now(),
+                actors=(actor,),
+                credential_refs=credential_refs,
+                reset_authorized=False,
+                target_verified=True,
+            )
         )
         return dataclasses.replace(
             manifest,
             actor_manifest_ref=actor_ref,
-            credential_refs=("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+            credential_refs=credential_refs,
             clients=self._agent_v2_binding_clients(
                 manifest.run_id,
                 slot,
