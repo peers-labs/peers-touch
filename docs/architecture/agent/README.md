@@ -53,7 +53,8 @@
 
 | 优先级 | 状态 | 文档 | 定位 |
 |---|---|---|---|
-| Current | prepared / full alignment | [Modern Chat Agent V2 Alignment Plan Package](./execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | **当前唯一执行入口** — 按 V2-J01..V2-J06、X3 trusted catalog 和 aggregate Acceptance 的垂直闭环持续执行 |
+| Current | prepared / minimum usable release | [Minimum Usable Agent Chat](./execution-plans/20261001-minimum-usable-agent-chat/plan.md) | **当前唯一执行入口** — 只关闭 Direct Model Agent Chat、Skill/MCP 注入、最终回复与重启恢复 |
+| Historical | completed / remaining scope descoped | [Modern Chat Agent V2 Alignment Plan Package](./execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | 2026-10-01 由 Product Owner 强制停止；未完成的外部 runtime、419-cell remediation 和 aggregate proof 全部退出首版路径 |
 | Historical | superseded | [Modern Chat Agent V2 overview](./execution-plans/20260817-modern-chat-agent-v2.md) · [Legacy formal execution DAG](./execution-plans/20260817-modern-chat-agent-v2-execution.md) | 保留产品、架构、历史依赖和证据输入；不再承担 current Task 或 active execution 状态 |
 | Amendment | owner approved | [Agent Delivery Recovery](./execution-plans/20260908-agent-delivery-recovery.md) | 2026-09-16 已批准 Home-first sequencing 与 C11 atomic activation；完整 G-F 不再阻塞 W2，未完成 `BASE-*` 作为 parked lane 保留 |
 | V1 | accepted baseline | [First Useful Answer](./execution-plans/20260815-v1-first-useful-answer.md) | 已提供 Direct Model → Agent Profile → New Topic → 真实流式回复 → Desktop 重启读回基线；当前不再替代 V2 Home 产品推进 |
