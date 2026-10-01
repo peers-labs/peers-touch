@@ -99,9 +99,16 @@ TOP_LEVEL_FIELDS = frozenset(
         "created_at",
         "manifest_digest",
         "continuation",
+        "post_cut_epoch_id",
+        "final_cut_bindings",
     }
 )
-REQUIRED_TOP_LEVEL_FIELDS = TOP_LEVEL_FIELDS - {"continuation"}
+REQUIRED_TOP_LEVEL_FIELDS = TOP_LEVEL_FIELDS - {
+    "continuation",
+    "post_cut_epoch_id",
+    "final_cut_bindings",
+}
+POST_CUT_PROFILES = frozenset({"four", "fiveArm"})
 SOURCE_FIELDS = frozenset(
     {
         "canonical_worktree",
@@ -193,6 +200,14 @@ CONTINUATION_ACKNOWLEDGEMENT_FIELDS = frozenset(
         "retained_storage_identity_digest",
         "lease_evidence_ref",
         "artifact_digest",
+    }
+)
+FINAL_CUT_BINDING_FIELDS = frozenset(
+    {
+        "result_digest",
+        "reset_id",
+        "schema_attestation_digest",
+        "station_runtime_identity",
     }
 )
 RUNTIME_LEASE_EVIDENCE_FIELDS = frozenset(
@@ -826,6 +841,54 @@ def validate_runtime_manifest(
             "CONTROLLER_BINDING_MISMATCH",
             "controller binding must remain profile four at slot 5",
         )
+
+    post_cut_epoch_id = payload.get("post_cut_epoch_id")
+    final_cut_bindings = payload.get("final_cut_bindings")
+    if (post_cut_epoch_id is None) != (final_cut_bindings is None):
+        _fail(
+            "INVALID_MANIFEST_SCHEMA",
+            "post-cut epoch and final-cut bindings must be declared together",
+        )
+    if post_cut_epoch_id is not None:
+        _identifier(
+            post_cut_epoch_id,
+            "runtime manifest post_cut_epoch_id",
+        )
+        bindings = _closed_mapping(
+            final_cut_bindings,
+            required=POST_CUT_PROFILES,
+            allowed=POST_CUT_PROFILES,
+            label="runtime manifest final_cut_bindings",
+            code="INVALID_MANIFEST_SCHEMA",
+        )
+        for profile_id, raw_binding in bindings.items():
+            binding = _closed_mapping(
+                raw_binding,
+                required=FINAL_CUT_BINDING_FIELDS,
+                allowed=FINAL_CUT_BINDING_FIELDS,
+                label=f"runtime manifest final_cut_bindings.{profile_id}",
+                code="INVALID_MANIFEST_SCHEMA",
+            )
+            _sha256(
+                binding["result_digest"],
+                f"final_cut_bindings.{profile_id}.result_digest",
+                "INVALID_MANIFEST_SCHEMA",
+            )
+            _identifier_for_code(
+                binding["reset_id"],
+                f"final_cut_bindings.{profile_id}.reset_id",
+                "INVALID_MANIFEST_SCHEMA",
+            )
+            _sha256(
+                binding["schema_attestation_digest"],
+                f"final_cut_bindings.{profile_id}.schema_attestation_digest",
+                "INVALID_MANIFEST_SCHEMA",
+            )
+            _nonempty(
+                binding["station_runtime_identity"],
+                f"final_cut_bindings.{profile_id}.station_runtime_identity",
+                "INVALID_MANIFEST_SCHEMA",
+            )
 
     services, service_profiles, service_provenance = _validate_services(
         payload["services"],

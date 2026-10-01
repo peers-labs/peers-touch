@@ -31,6 +31,10 @@ from tooling.acceptance.provisioners.secure_content_remote_recipient import (
     RemotePrivateRecipientProvisioner,
 )
 from tooling.development.secure_content import runtime_manifest
+from tooling.development.secure_content import runtime_owner as runtime_owner_module
+from tooling.development.secure_content.platform_runtime import (
+    load_platform_runtime_contract,
+)
 from tooling.development.secure_content.run import RunnerError, ScenarioContext
 from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
@@ -340,6 +344,607 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(6, W9_RUNTIME_REUSE.max_client_launches)
         self.assertEqual("run-w9-suite", _parse_args(["run-w9-suite"]).action)
 
+    def test_task_suite_entries_replace_public_leaf_commands(self) -> None:
+        suite_arguments = {
+            "run-w7-suite": ["--profiles", "four,fiveArm"],
+            "run-w9-suite": [],
+            "run-w2-suite": ["--profiles", "four,fiveArm"],
+            "run-w10-suite": ["--profiles", "four,fiveArm"],
+            "run-w11-suite": ["--profiles", "four,fiveArm"],
+            "run-final-suite": ["--profiles", "four,fiveArm"],
+        }
+        for action, arguments in suite_arguments.items():
+            with self.subTest(action=action):
+                self.assertEqual(
+                    action,
+                    _parse_args([action, *arguments]).action,
+                )
+
+        for action in load_platform_runtime_contract().commands:
+            with self.subTest(leaf_action=action):
+                with redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit):
+                        _parse_args([action])
+
+    def test_task_suite_contracts_match_plan_tasks(self) -> None:
+        plan_root = (
+            Path(__file__).resolve().parents[3]
+            / "docs"
+            / "architecture"
+            / "secure-content"
+            / "execution-plans"
+            / "20260913-secure-content-hard-cut"
+            / "tasks"
+        )
+        contracts = runtime_owner_module.TASK_SUITE_CONTRACTS
+        self.assertEqual(
+            {"W7", "W9", "W2", "W10", "W11", "W12"},
+            set(contracts),
+        )
+        for task_id, contract in contracts.items():
+            with self.subTest(task_id=task_id):
+                text = (plan_root / f"{task_id}.md").read_text(
+                    encoding="utf-8"
+                )
+                match = re.search(
+                    r"^```json\s*$\s*(\{.*\})\s*^```$",
+                    text,
+                    re.MULTILINE,
+                )
+                self.assertIsNotNone(match)
+                task = json.loads(match.group(1))
+                self.assertEqual(
+                    contract.to_dict(),
+                    task["runtimeReuse"],
+                )
+
+    def test_platform_suites_share_physical_clients_within_budget(self) -> None:
+        command_contract = load_platform_runtime_contract()
+        expected = {
+            "run-w9-suite": (0, 6, 6),
+            "run-w2-suite": (4, 4, 8),
+            "run-w10-suite": (4, 4, 8),
+            "run-w11-suite": (7, 8, 15),
+            "run-final-suite": (7, 8, 15),
+        }
+        for action, counts in expected.items():
+            with self.subTest(action=action):
+                suite = runtime_owner_module.TASK_SUITE_DEFINITIONS[action]
+                desktop, mobile = (
+                    runtime_owner_module._suite_physical_clients(
+                        suite,
+                        command_contract,
+                    )
+                )
+                self.assertEqual(counts[0], len(desktop))
+                self.assertEqual(counts[1], len(mobile))
+                self.assertEqual(counts[2], len(desktop) + len(mobile))
+                self.assertLessEqual(
+                    len(desktop) + len(mobile),
+                    suite.runtime_reuse.max_client_launches,
+                )
+
+        for action in ("run-w11-suite", "run-final-suite"):
+            suite = runtime_owner_module.TASK_SUITE_DEFINITIONS[action]
+            self.assertNotEqual(
+                "four-alice",
+                suite.desktop_client_aliases["four-alice"],
+            )
+            self.assertNotEqual(
+                "four-bob",
+                suite.desktop_client_aliases["four-bob"],
+            )
+            bindings = runtime_owner_module._suite_mobile_service_bindings(
+                suite,
+                command_contract,
+            )
+            self.assertEqual(
+                {
+                    runtime_owner_module.STATION_ID,
+                    runtime_owner_module.SECONDARY_STATION_ID,
+                },
+                {
+                    service_id
+                    for client_id, service_id in bindings.items()
+                    if runtime_owner_module._mobile_actor_role(client_id)
+                    == "bob"
+                },
+            )
+
+    def test_mobile_service_binding_supports_hyphenated_client_ids(self) -> None:
+        self.assertEqual(
+            "alice",
+            runtime_owner_module._mobile_actor_role(
+                "secure-content-hardcut-ios-alice"
+            ),
+        )
+        self.assertEqual(
+            runtime_owner_module.SECONDARY_STATION_ID,
+            runtime_owner_module._mobile_service_for_client(
+                "secure-content-ios-remote_bob",
+                ("four", "fiveArm"),
+            ),
+        )
+        self.assertEqual(
+            runtime_owner_module.SECONDARY_STATION_ID,
+            runtime_owner_module._mobile_service_for_client(
+                "secure-content-hardcut-ios-bob",
+                ("four", "fiveArm"),
+            ),
+        )
+        self.assertEqual(
+            runtime_owner_module.STATION_ID,
+            runtime_owner_module._mobile_service_for_client(
+                "secure-content-hardcut-ios-bob",
+                ("four",),
+            ),
+        )
+
+    def test_mobile_friendship_uses_explicit_local_and_remote_bob_bindings(
+        self,
+    ) -> None:
+        alice = MagicMock()
+        local_bob = MagicMock()
+        remote_bob = MagicMock()
+        accepted_requests = [
+            {
+                "requestId": "request-local",
+                "senderPtid": "ptid-alice",
+                "receiverPtid": "ptid-local-bob",
+                "federationId": "federation-shared",
+                "status": 2,
+            },
+            {
+                "requestId": "request-remote",
+                "senderPtid": "ptid-alice",
+                "receiverPtid": "ptid-remote-bob",
+                "federationId": "federation-shared",
+                "status": 2,
+            },
+        ]
+        alice.call_action.side_effect = lambda action, _payload: (
+            [
+                {
+                    "ptid": "ptid-local-bob",
+                    "federationId": "federation-shared",
+                    "homeStationPeerId": "runtime-four",
+                },
+                {
+                    "ptid": "ptid-remote-bob",
+                    "federationId": "federation-shared",
+                    "homeStationPeerId": "runtime-five-arm",
+                },
+            ]
+            if action == "social.people.search"
+            else {"friendRequests": accepted_requests}
+            if action == "social.projection.read"
+            else {}
+        )
+
+        def bob_action(
+            receiver_ptid: str,
+            request_id: str,
+        ) -> Callable[[str, Mapping[str, object]], object]:
+            return lambda action, _payload: (
+                {
+                    "friendRequests": [
+                        {
+                            "requestId": request_id,
+                            "senderPtid": "ptid-alice",
+                            "receiverPtid": receiver_ptid,
+                            "federationId": "federation-shared",
+                            "status": 2,
+                        }
+                    ]
+                }
+                if action == "social.projection.read"
+                else {}
+            )
+
+        local_bob.call_action.side_effect = bob_action(
+            "ptid-local-bob",
+            "request-local",
+        )
+        remote_bob.call_action.side_effect = bob_action(
+            "ptid-remote-bob",
+            "request-remote",
+        )
+        sessions = {
+            "secure-content-ios-alice": alice,
+            "secure-content-ios-bob": local_bob,
+            "secure-content-ios-remote_bob": remote_bob,
+        }
+
+        federation_id = runtime_owner_module._prepare_mobile_friendship(
+            sessions,
+            {
+                "secure-content-ios-alice": "ptid-alice",
+                "secure-content-ios-bob": "ptid-local-bob",
+                "secure-content-ios-remote_bob": "ptid-remote-bob",
+            },
+            {"bob": "sc-bob-abcdefghij@testnet.local"},
+            {
+                runtime_owner_module.STATION_ID: {
+                    "profile_id": "four",
+                    "runtime_identity": "runtime-four",
+                },
+                runtime_owner_module.SECONDARY_STATION_ID: {
+                    "profile_id": "fiveArm",
+                    "runtime_identity": "runtime-five-arm",
+                },
+            },
+            {
+                "secure-content-ios-alice": runtime_owner_module.STATION_ID,
+                "secure-content-ios-bob": runtime_owner_module.STATION_ID,
+                "secure-content-ios-remote_bob": (
+                    runtime_owner_module.SECONDARY_STATION_ID
+                ),
+            },
+            frozenset(
+                {
+                    runtime_owner_module.STATION_ID,
+                    runtime_owner_module.SECONDARY_STATION_ID,
+                }
+            ),
+        )
+
+        self.assertEqual("federation-shared", federation_id)
+        send_payloads = [
+            invocation.args[1]
+            for invocation in alice.call_action.call_args_list
+            if invocation.args[0] == "social.request.send"
+        ]
+        self.assertEqual(
+            ["runtime-four", "runtime-five-arm"],
+            [
+                payload["receiverHomeStationPeerId"]
+                for payload in send_payloads
+            ],
+        )
+        local_bob.call_action.assert_any_call(
+            "social.request.accept",
+            {"requestId": "request-local"},
+        )
+        remote_bob.call_action.assert_any_call(
+            "social.request.accept",
+            {"requestId": "request-remote"},
+        )
+
+    def test_mobile_friendship_rejects_missing_required_bob_station(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            RuntimeOwnerBlocked,
+            "requires Bob clients for Station bindings",
+        ):
+            runtime_owner_module._prepare_mobile_friendship(
+                {
+                    "secure-content-ios-alice": MagicMock(),
+                    "secure-content-ios-bob": MagicMock(),
+                },
+                {
+                    "secure-content-ios-alice": "ptid-alice",
+                    "secure-content-ios-bob": "ptid-local-bob",
+                },
+                {"bob": "sc-bob-abcdefghij@testnet.local"},
+                {
+                    runtime_owner_module.STATION_ID: {
+                        "profile_id": "four",
+                        "runtime_identity": "runtime-four",
+                    },
+                    runtime_owner_module.SECONDARY_STATION_ID: {
+                        "profile_id": "fiveArm",
+                        "runtime_identity": "runtime-five-arm",
+                    },
+                },
+                {
+                    "secure-content-ios-alice": (
+                        runtime_owner_module.STATION_ID
+                    ),
+                    "secure-content-ios-bob": runtime_owner_module.STATION_ID,
+                },
+                frozenset(
+                    {
+                        runtime_owner_module.STATION_ID,
+                        runtime_owner_module.SECONDARY_STATION_ID,
+                    }
+                ),
+            )
+
+    def test_mobile_friendship_rejects_unconfirmed_acceptance(self) -> None:
+        alice = MagicMock()
+        bob = MagicMock()
+        alice.call_action.side_effect = lambda action, _payload: (
+            [
+                {
+                    "ptid": "ptid-bob",
+                    "federationId": "federation-shared",
+                    "homeStationPeerId": "runtime-four",
+                }
+            ]
+            if action == "social.people.search"
+            else {
+                "friendRequests": [
+                    {
+                        "requestId": "request-bob",
+                        "senderPtid": "ptid-alice",
+                        "receiverPtid": "ptid-bob",
+                        "federationId": "federation-shared",
+                        "status": 1,
+                    }
+                ]
+            }
+            if action == "social.projection.read"
+            else {}
+        )
+        bob.call_action.side_effect = lambda action, _payload: (
+            {
+                "friendRequests": [
+                    {
+                        "requestId": "request-bob",
+                        "senderPtid": "ptid-alice",
+                        "receiverPtid": "ptid-bob",
+                        "federationId": "federation-shared",
+                        "status": 1,
+                    }
+                ]
+            }
+            if action == "social.projection.read"
+            else {}
+        )
+
+        with (
+            patch.object(
+                runtime_owner_module.time,
+                "monotonic",
+                side_effect=(0, 0, 0, 0, 0, 61),
+            ),
+            patch.object(runtime_owner_module.time, "sleep"),
+            self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "was not accepted",
+            ),
+        ):
+            runtime_owner_module._prepare_mobile_friendship(
+                {
+                    "secure-content-ios-alice": alice,
+                    "secure-content-ios-bob": bob,
+                },
+                {
+                    "secure-content-ios-alice": "ptid-alice",
+                    "secure-content-ios-bob": "ptid-bob",
+                },
+                {"bob": "sc-bob-abcdefghij@testnet.local"},
+                {
+                    runtime_owner_module.STATION_ID: {
+                        "profile_id": "four",
+                        "runtime_identity": "runtime-four",
+                    }
+                },
+                {
+                    "secure-content-ios-alice": (
+                        runtime_owner_module.STATION_ID
+                    ),
+                    "secure-content-ios-bob": runtime_owner_module.STATION_ID,
+                },
+                frozenset({runtime_owner_module.STATION_ID}),
+            )
+
+    def test_final_suite_loads_only_complete_final_cut_bindings(self) -> None:
+        generation = "a" * 40
+        workspace_id = "0123456789abcdef"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for profile, workstream, service_id in (
+                ("four", "W12F-FOUR", "station-four"),
+                ("fiveArm", "W12F-FIVEARM", "station-five-arm"),
+            ):
+                reset_id = f"reset-{profile}"
+                result_dir = (
+                    root
+                    / "W12"
+                    / "final-cut"
+                    / generation
+                    / profile
+                    / reset_id
+                )
+                result_dir.mkdir(parents=True)
+                attestation = {
+                    "source_commit": generation,
+                    "workspace_id": workspace_id,
+                    "profile_id": profile,
+                    "station_service_id": service_id,
+                    "station_runtime_identity": f"runtime-{profile}",
+                    "reset_intent": "FINAL_CUT",
+                }
+                attestation["attestation_digest"] = (
+                    runtime_manifest.canonical_digest(attestation)
+                )
+                attestation_path = (
+                    result_dir
+                    / runtime_manifest.CANONICAL_PRIVATE_SCHEMA_ATTESTATION_FILENAME
+                )
+                attestation_path.write_text(
+                    json.dumps(attestation),
+                    encoding="utf-8",
+                )
+                attestation_path.chmod(0o600)
+                result = {
+                    "kind": (
+                        runtime_owner_module.schema_activation
+                        .PROFILE_RESULT_KIND
+                    ),
+                    "workstream_id": workstream,
+                    "task_id": "W12",
+                    "generation_id": generation,
+                    "source_commit": generation,
+                    "workspace_id": workspace_id,
+                    "profile_id": profile,
+                    "reset_id": reset_id,
+                    "reset_intent": "FINAL_CUT",
+                    "schema_attestation_ref": {
+                        "path": attestation_path.relative_to(root).as_posix(),
+                        "sha256": hashlib.sha256(
+                            attestation_path.read_bytes()
+                        ).hexdigest(),
+                    },
+                    "schema_attestation_digest": attestation[
+                        "attestation_digest"
+                    ],
+                    "journal_state": "COMPLETE",
+                    "status": "PASS",
+                    "claim": "FINAL_RESET_COMPLETE_ONLY",
+                }
+                result["result_digest"] = (
+                    runtime_manifest.canonical_digest(result)
+                )
+                result_path = result_dir / "result.json"
+                result_path.write_text(
+                    json.dumps(result),
+                    encoding="utf-8",
+                )
+                result_path.chmod(0o600)
+
+            bindings = runtime_owner_module._load_final_cut_bindings(
+                root,
+                generation_id=generation,
+                workspace_id=workspace_id,
+            )
+
+            self.assertEqual({"four", "fiveArm"}, set(bindings))
+            self.assertEqual(
+                "runtime-four",
+                bindings["four"]["station_runtime_identity"],
+            )
+
+            result_path = (
+                root
+                / "W12"
+                / "final-cut"
+                / generation
+                / "four"
+                / "reset-four"
+                / "result.json"
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            result["reset_intent"] = "SCHEMA_ACTIVATION"
+            result.pop("result_digest")
+            result["result_digest"] = runtime_manifest.canonical_digest(
+                result
+            )
+            result_path.write_text(json.dumps(result), encoding="utf-8")
+            result_path.chmod(0o600)
+
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "FINAL_CUT result is invalid",
+            ):
+                runtime_owner_module._load_final_cut_bindings(
+                    root,
+                    generation_id=generation,
+                    workspace_id=workspace_id,
+                )
+
+    def test_platform_suite_prepares_once_before_attach_only_loop(self) -> None:
+        source = inspect.getsource(W7RuntimeOwner._run_platform_suite)
+        scenario_loop = source.index("for scenario in suite.scenarios:")
+
+        self.assertEqual(1, source.count("SuiteRuntimeLedger("))
+        self.assertEqual(1, source.count("SuiteRuntimeAction.PROVISION"))
+        self.assertLess(
+            source.index("_prepare_desktop_suite_resources("),
+            scenario_loop,
+        )
+        self.assertLess(
+            source.index("_prepare_mobile_suite_resources("),
+            scenario_loop,
+        )
+        self.assertNotIn(
+            "_prepare_desktop_suite_resources(",
+            source[scenario_loop:],
+        )
+        self.assertNotIn(
+            "_prepare_mobile_suite_resources(",
+            source[scenario_loop:],
+        )
+        self.assertNotIn("run_platform_action(", source)
+        self.assertNotIn("_run_mobile_platform_action(", source)
+        self.assertNotIn("_run_desktop_platform_action(", source)
+        for action in (
+            "SuiteRuntimeAction.UI_ACTION",
+            "SuiteRuntimeAction.RECEIVER_ASSERTION",
+            "SuiteRuntimeAction.SUPPORTING_OBSERVATION",
+            "SuiteRuntimeAction.SCENARIO_END",
+            "SuiteRuntimeAction.CLEANUP_COMPLETE",
+        ):
+            self.assertIn(action, source)
+        self.assertIn("suite.primary_journey_id", source)
+        self.assertIn("stack.callback(", source)
+
+    def test_w9_suite_uses_shared_owner_instead_of_pending_fence(self) -> None:
+        source = inspect.getsource(W7RuntimeOwner.run_w9_suite)
+
+        self.assertNotIn("SUITE_RUNTIME_OWNER_PENDING", source)
+        self.assertIn("_run_platform_suite", source)
+
+    def test_task_suite_cli_dispatches_once(self) -> None:
+        cases = {
+            "run-w7-suite": (
+                "run_w7_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+            "run-w9-suite": ("run_w9_suite", []),
+            "run-w2-suite": (
+                "run_w2_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+            "run-w10-suite": (
+                "run_w10_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+            "run-w11-suite": (
+                "run_w11_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+            "run-final-suite": (
+                "run_final_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+        }
+        for action, (method_name, arguments) in cases.items():
+            with self.subTest(action=action):
+                with patch.object(
+                    W7RuntimeOwner,
+                    method_name,
+                    return_value={
+                        "status": "FUNCTIONAL_PASS",
+                        "proofState": "UNPROVEN",
+                    },
+                ) as run_suite:
+                    status = main([action, *arguments])
+
+                self.assertEqual(0, status)
+                run_suite.assert_called_once_with()
+
+    def test_task_suite_invocations_do_not_share_mutable_runtime(self) -> None:
+        owner = W7RuntimeOwner(
+            repo_root=Path(__file__).resolve().parents[3],
+            result_root=Path("/tmp/secure-content-suite-test"),
+        )
+        roots = iter((Path("/tmp/suite-one"), Path("/tmp/suite-two")))
+        with patch.object(
+            owner,
+            "_run_platform_suite",
+            side_effect=lambda _suite: {
+                "status": "FUNCTIONAL_PASS",
+                "runtimeRoot": str(next(roots)),
+            },
+        ):
+            first = owner.run_w2_suite()
+            second = owner.run_w2_suite()
+
+        self.assertNotEqual(first["runtimeRoot"], second["runtimeRoot"])
+
     def test_suite_runtime_contracts_match_plan_tasks(self) -> None:
         plan_root = (
             Path(__file__).resolve().parents[3]
@@ -367,40 +972,37 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_platform_owner_cli_dispatches_without_manifest_argument(
         self,
     ) -> None:
-        parsed = _parse_args(["run-w2-ios", "--profiles", "four,fiveArm"])
-        self.assertEqual("run-w2-ios", parsed.action)
-        self.assertFalse(hasattr(parsed, "runtime_manifest"))
-
+        command = load_platform_runtime_contract().command("run-w2-ios")
+        owner = W7RuntimeOwner(
+            repo_root=Path(__file__).resolve().parents[3],
+            result_root=Path("/tmp/secure-content-leaf-test"),
+        )
         with patch.object(
             W7RuntimeOwner,
-            "run_platform_action",
+            "_run_mobile_platform_action",
             return_value={
                 "status": "FUNCTIONAL_PASS",
                 "proofState": "UNPROVEN",
             },
-        ) as run_platform:
-            status = main(["run-w2-ios", "--profiles", "four,fiveArm"])
+        ) as run_mobile:
+            result = owner.run_platform_action(command)
 
-        self.assertEqual(0, status)
+        self.assertEqual("FUNCTIONAL_PASS", result["status"])
         self.assertEqual(
             "run-w2-ios",
-            run_platform.call_args.args[0].action,
+            run_mobile.call_args.args[0].action,
         )
 
     def test_platform_owner_cli_rejects_profile_selector_drift(self) -> None:
-        stderr = io.StringIO()
-        with redirect_stderr(stderr):
-            status = main(
-                [
-                    "run-w2-ios",
-                    "--profiles",
-                    "four",
-                ]
-            )
-
-        self.assertEqual(2, status)
-        payload = json.loads(stderr.getvalue())
-        self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                _parse_args(
+                    [
+                        "run-w2-ios",
+                        "--profiles",
+                        "four",
+                    ]
+                )
 
     def test_w8_remote_recipient_handle_is_opaque_and_action_bound(self) -> None:
         actor_ptid = "did:peers:five-arm-actor"
@@ -1837,7 +2439,7 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_w7_refreshes_station_tunnels_at_long_running_boundaries(
         self,
     ) -> None:
-        source = inspect.getsource(W7RuntimeOwner.run)
+        source = inspect.getsource(W7RuntimeOwner.run_w7_suite)
         refreshes = [
             match.start()
             for match in re.finditer(
@@ -1847,6 +2449,14 @@ class RuntimeOwnerTest(unittest.TestCase):
         ]
 
         self.assertEqual(3, len(refreshes))
+        self.assertEqual(1, source.count("SuiteRuntimeLedger("))
+        self.assertEqual(1, source.count("SuiteRuntimeAction.PROVISION"))
+        self.assertLess(
+            source.rindex("_start_client("),
+            source.index(
+                'scenario_id="desktop-pilot"',
+            ),
+        )
         self.assertLess(
             source.index("parent_path = write_attached_runtime_manifest("),
             source.index("blocked_result_path: Path | None = None"),
@@ -1863,7 +2473,13 @@ class RuntimeOwnerTest(unittest.TestCase):
             refreshes[1],
             source.index("desktop_result = execute_scenario("),
         )
-        self.assertLess(source.index("desktop.clear()"), refreshes[2])
+        self.assertLess(
+            source.index("browser: dict[str, FoundationRuntimeClient]"),
+            refreshes[0],
+        )
+        self.assertNotIn("desktop.clear()", source)
+        self.assertIn("work_item_id=WORK_ITEM_ID", source)
+        self.assertIn("task_id=TASK_ID", source)
         self.assertLess(
             refreshes[2],
             source.index(

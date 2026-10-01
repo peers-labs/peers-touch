@@ -82,6 +82,31 @@ class PlatformRuntimeContractTest(unittest.TestCase):
             contract.command("run-w11-ios").fixture_operations,
         )
 
+    def test_w2_uses_one_task_owner_and_cross_station_mobile_is_isolated(
+        self,
+    ) -> None:
+        contract = load_platform_runtime_contract()
+        for action in ("run-w2-desktop", "run-w2-ios", "run-w2-android"):
+            self.assertEqual(
+                "secure-content-w2",
+                contract.command(action).work_item_id,
+            )
+
+        self.assertEqual(
+            (
+                "secure-content-hardcut-ios-alice",
+                "secure-content-hardcut-ios-remote_bob",
+            ),
+            contract.command("run-w11-chat-ios").clients,
+        )
+        self.assertEqual(
+            (
+                "secure-content-android-alice",
+                "secure-content-android-remote_bob",
+            ),
+            contract.command("run-final-chat-android").clients,
+        )
+
     def test_downstream_task_commands_use_the_runtime_owner(self) -> None:
         task_root = Path(
             "docs/architecture/secure-content/execution-plans/"

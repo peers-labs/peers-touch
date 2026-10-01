@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -72,7 +73,7 @@ from tooling.acceptance.provisioners.secure_content_remote_recipient import (
     W8RemoteRecipientFixtureOwner,
 )
 from tooling.acceptance.transports.ssh import SshTunnel
-from tooling.development.secure_content import runtime_manifest
+from tooling.development.secure_content import runtime_manifest, schema_activation
 from tooling.development.secure_content.activation_transport import (
     ActivationTransportError,
     ReviewedSchemaActivationTransport,
@@ -91,6 +92,7 @@ from tooling.development.secure_content.source_projection import (
 )
 from tooling.development.secure_content.platform_runtime import (
     PlatformRuntimeCommand,
+    PlatformRuntimeContract,
     load_platform_runtime_contract,
 )
 from tooling.development.secure_content.mobile_fixture import (
@@ -154,6 +156,275 @@ W9_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "allowClientReplacement": False,
     }
 )
+W7_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "w7-functional",
+        "scenarioIds": ["desktop-continuity", "browser-boundary"],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 6,
+        "minWarmReuseRate": 0.5,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
+W2_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "w2-functional",
+        "scenarioIds": ["desktop", "ios", "android"],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 8,
+        "minWarmReuseRate": 0.66,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
+W10_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "w10-functional",
+        "scenarioIds": ["desktop", "ios", "android"],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 8,
+        "minWarmReuseRate": 0.66,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
+W11_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "w11-functional",
+        "scenarioIds": [
+            "desktop",
+            "browser",
+            "ios",
+            "android",
+            "chat-desktop",
+            "chat-ios",
+            "chat-android",
+        ],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 15,
+        "minWarmReuseRate": 0.85,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
+W12_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "w12-functional",
+        "scenarioIds": [
+            "desktop",
+            "browser",
+            "ios",
+            "android",
+            "chat-desktop",
+            "chat-ios",
+            "chat-android",
+        ],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 15,
+        "minWarmReuseRate": 0.85,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
+TASK_SUITE_CONTRACTS = {
+    "W7": W7_RUNTIME_REUSE,
+    "W9": W9_RUNTIME_REUSE,
+    "W2": W2_RUNTIME_REUSE,
+    "W10": W10_RUNTIME_REUSE,
+    "W11": W11_RUNTIME_REUSE,
+    "W12": W12_RUNTIME_REUSE,
+}
+
+
+@dataclass(frozen=True)
+class _TaskSuiteScenario:
+    scenario_id: str
+    leaf_action: str
+
+
+@dataclass(frozen=True)
+class _TaskSuiteDefinition:
+    action: str
+    task_id: str
+    primary_journey_id: str
+    profiles: tuple[str, ...]
+    runtime_reuse: RuntimeReuseContract
+    scenarios: tuple[_TaskSuiteScenario, ...]
+    desktop_client_aliases: Mapping[str, str]
+    required_mobile_bob_services: frozenset[str]
+
+
+TASK_SUITE_DEFINITIONS = {
+    "run-w9-suite": _TaskSuiteDefinition(
+        action="run-w9-suite",
+        task_id="W9",
+        primary_journey_id="sc-dj-mobile-matrix",
+        profiles=(PROFILE,),
+        runtime_reuse=W9_RUNTIME_REUSE,
+        scenarios=(
+            _TaskSuiteScenario("ios", "run-w9-ios"),
+            _TaskSuiteScenario("android", "run-w9-android"),
+            _TaskSuiteScenario("cross-platform", "run-w9-cross-platform"),
+        ),
+        desktop_client_aliases={},
+        required_mobile_bob_services=frozenset({STATION_ID}),
+    ),
+    "run-w2-suite": _TaskSuiteDefinition(
+        action="run-w2-suite",
+        task_id="W2",
+        primary_journey_id="sc-dj-chat-attachment-atomic",
+        profiles=(PROFILE, SECONDARY_PROFILE),
+        runtime_reuse=W2_RUNTIME_REUSE,
+        scenarios=(
+            _TaskSuiteScenario("desktop", "run-w2-desktop"),
+            _TaskSuiteScenario("ios", "run-w2-ios"),
+            _TaskSuiteScenario("android", "run-w2-android"),
+        ),
+        desktop_client_aliases={},
+        required_mobile_bob_services=frozenset({SECONDARY_STATION_ID}),
+    ),
+    "run-w10-suite": _TaskSuiteDefinition(
+        action="run-w10-suite",
+        task_id="W10",
+        primary_journey_id="sc-dj-chat-revalidation",
+        profiles=(PROFILE, SECONDARY_PROFILE),
+        runtime_reuse=W10_RUNTIME_REUSE,
+        scenarios=(
+            _TaskSuiteScenario("desktop", "run-w10-desktop"),
+            _TaskSuiteScenario("ios", "run-w10-ios"),
+            _TaskSuiteScenario("android", "run-w10-android"),
+        ),
+        desktop_client_aliases={},
+        required_mobile_bob_services=frozenset({SECONDARY_STATION_ID}),
+    ),
+    "run-w11-suite": _TaskSuiteDefinition(
+        action="run-w11-suite",
+        task_id="W11",
+        primary_journey_id="sc-dj-hardcut-regression",
+        profiles=(PROFILE, SECONDARY_PROFILE),
+        runtime_reuse=W11_RUNTIME_REUSE,
+        scenarios=(
+            _TaskSuiteScenario("desktop", "run-w11-desktop"),
+            _TaskSuiteScenario("browser", "run-w11-browser"),
+            _TaskSuiteScenario("ios", "run-w11-ios"),
+            _TaskSuiteScenario("android", "run-w11-android"),
+            _TaskSuiteScenario("chat-desktop", "run-w11-chat-desktop"),
+            _TaskSuiteScenario("chat-ios", "run-w11-chat-ios"),
+            _TaskSuiteScenario("chat-android", "run-w11-chat-android"),
+        ),
+        desktop_client_aliases={
+            "four-alice": "secure-content-hardcut-four-alice",
+            "four-bob": "secure-content-hardcut-four-bob",
+        },
+        required_mobile_bob_services=frozenset(
+            {STATION_ID, SECONDARY_STATION_ID}
+        ),
+    ),
+    "run-final-suite": _TaskSuiteDefinition(
+        action="run-final-suite",
+        task_id="W12",
+        primary_journey_id="sc-dj-authorized-reset",
+        profiles=(PROFILE, SECONDARY_PROFILE),
+        runtime_reuse=W12_RUNTIME_REUSE,
+        scenarios=(
+            _TaskSuiteScenario("desktop", "run-final-desktop"),
+            _TaskSuiteScenario("browser", "run-final-browser"),
+            _TaskSuiteScenario("ios", "run-final-ios"),
+            _TaskSuiteScenario("android", "run-final-android"),
+            _TaskSuiteScenario("chat-desktop", "run-final-chat-desktop"),
+            _TaskSuiteScenario("chat-ios", "run-final-chat-ios"),
+            _TaskSuiteScenario("chat-android", "run-final-chat-android"),
+        ),
+        desktop_client_aliases={
+            "four-alice": "secure-content-desktop-alice",
+            "four-bob": "secure-content-desktop-bob",
+        },
+        required_mobile_bob_services=frozenset(
+            {STATION_ID, SECONDARY_STATION_ID}
+        ),
+    ),
+}
+
+
+def _suite_physical_clients(
+    suite: _TaskSuiteDefinition,
+    contract: PlatformRuntimeContract,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    desktop: dict[str, None] = {}
+    mobile: dict[str, None] = {}
+    for scenario in suite.scenarios:
+        command = contract.command(scenario.leaf_action)
+        if command.task_id != suite.task_id:
+            raise RuntimeOwnerBlocked(
+                "SUITE_RUNTIME_CONTRACT_INVALID",
+                (
+                    f"{scenario.leaf_action} belongs to {command.task_id}, "
+                    f"not {suite.task_id}"
+                ),
+                resource=f"runtime:{suite.action}",
+            )
+        target = mobile if command.runtime == "mobile" else desktop
+        for client_id in command.clients:
+            physical_id = (
+                client_id
+                if command.runtime == "mobile"
+                else suite.desktop_client_aliases.get(client_id, client_id)
+            )
+            target.setdefault(physical_id, None)
+    return tuple(desktop), tuple(mobile)
+
+
+def _suite_mobile_service_bindings(
+    suite: _TaskSuiteDefinition,
+    contract: PlatformRuntimeContract,
+) -> dict[str, str]:
+    bindings: dict[str, str] = {}
+    for scenario in suite.scenarios:
+        command = contract.command(scenario.leaf_action)
+        if command.runtime != "mobile":
+            continue
+        for client_id in command.clients:
+            service_id = _mobile_service_for_client(
+                client_id,
+                command.profiles,
+            )
+            previous = bindings.setdefault(client_id, service_id)
+            if previous != service_id:
+                raise RuntimeOwnerBlocked(
+                    "SUITE_RUNTIME_CONTRACT_INVALID",
+                    (
+                        f"Mobile client {client_id!r} has conflicting "
+                        "Station bindings"
+                    ),
+                    resource=f"runtime:{suite.action}",
+                )
+    observed_bob_services = frozenset(
+        service_id
+        for client_id, service_id in bindings.items()
+        if _mobile_actor_role(client_id) == "bob"
+    )
+    if observed_bob_services != suite.required_mobile_bob_services:
+        raise RuntimeOwnerBlocked(
+            "SUITE_RUNTIME_CONTRACT_INVALID",
+            (
+                f"{suite.action} requires Mobile Bob bindings "
+                f"{sorted(suite.required_mobile_bob_services)}, found "
+                f"{sorted(observed_bob_services)}"
+            ),
+            resource=f"runtime:{suite.action}",
+        )
+    return bindings
 _BIP39_ENGLISH_WORDLIST = Path(__file__).with_name("bip39_english.txt")
 _BIP39_ENGLISH_WORDLIST_SHA256 = (
     "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
@@ -237,6 +508,75 @@ class _StationEndpoints(dict[str, _StationEndpoint]):
     def refresh(self) -> None:
         for tunnel in self._tunnels.values():
             tunnel.refresh()
+
+
+@dataclass
+class _PreparedDesktopSuiteResources:
+    clients: dict[str, FoundationRuntimeClient]
+    snapshots: dict[str, Mapping[str, Any]]
+    logical_to_physical: dict[str, str]
+    service_by_physical: dict[str, str]
+    fixture: "_DesktopProductionFixture"
+
+    def sessions_for(
+        self,
+        command: PlatformRuntimeCommand,
+    ) -> dict[str, FoundationRuntimeClient]:
+        return {
+            client_id: self.clients[self.logical_to_physical[client_id]]
+            for client_id in command.clients
+        }
+
+    def payloads_for(
+        self,
+        command: PlatformRuntimeCommand,
+    ) -> list[dict[str, Any]]:
+        payloads: list[dict[str, Any]] = []
+        for client_id in command.clients:
+            physical_id = self.logical_to_physical[client_id]
+            payloads.append(
+                _client_payload(
+                    client_id,
+                    _desktop_actor_role(client_id),
+                    self.clients[physical_id],
+                    self.snapshots[physical_id],
+                    service_roles={
+                        "station": self.service_by_physical[physical_id],
+                    },
+                )
+            )
+        return payloads
+
+
+@dataclass
+class _PreparedMobileSuiteResources:
+    sessions: dict[str, Any]
+    payloads: dict[str, dict[str, Any]]
+    fixture: MobileProductionFixture
+
+    def sessions_for(
+        self,
+        command: PlatformRuntimeCommand,
+    ) -> dict[str, Any]:
+        return {
+            client_id: self.sessions[client_id]
+            for client_id in command.clients
+        }
+
+    def payloads_for(
+        self,
+        command: PlatformRuntimeCommand,
+    ) -> list[dict[str, Any]]:
+        return [self.payloads[client_id] for client_id in command.clients]
+
+
+@dataclass(frozen=True)
+class _PreparedSuiteScenario:
+    scenario_id: str
+    command: PlatformRuntimeCommand
+    manifest_path: Path
+    fixture_context: EphemeralGateLaunchContext
+    fixture_client: EphemeralGateClient
 
 
 @dataclass(frozen=True)
@@ -1584,6 +1924,14 @@ def _require_mobile_write_admission(
     )
 
 
+def _mobile_actor_role(client_id: str) -> str:
+    return (
+        client_id.rsplit("_", 1)[-1]
+        if "_" in client_id
+        else client_id.rsplit("-", 1)[-1]
+    )
+
+
 def _mobile_service_for_client(
     client_id: str,
     profiles: Sequence[str],
@@ -1596,7 +1944,7 @@ def _mobile_service_for_client(
             "Mobile runtime profiles are not canonical",
             resource="profile:secure-content-mobile",
         )
-    role = client_id.rsplit("_", 1)[-1]
+    role = _mobile_actor_role(client_id)
     return SECONDARY_STATION_ID if role == "bob" else STATION_ID
 
 
@@ -1637,6 +1985,8 @@ def _prepare_mobile_friendship(
     actor_ptids: Mapping[str, str],
     accounts: Mapping[str, str],
     services: Mapping[str, Mapping[str, Any]],
+    service_by_client: Mapping[str, str],
+    required_bob_service_ids: frozenset[str],
 ) -> str:
     alice_id = next(
         (
@@ -1646,124 +1996,193 @@ def _prepare_mobile_friendship(
         ),
         "",
     )
-    bob_id = next(
-        (
-            client_id
-            for client_id in sessions
-            if client_id.endswith(("_bob", "-bob"))
-        ),
-        "",
+    bob_ids = tuple(
+        client_id
+        for client_id in sessions
+        if client_id.endswith(("_bob", "-bob"))
     )
-    if not alice_id or not bob_id:
+    if not alice_id or not bob_ids:
         raise RuntimeOwnerBlocked(
             "FIXTURE_OWNER_UNAVAILABLE",
             "Mobile fixture requires Alice and Bob clients",
             resource="fixture:mobile-friendship",
         )
-    bob_ptid = actor_ptids[bob_id]
-    bob_service_id = _mobile_service_for_client(
-        bob_id,
-        tuple(
-            str(service["profile_id"]) for service in services.values()
-        ),
+    observed_bob_service_ids = frozenset(
+        str(service_by_client.get(bob_id, ""))
+        for bob_id in bob_ids
     )
-    bob_station = services[bob_service_id]
-    deadline = time.monotonic() + 60
-    search_result: Mapping[str, Any] | None = None
-    while time.monotonic() < deadline:
-        try:
-            candidates = sessions[alice_id].call_action(
-                "social.people.search",
-                {
-                    "query": _runtime_account_search_query(
-                        accounts["bob"],
-                        role="bob",
-                    )
-                },
-            )
-        except Exception as error:
+    if observed_bob_service_ids != required_bob_service_ids:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            (
+                "Mobile fixture requires Bob clients for Station bindings "
+                f"{sorted(required_bob_service_ids)}, found "
+                f"{sorted(observed_bob_service_ids)}"
+            ),
+            resource="fixture:mobile-friendship",
+        )
+    federation_id = ""
+    prepared_bob_ptids: dict[str, str] = {}
+    for bob_id in bob_ids:
+        bob_ptid = actor_ptids[bob_id]
+        bob_service_id = str(service_by_client[bob_id])
+        previous_service_id = prepared_bob_ptids.get(bob_ptid)
+        if previous_service_id == bob_service_id:
+            continue
+        if previous_service_id is not None:
             raise RuntimeOwnerBlocked(
                 "FIXTURE_OWNER_UNAVAILABLE",
-                f"Mobile actor search failed: {redact_text(str(error))}",
+                "Mobile Bob identity is shared across different Stations",
                 resource="fixture:mobile-friendship",
-            ) from error
-        if isinstance(candidates, list):
-            search_result = next(
-                (
-                    item
-                    for item in candidates
-                    if isinstance(item, Mapping)
-                    and item.get("ptid") == bob_ptid
-                ),
-                None,
             )
-        if search_result is not None:
-            break
-        _mobile_call(sessions[alice_id], "social.reconcile")
-        time.sleep(0.25)
-    if search_result is None:
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Mobile Alice could not resolve Bob through production search",
-            resource="fixture:mobile-friendship",
-        )
-    federation_id = _required_text(
-        search_result.get("federationId"),
-        "Mobile friendship Federation",
-    )
-    if search_result.get("homeStationPeerId") != bob_station[
-        "runtime_identity"
-    ]:
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Mobile Bob search result has the wrong Home Station",
-            resource="fixture:mobile-friendship",
-        )
-    _mobile_call(
-        sessions[alice_id],
-        "social.request.send",
-        {
-            "receiverPtid": bob_ptid,
-            "receiverHomeStationPeerId": bob_station["runtime_identity"],
-            "federationId": federation_id,
-            "message": "secure-content runtime fixture",
-        },
-    )
-    request_id = ""
-    while time.monotonic() < deadline:
-        _mobile_call(sessions[bob_id], "social.reconcile")
-        projection = _mobile_mapping(
-            _mobile_call(sessions[bob_id], "social.projection.read"),
-            "Social projection",
-            client_id=bob_id,
-        )
-        requests = projection.get("friendRequests")
-        if isinstance(requests, list):
-            request_id = next(
+        prepared_bob_ptids[bob_ptid] = bob_service_id
+        bob_station = services.get(bob_service_id)
+        if bob_station is None:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                f"Mobile Bob {bob_id!r} has no explicit Station binding",
+                resource="fixture:mobile-friendship",
+            )
+        deadline = time.monotonic() + 60
+        search_result: Mapping[str, Any] | None = None
+        while time.monotonic() < deadline:
+            try:
+                candidates = sessions[alice_id].call_action(
+                    "social.people.search",
+                    {
+                        "query": _runtime_account_search_query(
+                            accounts["bob"],
+                            role="bob",
+                        )
+                    },
+                )
+            except Exception as error:
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    f"Mobile actor search failed: {redact_text(str(error))}",
+                    resource="fixture:mobile-friendship",
+                ) from error
+            if isinstance(candidates, list):
+                search_result = next(
+                    (
+                        item
+                        for item in candidates
+                        if isinstance(item, Mapping)
+                        and item.get("ptid") == bob_ptid
+                    ),
+                    None,
+                )
+            if search_result is not None:
+                break
+            _mobile_call(sessions[alice_id], "social.reconcile")
+            time.sleep(0.25)
+        if search_result is None:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
                 (
-                    str(item["requestId"])
-                    for item in requests
-                    if isinstance(item, Mapping)
+                    f"Mobile Alice could not resolve Bob {bob_id!r} "
+                    "through production search"
+                ),
+                resource="fixture:mobile-friendship",
+            )
+        observed_federation_id = _required_text(
+            search_result.get("federationId"),
+            "Mobile friendship Federation",
+        )
+        if federation_id and observed_federation_id != federation_id:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                "Mobile Bob clients do not share one Federation",
+                resource="fixture:mobile-friendship",
+            )
+        federation_id = observed_federation_id
+        if search_result.get("homeStationPeerId") != bob_station[
+            "runtime_identity"
+        ]:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                f"Mobile Bob {bob_id!r} search result has the wrong Home Station",
+                resource="fixture:mobile-friendship",
+            )
+        _mobile_call(
+            sessions[alice_id],
+            "social.request.send",
+            {
+                "receiverPtid": bob_ptid,
+                "receiverHomeStationPeerId": bob_station["runtime_identity"],
+                "federationId": federation_id,
+                "message": "secure-content runtime fixture",
+            },
+        )
+        request_id = ""
+        while time.monotonic() < deadline:
+            _mobile_call(sessions[bob_id], "social.reconcile")
+            projection = _mobile_mapping(
+                _mobile_call(sessions[bob_id], "social.projection.read"),
+                "Social projection",
+                client_id=bob_id,
+            )
+            requests = projection.get("friendRequests")
+            if isinstance(requests, list):
+                request_id = next(
+                    (
+                        str(item["requestId"])
+                        for item in requests
+                        if isinstance(item, Mapping)
+                        and item.get("senderPtid") == actor_ptids[alice_id]
+                        and item.get("receiverPtid") == bob_ptid
+                        and isinstance(item.get("requestId"), str)
+                    ),
+                    "",
+                )
+            if request_id:
+                break
+            time.sleep(0.25)
+        if not request_id:
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                f"Mobile Bob {bob_id!r} did not observe Alice's friend request",
+                resource="fixture:mobile-friendship",
+            )
+        _mobile_call(
+            sessions[bob_id],
+            "social.request.accept",
+            {"requestId": request_id},
+        )
+        for observer_id in (alice_id, bob_id):
+            accepted = False
+            accepted_deadline = time.monotonic() + 60
+            while time.monotonic() < accepted_deadline:
+                _mobile_call(sessions[observer_id], "social.reconcile")
+                projection = _mobile_mapping(
+                    _mobile_call(
+                        sessions[observer_id],
+                        "social.projection.read",
+                    ),
+                    "Social projection",
+                    client_id=observer_id,
+                )
+                requests = projection.get("friendRequests")
+                accepted = isinstance(requests, list) and any(
+                    isinstance(item, Mapping)
                     and item.get("senderPtid") == actor_ptids[alice_id]
                     and item.get("receiverPtid") == bob_ptid
-                    and isinstance(item.get("requestId"), str)
-                ),
-                "",
-            )
-        if request_id:
-            break
-        time.sleep(0.25)
-    if not request_id:
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Mobile Bob did not observe Alice's friend request",
-            resource="fixture:mobile-friendship",
-        )
-    _mobile_call(
-        sessions[bob_id],
-        "social.request.accept",
-        {"requestId": request_id},
-    )
+                    and item.get("federationId") == federation_id
+                    and item.get("status") == 2
+                    for item in requests
+                )
+                if accepted:
+                    break
+                time.sleep(0.25)
+            if not accepted:
+                raise RuntimeOwnerBlocked(
+                    "FIXTURE_OWNER_UNAVAILABLE",
+                    (
+                        f"Mobile friendship for Bob {bob_id!r} was not "
+                        f"accepted in {observer_id!r} projection"
+                    ),
+                    resource="fixture:mobile-friendship",
+                )
     return federation_id
 
 
@@ -3198,6 +3617,8 @@ def _manifest_payload(
     fixture_digest: str,
     clients: Sequence[Mapping[str, Any]],
     continuation: Mapping[str, Any] | None = None,
+    post_cut_epoch_id: str | None = None,
+    final_cut_bindings: Mapping[str, Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": runtime_manifest.SCHEMA_VERSION,
@@ -3226,7 +3647,152 @@ def _manifest_payload(
     }
     if continuation is not None:
         payload["continuation"] = dict(continuation)
+    if post_cut_epoch_id is not None or final_cut_bindings is not None:
+        if post_cut_epoch_id is None or final_cut_bindings is None:
+            raise RuntimeOwnerBlocked(
+                "FINAL_CUT_BINDING_UNAVAILABLE",
+                "post-cut epoch and final-cut bindings must be supplied together",
+                resource="runtime:secure-content-w12",
+            )
+        payload["post_cut_epoch_id"] = post_cut_epoch_id
+        payload["final_cut_bindings"] = {
+            profile_id: dict(binding)
+            for profile_id, binding in final_cut_bindings.items()
+        }
     return payload
+
+
+def _load_final_cut_bindings(
+    result_root: Path,
+    *,
+    generation_id: str,
+    workspace_id: str,
+) -> dict[str, dict[str, str]]:
+    result_root = result_root.resolve()
+    bindings: dict[str, dict[str, str]] = {}
+    for profile_id, workstream_id, service_id in (
+        ("four", "W12F-FOUR", STATION_ID),
+        ("fiveArm", "W12F-FIVEARM", SECONDARY_STATION_ID),
+    ):
+        candidates = sorted(
+            (
+                result_root
+                / "W12"
+                / "final-cut"
+                / generation_id
+                / profile_id
+            ).glob("*/result.json")
+        )
+        if len(candidates) != 1:
+            raise RuntimeOwnerBlocked(
+                "FINAL_CUT_BINDING_UNAVAILABLE",
+                (
+                    f"profile {profile_id} requires exactly one FINAL_CUT "
+                    f"result, found {len(candidates)}"
+                ),
+                resource=f"fixture:secure-content-final-cut-{profile_id}",
+            )
+        result_path = candidates[0]
+        try:
+            result = schema_activation.read_json_artifact(
+                result_path,
+                f"{profile_id} FINAL_CUT result",
+            )
+        except schema_activation.SchemaActivationError as error:
+            raise RuntimeOwnerBlocked(
+                "FINAL_CUT_BINDING_UNAVAILABLE",
+                f"profile {profile_id} FINAL_CUT result is unavailable",
+                resource=f"fixture:secure-content-final-cut-{profile_id}",
+            ) from error
+        result_content = dict(result)
+        result_digest = result_content.pop("result_digest", None)
+        expected = {
+            "kind": schema_activation.PROFILE_RESULT_KIND,
+            "workstream_id": workstream_id,
+            "task_id": "W12",
+            "generation_id": generation_id,
+            "source_commit": generation_id,
+            "workspace_id": workspace_id,
+            "profile_id": profile_id,
+            "reset_id": result_path.parent.name,
+            "reset_intent": "FINAL_CUT",
+            "journal_state": "COMPLETE",
+            "status": "PASS",
+            "claim": "FINAL_RESET_COMPLETE_ONLY",
+        }
+        if (
+            any(result.get(field) != value for field, value in expected.items())
+            or not isinstance(result_digest, str)
+            or len(result_digest) != 64
+            or not hmac.compare_digest(
+                result_digest,
+                runtime_manifest.canonical_digest(result_content),
+            )
+        ):
+            raise RuntimeOwnerBlocked(
+                "FINAL_CUT_BINDING_UNAVAILABLE",
+                f"profile {profile_id} FINAL_CUT result is invalid",
+                resource=f"fixture:secure-content-final-cut-{profile_id}",
+            )
+        try:
+            attestation_path, attestation = (
+                schema_activation.read_referenced_artifact(
+                    result_root,
+                    result.get("schema_attestation_ref"),
+                    f"{profile_id} FINAL_CUT schema attestation",
+                )
+            )
+        except (schema_activation.SchemaActivationError, OSError) as error:
+            raise RuntimeOwnerBlocked(
+                "FINAL_CUT_BINDING_UNAVAILABLE",
+                (
+                    f"profile {profile_id} FINAL_CUT schema attestation "
+                    "is unavailable"
+                ),
+                resource=f"fixture:secure-content-final-cut-{profile_id}",
+            ) from error
+        expected_attestation_path = (
+            result_path.parent
+            / runtime_manifest.CANONICAL_PRIVATE_SCHEMA_ATTESTATION_FILENAME
+        )
+        attestation_content = dict(attestation)
+        attestation_digest = attestation_content.pop(
+            "attestation_digest",
+            None,
+        )
+        station_runtime_identity = attestation.get(
+            "station_runtime_identity"
+        )
+        if (
+            attestation_path != expected_attestation_path
+            or attestation.get("source_commit") != generation_id
+            or attestation.get("workspace_id") != workspace_id
+            or attestation.get("profile_id") != profile_id
+            or attestation.get("station_service_id") != service_id
+            or attestation.get("reset_intent") != "FINAL_CUT"
+            or result.get("schema_attestation_digest")
+            != attestation_digest
+            or not isinstance(attestation_digest, str)
+            or len(attestation_digest) != 64
+            or not hmac.compare_digest(
+                attestation_digest,
+                runtime_manifest.canonical_digest(attestation_content),
+            )
+            or not isinstance(station_runtime_identity, str)
+            or not station_runtime_identity
+        ):
+            raise RuntimeOwnerBlocked(
+                "FINAL_CUT_BINDING_UNAVAILABLE",
+                f"profile {profile_id} FINAL_CUT schema attestation is invalid",
+                resource=f"fixture:secure-content-final-cut-{profile_id}",
+            )
+        bindings[profile_id] = {
+            "result_digest": result_digest,
+            "reset_id": result_path.parent.name,
+            "schema_attestation_digest": attestation_digest,
+            "station_runtime_identity": station_runtime_identity,
+        }
+    return bindings
 
 
 def _continuation_run_id(parent_run_id: str, restart_request_id: str) -> str:
@@ -3891,13 +4457,16 @@ class W7RuntimeOwner:
             "fixtureOwner": "runtime-bound",
         }
 
-    def run(self) -> dict[str, Any]:
+    def run_w7_suite(self) -> dict[str, Any]:
         identity = _require_clean_source(self.repo_root, self.result_root)
         resolved, profile_env = _resolve_machine_profile(self.repo_root)
         _secondary_profile_path, secondary_profile_env = (
             _resolve_secondary_profile(resolved)
         )
-        run_id = f"w7-{identity['head'][:12]}-{os.getpid()}"
+        run_id = (
+            f"w7-suite-{identity['head'][:12]}-{os.getpid()}-"
+            f"{time.time_ns()}"
+        )
         owner_root = self.runtime_root / run_id
         acceptance_run_id = (
             datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -4006,6 +4575,17 @@ class W7RuntimeOwner:
             _close_runtime_stack(transport_stack, primary_error=error)
             raise
 
+        fixture_epoch = "w7-" + _sha256(run_id)[:32]
+        ledger = SuiteRuntimeLedger(
+            W7_RUNTIME_REUSE,
+            suite_runtime_id=run_id,
+            source_digest=str(identity["head"]),
+            fixture_epoch=fixture_epoch,
+        )
+        ledger.record(
+            SuiteRuntimeAction.PROVISION,
+            resource_id="runtime:w7",
+        )
         with _runtime_cleanup_scope(transport_stack) as stack:
             _activate_scenario_journey(self.repo_root, DESKTOP_JOURNEY)
             accounts, password = _provision_runtime_accounts(
@@ -4020,6 +4600,21 @@ class W7RuntimeOwner:
                     "browser_anonymous_bootstrap",
                 ),
                 secondary_roles=("bob",),
+            )
+            for role in (
+                "alice",
+                "bob",
+                "eve",
+                "browser_actor",
+                "browser_anonymous_bootstrap",
+            ):
+                ledger.record(
+                    SuiteRuntimeAction.ACCOUNT_PROVISION,
+                    resource_id=f"account:{PROFILE}:{role}",
+                )
+            ledger.record(
+                SuiteRuntimeAction.ACCOUNT_PROVISION,
+                resource_id=f"account:{SECONDARY_PROFILE}:bob",
             )
             reserved_ports: set[int] = set()
             active_client_ids: set[int] = set()
@@ -4050,6 +4645,14 @@ class W7RuntimeOwner:
                 )
                 _wait_for_device_enrollment(client)
                 desktop[client_id] = client
+                ledger.record(
+                    SuiteRuntimeAction.CLIENT_LAUNCH,
+                    resource_id=f"client:{client_id}",
+                )
+                ledger.record(
+                    SuiteRuntimeAction.LOGIN,
+                    resource_id=f"session:{client_id}",
+                )
 
             _prepare_accepted_friendship(
                 desktop[DESKTOP_CLIENTS[0][0]],
@@ -4094,6 +4697,69 @@ class W7RuntimeOwner:
                             "station-secondary": SECONDARY_STATION_ID,
                         },
                     )
+                )
+
+            browser: dict[str, FoundationRuntimeClient] = {}
+            browser_payloads: list[dict[str, Any]] = []
+            for index, (client_id, actor, account_role) in enumerate(
+                BROWSER_CLIENTS
+            ):
+                client = _make_client(
+                    repo_root=self.repo_root,
+                    runtime_root=owner_root,
+                    station_url=station_url,
+                    profile_env=profile_env,
+                    source_commit=str(identity["head"]),
+                    client_id=client_id,
+                    runtime_kind="browser",
+                    port_bases=(
+                        3630 + index * 20,
+                        3810 + index * 20,
+                        4595 + index * 20,
+                    ),
+                    reserved_ports=reserved_ports,
+                )
+                stack.callback(
+                    _stop_client_or_raise,
+                    client,
+                    purpose="Browser",
+                    active_client_ids=active_client_ids,
+                )
+                active_client_ids.add(id(client))
+                snapshot = _start_client(
+                    client,
+                    account=(
+                        accounts[account_role]
+                        if account_role is not None
+                        else None
+                    ),
+                    password=password,
+                    anonymous_binding_account=(
+                        accounts["browser_anonymous_bootstrap"]
+                        if account_role is None
+                        else None
+                    ),
+                )
+                browser[client_id] = client
+                browser_payloads.append(
+                    _client_payload(
+                        client_id,
+                        actor,
+                        client,
+                        snapshot,
+                        service_roles={
+                            "station": STATION_ID,
+                            "station-secondary": SECONDARY_STATION_ID,
+                        },
+                    )
+                )
+                ledger.record(
+                    SuiteRuntimeAction.CLIENT_LAUNCH,
+                    resource_id=f"client:{client_id}",
+                )
+                ledger.record(
+                    SuiteRuntimeAction.LOGIN,
+                    resource_id=f"session:{client_id}",
                 )
 
             desktop_dir = owner_root / "desktop"
@@ -4174,6 +4840,10 @@ class W7RuntimeOwner:
             )
             blocked_result_path: Path | None = None
             station_endpoints.refresh()
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="desktop-continuity",
+            )
             try:
                 execute_scenario(
                     runtime="desktop",
@@ -4223,6 +4893,11 @@ class W7RuntimeOwner:
                         "station": STATION_ID,
                         "station-secondary": SECONDARY_STATION_ID,
                     },
+                )
+                ledger.record(
+                    SuiteRuntimeAction.CLIENT_REPLACEMENT,
+                    scenario_id="desktop-continuity",
+                    resource_id=f"client:{current['id']}",
                 )
                 desktop_payloads = [
                     current if item["id"] == current["id"] else item
@@ -4359,70 +5034,48 @@ class W7RuntimeOwner:
                     fixture_action_client=fixture_action_client,
                 )
 
+            desktop_result_digest = _required_text(
+                desktop_result.get("resultDigest"),
+                "desktop-continuity result digest",
+            )
+            desktop_result_resource = (
+                f"scenario-result:{desktop_result_digest}"
+            )
+            ledger.record(
+                SuiteRuntimeAction.UI_ACTION,
+                scenario_id="desktop-continuity",
+                resource_id=f"{desktop_result_resource}:ui-action",
+            )
+            ledger.record(
+                SuiteRuntimeAction.RECEIVER_ASSERTION,
+                scenario_id="desktop-continuity",
+                resource_id=f"{desktop_result_resource}:receiver",
+            )
+            ledger.record(
+                SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                scenario_id="desktop-continuity",
+                resource_id=desktop_result_resource,
+            )
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_END,
+                scenario_id="desktop-continuity",
+            )
             _bridge_desktop_handoff(self.result_root, run_id, identity["head"])
 
             _close_fixture_action_channel(
                 fixture_context,
                 fixture_action_client,
             )
-            for client in reversed(tuple(desktop.values())):
-                _stop_client_or_raise(
-                    client,
-                    purpose="Desktop",
-                    active_client_ids=active_client_ids,
-                )
-            desktop.clear()
 
             station_endpoints.refresh()
+            stack.callback(
+                _activate_scenario_journey,
+                self.repo_root,
+                DESKTOP_JOURNEY,
+                work_item_id=WORK_ITEM_ID,
+                task_id=TASK_ID,
+            )
             _activate_scenario_journey(self.repo_root, BROWSER_JOURNEY)
-            browser: dict[str, FoundationRuntimeClient] = {}
-            browser_payloads: list[dict[str, Any]] = []
-            for index, (client_id, actor, account_role) in enumerate(BROWSER_CLIENTS):
-                client = _make_client(
-                    repo_root=self.repo_root,
-                    runtime_root=owner_root,
-                    station_url=station_url,
-                    profile_env=profile_env,
-                    source_commit=str(identity["head"]),
-                    client_id=client_id,
-                    runtime_kind="browser",
-                    port_bases=(3630 + index * 20, 3810 + index * 20, 4595 + index * 20),
-                    reserved_ports=reserved_ports,
-                )
-                stack.callback(
-                    _stop_client_or_raise,
-                    client,
-                    purpose="Browser",
-                    active_client_ids=active_client_ids,
-                )
-                active_client_ids.add(id(client))
-                snapshot = _start_client(
-                    client,
-                    account=(
-                        accounts[account_role]
-                        if account_role is not None
-                        else None
-                    ),
-                    password=password,
-                    anonymous_binding_account=(
-                        accounts["browser_anonymous_bootstrap"]
-                        if account_role is None
-                        else None
-                    ),
-                )
-                browser[client_id] = client
-                browser_payloads.append(
-                    _client_payload(
-                        client_id,
-                        actor,
-                        client,
-                        snapshot,
-                        service_roles={
-                            "station": STATION_ID,
-                            "station-secondary": SECONDARY_STATION_ID,
-                        },
-                    )
-                )
             browser_dir = owner_root / "browser"
             browser_fixture_ref = self._copy_fixture_into(
                 owner_root / fixture_ref["path"],
@@ -4490,6 +5143,10 @@ class W7RuntimeOwner:
                 sessions_by_client=browser,
                 repo_root=self.repo_root,
             )
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_START,
+                scenario_id="browser-boundary",
+            )
             browser_result = execute_scenario(
                 runtime="browser",
                 scenario_id="browser-private-boundary",
@@ -4502,26 +5159,908 @@ class W7RuntimeOwner:
                 result_root=self.result_root,
                 workspace_identity=identity,
             )
+            browser_result_digest = _required_text(
+                browser_result.get("resultDigest"),
+                "browser-boundary result digest",
+            )
+            browser_result_resource = (
+                f"scenario-result:{browser_result_digest}"
+            )
+            ledger.record(
+                SuiteRuntimeAction.UI_ACTION,
+                scenario_id="browser-boundary",
+                resource_id=f"{browser_result_resource}:ui-action",
+            )
+            ledger.record(
+                SuiteRuntimeAction.RECEIVER_ASSERTION,
+                scenario_id="browser-boundary",
+                resource_id=f"{browser_result_resource}:receiver",
+            )
+            ledger.record(
+                SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                scenario_id="browser-boundary",
+                resource_id=browser_result_resource,
+            )
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_END,
+                scenario_id="browser-boundary",
+            )
+        ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
+        suite_report = ledger.require_valid()
+        suite_report_path = _write_immutable_json(
+            owner_root / "suite-runtime.json",
+            suite_report,
+        )
         return {
             "status": "FUNCTIONAL_PASS",
             "proofState": "UNPROVEN",
             "desktopResult": desktop_result["result"],
             "browserResult": browser_result["result"],
             "runtimeRoot": str(owner_root),
+            "suiteRuntimeReport": str(suite_report_path),
+            "suiteRuntimeReportDigest": suite_report["reportDigest"],
         }
+
+    def run(self) -> dict[str, Any]:
+        return self.run_w7_suite()
 
     def run_w8_suite(self) -> dict[str, Any]:
         return self._run_w8_suite()
 
     def run_w9_suite(self) -> dict[str, Any]:
-        raise RuntimeOwnerBlocked(
-            "SUITE_RUNTIME_OWNER_PENDING",
-            (
-                "W9 Suite Runtime remains fenced behind W12A Mobile "
-                "foundation, W12B parity, and W12C platform-owner closure"
-            ),
-            resource="runtime:secure-content-w9",
+        return self._run_platform_suite(
+            TASK_SUITE_DEFINITIONS["run-w9-suite"]
         )
+
+    def run_w2_suite(self) -> dict[str, Any]:
+        return self._run_platform_suite(
+            TASK_SUITE_DEFINITIONS["run-w2-suite"]
+        )
+
+    def run_w10_suite(self) -> dict[str, Any]:
+        return self._run_platform_suite(
+            TASK_SUITE_DEFINITIONS["run-w10-suite"]
+        )
+
+    def run_w11_suite(self) -> dict[str, Any]:
+        return self._run_platform_suite(
+            TASK_SUITE_DEFINITIONS["run-w11-suite"]
+        )
+
+    def run_final_suite(self) -> dict[str, Any]:
+        return self._run_platform_suite(
+            TASK_SUITE_DEFINITIONS["run-final-suite"]
+        )
+
+    def _run_platform_suite(
+        self,
+        suite: _TaskSuiteDefinition,
+    ) -> dict[str, Any]:
+        contract = load_platform_runtime_contract()
+        scenario_commands = tuple(
+            (scenario, contract.command(scenario.leaf_action))
+            for scenario in suite.scenarios
+        )
+        if (
+            tuple(scenario.scenario_id for scenario, _ in scenario_commands)
+            != suite.runtime_reuse.scenario_ids
+            or any(
+                command.task_id != suite.task_id
+                for _, command in scenario_commands
+            )
+        ):
+            raise RuntimeOwnerBlocked(
+                "SUITE_RUNTIME_CONTRACT_INVALID",
+                f"{suite.action} does not match its Task runtimeReuse contract",
+                resource=f"runtime:{suite.action}",
+            )
+        identity = _require_clean_source(self.repo_root, self.result_root)
+        first_command = scenario_commands[0][1]
+        _activate_scenario_journey(
+            self.repo_root,
+            suite.primary_journey_id,
+            work_item_id=first_command.work_item_id,
+            task_id=first_command.task_id,
+        )
+        resolved, primary_profile_env = _resolve_machine_profile(
+            self.repo_root
+        )
+        profile_environments = {PROFILE: primary_profile_env}
+        if SECONDARY_PROFILE in suite.profiles:
+            _path, secondary_profile_env = _resolve_secondary_profile(
+                resolved
+            )
+            profile_environments[SECONDARY_PROFILE] = secondary_profile_env
+        bindings = tuple(
+            (
+                STATION_ID
+                if profile_id == PROFILE
+                else SECONDARY_STATION_ID,
+                profile_environments[profile_id],
+            )
+            for profile_id in suite.profiles
+        )
+        run_id = (
+            f"{suite.task_id.lower()}-suite-{identity['head'][:12]}-"
+            f"{os.getpid()}-{time.time_ns()}"
+        )
+        owner_root = self.runtime_root / run_id
+        fixture_epoch = f"{suite.task_id.lower()}-" + _sha256(run_id)[:32]
+        acceptance_run_id = (
+            datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+            + "-"
+            + _sha256(run_id)[:32]
+        )
+        attestation_store = owner_root / "attestation-store"
+        (
+            attestation_store
+            / identity["workspaceId"]
+            / first_command.journey_id
+            / acceptance_run_id
+        ).mkdir(parents=True, mode=0o700)
+        transport_stack, station_endpoints = _open_station_tunnels(bindings)
+        attestations: dict[str, Any] = {}
+        try:
+            with _environment(
+                {
+                    "PT_ACCEPTANCE_ARTIFACT_ROOT": str(attestation_store),
+                    "PT_ACCEPTANCE_WORKSPACE_ID": str(
+                        identity["workspaceId"]
+                    ),
+                    "PT_ACCEPTANCE_GATE_ID": first_command.journey_id,
+                    "PT_ACCEPTANCE_RUN_ID": acceptance_run_id,
+                }
+            ):
+                for service_id, profile_env in bindings:
+                    attestations[service_id] = produce_station_attestation(
+                        environment_id=(
+                            f"secure-content-{suite.task_id.lower()}-suite"
+                        ),
+                        run_id=run_id,
+                        service_id=service_id,
+                        station_url=station_endpoints[
+                            service_id
+                        ].transport_url,
+                        profile_env=profile_env,
+                        require_runtime_identity=True,
+                        remote_source_identity_provider=(
+                            resolve_remote_source_identity
+                        ),
+                    )
+        except Exception as error:
+            _close_runtime_stack(transport_stack, primary_error=error)
+            raise RuntimeOwnerBlocked(
+                "SERVICE_ATTESTATION_UNAVAILABLE",
+                _error_message_with_cleanup(error),
+                resource=f"station:{suite.action}",
+            ) from error
+        protocol_digest = source_proto_digest(self.repo_root)
+        if any(
+            not commits_match(attestation.live_commit, identity["head"])
+            or attestation.protocol_digest != protocol_digest
+            for attestation in attestations.values()
+        ):
+            error = RuntimeOwnerBlocked(
+                "SOURCE_ATTESTATION_MISMATCH",
+                f"{suite.task_id} Stations are not deployed from exact source",
+                resource=f"station:{suite.action}",
+            )
+            _close_runtime_stack(transport_stack, primary_error=error)
+            raise error
+
+        schema_bindings: dict[
+            str,
+            runtime_manifest.CanonicalPrivateSchemaAttestationBinding,
+        ] = {}
+        try:
+            for service_id, profile_env in bindings:
+                schema_bindings[service_id] = (
+                    _resolve_canonical_private_schema_attestation(
+                        self.result_root,
+                        self.repo_root,
+                        identity,
+                        attestations[service_id],
+                        service_id=service_id,
+                        profile_id=str(profile_env["PT_DEV_PROFILE"]),
+                        attested_endpoint=profile_env["PT_STATION_URL"],
+                        accepted_intents=(
+                            ("FINAL_CUT",)
+                            if suite.task_id == "W12"
+                            else ("SCHEMA_ACTIVATION",)
+                        ),
+                    )
+                )
+        except Exception as error:
+            _close_runtime_stack(transport_stack, primary_error=error)
+            raise
+
+        try:
+            final_cut_bindings = (
+                _load_final_cut_bindings(
+                    self.result_root,
+                    generation_id=str(identity["head"]),
+                    workspace_id=str(identity["workspaceId"]),
+                )
+                if suite.task_id == "W12"
+                else None
+            )
+        except Exception as error:
+            _close_runtime_stack(transport_stack, primary_error=error)
+            raise
+        ledger = SuiteRuntimeLedger(
+            suite.runtime_reuse,
+            suite_runtime_id=run_id,
+            source_digest=str(identity["head"]),
+            fixture_epoch=fixture_epoch,
+        )
+        ledger.record(
+            SuiteRuntimeAction.PROVISION,
+            resource_id=f"runtime:{suite.task_id.lower()}",
+        )
+        desktop_ids, mobile_ids = _suite_physical_clients(suite, contract)
+        if len(desktop_ids) + len(mobile_ids) > (
+            suite.runtime_reuse.max_client_launches
+        ):
+            error = RuntimeOwnerBlocked(
+                "SUITE_RUNTIME_CONTRACT_INVALID",
+                f"{suite.action} exceeds its physical client launch budget",
+                resource=f"runtime:{suite.action}",
+            )
+            _close_runtime_stack(transport_stack, primary_error=error)
+            raise error
+
+        primary_roles: set[str] = set()
+        secondary_roles: set[str] = set()
+        for _scenario, command in scenario_commands:
+            for client_id in command.clients:
+                if command.runtime == "mobile":
+                    role = _mobile_actor_role(client_id)
+                    physical_id = client_id
+                else:
+                    role = _desktop_actor_role(client_id)
+                    physical_id = suite.desktop_client_aliases.get(
+                        client_id,
+                        client_id,
+                    )
+                if role == "anonymous":
+                    primary_roles.add("browser_anonymous_bootstrap")
+                    continue
+                primary_roles.add(role)
+                physical_service = (
+                    _mobile_service_for_client(
+                        client_id,
+                        command.profiles,
+                    )
+                    if command.runtime == "mobile"
+                    else _desktop_service_for_client(
+                        physical_id,
+                        command.profiles,
+                    )
+                )
+                if physical_service == SECONDARY_STATION_ID:
+                    secondary_roles.add(role)
+
+        variant_results: dict[str, str] = {}
+        result_refs: dict[str, str] = {}
+        with _runtime_cleanup_scope(transport_stack) as stack:
+            stack.callback(
+                _activate_scenario_journey,
+                self.repo_root,
+                suite.primary_journey_id,
+                work_item_id=first_command.work_item_id,
+                task_id=first_command.task_id,
+            )
+            accounts, password = _provision_runtime_accounts(
+                primary_station_url=station_endpoints[
+                    STATION_ID
+                ].transport_url,
+                secondary_station_url=(
+                    station_endpoints[
+                        SECONDARY_STATION_ID
+                    ].transport_url
+                    if SECONDARY_STATION_ID in station_endpoints
+                    else None
+                ),
+                run_id=run_id,
+                roles=tuple(sorted(primary_roles)),
+                secondary_roles=tuple(sorted(secondary_roles)),
+            )
+            for role in sorted(primary_roles):
+                ledger.record(
+                    SuiteRuntimeAction.ACCOUNT_PROVISION,
+                    resource_id=f"account:{PROFILE}:{role}",
+                )
+            for role in sorted(secondary_roles):
+                ledger.record(
+                    SuiteRuntimeAction.ACCOUNT_PROVISION,
+                    resource_id=f"account:{SECONDARY_PROFILE}:{role}",
+                )
+
+            desktop_resources = self._prepare_desktop_suite_resources(
+                suite=suite,
+                contract=contract,
+                owner_root=owner_root,
+                identity=identity,
+                profile_environments=profile_environments,
+                station_endpoints=station_endpoints,
+                accounts=accounts,
+                password=password,
+                stack=stack,
+                ledger=ledger,
+            )
+            mobile_resources = self._prepare_mobile_suite_resources(
+                suite=suite,
+                contract=contract,
+                owner_root=owner_root,
+                identity=identity,
+                profile_environments=profile_environments,
+                station_endpoints=station_endpoints,
+                attestations=attestations,
+                accounts=accounts,
+                password=password,
+                stack=stack,
+                ledger=ledger,
+            )
+
+            prepared: dict[str, _PreparedSuiteScenario] = {}
+            for scenario in suite.scenarios:
+                command = contract.command(scenario.leaf_action)
+                runtime_dir = owner_root / scenario.scenario_id
+                resources: (
+                    _PreparedDesktopSuiteResources
+                    | _PreparedMobileSuiteResources
+                    | None
+                ) = (
+                    mobile_resources
+                    if command.runtime == "mobile"
+                    else desktop_resources
+                )
+                if resources is None:
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE",
+                        f"{scenario.leaf_action} has no prepared clients",
+                        resource=f"runtime:{suite.action}",
+                    )
+                fixture_identity = _sha256(
+                    json.dumps(
+                        {
+                            "fixtureEpoch": fixture_epoch,
+                            "leafAction": scenario.leaf_action,
+                            "physicalClients": [
+                                (
+                                    client_id
+                                    if command.runtime == "mobile"
+                                    else suite.desktop_client_aliases.get(
+                                        client_id,
+                                        client_id,
+                                    )
+                                )
+                                for client_id in command.clients
+                            ],
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    )
+                )
+                fixture_owner = RuntimeFixtureOwner(
+                    source_checkpoint=str(identity["head"]),
+                    run_id=run_id,
+                    fixture_set_id=(
+                        f"{suite.task_id.lower()}-{fixture_epoch}-"
+                        f"{scenario.scenario_id}"
+                    ),
+                    bindings=(
+                        RuntimeFixtureBinding(
+                            capability=command.fixture_capability,
+                            owner=(
+                                "mobile-product-fixture-owner"
+                                if command.runtime == "mobile"
+                                else "desktop-product-fixture-owner"
+                            ),
+                            opaque_id=(
+                                f"{suite.task_id.lower()}-"
+                                f"{scenario.scenario_id}-fixture"
+                            ),
+                            expected_identity_digest=fixture_identity,
+                            operations=command.fixture_operations,
+                            action=resources.fixture.execute,
+                            sensitive_values=(
+                                password,
+                                *accounts.values(),
+                            ),
+                        ),
+                    ),
+                )
+                fixture_path = fixture_owner.write_manifest(
+                    runtime_dir / "fixture.json"
+                )
+                fixture = fixture_owner.manifest()
+                services = self._publish_suite_services(
+                    root=runtime_dir,
+                    command=command,
+                    run_id=run_id,
+                    profile_environments=profile_environments,
+                    attestations=attestations,
+                    schema_bindings=schema_bindings,
+                )
+                payload = _manifest_payload(
+                    identity=identity,
+                    journey_id=command.journey_id,
+                    run_id=run_id,
+                    services=services,
+                    fixture_ref={
+                        "path": fixture_path.name,
+                        "sha256": _sha256(fixture_path.read_bytes()),
+                    },
+                    fixture_digest=str(fixture["manifest_digest"]),
+                    clients=resources.payloads_for(command),
+                    post_cut_epoch_id=(
+                        fixture_epoch
+                        if final_cut_bindings is not None
+                        else None
+                    ),
+                    final_cut_bindings=final_cut_bindings,
+                )
+                if command.runtime == "mobile":
+                    manifest_path = _write_owned_runtime_manifest(
+                        payload=payload,
+                        output_path=runtime_dir / "runtime.json",
+                        repo_root=self.repo_root,
+                    )
+                else:
+                    sessions = resources.sessions_for(command)
+                    manifest_path = write_attached_runtime_manifest(
+                        manifest_payload=payload,
+                        output_path=runtime_dir / "runtime.json",
+                        journey_id=command.journey_id,
+                        sessions_by_client=sessions,
+                        automation_refs_by_client={
+                            client_id: {
+                                "kind": (
+                                    runtime_manifest
+                                    .AUTOMATION_ATTACHMENT_KIND
+                                ),
+                                "endpoint": _webdriver_endpoint(client),
+                                "session_id": str(client.driver.session_id),
+                            }
+                            for client_id, client in sessions.items()
+                        },
+                        repo_root=self.repo_root,
+                    )
+                manifest = json.loads(
+                    manifest_path.read_text(encoding="utf-8")
+                )
+                fixture_context, fixture_client = (
+                    fixture_owner.open_action_channel(
+                        workspace_id=str(identity["workspaceId"]),
+                        gate_id=command.journey_id,
+                        runtime_manifest_digests=(
+                            str(manifest["manifest_digest"]),
+                        ),
+                    )
+                )
+                stack.callback(
+                    _close_fixture_action_channel,
+                    fixture_context,
+                    fixture_client,
+                )
+                prepared[scenario.scenario_id] = _PreparedSuiteScenario(
+                    scenario_id=scenario.scenario_id,
+                    command=command,
+                    manifest_path=manifest_path,
+                    fixture_context=fixture_context,
+                    fixture_client=fixture_client,
+                )
+
+            for scenario in suite.scenarios:
+                attached = prepared[scenario.scenario_id]
+                command = attached.command
+                _activate_scenario_journey(
+                    self.repo_root,
+                    command.journey_id,
+                    work_item_id=command.work_item_id,
+                    task_id=command.task_id,
+                )
+                station_endpoints.refresh()
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_START,
+                    scenario_id=scenario.scenario_id,
+                )
+                result = execute_scenario(
+                    runtime=command.runtime,
+                    scenario_id=command.scenario_id,
+                    budget_seconds=command.budget_seconds,
+                    repo_root=self.repo_root,
+                    profile=command.profile,
+                    profiles=(
+                        ()
+                        if command.profile is not None
+                        else command.profiles
+                    ),
+                    clients=command.clients,
+                    runtime_manifest_path=attached.manifest_path,
+                    result_root=self.result_root,
+                    workspace_identity=identity,
+                    fixture_action_client=attached.fixture_client,
+                )
+                result_digest = _required_text(
+                    result.get("resultDigest"),
+                    f"{scenario.scenario_id} result digest",
+                )
+                result_resource = f"scenario-result:{result_digest}"
+                ledger.record(
+                    SuiteRuntimeAction.UI_ACTION,
+                    scenario_id=scenario.scenario_id,
+                    resource_id=f"{result_resource}:ui-action",
+                )
+                ledger.record(
+                    SuiteRuntimeAction.RECEIVER_ASSERTION,
+                    scenario_id=scenario.scenario_id,
+                    resource_id=f"{result_resource}:receiver",
+                )
+                ledger.record(
+                    SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                    scenario_id=scenario.scenario_id,
+                    resource_id=result_resource,
+                )
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_END,
+                    scenario_id=scenario.scenario_id,
+                )
+                variant_results[scenario.scenario_id] = str(
+                    result["result"]
+                )
+                result_refs[scenario.scenario_id] = result_digest
+
+        ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
+        suite_report = ledger.require_valid()
+        suite_report_path = _write_immutable_json(
+            owner_root / "suite-runtime.json",
+            suite_report,
+        )
+        return {
+            "status": "FUNCTIONAL_PASS",
+            "proofState": "UNPROVEN",
+            "taskId": suite.task_id,
+            "variantResults": variant_results,
+            "resultDigests": result_refs,
+            "runtimeRoot": str(owner_root),
+            "suiteRuntimeReport": str(suite_report_path),
+            "suiteRuntimeReportDigest": suite_report["reportDigest"],
+        }
+
+    def _prepare_desktop_suite_resources(
+        self,
+        *,
+        suite: _TaskSuiteDefinition,
+        contract: PlatformRuntimeContract,
+        owner_root: Path,
+        identity: Mapping[str, Any],
+        profile_environments: Mapping[str, Mapping[str, str]],
+        station_endpoints: _StationEndpoints,
+        accounts: Mapping[str, str],
+        password: str,
+        stack: ExitStack,
+        ledger: SuiteRuntimeLedger,
+    ) -> _PreparedDesktopSuiteResources | None:
+        plans: dict[str, tuple[str, PlatformRuntimeCommand]] = {}
+        logical_to_physical: dict[str, str] = {}
+        for scenario in suite.scenarios:
+            command = contract.command(scenario.leaf_action)
+            if command.runtime == "mobile":
+                continue
+            for client_id in command.clients:
+                physical_id = suite.desktop_client_aliases.get(
+                    client_id,
+                    client_id,
+                )
+                logical_to_physical[client_id] = physical_id
+                plans.setdefault(physical_id, (client_id, command))
+        if not plans:
+            return None
+
+        reserved_ports: set[int] = set()
+        active_client_ids: set[int] = set()
+        clients: dict[str, FoundationRuntimeClient] = {}
+        snapshots: dict[str, Mapping[str, Any]] = {}
+        service_by_physical: dict[str, str] = {}
+        for index, (physical_id, (logical_id, command)) in enumerate(
+            plans.items()
+        ):
+            actor_role = _desktop_actor_role(logical_id)
+            service_id = _desktop_service_for_client(
+                physical_id,
+                command.profiles,
+            )
+            profile_id = (
+                PROFILE
+                if service_id == STATION_ID
+                else SECONDARY_PROFILE
+            )
+            client = _make_client(
+                repo_root=self.repo_root,
+                runtime_root=owner_root,
+                station_url=station_endpoints[service_id].transport_url,
+                profile_env=profile_environments[profile_id],
+                source_commit=str(identity["head"]),
+                client_id=physical_id,
+                runtime_kind=(
+                    "browser"
+                    if command.runtime == "browser"
+                    else "native-tauri"
+                ),
+                port_bases=(
+                    3530 + index * 20,
+                    3710 + index * 20,
+                    4495 + index * 20,
+                ),
+                reserved_ports=reserved_ports,
+            )
+            stack.callback(
+                _stop_client_or_raise,
+                client,
+                purpose=f"{suite.task_id} Suite",
+                active_client_ids=active_client_ids,
+            )
+            active_client_ids.add(id(client))
+            account = (
+                None
+                if actor_role == "anonymous"
+                else accounts[actor_role]
+            )
+            snapshot = _start_client(
+                client,
+                account=account,
+                password=password,
+                anonymous_binding_account=(
+                    accounts["browser_anonymous_bootstrap"]
+                    if actor_role == "anonymous"
+                    else None
+                ),
+            )
+            if account is not None and command.runtime != "browser":
+                _wait_for_device_enrollment(client)
+            clients[physical_id] = client
+            snapshots[physical_id] = snapshot
+            service_by_physical[physical_id] = service_id
+            ledger.record(
+                SuiteRuntimeAction.CLIENT_LAUNCH,
+                resource_id=f"client:{physical_id}",
+            )
+            ledger.record(
+                SuiteRuntimeAction.LOGIN,
+                resource_id=f"session:{physical_id}",
+            )
+
+        for service_id in tuple(dict.fromkeys(service_by_physical.values())):
+            by_role = {
+                _desktop_actor_role(logical_id): clients[physical_id]
+                for physical_id, (logical_id, _command) in plans.items()
+                if service_by_physical[physical_id] == service_id
+                and _desktop_actor_role(logical_id) in {"alice", "bob"}
+            }
+            if set(by_role) == {"alice", "bob"}:
+                _prepare_accepted_friendship(
+                    by_role["alice"],
+                    by_role["bob"],
+                )
+        logical_clients = {
+            logical_id: clients[physical_id]
+            for logical_id, physical_id in logical_to_physical.items()
+        }
+        return _PreparedDesktopSuiteResources(
+            clients=clients,
+            snapshots=snapshots,
+            logical_to_physical=logical_to_physical,
+            service_by_physical=service_by_physical,
+            fixture=_DesktopProductionFixture(logical_clients),
+        )
+
+    def _prepare_mobile_suite_resources(
+        self,
+        *,
+        suite: _TaskSuiteDefinition,
+        contract: PlatformRuntimeContract,
+        owner_root: Path,
+        identity: Mapping[str, Any],
+        profile_environments: Mapping[str, Mapping[str, str]],
+        station_endpoints: _StationEndpoints,
+        attestations: Mapping[str, Any],
+        accounts: Mapping[str, str],
+        password: str,
+        stack: ExitStack,
+        ledger: SuiteRuntimeLedger,
+    ) -> _PreparedMobileSuiteResources | None:
+        specs: dict[str, Any] = {}
+        command_by_client: dict[str, PlatformRuntimeCommand] = {}
+        for scenario in suite.scenarios:
+            command = contract.command(scenario.leaf_action)
+            if command.runtime != "mobile":
+                continue
+            for client in command.mobile_clients:
+                specs.setdefault(client.id, client)
+                command_by_client.setdefault(client.id, command)
+        if not specs:
+            return None
+        service_by_client = _suite_mobile_service_bindings(
+            suite,
+            contract,
+        )
+
+        base_contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "mobile-simulator.yaml"
+        )
+        provisioner = SelectedMobileSimulatorProvisioner(
+            base_contract,
+            clients=tuple(specs.values()),
+            runtime_source_commit=str(identity["head"]),
+            repo_root=self.repo_root,
+            runtime_base=owner_root / "simulator",
+        )
+        stack.callback(
+            _cleanup_mobile_provisioner_or_raise,
+            provisioner,
+        )
+        provisioned = provisioner.provision(
+            next(iter(command_by_client.values())).journey_id
+        )
+        if (
+            not isinstance(provisioned, MobileSimulatorRuntimeManifest)
+            or provisioned.is_blocked()
+        ):
+            raise RuntimeOwnerBlocked(
+                "CLIENT_RUNTIME_UNAVAILABLE",
+                (
+                    provisioned.blocked_reason
+                    or "Mobile simulator provisioning did not complete"
+                ),
+                resource=(
+                    provisioned.blocked_resource
+                    or "mobile-simulator"
+                ),
+            )
+        resources = provisioned.simulator_resources
+        client_resources = _mobile_mapping(
+            resources.get("clients"),
+            "client resources",
+            client_id="mobile-runtime",
+        )
+        appium = _mobile_mapping(
+            resources.get("appium"),
+            "Appium resources",
+            client_id="mobile-runtime",
+        )
+        appium_endpoint = _required_text(
+            appium.get("serverUrl"),
+            "Mobile Appium endpoint",
+        )
+        services: dict[str, dict[str, Any]] = {
+            service_id: {
+                "runtime_identity": attestation.runtime_identity,
+                "endpoint": attestation.endpoint,
+                "profile_id": (
+                    PROFILE
+                    if service_id == STATION_ID
+                    else SECONDARY_PROFILE
+                ),
+            }
+            for service_id, attestation in attestations.items()
+        }
+        sessions: dict[str, Any] = {}
+        actor_ptids: dict[str, str] = {}
+        payloads: dict[str, dict[str, Any]] = {}
+        for client_id, client_spec in specs.items():
+            command = command_by_client[client_id]
+            service_id = service_by_client[client_id]
+            session = provisioner.create_appium_session(
+                provisioned,
+                client_id,
+            )
+            stack.callback(
+                _stop_mobile_session_or_raise,
+                session,
+                client_id=client_id,
+            )
+            actor_ptid, scope, build = _start_mobile_client(
+                session,
+                client_id=client_id,
+                account=accounts[client_spec.role],
+                password=password,
+                station_endpoint=station_endpoints[service_id],
+                station_runtime_identity=(
+                    attestations[service_id].runtime_identity
+                ),
+                source_commit=str(identity["head"]),
+                required_actions=contract.mobile_harness_actions,
+            )
+            sessions[client_id] = session
+            actor_ptids[client_id] = actor_ptid
+            payloads[client_id] = _mobile_client_payload(
+                client_id=client_id,
+                actor_role=client_spec.role,
+                actor_ptid=actor_ptid,
+                session=session,
+                resource=_mobile_mapping(
+                    client_resources.get(client_id),
+                    "client resource",
+                    client_id=client_id,
+                ),
+                service_id=service_id,
+                service=services[service_id],
+                source_commit=str(identity["head"]),
+                build=build,
+                scope=scope,
+                appium_endpoint=appium_endpoint,
+            )
+            ledger.record(
+                SuiteRuntimeAction.CLIENT_LAUNCH,
+                resource_id=f"client:{client_id}",
+            )
+            ledger.record(
+                SuiteRuntimeAction.LOGIN,
+                resource_id=f"session:{client_id}",
+            )
+        federation_id = _prepare_mobile_friendship(
+            sessions,
+            actor_ptids,
+            accounts,
+            services,
+            service_by_client,
+            suite.required_mobile_bob_services,
+        )
+        return _PreparedMobileSuiteResources(
+            sessions=sessions,
+            payloads=payloads,
+            fixture=MobileProductionFixture(
+                sessions=sessions,
+                actor_ptids=actor_ptids,
+                federation_id=federation_id,
+            ),
+        )
+
+    @staticmethod
+    def _publish_suite_services(
+        *,
+        root: Path,
+        command: PlatformRuntimeCommand,
+        run_id: str,
+        profile_environments: Mapping[str, Mapping[str, str]],
+        attestations: Mapping[str, Any],
+        schema_bindings: Mapping[
+            str,
+            runtime_manifest.CanonicalPrivateSchemaAttestationBinding,
+        ],
+    ) -> dict[str, dict[str, Any]]:
+        services: dict[str, dict[str, Any]] = {}
+        for profile_id in command.profiles:
+            service_id = (
+                STATION_ID
+                if profile_id == PROFILE
+                else SECONDARY_STATION_ID
+            )
+            profile_env = profile_environments[profile_id]
+            attestation_ref = _publish_attestation(
+                root,
+                attestations[service_id],
+                run_id=run_id,
+                journey_id=command.journey_id,
+                service_id=service_id,
+            )
+            schema_ref = _publish_canonical_private_schema_attestation(
+                root,
+                service_id,
+                schema_bindings[service_id],
+            )
+            services[service_id] = _service_payload(
+                attestations[service_id],
+                attestation_ref,
+                schema_ref,
+                profile_id=profile_id,
+                schema_attestation_endpoint=profile_env[
+                    "PT_STATION_URL"
+                ],
+            )
+        return services
 
     def run_platform_action(
         self,
@@ -4755,6 +6294,7 @@ class W7RuntimeOwner:
             sessions: dict[str, Any] = {}
             actor_ptids: dict[str, str] = {}
             client_payloads: list[dict[str, Any]] = []
+            service_by_client: dict[str, str] = {}
             for client in command.mobile_clients:
                 service_id = _mobile_service_for_client(
                     client.id,
@@ -4785,6 +6325,7 @@ class W7RuntimeOwner:
                 )
                 sessions[client.id] = session
                 actor_ptids[client.id] = actor_ptid
+                service_by_client[client.id] = service_id
                 client_payloads.append(
                     _mobile_client_payload(
                         client_id=client.id,
@@ -4810,6 +6351,14 @@ class W7RuntimeOwner:
                 actor_ptids,
                 accounts,
                 services,
+                service_by_client,
+                frozenset(
+                    {
+                        SECONDARY_STATION_ID
+                        if SECONDARY_PROFILE in command.profiles
+                        else STATION_ID
+                    }
+                ),
             )
             actions = MobileProductionFixture(
                 sessions=sessions,
@@ -5860,27 +7409,18 @@ class W7RuntimeOwner:
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    platform_actions = tuple(
-        sorted(
-            action
-            for action in load_platform_runtime_contract().commands
-            if action
-            not in {
-                "run-w9-ios",
-                "run-w9-android",
-                "run-w9-cross-platform",
-            }
-        )
-    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
         choices=(
             "preflight",
-            "run",
+            "run-w7-suite",
             "run-w8-suite",
             "run-w9-suite",
-            *platform_actions,
+            "run-w2-suite",
+            "run-w10-suite",
+            "run-w11-suite",
+            "run-final-suite",
         ),
     )
     parser.add_argument("--profile", default=PROFILE)
@@ -5892,8 +7432,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    contract = load_platform_runtime_contract()
-    platform_command = contract.commands.get(args.action)
     if args.profile != PROFILE or args.slot != SLOT:
         blocked = RuntimeOwnerBlocked(
             "CONTROLLER_BINDING_MISMATCH",
@@ -5902,46 +7440,38 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(blocked.payload(), sort_keys=True), file=sys.stderr)
         return 2
-    if platform_command is not None:
-        selected_profiles = (
-            tuple(
-                profile.strip()
-                for profile in args.profiles.split(",")
-                if profile.strip()
-            )
-            if isinstance(args.profiles, str)
-            else (args.profile,)
-        )
-        if selected_profiles != platform_command.profiles:
-            blocked = RuntimeOwnerBlocked(
-                "CONTROLLER_BINDING_MISMATCH",
-                (
-                    f"{args.action} requires profiles "
-                    + ",".join(platform_command.profiles)
-                ),
-                resource=f"runtime:{args.action}",
-            )
-            print(
-                json.dumps(blocked.payload(), sort_keys=True),
-                file=sys.stderr,
-            )
-            return 2
+    selected_profiles = tuple(
+        profile.strip()
+        for profile in (args.profiles or "").split(",")
+        if profile.strip()
+    )
+    dual_profile_actions = {
+        "run-w7-suite",
+        "run-w8-suite",
+        "run-w2-suite",
+        "run-w10-suite",
+        "run-w11-suite",
+        "run-final-suite",
+    }
     if (
-        args.action == "run-w8-suite"
-        and tuple(
-            profile.strip()
-            for profile in (args.profiles or "").split(",")
-            if profile.strip()
-        )
-        != (PROFILE, SECONDARY_PROFILE)
+        args.action in dual_profile_actions
+        and selected_profiles != (PROFILE, SECONDARY_PROFILE)
     ):
+        resource = {
+            "run-w7-suite": "runtime:secure-content-w7",
+            "run-w8-suite": "runtime:secure-content-w8",
+            "run-w2-suite": "runtime:secure-content-w2",
+            "run-w10-suite": "runtime:secure-content-w10",
+            "run-w11-suite": "runtime:secure-content-w11",
+            "run-final-suite": "runtime:secure-content-w12",
+        }[args.action]
         blocked = RuntimeOwnerBlocked(
             "CONTROLLER_BINDING_MISMATCH",
             (
-                "W8 Suite Runtime requires exactly "
+                f"{args.action} requires exactly "
                 "--profiles four,fiveArm"
             ),
-            resource="runtime:secure-content-w8",
+            resource=resource,
         )
         print(json.dumps(blocked.payload(), sort_keys=True), file=sys.stderr)
         return 2
@@ -5970,14 +7500,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.action == "preflight":
             result = owner.preflight()
+        elif args.action == "run-w7-suite":
+            result = owner.run_w7_suite()
         elif args.action == "run-w8-suite":
             result = owner.run_w8_suite()
         elif args.action == "run-w9-suite":
             result = owner.run_w9_suite()
-        elif platform_command is not None:
-            result = owner.run_platform_action(platform_command)
+        elif args.action == "run-w2-suite":
+            result = owner.run_w2_suite()
+        elif args.action == "run-w10-suite":
+            result = owner.run_w10_suite()
+        elif args.action == "run-w11-suite":
+            result = owner.run_w11_suite()
         else:
-            result = owner.run()
+            result = owner.run_final_suite()
     except RuntimeOwnerBlocked as error:
         print(json.dumps(error.payload(), sort_keys=True), file=sys.stderr)
         return 2
@@ -5991,13 +7527,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         blocked = RuntimeOwnerBlocked(
             "RUNTIME_OWNER_FAILED",
             _error_message_with_cleanup(error),
-            resource=(
-                "runtime:secure-content-w8"
-                if args.action == "run-w8-suite"
-                else "runtime:secure-content-w9"
-                if args.action == "run-w9-suite"
-                else "runtime:secure-content-w7"
-            ),
+            resource=f"runtime:{args.action}",
         )
         print(json.dumps(blocked.payload(), sort_keys=True), file=sys.stderr)
         return 2

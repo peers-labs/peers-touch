@@ -186,7 +186,7 @@ the parent Schema V2 task locator:
 | `W12A-FOUR` | `W12D` | `four` plus `station-four-social-private` only |
 | `W12A-FIVEARM` | `W12D` | `fiveArm` plus `station-five-arm-social-private` only |
 | `W7` / `W8` / `W9` / `W10` / `W11` | same-named task | functional runtime only; source is read-only |
-| `W2B-DESKTOP` / `W2B-MOBILE` | `W2` | platform-specific functional runtime only |
+| `W2` | `W2` | one Desktop/iOS/Android Suite Runtime |
 | `W12F-FOUR` | `W12` | `four` plus `station-four-social-private` only |
 | `W12F-FIVEARM` | `W12` | `fiveArm` plus `station-five-arm-social-private` only |
 | `W12` | `W12` | product children and aggregate; no reset claims |
@@ -229,9 +229,9 @@ final matrix does not reuse W7/W9 child ownership.
 - W7-W12 each own one Suite Runtime. Build/install, accounts, clients, storage,
   login, attestations, and one Fixture Epoch are created once before its first
   attach-only Scenario.
-- Scenario resets are namespaced, occur after receiver evidence, and require an
-  owner acknowledgement plus baseline digest. Product restarts are recorded
-  client replacements, not Suite reprovisioning.
+- Scenarios are attach-only. Any required cleanup occurs after receiver
+  evidence and affects only the Scenario's owner-controlled namespace.
+  Product restarts are recorded client replacements, not Suite reprovisioning.
 - Task handoff releases all mutable runtime resources. Only content-addressed
   artifacts and the exact deployment generation cross Task boundaries.
 - Both W12 FINAL_CUT children precede a new post-cut Suite. Product children

@@ -17,10 +17,10 @@ from tooling.development.secure_content.scenarios.chat_attachment_mobile import 
 FIXTURE_CAPABILITY = "secure-content-final"
 PLATFORM_CLIENTS = {
     "ios": frozenset(
-        {"secure-content-ios-alice", "secure-content-ios-bob"}
+        {"secure-content-ios-alice", "secure-content-ios-remote_bob"}
     ),
     "android": frozenset(
-        {"secure-content-android-alice", "secure-content-android-bob"}
+        {"secure-content-android-alice", "secure-content-android-remote_bob"}
     ),
 }
 
