@@ -25,7 +25,7 @@ harness[method](payload)
   .catch((error) => {
     const message = String(error && error.message || error);
     const stack = String(error && error.stack || '');
-    done({ error: stack || message });
+    done({ error: stack ? `${message}\n${stack}` : message });
   });
 """
 
