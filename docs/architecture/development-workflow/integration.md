@@ -227,11 +227,12 @@ restart the IDE only when the host cannot reload changed hooks, then rerun the
 audit.
 
 The TRAE rollout is a machine-store hard cut: while holding the installation
-lock it consumes the exact installer grant, publishes `INSTALLING`, deletes the
-old conversation and workflow-action stores inside the guarded lifecycle,
-installs the new OWNER/child binding store contract, and then publishes the one
-bootstrap. Reset or installation failure publishes `BLOCKED`. No legacy
-binding/action reader or dual writer remains.
+lock it completes fallible path/workspace/catalog planning, consumes the exact
+installer grant, publishes `INSTALLING`, deletes the old conversation and
+workflow-action stores inside the guarded lifecycle, installs the new
+OWNER/child binding store contract, and then publishes the one bootstrap. Reset
+or installation failure publishes `BLOCKED`. No legacy binding/action reader or
+dual writer remains.
 
 ## 4. Skill Integration
 

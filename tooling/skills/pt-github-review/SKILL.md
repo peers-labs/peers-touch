@@ -149,9 +149,10 @@ verify:
   `WORKTREE_SELECTION_REQUIRED`;
 - binding rollout proves global workflow quiescence, deletes only the old
   conversation and workflow-action stores, consumes a create-once grant for
-  the exact current OWNER `skills` action, publishes `INSTALLING` before
-  destructive reset, records reset failure as `BLOCKED`, and contains no
-  compatibility reader, importer, alias, fallback, or dual writer;
+  the exact current OWNER `skills` action only after fallible preflight,
+  publishes `INSTALLING` immediately after consumption and before destructive
+  reset, records reset failure as `BLOCKED`, and contains no compatibility
+  reader, importer, alias, fallback, or dual writer;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under
