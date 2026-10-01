@@ -114,7 +114,7 @@
 ## Acceptance Execution
 
 ```json
-{"closures":{"AMU-functional":["agent-conversation-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"]},"completion":["agent-conversation-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"],"full":["agent-conversation-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"]}
+{"closures":{"AMU-functional":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"]},"completion":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"],"full":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"]}
 ```
 
 ## Goal
