@@ -7,14 +7,18 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tooling.acceptance.core import EvidenceStore, source_identity
 from tooling.acceptance.gates.agent.agent_v2_gate import (
+    AUTO_CANDIDATE_PRODUCERS,
     GATE_ROLES,
     MATRIX,
     REPO_ROOT,
     RUNNER_GENERATED_ROLES,
+    _produce_candidate,
     _report,
+    _resolve_candidate,
     _validate_candidate,
 )
 
@@ -26,13 +30,15 @@ class AgentV2GateContractTest(unittest.TestCase):
         self,
         root: Path,
         *,
+        gate_id: str | None = None,
         omitted_role: str = "",
         empty_role: str = "",
         matrix: dict[str, str] | None = None,
     ) -> Path:
+        selected_gate = gate_id or self.gate_id
         artifacts = []
         for role in (
-            set(GATE_ROLES[self.gate_id]) - RUNNER_GENERATED_ROLES
+            set(GATE_ROLES[selected_gate]) - RUNNER_GENERATED_ROLES
         ):
             if role == omitted_role:
                 continue
@@ -43,7 +49,7 @@ class AgentV2GateContractTest(unittest.TestCase):
         manifest.write_text(
             json.dumps(
                 {
-                    "gateId": self.gate_id,
+                    "gateId": selected_gate,
                     "runtimeMatrix": matrix or MATRIX,
                     "scenarioExecuted": True,
                     "proofStatus": "UNPROVEN",
@@ -151,8 +157,143 @@ class AgentV2GateContractTest(unittest.TestCase):
         report = _report(self.gate_id, "candidate.json", issues)
         self.assertEqual(issues, [])
         self.assertTrue(report["candidateComplete"])
+        self.assertEqual(
+            report["artifactKind"],
+            "acceptance-gate-evidence-report",
+        )
         self.assertEqual(report["status"], "passed")
         self.assertEqual(report["proofStatus"], "CANDIDATE")
+
+    def test_auto_candidate_runs_bounded_producer_and_cleans_temp_root(
+        self,
+    ) -> None:
+        gate_id = "agent-v2-capability-binding-e2e"
+        observed_root: Path | None = None
+
+        def run(
+            command: list[str],
+            **kwargs: object,
+        ) -> subprocess.CompletedProcess[str]:
+            nonlocal observed_root
+            self.assertEqual(
+                command,
+                [sys.executable, *AUTO_CANDIDATE_PRODUCERS[gate_id]],
+            )
+            environment = kwargs["env"]
+            self.assertIsInstance(environment, dict)
+            assert isinstance(environment, dict)
+            observed_root = Path(environment["PT_ACCEPTANCE_ARTIFACT_ROOT"])
+            for key in (
+                "PT_ACCEPTANCE_WORKSPACE_ID",
+                "PT_ACCEPTANCE_GATE_ID",
+                "PT_ACCEPTANCE_RUN_ID",
+                "PT_ACCEPTANCE_REDACTION_VALUES",
+                "PT_AGENT_V2_CANDIDATE_MANIFEST",
+            ):
+                self.assertNotIn(key, environment)
+            candidate = self.write_candidate(
+                observed_root,
+                gate_id=gate_id,
+            )
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps({"candidate": str(candidate)}) + "\n",
+                stderr="",
+            )
+
+        inherited = {
+            "PT_ACCEPTANCE_WORKSPACE_ID": "parent-workspace",
+            "PT_ACCEPTANCE_GATE_ID": gate_id,
+            "PT_ACCEPTANCE_RUN_ID": "parent-run",
+            "PT_ACCEPTANCE_REDACTION_VALUES": '["secret"]',
+            "PT_AGENT_V2_CANDIDATE_MANIFEST": "/tmp/stale.json",
+        }
+        with patch.dict(os.environ, inherited), patch(
+            "tooling.acceptance.gates.agent.agent_v2_gate.subprocess.run",
+            side_effect=run,
+        ):
+            manifest, issues, role_payloads = _produce_candidate(gate_id)
+
+        self.assertEqual(
+            manifest,
+            "auto:" + " ".join(AUTO_CANDIDATE_PRODUCERS[gate_id]),
+        )
+        self.assertEqual(issues, [])
+        self.assertEqual(
+            set(role_payloads),
+            set(GATE_ROLES[gate_id]) - RUNNER_GENERATED_ROLES,
+        )
+        self.assertIsNotNone(observed_root)
+        assert observed_root is not None
+        self.assertFalse(observed_root.exists())
+
+    def test_auto_candidate_failure_cleans_temp_root(self) -> None:
+        gate_id = "agent-v2-governed-tool-loop-e2e"
+        observed_root: Path | None = None
+
+        def run(
+            command: list[str],
+            **kwargs: object,
+        ) -> subprocess.CompletedProcess[str]:
+            nonlocal observed_root
+            environment = kwargs["env"]
+            assert isinstance(environment, dict)
+            observed_root = Path(environment["PT_ACCEPTANCE_ARTIFACT_ROOT"])
+            return subprocess.CompletedProcess(
+                command,
+                23,
+                stdout="",
+                stderr="producer failed",
+            )
+
+        with patch(
+            "tooling.acceptance.gates.agent.agent_v2_gate.subprocess.run",
+            side_effect=run,
+        ):
+            _, issues, role_payloads = _produce_candidate(gate_id)
+
+        self.assertEqual(
+            issues,
+            ["candidate producer failed with exit code 23"],
+        )
+        self.assertEqual(role_payloads, {})
+        self.assertIsNotNone(observed_root)
+        assert observed_root is not None
+        self.assertFalse(observed_root.exists())
+
+    def test_explicit_candidate_does_not_run_auto_producer(self) -> None:
+        gate_id = "agent-v2-capability-binding-e2e"
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = self.write_candidate(
+                Path(directory),
+                gate_id=gate_id,
+            )
+            with patch(
+                "tooling.acceptance.gates.agent.agent_v2_gate."
+                "_produce_candidate",
+                side_effect=AssertionError("auto producer must not run"),
+            ):
+                manifest, issues, role_payloads = _resolve_candidate(
+                    gate_id,
+                    str(candidate),
+                )
+
+        self.assertEqual(manifest, str(candidate))
+        self.assertEqual(issues, [])
+        self.assertEqual(
+            set(role_payloads),
+            set(GATE_ROLES[gate_id]) - RUNNER_GENERATED_ROLES,
+        )
+
+    def test_unmapped_gate_without_manifest_fails_closed(self) -> None:
+        manifest, issues, role_payloads = _produce_candidate(self.gate_id)
+        self.assertEqual(manifest, "")
+        self.assertEqual(
+            issues,
+            ["PT_AGENT_V2_CANDIDATE_MANIFEST is required from a real scenario"],
+        )
+        self.assertEqual(role_payloads, {})
 
     def test_gate_registers_scenario_roles_in_parent_run(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -32,6 +32,7 @@ from tooling.acceptance.gates.agent.agent_v2_candidate_producer import (
     AgentV2RuntimeAttestation,
     AgentV2RuntimeTuple,
     AgentV2TupleObservation,
+    load_preprovisioned_runtime_manifest,
 )
 from tooling.acceptance.gates.agent.foundation_mobile_contract_adapter import (
     _parse_vitest_report,
@@ -655,19 +656,24 @@ def main() -> int:
     os.environ["PT_ACCEPTANCE_WORKSPACE_ID"] = store.workspace_id
     os.environ["PT_ACCEPTANCE_GATE_ID"] = AGENT_V2_BINDING_GATE
     os.environ["PT_ACCEPTANCE_RUN_ID"] = run.run_id
-    _deploy_acceptance_station(profile_env, run.run_id)
-
-    provisioner = HomeStationProvisioner(
-        EnvironmentContract.from_yaml(
-            ENVIRONMENTS_DIR / "home-station.yaml"
+    runtime_manifest = load_preprovisioned_runtime_manifest(
+        AGENT_V2_BINDING_GATE,
+        repo_root=ROOT,
+    )
+    provisioner: HomeStationProvisioner | None = None
+    if runtime_manifest is None:
+        _deploy_acceptance_station(profile_env, run.run_id)
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
         )
-    )
-    provisioner._resolve_active_profile = lambda: (
-        profile_name,
-        profile_file,
-        slot,
-        dict(profile_env),
-    )
+        provisioner._resolve_active_profile = lambda: (
+            profile_name,
+            profile_file,
+            slot,
+            dict(profile_env),
+        )
     runtime_pair: FoundationRuntimePair | None = None
     runtime_adapter: CapabilityBindingRuntimeAdapter | None = None
     observations: tuple[
@@ -677,14 +683,17 @@ def main() -> int:
     primary_error: BaseException | None = None
     run_closed = False
     try:
-        manifest = provisioner.provision(AGENT_V2_BINDING_GATE)
-        require(
-            manifest.state.value == "FIXTURE_READY",
-            "J02 provisioning blocked: "
-            f"{manifest.blocked_reason or manifest.state.value}",
-        )
+        if runtime_manifest is None:
+            assert provisioner is not None
+            manifest = provisioner.provision(AGENT_V2_BINDING_GATE)
+            require(
+                manifest.state.value == "FIXTURE_READY",
+                "J02 provisioning blocked: "
+                f"{manifest.blocked_reason or manifest.state.value}",
+            )
+            runtime_manifest = manifest.to_dict()
         runtime_pair = FoundationRuntimePair.from_manifest(
-            _build_client_manifest(manifest.to_dict()),
+            _build_client_manifest(runtime_manifest),
             profile_env=profile_env,
             startup_timeout=900,
         )
@@ -745,10 +754,11 @@ def main() -> int:
                     cleanup_failures.append(f"client cleanup failed: {result}")
             except BaseException as error:
                 cleanup_failures.append(f"client cleanup failed: {error}")
-        try:
-            provisioner.cleanup()
-        except BaseException as error:
-            cleanup_failures.append(f"provisioner cleanup failed: {error}")
+        if provisioner is not None:
+            try:
+                provisioner.cleanup()
+            except BaseException as error:
+                cleanup_failures.append(f"provisioner cleanup failed: {error}")
         if cleanup_failures:
             run.close()
             run_closed = True
