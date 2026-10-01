@@ -3137,7 +3137,7 @@ def _receiver_ui_probe(
     *,
     workstream_id: str,
     scenario_id: str,
-    action_text: str,
+    action_text: str | None,
     visible_text: str,
     open_comments: bool,
     absent_texts: Sequence[str] = (),
@@ -3235,27 +3235,34 @@ def _receiver_ui_probe(
             resource=f"client:{client.spec.profile}",
         ) from error
 
-    def click_action_text() -> Any:
-        target = find_visible_text(action_text, deepest_match=True)
-        if target is None:
-            return None
-        try:
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block:'center',inline:'nearest'});",
-                target,
-            )
-            target.click()
-        except Exception:
-            return None
-        return {"tagName": str(target.tag_name), "visible": True}
-
     try:
-        action = wait_until(
-            click_action_text,
-            f"{workstream_id} {scenario_id} visible product action",
-            timeout=90,
-            interval=0.25,
-        )
+        action = {"tagName": str(nav_target.tag_name), "visible": True}
+        action_identity = "moments-navigation"
+        if action_text is not None:
+            def click_action_text() -> Any:
+                target = find_visible_text(action_text, deepest_match=True)
+                if target is None:
+                    return None
+                try:
+                    driver.execute_script(
+                        (
+                            "arguments[0].scrollIntoView("
+                            "{block:'center',inline:'nearest'});"
+                        ),
+                        target,
+                    )
+                    target.click()
+                except Exception:
+                    return None
+                return {"tagName": str(target.tag_name), "visible": True}
+
+            action = wait_until(
+                click_action_text,
+                f"{workstream_id} {scenario_id} visible product action",
+                timeout=90,
+                interval=0.25,
+            )
+            action_identity = action_text
         if open_comments:
             comments_target = wait_until(
                 lambda: find_visible(
@@ -3356,7 +3363,7 @@ def _receiver_ui_probe(
         ),
         "actionTag": str(action["tagName"]),
         "receiverTag": str(receiver_target.tag_name),
-        "actionTextSha256": _sha256(action_text),
+        "actionTextSha256": _sha256(action_identity),
         "visibleTextSha256": _sha256(visible_text),
         "absentTextSha256": [
             _sha256(value)
@@ -5046,7 +5053,7 @@ class W7RuntimeOwner:
                 desktop[DESKTOP_CLIENTS[1][0]],
                 workstream_id=TASK_ID,
                 scenario_id="desktop-pre-restart",
-                action_text=W7_PRIVATE_TEXT,
+                action_text=None,
                 visible_text=W7_PRIVATE_TEXT,
                 open_comments=False,
             )
@@ -5267,7 +5274,7 @@ class W7RuntimeOwner:
                 desktop[DESKTOP_CLIENTS[1][0]],
                 workstream_id=TASK_ID,
                 scenario_id="desktop-continuity",
-                action_text=W7_PRIVATE_TEXT,
+                action_text=None,
                 visible_text=W7_PRIVATE_TEXT,
                 open_comments=False,
             )

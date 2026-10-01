@@ -627,6 +627,27 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         self.assertNotIn("[not(*)]", action_selector)
 
+        navigation_driver = Driver()
+        navigation_client = SimpleNamespace(
+            driver=navigation_driver,
+            spec=SimpleNamespace(profile="w7-bob"),
+        )
+        navigation_evidence = _receiver_ui_probe(
+            navigation_client,
+            workstream_id="W7",
+            scenario_id="desktop-continuity",
+            action_text=None,
+            visible_text="comment",
+            open_comments=False,
+        )
+
+        self.assertTrue(navigation_driver.nav.clicked)
+        self.assertFalse(navigation_driver.action.clicked)
+        self.assertEqual(
+            hashlib.sha256(b"moments-navigation").hexdigest(),
+            navigation_evidence["actionTextSha256"],
+        )
+
     def test_w9_suite_contract_is_single_entry(self) -> None:
         self.assertEqual(
             ("ios", "android", "cross-platform"),
