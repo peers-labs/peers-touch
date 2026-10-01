@@ -83,7 +83,7 @@
     "Do not claim real shared-workspace rollout from temporary fixture proof",
     "Do not modify sibling worktrees, push, open a pull request, merge, or rewrite history"
   ],
-  "updatedAt": "2026-10-01T16:16:17.000Z",
+  "updatedAt": "2026-10-01T17:40:16.000Z",
   "durableEvidence": []
 }
 ```
@@ -91,11 +91,9 @@
 ## Current Snapshot
 
 - State: Plan-scoped review remediation after reviewer receipt
-  `ad36db87a1b5983dd5ec8309638b1bbdaa178d6c3d62d3690e9a7c8e24f5ba2c`.
-- The installer must require and consume an exact one-time OWNER `skills`
-  action grant; zero live actions are not admissible.
-- One assignment must have exactly one atomic execution-session claimant, and
-  installer lifecycle state must precede destructive hard-cut cleanup.
+  `6cec37563c882f08f42a13be04390b09dbcfa0318283e1716e490a627531c134`.
+- OWNER, WORKER, and REVIEWER compact-lineage receipts must be isolated by
+  binding digest so concurrent compactions cannot overwrite each other.
 - Completion requires fresh full-range Gap Detector, code-structure, quality,
   seven-Gate, and Plan-scoped independent review evidence.
 - Actual shared-workspace bootstrap installation is not claimed by this Task.
