@@ -64,6 +64,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "docs/knowledge/pitfalls/acceptance-shared-validator-variant-assumptions.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "tooling/acceptance/gates/dev",
         "mode": "exclusive-write"
       },

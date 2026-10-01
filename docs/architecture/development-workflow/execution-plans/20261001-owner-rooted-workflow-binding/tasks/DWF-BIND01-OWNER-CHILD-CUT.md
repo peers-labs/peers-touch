@@ -17,9 +17,11 @@
   "runtimeClass": "source-only",
   "writeSet": [
     "AGENTS.md",
+    "docs/architecture/architecture-module-governance/architecture-modules.json",
     "docs/architecture/development-workflow",
     "docs/global/workflow.md",
     "docs/knowledge/invariants",
+    "docs/knowledge/pitfalls/acceptance-shared-validator-variant-assumptions.md",
     "tooling/make/setup.mk",
     "tooling/plugins/pt-ew-plugin",
     "tooling/make/local-dev.mk",
@@ -40,7 +42,6 @@
     "tooling/skills/pt-trae-host-adapter"
   ],
   "readSet": [
-    "docs/architecture/architecture-module-governance/architecture-modules.json",
     "tooling/scripts/plan"
   ],
   "budgets": {
