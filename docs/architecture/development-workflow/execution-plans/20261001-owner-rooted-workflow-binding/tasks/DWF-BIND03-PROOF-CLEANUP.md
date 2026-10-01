@@ -56,7 +56,7 @@
     },
     {
       "id": "binding-completion-proof",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate development-workflow-control-plane --gate acceptance-workflow-contract",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate development-workflow-control-plane --gate acceptance-workflow-contract --gate peers-dev-product --gate peers-dev-ui-browser-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],

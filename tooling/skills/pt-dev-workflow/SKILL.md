@@ -126,10 +126,12 @@ are internal Run work, not user approval boundaries.
 
 Before mutation:
 
-1. When the Workflow Kernel reports `ENFORCED`, consume its immutable
-   conversation `executionRoot`; tool `cwd`, target paths, Skill paths, Plan
-   paths and sibling repositories cannot replace it. The binding is not a
-   worktree lease and says nothing about another conversation's ownership.
+1. When the Workflow Kernel reports `ENFORCED`, consume its canonical
+   `BindingProjection` and immutable OWNER `executionRoot`; tool `cwd`, target
+   paths, Skill paths, Plan paths and sibling repositories cannot replace it.
+   TRAE owner identity comes only from `chat_session_id`; internal
+   `session_id` values do not create peer owners. WORKER/REVIEWER authority
+   requires an assigned, live child projection with exact root/parent lineage.
 2. In `OBSERVE_ONLY`, bind one explicitly selected worktree. Never infer it
    from a Skill path, branch name, Plan path, or nearby repository.
 3. Capture and verify canonical root, branch, `workspaceId`, initial HEAD,
@@ -433,14 +435,18 @@ Plan Package.
 Review is an internal quality gate, not a default user handoff:
 
 1. Generate the owning methodology or delivery review prompt.
-2. Invoke the applicable project review path, normally
+2. Before `completion-review-prepare`, revalidate the current OWNER projection.
+   The command creates one REVIEWER assignment. The reviewer must claim that
+   assignment; `completion-review-submit` rejects an OWNER, unassigned,
+   expired, terminal, wrong-parent, or wrong-assignment projection.
+3. Invoke the applicable project review path, normally
    `route-change` -> `pt-code-structure-review` for authored source and record
    its source-bound decision -> `pt-quality-check` ->
    `pt-completion-auditor` -> `pt-github-review`.
-3. Treat findings that accepted sources resolve as Run work.
-4. Fix them at the owning layer, rerun affected checks, and repeat review.
-5. Advance automatically when the review passes.
-6. Escalate only the precise unresolved DWF-D20 hard-boundary decision.
+4. Treat findings that accepted sources resolve as Run work.
+5. Fix them at the owning layer, rerun affected checks, and repeat review.
+6. Advance automatically when the review passes.
+7. Escalate only the precise unresolved DWF-D20 hard-boundary decision.
 
 An independent subagent may review when available and safely isolated.
 Otherwise the current agent performs a separate findings-first review pass.

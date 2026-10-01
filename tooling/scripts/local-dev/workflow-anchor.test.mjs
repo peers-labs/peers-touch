@@ -18,7 +18,9 @@ function fixture() {
     {
       executionRoot: '/private/work/peers-touch',
       workspaceId: '0123456789abcdef',
-      digest: 'a'.repeat(64),
+      role: 'OWNER',
+      bindingDigest: 'a'.repeat(64),
+      rootBindingDigest: 'a'.repeat(64),
     },
     {
       status: 'TERMINAL',

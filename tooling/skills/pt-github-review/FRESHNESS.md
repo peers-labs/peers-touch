@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-01
-covered_docs_hash: a555fe4e0923647de5f340ac97fac0397de6ddde79a2c9e099ab5f531b016c6e
+covered_docs_hash: e64e2cee6eac02162b162d279465d515408dd69f6ffcd46bd16289f50bfc816f
 
 covered_docs:
   - AGENTS.md
@@ -32,6 +32,12 @@ covered_docs:
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
 
 ## 2026-10-01 Review
+
+Owner-rooted workflow binding replaced peer conversation bindings. Review now
+requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt
+selection, live assigned reviewers, and no worktree-wide identity fallback.
+`SKILL.md`, workflow regression fixtures, and the owner-rooted invariant cover
+the new omission and stale-child risks.
 
 Resource-plan selection no longer treats healthy reusable inventory as
 Runtime Owner readiness, and incompatible non-null digest expectations cannot

@@ -70,7 +70,9 @@ class AgentIntegrationTests(unittest.TestCase):
             "workflow-anchor.mjs",
             "workflow-action-store.mjs",
             "workflow-snapshot-core.mjs",
-            "workflow-conversation-binding.mjs",
+            "workflow-binding-projection.mjs",
+            "workflow-binding-store.mjs",
+            "workflow-binding.mjs",
             "workflow-host-adapters.mjs",
             "workflow-kernel.mjs",
             "workflow-state-inspector.mjs",
@@ -482,6 +484,10 @@ export function processStartIdentity() { return 'fixture'; }
             "PreToolUse",
             "PostToolUse",
             "PostToolUseFailure",
+            "SubagentStart",
+            "SubagentStop",
+            "PreCompact",
+            "PostCompact",
             "Stop",
         ):
             managed = [

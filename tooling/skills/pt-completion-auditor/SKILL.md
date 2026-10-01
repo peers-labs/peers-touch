@@ -45,6 +45,12 @@ Every conclusion must be tied to:
 
 If a claim is not proven, mark it as `UNPROVEN`, not `PASS`.
 
+Before any completion/readiness verdict, require the canonical
+`BindingProjection` for the current action. OWNER claims must carry the exact
+root binding; REVIEWER claims must carry the request's exact live assignment,
+root and parent digests. An unassigned, expired, terminal, released, or
+worktree-enumerated binding is `UNPROVEN` and cannot sign completion.
+
 For non-trivial development work, also read
 `docs/architecture/development-workflow/README.md` and require:
 

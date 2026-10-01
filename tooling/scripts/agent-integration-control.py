@@ -25,6 +25,10 @@ TRAE_HOOK_EVENTS = (
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
     "Stop",
 )
 CURSOR_HOOK_EVENTS = (
@@ -43,7 +47,9 @@ WORKFLOW_KERNEL_FILES = (
     "tooling/scripts/architecture/module-governance.mjs",
     "tooling/scripts/local-dev/workflow-action-store.mjs",
     "tooling/scripts/local-dev/workflow-anchor.mjs",
-    "tooling/scripts/local-dev/workflow-conversation-binding.mjs",
+    "tooling/scripts/local-dev/workflow-binding-projection.mjs",
+    "tooling/scripts/local-dev/workflow-binding-store.mjs",
+    "tooling/scripts/local-dev/workflow-binding.mjs",
     "tooling/scripts/local-dev/workflow-host-adapters.mjs",
     "tooling/scripts/local-dev/workflow-kernel.mjs",
     "tooling/scripts/local-dev/workflow-state-inspector.mjs",
@@ -714,6 +720,7 @@ def probe_installed_trae_hook(
             "PT_MACHINE_DEV_ROOT": str(machine),
         }
         payload = {
+            "chat_session_id": f"pt-install-probe-{os.urandom(16).hex()}",
             "session_id": f"pt-install-probe-{os.urandom(16).hex()}",
             "repo_working_dir": str(root),
             "tool_name": "pt_install_probe",
@@ -759,7 +766,7 @@ def probe_installed_trae_hook(
             and reason.startswith("TOOL_INTENT_UNSUPPORTED:")
         )
         bindings = list(
-            machine.glob("conversations/trae/*/execution-binding.json")
+            machine.glob("bindings/owners/trae/*/owner-binding.json")
         )
         if not supported:
             raise RuntimeError("TRAE_HOOK_PROBE_RESPONSE_UNSUPPORTED")
@@ -772,6 +779,7 @@ def probe_installed_trae_hook(
         if (
             not isinstance(binding, dict)
             or binding.get("host") != "trae"
+            or binding.get("role") != "OWNER"
             or binding.get("executionRoot") != str(root.resolve(strict=True))
         ):
             raise RuntimeError("TRAE_HOOK_PROBE_BINDING_INVALID")
