@@ -7,6 +7,7 @@ import argparse
 import fcntl
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import secrets
@@ -18,6 +19,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
@@ -30,7 +32,7 @@ from tooling.acceptance.core.attestation import (
     produce_station_attestation,
     source_proto_digest,
 )
-from tooling.acceptance.core.errors import BlockedError, ProvisioningError
+from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.core._paths import ENVIRONMENTS_DIR
 from tooling.acceptance.core.provisioning import EnvironmentContract
 from tooling.acceptance.core.launch_context import (
@@ -57,8 +59,6 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
     wait_until,
 )
 from tooling.acceptance.provisioners.remote_source_identity import (
-    open_reviewed_remote_tunnel,
-    reviewed_remote_transport,
     resolve_remote_source_identity,
 )
 from tooling.acceptance.provisioners.mobile_simulator import (
@@ -72,7 +72,6 @@ from tooling.acceptance.provisioners.secure_content_remote_recipient import (
     RemotePrivateRecipientProvisioner,
     W8RemoteRecipientFixtureOwner,
 )
-from tooling.acceptance.transports.ssh import SshTunnel
 from tooling.development.secure_content import runtime_manifest, schema_activation
 from tooling.development.secure_content.activation_transport import (
     ActivationTransportError,
@@ -435,77 +434,6 @@ _BIP39_CHECKSUM_BITS = 8
 class _StationEndpoint:
     transport_url: str
     canonical_origin: str
-
-
-class _RefreshableStationTunnel:
-    def __init__(
-        self,
-        *,
-        service_id: str,
-        deployment_environment: str,
-        remote_port: int,
-        tunnel: SshTunnel,
-    ) -> None:
-        self.service_id = service_id
-        self.deployment_environment = deployment_environment
-        self.remote_port = remote_port
-        self._tunnel = tunnel
-
-    @property
-    def local_port(self) -> int:
-        return self._tunnel.local_port
-
-    def is_alive(self) -> bool:
-        return self._tunnel.is_alive()
-
-    def stop(self) -> None:
-        self._tunnel.stop()
-
-    def refresh(self) -> None:
-        local_port = self.local_port
-        _stop_station_tunnel_or_raise(
-            self._tunnel,
-            service_id=self.service_id,
-        )
-        try:
-            transport, _environment = reviewed_remote_transport(
-                self.deployment_environment
-            )
-            replacement = transport.start_local_forward(
-                remote_port=self.remote_port,
-                local_port=local_port,
-            )
-        except (BlockedError, ProvisioningError) as error:
-            reason = (
-                error.reason
-                if isinstance(error, BlockedError)
-                else str(error)
-            )
-            resource = (
-                error.resource
-                if isinstance(error, BlockedError)
-                else f"station-tunnel:{self.service_id}"
-            )
-            raise RuntimeOwnerBlocked(
-                "SERVICE_TRANSPORT_UNAVAILABLE",
-                f"cannot refresh Station tunnel for {self.service_id}: {reason}",
-                resource=resource,
-            ) from error
-        self._tunnel = replacement
-
-
-class _StationEndpoints(dict[str, _StationEndpoint]):
-    def __init__(
-        self,
-        endpoints: Mapping[str, _StationEndpoint],
-        tunnels: Mapping[str, _RefreshableStationTunnel],
-    ) -> None:
-        super().__init__(endpoints)
-        self._tunnels = dict(tunnels)
-
-    def refresh(self) -> None:
-        for tunnel in self._tunnels.values():
-            tunnel.refresh()
 
 
 @dataclass
@@ -1336,88 +1264,59 @@ def _resolve_secondary_profile(
     return profile_path, values
 
 
-def _stop_station_tunnel_or_raise(
-    tunnel: SshTunnel | _RefreshableStationTunnel,
-    *,
-    service_id: str,
-) -> None:
-    try:
-        tunnel.stop()
-    except Exception as error:
-        raise RuntimeOwnerBlocked(
-            "RUNTIME_CLEANUP_FAILED",
-            f"Station tunnel cleanup failed for {service_id}: {error}",
-            resource=f"station-tunnel:{service_id}",
-        ) from error
-    if tunnel.is_alive():
-        raise RuntimeOwnerBlocked(
-            "RUNTIME_CLEANUP_FAILED",
-            f"Station tunnel remains active for {service_id}",
-            resource=f"station-tunnel:{service_id}",
-        )
-
-
-def _open_station_tunnels(
+def _resolve_station_endpoints(
     bindings: Sequence[tuple[str, Mapping[str, str]]],
-) -> tuple[ExitStack, _StationEndpoints]:
-    stack = ExitStack()
+) -> dict[str, _StationEndpoint]:
     endpoints: dict[str, _StationEndpoint] = {}
-    managed_tunnels: dict[str, _RefreshableStationTunnel] = {}
-    try:
-        for service_id, profile_env in bindings:
-            deployment_environment = str(
-                profile_env.get("PT_STATION_DEPLOY_ENV") or ""
+    for service_id, profile_env in bindings:
+        deployment_environment = str(
+            profile_env.get("PT_STATION_DEPLOY_ENV") or ""
+        )
+        station_mode = str(profile_env.get("PT_STATION_MODE") or "")
+        raw_port = str(profile_env.get("PT_STATION_PORT") or "")
+        canonical_origin = _required_text(
+            profile_env.get("PT_STATION_URL"),
+            f"{service_id} canonical Station origin",
+        ).rstrip("/")
+        try:
+            station_port = int(raw_port)
+            parsed = urllib.parse.urlsplit(canonical_origin)
+            parsed_port = parsed.port
+        except (ValueError, urllib.error.URLError) as error:
+            raise RuntimeOwnerBlocked(
+                "SERVICE_TRANSPORT_UNAVAILABLE",
+                f"Station endpoint is invalid for {service_id}",
+                resource=f"station-endpoint:{service_id}",
+            ) from error
+        hostname = parsed.hostname or ""
+        try:
+            loopback = ipaddress.ip_address(hostname).is_loopback
+        except ValueError:
+            loopback = hostname.lower() in {"localhost", "localhost.localdomain"}
+        if (
+            station_mode != "remote"
+            or not deployment_environment
+            or parsed.scheme not in {"http", "https"}
+            or not hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+            or not 1 <= station_port <= 65535
+            or parsed_port != station_port
+            or loopback
+        ):
+            raise RuntimeOwnerBlocked(
+                "SERVICE_TRANSPORT_UNAVAILABLE",
+                f"Station endpoint binding is invalid for {service_id}",
+                resource=f"station-endpoint:{service_id}",
             )
-            raw_port = str(profile_env.get("PT_STATION_PORT") or "")
-            canonical_origin = _required_text(
-                profile_env.get("PT_STATION_URL"),
-                f"{service_id} canonical Station origin",
-            ).rstrip("/")
-            try:
-                remote_port = int(raw_port)
-            except ValueError as error:
-                raise RuntimeOwnerBlocked(
-                    "SERVICE_TRANSPORT_UNAVAILABLE",
-                    f"Station port is invalid for {service_id}",
-                    resource=f"station-tunnel:{service_id}",
-                ) from error
-            if not deployment_environment or not 1 <= remote_port <= 65535:
-                raise RuntimeOwnerBlocked(
-                    "SERVICE_TRANSPORT_UNAVAILABLE",
-                    f"Station tunnel binding is invalid for {service_id}",
-                    resource=f"station-tunnel:{service_id}",
-                )
-            try:
-                tunnel = open_reviewed_remote_tunnel(
-                    deployment_environment,
-                    remote_port=remote_port,
-                )
-            except BlockedError as error:
-                raise RuntimeOwnerBlocked(
-                    "SERVICE_TRANSPORT_UNAVAILABLE",
-                    error.reason,
-                    resource=error.resource,
-                ) from error
-            managed_tunnel = _RefreshableStationTunnel(
-                service_id=service_id,
-                deployment_environment=deployment_environment,
-                remote_port=remote_port,
-                tunnel=tunnel,
-            )
-            stack.callback(
-                _stop_station_tunnel_or_raise,
-                managed_tunnel,
-                service_id=service_id,
-            )
-            managed_tunnels[service_id] = managed_tunnel
-            endpoints[service_id] = _StationEndpoint(
-                transport_url=f"http://127.0.0.1:{tunnel.local_port}",
-                canonical_origin=canonical_origin,
-            )
-    except BaseException as error:
-        _close_runtime_stack(stack, primary_error=error)
-        raise
-    return stack, _StationEndpoints(endpoints, managed_tunnels)
+        endpoints[service_id] = _StationEndpoint(
+            transport_url=canonical_origin,
+            canonical_origin=canonical_origin,
+        )
+    return endpoints
 
 
 def _activate_scenario_journey(
@@ -4723,12 +4622,13 @@ class W7RuntimeOwner:
             / DESKTOP_JOURNEY
             / acceptance_run_id
         ).mkdir(parents=True, mode=0o700)
-        transport_stack, station_endpoints = _open_station_tunnels(
+        station_endpoints = _resolve_station_endpoints(
             (
                 (STATION_ID, profile_env),
                 (SECONDARY_STATION_ID, secondary_profile_env),
             )
         )
+        runtime_stack = ExitStack()
         station_url = station_endpoints[STATION_ID].transport_url
         secondary_station_url = station_endpoints[
             SECONDARY_STATION_ID
@@ -4761,7 +4661,7 @@ class W7RuntimeOwner:
                     remote_source_identity_provider=resolve_remote_source_identity,
                 )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             reason = _error_message_with_cleanup(error)
             resource = (
                 error.resource
@@ -4788,7 +4688,7 @@ class W7RuntimeOwner:
                 "W7 Stations are not deployed from the exact source",
                 resource="station:secure-content-w7",
             )
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise error
 
         try:
@@ -4815,7 +4715,7 @@ class W7RuntimeOwner:
                 )
             )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise
 
         fixture_epoch = "w7-" + _sha256(run_id)[:32]
@@ -4832,7 +4732,7 @@ class W7RuntimeOwner:
         raw_result_root = owner_root / "unpublished-results"
         publish_root = owner_root / "publish-ready"
         receiver_evidence_refs: dict[str, dict[str, str]] = {}
-        with _runtime_cleanup_scope(transport_stack) as stack:
+        with _runtime_cleanup_scope(runtime_stack) as stack:
             _activate_scenario_journey(
                 self.repo_root,
                 DESKTOP_JOURNEY,
@@ -5023,7 +4923,6 @@ class W7RuntimeOwner:
                 repo_root=self.repo_root,
             )
             blocked_result_path: Path | None = None
-            station_endpoints.refresh()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
                 scenario_id="desktop-pre-restart",
@@ -5253,7 +5152,6 @@ class W7RuntimeOwner:
                     client_id=current["id"],
                     acknowledgement=acknowledgement,
                 )
-                station_endpoints.refresh()
                 ledger.record(
                     SuiteRuntimeAction.SCENARIO_START,
                     scenario_id="desktop-continuity",
@@ -5474,7 +5372,8 @@ class W7RuntimeOwner:
             / first_command.journey_id
             / acceptance_run_id
         ).mkdir(parents=True, mode=0o700)
-        transport_stack, station_endpoints = _open_station_tunnels(bindings)
+        station_endpoints = _resolve_station_endpoints(bindings)
+        runtime_stack = ExitStack()
         attestations: dict[str, Any] = {}
         try:
             with _environment(
@@ -5504,7 +5403,7 @@ class W7RuntimeOwner:
                         ),
                     )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise RuntimeOwnerBlocked(
                 "SERVICE_ATTESTATION_UNAVAILABLE",
                 _error_message_with_cleanup(error),
@@ -5521,7 +5420,7 @@ class W7RuntimeOwner:
                 f"{suite.task_id} Stations are not deployed from exact source",
                 resource=f"station:{suite.action}",
             )
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise error
 
         schema_bindings: dict[
@@ -5547,7 +5446,7 @@ class W7RuntimeOwner:
                     )
                 )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise
 
         try:
@@ -5561,7 +5460,7 @@ class W7RuntimeOwner:
                 else None
             )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise
         ledger = SuiteRuntimeLedger(
             suite.runtime_reuse,
@@ -5582,7 +5481,7 @@ class W7RuntimeOwner:
                 f"{suite.action} exceeds its physical client launch budget",
                 resource=f"runtime:{suite.action}",
             )
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise error
 
         primary_roles: set[str] = set()
@@ -5618,7 +5517,7 @@ class W7RuntimeOwner:
 
         variant_results: dict[str, str] = {}
         result_refs: dict[str, str] = {}
-        with _runtime_cleanup_scope(transport_stack) as stack:
+        with _runtime_cleanup_scope(runtime_stack) as stack:
             stack.callback(
                 _activate_scenario_journey,
                 self.repo_root,
@@ -5837,7 +5736,6 @@ class W7RuntimeOwner:
                     work_item_id=command.work_item_id,
                     task_id=command.task_id,
                 )
-                station_endpoints.refresh()
                 ledger.record(
                     SuiteRuntimeAction.SCENARIO_START,
                     scenario_id=scenario.scenario_id,
@@ -6293,7 +6191,8 @@ class W7RuntimeOwner:
             )
             for profile_id in command.profiles
         )
-        transport_stack, station_endpoints = _open_station_tunnels(bindings)
+        station_endpoints = _resolve_station_endpoints(bindings)
+        runtime_stack = ExitStack()
         attestations: dict[str, Any] = {}
         try:
             with _environment(
@@ -6321,7 +6220,7 @@ class W7RuntimeOwner:
                         ),
                     )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise RuntimeOwnerBlocked(
                 "SERVICE_ATTESTATION_UNAVAILABLE",
                 _error_message_with_cleanup(error),
@@ -6338,7 +6237,7 @@ class W7RuntimeOwner:
                 "Mobile Stations are not deployed from the exact source",
                 resource="station:secure-content-mobile",
             )
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise error
 
         schema_bindings: dict[
@@ -6365,10 +6264,10 @@ class W7RuntimeOwner:
                     )
                 )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise
 
-        with _runtime_cleanup_scope(transport_stack) as stack:
+        with _runtime_cleanup_scope(runtime_stack) as stack:
             base_contract = EnvironmentContract.from_yaml(
                 ENVIRONMENTS_DIR / "mobile-simulator.yaml"
             )
@@ -6676,7 +6575,8 @@ class W7RuntimeOwner:
             / command.journey_id
             / acceptance_run_id
         ).mkdir(parents=True, mode=0o700)
-        transport_stack, station_endpoints = _open_station_tunnels(bindings)
+        station_endpoints = _resolve_station_endpoints(bindings)
+        runtime_stack = ExitStack()
         attestations: dict[str, Any] = {}
         try:
             with _environment(
@@ -6704,7 +6604,7 @@ class W7RuntimeOwner:
                         ),
                     )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise RuntimeOwnerBlocked(
                 "SERVICE_ATTESTATION_UNAVAILABLE",
                 _error_message_with_cleanup(error),
@@ -6721,7 +6621,7 @@ class W7RuntimeOwner:
                 "Desktop Stations are not deployed from the exact source",
                 resource="station:secure-content-desktop",
             )
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise error
 
         schema_bindings: dict[
@@ -6748,10 +6648,10 @@ class W7RuntimeOwner:
                     )
                 )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise
 
-        with _runtime_cleanup_scope(transport_stack) as stack:
+        with _runtime_cleanup_scope(runtime_stack) as stack:
             roles = tuple(
                 sorted(
                     {
@@ -7060,9 +6960,10 @@ class W7RuntimeOwner:
             (STATION_ID, profile_env),
             (SECONDARY_STATION_ID, secondary_profile_env),
         )
-        transport_stack, station_endpoints = _open_station_tunnels(
+        station_endpoints = _resolve_station_endpoints(
             profile_bindings
         )
+        runtime_stack = ExitStack()
         station_url = station_endpoints[STATION_ID].transport_url
         secondary_station_url = station_endpoints[
             SECONDARY_STATION_ID
@@ -7097,7 +6998,7 @@ class W7RuntimeOwner:
                     ),
                 )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             reason = _error_message_with_cleanup(error)
             resource = (
                 error.resource
@@ -7124,7 +7025,7 @@ class W7RuntimeOwner:
                 "W8 Stations are not deployed from the exact source",
                 resource="station:secure-content-w8",
             )
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise error
 
         try:
@@ -7153,7 +7054,7 @@ class W7RuntimeOwner:
                 )
             )
         except Exception as error:
-            _close_runtime_stack(transport_stack, primary_error=error)
+            _close_runtime_stack(runtime_stack, primary_error=error)
             raise
 
         fixture_epoch = "w8-" + _sha256(run_id)[:32]
@@ -7171,7 +7072,7 @@ class W7RuntimeOwner:
         ui_evidence_refs: dict[str, dict[str, str]] = {}
         raw_result_root = owner_root / "unpublished-results"
         publish_root = owner_root / "publish-ready"
-        with _runtime_cleanup_scope(transport_stack) as stack:
+        with _runtime_cleanup_scope(runtime_stack) as stack:
             accounts, password = _provision_runtime_accounts(
                 primary_station_url=station_url,
                 run_id=run_id,
@@ -7430,7 +7331,6 @@ class W7RuntimeOwner:
                 fixture_action_client,
             )
             for spec in W8_SCENARIOS:
-                station_endpoints.refresh()
                 ledger.record(
                     SuiteRuntimeAction.SCENARIO_START,
                     scenario_id=spec.scenario_id,
