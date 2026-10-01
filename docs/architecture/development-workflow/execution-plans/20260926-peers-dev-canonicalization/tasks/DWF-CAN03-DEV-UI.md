@@ -43,6 +43,11 @@
       "id": "dev-ui-browser-proof",
       "command": "python3 tooling/scripts/acceptance-run.py --gate peers-dev-ui-browser-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
+    },
+    {
+      "id": "dev-ui-live-browser-proof",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate dev-ui-browser-e2e",
+      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [
