@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import Callable, Mapping
 from unittest.mock import MagicMock, call, patch
 
+from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.fixtures.secure_content_w7 import (
     W7FixtureBinding,
     W7FixtureCapabilityHandler,
@@ -61,6 +62,7 @@ from tooling.development.secure_content.runtime_owner import (
     _generate_mobile_recovery_phrase,
     _make_client,
     _manifest_payload,
+    _open_station_tunnels,
     _prepare_accepted_friendship,
     _prepare_mobile_private_content_keys,
     _prepare_private_content_keys,
@@ -73,7 +75,6 @@ from tooling.development.secure_content.runtime_owner import (
     _require_mobile_write_admission,
     _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
-    _resolve_station_endpoints,
     _restart_lease,
     _runtime_cleanup_scope,
     _service_payload,
@@ -228,8 +229,15 @@ class RuntimeOwnerTest(unittest.TestCase):
             "SuiteRuntimeAction.CLEANUP_COMPLETE",
             source,
         )
-        self.assertEqual(1, source.count("_resolve_station_endpoints("))
-        self.assertNotIn("station_endpoints.refresh()", execution_source)
+        self.assertEqual(1, source.count("_open_station_tunnels("))
+        self.assertEqual(
+            1,
+            execution_source.count("station_endpoints.refresh()"),
+        )
+        self.assertLess(
+            execution_source.index("station_endpoints.refresh()"),
+            execution_source.index("SuiteRuntimeAction.SCENARIO_START"),
+        )
 
     def test_w8_suite_publishes_results_after_receiver_proof_and_cleanup(
         self,
@@ -2614,48 +2622,130 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
         self.assertIn("one bounded", str(raised.exception))
 
-    def test_station_endpoints_use_reviewed_profile_canonical_routes(
+    def test_station_tunnels_target_reviewed_profile_hosts_and_close(
         self,
     ) -> None:
-        endpoints = _resolve_station_endpoints(
-            (
+        primary = MagicMock(local_port=4101)
+        primary.is_alive.return_value = False
+        secondary = MagicMock(local_port=4102)
+        secondary.is_alive.return_value = False
+        renewed_primary = MagicMock(local_port=4101)
+        renewed_primary.is_alive.return_value = False
+        renewed_secondary = MagicMock(local_port=4102)
+        renewed_secondary.is_alive.return_value = False
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "open_reviewed_remote_tunnel",
+            side_effect=(
+                primary,
+                secondary,
+                renewed_primary,
+                renewed_secondary,
+            ),
+        ) as open_tunnel:
+            stack, endpoints = _open_station_tunnels(
                 (
-                    "station-four",
-                    {
-                        "PT_STATION_MODE": "remote",
-                        "PT_STATION_DEPLOY_ENV": "station-four",
-                        "PT_STATION_PORT": "18080",
-                        "PT_STATION_URL": "https://four.example:18080",
-                    },
-                ),
-                (
-                    "station-five-arm",
-                    {
-                        "PT_STATION_MODE": "remote",
-                        "PT_STATION_DEPLOY_ENV": "station-five-arm",
-                        "PT_STATION_PORT": "18080",
-                        "PT_STATION_URL": "https://five-arm.example:18080",
-                    },
-                ),
+                    (
+                        "station-four",
+                        {
+                            "PT_STATION_MODE": "remote",
+                            "PT_STATION_DEPLOY_ENV": "station-four",
+                            "PT_STATION_PORT": "18080",
+                            "PT_STATION_URL": "http://10.0.0.4:18080",
+                        },
+                    ),
+                    (
+                        "station-five-arm",
+                        {
+                            "PT_STATION_MODE": "remote",
+                            "PT_STATION_DEPLOY_ENV": "station-five-arm",
+                            "PT_STATION_PORT": "18080",
+                            "PT_STATION_URL": "http://10.0.0.5:18080",
+                        },
+                    ),
+                )
             )
-        )
+            endpoints.refresh()
+            stack.close()
 
         self.assertEqual(
             _StationEndpoint(
-                transport_url="https://four.example:18080",
-                canonical_origin="https://four.example:18080",
+                transport_url="http://127.0.0.1:4101",
+                canonical_origin="http://10.0.0.4:18080",
             ),
             endpoints["station-four"],
         )
         self.assertEqual(
             _StationEndpoint(
-                transport_url="https://five-arm.example:18080",
-                canonical_origin="https://five-arm.example:18080",
+                transport_url="http://127.0.0.1:4102",
+                canonical_origin="http://10.0.0.5:18080",
             ),
             endpoints["station-five-arm"],
         )
+        self.assertEqual(
+            [
+                call(
+                    "station-four",
+                    remote_host="10.0.0.4",
+                    remote_port=18080,
+                ),
+                call(
+                    "station-five-arm",
+                    remote_host="10.0.0.5",
+                    remote_port=18080,
+                ),
+                call(
+                    "station-four",
+                    remote_host="10.0.0.4",
+                    remote_port=18080,
+                    local_port=4101,
+                ),
+                call(
+                    "station-five-arm",
+                    remote_host="10.0.0.5",
+                    remote_port=18080,
+                    local_port=4102,
+                ),
+            ],
+            open_tunnel.call_args_list,
+        )
+        primary.stop.assert_called_once_with()
+        secondary.stop.assert_called_once_with()
+        renewed_primary.stop.assert_called_once_with()
+        renewed_secondary.stop.assert_called_once_with()
 
-    def test_station_endpoints_reject_non_remote_or_noncanonical_routes(
+    def test_https_station_endpoints_use_canonical_route_without_tunnel(
+        self,
+    ) -> None:
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "open_reviewed_remote_tunnel",
+        ) as open_tunnel:
+            stack, endpoints = _open_station_tunnels(
+                (
+                    (
+                        "station-four",
+                        {
+                            "PT_STATION_MODE": "remote",
+                            "PT_STATION_DEPLOY_ENV": "station-four",
+                            "PT_STATION_PORT": "443",
+                            "PT_STATION_URL": "https://four.example:443",
+                        },
+                    ),
+                )
+            )
+            stack.close()
+
+        open_tunnel.assert_not_called()
+        self.assertEqual(
+            _StationEndpoint(
+                transport_url="https://four.example:443",
+                canonical_origin="https://four.example:443",
+            ),
+            endpoints["station-four"],
+        )
+
+    def test_station_tunnels_reject_non_remote_or_noncanonical_routes(
         self,
     ) -> None:
         invalid_profiles = (
@@ -2680,25 +2770,127 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         for profile in invalid_profiles:
             with self.assertRaises(RuntimeOwnerBlocked) as raised:
-                _resolve_station_endpoints((("station-four", profile),))
+                _open_station_tunnels((("station-four", profile),))
             self.assertEqual(
                 "SERVICE_TRANSPORT_UNAVAILABLE",
                 raised.exception.code,
             )
             self.assertEqual(
-                "station-endpoint:station-four",
+                "station-tunnel:station-four",
                 raised.exception.resource,
             )
 
-    def test_w7_uses_one_profile_owned_station_route(
+    def test_station_tunnel_refresh_failure_is_typed_and_cleanup_safe(
+        self,
+    ) -> None:
+        primary = MagicMock(local_port=4101)
+        primary.is_alive.return_value = False
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "open_reviewed_remote_tunnel",
+            side_effect=(
+                primary,
+                BlockedError(
+                    "forward unavailable",
+                    resource="deployment-tunnel:station-four",
+                ),
+            ),
+        ):
+            stack, endpoints = _open_station_tunnels(
+                (
+                    (
+                        "station-four",
+                        {
+                            "PT_STATION_MODE": "remote",
+                            "PT_STATION_DEPLOY_ENV": "station-four",
+                            "PT_STATION_PORT": "18080",
+                            "PT_STATION_URL": "http://10.0.0.4:18080",
+                        },
+                    ),
+                )
+            )
+            with self.assertRaises(RuntimeOwnerBlocked) as raised:
+                endpoints.refresh()
+            stack.close()
+
+        self.assertEqual(
+            "SERVICE_TRANSPORT_UNAVAILABLE",
+            raised.exception.code,
+        )
+        self.assertIn("forward unavailable", str(raised.exception))
+        self.assertEqual(
+            "deployment-tunnel:station-four",
+            raised.exception.resource,
+        )
+        self.assertEqual(2, primary.stop.call_count)
+
+    def test_station_tunnel_open_failure_preserves_primary_error(self) -> None:
+        primary = MagicMock(local_port=4101)
+        primary.stop.side_effect = RuntimeError("tunnel cleanup failed")
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "open_reviewed_remote_tunnel",
+            side_effect=(
+                primary,
+                BlockedError(
+                    "second tunnel failed",
+                    resource="deployment-tunnel:station-five-arm",
+                ),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "second tunnel failed",
+            ) as raised:
+                _open_station_tunnels(
+                    (
+                        (
+                            "station-four",
+                            {
+                                "PT_STATION_MODE": "remote",
+                                "PT_STATION_DEPLOY_ENV": "station-four",
+                                "PT_STATION_PORT": "18080",
+                                "PT_STATION_URL": "http://10.0.0.4:18080",
+                            },
+                        ),
+                        (
+                            "station-five-arm",
+                            {
+                                "PT_STATION_MODE": "remote",
+                                "PT_STATION_DEPLOY_ENV": "station-five-arm",
+                                "PT_STATION_PORT": "18080",
+                                "PT_STATION_URL": "http://10.0.0.5:18080",
+                            },
+                        ),
+                    )
+                )
+
+        self.assertEqual(1, len(raised.exception.secondary_cleanup_failures))
+        self.assertIn(
+            "RUNTIME_CLEANUP_FAILED",
+            raised.exception.secondary_cleanup_failures[0],
+        )
+        self.assertIn(
+            "tunnel cleanup failed",
+            raised.exception.secondary_cleanup_failures[0],
+        )
+
+    def test_w7_refreshes_profile_owned_station_tunnels(
         self,
     ) -> None:
         source = inspect.getsource(
             W7RuntimeOwner.run_w7_desktop_suite
         )
+        refreshes = [
+            match.start()
+            for match in re.finditer(
+                re.escape("station_endpoints.refresh()"),
+                source,
+            )
+        ]
 
-        self.assertEqual(1, source.count("_resolve_station_endpoints("))
-        self.assertNotIn("station_endpoints.refresh()", source)
+        self.assertEqual(1, source.count("_open_station_tunnels("))
+        self.assertEqual(2, len(refreshes))
         self.assertEqual(1, source.count("SuiteRuntimeLedger("))
         self.assertEqual(1, source.count("SuiteRuntimeAction.PROVISION"))
         self.assertLess(
@@ -2710,6 +2902,18 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertLess(
             source.index("parent_path = write_attached_runtime_manifest("),
             source.index("blocked_result_path: Path | None = None"),
+        )
+        self.assertLess(
+            source.index("blocked_result_path: Path | None = None"),
+            refreshes[0],
+        )
+        self.assertLess(
+            source.index("_stage_continuation_evidence("),
+            refreshes[1],
+        )
+        self.assertLess(
+            refreshes[1],
+            source.index("desktop_result = execute_scenario("),
         )
         self.assertLess(
             source.index('scenario_id="desktop-pre-restart"'),

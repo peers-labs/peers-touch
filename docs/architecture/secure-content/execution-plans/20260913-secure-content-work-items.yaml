@@ -497,10 +497,14 @@ items:
     architectureRefs: [SC-D21, SC-D22, SC-D28]
     journeyIds: [sc-dj-runtime-manifest-v3]
     scope:
-      include: [tooling/development/secure_content, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml]
+      include: [tooling/acceptance/provisioners/remote_source_identity.py, tooling/acceptance/tests/test_provisioning_owners.py, tooling/acceptance/tests/test_ssh_transport.py, tooling/acceptance/transports/ssh.py, tooling/development/secure_content, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml]
       exclude: [product semantics, Station reset, Browser, Mobile, Chat, formal Acceptance execution]
     resources:
       sourceClaims:
+        - { pathPrefix: tooling/acceptance/provisioners/remote_source_identity.py, mode: exclusive-write }
+        - { pathPrefix: tooling/acceptance/tests/test_provisioning_owners.py, mode: exclusive-write }
+        - { pathPrefix: tooling/acceptance/tests/test_ssh_transport.py, mode: exclusive-write }
+        - { pathPrefix: tooling/acceptance/transports/ssh.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content, mode: exclusive-write }
         - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, mode: exclusive-write }
         - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml, mode: exclusive-write }
