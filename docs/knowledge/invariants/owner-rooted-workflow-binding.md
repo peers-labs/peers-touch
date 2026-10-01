@@ -48,7 +48,8 @@ Completion Review selects the exact OWNER or assigned REVIEWER from the
 latest receipt for the current owner-command action ID. A FINISHED receipt
 invalidates earlier STARTED and HEARTBEAT receipts. It never enumerates every
 unreleased binding for a worktree and never treats stale child history as
-ownership.
+ownership. Schema-v2 requests and receipts use only
+`completion-reviews-v2`; the pre-hard-cut namespace is not read or migrated.
 
 `PreCompact` writes one bounded current-lineage receipt. `PostCompact` must
 re-resolve the same binding, root, parent, assignment, Development Session,
@@ -86,6 +87,7 @@ authority because a timer elapsed.
 - Expired and terminal children are excluded from current projections.
 - Twenty stale child records do not block exact Completion Review resolution.
 - A FINISHED review action cannot authorize work through an older receipt.
+- Pre-hard-cut Completion Review records cannot block current status or review.
 - Compact restoration fails when any persisted lineage field differs.
 - A seeded or already-consumed installer action has no rollout authority.
 - BeforePrompt injects role, lineage, release, execution, subject, tool, and

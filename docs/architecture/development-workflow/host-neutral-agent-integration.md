@@ -81,6 +81,10 @@ requires the same root, parent, assignment, Session, workspace, and execution
 root before restoring context. Task changes update only the projected
 Development Session identity; they do not create another OWNER.
 
+Completion Review schema v2 uses only the `completion-reviews-v2` machine
+namespace. Pre-hard-cut review records remain untouched and are never loaded,
+translated, or copied into current authority.
+
 ## Required Sequence
 
 1. Reach a durable Task or Context Anchor boundary. Do not replace Skills while

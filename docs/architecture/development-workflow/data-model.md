@@ -677,6 +677,11 @@ The Kernel creates a create-once grant for that exact OWNER `skills` action.
 The installer atomically consumes the grant before reset; a seeded receipt,
 another action ID, or a second invocation has no installation authority.
 
+Canonical Completion Review requests and receipts use schema version `2` under
+`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v2/`.
+The pre-hard-cut `completion-reviews/` namespace is not read, imported,
+migrated, or deleted.
+
 It does not delete Plan bindings, Plan generations, active-work, Development
 Sessions, Completion Review records, runtime leases, or Acceptance evidence.
 After the reset it publishes the current bootstrap. No legacy parser, importer,
