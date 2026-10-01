@@ -120,13 +120,42 @@ acceptance_runtime_env_prefix() {
     "$run_id"
 }
 
+external_runtime_env_prefix() {
+  local runtime_root="${PT_AGENT_EXTERNAL_RUNTIME_ROOT:-}"
+  local start_argv="${PT_AGENT_EXTERNAL_START_ARGV_JSON:-}"
+  local resume_argv="${PT_AGENT_EXTERNAL_RESUME_ARGV_JSON:-}"
+  local reset_argv="${PT_AGENT_EXTERNAL_RESET_ARGV_JSON:-}"
+  if [[ -z "$runtime_root" && -z "$start_argv" && -z "$resume_argv" && -z "$reset_argv" ]]; then
+    return
+  fi
+  if [[ "$PT_DEPLOY_ROLE" != "station" ]] \
+    || [[ -z "$runtime_root" ]] \
+    || [[ -z "$start_argv" ]] \
+    || [[ -z "$resume_argv" ]] \
+    || [[ -z "$reset_argv" ]] \
+    || [[ "$runtime_root" != /* ]]; then
+    echo "[ERROR] Invalid external Agent runtime environment." >&2
+    echo "        Require station + absolute runtime root + complete start/resume/reset argv JSON." >&2
+    return 1
+  fi
+  printf \
+    'PT_AGENT_EXTERNAL_RUNTIME_ROOT=%q PT_AGENT_EXTERNAL_START_ARGV_JSON=%q PT_AGENT_EXTERNAL_RESUME_ARGV_JSON=%q PT_AGENT_EXTERNAL_RESET_ARGV_JSON=%q ' \
+    "$runtime_root" \
+    "$start_argv" \
+    "$resume_argv" \
+    "$reset_argv"
+}
+
 if [[ "$cmd" != "status" && "$cmd" != "logs" ]]; then
   if ! ACCEPTANCE_RUNTIME_ENV_PREFIX="$(acceptance_runtime_env_prefix)"; then
     exit 1
   fi
-  if [[ -n "$ACCEPTANCE_RUNTIME_ENV_PREFIX" ]] \
+  if ! EXTERNAL_RUNTIME_ENV_PREFIX="$(external_runtime_env_prefix)"; then
+    exit 1
+  fi
+  if [[ -n "$ACCEPTANCE_RUNTIME_ENV_PREFIX$EXTERNAL_RUNTIME_ENV_PREFIX" ]] \
     && [[ -z "${PT_DEPLOY_RESTART_CMD:-}" ]]; then
-    echo "[ERROR] Acceptance runtime variables require a reviewed restart command." >&2
+    echo "[ERROR] Runtime variables require a reviewed restart command." >&2
     exit 1
   fi
   if [[ "$PT_DEPLOY_ROLE" == "station" ]]; then
@@ -298,7 +327,7 @@ case "$cmd" in
     echo "[4/5] Restarting $PT_DEPLOY_ROLE ..."
     if [[ -n "${PT_DEPLOY_RESTART_CMD:-}" ]]; then
       CLI_RUNTIME_ENV_PREFIX="$(remote_cli_runtime_env_prefix)"
-      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && ${ACCEPTANCE_RUNTIME_ENV_PREFIX}${CLI_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}"
+      ssh_run "cd \$HOME/$PT_DEPLOY_PATH && ${ACCEPTANCE_RUNTIME_ENV_PREFIX}${EXTERNAL_RUNTIME_ENV_PREFIX}${CLI_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}"
     else
       ssh_run "cd \$HOME/$PT_DEPLOY_PATH && systemctl --user restart peers-${PT_DEPLOY_ROLE}"
     fi

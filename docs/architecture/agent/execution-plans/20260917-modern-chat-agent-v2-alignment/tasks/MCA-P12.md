@@ -37,7 +37,9 @@
     "packages/locales/en/agent.json",
     "packages/locales/zh-CN/agent.json",
     "tooling/acceptance/gates/agent",
+    "tooling/acceptance/tests/test_profile_lease.py",
     "tooling/docker/compose.yml",
+    "tooling/scripts/deploy/deploy.sh",
     "docs/architecture/agent"
   ],
   "readSet": [
