@@ -378,6 +378,13 @@ def main() -> int:
                 ),
                 "P12 preparation",
             )
+            require(
+                preparation.get("ok") is True,
+                "P12 preparation failed at "
+                f"{preparation.get('stage') or 'unknown'}: "
+                f"{preparation.get('errorCode') or 'unknown'}; "
+                f"cleanup={preparation.get('cleanup')}",
+            )
             fixture = _fixture(preparation)
             restart = _restart_external_runtime_station(
                 runtime_manifest,

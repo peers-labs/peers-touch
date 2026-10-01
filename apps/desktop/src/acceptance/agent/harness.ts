@@ -43610,6 +43610,7 @@ export function installAcceptanceHarness(): void {
           epoch: Number(primaryBinding.external_session_epoch ?? 0),
         };
         return evidenceValue({
+          ok: true,
           fixture,
           profile,
           activityBefore,
@@ -43651,13 +43652,18 @@ export function installAcceptanceHarness(): void {
           );
           await api.setSelectedAgent(priorSelection);
         }
-        const original = error instanceof Error
-          ? error.message
-          : String(error);
-        throw new Error(
-          `agent.acceptance.externalRuntimePreparationFailed:${stage}:`
-          + `${original}:cleanup=${cleanupFailures.join(',') || 'clean'}`,
-        );
+        return evidenceValue({
+          ok: false,
+          stage,
+          errorCode: observedErrorCode(error),
+          errorType: error instanceof Error
+            ? error.constructor.name
+            : typeof error,
+          cleanup: {
+            status: cleanupFailures.length === 0 ? 'clean' : 'failed',
+            failures: cleanupFailures,
+          },
+        });
       }
     },
 
