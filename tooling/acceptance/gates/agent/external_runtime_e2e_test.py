@@ -8,7 +8,11 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
+from tooling.acceptance.gates.agent.external_runtime_e2e import (
+    _restart_external_runtime_station,
+)
 from tooling.acceptance.gates.agent.external_runtime_fixture import (
     external_runtime_environment,
 )
@@ -210,6 +214,47 @@ def passing_capture() -> dict:
 
 
 class ExternalRuntimeE2ETest(unittest.TestCase):
+    @patch(
+        "tooling.acceptance.gates.agent.external_runtime_e2e."
+        "_station_container_id",
+        side_effect=("container-before", "container-after"),
+    )
+    @patch(
+        "tooling.acceptance.gates.agent.external_runtime_e2e._station_version",
+        return_value={"build_commit": "a" * 40},
+    )
+    @patch(
+        "tooling.acceptance.gates.agent.external_runtime_e2e.subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=["make", "station"],
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+    def test_station_restart_reuses_provisioner_source_lease(
+        self,
+        run: Mock,
+        _version: Mock,
+        _container: Mock,
+    ) -> None:
+        result = _restart_external_runtime_station(
+            {
+                "runId": "run-1",
+                "services": {
+                    "station": {
+                        "endpoint": "http://station.example",
+                        "deploymentEnvironment": "station-two",
+                    }
+                },
+            },
+            {},
+        )
+
+        self.assertTrue(result["stationRestarted"])
+        environment = run.call_args.kwargs["env"]
+        self.assertEqual(environment["PT_SOURCE_LEASE_HELD"], "1")
+
     def test_fixture_argv_is_bounded_json_without_newlines(self) -> None:
         environment = external_runtime_environment("run-1")
         self.assertEqual(

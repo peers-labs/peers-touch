@@ -144,6 +144,7 @@ def _restart_external_runtime_station(
     environment.update(external_runtime_environment(run_id))
     environment["PT_ACCEPTANCE_ENVIRONMENT"] = "home-station"
     environment["PT_AGENT_CAPABILITY_SCENARIO_CONTROL"] = "1"
+    environment["PT_SOURCE_LEASE_HELD"] = "1"
     environment["PT_ACCEPTANCE_RUN_ID"] = (
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
         + "-"
