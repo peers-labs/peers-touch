@@ -1490,11 +1490,6 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     reason="Active profile is missing PT_STATION_URL",
                     resource="profile:PT_STATION_URL",
                 )
-            if profile_env.get("PT_STATION_MODE", "local") == "remote":
-                self.acquire_remote_git_source_lease(
-                    deployment_environment,
-                    f"acceptance:{gate_id}:{manifest.run_id}",
-                )
             if gate_id == AGENT_V2_EXTERNAL_RUNTIME_GATE:
                 if manifest.workspace_digest != "clean":
                     raise BlockedError(
@@ -1508,6 +1503,11 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     run_id=manifest.run_id,
                     profile_env=profile_env,
                     deployment_environment=deployment_environment,
+                )
+            if profile_env.get("PT_STATION_MODE", "local") == "remote":
+                self.acquire_remote_git_source_lease(
+                    deployment_environment,
+                    f"acceptance:{gate_id}:{manifest.run_id}",
                 )
             if not self._station_ready(station_url, health_url):
                 if profile_env.get("PT_STATION_MODE", "local") != "remote":
