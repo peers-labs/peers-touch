@@ -67,7 +67,8 @@ conversation and workflow-action stores before installing the current
 bootstrap. No legacy reader, importer, alias, or dual writer is allowed.
 The sole live OWNER `skills` action is admissible only with its create-once
 Kernel grant, which the installer atomically consumes exactly once. Zero live
-actions are denied. After grant consumption, the installer persists
+actions are denied. Fallible path/workspace/catalog planning completes before
+grant consumption. After consumption, the installer immediately persists
 `INSTALLING` before destructive reset and records `BLOCKED` if reset fails.
 
 ## Why this is non-negotiable

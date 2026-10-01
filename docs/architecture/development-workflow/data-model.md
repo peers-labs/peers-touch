@@ -686,10 +686,12 @@ deletes exactly:
 ```
 
 The Kernel creates a create-once grant for that exact OWNER `skills` action.
-The installer requires exactly one such live action, atomically consumes its
-grant, publishes `INSTALLING`, and only then starts destructive reset. A seeded
-receipt, missing action, another action ID, or a second invocation has no
-installation authority; reset failure publishes `BLOCKED`.
+The installer completes fallible catalog, host-root, workspace, and hook
+preflight before consuming the grant. It then requires exactly one such live
+action, atomically consumes its grant, publishes `INSTALLING`, and only then
+starts destructive reset. A seeded receipt, missing action, another action ID,
+or a second invocation has no installation authority; reset failure publishes
+`BLOCKED`.
 
 Canonical Completion Review requests and receipts use schema version `2` under
 `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v2/`.

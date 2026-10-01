@@ -790,6 +790,21 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertIn("TRAE_WORKSPACE_DESCRIPTOR_INVALID", installed.stdout)
         self.assertTrue(legacy.exists())
 
+        workspace.write_text(
+            json.dumps({"folders": [{"path": "."}]}),
+            encoding="utf-8",
+        )
+        retried = subprocess.run(
+            ["make", "skills", "IDE=trae", f"WORKSPACE={workspace}"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(retried.returncode, 0, retried.stdout + retried.stderr)
+        self.assertFalse((self.machine / "conversations").exists())
+
     def test_hard_cut_purges_only_legacy_conversations_and_action_stores(
         self,
     ) -> None:

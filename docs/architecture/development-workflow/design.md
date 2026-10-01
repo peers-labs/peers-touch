@@ -316,11 +316,11 @@ workspace root. Ambiguous or target-less selection returns
 `WORKTREE_SELECTION_REQUIRED`. Changing the workspace descriptor or writing
 that shared bootstrap is a separately declared cross-root rollout operation.
 
-This is a hard cut. Rollout first proves no live declaration/action, consumes
-the exact installer grant, publishes `INSTALLING`, then deletes the old
-conversation and workflow-action stores and installs the current bootstrap.
-Any reset or installation failure publishes `BLOCKED`. No old binding/action
-schema reader, importer, alias, or dual-write path exists.
+This is a hard cut. Rollout completes fallible preflight, proves no live
+declaration/action, consumes the exact installer grant, publishes `INSTALLING`,
+then deletes the old conversation and workflow-action stores and installs the
+current bootstrap. Any reset or installation failure publishes `BLOCKED`. No
+old binding/action schema reader, importer, alias, or dual-write path exists.
 
 ## 5. Plan Package Contract
 

@@ -1191,6 +1191,7 @@ def install(
         if host == "cursor"
         else None
     )
+    require_global_idle(root, workspace_id)
     write_installation_receipt(
         workspace_id,
         branch,
@@ -1274,7 +1275,6 @@ def main() -> int:
     workspace_id, branch, head = identity(root)
     try:
         with WorkLedgerLock():
-            require_global_idle(root, workspace_id)
             install(
                 root,
                 options.host,
