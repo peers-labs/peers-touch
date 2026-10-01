@@ -1116,6 +1116,9 @@ function observedErrorCode(error: unknown): string {
     if (serializedDetails.includes('RETENTION_CONFLICT')) {
       return 'RETENTION_CONFLICT';
     }
+    if (serializedDetails.includes('ADMISSION_DUPLICATE_CONFLICT')) {
+      return 'ADMISSION_DUPLICATE_CONFLICT';
+    }
     if (
       serializedDetails.includes('AGENT_4009')
       || (error as { code?: string }).code === 'CONFLICT'
@@ -1141,6 +1144,9 @@ function observedErrorCode(error: unknown): string {
     return 'ADMISSION_QUEUE_FULL';
   }
   if (message.includes('ACTIVE_DEPENDENCY')) return 'ACTIVE_DEPENDENCY';
+  if (message.includes('ADMISSION_DUPLICATE_CONFLICT')) {
+    return 'ADMISSION_DUPLICATE_CONFLICT';
+  }
   if (message.includes('AGENT_4009') || message.includes('CONFLICT')) {
     return 'VERSION_CONFLICT';
   }

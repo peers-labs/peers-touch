@@ -3271,6 +3271,24 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         self.assertLess(attachment_rejection, generic_structured_code)
 
+    def test_duplicate_conflict_precedes_generic_version_conflict(self) -> None:
+        error_code_start = self.source.index(
+            "function observedErrorCode(error: unknown): string",
+        )
+        error_code_end = self.source.index(
+            "function isFoundationResourceNotFound",
+            error_code_start,
+        )
+        error_code = self.source[error_code_start:error_code_end]
+
+        duplicate_conflict = error_code.index(
+            "serializedDetails.includes('ADMISSION_DUPLICATE_CONFLICT')",
+        )
+        generic_conflict = error_code.index(
+            "(error as { code?: string }).code === 'CONFLICT'",
+        )
+        self.assertLess(duplicate_conflict, generic_conflict)
+
     def test_agent_file_picker_uses_the_portable_attachment_mime_contract(self) -> None:
         chat_input = DESKTOP_CHAT_INPUT.read_text(encoding="utf-8")
         self.assertIn("AGENT_ATTACHMENT_ACCEPT", chat_input)
