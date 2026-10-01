@@ -236,7 +236,7 @@ async function assertViewport(page, endpoint, viewport, screenshot) {
   await page.screenshot({ path: screenshot, fullPage: true });
 }
 
-async function main() {
+async function main(outputDirectory = null) {
   const port = await freePort();
   const endpoint = `http://127.0.0.1:${port}`;
   const identity = workflowSnapshot(port).server;
@@ -246,13 +246,15 @@ async function main() {
     buildSnapshot: async () => workflowSnapshot(port),
     brokerOptions: { intervalMs: 100, keepAliveMs: 500 },
   });
-  const artifactRoot = path.join(
-    machineDevRoot(),
-    'workspaces',
-    fixtureWorkspaceId,
-    'workflow',
-    'browser-e2e',
-  );
+  const artifactRoot = outputDirectory
+    ? path.resolve(outputDirectory)
+    : path.join(
+        machineDevRoot(),
+        'workspaces',
+        fixtureWorkspaceId,
+        'workflow',
+        'browser-e2e',
+      );
   mkdirSync(artifactRoot, { recursive: true, mode: 0o700 });
   const browser = await chromium.launch({ headless: true });
   const consoleErrors = [];
@@ -353,10 +355,7 @@ async function main() {
       `${JSON.stringify({
         ok: true,
         viewports: ['1440x1000', '390x844'],
-        screenshots: [
-          '~/.peers-touch/dev/workspaces/<workspaceId>/workflow/browser-e2e/desktop.png',
-          '~/.peers-touch/dev/workspaces/<workspaceId>/workflow/browser-e2e/narrow.png',
-        ],
+        screenshots: ['desktop.png', 'narrow.png'],
         disconnectFallback: 'PASS',
         sseRecovery: 'PASS',
       })}\n`,
@@ -370,4 +369,4 @@ async function main() {
   }
 }
 
-await main();
+await main(process.argv[2] ?? null);
