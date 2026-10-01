@@ -199,10 +199,16 @@
 {
   "closures": {
     "owner-child-binding-cut": [
+      "acceptance-infra-validation",
+      "acceptance-plan-self",
+      "acceptance-runtime-provisioning-self",
       "acceptance-workflow-contract",
       "development-workflow-control-plane"
     ],
     "binding-hard-cut-proof": [
+      "acceptance-infra-validation",
+      "acceptance-plan-self",
+      "acceptance-runtime-provisioning-self",
       "acceptance-workflow-contract",
       "development-workflow-control-plane",
       "peers-dev-product",
@@ -210,12 +216,18 @@
     ]
   },
   "completion": [
+    "acceptance-infra-validation",
+    "acceptance-plan-self",
+    "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
     "development-workflow-control-plane",
     "peers-dev-product",
     "peers-dev-ui-browser-e2e"
   ],
   "full": [
+    "acceptance-infra-validation",
+    "acceptance-plan-self",
+    "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
     "development-workflow-control-plane",
     "peers-dev-product",
