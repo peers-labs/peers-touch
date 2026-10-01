@@ -184,11 +184,81 @@ test('single module resolves target requirements and reuses healthy runtime', ()
     },
   ]);
   assert.equal(plan.resourceResults[0].action, 'REUSE');
-  assert.equal(plan.resourceResults[0].status, 'READY');
+  assert.equal(plan.resourceResults[0].status, 'PENDING');
   assert.equal(plan.proofAction, 'REPROVE_REQUIRED');
   assert.equal(plan.acquisition.reservation, 'atomic-per-target');
   assert.equal(plan.acquisition.holdAndWait, 'forbidden');
   assert.equal(plan.acquisition.gatePolicy, 'attach-only');
+});
+
+test('healthy reuse remains pending until its runtime owner confirms it', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'pt-resource-reuse-owner-'));
+  const home = path.join(root, 'home');
+  const workspaceRoot = path.join(root, 'workspace');
+  const receiptFile = path.join(root, 'resource-plan.json');
+  mkdirSync(home);
+  mkdirSync(workspaceRoot);
+  const declaration = activeDeclaration();
+  const dependencies = {
+    requireActiveDeclaration: () => declaration,
+    inspectGitWorkspace: sourceIdentity,
+    startOrUpdateDeclaration: (options) => {
+      declaration.runtimeClaims = options.runtimeClaims
+        .split(';')
+        .filter(Boolean)
+        .map((claim) => {
+          const [mode, kind, resourceId] = claim.split(':');
+          return { kind, resourceId, mode };
+        });
+      return {
+        ...declaration,
+        declarationDigest: digest('d').slice('sha256:'.length),
+      };
+    },
+    now: new Date('2026-10-01T00:00:00.000Z'),
+  };
+  try {
+    const options = {
+      home,
+      workspaceRoot,
+      workItemId: 'WORK-1',
+      sessionId: 'SESSION-1',
+      resourcePlanFile: receiptFile,
+      resourceRequest: request(),
+    };
+    const prepared = prepareDevelopmentResources(options, dependencies);
+
+    assert.equal(prepared.resourceResults[0].action, 'REUSE');
+    assert.equal(prepared.resourceResults[0].status, 'PENDING');
+    assert.equal(prepared.runtimeState, 'PENDING');
+
+    const recorded = recordDevelopmentResourceResult(
+      {
+        ...options,
+        resourceResult: {
+          kind: RESOURCE_RESULT_KIND,
+          schemaVersion: 1,
+          allocationDigest: prepared.allocationDigest,
+          fencingToken: prepared.fencingToken,
+          resourceKind: 'service',
+          resourceId: 'station-four',
+          owner: 'runtime-owner',
+          status: 'READY',
+          manifestRef: 'runtime://station-four',
+          digests: requirement().expectedDigests,
+        },
+      },
+      {
+        requireActiveDeclaration: () => declaration,
+        inspectGitWorkspace: sourceIdentity,
+      },
+    );
+
+    assert.equal(recorded.resourceResults[0].status, 'READY');
+    assert.equal(recorded.runtimeState, 'READY');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('consumes the Agent domain policy through the standard ModuleImpact contract', () => {
@@ -257,6 +327,52 @@ test('multi-module target closure is dependency ordered and deduplicated', () =>
     { wave: 0, quantity: 1 },
     { wave: 1, quantity: 1 },
   ]);
+});
+
+test('rejects one resource allocated to incompatible digest identities', () => {
+  const firstRequirement = requirement({
+    requirementId: 'first-runtime',
+    lifecycleScope: 'scenario',
+  });
+  const secondRequirement = requirement({
+    requirementId: 'second-runtime',
+    lifecycleScope: 'scenario',
+    expectedDigests: {
+      source: digest('4'),
+      artifact: digest('2'),
+      runtime: digest('3'),
+    },
+  });
+
+  assert.throws(
+    () =>
+      buildPlanResourcePlan(
+        request({
+          moduleImpacts: [
+            impact('agent', ['first']),
+            impact('desktop', ['second']),
+          ],
+          targets: [
+            target('first', [firstRequirement]),
+            target('second', [secondRequirement], {
+              dependsOn: ['first'],
+            }),
+          ],
+        }),
+      ),
+    (error) => {
+      assert.ok(error instanceof ResourcePlanError);
+      assert.equal(error.code, 'RESOURCE_REQUIREMENT_CONFLICT');
+      assert.deepEqual(error.detail, {
+        resourceKind: 'service',
+        resourceId: 'station-four',
+        digestKind: 'source',
+        current: digest('1'),
+        incoming: digest('4'),
+      });
+      return true;
+    },
+  );
 });
 
 test('duplicate account demand reuses one compatible account', () => {
