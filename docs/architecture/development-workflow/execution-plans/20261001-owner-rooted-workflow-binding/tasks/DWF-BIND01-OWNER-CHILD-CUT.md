@@ -102,14 +102,31 @@
     "Do not purge Plan, Session, Review, lease, or Acceptance stores",
     "Do not treat bootstrap installationRoot as execution authority"
   ],
-  "updatedAt": "2026-10-01T10:30:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-01T15:36:12.703Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "checkpoint e81e314d17dd5c136fe89c527ae6932bf1ee8993"
+    },
+    {
+      "verificationClass": "ACCEPTANCE_PROOF",
+      "result": "PASS",
+      "ref": "acceptance://dbd1913c8dd24d52/acceptance-run/20261001T152044563235Z-3324a2e7f65dc36aab34ced6cfee6c7d"
+    },
+    {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "review://review-356ef8c3a091d7a286b051c186fb8716/cbaa3e6d2da03c9f9bd8c0366115fdb6f22d812076016d9eb884574dfc48bf07"
+    }
+  ]
 }
 ```
 
 ## Current Snapshot
 
-- State: implementation and source checks in progress.
+- State: done at checkpoint `e81e314d1`; formal Acceptance 5/5 and independent
+  Completion Review PASS.
 - Amendment: core binding and bootstrap are one atomic closure because the new
   binding is required to perform its own independent Completion Review.
 - Rollout proof uses temporary workspace roots; the real shared workspace
