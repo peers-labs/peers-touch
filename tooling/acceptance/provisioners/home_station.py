@@ -512,6 +512,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         profile_env: dict[str, str],
         *,
         runtime_name: str = "binding",
+        actor: str = "bob",
     ) -> tuple[ClientRuntime, ClientRuntime]:
         environment_prefixes = {
             "binding": "PT_AGENT_V2_BINDING",
@@ -535,7 +536,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             os.environ.get(f"{environment_prefix}_WORKTREE", str(REPO_ROOT))
         ).expanduser().resolve()
         native = ClientRuntime(
-            actor="bob",
+            actor=actor,
             runtime="native-tauri",
             worktree=str(worktree),
             gateway_port=int(
@@ -569,7 +570,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             storage_root=str(run_root / "native" / "storage"),
         )
         browser = ClientRuntime(
-            actor="bob",
+            actor=actor,
             runtime="browser",
             worktree=str(worktree),
             gateway_port=int(
@@ -1011,6 +1012,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             manifest.run_id,
             slot,
             profile_env,
+            actor="charlie",
         )
         actors = tuple(
             resolve_existing_actor(
@@ -1018,7 +1020,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 role,
                 profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
             )
-            for role in ("alice", "bob")
+            for role in ("alice", "charlie")
         )
         _, _, actor_ref = persist_actor_manifest(
             ActorManifest(
@@ -1062,6 +1064,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             slot,
             profile_env,
             runtime_name="governed-tool",
+            actor="charlie",
         )
         return dataclasses.replace(
             manifest,
@@ -1095,6 +1098,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 slot,
                 profile_env,
                 runtime_name="mcp",
+                actor="charlie",
             ),
             cleanup_resources=self.contract.cleanup.resources,
         )

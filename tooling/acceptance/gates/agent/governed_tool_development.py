@@ -747,6 +747,7 @@ def main() -> int:
             station_accepted=identity_enrollment["accepted"] is True,
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            allow_actor_rebinding=True,
         )
         native_adapter.write_clipboard(FIXTURE_CLIPBOARD_BYTES)
         fixture_round_trip = (
