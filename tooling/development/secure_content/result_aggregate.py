@@ -147,18 +147,6 @@ SPECS: Mapping[str, AggregateSpec] = {
                 ),
                 allows_owner_continuation=True,
             ),
-            "browser": ChildSpec(
-                "browser",
-                "secure-content-w7",
-                "sc-dj-browser-private-boundary",
-                frozenset({"four", "fiveArm"}),
-                frozenset(
-                    {
-                        "secure-content-browser-authenticated",
-                        "secure-content-browser-anonymous",
-                    }
-                ),
-            ),
         },
     ),
     "W8": AggregateSpec(

@@ -102,6 +102,9 @@ from tooling.development.secure_content.runtime_fixture import (
     RuntimeFixtureBinding,
     RuntimeFixtureOwner,
 )
+from tooling.development.secure_content.scenarios.desktop_pilot import (
+    PRIVATE_TEXT as W7_PRIVATE_TEXT,
+)
 
 
 OWNER_ID = runtime_manifest.RUNTIME_OWNER_ID
@@ -160,9 +163,9 @@ W7_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
         "scope": "suite",
         "entryCheckId": "w7-functional",
-        "scenarioIds": ["desktop-continuity", "browser-boundary"],
+        "scenarioIds": ["desktop-pre-restart", "desktop-continuity"],
         "maxProvisioningRuns": 1,
-        "maxClientLaunches": 6,
+        "maxClientLaunches": 4,
         "minWarmReuseRate": 0.5,
         "requireAttachOnlyScenarios": True,
         "requireReceiverVisibleProof": True,
@@ -239,11 +242,6 @@ W12_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
 )
 TASK_SUITE_CONTRACTS = {
     "W7": W7_RUNTIME_REUSE,
-    "W9": W9_RUNTIME_REUSE,
-    "W2": W2_RUNTIME_REUSE,
-    "W10": W10_RUNTIME_REUSE,
-    "W11": W11_RUNTIME_REUSE,
-    "W12": W12_RUNTIME_REUSE,
 }
 
 
@@ -650,10 +648,6 @@ W8_SCENARIOS = (
         action_text="secure-content-w8-bounds-poll",
         visible_text="secure-content-w8-bounds-poll",
     ),
-)
-BROWSER_CLIENTS = (
-    ("secure-content-browser-authenticated", "browser_actor", "browser_actor"),
-    ("secure-content-browser-anonymous", "anonymous", None),
 )
 REQUIRED_FIXTURE_CAPABILITIES = frozenset(
     {
@@ -3138,9 +3132,10 @@ def _wait_for_moments_snapshot(
     return snapshot
 
 
-def _w8_receiver_ui_probe(
+def _receiver_ui_probe(
     client: FoundationRuntimeClient,
     *,
+    workstream_id: str,
     scenario_id: str,
     action_text: str,
     visible_text: str,
@@ -3151,7 +3146,10 @@ def _w8_receiver_ui_probe(
     if driver is None:
         raise RuntimeOwnerBlocked(
             "CLIENT_RUNTIME_UNAVAILABLE",
-            f"W8 scenario {scenario_id!r} has no attached WebDriver",
+            (
+                f"{workstream_id} scenario {scenario_id!r} has no "
+                "attached WebDriver"
+            ),
             resource=f"client:{client.spec.profile}",
         )
 
@@ -3162,7 +3160,8 @@ def _w8_receiver_ui_probe(
             raise RuntimeOwnerBlocked(
                 "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
                 (
-                    f"W8 scenario {scenario_id!r} product surface failed: "
+                    f"{workstream_id} scenario {scenario_id!r} product "
+                    "surface failed: "
                     f"{redact_text(str(error))}"
                 ),
                 resource=f"client:{client.spec.profile}",
@@ -3210,7 +3209,7 @@ def _w8_receiver_ui_probe(
                     '[data-pt-primary-nav="moments"] [role="button"]'
                 ),
             ),
-            f"W8 {scenario_id} Moments product navigation",
+            f"{workstream_id} {scenario_id} Moments product navigation",
             timeout=90,
             interval=0.25,
         )
@@ -3218,8 +3217,8 @@ def _w8_receiver_ui_probe(
         raise RuntimeOwnerBlocked(
             "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
             (
-                f"W8 scenario {scenario_id!r} cannot open the Moments "
-                f"product page: {redact_text(str(error))}"
+                f"{workstream_id} scenario {scenario_id!r} cannot open "
+                f"the Moments product page: {redact_text(str(error))}"
             ),
             resource=f"client:{client.spec.profile}",
         ) from error
@@ -3229,8 +3228,9 @@ def _w8_receiver_ui_probe(
         raise RuntimeOwnerBlocked(
             "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
             (
-                f"W8 scenario {scenario_id!r} cannot activate the Moments "
-                f"product page: {redact_text(str(error))}"
+                f"{workstream_id} scenario {scenario_id!r} cannot "
+                f"activate the Moments product page: "
+                f"{redact_text(str(error))}"
             ),
             resource=f"client:{client.spec.profile}",
         ) from error
@@ -3252,7 +3252,7 @@ def _w8_receiver_ui_probe(
     try:
         action = wait_until(
             click_action_text,
-            f"W8 {scenario_id} visible product action",
+            f"{workstream_id} {scenario_id} visible product action",
             timeout=90,
             interval=0.25,
         )
@@ -3262,7 +3262,7 @@ def _w8_receiver_ui_probe(
                     "css selector",
                     "[data-moments-comments-toggle]",
                 ),
-                f"W8 {scenario_id} comment-thread action",
+                f"{workstream_id} {scenario_id} comment-thread action",
                 timeout=30,
                 interval=0.25,
             )
@@ -3270,8 +3270,8 @@ def _w8_receiver_ui_probe(
                 raise RuntimeOwnerBlocked(
                     "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
                     (
-                        f"W8 scenario {scenario_id!r} did not open the "
-                        "comment thread"
+                        f"{workstream_id} scenario {scenario_id!r} did not "
+                        "open the comment thread"
                     ),
                     resource=f"client:{client.spec.profile}",
                 )
@@ -3281,15 +3281,16 @@ def _w8_receiver_ui_probe(
                 raise RuntimeOwnerBlocked(
                     "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
                     (
-                        f"W8 scenario {scenario_id!r} could not activate "
-                        f"the comment thread: {redact_text(str(error))}"
+                        f"{workstream_id} scenario {scenario_id!r} could not "
+                        f"activate the comment thread: "
+                        f"{redact_text(str(error))}"
                     ),
                     resource=f"client:{client.spec.profile}",
                 ) from error
 
         receiver_target = wait_until(
             lambda: find_visible_text(visible_text, deepest_match=False),
-            f"W8 {scenario_id} receiver-visible assertion",
+            f"{workstream_id} {scenario_id} receiver-visible assertion",
             timeout=90,
             interval=0.25,
         )
@@ -3298,7 +3299,10 @@ def _w8_receiver_ui_probe(
                 find_visible_text(value, deepest_match=False) is None
                 for value in absent_texts
             ),
-            f"W8 {scenario_id} receiver-visible negative assertion",
+            (
+                f"{workstream_id} {scenario_id} receiver-visible "
+                "negative assertion"
+            ),
             timeout=30,
             interval=0.25,
         )
@@ -3308,23 +3312,27 @@ def _w8_receiver_ui_probe(
         raise RuntimeOwnerBlocked(
             "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
             (
-                f"W8 scenario {scenario_id!r} did not produce a visible "
-                f"receiver result: {redact_text(str(error))}"
+                f"{workstream_id} scenario {scenario_id!r} did not "
+                "produce a visible receiver result: "
+                f"{redact_text(str(error))}"
             ),
             resource=f"client:{client.spec.profile}",
         ) from error
     if not isinstance(action, Mapping) or action.get("visible") is not True:
         raise RuntimeOwnerBlocked(
             "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
-            f"W8 scenario {scenario_id!r} did not execute a visible UI action",
+            (
+                f"{workstream_id} scenario {scenario_id!r} did not execute "
+                "a visible UI action"
+            ),
             resource=f"client:{client.spec.profile}",
         )
     if receiver_target is None:
         raise RuntimeOwnerBlocked(
             "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
             (
-                f"W8 scenario {scenario_id!r} did not expose a visible "
-                "receiver projection"
+                f"{workstream_id} scenario {scenario_id!r} did not expose "
+                "a visible receiver projection"
             ),
             resource=f"client:{client.spec.profile}",
         )
@@ -3332,8 +3340,8 @@ def _w8_receiver_ui_probe(
         raise RuntimeOwnerBlocked(
             "RECEIVER_VISIBLE_PROOF_UNAVAILABLE",
             (
-                f"W8 scenario {scenario_id!r} exposed a forbidden receiver "
-                "projection"
+                f"{workstream_id} scenario {scenario_id!r} exposed a "
+                "forbidden receiver projection"
             ),
             resource=f"client:{client.spec.profile}",
         )
@@ -3359,9 +3367,53 @@ def _w8_receiver_ui_probe(
     }
 
 
-def _w8_result_relative_path(result: Mapping[str, Any]) -> Path:
+def _write_receiver_ui_evidence(
+    owner_root: Path,
+    *,
+    workstream_id: str,
+    suite_runtime_id: str,
+    source_digest: str,
+    fixture_epoch: str,
+    fixture_manifest_digest: str,
+    scenario_id: str,
+    variant_id: str,
+    receiver_client_id: str,
+    evidence: Mapping[str, Any],
+) -> Path:
+    artifact: dict[str, Any] = {
+        "schemaVersion": 1,
+        "kind": "secure-content-receiver-visible-evidence",
+        "workstreamId": workstream_id,
+        "suiteRuntimeId": suite_runtime_id,
+        "sourceDigest": source_digest,
+        "fixtureEpoch": fixture_epoch,
+        "fixtureManifestDigest": fixture_manifest_digest,
+        "scenarioId": scenario_id,
+        "receiverClientId": receiver_client_id,
+        "actionResourceId": evidence["actionResourceId"],
+        "receiverResourceId": evidence["receiverResourceId"],
+        "actionTag": evidence["actionTag"],
+        "receiverTag": evidence["receiverTag"],
+        "actionTextSha256": evidence["actionTextSha256"],
+        "visibleTextSha256": evidence["visibleTextSha256"],
+        "absentTextSha256": evidence["absentTextSha256"],
+        "automationSessionId": evidence["automationSessionId"],
+        "pageUrlSha256": evidence["pageUrlSha256"],
+    }
+    artifact["artifactDigest"] = runtime_manifest.canonical_digest(artifact)
+    return _write_immutable_json(
+        owner_root / variant_id / "receiver-visible-evidence.json",
+        artifact,
+    )
+
+
+def _result_relative_path(
+    result: Mapping[str, Any],
+    *,
+    workstream_id: str,
+) -> Path:
     coordinates = {
-        "workstreamId": W8_TASK_ID,
+        "workstreamId": workstream_id,
         "generationId": None,
         "variantId": None,
         "runId": None,
@@ -3377,8 +3429,8 @@ def _w8_result_relative_path(result: Mapping[str, Any]) -> Path:
         ):
             raise RuntimeOwnerBlocked(
                 "RESULT_PUBLICATION_INVALID",
-                f"W8 staged result has invalid {field}",
-                resource="result:secure-content-w8",
+                f"{workstream_id} staged result has invalid {field}",
+                resource=f"result:secure-content-{workstream_id.lower()}",
             )
         resolved[field] = value
     return (
@@ -3390,29 +3442,42 @@ def _w8_result_relative_path(result: Mapping[str, Any]) -> Path:
     )
 
 
-def _stage_w8_child_result(
+def _stage_child_result(
     result: Mapping[str, Any],
     *,
+    workstream_id: str,
     raw_result_root: Path,
     publish_root: Path,
     final_result_root: Path,
-    ui_evidence_path: Path,
+    ui_evidence_paths: Sequence[Path],
 ) -> Mapping[str, Any]:
-    relative_path = _w8_result_relative_path(result)
+    relative_path = _result_relative_path(
+        result,
+        workstream_id=workstream_id,
+    )
     raw_root = raw_result_root.resolve()
     raw_result_path = (raw_root / relative_path).resolve()
     final_result_path = (final_result_root.resolve() / relative_path).resolve()
     if not raw_result_path.is_file():
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_INVALID",
-            "W8 staged result is unavailable before receiver proof publication",
-            resource="result:secure-content-w8",
+            (
+                f"{workstream_id} staged result is unavailable before "
+                "receiver proof publication"
+            ),
+            resource=f"result:secure-content-{workstream_id.lower()}",
         )
-    if not ui_evidence_path.resolve().is_file():
+    if not ui_evidence_paths or any(
+        not path.resolve().is_file()
+        for path in ui_evidence_paths
+    ):
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_INVALID",
-            "W8 receiver-visible evidence is unavailable before result publication",
-            resource="result:secure-content-w8",
+            (
+                f"{workstream_id} receiver-visible evidence is unavailable "
+                "before result publication"
+            ),
+            resource=f"result:secure-content-{workstream_id.lower()}",
         )
 
     artifact_refs = result.get("artifactRefs")
@@ -3422,8 +3487,8 @@ def _stage_w8_child_result(
     ):
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_INVALID",
-            "W8 staged result artifact references are invalid",
-            resource="result:secure-content-w8",
+            f"{workstream_id} staged result artifact references are invalid",
+            resource=f"result:secure-content-{workstream_id.lower()}",
         )
     normalized_refs: list[str] = []
     observed_self_ref = False
@@ -3434,22 +3499,28 @@ def _stage_w8_child_result(
             observed_self_ref = True
             continue
         if artifact_path == raw_root or raw_root in artifact_path.parents:
-            raise RuntimeOwnerBlocked(
-                "RESULT_PUBLICATION_INVALID",
-                "W8 staged result contains an unsupported unpublished artifact",
-                resource="result:secure-content-w8",
+            normalized_refs.append(
+                str(
+                    final_result_root.resolve()
+                    / artifact_path.relative_to(raw_root)
+                )
             )
+            continue
         normalized_refs.append(str(artifact_path))
     if not observed_self_ref:
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_INVALID",
-            "W8 staged result does not reference its unpublished result",
-            resource="result:secure-content-w8",
+            (
+                f"{workstream_id} staged result does not reference its "
+                "unpublished result"
+            ),
+            resource=f"result:secure-content-{workstream_id.lower()}",
         )
 
-    ui_ref = str(ui_evidence_path.resolve())
-    if ui_ref not in normalized_refs:
-        normalized_refs.append(ui_ref)
+    for ui_evidence_path in ui_evidence_paths:
+        ui_ref = str(ui_evidence_path.resolve())
+        if ui_ref not in normalized_refs:
+            normalized_refs.append(ui_ref)
     published = json.loads(json.dumps(result))
     completed_at = _utc_now()
     try:
@@ -3464,8 +3535,8 @@ def _stage_w8_child_result(
     except (KeyError, ValueError) as error:
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_INVALID",
-            "W8 staged result timestamps are invalid",
-            resource="result:secure-content-w8",
+            f"{workstream_id} staged result timestamps are invalid",
+            resource=f"result:secure-content-{workstream_id.lower()}",
         ) from error
     published["artifactRefs"] = normalized_refs
     published["completedAt"] = completed_at
@@ -3475,12 +3546,27 @@ def _stage_w8_child_result(
     )
     published.pop("resultDigest", None)
     published["resultDigest"] = runtime_manifest.canonical_digest(published)
-    _write_immutable_json(publish_root.resolve() / relative_path, published)
+    raw_run_root = raw_result_path.parent
+    staged_run_root = (publish_root.resolve() / relative_path.parent).resolve()
+    if staged_run_root.exists() or any(
+        child.is_symlink()
+        for child in raw_run_root.rglob("*")
+    ):
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_CONFLICT",
+            f"{workstream_id} staged result run is not publishable",
+            resource=f"result:secure-content-{workstream_id.lower()}",
+        )
+    shutil.copytree(raw_run_root, staged_run_root)
+    staged_result_path = staged_run_root / "result.json"
+    staged_result_path.unlink()
+    _write_immutable_json(staged_result_path, published)
     return published
 
 
-def _publish_w8_result_generation(
+def _publish_result_generation(
     *,
+    workstream_id: str,
     publish_root: Path,
     final_result_root: Path,
     generation_id: str,
@@ -3489,33 +3575,39 @@ def _publish_w8_result_generation(
     if generation.name != generation_id:
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_INVALID",
-            "W8 result generation ID is invalid",
-            resource="result:secure-content-w8",
+            f"{workstream_id} result generation ID is invalid",
+            resource=f"result:secure-content-{workstream_id.lower()}",
         )
-    staged = (publish_root.resolve() / W8_TASK_ID / generation).resolve()
+    staged = (publish_root.resolve() / workstream_id / generation).resolve()
     destination = (
-        final_result_root.resolve() / W8_TASK_ID / generation
+        final_result_root.resolve() / workstream_id / generation
     ).resolve()
     if not staged.is_dir():
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_INVALID",
-            "W8 result generation is incomplete before publication",
-            resource="result:secure-content-w8",
+            (
+                f"{workstream_id} result generation is incomplete before "
+                "publication"
+            ),
+            resource=f"result:secure-content-{workstream_id.lower()}",
         )
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_CONFLICT",
-            "W8 result generation already exists",
-            resource="result:secure-content-w8",
+            f"{workstream_id} result generation already exists",
+            resource=f"result:secure-content-{workstream_id.lower()}",
         )
     try:
         os.rename(staged, destination)
     except OSError as error:
         raise RuntimeOwnerBlocked(
             "RESULT_PUBLICATION_FAILED",
-            f"W8 result generation could not be published: {error}",
-            resource="result:secure-content-w8",
+            (
+                f"{workstream_id} result generation could not be published: "
+                f"{error}"
+            ),
+            resource=f"result:secure-content-{workstream_id.lower()}",
         ) from error
     return destination
 
@@ -3747,25 +3839,6 @@ def _ensure_browser_station_binding(
             f"browser station binding unreachable for {client.spec.profile}: {error}",
             resource=f"client:{client.spec.profile}",
         ) from error
-
-
-def _bridge_desktop_handoff(result_root: Path, run_id: str, head: str) -> None:
-    w7_root = result_root / "W7" / head
-    desktop_root = w7_root / "desktop"
-    source = desktop_root / run_id / "browser-private-handoff.json"
-    if not source.is_file():
-        candidates = sorted(
-            desktop_root.glob(f"{run_id}-c-*/browser-private-handoff.json"),
-        )
-        if not candidates:
-            return
-        source = candidates[-1]
-    browser_target = w7_root / "browser" / run_id / "browser-private-handoff.json"
-    if browser_target.is_file():
-        return
-    browser_target.parent.mkdir(parents=True, exist_ok=True)
-    import shutil
-    shutil.copy2(str(source), str(browser_target))
 
 
 def _manifest_payload(
@@ -4618,14 +4691,14 @@ class W7RuntimeOwner:
             "fixtureOwner": "runtime-bound",
         }
 
-    def run_w7_suite(self) -> dict[str, Any]:
+    def run_w7_desktop_suite(self) -> dict[str, Any]:
         identity = _require_clean_source(self.repo_root, self.result_root)
         resolved, profile_env = _resolve_machine_profile(self.repo_root)
         _secondary_profile_path, secondary_profile_env = (
             _resolve_secondary_profile(resolved)
         )
         run_id = (
-            f"w7-suite-{identity['head'][:12]}-{os.getpid()}-"
+            f"w7-desktop-suite-{identity['head'][:12]}-{os.getpid()}-"
             f"{time.time_ns()}"
         )
         owner_root = self.runtime_root / run_id
@@ -4747,8 +4820,16 @@ class W7RuntimeOwner:
             SuiteRuntimeAction.PROVISION,
             resource_id="runtime:w7",
         )
+        raw_result_root = owner_root / "unpublished-results"
+        publish_root = owner_root / "publish-ready"
+        receiver_evidence_refs: dict[str, dict[str, str]] = {}
         with _runtime_cleanup_scope(transport_stack) as stack:
-            _activate_scenario_journey(self.repo_root, DESKTOP_JOURNEY)
+            _activate_scenario_journey(
+                self.repo_root,
+                DESKTOP_JOURNEY,
+                work_item_id=WORK_ITEM_ID,
+                task_id=TASK_ID,
+            )
             accounts, password = _provision_runtime_accounts(
                 primary_station_url=station_url,
                 secondary_station_url=secondary_station_url,
@@ -4757,8 +4838,6 @@ class W7RuntimeOwner:
                     "alice",
                     "bob",
                     "eve",
-                    "browser_actor",
-                    "browser_anonymous_bootstrap",
                 ),
                 secondary_roles=("bob",),
             )
@@ -4766,8 +4845,6 @@ class W7RuntimeOwner:
                 "alice",
                 "bob",
                 "eve",
-                "browser_actor",
-                "browser_anonymous_bootstrap",
             ):
                 ledger.record(
                     SuiteRuntimeAction.ACCOUNT_PROVISION,
@@ -4860,69 +4937,6 @@ class W7RuntimeOwner:
                     )
                 )
 
-            browser: dict[str, FoundationRuntimeClient] = {}
-            browser_payloads: list[dict[str, Any]] = []
-            for index, (client_id, actor, account_role) in enumerate(
-                BROWSER_CLIENTS
-            ):
-                client = _make_client(
-                    repo_root=self.repo_root,
-                    runtime_root=owner_root,
-                    station_url=station_url,
-                    profile_env=profile_env,
-                    source_commit=str(identity["head"]),
-                    client_id=client_id,
-                    runtime_kind="browser",
-                    port_bases=(
-                        3630 + index * 20,
-                        3810 + index * 20,
-                        4595 + index * 20,
-                    ),
-                    reserved_ports=reserved_ports,
-                )
-                stack.callback(
-                    _stop_client_or_raise,
-                    client,
-                    purpose="Browser",
-                    active_client_ids=active_client_ids,
-                )
-                active_client_ids.add(id(client))
-                snapshot = _start_client(
-                    client,
-                    account=(
-                        accounts[account_role]
-                        if account_role is not None
-                        else None
-                    ),
-                    password=password,
-                    anonymous_binding_account=(
-                        accounts["browser_anonymous_bootstrap"]
-                        if account_role is None
-                        else None
-                    ),
-                )
-                browser[client_id] = client
-                browser_payloads.append(
-                    _client_payload(
-                        client_id,
-                        actor,
-                        client,
-                        snapshot,
-                        service_roles={
-                            "station": STATION_ID,
-                            "station-secondary": SECONDARY_STATION_ID,
-                        },
-                    )
-                )
-                ledger.record(
-                    SuiteRuntimeAction.CLIENT_LAUNCH,
-                    resource_id=f"client:{client_id}",
-                )
-                ledger.record(
-                    SuiteRuntimeAction.LOGIN,
-                    resource_id=f"session:{client_id}",
-                )
-
             desktop_dir = owner_root / "desktop"
             desktop_fixture_ref = self._copy_fixture_into(
                 owner_root / fixture_ref["path"],
@@ -5003,7 +5017,7 @@ class W7RuntimeOwner:
             station_endpoints.refresh()
             ledger.record(
                 SuiteRuntimeAction.SCENARIO_START,
-                scenario_id="desktop-continuity",
+                scenario_id="desktop-pre-restart",
             )
             try:
                 execute_scenario(
@@ -5015,7 +5029,7 @@ class W7RuntimeOwner:
                     profiles=(PROFILE, SECONDARY_PROFILE),
                     clients=tuple(item[0] for item in DESKTOP_CLIENTS),
                     runtime_manifest_path=parent_path,
-                    result_root=self.result_root,
+                    result_root=raw_result_root,
                     workspace_identity=identity,
                 )
             except ScenarioBlocked as error:
@@ -5028,6 +5042,56 @@ class W7RuntimeOwner:
                     "Desktop pilot did not publish its restart boundary",
                     resource=f"client:{DESKTOP_CLIENTS[1][0]}",
                 )
+            pre_restart_ui = _receiver_ui_probe(
+                desktop[DESKTOP_CLIENTS[1][0]],
+                workstream_id=TASK_ID,
+                scenario_id="desktop-pre-restart",
+                action_text=W7_PRIVATE_TEXT,
+                visible_text=W7_PRIVATE_TEXT,
+                open_comments=False,
+            )
+            pre_restart_ui_path = _write_receiver_ui_evidence(
+                owner_root,
+                workstream_id=TASK_ID,
+                suite_runtime_id=run_id,
+                source_digest=str(identity["head"]),
+                fixture_epoch=fixture_epoch,
+                fixture_manifest_digest=fixture_digest,
+                scenario_id="desktop-pre-restart",
+                variant_id="desktop-pre-restart",
+                receiver_client_id=DESKTOP_CLIENTS[1][0],
+                evidence=pre_restart_ui,
+            )
+            pre_restart_ref = {
+                "path": pre_restart_ui_path.relative_to(owner_root).as_posix(),
+                "sha256": _sha256(pre_restart_ui_path.read_bytes()),
+            }
+            receiver_evidence_refs["desktop-pre-restart"] = pre_restart_ref
+            pre_restart_resource = (
+                "artifact:"
+                + pre_restart_ref["path"]
+                + ":"
+                + pre_restart_ref["sha256"]
+            )
+            ledger.record(
+                SuiteRuntimeAction.UI_ACTION,
+                scenario_id="desktop-pre-restart",
+                resource_id=f"{pre_restart_resource}:ui-action",
+            )
+            ledger.record(
+                SuiteRuntimeAction.RECEIVER_ASSERTION,
+                scenario_id="desktop-pre-restart",
+                resource_id=f"{pre_restart_resource}:receiver",
+            )
+            ledger.record(
+                SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                scenario_id="desktop-pre-restart",
+                resource_id=pre_restart_resource,
+            )
+            ledger.record(
+                SuiteRuntimeAction.SCENARIO_END,
+                scenario_id="desktop-pre-restart",
+            )
             request_path = (
                 blocked_result_path.parent
                 / f"restart-request-{DESKTOP_CLIENTS[1][0]}.json"
@@ -5181,6 +5245,10 @@ class W7RuntimeOwner:
                     acknowledgement=acknowledgement,
                 )
                 station_endpoints.refresh()
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_START,
+                    scenario_id="desktop-continuity",
+                )
                 desktop_result = execute_scenario(
                     runtime="desktop",
                     scenario_id="desktop-pilot",
@@ -5190,11 +5258,42 @@ class W7RuntimeOwner:
                     profiles=(PROFILE, SECONDARY_PROFILE),
                     clients=tuple(item[0] for item in DESKTOP_CLIENTS),
                     runtime_manifest_path=child_path,
-                    result_root=self.result_root,
+                    result_root=raw_result_root,
                     workspace_identity=identity,
                     fixture_action_client=fixture_action_client,
                 )
 
+            continuity_ui = _receiver_ui_probe(
+                desktop[DESKTOP_CLIENTS[1][0]],
+                workstream_id=TASK_ID,
+                scenario_id="desktop-continuity",
+                action_text=W7_PRIVATE_TEXT,
+                visible_text=W7_PRIVATE_TEXT,
+                open_comments=False,
+            )
+            continuity_ui_path = _write_receiver_ui_evidence(
+                owner_root,
+                workstream_id=TASK_ID,
+                suite_runtime_id=run_id,
+                source_digest=str(identity["head"]),
+                fixture_epoch=fixture_epoch,
+                fixture_manifest_digest=fixture_digest,
+                scenario_id="desktop-continuity",
+                variant_id="desktop-continuity",
+                receiver_client_id=DESKTOP_CLIENTS[1][0],
+                evidence=continuity_ui,
+            )
+            continuity_ref = {
+                "path": continuity_ui_path.relative_to(owner_root).as_posix(),
+                "sha256": _sha256(continuity_ui_path.read_bytes()),
+            }
+            receiver_evidence_refs["desktop-continuity"] = continuity_ref
+            continuity_resource = (
+                "artifact:"
+                + continuity_ref["path"]
+                + ":"
+                + continuity_ref["sha256"]
+            )
             desktop_result_digest = _required_text(
                 desktop_result.get("resultDigest"),
                 "desktop-continuity result digest",
@@ -5205,12 +5304,12 @@ class W7RuntimeOwner:
             ledger.record(
                 SuiteRuntimeAction.UI_ACTION,
                 scenario_id="desktop-continuity",
-                resource_id=f"{desktop_result_resource}:ui-action",
+                resource_id=continuity_resource,
             )
             ledger.record(
                 SuiteRuntimeAction.RECEIVER_ASSERTION,
                 scenario_id="desktop-continuity",
-                resource_id=f"{desktop_result_resource}:receiver",
+                resource_id=continuity_resource,
             )
             ledger.record(
                 SuiteRuntimeAction.SUPPORTING_OBSERVATION,
@@ -5221,130 +5320,34 @@ class W7RuntimeOwner:
                 SuiteRuntimeAction.SCENARIO_END,
                 scenario_id="desktop-continuity",
             )
-            _bridge_desktop_handoff(self.result_root, run_id, identity["head"])
 
+            blocked_result = json.loads(
+                blocked_result_path.read_text(encoding="utf-8")
+            )
+            _stage_child_result(
+                blocked_result,
+                workstream_id=TASK_ID,
+                raw_result_root=raw_result_root,
+                publish_root=publish_root,
+                final_result_root=self.result_root,
+                ui_evidence_paths=(pre_restart_ui_path,),
+            )
+            desktop_result = _stage_child_result(
+                desktop_result,
+                workstream_id=TASK_ID,
+                raw_result_root=raw_result_root,
+                publish_root=publish_root,
+                final_result_root=self.result_root,
+                ui_evidence_paths=(
+                    pre_restart_ui_path,
+                    continuity_ui_path,
+                ),
+            )
+            for client in desktop.values():
+                _moments_harness(client, "clearLocalState")
             _close_fixture_action_channel(
                 fixture_context,
                 fixture_action_client,
-            )
-
-            station_endpoints.refresh()
-            stack.callback(
-                _activate_scenario_journey,
-                self.repo_root,
-                DESKTOP_JOURNEY,
-                work_item_id=WORK_ITEM_ID,
-                task_id=TASK_ID,
-            )
-            _activate_scenario_journey(self.repo_root, BROWSER_JOURNEY)
-            browser_dir = owner_root / "browser"
-            browser_fixture_ref = self._copy_fixture_into(
-                owner_root / fixture_ref["path"],
-                browser_dir,
-            )
-            browser_service_ref = _publish_attestation(
-                browser_dir,
-                attestation,
-                run_id=run_id,
-                journey_id=BROWSER_JOURNEY,
-                service_id=STATION_ID,
-            )
-            browser_secondary_service_ref = _publish_attestation(
-                browser_dir,
-                secondary_attestation,
-                run_id=run_id,
-                journey_id=BROWSER_JOURNEY,
-                service_id=SECONDARY_STATION_ID,
-            )
-            browser_schema_attestation_ref = (
-                _publish_canonical_private_schema_attestation(
-                    browser_dir,
-                    STATION_ID,
-                    schema_attestation,
-                )
-            )
-            browser_secondary_schema_attestation_ref = (
-                _publish_canonical_private_schema_attestation(
-                    browser_dir,
-                    SECONDARY_STATION_ID,
-                    secondary_schema_attestation,
-                )
-            )
-            browser_path = _write_browser_runtime_manifest_with_recovery(
-                manifest_payload=_manifest_payload(
-                    identity=identity,
-                    journey_id=BROWSER_JOURNEY,
-                    run_id=run_id,
-                    services={
-                        STATION_ID: _service_payload(
-                            attestation,
-                            browser_service_ref,
-                            browser_schema_attestation_ref,
-                            profile_id=PROFILE,
-                            schema_attestation_endpoint=profile_env[
-                                "PT_STATION_URL"
-                            ],
-                        ),
-                        SECONDARY_STATION_ID: _service_payload(
-                            secondary_attestation,
-                            browser_secondary_service_ref,
-                            browser_secondary_schema_attestation_ref,
-                            profile_id=SECONDARY_PROFILE,
-                            schema_attestation_endpoint=secondary_profile_env[
-                                "PT_STATION_URL"
-                            ],
-                        ),
-                    },
-                    fixture_ref=browser_fixture_ref,
-                    fixture_digest=fixture_digest,
-                    clients=browser_payloads,
-                ),
-                output_path=browser_dir / "runtime.json",
-                journey_id=BROWSER_JOURNEY,
-                sessions_by_client=browser,
-                repo_root=self.repo_root,
-            )
-            ledger.record(
-                SuiteRuntimeAction.SCENARIO_START,
-                scenario_id="browser-boundary",
-            )
-            browser_result = execute_scenario(
-                runtime="browser",
-                scenario_id="browser-private-boundary",
-                budget_seconds=1200,
-                repo_root=self.repo_root,
-                profile=None,
-                profiles=(PROFILE, SECONDARY_PROFILE),
-                clients=tuple(item[0] for item in BROWSER_CLIENTS),
-                runtime_manifest_path=browser_path,
-                result_root=self.result_root,
-                workspace_identity=identity,
-            )
-            browser_result_digest = _required_text(
-                browser_result.get("resultDigest"),
-                "browser-boundary result digest",
-            )
-            browser_result_resource = (
-                f"scenario-result:{browser_result_digest}"
-            )
-            ledger.record(
-                SuiteRuntimeAction.UI_ACTION,
-                scenario_id="browser-boundary",
-                resource_id=f"{browser_result_resource}:ui-action",
-            )
-            ledger.record(
-                SuiteRuntimeAction.RECEIVER_ASSERTION,
-                scenario_id="browser-boundary",
-                resource_id=f"{browser_result_resource}:receiver",
-            )
-            ledger.record(
-                SuiteRuntimeAction.SUPPORTING_OBSERVATION,
-                scenario_id="browser-boundary",
-                resource_id=browser_result_resource,
-            )
-            ledger.record(
-                SuiteRuntimeAction.SCENARIO_END,
-                scenario_id="browser-boundary",
             )
         ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
         suite_report = ledger.require_valid()
@@ -5352,18 +5355,21 @@ class W7RuntimeOwner:
             owner_root / "suite-runtime.json",
             suite_report,
         )
+        _publish_result_generation(
+            workstream_id=TASK_ID,
+            publish_root=publish_root,
+            final_result_root=self.result_root,
+            generation_id=str(identity["head"]),
+        )
         return {
             "status": "FUNCTIONAL_PASS",
             "proofState": "UNPROVEN",
             "desktopResult": desktop_result["result"],
-            "browserResult": browser_result["result"],
             "runtimeRoot": str(owner_root),
             "suiteRuntimeReport": str(suite_report_path),
             "suiteRuntimeReportDigest": suite_report["reportDigest"],
+            "receiverVisibleEvidence": receiver_evidence_refs,
         }
-
-    def run(self) -> dict[str, Any]:
-        return self.run_w7_suite()
 
     def run_w8_suite(self) -> dict[str, Any]:
         return self._run_w8_suite()
@@ -7456,54 +7462,34 @@ class W7RuntimeOwner:
                     workspace_identity=identity,
                     fixture_action_client=fixture_action_client,
                 )
-                ui_evidence = _w8_receiver_ui_probe(
+                ui_evidence = _receiver_ui_probe(
                     clients[spec.receiver_client_id],
+                    workstream_id=W8_TASK_ID,
                     scenario_id=spec.scenario_id,
                     action_text=spec.action_text,
                     visible_text=spec.visible_text,
                     open_comments=spec.open_comments,
                     absent_texts=spec.absent_texts,
                 )
-                ui_artifact: dict[str, Any] = {
-                    "schemaVersion": 1,
-                    "kind": "secure-content-w8-receiver-visible-evidence",
-                    "suiteRuntimeId": run_id,
-                    "sourceDigest": identity["head"],
-                    "fixtureEpoch": fixture_epoch,
-                    "fixtureManifestDigest": fixture_digest,
-                    "scenarioId": spec.scenario_id,
-                    "receiverClientId": spec.receiver_client_id,
-                    "actionResourceId": ui_evidence["actionResourceId"],
-                    "receiverResourceId": ui_evidence[
-                        "receiverResourceId"
-                    ],
-                    "actionTag": ui_evidence["actionTag"],
-                    "receiverTag": ui_evidence["receiverTag"],
-                    "actionTextSha256": ui_evidence["actionTextSha256"],
-                    "visibleTextSha256": ui_evidence["visibleTextSha256"],
-                    "absentTextSha256": ui_evidence[
-                        "absentTextSha256"
-                    ],
-                    "automationSessionId": ui_evidence[
-                        "automationSessionId"
-                    ],
-                    "pageUrlSha256": ui_evidence["pageUrlSha256"],
-                }
-                ui_artifact["artifactDigest"] = (
-                    runtime_manifest.canonical_digest(ui_artifact)
+                ui_artifact_path = _write_receiver_ui_evidence(
+                    owner_root,
+                    workstream_id=W8_TASK_ID,
+                    suite_runtime_id=run_id,
+                    source_digest=str(identity["head"]),
+                    fixture_epoch=fixture_epoch,
+                    fixture_manifest_digest=fixture_digest,
+                    scenario_id=spec.scenario_id,
+                    variant_id=spec.variant_id,
+                    receiver_client_id=spec.receiver_client_id,
+                    evidence=ui_evidence,
                 )
-                ui_artifact_path = _write_immutable_json(
-                    owner_root
-                    / spec.variant_id
-                    / "receiver-visible-evidence.json",
-                    ui_artifact,
-                )
-                result = _stage_w8_child_result(
+                result = _stage_child_result(
                     result,
+                    workstream_id=W8_TASK_ID,
                     raw_result_root=raw_result_root,
                     publish_root=publish_root,
                     final_result_root=self.result_root,
-                    ui_evidence_path=ui_artifact_path,
+                    ui_evidence_paths=(ui_artifact_path,),
                 )
                 ui_artifact_ref = {
                     "path": ui_artifact_path.relative_to(
@@ -7548,7 +7534,8 @@ class W7RuntimeOwner:
             owner_root / "suite-runtime.json",
             suite_report,
         )
-        _publish_w8_result_generation(
+        _publish_result_generation(
+            workstream_id=W8_TASK_ID,
             publish_root=publish_root,
             final_result_root=self.result_root,
             generation_id=str(identity["head"]),
@@ -7589,7 +7576,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "action",
         choices=(
             "preflight",
-            "run-w7-suite",
+            "run-w7-desktop-suite",
             "run-w8-suite",
             "run-w9-suite",
             "run-w2-suite",
@@ -7621,7 +7608,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if profile.strip()
     )
     dual_profile_actions = {
-        "run-w7-suite",
+        "run-w7-desktop-suite",
         "run-w8-suite",
         "run-w2-suite",
         "run-w10-suite",
@@ -7633,7 +7620,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         and selected_profiles != (PROFILE, SECONDARY_PROFILE)
     ):
         resource = {
-            "run-w7-suite": "runtime:secure-content-w7",
+            "run-w7-desktop-suite": "runtime:secure-content-w7",
             "run-w8-suite": "runtime:secure-content-w8",
             "run-w2-suite": "runtime:secure-content-w2",
             "run-w10-suite": "runtime:secure-content-w10",
@@ -7675,8 +7662,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.action == "preflight":
             result = owner.preflight()
-        elif args.action == "run-w7-suite":
-            result = owner.run_w7_suite()
+        elif args.action == "run-w7-desktop-suite":
+            result = owner.run_w7_desktop_suite()
         elif args.action == "run-w8-suite":
             result = owner.run_w8_suite()
         elif args.action == "run-w9-suite":

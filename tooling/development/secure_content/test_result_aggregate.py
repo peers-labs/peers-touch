@@ -644,10 +644,9 @@ class ResultAggregateOwnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             spec = result_aggregate.SPECS["W7"]
+            self.assertEqual(("desktop",), tuple(spec.variants))
             desktop = spec.variants["desktop"]
-            browser = spec.variants["browser"]
             assert desktop is not None
-            assert browser is not None
             parent_run_id = "w7-parent"
             parent_manifest_path, parent_manifest_digest = _runtime_manifest(
                 root,
@@ -708,17 +707,9 @@ class ResultAggregateOwnerTest(unittest.TestCase):
                 runtime_manifest_digest=child_manifest_digest,
                 runtime_manifest_ref=str(child_manifest_path),
             )
-            _product_child(
-                root,
-                workstream="W7",
-                variant="browser",
-                run_id="w7-browser",
-                spec=browser,
-            )
-
             result = self.owner(root).aggregate(
                 workstream="W7",
-                required=("desktop", "browser"),
+                required=("desktop",),
                 generation_id=GENERATION,
             )
 
