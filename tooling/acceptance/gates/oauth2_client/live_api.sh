@@ -156,10 +156,14 @@ jq -e '
   all(.identities[]; .email_verified == true and .login_count >= 1)
 ' "$temporary/admin.json" >/dev/null
 
+OAUTH2_CLIENT_LIVE=1 go test ./internal/integration \
+  -run '^TestLiveGitHubStorePersistsRefreshClaimAcrossInstances$' \
+  -count=1
+
 tree="$(gh api \
   "repos/$OAUTH_GITHUB_STORAGE_OWNER/$OAUTH_GITHUB_STORAGE_REPO/git/trees/$OAUTH_GITHUB_STORAGE_BRANCH?recursive=1" \
   --jq ".tree[].path")"
-for prefix in transactions identities credentials audits; do
+for prefix in transactions identities credentials refresh-operations audits; do
   if ! grep -Eq "^oauth-data/$prefix/.+\\.json$" <<<"$tree"; then
     echo "missing GitHub repository record class: $prefix" >&2
     exit 1
