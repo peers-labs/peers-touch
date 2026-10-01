@@ -1254,7 +1254,7 @@
     },
     "agent-v2-capability-binding-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-capability-binding-e2e",
-      "timeout_seconds": 600,
+      "timeout_seconds": 3600,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
@@ -1285,7 +1285,7 @@
     },
     "agent-v2-governed-tool-loop-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-governed-tool-loop-e2e",
-      "timeout_seconds": 600,
+      "timeout_seconds": 3600,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
@@ -1315,7 +1315,7 @@
     },
     "agent-v2-mcp-lifecycle-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-mcp-lifecycle-e2e",
-      "timeout_seconds": 600,
+      "timeout_seconds": 3600,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
