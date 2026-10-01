@@ -850,6 +850,10 @@ Allocation rules:
   satisfy every target, so flexible demand cannot consume a pinned candidate;
 - resource selection prefers `REUSE`, then `RESTART`, `BUILD`, and
   `PROVISION`;
+- selected resources, including `REUSE`, remain `PENDING` until the named
+  Runtime Owner returns a valid fenced result;
+- one physical resource cannot satisfy conflicting non-null expected digests;
+  incompatible co-allocation fails with `RESOURCE_REQUIREMENT_CONFLICT`;
 - quarantined and unavailable resources are never selected;
 - one target's declaration claims are all-or-none;
 - claims are sorted canonically and atomically merged into the existing

@@ -698,6 +698,32 @@ function digestsMatch(expected, actual) {
   );
 }
 
+function mergeExpectedDigests(current, incoming, resource) {
+  const merged = {};
+  for (const field of ['source', 'artifact', 'runtime']) {
+    if (
+      current?.[field] !== null
+      && current?.[field] !== undefined
+      && incoming[field] !== null
+      && current[field] !== incoming[field]
+    ) {
+      fail(
+        'RESOURCE_REQUIREMENT_CONFLICT',
+        'one resource has incompatible expected digest identities',
+        {
+          resourceKind: resource.resourceKind,
+          resourceId: resource.resourceId,
+          digestKind: field,
+          current: current[field],
+          incoming: incoming[field],
+        },
+      );
+    }
+    merged[field] = current?.[field] ?? incoming[field];
+  }
+  return merged;
+}
+
 function selectAction(requirement, resource) {
   if (['QUARANTINED', 'UNAVAILABLE'].includes(resource.state)) return null;
   if (requirement.reusePolicy === 'FRESH') {
@@ -1720,6 +1746,11 @@ export function buildPlanResourcePlan(rawRequest) {
           const current = combinedResources.get(key);
           combinedResources.set(key, {
             ...selection,
+            expectedDigests: mergeExpectedDigests(
+              current?.expectedDigests,
+              item.requirement.expectedDigests,
+              selection,
+            ),
             action: mergeResourceAction(current?.action, selection.action),
             mode:
               current?.mode === 'exclusive'
@@ -1774,7 +1805,7 @@ export function buildPlanResourcePlan(rawRequest) {
     resourceKind: resource.resourceKind,
     resourceId: resource.resourceId,
     action: resource.action,
-    status: resource.action === 'REUSE' ? 'READY' : 'PENDING',
+    status: 'PENDING',
     owner: resource.owner,
     manifestRef: resource.manifestRef,
     digests: resource.digests,
