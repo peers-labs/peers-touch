@@ -29,6 +29,7 @@ type externalRuntimeManagerStub struct {
 		externalruntime.SessionSink,
 		externalruntime.ActivitySink,
 	) (*externalruntime.ExecuteResult, error)
+	cleanup      func(context.Context, externalruntime.CleanupRequest) error
 	cleanupErr   error
 	executions   []externalruntime.ExecuteRequest
 	cleanupCalls []externalruntime.CleanupRequest
@@ -56,13 +57,18 @@ func (s *externalRuntimeManagerStub) Execute(
 }
 
 func (s *externalRuntimeManagerStub) Cleanup(
-	_ context.Context,
+	ctx context.Context,
 	request externalruntime.CleanupRequest,
 ) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.cleanupCalls = append(s.cleanupCalls, request)
-	return s.cleanupErr
+	cleanup := s.cleanup
+	cleanupErr := s.cleanupErr
+	s.mu.Unlock()
+	if cleanup != nil {
+		return cleanup(ctx, request)
+	}
+	return cleanupErr
 }
 
 func TestExternalRuntimeSessionPersistsBeforeOutputAndResumesAfterRestart(t *testing.T) {
@@ -291,6 +297,87 @@ func TestExternalRuntimeResetIsFencedIdempotentAndAdvancesOneEpoch(t *testing.T)
 	if !errors.As(err, &bizErr) ||
 		bizErr.Code != errcode.AgentIdempotencyConflict {
 		t.Fatalf("conflicting reset replay = %T %v", err, err)
+	}
+}
+
+func TestExternalRuntimeResetSerializesConcurrentIdempotentReplay(t *testing.T) {
+	db := openExternalRuntimeServiceDB(t, "reset-concurrent-replay")
+	seedExternalRuntimeConversation(t, db, "conversation-1", "session-old", 3, 8)
+	cleanupStarted := make(chan struct{})
+	releaseCleanup := make(chan struct{})
+	var startedOnce sync.Once
+	manager := &externalRuntimeManagerStub{
+		available: true,
+		cleanup: func(
+			ctx context.Context,
+			_ externalruntime.CleanupRequest,
+		) error {
+			startedOnce.Do(func() { close(cleanupStarted) })
+			select {
+			case <-releaseCleanup:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	}
+	service := NewExternalRuntimeService(db, manager, nil, &ConversationService{})
+	request := &model.ResetConversationRuntimeRequest{
+		ConversationId:              "conversation-1",
+		ExpectedConversationVersion: 8,
+		ClientIdempotencyKey:        "reset-concurrent",
+		DestructiveConfirmed:        true,
+	}
+	type resetOutcome struct {
+		result *ExternalRuntimeResetResult
+		err    error
+	}
+	outcomes := make(chan resetOutcome, 2)
+	reset := func() {
+		result, err := service.ResetConversationRuntime(
+			context.Background(),
+			"ptid:person:owner",
+			request,
+		)
+		outcomes <- resetOutcome{result: result, err: err}
+	}
+
+	go reset()
+	<-cleanupStarted
+	go reset()
+	time.Sleep(100 * time.Millisecond)
+	manager.mu.Lock()
+	cleanupCallCount := len(manager.cleanupCalls)
+	manager.mu.Unlock()
+	if cleanupCallCount != 1 {
+		t.Fatalf("concurrent cleanup calls before release = %d, want 1", cleanupCallCount)
+	}
+	close(releaseCleanup)
+
+	first := <-outcomes
+	second := <-outcomes
+	for _, outcome := range []resetOutcome{first, second} {
+		if outcome.err != nil {
+			t.Fatalf("concurrent reset error = %v", outcome.err)
+		}
+		if outcome.result == nil ||
+			outcome.result.Conversation.Version != 9 ||
+			outcome.result.Conversation.RuntimeBinding.GetExternalSessionEpoch() != 4 {
+			t.Fatalf("concurrent reset result = %+v", outcome.result)
+		}
+	}
+	if first.result.Replayed == second.result.Replayed {
+		t.Fatalf(
+			"concurrent replay flags = %v, %v; want one committed result and one replay",
+			first.result.Replayed,
+			second.result.Replayed,
+		)
+	}
+	manager.mu.Lock()
+	cleanupCallCount = len(manager.cleanupCalls)
+	manager.mu.Unlock()
+	if cleanupCallCount != 1 {
+		t.Fatalf("concurrent cleanup calls = %d, want 1", cleanupCallCount)
 	}
 }
 

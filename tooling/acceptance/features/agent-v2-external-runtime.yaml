@@ -33,6 +33,7 @@
       "follow-up and post-Station-restart Turns resume the exact persisted session and epoch",
       "resume failure preserves the old binding and emits RUNTIME_RESUME_UNAVAILABLE",
       "confirmed reset is actor-scoped, version-fenced, idempotent, cleans once, advances one epoch, and clears the session",
+      "concurrent duplicate reset requests serialize to one cleanup and one committed response",
       "cleanup failure remains durable and retrying the same reset succeeds",
       "the next Turn creates a fresh session in the new epoch",
       "cancelling an active external Turn terminates execution without changing its session binding",
@@ -48,6 +49,7 @@
     "clients must not receive raw runtime-home paths or own process, session, epoch, or cleanup truth",
     "resume failure must not start a replacement session before confirmation",
     "reset replay must not execute cleanup twice or advance another epoch",
+    "concurrent duplicate reset delivery must not run external cleanup twice",
     "cleanup failure must not admit a new Turn or delete the Conversation",
     "static, mock, prototype, or Direct Model evidence must not prove this Gate"
   ]

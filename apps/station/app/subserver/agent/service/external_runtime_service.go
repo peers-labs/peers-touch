@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -35,6 +36,13 @@ type ExternalRuntimeService struct {
 	evidence      *RuntimeEvidenceService
 	conversations *ConversationService
 	now           func() time.Time
+	resetLocksMu  sync.Mutex
+	resetLocks    map[string]*externalRuntimeResetLock
+}
+
+type externalRuntimeResetLock struct {
+	mu   sync.Mutex
+	refs int
 }
 
 type ExternalRuntimeTurnRequest struct {
@@ -66,6 +74,34 @@ func NewExternalRuntimeService(
 		evidence:      evidence,
 		conversations: conversations,
 		now:           func() time.Time { return time.Now().UTC() },
+		resetLocks:    make(map[string]*externalRuntimeResetLock),
+	}
+}
+
+func (s *ExternalRuntimeService) acquireResetLock(
+	actorPTID string,
+	idempotencyKey string,
+) func() {
+	key := strings.TrimSpace(actorPTID) + "\x00" +
+		strings.TrimSpace(idempotencyKey)
+	s.resetLocksMu.Lock()
+	entry := s.resetLocks[key]
+	if entry == nil {
+		entry = &externalRuntimeResetLock{}
+		s.resetLocks[key] = entry
+	}
+	entry.refs++
+	s.resetLocksMu.Unlock()
+
+	entry.mu.Lock()
+	return func() {
+		entry.mu.Unlock()
+		s.resetLocksMu.Lock()
+		entry.refs--
+		if entry.refs == 0 {
+			delete(s.resetLocks, key)
+		}
+		s.resetLocksMu.Unlock()
 	}
 }
 

@@ -158,6 +158,11 @@ def passing_capture() -> dict:
         "reset": {
             "before": failed,
             "after": reset_after,
+            "concurrentReplay": {
+                "replayed": False,
+                "closed_external_session_epoch": 1,
+                "conversation": reset_after,
+            },
             "replay": {
                 "replayed": True,
                 "closed_external_session_epoch": 1,

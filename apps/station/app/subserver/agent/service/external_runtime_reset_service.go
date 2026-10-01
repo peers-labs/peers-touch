@@ -113,6 +113,12 @@ func (s *ExternalRuntimeService) ResetConversationRuntime(
 	if !s.Available() {
 		return nil, errcode.NewRuntimeUnavailable("external_agent", "adapter_unavailable")
 	}
+	releaseResetLock := s.acquireResetLock(
+		actorPTID,
+		request.GetClientIdempotencyKey(),
+	)
+	defer releaseResetLock()
+
 	command, replay, err := s.prepareReset(ctx, actorPTID, request)
 	if err != nil || replay != nil {
 		return replay, err

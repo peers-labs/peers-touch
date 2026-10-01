@@ -32613,6 +32613,12 @@ async function confirmExternalRuntimeResetThroughUI(input: {
     throw new Error('agent.acceptance.externalRuntimeConfirmationMissing');
   }
   const confirmationText = confirmation.textContent?.trim() ?? '';
+  const concurrentReset = api.resetAgentConversationRuntime({
+    conversation_id: input.conversationId,
+    expected_conversation_version: before.version,
+    client_idempotency_key: input.resetIdempotencyKey,
+    destructive_confirmed: true,
+  });
   confirmation.click();
   let after = before;
   const resetDeadline = Date.now() + 60_000;
@@ -32633,6 +32639,7 @@ async function confirmExternalRuntimeResetThroughUI(input: {
   if (!resetCommitted) {
     throw new Error('agent.acceptance.externalRuntimeResetTimeout');
   }
+  const concurrentReplay = await concurrentReset;
   const replay = await api.resetAgentConversationRuntime({
     conversation_id: input.conversationId,
     expected_conversation_version: before.version,
@@ -32653,6 +32660,7 @@ async function confirmExternalRuntimeResetThroughUI(input: {
   return evidenceValue({
     before,
     after,
+    concurrentReplay,
     replay,
     conflictCode,
     confirmationVisible: true,
