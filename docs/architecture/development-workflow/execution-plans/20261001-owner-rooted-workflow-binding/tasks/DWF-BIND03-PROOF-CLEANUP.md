@@ -83,7 +83,7 @@
     "Do not claim real shared-workspace rollout from temporary fixture proof",
     "Do not modify sibling worktrees, push, open a pull request, merge, or rewrite history"
   ],
-  "updatedAt": "2026-10-01T17:40:16.000Z",
+  "updatedAt": "2026-10-01T18:18:00.000Z",
   "durableEvidence": []
 }
 ```
@@ -91,9 +91,9 @@
 ## Current Snapshot
 
 - State: Plan-scoped review remediation after reviewer receipt
-  `6cec37563c882f08f42a13be04390b09dbcfa0318283e1716e490a627531c134`.
-- OWNER, WORKER, and REVIEWER compact-lineage receipts must be isolated by
-  binding digest so concurrent compactions cannot overwrite each other.
+  `0f965947b42b341af89746f3969fb55800cdb67e6b4f3f0e1e0067e633745565`.
+- The storage contract must list the per-binding compact-lineage path and the
+  assignment-claim path used by the implementation.
 - Completion requires fresh full-range Gap Detector, code-structure, quality,
   seven-Gate, and Plan-scoped independent review evidence.
 - Actual shared-workspace bootstrap installation is not claimed by this Task.
