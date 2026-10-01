@@ -27,6 +27,7 @@
     "tooling/scripts/local-dev",
     "tooling/scripts/plan",
     "tooling/scripts/README.md",
+    "tooling/scripts/review/code_structure_decision_test.py",
     "tooling/scripts/review/skill-check.sh",
     "tooling/make/local-dev.mk",
     "tooling/skills"
