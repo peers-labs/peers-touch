@@ -70,16 +70,19 @@ import {
   ListMemberStationsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
+  Conversation as ProtoAgentConversation,
   ExportTurnDiagnosticsResponse,
   GetTurnTraceResponse,
   ListTurnFeedbackResponse,
   ListTurnTracesResponse,
   RecordFeedbackResponse,
+  ResetConversationRuntimeResponse,
 } from '../gen/proto/domain/agent/agent_pb';
 import {
   ExportTurnDiagnosticsResponseSchema,
   ListTurnFeedbackResponseSchema,
   RecordFeedbackResponseSchema,
+  ResetConversationRuntimeResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
   AdvanceCapabilityAcceptanceScenarioClockRequest,
@@ -4091,6 +4094,86 @@ export interface AgentConversationRuntimeResetResult {
   replayed: boolean;
 }
 
+function agentProtoTimestamp(
+  value: ProtoAgentConversation['createdAt'],
+): { seconds: number; nanos: number } | null {
+  if (!value) return null;
+  return {
+    seconds: toRustUint64(value.seconds, 'timestamp.seconds'),
+    nanos: value.nanos,
+  };
+}
+
+function agentProtoTimestampISO(
+  value: ProtoAgentConversation['createdAt'],
+): string {
+  if (!value) return '';
+  const milliseconds = (
+    toRustUint64(value.seconds, 'timestamp.seconds') * 1_000
+    + Math.floor(value.nanos / 1_000_000)
+  );
+  return new Date(milliseconds).toISOString();
+}
+
+function agentConversationFromProto(
+  conversation: ProtoAgentConversation,
+): AgentConversation {
+  const binding = conversation.runtimeBinding;
+  return {
+    conversation_id: conversation.conversationId,
+    agent_id: conversation.agentId,
+    ptid: conversation.ptid || conversation.actorPtid,
+    title: conversation.title,
+    description: conversation.description,
+    provider_id: conversation.providerId,
+    model_name: conversation.modelName,
+    status: conversation.status,
+    parent_id: conversation.parentId,
+    active_branch_message_id: conversation.activeBranchMessageId,
+    queued_turn_count: conversation.queuedTurnCount,
+    version: toRustUint64(conversation.version, 'conversation.version'),
+    runtime_binding: binding
+      ? {
+          runtime_kind: binding.runtimeKind,
+          provider_id: binding.providerId,
+          model_id: binding.modelId,
+          runtime_profile_id: binding.runtimeProfileId,
+          external_session_id: binding.externalSessionId,
+          external_session_epoch: toRustUint64(
+            binding.externalSessionEpoch,
+            'runtime_binding.external_session_epoch',
+          ),
+          runtime_home_ref: binding.runtimeHomeRef,
+          capability_snapshot_hash: binding.capabilitySnapshotHash,
+          config_snapshot_hash: binding.configSnapshotHash,
+          bound_at: agentProtoTimestamp(binding.boundAt),
+          state: binding.state,
+          last_error_code: binding.lastErrorCode,
+          updated_at: agentProtoTimestamp(binding.updatedAt),
+        }
+      : undefined,
+    meta: conversation.meta,
+    created_at: agentProtoTimestampISO(conversation.createdAt),
+    updated_at: agentProtoTimestampISO(conversation.updatedAt),
+  };
+}
+
+function agentRuntimeResetResultFromProto(
+  response: ResetConversationRuntimeResponse,
+): AgentConversationRuntimeResetResult {
+  if (!response.conversation) {
+    throw new Error('agent.runtimeResetConversationMissing');
+  }
+  return {
+    conversation: agentConversationFromProto(response.conversation),
+    closed_external_session_epoch: toRustUint64(
+      response.closedExternalSessionEpoch,
+      'closed_external_session_epoch',
+    ),
+    replayed: response.replayed,
+  };
+}
+
 export interface AgentRuntimeBudgetInput {
   max_attempts?: number;
   max_agent_steps?: number;
@@ -6854,10 +6937,14 @@ export const api = {
     ).then((result) => result.conversation),
 
   resetAgentConversationRuntime: (input: AgentConversationRuntimeResetInput) =>
-    invokeRustDataFromStatus<
+    invokeRustProto<
       AgentConversationRuntimeResetInput,
-      AgentConversationRuntimeResetResult
-    >('agent_conversation_runtime_reset', input),
+      ResetConversationRuntimeResponse
+    >(
+      'agent_conversation_runtime_reset',
+      ResetConversationRuntimeResponseSchema,
+      input,
+    ).then(agentRuntimeResetResultFromProto),
 
   retryAgentTurn: (input: AgentRetryTurnInput) =>
     invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),
