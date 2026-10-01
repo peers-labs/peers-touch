@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Module Layout
 
-> **Status**: accepted
-> **Created**: 2026-09-16 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-16 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 
 ---
@@ -37,6 +37,8 @@ tooling/scripts/local-dev/
 ├── dev-work-ledger.mjs
 ├── dev-work.mjs
 ├── dev-work.test.mjs
+├── dev-resource-plan.mjs
+├── dev-resource-plan.test.mjs
 ├── dev-session-schema.mjs
 ├── dev-session-store.mjs
 ├── dev-session.mjs
@@ -90,6 +92,7 @@ tooling/scripts/
     ├── <workItemId>/
     │   ├── session.json
     │   ├── events.ndjson
+    │   ├── resource-plan.json
     │   ├── session.lock
     │   ├── checks/
     │   └── artifacts/
@@ -111,7 +114,7 @@ tooling/scripts/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D31 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D32 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
@@ -126,6 +129,8 @@ tooling/scripts/
 | `dev-work-schema.mjs` | Resource declaration closed schema and digest |
 | `dev-work-ledger.mjs` | Machine-wide declaration lock, conflict and lifecycle |
 | `dev-work.mjs` | Resource declaration CLI |
+| `dev-resource-plan.mjs` | Standard ModuleImpact validation, target dependency closure, peak-capacity planning, concrete resource selection, declaration update, fencing, and Runtime Owner result receipt |
+| `dev-resource-plan.test.mjs` | Single/multi-module, reuse/build/restart, capacity parking, all-or-none reservation, replacement, idempotency, and fencing regressions |
 | `active-work-store.mjs` | Consuming-workspace active-work schema, revision/CAS, digest, lock and atomic storage |
 | `active-work.mjs` | Owner-derived active-work sync/status/close CLI |
 | `dev-session-schema.mjs` | Session, verification, failure and transition schemas |
@@ -194,6 +199,14 @@ dev-work.mjs
   -> dev-work-schema.mjs
   -> workspace-plan-binding.mjs
   -> machine-dev-paths.mjs
+
+Module Skills
+  -> standard ModuleImpact
+  -> dev-resource-plan.mjs
+       -> target dependency graph + Runtime Owner inventory
+       -> dev-work-ledger.mjs atomic concrete claims
+       -> machine-local fenced PlanResourcePlan receipt
+  -> Local Dev / Acceptance Suite Runtime physical owner
 
 pt-dev-workflow
   -> pt-goal-orchestrator

@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Design
 
-> **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 
 ---
@@ -55,6 +55,9 @@
 21. **No worktree as a workaround**: Agent 不得为了绕过 Plan binding、
     lifecycle 或并发错误自行创建 worktree；worktree 创建只来自用户明确选择的
     隔离或并行需求。
+22. **Aggregate before acquire**: 模块 Skill 只描述 `ModuleImpact`；Dev
+    Workflow 在任何 runtime acquisition 前统一解析 target、依赖、峰值容量和
+    资源复用，业务 Gate 只 attach 到已准备的 runtime manifest。
 
 ## 2. Evidence Ledger
 
@@ -121,6 +124,8 @@ accepted product + architecture
 | Current mutation source identity | Development Workflow | `DevelopmentResourceDeclaration.sourceHead` | machine-wide work ledger |
 | Runtime checkpoint source identity | Development Session | `SourceCheckpoint.commit/tree` | Context Anchor evidence |
 | Runtime allocation | Local Dev Control Plane | machine registry and live observation | session binding ref |
+| Cross-module resource intent | Development Workflow | machine-local `PlanResourcePlan` plus public declaration claims | Context Anchor / Peers Dev |
+| Physical account/service/client/device/Fixture lifecycle | owning Local Dev or Acceptance Suite Runtime | owner manifest and live lease | `PlanResourcePlan.resourceResults` |
 | Formal product proof | Acceptance Framework | Evidence Store | Task evidence refs |
 | Workspace Plan ownership | Development Workflow | machine-local generation records plus atomic current `plan-binding.json` | Plan/declaration/workspace active-work consistency checks |
 | Current tracked locator | Plan Package | current Task entry | workspace active-work + Context Anchor |
@@ -148,6 +153,11 @@ No owner may copy another owner's complete state. In particular:
   consuming worktree.
 - Context Anchor does not read `archive/` or scan every task body.
 - Development records do not satisfy formal Acceptance proof.
+- Module Skills do not select concrete runtime resources or execute lifecycle
+  actions; they emit standard `ModuleImpact`.
+- `PlanResourcePlan` does not replace a physical lease or runtime manifest.
+- Business Gates do not build, provision, log in, clean up, or release
+  resources.
 
 ### 4.1 Methodology Runtime Boundaries
 
@@ -169,6 +179,10 @@ The runtime call direction is:
 God View -> Dev Workflow -> Scheduler -> Guardian -> Dev Workflow executes
                                |                         |
                                +------ read only --------+
+Module Skills -> ModuleImpact -> Dev Workflow Resource Aggregator
+                                      |
+                                      +-> public declaration claims
+                                      +-> Runtime/Suite Owner manifest
 Dev Workflow -> owner commands persist -> Context Anchor projects
 Dev Workflow -> Runtime Handoff -> project driver
 Dev Workflow -> admitted Host Capability Request -> optional Host Adapter
@@ -553,6 +567,14 @@ Missing or mismatched session state is explicit `SESSION_UNAVAILABLE` or
 - Independent source lanes inside one Task may run in parallel only after
   manifest/schema is frozen and write sets are disjoint. Different Tasks are
   not concurrently current in one worktree.
+- Runtime targets run only after one Plan-level aggregation pass. Each ready
+  target publishes its complete concrete claim set atomically in canonical key
+  order; physical owner actions never hold one lease while waiting for another.
+- Capacity shortage parks only the conflicting target and its dependents.
+  Independent target lanes continue. A global workflow lock is forbidden.
+- Reuse requires compatible source, artifact, runtime, health and owner
+  manifest identity. Quarantine is controlled by the physical resource owner
+  and cannot be cleared by the aggregator.
 - A plan migration is atomic to readers under a migration lock and journal:
   1. create a `prepared` package and byte-identical archive copy;
   2. record old/new hashes, the reviewed crosswalk digest, every live reference

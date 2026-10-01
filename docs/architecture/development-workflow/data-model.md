@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Data Model
 
-> **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 
 ---
@@ -609,8 +609,14 @@ interface DevelopmentResourceIntent {
       | 'relay.connect'
       | 'relay.deploy'
       | 'database'
+      | 'service'
+      | 'account'
+      | 'client'
+      | 'device'
       | 'client.storage'
-      | 'fixture';
+      | 'fixture'
+      | 'automation.session'
+      | 'resource.plan';
     resourceId: string;
     mode: 'shared' | 'exclusive';
   }>;
@@ -651,6 +657,254 @@ Publication uses lock, closed-schema validation, atomic replace and digest
 readback. Declaration intent never substitutes for a live runtime lease.
 Relay and database claims provide machine-wide planning visibility only; they
 do not create deployment, mutation or lease authority.
+
+### 8.1 Module Impact And Plan Resource Plan
+
+Every domain classifier returns one closed module contribution:
+
+```ts
+interface ModuleImpact {
+  kind: 'peers-touch-module-impact';
+  schemaVersion: 1;
+  moduleId: string;
+  state:
+    | 'DECIDED'
+    | 'POLICY_REQUIRED'
+    | 'OWNERSHIP_SPLIT_REQUIRED'
+    | 'NOT_APPLICABLE';
+  changedPaths: string[];
+  changeKinds: string[];
+  moduleDependencies: string[];
+  requirements: {
+    focusedCheckSelectors: string[];
+    targetSelectors: string[];
+    journeySelectors: string[];
+    gateSelectors: string[];
+    resourceRequirements: ResourceRequirement[];
+  };
+  classification: object;
+  proof: object;
+}
+```
+
+`ModuleImpact` is declarative. It cannot contain commands, selected account or
+device IDs, ports, process IDs, lease files, or a concrete deployment sequence.
+
+```ts
+interface ResourceRequirement {
+  requirementId: string;
+  resourceKind: string;
+  quantity: number;
+  mode: 'shared' | 'exclusive';
+  lifecycleScope: 'task' | 'suite' | 'scenario';
+  isolationKey: string;
+  compatibilityKey: string;
+  reusePolicy:
+    | 'REUSE_IF_HEALTHY'
+    | 'RESTART_IF_COMPATIBLE'
+    | 'BUILD_IF_SOURCE_DRIFT'
+    | 'FRESH';
+  readinessProbe: {
+    kind: string;
+    ref: string | null;
+  };
+  mandatory: boolean;
+  candidateIds: string[];
+  expectedDigests: {
+    source: `sha256:${string}` | null;
+    artifact: `sha256:${string}` | null;
+    runtime: `sha256:${string}` | null;
+  };
+}
+```
+
+The Plan-level input joins all module impacts with the accepted target graph and
+the current Runtime Owner inventory:
+
+```ts
+interface ResourceTarget {
+  targetId: string;
+  dependsOn: string[];
+  focusedCheckSelectors: string[];
+  journeySelectors: string[];
+  gateSelectors: string[];
+  resourceRequirements: ResourceRequirement[];
+}
+
+interface RuntimeResourceCandidate {
+  resourceId: string;
+  resourceKind: DevelopmentResourceIntent['runtimeClaims'][number]['kind'];
+  compatibilityKey: string;
+  state: 'HEALTHY' | 'STALE' | 'ABSENT' | 'QUARANTINED' | 'UNAVAILABLE';
+  capacity: number;
+  reusable: boolean;
+  provisionable: boolean;
+  owner: string;
+  manifestRef: string | null;
+  digests: {
+    source: `sha256:${string}` | null;
+    artifact: `sha256:${string}` | null;
+    runtime: `sha256:${string}` | null;
+  };
+}
+
+interface PlanResourceRequest {
+  kind: 'peers-touch-plan-resource-request';
+  schemaVersion: 1;
+  planId: string;
+  taskId: string;
+  source: {
+    commit: string;
+    workspaceDigest: 'clean' | `sha256:${string}`;
+  };
+  satisfiedModuleIds: string[];
+  moduleImpacts: ModuleImpact[];
+  targets: ResourceTarget[];
+  inventory: RuntimeResourceCandidate[];
+}
+```
+
+The target graph comes from the accepted Plan and Gate/runtime registries.
+Inventory comes from the owning Local Dev or Acceptance Suite Runtime. A module
+policy cannot define either as a private substitute.
+
+The output is one machine-local `PlanResourcePlan`:
+
+```ts
+interface PlanResourcePlan {
+  kind: 'peers-touch-plan-resource-plan';
+  schemaVersion: 1;
+  planId: string;
+  taskId: string;
+  workItemId: string;
+  workspaceId: string;
+  sourceHead: string;
+  inputDigest: `sha256:${string}`;
+  allocationDigest: `sha256:${string}`;
+  fencingToken: number;
+  preparationState: 'RESERVING' | 'COMMITTED';
+  allocationState: 'READY' | 'PARTIALLY_READY' | 'PARKED';
+  runtimeState: 'READY' | 'PENDING' | 'PARKED' | 'QUARANTINED';
+  proofAction:
+    | 'REUSE_CANDIDATE'
+    | 'REUSE_ALLOWED'
+    | 'REPROVE_REQUIRED'
+    | 'POLICY_REQUIRED';
+  selectedTargetIds: string[];
+  executionWaves: string[][];
+  targets: Array<{
+    targetId: string;
+    wave: number;
+    state: 'ALLOCATED' | 'PARKED';
+    dependsOn: string[];
+    requirementIds: string[];
+    blockers: object[];
+  }>;
+  requirements: Array<{
+    idempotencyKey: string;
+    requirementId: string;
+    peakQuantity: number;
+    targetIds: string[];
+  }>;
+  capacity: Array<{
+    resourceKind: string;
+    compatibilityKey: string;
+    isolationKey: string;
+    mode: 'shared' | 'exclusive';
+    lifecycleScope: 'task' | 'suite' | 'scenario';
+    peakQuantity: number;
+    waveQuantities: Array<{ wave: number; quantity: number }>;
+  }>;
+  runtimeClaims: DevelopmentResourceIntent['runtimeClaims'];
+  baseRuntimeClaims: DevelopmentResourceIntent['runtimeClaims'];
+  plannedRuntimeClaims: DevelopmentResourceIntent['runtimeClaims'];
+  declarationRuntimeClaims: DevelopmentResourceIntent['runtimeClaims'];
+  resourceResults: Array<{
+    resourceKind: string;
+    resourceId: string;
+    status: 'READY' | 'PENDING' | 'QUARANTINED';
+    targetIds: string[];
+    requirementIds: string[];
+    idempotencyKeys: string[];
+  }>;
+  receiptDigest: `sha256:${string}`;
+}
+```
+
+The resource-plan path is
+`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/<workItemId>/resource-plan.json`.
+It is a current execution receipt, not repository state or Acceptance evidence.
+
+Allocation rules:
+
+- target dependency closure is resolved before capacity;
+- module dependencies become target dependencies; a module with no direct
+  target still inherits the readiness of its impacted dependencies;
+- requirements with the same
+  `planId + lifecycleScope + requirementId + compatibilityKey` are idempotent;
+- peak quantity is computed per parallel execution wave;
+- mandatory bundles are allocated before optional demand in the same wave, so
+  optional reuse cannot park a mandatory target;
+- mandatory demand is solved across the complete wave with deterministic
+  rematching; constrained targets are considered first when capacity cannot
+  satisfy every target, so flexible demand cannot consume a pinned candidate;
+- resource selection prefers `REUSE`, then `RESTART`, `BUILD`, and
+  `PROVISION`;
+- quarantined and unavailable resources are never selected;
+- one target's declaration claims are all-or-none;
+- claims are sorted canonically and atomically merged into the existing
+  `DevelopmentResourceDeclaration`;
+- unavailable capacity parks the affected target and dependent targets, not
+  unrelated targets or the whole Plan.
+
+The resource-plan fencing token increments when request or source identity
+changes. A Runtime Owner result with a stale token, wrong allocation digest,
+wrong owner, unplanned resource, or mismatched expected digest is rejected.
+Heartbeat extends declaration liveness but does not mint a new fencing token.
+Preparation writes `RESERVING` before updating the public declaration and
+`COMMITTED` only after declaration readback. The `RESERVING` receipt retains
+the union of prior and proposed planner-owned claims, so interruption cannot
+reclassify an old planner claim as base intent. It is non-authorizing and is
+reconciled idempotently on the next prepare.
+
+`PlanResourcePlan` is not a live physical lease. Local Dev and Acceptance Suite
+Runtime own process/resource leases, readiness probes, manifests, cleanup and
+quarantine. A Gate may consume their manifest but cannot perform lifecycle
+operations.
+
+Runtime owners return:
+
+```ts
+interface ResourceOwnerResult {
+  kind: 'peers-touch-resource-owner-result';
+  schemaVersion: 1;
+  allocationDigest: `sha256:${string}`;
+  fencingToken: number;
+  resourceKind: string;
+  resourceId: string;
+  owner: string;
+  status: 'READY' | 'QUARANTINED';
+  manifestRef: string;
+  digests: {
+    source: `sha256:${string}` | null;
+    artifact: `sha256:${string}` | null;
+    runtime: `sha256:${string}` | null;
+  };
+}
+```
+
+The recorder serializes with prepare under the workspace lifecycle lock and
+accepts an idempotent identical result. A second result with different content
+for the same fenced resource is `RESOURCE_RESULT_CONFLICT`.
+Expected-digest validation joins through the exact `idempotencyKeys`; a bare
+`requirementId` never links results across compatibility or lifecycle scopes.
+`baseRuntimeClaims` preserves declaration claims that predate the planner.
+Replanning removes only prior `plannedRuntimeClaims`; it never adopts or
+releases a pre-existing claim with the same resource identity. Physical lease
+admission requires a matching `COMMITTED` receipt for planner-owned claims. A
+shared `resource.plan:<workItemId>` marker makes missing-receipt provenance
+fail closed without acting as a physical lease. The marker is reserved for the
+planner and is invalid as a module requirement or Runtime Owner inventory item.
 
 ## 9. Execution Authorization
 

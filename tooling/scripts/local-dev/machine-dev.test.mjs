@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -38,6 +39,12 @@ import {
   updateWorkspace,
   validateLeaseRequest,
 } from './machine-dev-registry.mjs';
+import {
+  RESOURCE_PLAN_KIND,
+  digestValue,
+  planResourceReceiptPath,
+} from './dev-resource-plan.mjs';
+import { inspectGitWorkspace } from './git-workspace.mjs';
 import { acquireWorkspaceLifecycleLockSync } from './workspace-lifecycle-lock.mjs';
 
 const cli = fileURLToPath(new URL('./machine-dev.mjs', import.meta.url));
@@ -480,6 +487,129 @@ test('runtime intent remains fenced to the current Git HEAD', () => {
       }).declarationId,
       refreshed.declarationId,
     );
+  } finally {
+    scope.close();
+  }
+});
+
+test('planner-owned runtime intent requires a committed resource-plan fence', () => {
+  const scope = fixture();
+  try {
+    const registered = registerWorkspace(registrationOptions(scope));
+    const source = inspectGitWorkspace(scope.workspaceA);
+    const planPath =
+      'docs/architecture/development-workflow/execution-plans/test/plan.md';
+    const planStatus = {
+      planId: 'DWF-RESOURCE-PLAN',
+      currentTaskId: 'DWF-RESOURCE-T1',
+      workspaceId: registered.workspaceId,
+      branch: registered.branch,
+    };
+    const declaration = startOrUpdateDeclaration({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      workItemId: 'machine-dev-test',
+      sessionId: 'machine-dev-session',
+      owner: 'machine-dev-test@example.invalid',
+      purpose: 'exercise planner-owned machine lease admission',
+      sourceClaims: 'exclusive-write:tooling/scripts/local-dev',
+      runtimeClaims: [
+        'shared:profile:four',
+        'exclusive:local.slot:5',
+        'shared:resource.plan:machine-dev-test',
+        'exclusive:station.deploy:station-four',
+        'exclusive:station.reset:station-four-fixture',
+      ].join(';'),
+      planPath,
+      taskId: planStatus.currentTaskId,
+      planStatus,
+      planBinding: {
+        planId: planStatus.planId,
+        planPath,
+      },
+    });
+    const file = planResourceReceiptPath({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      workItemId: declaration.workItemId,
+    });
+    expectCode('RESOURCE_PLAN_MISSING', () =>
+      validateLeaseRequest({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
+      }),
+    );
+    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    const receipt = {
+      kind: RESOURCE_PLAN_KIND,
+      schemaVersion: 1,
+      planId: planStatus.planId,
+      taskId: planStatus.currentTaskId,
+      source: {
+        commit: source.commit,
+        workspaceDigest: source.workspaceDigest,
+      },
+      sourceHead: source.commit,
+      workItemId: declaration.workItemId,
+      workspaceId: registered.workspaceId,
+      declarationId: declaration.declarationId,
+      preparationState: 'RESERVING',
+      baseRuntimeClaims: [
+        {
+          kind: 'profile',
+          resourceId: 'four',
+          mode: 'shared',
+        },
+        {
+          kind: 'local.slot',
+          resourceId: '5',
+          mode: 'exclusive',
+        },
+        {
+          kind: 'station.reset',
+          resourceId: 'station-four-fixture',
+          mode: 'exclusive',
+        },
+      ],
+      plannedRuntimeClaims: [
+        {
+          kind: 'resource.plan',
+          resourceId: declaration.workItemId,
+          mode: 'shared',
+        },
+        {
+          kind: 'station.deploy',
+          resourceId: 'station-four',
+          mode: 'exclusive',
+        },
+      ],
+    };
+    receipt.receiptDigest = digestValue(receipt);
+    writeFileSync(file, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
+    chmodSync(file, 0o600);
+
+    expectCode('RESOURCE_PLAN_NOT_COMMITTED', () =>
+      validateLeaseRequest({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
+      }),
+    );
+
+    receipt.preparationState = 'COMMITTED';
+    delete receipt.receiptDigest;
+    receipt.receiptDigest = digestValue(receipt);
+    writeFileSync(file, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
+    const admitted = validateLeaseRequest({
+      ...registrationOptions(scope),
+      resourceKind: 'station.deploy',
+      resourceId: 'station-four',
+      budgetSeconds: 5,
+    });
+    assert.equal(admitted.resourcePlanAdmission.authority, 'resource-plan');
   } finally {
     scope.close();
   }

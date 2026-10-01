@@ -1,7 +1,7 @@
 # Development Workflow Control Plane
 
-> **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 
 ---
@@ -14,6 +14,7 @@
 - 从资源声明、实现、聚焦检查、checkpoint、部署到功能验证的状态机。
 - Development、Local Dev、Acceptance 和 Quality 的所有权边界。
 - 所有 worktree 可见的机器级资源声明。
+- 跨模块 `ModuleImpact` 聚合、target 依赖、峰值容量和资源复用计划。
 - compact Plan Package、独立 Task Slice 和跨会话恢复协议。
 - checkpoint、部署、reset、push 和 branch rewrite 的授权模型。
 - 低噪声状态汇报和仓库外瞬态诊断记录。
@@ -82,6 +83,9 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 20. Task 和 Plan 完成必须有独立、当前源码绑定的 Completion Review。
 21. completed 且已释放的 workspace 通过显式 generation advance 承接下一
     Plan；Agent 不得把新建 worktree 当作绕过绑定的手段。
+22. 模块 Skill 只输出影响与逻辑需求；Dev Workflow 在 runtime acquisition
+    前形成唯一 `PlanResourcePlan`，具体资源生命周期仍由既有 Runtime/Suite
+    Owner 管理。
 
 ## 4. Document Navigation
 
@@ -89,7 +93,7 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 |---|---|
 | [design.md](./design.md) | 控制面边界、Plan Package、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D31 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D32 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
 | [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D26 的 Kernel、宿主投影和 rollout 流程 |
@@ -105,7 +109,7 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 
 ## 5. Current Status
 
-DWF-D01..DWF-D31 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
+DWF-D01..DWF-D32 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
 workspace 只解析机器级当前 generation 指向的一个 Plan；同步进入分支的外来
 Plan 不参与本 workspace 的发现。completed 且 quiescent 的 generation 可由
 显式 owner command 原子推进，不能由 repository discovery 或 Agent 新建

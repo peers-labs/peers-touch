@@ -32,6 +32,9 @@ Architecture source:
 | Ready/Parked selection and concurrency lanes | `pt-goal-orchestrator` |
 | Whether a proposed action may run | `pt-execution-plan-guardian` |
 | Plan/Task/Session/workspace active-work mutation order | `pt-dev-workflow` through their owning commands |
+| Domain-specific change classification | Module Skills emitting standard `ModuleImpact` |
+| Cross-module target and resource aggregation | `pt-dev-workflow` through `dev-resources-prepare` |
+| Physical build, restart, provision, health and quarantine | Local Dev or Acceptance Suite Runtime owner |
 | Runtime launch, Journey operation and functional result commit | `pt-dev-runtime-handoff` |
 | Optional host tool transport | detected `pt-*-host-adapter` after Guardian admission |
 | Status projection | read-only `pt-context-anchor` |
@@ -188,6 +191,75 @@ Rules:
   state remains worktree-local; the Kernel writes only its separate
   machine-local binding/Anchor/release receipts.
 
+## 2.1 Plan Resource Preparation
+
+Before the first runtime acquisition, collect one standard `ModuleImpact` from
+each affected module. A Module Skill classifies its own paths, proof
+invalidation, focused checks, logical target selectors, Journeys, Gates, and
+optional resource requirements. It must not select concrete resources or issue
+build, deploy, login, reset, or provisioning commands.
+
+Dev Workflow combines those outputs with the current Plan target graph and
+Runtime Owner inventory:
+
+```bash
+make dev-resources-prepare \
+  WORK_ITEM=<id> \
+  RESOURCE_INPUT=<plan-resource-request.json>
+```
+
+The preparation owner:
+
+1. validates every `ModuleImpact` and its dependency closure;
+2. resolves target dependencies into deterministic execution waves;
+3. merges compatible requirements and computes peak concurrent capacity;
+4. selects `REUSE | RESTART | BUILD | PROVISION` from source, artifact,
+   runtime and health identity;
+5. parks only targets whose mandatory capacity is unavailable;
+6. atomically updates the existing declaration with all concrete claims for
+   each ready target, or none of that target's claims;
+7. writes a source-bound `PlanResourcePlan` under the current work item's
+   machine-local workflow directory.
+
+The idempotency key is
+`planId + lifecycleScope + requirementId + compatibilityKey`. Repeating the
+same input reuses the same resource-plan fencing token. Changed input advances
+the token; stale Runtime Owner results are rejected. Receipt and declaration
+updates share the workspace lifecycle lock; only `COMMITTED` receipts authorize
+Runtime Owner results, while an interrupted `RESERVING` receipt is retried.
+Physical lease admission applies the same check for planner-owned claims;
+pre-existing declaration claims retain separate base provenance.
+
+All claims use canonical key order. A target never holds a partial reservation
+while waiting for another resource. Capacity conflict returns a parked target,
+not a global Plan lock; dependency-independent targets remain executable.
+
+The plan is intent and allocation, not physical ownership. Local Dev and
+Acceptance Suite Runtime remain the only owners of live process/resource
+leases, readiness probes, manifests, cleanup, and quarantine. After one owner
+action, record its manifest-bound result:
+
+```bash
+make dev-resource-record \
+  WORK_ITEM=<id> \
+  RESOURCE_RESULT=<runtime-owner-result.json>
+```
+
+Business Acceptance Gates are attach-only. They consume the prepared
+SuiteRuntime manifest and must never build, deploy, allocate accounts, launch
+clients, create automation sessions, or release resources.
+
+Before executing runtime actions, show the developer one concise projection:
+
+```text
+Current worktree: <bound worktree>
+Ready targets: <target -> REUSE|RESTART|BUILD|PROVISION>
+Parked targets: <target -> typed capacity/dependency reason>
+Shared resources: <deduplicated account/service/client/device/fixture/session>
+```
+
+The developer does not construct resource JSON or select internal commands.
+
 ## 3. Dispatch Stages
 
 Invoke the owning Skill and consume its typed output:
@@ -215,28 +287,35 @@ For an accepted Plan Package:
 3. Ask `pt-goal-orchestrator` for the bounded Ready/Parked schedule and
    concurrency lanes. The schedule must bind one Progress Slice to the current
    Task's `planctl status.progress.nextProgressBoundary`.
-4. Submit each proposed action to `pt-execution-plan-guardian`.
-5. Execute only `ACTION_ALLOWED` work within declared source/runtime scope.
+4. Aggregate all affected module impacts and prepare the current
+   `PlanResourcePlan`; omit runtime preparation only when every resolved target
+   is source-only.
+5. Submit each resource-ready proposed action to
+   `pt-execution-plan-guardian`. Keep resource-conflicting lanes parked and
+   continue independent lanes.
+6. Execute only `ACTION_ALLOWED` work within declared source/runtime scope.
    When the schedule carries a Host Capability Request, Dev Workflow invokes
    the named `pt-*-host-adapter` after admission and remains the sole executor.
-6. Record the first actionable failure in the Session and stop that action.
-7. Persist meaningful results in owner order:
+7. Record each Runtime Owner result against the current resource-plan fencing
+   token. Reject stale, unplanned, wrong-owner, or digest-mismatched results.
+8. Record the first actionable failure in the Session and stop that action.
+9. Persist meaningful results in owner order:
    - Session transition/evidence;
    - Task snapshot and manifest lifecycle through `planctl`;
    - workspace active-work locator projection through
      `make active-work-sync WORK_ITEM=<id>`.
-8. Recompute and continue the schedule across setup, authorization, diagnostic,
+10. Recompute and continue the schedule across setup, authorization, diagnostic,
    checkpoint, deploy, verification, and source-backed remediation actions
    until the current Task closes or only a hard boundary remains.
-9. Run the stage-appropriate Agent Review Loop before accepting the Task or
+11. Run the stage-appropriate Agent Review Loop before accepting the Task or
    stage gate.
-10. When the Task closes or parks, atomically advance the manifest through its
+12. When the Task closes or parks, atomically advance the manifest through its
     owner command, update the declaration's Task locator and workspace
     active-work record, ask the scheduler for `NEXT`, and activate a
     dependency-ready successor.
-11. Repeat steps 1-10 while the Plan Run has a legal frontier. A Goal Slice
+13. Repeat steps 1-12 while the Plan Run has a legal frontier. A Goal Slice
     closes one Task; it does not close the outer Plan Run.
-12. Invoke read-only `pt-context-anchor` when a meaningful user-facing or
+14. Invoke read-only `pt-context-anchor` when a meaningful user-facing or
     compaction projection is due, then continue without waiting for
     confirmation.
 
@@ -414,6 +493,13 @@ merely to print the Anchor or after the first Task closes.
 
 - One Development Run owns the lifecycle.
 - Public declaration preceded mutation and was released at closure.
+- Every affected module emitted one standard `ModuleImpact`; one
+  `PlanResourcePlan` resolved targets and capacity for the whole Task.
+- Ready target claims were published atomically; parked targets retained no
+  partial reservation and did not block independent lanes.
+- Runtime Owner results matched the current resource-plan fencing token,
+  identity digests, and owner.
+- Business Gates attached to prepared manifests and performed no provisioning.
 - Every completed Goal Slice closed its declared Progress Slice and matched the
   `planctl status.progress` delta.
 - One authorized Plan Run drained every dependency-ready successor until Plan
@@ -431,6 +517,10 @@ merely to print the Anchor or after the first Task closes.
 Never:
 
 - add another complete-development orchestrator;
+- let a module Skill allocate concrete resources or own deployment;
+- let a business Gate build, provision, log in, or release Suite resources;
+- acquire one resource while waiting for another resource in the same target;
+- retry a parked target while an independent ready target can progress;
 - let God View execute or persist workflow state;
 - let the scheduler or Guardian mutate the Plan Package;
 - let Context Anchor repair workspace active-work;

@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-29
-covered_docs_hash: c1d5869698aab5871ce6ea227443848abadcdcff0f81671adccaff03a3ffe28e
+last_verified_at: 2026-09-30
+covered_docs_hash: e58c6e919f0b3ed1950da1b36d1a5f90fdb2a7dee7ded4144ba32ffb76f590ff
 
 covered_docs:
   - AGENTS.md
@@ -29,7 +29,44 @@ covered_docs:
 
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
-Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-09-30 Review
+
+Development Workflow and Local Dev Control Plane are now registered in the
+central architecture module registry. Their existing accepted decisions were
+normalized to the ADR-lite document contract without changing behavior; this
+adds fail-closed ownership discovery and requires no GitHub Review rule change.
+
+Completion Review now derives a deterministic fixed-point blocked candidate
+when a successful Task has no ready successor but other Plan branches remain
+blocked. The Plan lifecycle owner still performs the atomic transition and
+verifies the exact candidate digest.
+
+Independent completion review found that per-target greedy allocation could
+park a constrained target despite a feasible wave-level assignment. Mandatory
+demand now uses deterministic global matching with constrained-target priority;
+the pinned-versus-flexible regression is part of the resource-plan suite.
+
+The superseded skill-rollout implementation was removed after all live setup,
+audit, and host projection ownership moved to agent-integration. Historical
+Plan references remain documentation only and are excluded from live routing.
+
+`DWF-D32` adds one Dev Workflow-owned cross-module resource-plan contract.
+Module Skills emit declarative impact, the existing machine declaration ledger
+holds concrete intent, and Local Dev or Acceptance Suite Runtime retains
+physical lifecycle ownership. Review must reject module-owned provisioning,
+partial target reservations, optional-demand starvation, stale fencing results,
+missing-receipt provenance adoption, bare-ID result joins, and business Gate
+lifecycle actions. The new resource-plan and Agent-impact tests cover those boundaries;
+no GitHub Review severity or fixture schema change is required.
+
+`pt-agent-development` adds an Agent-domain policy for deterministic impact
+classification, proof reuse, minimal deployment, ownership splitting, and
+failure attribution inside the existing Development Workflow. It does not
+change GitHub Review severity or ownership. The co-located policy tests and
+18-commit MCA-P04 replay fixture provide the required regression coverage; no
+generic review fixture or `pt-github-review/SKILL.md` change is required.
 
 ## 2026-09-29 Review
 

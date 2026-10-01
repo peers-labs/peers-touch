@@ -1,7 +1,7 @@
 # Peers Dev 产品验收矩阵
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Created**: 2026-09-26 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`
 
@@ -9,7 +9,7 @@
 
 ## 1. Decision Status
 
-DWF-D24..DWF-D31 已由 `decisions.md` 接受。决策接受只定义目标合同；在当前
+DWF-D24..DWF-D32 已由 `decisions.md` 接受。决策接受只定义目标合同；在当前
 源码和对应 Gate 完成验证前，相关 Acceptance cell 的最高合法结果仍是
 `UNPROVEN`。
 
@@ -41,6 +41,12 @@ DWF-D24..DWF-D31 已由 `decisions.md` 接受。决策接受只定义目标合�
 | DEV-A22 | DEV-C02 / DEV-J03 | DWF-D24/DWF-D28 | Completed Task receipt 变为 stale | DWF-D24 owner 重开最早失效 Task，并将传递依赖重置为 pending | Plan reopen regression test |
 | DEV-A23 | DEV-C01 / DEV-J01 | DWF-D25/DWF-D26 | User Overlay 试图扩大 scope 或 authorization | Kernel 忽略 Overlay 的政策影响并拒绝动作 | overlay-isolation hook test |
 | DEV-A24 | DEV-C08 / DEV-J05 | DWF-D31 | completed 且 quiescent 的 canonical owner workspace 接收下一 Plan | expected generation CAS 成功并保留不可变历史；active 或持有资源时拒绝 | workspace binding generation and concurrency tests |
+| DEV-A25 | DEV-C09 / DEV-J06 | DWF-D32 | Agent、Station、Desktop 等模块同时返回影响 | 一个 `PlanResourcePlan` 解析完整 target 依赖闭包，并聚合 checks、Journeys 与 Gates | multi-module resource-plan contract test |
+| DEV-A26 | DEV-C09 / DEV-J06 | DWF-D32 | 两个 target 请求同一兼容账号或服务 | Suite/task 生命周期内只选取一次，幂等键和 peak capacity 可见 | account/service reuse test |
+| DEV-A27 | DEV-C09 / DEV-J06 | DWF-D32 | 并行 target 竞争不足的独占资源 | 仅冲突 target 与依赖项进入 `PARKED`，其他 target 保持可执行 | parallel-capacity test |
+| DEV-A28 | DEV-C09 / DEV-J06 | DWF-D32 | 一个 target 的多资源集合存在缺项或另一 Plan 已占用 | 不发布部分 claims；声明更新原子失败且不存在 hold-and-wait | all-or-none and cross-Plan conflict tests |
+| DEV-A29 | DEV-C09 / DEV-J06 | DWF-D32 | 资源失效、quarantine 或 owner 回报旧 fencing token | 选择健康 replacement，或拒绝旧/错 owner/错 digest 结果 | replacement and fencing tests |
+| DEV-A30 | DEV-C09 / DEV-J06 | DWF-D32 | 执行业务 Acceptance Gate | Gate 仅附着到 SuiteRuntime manifest，不触发 build/deploy/account/login/cleanup | attach-only contract check |
 
 ## 3. Acceptance Rules
 
