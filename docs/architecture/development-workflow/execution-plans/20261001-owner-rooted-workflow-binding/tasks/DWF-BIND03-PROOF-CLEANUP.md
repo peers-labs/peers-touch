@@ -17,7 +17,9 @@
   "runtimeClass": "source-only",
   "writeSet": [
     "docs/architecture/development-workflow/execution-plans/20261001-owner-rooted-workflow-binding",
-    "tooling/acceptance/gates/dev"
+    "tooling/acceptance/gates/dev",
+    "tooling/scripts/agent-integration-audit-test.py",
+    "tooling/scripts/agent-integration-control.py"
   ],
   "readSet": [
     "AGENTS.md",
@@ -73,14 +75,17 @@
     "Do not claim real shared-workspace rollout from temporary fixture proof",
     "Do not modify sibling worktrees, push, open a pull request, merge, or rewrite history"
   ],
-  "updatedAt": "2026-10-01T09:00:00.000Z",
+  "updatedAt": "2026-10-01T16:16:17.000Z",
   "durableEvidence": []
 }
 ```
 
 ## Current Snapshot
 
-- State: active after BIND01 checkpoint `e81e314d1` and independent review PASS.
-- Completion requires the final seven-Gate proof, Plan-scoped independent
-  review, and zero live legacy runtime imports.
+- State: Plan-scoped review remediation after reviewer receipt
+  `ad36db87a1b5983dd5ec8309638b1bbdaa178d6c3d62d3690e9a7c8e24f5ba2c`.
+- The installer must require and consume an exact one-time OWNER `skills`
+  action grant; zero live actions are not admissible.
+- Completion requires fresh full-range Gap Detector, code-structure, quality,
+  seven-Gate, and Plan-scoped independent review evidence.
 - Actual shared-workspace bootstrap installation is not claimed by this Task.
