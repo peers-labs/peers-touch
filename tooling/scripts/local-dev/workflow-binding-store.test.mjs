@@ -14,6 +14,7 @@ import {
   bindWorkflowOwner,
   claimWorkflowChild,
   createWorkflowBindingAssignment,
+  inspectWorkflowBindingLiveness,
   readWorkflowProjectionByActor,
   releaseWorkflowOwner,
   resolveEventWorkflowBinding,
@@ -77,6 +78,68 @@ test('creates one immutable OWNER without persisting the raw root chat', () => {
     if (process.platform !== 'win32') {
       assert.equal(lstatSync(file).mode & 0o777, 0o600);
     }
+  } finally {
+    scope.close();
+  }
+});
+
+test('hard-cut inspection excludes expired and terminal child assignments', () => {
+  const scope = fixture();
+  try {
+    const owner = bindWorkflowOwner('trae', 'visible-chat', scope.root, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:00.000Z'),
+    }).binding;
+    const assignment = createWorkflowBindingAssignment(
+      ownerProjection(owner),
+      {
+        assignmentId: 'reviewer-1',
+        role: 'REVIEWER',
+        workflowSessionId: 'DEV-SESSION',
+        operationId: 'review-op',
+        leaseUntil: '2026-10-01T00:10:00.000Z',
+      },
+      {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:01.000Z'),
+      },
+    ).assignment;
+    assert.deepEqual(
+      inspectWorkflowBindingLiveness({
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:02.000Z'),
+      }).liveAssignments.map((item) => item.assignmentId),
+      ['reviewer-1'],
+    );
+
+    const child = claimWorkflowChild(
+      'trae',
+      'reviewer-session',
+      owner,
+      assignment,
+      {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:03.000Z'),
+      },
+    ).binding;
+    terminalizeWorkflowChild(child, 'PASS', {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:04.000Z'),
+    });
+    assert.deepEqual(
+      inspectWorkflowBindingLiveness({
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:05.000Z'),
+      }).liveAssignments,
+      [],
+    );
+    assert.deepEqual(
+      inspectWorkflowBindingLiveness({
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:11:00.000Z'),
+      }).liveAssignments,
+      [],
+    );
   } finally {
     scope.close();
   }

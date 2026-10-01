@@ -78,9 +78,12 @@ export function normalizeHostPayload(raw, options = {}) {
 
   const bindingIdentity = projectHostBindingIdentity(host, payload);
   const workspaceRoots = uniqueStrings([
+    ...stringArray(options.workspaceRoots),
     ...stringArray(payload.workspace_roots),
     ...stringArray(payload.workspaceRoots),
   ]);
+  const explicitTaskRoot = firstString(payload.task_root);
+  const activeEditorPath = firstString(payload.active_editor_path);
   const repositoryWorkingDirectory = firstString(
     payload.repo_working_dir,
     payload.repoWorkingDir,
@@ -110,12 +113,16 @@ export function normalizeHostPayload(raw, options = {}) {
       payload.toolCallId,
     ),
     executionRootHints: uniqueStrings([
-      installationRoot,
-      ...workspaceRoots,
+      explicitTaskRoot,
+      ...(workspaceRoots.length === 1 ? workspaceRoots : []),
       repositoryWorkingDirectory,
       payloadWorkingDirectory,
+      ...(workspaceRoots.length <= 1 ? [installationRoot] : []),
     ]),
     workspaceRoots,
+    explicitTaskRoot,
+    activeEditorPath,
+    bootstrapRoot: firstString(options.bootstrapRoot),
     repositoryWorkingDirectory,
     toolWorkingDirectory,
     toolName: firstString(

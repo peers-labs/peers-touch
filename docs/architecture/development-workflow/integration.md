@@ -211,6 +211,7 @@ Agent integration:
 
 ```bash
 make skills IDE=<trae|cursor|codex>
+make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>
 make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
 ```
 
@@ -218,8 +219,10 @@ This is the only canonical project Skill projector. Codex also receives the
 worktree-local `pt-ew-plugin`; TRAE receives one descriptor-selected multi-root
 workspace bootstrap. The installer removes managed per-worktree TRAE hooks,
 preserves unrelated host files, never edits global hooks, and cannot run while
-the machine has a live workflow action or this workspace has a live
-Development declaration. There is no separate acknowledgement command;
+the machine has a live declaration, live child assignment, active canonical
+Action Receipt, or active Action Store lock. The sole exception is one
+current, live OWNER `skills` Action Receipt bound to the selected source
+worktree. There is no separate acknowledgement command;
 restart the IDE only when the host cannot reload changed hooks, then rerun the
 audit.
 

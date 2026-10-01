@@ -253,7 +253,7 @@ if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script
 fi
 
 for marker in \
-  "ACTIVE_ACTION_IN_FLIGHT" \
+  "GLOBAL_WORKFLOW_NOT_IDLE" \
   "INSTALLING" \
   "BLOCKED" \
   "INSTALLED"; do

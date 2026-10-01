@@ -9,6 +9,7 @@ import errno
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -62,6 +63,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("action", choices=("install",))
     parser.add_argument("--root", required=True)
     parser.add_argument("--host", required=True, choices=("trae", "cursor", "codex"))
+    parser.add_argument("--workspace")
     return parser.parse_args()
 
 
@@ -90,6 +92,65 @@ def identity(root: Path) -> tuple[str, str, str]:
     if not branch or not head:
         raise RuntimeError("worktree identity is incomplete")
     return workspace_id, branch, head
+
+
+def read_workspace_descriptor(path: Path) -> tuple[Path, tuple[Path, ...]]:
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
+    descriptor = path.resolve(strict=True)
+    try:
+        value = json.loads(descriptor.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID") from error
+    folders = value.get("folders") if isinstance(value, dict) else None
+    if not isinstance(folders, list) or not folders:
+        raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
+    roots: list[Path] = []
+    for folder in folders:
+        folder_path = (
+            folder
+            if isinstance(folder, str)
+            else folder.get("path")
+            if isinstance(folder, dict)
+            else None
+        )
+        if not isinstance(folder_path, str) or not folder_path.strip():
+            raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
+        try:
+            candidate = (descriptor.parent / folder_path).resolve(strict=True)
+        except OSError as error:
+            raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID") from error
+        if not candidate.is_dir():
+            raise RuntimeError("TRAE_WORKSPACE_DESCRIPTOR_INVALID")
+        if candidate not in roots:
+            roots.append(candidate)
+    return descriptor, tuple(roots)
+
+
+def resolve_trae_workspace(
+    root: Path,
+    requested: str | None = None,
+) -> tuple[Path | None, tuple[Path, ...], Path]:
+    explicit = requested or os.environ.get("PT_TRAE_WORKSPACE_FILE", "").strip()
+    if explicit:
+        descriptor, roots = read_workspace_descriptor(Path(explicit))
+    else:
+        matches: list[tuple[Path, tuple[Path, ...]]] = []
+        for candidate in sorted(root.parent.glob("*.code-workspace")):
+            try:
+                descriptor, roots = read_workspace_descriptor(candidate)
+            except RuntimeError:
+                continue
+            if root in roots:
+                matches.append((descriptor, roots))
+        if len(matches) > 1:
+            raise RuntimeError("TRAE_WORKSPACE_SELECTION_AMBIGUOUS")
+        if not matches:
+            return None, (root,), root
+        descriptor, roots = matches[0]
+    if root not in roots:
+        raise RuntimeError("TRAE_WORKSPACE_ROOT_MISMATCH")
+    return descriptor, roots, roots[0]
 
 
 def canonical_integration_catalog(
@@ -499,21 +560,6 @@ def validated_work_ledger(root: Path) -> dict[str, object]:
     return value
 
 
-def active_declaration(
-    root: Path,
-    workspace_id: str,
-) -> dict[str, object] | None:
-    value = validated_work_ledger(root)
-    candidates = [
-        item
-        for item in value.get("declarations", {}).values()
-        if isinstance(item, dict)
-        and item.get("workspaceId") == workspace_id
-        and item.get("state") in LIVE_DECLARATION_STATES
-    ]
-    return max(candidates, key=lambda item: item.get("heartbeatAt", "")) if candidates else None
-
-
 def write_receipt(path: Path, value: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     descriptor, temporary_name = tempfile.mkstemp(
@@ -553,14 +599,145 @@ def timestamp(value: object) -> datetime | None:
     return parsed if parsed.tzinfo is not None else None
 
 
-def require_no_live_declaration(root: Path, workspace_id: str) -> None:
-    active = active_declaration(root, workspace_id)
-    if active is None:
-        return
-    raise RuntimeError(
-        "ACTIVE_ACTION_IN_FLIGHT: "
-        f"{active.get('workItemId')} is {active.get('state')}"
+def inspect_workflow_liveness(
+    root: Path,
+    now: datetime,
+) -> dict[str, object]:
+    completed = subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "--eval",
+            (
+                "import { pathToFileURL } from 'node:url';"
+                "const [bindingPath, actionPath, machineRoot, now] = "
+                "process.argv.slice(-4);"
+                "try {"
+                "const binding = await import(pathToFileURL(bindingPath));"
+                "const action = await import(pathToFileURL(actionPath));"
+                "const actions = action.inspectWorkflowActionLiveness({"
+                "machineRoot, now"
+                "});"
+                "actions.liveReceipts = actions.liveReceipts.map((receipt) => ({"
+                "...receipt,"
+                "actorProjection: binding.readWorkflowProjectionByActor("
+                "receipt.actor, { machineRoot, now }"
+                ")"
+                "}));"
+                "console.log(JSON.stringify({"
+                "bindings: binding.inspectWorkflowBindingLiveness({"
+                "machineRoot, now"
+                "}),"
+                "actions"
+                "}));"
+                "} catch (error) {"
+                "console.error(error?.code ?? error?.message ?? String(error));"
+                "process.exit(2);"
+                "}"
+            ),
+            str(root / "tooling/scripts/local-dev/workflow-binding-store.mjs"),
+            str(root / "tooling/scripts/local-dev/workflow-action-store.mjs"),
+            str(machine_root()),
+            now.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
     )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or "WORKFLOW_MACHINE_STATE_INVALID"
+        )
+    try:
+        value = json.loads(completed.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("WORKFLOW_MACHINE_STATE_INVALID") from error
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("bindings"), dict)
+        or not isinstance(value.get("actions"), dict)
+    ):
+        raise RuntimeError("WORKFLOW_MACHINE_STATE_INVALID")
+    return value
+
+
+def require_global_idle(root: Path, current_workspace_id: str) -> None:
+    now = datetime.now(timezone.utc)
+    ledger = validated_work_ledger(root)
+    live_declarations = [
+        item
+        for item in ledger.get("declarations", {}).values()
+        if isinstance(item, dict)
+        and item.get("state") in LIVE_DECLARATION_STATES
+        and (
+            timestamp(item.get("expiresAt")) is None
+            or timestamp(item.get("expiresAt")) > now
+        )
+    ]
+    if live_declarations:
+        raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live declaration")
+
+    liveness = inspect_workflow_liveness(root, now)
+    live_assignments = liveness["bindings"].get("liveAssignments")
+    live_actions = liveness["actions"].get("liveReceipts")
+    active_action_locks = liveness["actions"].get("activeLocks")
+    if (
+        not isinstance(live_assignments, list)
+        or not isinstance(live_actions, list)
+        or not isinstance(active_action_locks, list)
+    ):
+        raise RuntimeError("WORKFLOW_MACHINE_STATE_INVALID")
+    if live_assignments:
+        raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live child assignment")
+    if active_action_locks:
+        raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: active workflow action lock")
+
+    non_installer = [
+        receipt
+        for receipt in live_actions
+        if not (
+            receipt.get("operation") == {
+                "family": "OWNER_CONTROL",
+                "label": "skills",
+                "targetRef": None,
+            }
+            and isinstance(receipt.get("actor"), dict)
+            and receipt["actor"].get("role") == "OWNER"
+            and isinstance(receipt.get("actorProjection"), dict)
+            and receipt["actorProjection"].get("role") == "OWNER"
+            and receipt["actorProjection"].get("released") is False
+            and receipt["actorProjection"].get("executionRoot")
+            == str(root.resolve(strict=True))
+            and isinstance(receipt.get("binding"), dict)
+            and receipt["binding"].get("workspaceId") == current_workspace_id
+        )
+    ]
+    if non_installer or len(live_actions) > 1:
+        raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live workflow action")
+
+
+def purge_legacy_binding_state() -> None:
+    root = machine_root().resolve()
+    targets = [root / "conversations"]
+    workspaces = root / "workspaces"
+    if workspaces.exists():
+        targets.extend(workspaces.glob("*/workflow/actions"))
+    existing: list[Path] = []
+    for target in targets:
+        if not target.exists() and not target.is_symlink():
+            continue
+        if target.is_symlink() or target.resolve().parent == target.resolve():
+            raise RuntimeError("LEGACY_BINDING_RESET_INVALID")
+        if os.path.commonpath((str(root), str(target.resolve()))) != str(root):
+            raise RuntimeError("LEGACY_BINDING_RESET_INVALID")
+        if hasattr(os, "getuid") and target.stat().st_uid != os.getuid():
+            raise RuntimeError("LEGACY_BINDING_RESET_INVALID")
+        existing.append(target)
+    for target in existing:
+        shutil.rmtree(target)
 
 
 def host_root(root: Path, host: str) -> Path:
@@ -594,7 +771,11 @@ def retire(path: Path, retired_root: Path) -> None:
     print(f"retired existing project integration: {destination}")
 
 
-def canonical_trae_hook_entry(root: Path, event: str) -> dict[str, object]:
+def canonical_trae_hook_entry(
+    root: Path,
+    event: str,
+    workspace: Path | None = None,
+) -> dict[str, object]:
     script = (
         root
         / "tooling"
@@ -609,6 +790,11 @@ def canonical_trae_hook_entry(root: Path, event: str) -> dict[str, object]:
                 "type": "command",
                 "command": (
                     f'node "{script}" --host trae --event {event}'
+                    + (
+                        f' --workspace "{workspace.resolve(strict=True)}"'
+                        if workspace is not None
+                        else ""
+                    )
                 ),
                 "timeout": 5,
             }
@@ -630,7 +816,13 @@ def is_managed_trae_hook_entry(value: object) -> bool:
     )
 
 
-def planned_trae_hooks(root: Path, target_root: Path) -> dict[str, object]:
+def planned_trae_hooks(
+    root: Path,
+    target_root: Path,
+    workspace: Path | None = None,
+    *,
+    install: bool = True,
+) -> dict[str, object]:
     hooks_file = target_root / "hooks.json"
     if hooks_file.is_symlink():
         raise RuntimeError(
@@ -653,15 +845,25 @@ def planned_trae_hooks(root: Path, target_root: Path) -> dict[str, object]:
         existing = output["hooks"].get(event, [])
         if not isinstance(existing, list):
             raise RuntimeError("TRAE_HOOKS_INVALID")
-        output["hooks"][event] = [
+        retained = [
             item for item in existing if not is_managed_trae_hook_entry(item)
-        ] + [canonical_trae_hook_entry(root, event)]
+        ]
+        if install:
+            output["hooks"][event] = retained + [
+                canonical_trae_hook_entry(root, event, workspace)
+            ]
+        elif len(retained) != len(existing):
+            if retained:
+                output["hooks"][event] = retained
+            else:
+                output["hooks"].pop(event, None)
     return output
 
 
 def installed_trae_pre_tool_invocation(
     root: Path,
     target_root: Path,
+    workspace: Path | None = None,
 ) -> tuple[list[str], int]:
     hooks_file = target_root / "hooks.json"
     try:
@@ -670,7 +872,7 @@ def installed_trae_pre_tool_invocation(
         raise RuntimeError("TRAE_HOOK_PROBE_PROJECTION_INVALID") from error
     hooks = value.get("hooks") if isinstance(value, dict) else None
     entries = hooks.get("PreToolUse") if isinstance(hooks, dict) else None
-    expected = canonical_trae_hook_entry(root, "PreToolUse")
+    expected = canonical_trae_hook_entry(root, "PreToolUse", workspace)
     managed = (
         [entry for entry in entries if is_managed_trae_hook_entry(entry)]
         if isinstance(entries, list)
@@ -689,24 +891,29 @@ def installed_trae_pre_tool_invocation(
         / "scripts"
         / "hook-entry.mjs"
     ).resolve(strict=True)
-    return (
-        [
-            "node",
-            str(script),
-            "--host",
-            "trae",
-            "--event",
-            "PreToolUse",
-        ],
-        timeout,
-    )
+    command = [
+        "node",
+        str(script),
+        "--host",
+        "trae",
+        "--event",
+        "PreToolUse",
+    ]
+    if workspace is not None:
+        command.extend(["--workspace", str(workspace.resolve(strict=True))])
+    return command, timeout
 
 
 def probe_installed_trae_hook(
     root: Path,
     target_root: Path,
+    workspace: Path | None = None,
 ) -> dict[str, object]:
-    command, timeout = installed_trae_pre_tool_invocation(root, target_root)
+    command, timeout = installed_trae_pre_tool_invocation(
+        root,
+        target_root,
+        workspace,
+    )
     with tempfile.TemporaryDirectory(prefix="pt-trae-hook-probe-") as temporary:
         probe_root = Path(temporary)
         home = probe_root / "home"
@@ -722,6 +929,7 @@ def probe_installed_trae_hook(
         payload = {
             "chat_session_id": f"pt-install-probe-{os.urandom(16).hex()}",
             "session_id": f"pt-install-probe-{os.urandom(16).hex()}",
+            "task_root": str(root),
             "repo_working_dir": str(root),
             "tool_name": "pt_install_probe",
             "tool_input": {},
@@ -899,19 +1107,41 @@ def install(
     workspace_id: str,
     branch: str,
     head: str,
+    workspace_file: str | None = None,
 ) -> None:
     sources, plugin, catalog = canonical_integration_catalog(root)
     target_root = host_root(root, host)
-    trae_hooks = (
-        planned_trae_hooks(root, target_root)
-        if host == "trae"
-        else None
-    )
+    trae_workspace: Path | None = None
+    trae_hook_targets: list[tuple[Path, dict[str, object]]] = []
+    trae_bootstrap_root = target_root
+    if host == "trae":
+        trae_workspace, workspace_roots, bootstrap_root = resolve_trae_workspace(
+            root,
+            workspace_file,
+        )
+        trae_bootstrap_root = host_root(bootstrap_root, "trae")
+        for workspace_root in workspace_roots:
+            candidate = workspace_root / ".trae"
+            if workspace_root != bootstrap_root and not candidate.exists():
+                continue
+            hook_root = host_root(workspace_root, "trae")
+            trae_hook_targets.append(
+                (
+                    hook_root / "hooks.json",
+                    planned_trae_hooks(
+                        root,
+                        hook_root,
+                        trae_workspace,
+                        install=workspace_root == bootstrap_root,
+                    ),
+                )
+            )
     cursor_hooks = (
         planned_cursor_hooks(root, target_root)
         if host == "cursor"
         else None
     )
+    purge_legacy_binding_state()
     write_installation_receipt(
         workspace_id,
         branch,
@@ -942,11 +1172,16 @@ def install(
         if host == "codex":
             install_codex_plugin(plugin, target_root)
         elif host == "trae":
-            write_receipt(target_root / "hooks.json", trae_hooks)
+            for hooks_file, hooks in trae_hook_targets:
+                write_receipt(hooks_file, hooks)
         elif host == "cursor":
             write_receipt(target_root / "hooks.json", cursor_hooks)
         callback_proof = (
-            probe_installed_trae_hook(root, target_root)
+            probe_installed_trae_hook(
+                root,
+                trae_bootstrap_root,
+                trae_workspace,
+            )
             if host == "trae"
             else {"status": "NOT_APPLICABLE"}
         )
@@ -989,8 +1224,15 @@ def main() -> int:
     workspace_id, branch, head = identity(root)
     try:
         with WorkLedgerLock():
-            require_no_live_declaration(root, workspace_id)
-            install(root, options.host, workspace_id, branch, head)
+            require_global_idle(root, workspace_id)
+            install(
+                root,
+                options.host,
+                workspace_id,
+                branch,
+                head,
+                options.workspace,
+            )
     except (OSError, RuntimeError, json.JSONDecodeError) as error:
         print(json.dumps({"status": "BLOCKED", "code": str(error)}))
         return 2

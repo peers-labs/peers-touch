@@ -507,21 +507,31 @@ Agent responsibilities at startup:
 
 1. **Discover**: read every `tooling/skills/*/SKILL.md` in the repo.
 2. **Integrate**: run `make skills IDE=<trae|cursor|codex>` at a durable
-   boundary. It projects Skills plus supported worktree-local hooks.
+   boundary. For a TRAE multi-root workspace, pass
+   `WORKSPACE=<absolute-.code-workspace-path>`. It projects Skills in the
+   selected source worktree and one descriptor-selected workspace hook
+   bootstrap.
 3. **Resolve conflicts**: if a same-named skill already exists in the IDE-private directory, the project copy in `tooling/skills/` wins.
 4. **Never write back**: do not edit, generate, or persist project skills inside the IDE-private directory.
-5. **Never mutate global hooks**: host integration writes only this worktree's
-   `.trae`, `.cursor`, or `.agents` projection. The first blockable tool event
-   binds the host conversation to that installed root; later tool `cwd` and
-   targets are subject roots and cannot rebind write authority.
+5. **Never mutate global hooks**: Cursor and Codex integration writes only this
+   worktree's projection. TRAE writes one bootstrap in the descriptor's first
+   folder and removes managed project hooks from existing sibling `.trae`
+   projections; it preserves unrelated hook entries and never creates sibling
+   host directories except for the bootstrap or selected source worktree. The
+   first blockable tool event selects authority from an explicit declared task
+   root or one mutation root, never from bootstrap location or folder order.
 
 This keeps `tooling/skills/` as the single git-tracked truth and prevents skill drift across IDE instances or contributors.
 
 After a governance-source update, follow
 `docs/architecture/development-workflow/host-neutral-agent-integration.md`.
-Installation rejects an active declaration; persist a Context Anchor, release
-the declaration, run `make skills IDE=<host>`, restart the IDE when hooks
-changed, audit, then resume. Do not hot-swap Skills during an in-flight action.
+Installation rejects every live machine declaration, child assignment, and
+workflow action except the current exact OWNER-bound `make skills` action.
+Persist a Context Anchor, release the declaration, run
+`make skills IDE=<host> [WORKSPACE=<absolute-.code-workspace-path>]`, restart
+the IDE when hooks changed, audit, then resume. The hard cut deletes only the
+old conversation and workflow-action stores; it does not migrate or read them.
+Do not hot-swap Skills during an in-flight action.
 
 ### 13.3 Hard Constraints
 

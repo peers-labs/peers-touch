@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-01
-covered_docs_hash: e64e2cee6eac02162b162d279465d515408dd69f6ffcd46bd16289f50bfc816f
+covered_docs_hash: 5b81b469cdc6e3623a6be30b8dff8cb9e605d6ac7c4dc875c9a5c1e7c507648b
 
 covered_docs:
   - AGENTS.md
@@ -36,8 +36,11 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 Owner-rooted workflow binding replaced peer conversation bindings. Review now
 requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt
 selection, live assigned reviewers, and no worktree-wide identity fallback.
-`SKILL.md`, workflow regression fixtures, and the owner-rooted invariant cover
-the new omission and stale-child risks.
+TRAE multi-root review also requires one descriptor-selected bootstrap,
+target-derived owner selection, active-editor mismatch rejection, global-idle
+hard-cut admission, and deletion limited to the old conversation and Action
+Receipt stores. `SKILL.md`, workflow regression fixtures, and the owner-rooted
+invariant cover the new omission, stale-child, and bootstrap-authority risks.
 
 Resource-plan selection no longer treats healthy reusable inventory as
 Runtime Owner readiness, and incompatible non-null digest expectations cannot

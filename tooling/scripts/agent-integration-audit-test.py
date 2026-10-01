@@ -233,9 +233,15 @@ export function processStartIdentity() { return 'fixture'; }
             environment.pop(name, None)
         return environment
 
-    def install_trae_fixture(self) -> subprocess.CompletedProcess[str]:
+    def install_trae_fixture(
+        self,
+        workspace: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        command = ["make", "skills", "IDE=trae"]
+        if workspace is not None:
+            command.append(f"WORKSPACE={workspace}")
         return subprocess.run(
-            ["make", "skills", "IDE=trae"],
+            command,
             cwd=self.root,
             capture_output=True,
             text=True,
@@ -243,15 +249,103 @@ export function processStartIdentity() { return 'fixture'; }
             check=False,
         )
 
-    def audit_trae_fixture(self) -> subprocess.CompletedProcess[str]:
+    def audit_trae_fixture(
+        self,
+        workspace: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        command = [
+            "python3",
+            "tooling/scripts/agent-integration-audit.py",
+            "--root",
+            str(self.root),
+            "--host",
+            "trae",
+        ]
+        if workspace is not None:
+            command.extend(["--workspace", str(workspace)])
         return subprocess.run(
+            command,
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+
+    def seed_live_workflow_state(self, mode: str) -> None:
+        script = (
+            "import { pathToFileURL } from 'node:url';"
+            "const [bindingPath, projectionPath, actionPath, repoRoot, "
+            "machineRoot, mode] = process.argv.slice(-6);"
+            "const binding = await import(pathToFileURL(bindingPath));"
+            "const projection = await import(pathToFileURL(projectionPath));"
+            "const action = await import(pathToFileURL(actionPath));"
+            "const now = new Date();"
+            "const owner = binding.bindWorkflowOwner("
+            "'trae', 'visible-chat', repoRoot, { machineRoot, now }"
+            ").binding;"
+            "const ownerProjection = projection.projectWorkflowBinding({"
+            "binding: owner, now"
+            "});"
+            "if (mode === 'assignment') {"
+            "binding.createWorkflowBindingAssignment(ownerProjection, {"
+            "assignmentId: 'reviewer-1',"
+            "role: 'REVIEWER',"
+            "workflowSessionId: 'SESSION-1',"
+            "operationId: 'review-1',"
+            "leaseMs: 60_000"
+            "}, { machineRoot, now });"
+            "} else {"
+            "action.recordWorkflowAction({"
+            "machineRoot,"
+            "rootBindingDigest: owner.digest,"
+            "binding: {"
+            "workspaceId: owner.workspaceId,"
+            "workItemId: null,"
+            "planId: null,"
+            "taskId: null,"
+            "sessionId: null"
+            "},"
+            "actor: {"
+            "host: owner.host,"
+            "bindingDigest: owner.digest,"
+            "role: owner.role,"
+            "rootBindingDigest: owner.digest,"
+            "parentBindingDigest: null,"
+            "assignmentDigest: null"
+            "},"
+            "operation: {"
+            "family: 'OWNER_CONTROL',"
+            "label: mode === 'installer-action' ? 'skills' : 'status',"
+            "targetRef: null"
+            "},"
+            "progressStamp: 'c'.repeat(64),"
+            "leaseMs: 60_000,"
+            "now"
+            "});"
+            "}"
+        )
+        completed = subprocess.run(
             [
-                "python3",
-                "tooling/scripts/agent-integration-audit.py",
-                "--root",
+                "node",
+                "--input-type=module",
+                "--eval",
+                script,
+                str(
+                    self.root
+                    / "tooling/scripts/local-dev/workflow-binding-store.mjs"
+                ),
+                str(
+                    self.root
+                    / "tooling/scripts/local-dev/workflow-binding-projection.mjs"
+                ),
+                str(
+                    self.root
+                    / "tooling/scripts/local-dev/workflow-action-store.mjs"
+                ),
                 str(self.root),
-                "--host",
-                "trae",
+                str(self.machine),
+                mode,
             ],
             cwd=self.root,
             capture_output=True,
@@ -259,6 +353,7 @@ export function processStartIdentity() { return 'fixture'; }
             env=self.environment(),
             check=False,
         )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_installer_atomic_lock_capture_declares_windows_no_replace(self) -> None:
         control = (
@@ -531,6 +626,202 @@ export function processStartIdentity() { return 'fixture'; }
                 "code": "TOOL_INTENT_UNSUPPORTED",
             },
         )
+
+    def test_trae_workspace_bootstrap_is_unique_and_folder_order_is_not_authority(
+        self,
+    ) -> None:
+        bootstrap = self.root / "bootstrap"
+        untouched = self.root / "untouched"
+        bootstrap.mkdir()
+        untouched.mkdir()
+        workspace = self.root / "fixture.code-workspace"
+        workspace.write_text(
+            json.dumps(
+                {
+                    "folders": [
+                        {"path": "bootstrap"},
+                        {"path": "."},
+                        {"path": "untouched"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        current_hooks = self.root / ".trae/hooks.json"
+        current_hooks.parent.mkdir()
+        current_hooks.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": [
+                            load_integration_control().canonical_trae_hook_entry(
+                                self.root,
+                                "PreToolUse",
+                            )
+                        ]
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        installed = self.install_trae_fixture(workspace)
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        bootstrap_hooks = json.loads(
+            (bootstrap / ".trae/hooks.json").read_text(encoding="utf-8")
+        )
+        self.assertIn("--workspace", json.dumps(bootstrap_hooks))
+        self.assertNotIn(
+            "pt-ew-plugin",
+            current_hooks.read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            json.loads(current_hooks.read_text(encoding="utf-8")),
+            {"hooks": {}},
+        )
+        self.assertFalse((untouched / ".trae").exists())
+
+        audit = self.audit_trae_fixture(workspace)
+        self.assertEqual(audit.returncode, 0, audit.stdout + audit.stderr)
+
+        duplicate_hooks = untouched / ".trae/hooks.json"
+        duplicate_hooks.parent.mkdir()
+        duplicate_hooks.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "PreToolUse": bootstrap_hooks["hooks"]["PreToolUse"],
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        duplicate_audit = self.audit_trae_fixture(workspace)
+        self.assertEqual(duplicate_audit.returncode, 2)
+        self.assertIn(
+            "managed-hook-invalid:PreToolUse",
+            duplicate_audit.stdout,
+        )
+
+    def test_trae_workspace_preflight_fails_before_hard_cut_reset(self) -> None:
+        workspace = self.root / "fixture.code-workspace"
+        workspace.write_text(
+            json.dumps({"folders": [{"path": "missing"}]}),
+            encoding="utf-8",
+        )
+        legacy = self.machine / "conversations/trae/legacy"
+        legacy.mkdir(parents=True)
+
+        installed = self.install_trae_fixture(workspace)
+        self.assertEqual(installed.returncode, 2)
+        self.assertIn("TRAE_WORKSPACE_DESCRIPTOR_INVALID", installed.stdout)
+        self.assertTrue(legacy.exists())
+
+    def test_hard_cut_purges_only_legacy_conversations_and_action_stores(
+        self,
+    ) -> None:
+        conversations = self.machine / "conversations/trae/legacy"
+        actions = self.machine / "workspaces/0123456789abcdef/workflow/actions"
+        preserved = (
+            self.machine
+            / "workspaces/0123456789abcdef/workflow/WORK-1/session.json"
+        )
+        conversations.mkdir(parents=True)
+        actions.mkdir(parents=True)
+        preserved.parent.mkdir(parents=True)
+        (conversations / "execution-binding.json").write_text(
+            "{}\n",
+            encoding="utf-8",
+        )
+        (actions / "trae-legacy.json").write_text("{}\n", encoding="utf-8")
+        preserved.write_text('{"preserved":true}\n', encoding="utf-8")
+
+        installed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        self.assertFalse((self.machine / "conversations").exists())
+        self.assertFalse(actions.exists())
+        self.assertTrue(preserved.is_file())
+
+    def test_hard_cut_refuses_a_live_child_assignment(self) -> None:
+        self.seed_live_workflow_state("assignment")
+        legacy = self.machine / "conversations/trae/legacy"
+        legacy.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
+        self.assertTrue(legacy.exists())
+
+    def test_hard_cut_refuses_a_live_non_installer_action(self) -> None:
+        self.seed_live_workflow_state("action")
+        legacy = self.machine / "conversations/trae/legacy"
+        legacy.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
+        self.assertTrue(legacy.exists())
+
+    def test_hard_cut_accepts_only_the_current_owner_installer_action(self) -> None:
+        self.seed_live_workflow_state("installer-action")
+        legacy = self.machine / "conversations/trae/legacy"
+        legacy.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertFalse(legacy.exists())
+
+    def test_hard_cut_validates_all_targets_before_deleting_any_store(self) -> None:
+        legacy = self.machine / "conversations/trae/legacy"
+        legacy.mkdir(parents=True)
+        action_store = (
+            self.machine
+            / "workspaces/0123456789abcdef/workflow/actions"
+            / f"{'a' * 64}.json"
+        )
+        action_store.parent.mkdir(parents=True)
+        action_store.write_text("{}\n", encoding="utf-8")
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("WORKFLOW_ACTION_STORE_INVALID", completed.stdout)
+        self.assertTrue(legacy.exists())
+        self.assertTrue(action_store.exists())
 
     def test_trae_audit_rejects_missing_pre_tool_use_matcher(self) -> None:
         installed = self.install_trae_fixture()
@@ -831,7 +1122,7 @@ export function processStartIdentity() { return 'fixture'; }
                     check=False,
                 )
                 self.assertEqual(completed.returncode, 2)
-                self.assertIn("ACTIVE_ACTION_IN_FLIGHT", completed.stdout)
+                self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
                 self.assertFalse(
                     (self.root / ".agents/skills/pt-goal-orchestrator").exists()
                 )

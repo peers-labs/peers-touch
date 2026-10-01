@@ -80,6 +80,6 @@
 
 ## Current Snapshot
 
-- State: pending on the core and bootstrap closures.
+- State: pending on the atomic binding/bootstrap closure.
 - Completion requires independent review and zero live legacy runtime imports.
 - Actual shared-workspace bootstrap installation is not claimed by this Task.

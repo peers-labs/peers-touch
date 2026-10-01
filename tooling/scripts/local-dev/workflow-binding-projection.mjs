@@ -217,3 +217,102 @@ export function projectWorkflowEventRoots(
     targetRoots: canonicalRoots(targetRoots),
   });
 }
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+export function selectOwnerExecutionRoot(
+  event,
+  {
+    resolveProjectRoot,
+    targetPaths = [],
+  },
+) {
+  if (typeof resolveProjectRoot !== 'function') {
+    fail(
+      'WORKTREE_SELECTION_REQUIRED',
+      'Project-root resolver is unavailable',
+    );
+  }
+  const workspaceRoots = unique(
+    (event.workspaceRoots ?? [])
+      .map((candidate) => resolveProjectRoot(candidate)),
+  );
+  const explicitTaskRoot = resolveProjectRoot(event.explicitTaskRoot);
+  const activeEditorRoot = resolveProjectRoot(event.activeEditorPath);
+  if (explicitTaskRoot !== null) {
+    if (
+      workspaceRoots.length > 0 &&
+      !workspaceRoots.includes(explicitTaskRoot)
+    ) {
+      fail(
+        'WORKTREE_SELECTION_REQUIRED',
+        'Explicit task root is not a declared workspace root',
+      );
+    }
+    if (
+      activeEditorRoot !== null &&
+      activeEditorRoot !== explicitTaskRoot
+    ) {
+      fail(
+        'WORKTREE_SELECTION_REQUIRED',
+        'Active editor and explicit task root identify different worktrees',
+      );
+    }
+    return explicitTaskRoot;
+  }
+
+  const targetRoots = unique(
+    targetPaths.map((candidate) => resolveProjectRoot(candidate)),
+  );
+  if (workspaceRoots.length > 1) {
+    const matchingTargets = targetRoots.filter((candidate) =>
+      workspaceRoots.includes(candidate));
+    if (matchingTargets.length === 1) {
+      if (
+        activeEditorRoot !== null &&
+        activeEditorRoot !== matchingTargets[0]
+      ) {
+        fail(
+          'WORKTREE_SELECTION_REQUIRED',
+          'Active editor and mutation target identify different worktrees',
+        );
+      }
+      return matchingTargets[0];
+    }
+    fail(
+      'WORKTREE_SELECTION_REQUIRED',
+      'Multi-root workspace requires one explicit task or mutation root',
+      {
+        workspaceRootCount: workspaceRoots.length,
+        mutationRootCount: matchingTargets.length,
+      },
+    );
+  }
+  if (workspaceRoots.length === 1) {
+    if (
+      activeEditorRoot !== null &&
+      activeEditorRoot !== workspaceRoots[0]
+    ) {
+      fail(
+        'WORKTREE_SELECTION_REQUIRED',
+        'Active editor and declared workspace root identify different worktrees',
+      );
+    }
+    return workspaceRoots[0];
+  }
+
+  const inferred = unique([
+    resolveProjectRoot(event.repositoryWorkingDirectory),
+    resolveProjectRoot(event.toolWorkingDirectory),
+    ...targetRoots,
+  ]);
+  if (inferred.length === 1) return inferred[0];
+  if (inferred.length === 0) return null;
+  fail(
+    'WORKTREE_SELECTION_REQUIRED',
+    'Host event resolves more than one candidate worktree',
+    { candidateCount: inferred.length },
+  );
+}

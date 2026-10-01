@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  inspectWorkflowActionLiveness,
   MAX_ACTION_RECEIPTS,
   readWorkflowActions,
   readWorkspaceActions,
@@ -96,6 +97,41 @@ test('records a bounded redacted lifecycle with a verified digest chain', () => 
         workspaceId: WORKSPACE,
       }),
       receipts,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('hard-cut inspection validates streams and returns only live actions', () => {
+  const scope = fixture();
+  try {
+    record(scope.home, {
+      actionId: 'live-action',
+      leaseMs: 60_000,
+    });
+    const live = inspectWorkflowActionLiveness({
+      home: scope.home,
+      now: new Date('2026-09-26T00:00:30.000Z'),
+    });
+    assert.deepEqual(
+      live.liveReceipts.map((receipt) => receipt.actionId),
+      ['live-action'],
+    );
+    assert.deepEqual(live.activeLocks, []);
+
+    record(scope.home, {
+      actionId: 'live-action',
+      event: 'FINISHED',
+      result: 'PASS',
+      now: new Date('2026-09-26T00:00:31.000Z'),
+    });
+    assert.deepEqual(
+      inspectWorkflowActionLiveness({
+        home: scope.home,
+        now: new Date('2026-09-26T00:00:32.000Z'),
+      }).liveReceipts,
+      [],
     );
   } finally {
     scope.close();

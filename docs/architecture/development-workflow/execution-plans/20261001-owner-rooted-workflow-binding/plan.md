@@ -150,22 +150,11 @@
       "blocker": null
     },
     {
-      "id": "DWF-BIND02-WORKSPACE-BOOTSTRAP",
-      "workstreamId": "DWF-BINDING-BOOTSTRAP",
-      "path": "tasks/DWF-BIND02-WORKSPACE-BOOTSTRAP.md",
-      "dependsOn": [
-        "DWF-BIND01-OWNER-CHILD-CUT"
-      ],
-      "status": "pending",
-      "blocker": null
-    },
-    {
       "id": "DWF-BIND03-PROOF-CLEANUP",
       "workstreamId": "DWF-BINDING-DELIVERY",
       "path": "tasks/DWF-BIND03-PROOF-CLEANUP.md",
       "dependsOn": [
-        "DWF-BIND01-OWNER-CHILD-CUT",
-        "DWF-BIND02-WORKSPACE-BOOTSTRAP"
+        "DWF-BIND01-OWNER-CHILD-CUT"
       ],
       "status": "pending",
       "blocker": null
@@ -198,10 +187,8 @@
 {
   "closures": {
     "owner-child-binding-cut": [
+      "acceptance-workflow-contract",
       "development-workflow-control-plane"
-    ],
-    "multi-root-workspace-bootstrap": [
-      "acceptance-workflow-contract"
     ],
     "binding-hard-cut-proof": [
       "acceptance-workflow-contract",
