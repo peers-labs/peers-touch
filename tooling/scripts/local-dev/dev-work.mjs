@@ -14,6 +14,12 @@ import {
   canonicalize,
   digestDeclaration,
 } from './dev-work-schema.mjs';
+import {
+  ResourcePlanError,
+  prepareDevelopmentResources,
+  recordDevelopmentResourceResult,
+  statusDevelopmentResources,
+} from './dev-resource-plan.mjs';
 
 export { DevWorkError, digestDeclaration };
 export {
@@ -41,6 +47,8 @@ const OPTION_NAMES = {
   'source-head': 'sourceHead',
   'source-claims': 'sourceClaims',
   'runtime-claims': 'runtimeClaims',
+  'resource-input': 'resourceInput',
+  'resource-result': 'resourceResultFile',
   'expires-minutes': 'expiresMinutes',
   'workspace-root': 'workspaceRoot',
   home: 'home',
@@ -102,10 +110,19 @@ export function runCli(argv, io = {}) {
     case 'release':
       result = releaseDeclaration(options);
       break;
+    case 'prepare-resources':
+      result = prepareDevelopmentResources(options);
+      break;
+    case 'resource-status':
+      result = statusDevelopmentResources(options);
+      break;
+    case 'record-resource':
+      result = recordDevelopmentResourceResult(options);
+      break;
     default:
       throw new DevWorkError(
         'INVALID_ARGUMENT',
-        'action must be start, update, status, status-all, check, heartbeat, or release',
+        'action must be start, update, status, status-all, check, heartbeat, release, prepare-resources, resource-status, or record-resource',
       );
   }
   write(result);
@@ -114,7 +131,7 @@ export function runCli(argv, io = {}) {
 
 function reportError(error) {
   const payload =
-    error instanceof DevWorkError
+    error instanceof DevWorkError || error instanceof ResourcePlanError
       ? {
           status: 'BLOCKED',
           code: error.code,

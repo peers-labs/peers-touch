@@ -35,7 +35,14 @@ function taskEntry(id, status, dependsOn = []) {
     path: `tasks/${id}.md`,
     dependsOn,
     status,
-    blocker: null,
+    blocker:
+      status === 'blocked'
+        ? {
+            code: 'CHECKPOINT_REQUIRED',
+            owner: 'authorization',
+            evidenceRef: `evidence://${id}`,
+          }
+        : null,
   };
 }
 
@@ -91,7 +98,10 @@ function assessment(openFindingId = null) {
   };
 }
 
-async function makeFixture(t, { finalTask = false } = {}) {
+async function makeFixture(
+  t,
+  { finalTask = false, fixedPointBlocked = false } = {},
+) {
   const root = await fsp.realpath(
     await fsp.mkdtemp(path.join(os.tmpdir(), 'completion-review-test-')),
   );
@@ -100,7 +110,13 @@ async function makeFixture(t, { finalTask = false } = {}) {
   const planPath = path.join(root, 'plan.md');
   const workspaceId = workspaceIdForRoot(root);
 
-  const tasks = finalTask
+  const tasks = fixedPointBlocked
+    ? [
+        taskEntry('task-a', 'in_progress'),
+        taskEntry('task-b', 'blocked'),
+        taskEntry('task-c', 'pending', ['task-b']),
+      ]
+    : finalTask
     ? [
         taskEntry('task-a', 'done'),
         taskEntry('task-b', 'in_progress', ['task-a']),
@@ -325,6 +341,55 @@ test('stores immutable task request and independent PASS receipt', async (t) => 
     'COMPLETION_REVIEW_IMMUTABLE',
   );
   assert.deepEqual(await fsp.readFile(submitted.paths.receipt), before);
+});
+
+test('reviews a fixed-point blocked handoff without inventing a successor', async (t) => {
+  const fixture = await makeFixture(t, { fixedPointBlocked: true });
+  const prepared = await prepareCompletionReview(
+    {
+      repoRoot: fixture.root,
+      workItemId: 'DWF-REVIEW-WORK',
+      scope: 'task',
+    },
+    fixture.dependencies,
+  );
+  assert.match(prepared.request.candidatePlanDigest, /^[0-9a-f]{64}$/);
+  assert.deepEqual(prepared.candidateTransition, {
+    to: 'done',
+    nextTaskId: null,
+    exhaustion: {
+      recordedAt: FIXED_TIME,
+      blockedTaskIds: ['task-b'],
+      decisionRefs: ['DWF-D28'],
+      evidenceRefs: ['evidence://task-b'],
+    },
+  });
+
+  fixture.useReviewer();
+  const submitted = await submitCompletionReview(
+    {
+      repoRoot: fixture.root,
+      reviewId: prepared.request.reviewId,
+      verdict: 'PASS',
+    },
+    {
+      ...fixture.dependencies,
+      assessment: assessment(),
+    },
+  );
+  assert.equal(submitted.receipt.verdict, 'PASS');
+
+  const current = await requireCurrentCompletionReview(
+    {
+      repoRoot: fixture.root,
+      planPackage: fixture.planPackage,
+      session: fixture.session,
+      workItemId: 'DWF-REVIEW-WORK',
+      candidatePlanDigest: prepared.request.candidatePlanDigest,
+    },
+    fixture.dependencies,
+  );
+  assert.equal(current.state, 'PASS');
 });
 
 test('rejects self-review and caller-supplied reviewer identity', async (t) => {

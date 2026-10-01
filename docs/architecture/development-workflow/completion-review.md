@@ -126,6 +126,13 @@ Closure owner 必须拒绝没有 current `PASS` receipt 的 done transition。�
 Task 或 Plan 的 receipt 失效后，projection 不得继续显示完成；只有需要 source
 invalidation 时，lifecycle 重置才通过 DWF-D24 的 invalidation owner 完成。
 
+当前 Task 完成后若没有 dependency-ready successor、但已有 blocked Task，
+Completion Review 必须审查同一个 fixed-point blocked 候选状态。该候选的
+`recordedAt` 取成功 Session 的最终更新时间，`decisionRefs` 取 Plan 已声明架构
+决策，`evidenceRefs` 取现有 Task blocker；`planctl advance` 必须使用相同字段，
+否则候选摘要不匹配并拒绝关闭。prepare 输出同时返回该
+`candidateTransition`，调用方不得再次实现候选状态推导。
+
 ## 5. Review Checks
 
 每次 review 包含：

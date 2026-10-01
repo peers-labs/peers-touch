@@ -126,6 +126,27 @@ Rules:
 - Completion, cancellation and abandonment require
   `make dev-release WORK_ITEM=<id>`.
 
+For a runtime-bearing Task, the Agent gathers one `ModuleImpact` from each
+affected module and prepares one combined resource plan before acquisition:
+
+```bash
+make dev-resources-prepare \
+  WORK_ITEM=<id> \
+  RESOURCE_INPUT=<plan-resource-request.json>
+```
+
+The Agent, not the developer, owns this command and its input. The result names
+the target dependency waves, peak resource demand, reused resources,
+build/restart/provision actions, and any parked target. Compatible accounts,
+services, clients, devices, Fixtures, and automation sessions are deduplicated
+across modules. One target's claims publish all-or-none; a conflict parks only
+that target and its dependents.
+
+Runtime and Acceptance Suite owners perform the physical lifecycle and return
+manifest-bound results through `make dev-resource-record`. Business Gates only
+attach to the prepared manifest. They never create accounts, launch clients,
+deploy services, or release resources.
+
 Architecture source:
 `docs/architecture/development-workflow/README.md`.
 

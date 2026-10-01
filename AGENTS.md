@@ -240,6 +240,16 @@ hours to diagnose.
   declaration scope, source identity, topology, and lease all match.
 - `active_work`, branch names, process discovery and private `.local` files are
   not substitutes for public resource intent.
+- Before runtime acquisition, every affected module emits one standard
+  `ModuleImpact`. `pt-dev-workflow` alone resolves the combined target graph,
+  peak capacity, reuse action, and concrete claims into a fenced
+  `PlanResourcePlan`.
+- Module Skills must not allocate concrete accounts, services, clients,
+  devices, Fixtures, or automation sessions. Business Gates are attach-only;
+  Local Dev or Acceptance Suite Runtime owns physical lifecycle and quarantine.
+- Resource claims for one target are published all-or-none in canonical order.
+  Capacity conflict parks only that target and its dependents; independent
+  target lanes continue without a global lock.
 
 ### No Unauthorized Development Environments
 
@@ -465,6 +475,7 @@ Current project skills:
 | `pt-branch-conflict-guardian` | Guide semantic conflict resolution across parallel branches: separate mechanical conflicts from ownership/behavior divergence, escalate unclear intent, and verify integrated behavior |
 | `pt-context-anchor` | Read-only projection of verified tracked-work state into chat; report owner mismatches without repairing them |
 | `pt-execution-plan-guardian` | Read-only policy guard that allows, denies, or escalates one scheduler-proposed action |
+| `pt-agent-development` | Emit Agent `ModuleImpact`, proof invalidation, and failure ownership for aggregation by the Development Workflow |
 | `pt-official-applet-development` | Create, scaffold, implement, and validate official applet product units under `apps/applets/` using the applet architecture contract |
 | `pt-desktop-runtime-projections` | Enforce Page / Runtime / Boot kernel contracts under `apps/desktop/src/{kernel,runtimes,services,store,pages,components}` |
 | `pt-read-before-edit` | Consult `docs/knowledge/` invariants / pitfalls / playbooks whose `owns:` covers the path being edited (referenced from §3.5) |

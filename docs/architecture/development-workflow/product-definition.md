@@ -1,7 +1,7 @@
 # Peers Dev 产品定义
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Created**: 2026-09-26 | **Updated**: 2026-09-30
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`
 
@@ -49,6 +49,7 @@ Conversation 不得静默改变执行根。Task 或 Plan 不得因聊天文本�
 | DWF-D29 | Action Receipt | 有界、脱敏的 Agent 动作收据 | accepted |
 | DWF-D30 | Workflow Doctor | 可执行的工作流自诊断 | accepted |
 | DWF-D31 | Plan generation advance | completed 且 quiescent 后复用 canonical owner workspace | accepted |
+| DWF-D32 | Cross-module resource aggregation | runtime acquisition 前统一解析 target、复用、容量与 park | accepted |
 
 Accepted 决策定义目标合同，不等于实现或验收已经通过。在当前源码完成验证前，
 消费者仍须把尚未证明的能力投影为 `UNPROVEN`。
@@ -65,6 +66,7 @@ Accepted 决策定义目标合同，不等于实现或验收已经通过。在�
 | DEV-C06 | Mutation from Dev UI | unsupported | DWF-D27 | Dev UI 保持只读，所有写入由 owner CLI 执行 |
 | DEV-C07 | Cross-worktree writes | unsupported | DWF-D26 | Conversation 可读取其他 worktree，但只能写入自己的不可变执行根 |
 | DEV-C08 | Sequential owner Plans | required | DWF-D31 | completed 且 quiescent 后在同一 canonical owner workspace 推进下一 Plan generation |
+| DEV-C09 | Plan-level resource preparation | required | DWF-D32 | 多模块影响在 runtime acquisition 前聚合；复用、容量、冲突和 park 由一个资源计划裁决 |
 
 ## 5. 首次可用结果
 
@@ -131,6 +133,7 @@ Acceptance 单元独立证明。
 | DEV-C04 | 架构文档和应用 README 已存在 | 确立唯一操作指南并将每条命令纳入 truth audit | 从干净 worktree 执行所有已声明命令 |
 | DEV-C05 | 现有 audit 可作为候选检查输入 | 组合为一个 typed Doctor 并验证公开承诺 | healthy fixture 与故障注入 fixture |
 | DEV-C08 | Workspace binding 已隔离同步进入仓库的外来 Plan | 增加显式 generation CAS、quiescence 与不可变历史 | completed advance、live-resource rejection 与并发测试 |
+| DEV-C09 | Machine ledger、Local Dev lease 和 Acceptance runtime manifest 已有明确 owner | 增加标准 ModuleImpact、target closure 与 fenced PlanResourcePlan | 多模块、复用、容量不足、all-or-none、quarantine replacement 与跨 Plan 冲突测试 |
 
 表中 `Canonical basis` 只说明可继续设计或实现的当前输入，不构成实现完成或
 Acceptance 通过证明。

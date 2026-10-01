@@ -4,6 +4,7 @@
 .PHONY: env-register env-update env-unregister env-check env-status-all dev-ui dev-ui-snapshot dev-observe workflow-snapshot workflow-doctor \
         profile profile-authorize profile-init profiles config \
         dev-start dev-update dev-status dev-status-all dev-check dev-heartbeat dev-release \
+        dev-resources-prepare dev-resources-status dev-resource-record \
         dev-session-start dev-session-status dev-transition dev-functional-result \
         active-work-sync active-work-status active-work-status-all active-work-close \
         completion-review-prepare completion-review-submit completion-review-status \
@@ -42,6 +43,8 @@ DEV_PURPOSE_ARG := $(or $(PURPOSE),$(DEV_PURPOSE))
 DEV_SOURCE_CLAIMS_ARG := $(or $(SOURCE_CLAIMS),$(DEV_SOURCE_CLAIMS))
 DEV_RUNTIME_CLAIMS_ARG := $(or $(RUNTIME_CLAIMS),$(DEV_RUNTIME_CLAIMS))
 DEV_RUNTIME_CLAIMS_SPECIFIED := $(if $(filter undefined,$(origin RUNTIME_CLAIMS)),$(if $(filter undefined,$(origin DEV_RUNTIME_CLAIMS)),,1),1)
+DEV_RESOURCE_INPUT_ARG := $(or $(RESOURCE_INPUT),$(DEV_RESOURCE_INPUT))
+DEV_RESOURCE_RESULT_ARG := $(or $(RESOURCE_RESULT),$(DEV_RESOURCE_RESULT))
 DEV_EXPIRES_MINUTES_ARG := $(or $(EXPIRES_MINUTES),$(DEV_EXPIRES_MINUTES),480)
 DEV_WORK_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-work.mjs
 DEV_SESSION_SCRIPT := $(LOCAL_DEV_SCRIPTS)/dev-session.mjs
@@ -239,6 +242,25 @@ dev-release:
 	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-release WORK_ITEM=<id>"; exit 1; fi
 	@node $(DEV_WORK_SCRIPT) release \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
+
+dev-resources-prepare:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_RESOURCE_INPUT_ARG)" ]; then echo "Usage: make dev-resources-prepare WORK_ITEM=<id> RESOURCE_INPUT=<json-file>"; exit 1; fi
+	@node $(DEV_WORK_SCRIPT) prepare-resources \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--resource-input "$(DEV_RESOURCE_INPUT_ARG)" \
+		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
+
+dev-resources-status:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make dev-resources-status WORK_ITEM=<id>"; exit 1; fi
+	@node $(DEV_WORK_SCRIPT) resource-status \
+		--work-item "$(DEV_WORK_ITEM_ARG)"
+
+dev-resource-record:
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ] || [ -z "$(DEV_RESOURCE_RESULT_ARG)" ]; then echo "Usage: make dev-resource-record WORK_ITEM=<id> RESOURCE_RESULT=<json-file>"; exit 1; fi
+	@node $(DEV_WORK_SCRIPT) record-resource \
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		--resource-result "$(DEV_RESOURCE_RESULT_ARG)" \
 		$(if $(DEV_SESSION_ARG),--session "$(DEV_SESSION_ARG)",)
 
 dev-session-start:

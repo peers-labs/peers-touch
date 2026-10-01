@@ -669,7 +669,11 @@ async function planBytes(planPackage, dependencies) {
   return fsp.readFile(planPackage.path);
 }
 
-function completionCandidateManifest(planPackage, requestedNextTaskId) {
+function completionCandidateManifest(
+  planPackage,
+  requestedNextTaskId,
+  recordedAt,
+) {
   const manifest = structuredClone(planPackage.manifest);
   const current = manifest.tasks.find((task) => task.status === 'in_progress');
   if (!current) {
@@ -701,12 +705,36 @@ function completionCandidateManifest(planPackage, requestedNextTaskId) {
     manifest.exhaustion = null;
     return manifest;
   }
-  let nextTaskId = requestedNextTaskId;
+  let nextTaskId =
+    requestedNextTaskId?.toLowerCase() === 'none'
+      ? undefined
+      : requestedNextTaskId;
   if (nextTaskId === undefined && ready.length === 1) {
     nextTaskId = ready[0].id;
   }
   const next = ready.find((task) => task.id === nextTaskId);
   if (!next) {
+    const blocked = manifest.tasks.filter((task) => task.status === 'blocked');
+    const evidenceRefs = [
+      ...new Set(blocked.map((task) => task.blocker?.evidenceRef).filter(Boolean)),
+    ];
+    if (
+      nextTaskId === undefined &&
+      ready.length === 0 &&
+      blocked.length > 0 &&
+      manifest.architecture.decisions.length > 0 &&
+      evidenceRefs.length > 0
+    ) {
+      validateTimestamp(recordedAt, 'completionCandidate.recordedAt');
+      manifest.status = 'blocked';
+      manifest.exhaustion = {
+        recordedAt,
+        blockedTaskIds: blocked.map((task) => task.id),
+        decisionRefs: [...manifest.architecture.decisions],
+        evidenceRefs,
+      };
+      return manifest;
+    }
     fail(
       'COMPLETION_REVIEW_SUCCESSOR_REQUIRED',
       'review preparation requires the exact dependency-ready successor',
@@ -727,23 +755,38 @@ export function digestCompletionCandidate(candidateDocument) {
   return digest(candidateDocument);
 }
 
-async function completionCandidateDigest(
+function describeCompletionCandidate(manifest) {
+  return {
+    to: 'done',
+    nextTaskId:
+      manifest.tasks.find((task) => task.status === 'in_progress')?.id ?? null,
+    exhaustion: manifest.exhaustion,
+  };
+}
+
+async function completionCandidate(
   planPackage,
   requestedNextTaskId,
+  recordedAt,
   dependencies,
 ) {
-  if (dependencies.candidatePlanDigest !== undefined) {
-    return dependencies.candidatePlanDigest;
-  }
   const currentDocument = (await planBytes(
     planPackage,
     dependencies,
   )).toString('utf8');
+  const manifest = completionCandidateManifest(
+    planPackage,
+    requestedNextTaskId,
+    recordedAt,
+  );
   const candidate = renderPlanDocument(
     currentDocument,
-    completionCandidateManifest(planPackage, requestedNextTaskId),
+    manifest,
   );
-  return digestCompletionCandidate(candidate);
+  return {
+    digest: digestCompletionCandidate(candidate),
+    transition: describeCompletionCandidate(manifest),
+  };
 }
 
 async function currentReviewMaterial(options, dependencies = {}) {
@@ -772,6 +815,15 @@ async function currentReviewMaterial(options, dependencies = {}) {
   assertSuccessfulSession(session, planPackage, current, workItemId);
   const source = await inspectSource(root, planPackage, dependencies);
   const taskId = scope === 'task' ? current.id : null;
+  const candidate =
+    options.candidatePlanDigest === undefined
+      ? await completionCandidate(
+          planPackage,
+          options.nextTaskId,
+          session.state.updatedAt,
+          dependencies,
+        )
+      : null;
   return {
     root,
     planPackage,
@@ -786,11 +838,8 @@ async function currentReviewMaterial(options, dependencies = {}) {
     ),
     candidatePlanDigest:
       options.candidatePlanDigest ??
-      (await completionCandidateDigest(
-        planPackage,
-        options.nextTaskId,
-        dependencies,
-      )),
+      candidate.digest,
+    candidateTransition: candidate?.transition ?? null,
     evidenceDigest: digest(
       evidenceFor(planPackage, scope, taskId, session),
     ),
@@ -980,7 +1029,11 @@ export async function prepareCompletionReview(options, dependencies = {}) {
     dependencies,
   );
   await publishImmutable(paths.request, request);
-  return { request, paths };
+  return {
+    request,
+    paths,
+    candidateTransition: material.candidateTransition,
+  };
 }
 
 async function readAssessment(file) {
@@ -1744,7 +1797,12 @@ export async function runCompletionReviewCli(
       },
       dependencies,
     );
-    return { ok: true, action: 'prepare', request: result.request };
+    return {
+      ok: true,
+      action: 'prepare',
+      request: result.request,
+      candidateTransition: result.candidateTransition,
+    };
   }
   if (command === 'submit') {
     allowedOptions(options, [
