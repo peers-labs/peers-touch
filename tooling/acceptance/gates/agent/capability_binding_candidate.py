@@ -46,12 +46,13 @@ from tooling.acceptance.gates.agent.foundation_scenario_runner import (
 from tooling.acceptance.gates.agent.capability_binding_development import (
     OPERATION_SCENARIO_ACTOR_ACCOUNT,
     OPERATION_SCENARIO_IDENTITY_FIXTURE,
+    authenticate_native_client,
     confirm_native_actor_identity_enrollment,
     persist_native_actor_identity,
+    resolve_operation_scenario_actor,
     seed_native_actor_identity,
 )
 from tooling.acceptance.gates.agent.home_command_center_candidate import (
-    _authenticate,
     _load_script,
     resolve_machine_profile,
 )
@@ -134,9 +135,23 @@ class CapabilityBindingRuntimeAdapter:
         self._runtime_pair = runtime_pair
         self._profile_env = dict(profile_env)
         self._run_id = run_id
+        logins = {
+            "desktop_app": authenticate_native_client(
+                runtime_pair.native,
+                profile_env,
+                profile=PROFILE,
+                account=ACTOR_ACCOUNT,
+            ),
+            "browser": authenticate_native_client(
+                runtime_pair.browser,
+                profile_env,
+                profile=PROFILE,
+                account=ACTOR_ACCOUNT,
+            ),
+        }
         actors = {
-            "desktop_app": _authenticate(runtime_pair.native, profile_env),
-            "browser": _authenticate(runtime_pair.browser, profile_env),
+            platform: str(login["actorId"])
+            for platform, login in logins.items()
         }
         require(
             len(set(actors.values())) == 1,
@@ -673,18 +688,24 @@ def main() -> int:
             profile_env=profile_env,
             startup_timeout=900,
         )
+        expected_actor_id = resolve_operation_scenario_actor(profile_env)
         seed_native_actor_identity(
             fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
             target_root=runtime_pair.native.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
             profile=PROFILE,
             account=ACTOR_ACCOUNT,
+            expected_actor_id=expected_actor_id,
         )
         runtime_pair.start()
         runtime_adapter = CapabilityBindingRuntimeAdapter(
             runtime_pair,
             profile_env,
             run.run_id,
+        )
+        require(
+            runtime_adapter.actor_id == expected_actor_id,
+            "J02 authenticated actor differs from the provisioned fixture",
         )
         enrollment = confirm_native_actor_identity_enrollment(
             runtime_pair.native,

@@ -22,7 +22,8 @@
     "model/domain/agent",
     "packages/agent-catalog",
     "packages/locales",
-    "tooling/acceptance"
+    "tooling/acceptance",
+    "tooling/scripts/local-dev"
   ],
   "readSet": [
     "apps/desktop",
@@ -30,7 +31,8 @@
     "docs/architecture/agent/modern-chat-agent",
     "model/domain/agent",
     "packages/agent-catalog",
-    "tooling/acceptance"
+    "tooling/acceptance",
+    "tooling/scripts/local-dev"
   ],
   "budgets": {
     "focusedCheckSeconds": 1200,
@@ -72,7 +74,7 @@
     "Do not expand to the 419-cell Foundation matrix",
     "Return only the first deterministic failure"
   ],
-  "updatedAt": "2026-10-01T09:23:00Z",
+  "updatedAt": "2026-10-01T11:34:40Z",
   "durableEvidence": []
 }
 ```

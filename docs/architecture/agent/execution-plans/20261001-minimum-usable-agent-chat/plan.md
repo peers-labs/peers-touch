@@ -67,6 +67,10 @@
       {
         "pathPrefix": "tooling/acceptance",
         "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/local-dev",
+        "mode": "exclusive-write"
       }
     ],
     "nonGoals": [
