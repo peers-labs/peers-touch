@@ -19,7 +19,7 @@ from tooling.acceptance.core import (
 
 
 GATE_ID = "peers-dev-ui-browser-e2e"
-ENVIRONMENT_ID = "peers-dev-fixture-browser"
+ENVIRONMENT_ID = "dev-ui-local-browser"
 PROFILE_ID = "dev-ui-local"
 DRIVER = Path(__file__).with_name("dev-ui-browser-e2e.mjs")
 SCREENSHOTS = ("desktop.png", "narrow.png")
