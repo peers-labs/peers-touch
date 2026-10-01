@@ -41,7 +41,7 @@ release label。
 
 ```ts
 interface CompletionReviewRequest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   kind: 'peers-touch-completion-review-request';
   reviewId: string;
   scope: 'task' | 'plan';
@@ -66,7 +66,7 @@ interface CompletionReviewRequest {
 }
 
 interface CompletionReviewReceipt {
-  schemaVersion: 1;
+  schemaVersion: 2;
   kind: 'peers-touch-completion-review-receipt';
   reviewId: string;
   requestDigest: string;
@@ -85,6 +85,11 @@ interface CompletionReviewReceipt {
   receiptDigest: string;
 }
 ```
+
+Schema v2 records live only under
+`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v2/`.
+The pre-hard-cut `completion-reviews/` namespace is retained as inert history:
+the canonical owner never reads, imports, migrates, or rewrites it.
 
 Request 和 receipt 都是 create-once。`obligationsDigest` 覆盖 Task 的
 `doneWhen`、`failureBehavior`、checks、read/write set、Acceptance closure
