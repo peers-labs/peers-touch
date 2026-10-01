@@ -23,6 +23,7 @@
         "oauth-login-broker-refresh-idempotency",
         "oauth-login-broker-key-rotation",
         "oauth-login-broker-operator",
+        "oauth2-client-live-api-repository",
         "oauth-login-broker-architecture",
         "oauth-login-broker-contract"
       ]

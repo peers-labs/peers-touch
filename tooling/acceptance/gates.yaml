@@ -47,6 +47,13 @@
       "tier": "env-evidence",
       "description": "Prove authenticated token-free operator HTML and JSON plus the local start, callback, and administration browser journey from exact source."
     },
+    "oauth2-client-live-api-repository": {
+      "command": "tooling/acceptance/gates/oauth2_client/live_api.sh",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove live GitHub and Google identity readback, standards-based OAuth2 redirects, GitHub-backed encrypted record classes, and idempotent key rotation using the isolated oauth2-client-test environment."
+    },
     "oauth-login-broker-architecture": {
       "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs",
       "timeout_seconds": 60,

@@ -31,20 +31,29 @@
       "oauth-login-broker-durable-login",
       "oauth-login-broker-refresh-idempotency",
       "oauth-login-broker-key-rotation",
-      "oauth-login-broker-operator"
+      "oauth-login-broker-operator",
+      "oauth2-client-live-api-repository",
+      "oauth-login-broker-architecture",
+      "oauth-login-broker-contract"
     ]
   },
   "completion": [
     "oauth-login-broker-durable-login",
     "oauth-login-broker-refresh-idempotency",
     "oauth-login-broker-key-rotation",
-    "oauth-login-broker-operator"
+    "oauth-login-broker-operator",
+    "oauth2-client-live-api-repository",
+    "oauth-login-broker-architecture",
+    "oauth-login-broker-contract"
   ],
   "full": [
     "oauth-login-broker-durable-login",
     "oauth-login-broker-refresh-idempotency",
     "oauth-login-broker-key-rotation",
-    "oauth-login-broker-operator"
+    "oauth-login-broker-operator",
+    "oauth2-client-live-api-repository",
+    "oauth-login-broker-architecture",
+    "oauth-login-broker-contract"
   ]
 }
 ```
