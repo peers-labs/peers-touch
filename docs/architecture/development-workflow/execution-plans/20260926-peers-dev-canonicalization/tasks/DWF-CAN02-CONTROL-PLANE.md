@@ -16,6 +16,8 @@
   "journeyId": "DEV-J01",
   "runtimeClass": "source-only",
   "writeSet": [
+    "apps/dev/server/index.test.mjs",
+    "tooling/acceptance/gates/desktop/dev_runtime_multi_instance_static_test.py",
     "tooling/make/setup.mk",
     "tooling/plugins",
     "tooling/scripts/agent-integration-audit-test.py",
