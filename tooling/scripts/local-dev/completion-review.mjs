@@ -42,7 +42,7 @@ export const COMPLETION_REVIEW_CHECK_IDS = Object.freeze([
 const REQUEST_KIND = 'peers-touch-completion-review-request';
 const RECEIPT_KIND = 'peers-touch-completion-review-receipt';
 const ASSESSMENT_KIND = 'peers-touch-completion-review-assessment';
-const REVIEW_SCHEMA_VERSION = 1;
+const REVIEW_SCHEMA_VERSION = 2;
 const REVIEW_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SHA = /^[0-9a-f]{40,64}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -373,7 +373,7 @@ function reviewRoot(workspaceId, dependencies = {}) {
     'workspaces',
     workspaceId,
     'workflow',
-    'completion-reviews',
+    'completion-reviews-v2',
   );
 }
 

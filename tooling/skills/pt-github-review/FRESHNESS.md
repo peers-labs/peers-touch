@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-01
-covered_docs_hash: 5d6d1755473da20fa8b9d0230bd3acb77c44d51e040e307ad4cb436cc83ae901
+covered_docs_hash: 5286b58534fa5a618a6acaa9c8bde12d7a2158c8f6f45480b65bbcd95aa2e6f4
 
 covered_docs:
   - AGENTS.md
@@ -39,7 +39,8 @@ assignment, latest-per-action Completion Review selection, persisted
 PreCompact/PostCompact lineage continuity, and a one-time installer grant tied
 to the exact live OWNER `skills` action. `SKILL.md` and the owner-rooted
 invariant now carry these checks; dedicated workflow and installer regressions
-cover each failure mode.
+cover each failure mode. Completion Review schema v2 also uses a new canonical
+namespace, so pre-hard-cut requests are preserved but never loaded or migrated.
 
 Owner-rooted workflow binding replaced peer conversation bindings. Review now
 requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt

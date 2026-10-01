@@ -138,7 +138,8 @@ verify:
   current canonical `BindingProjection`; child assignment validates the exact
   current active-work and Development Session records; Completion Review
   reduces each action to its latest receipt and uses the exact live OWNER
-  command or assigned REVIEWER rather than enumerating worktree bindings;
+  command or assigned REVIEWER rather than enumerating worktree bindings, and
+  reads only the current versioned review namespace;
 - OWNER publication uses atomic create-once semantics, and `PreCompact` /
   `PostCompact` persist and verify the same complete binding lineage;
 - TRAE multi-root integration installs one descriptor-selected bootstrap,

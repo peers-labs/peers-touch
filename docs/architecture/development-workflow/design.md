@@ -300,7 +300,9 @@ Every status, readiness, handoff and final claim revalidates the same
 projection. Completion Review resolves the exact OWNER or assigned REVIEWER
 from the latest receipt for the current owner-command action ID; a terminal
 receipt suppresses every earlier STARTED or HEARTBEAT receipt. It never falls
-back to enumerating all unreleased bindings in a worktree.
+back to enumerating all unreleased bindings in a worktree. Canonical requests
+and receipts live only in the versioned `completion-reviews-v2` namespace;
+pre-hard-cut review records are neither read nor migrated.
 
 TRAE multi-root startup uses one workspace bootstrap hook selected from the
 workspace descriptor, not one competing hook owner per worktree. The bootstrap

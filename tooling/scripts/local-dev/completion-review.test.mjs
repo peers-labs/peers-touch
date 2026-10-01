@@ -87,7 +87,7 @@ function taskSlice(id) {
 
 function assessment(openFindingId = null) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'peers-touch-completion-review-assessment',
     findings: COMPLETION_REVIEW_CHECK_IDS.map((id) => ({
       id,
@@ -197,7 +197,7 @@ async function makeFixture(
     ].join('\n'),
   );
   const session = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     kind: 'peers-touch-development-session',
     state: {
       sessionId: `session-${current.id}`,
@@ -789,6 +789,49 @@ test('status prefers the latest pending request over older stale history', async
       ['review-new', 'PENDING'],
       ['review-old', 'STALE'],
     ],
+  );
+});
+
+test('v2 review namespace never reads pre-hard-cut review records', async (t) => {
+  const fixture = await makeFixture(t);
+  const legacy = path.join(
+    fixture.machineRoot,
+    'workspaces',
+    fixture.workspaceId,
+    'workflow',
+    'completion-reviews',
+    'review-legacy',
+  );
+  await fsp.mkdir(legacy, { recursive: true });
+  await fsp.writeFile(
+    path.join(legacy, 'request.json'),
+    '{"schemaVersion":1,"kind":"obsolete"}\n',
+  );
+  const prepared = await prepareCompletionReview(
+    {
+      repoRoot: fixture.root,
+      workItemId: 'DWF-REVIEW-WORK',
+    },
+    {
+      ...fixture.dependencies,
+      reviewId: 'review-current',
+    },
+  );
+  assert.match(prepared.paths.directory, /completion-reviews-v2/);
+  const result = await runCompletionReviewCli(
+    [
+      'status',
+      '--repo-root',
+      fixture.root,
+      '--work-item',
+      'DWF-REVIEW-WORK',
+    ],
+    fixture.dependencies,
+  );
+  assert.equal(result.state, 'PENDING');
+  assert.deepEqual(
+    result.reviews.map((review) => review.reviewId),
+    ['review-current'],
   );
 });
 
