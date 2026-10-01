@@ -38,6 +38,13 @@ grant, and object authorities.
   runtime owners -> W12D source freeze and serial schema activation.
 - W7-W13 remain `UNPROVEN` and dependency-parked behind W12D. No source,
   activation, API-only, Browser, or single-platform result can substitute.
+- The 2026-10-01 runtime reuse audit found that W7 lacked a declared Suite
+  contract, W9's Suite owner was still blocked, and W2/W10/W11/W12 repeated
+  platform provisioning. `review-runtime-reuse-amendment.md` owns the accepted
+  repair contract.
+- The amendment preserves Task ownership: immutable build/deploy identity is
+  generation-scoped, while accounts, clients, storage, login, and Fixture
+  state are shared only by Scenarios inside one Task-owned Suite Runtime.
 
 ## Workflow Dependency
 
@@ -202,12 +209,34 @@ final matrix does not reuse W7/W9 child ownership.
 3. Complete W12A Mobile private publish/read/recovery source.
 4. Complete W12B private Comment, media, subtype, lifecycle, and bounds source.
 5. Complete W12C owner-produced Desktop/iOS/Android manifests and Fixtures for
-   every W9-W12 functional child.
-6. Run W12D full source matrix, freeze one generation, and activate `four`
-   then `fiveArm` serially.
-7. Replay W7, W8, W9, W2, W10, and W11 on that exact generation.
-8. Run W12 fresh `FINAL_CUT` plus the complete product matrix.
-9. Promote the same final source through W13 formal Acceptance.
+   every W7-W12 Suite Runtime.
+6. Run W12D full source matrix once, publish one immutable build/source
+   generation, and activate/deploy `four` then `fiveArm` serially exactly once
+   for that generation.
+7. Replay W7, W8, W9, W2, W10, and W11 on that exact generation. Each Task
+   uses one Suite Runtime and never rebuilds or redeploys an already-attested
+   generation.
+8. Run W12 fresh `FINAL_CUT` serially for `four` then `fiveArm`, then execute
+   one post-cut Suite Runtime for the complete product matrix.
+9. Promote the same final source through W13 formal Acceptance. Read-only Gate
+   crosswalk and evidence-integrity preparation may run in parallel with W12,
+   but no W13 Gate starts before W12 reaches `FUNCTIONAL_PASS`.
+
+## Runtime Reuse Model
+
+- W12D owns one immutable build/source generation and the only pre-final
+  deployment per Profile; W7-W11 only attest and attach.
+- W7-W12 each own one Suite Runtime. Build/install, accounts, clients, storage,
+  login, attestations, and one Fixture Epoch are created once before its first
+  attach-only Scenario.
+- Scenario resets are namespaced, occur after receiver evidence, and require an
+  owner acknowledgement plus baseline digest. Product restarts are recorded
+  client replacements, not Suite reprovisioning.
+- Task handoff releases all mutable runtime resources. Only content-addressed
+  artifacts and the exact deployment generation cross Task boundaries.
+- Both W12 FINAL_CUT children precede a new post-cut Suite. Product children
+  bind their reset IDs, result/schema digests, service identities, and Fixture
+  Epoch. W13 creates independent formal Gate runs; it cannot relabel W12 proof.
 
 ## Concurrency Decision
 
@@ -219,12 +248,11 @@ final matrix does not reuse W7/W9 child ownership.
 - W12D schema activation is serial across `four` and `fiveArm`; each profile
   uses an independent work item and declaration with one scope authorization,
   reset ID, manifest, journal, invocation sequence, and `station.reset` lease.
-- Runtime execution remains serial for every shared Profile, Station, Fixture,
-  client storage, and local slot.
-- Source-only work may run in parallel only when its declared write sets are
-  disjoint and its functional successor remains dependency-parked.
-- The integrator owns this Plan Package, shared manifests, checkpoints, and
-  final reconciliation.
+- Runtime execution is serial for shared Profile, Station, Fixture, client
+  storage, slot, Suite, FINAL_CUT, Actor, Appium, or port ownership.
+- Source-only work and W13 read-only Acceptance preparation may run in parallel
+  only when their declared write sets are disjoint and every runtime successor
+  remains dependency-parked.
 
 ## Completion
 
