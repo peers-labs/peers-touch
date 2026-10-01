@@ -1,0 +1,54 @@
+{
+  "id": "agent-v2-external-runtime",
+  "status": "active",
+  "initial_proof_status": "UNPROVEN",
+  "product_area": "agent",
+  "owners": [
+    "model/domain/agent/agent.proto",
+    "apps/station/app/subserver/agent/service/external_runtime*",
+    "apps/station/app/subserver/agent/service/externalruntime/**",
+    "apps/station/app/subserver/agent/infrastructure/persistence/external_runtime_reset.go",
+    "apps/desktop/src/services/desktop_api.ts",
+    "apps/desktop/src/store/chat.ts",
+    "apps/desktop/src/components/messages/AssistantMessage.tsx",
+    "apps/desktop/src/acceptance/agent/harness.ts",
+    "tooling/acceptance/gates/agent/external_runtime_*.py",
+    "tooling/docker/compose.yml"
+  ],
+  "truth_sources": [
+    "Station Conversation runtime binding and external reset command persistence",
+    "Station External Runtime Manager process and session lifecycle",
+    "Station Turn event and terminal message persistence"
+  ],
+  "visible_surfaces": [
+    {"type": "native-tauri", "surface": "External Agent response and Confirm reset recovery"},
+    {"type": "browser", "surface": "Station-backed External Agent response and Confirm reset recovery"},
+    {"type": "station-readback", "surface": "Conversation runtime binding, epoch, session, Turn events, and reset receipt"}
+  ],
+  "required_gates": ["agent-v2-external-runtime-e2e"],
+  "acceptance": {
+    "service": [
+      "a healthy configured external session adapter is advertised while incomplete configuration remains unavailable",
+      "two Conversations receive distinct opaque runtime homes and session handles",
+      "follow-up and post-Station-restart Turns resume the exact persisted session and epoch",
+      "resume failure preserves the old binding and emits RUNTIME_RESUME_UNAVAILABLE",
+      "confirmed reset is actor-scoped, version-fenced, idempotent, cleans once, advances one epoch, and clears the session",
+      "cleanup failure remains durable and retrying the same reset succeeds",
+      "the next Turn creates a fresh session in the new epoch",
+      "cancelling an active external Turn terminates execution without changing its session binding",
+      "permanent Conversation deletion uses the same external cleanup closure"
+    ],
+    "visible": [
+      "Native and Browser render the localized Confirm reset recovery",
+      "the destructive confirmation is visible before reset is submitted",
+      "both clients reconcile to the same Station-owned binding after reset"
+    ]
+  },
+  "negative": [
+    "clients must not receive raw runtime-home paths or own process, session, epoch, or cleanup truth",
+    "resume failure must not start a replacement session before confirmation",
+    "reset replay must not execute cleanup twice or advance another epoch",
+    "cleanup failure must not admit a new Turn or delete the Conversation",
+    "static, mock, prototype, or Direct Model evidence must not prove this Gate"
+  ]
+}

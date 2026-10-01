@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/domain"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
 	"github.com/peers-labs/peers-touch/station/frame/core/logger"
@@ -18,12 +19,21 @@ import (
 )
 
 type ConversationHandlers struct {
-	convService *service.ConversationService
-	turnService *service.TurnService
+	convService     *service.ConversationService
+	turnService     *service.TurnService
+	externalRuntime *service.ExternalRuntimeService
 }
 
-func NewConversationHandlers(convService *service.ConversationService, turnService *service.TurnService) *ConversationHandlers {
-	return &ConversationHandlers{convService: convService, turnService: turnService}
+func NewConversationHandlers(
+	convService *service.ConversationService,
+	turnService *service.TurnService,
+	externalRuntime *service.ExternalRuntimeService,
+) *ConversationHandlers {
+	return &ConversationHandlers{
+		convService:     convService,
+		turnService:     turnService,
+		externalRuntime: externalRuntime,
+	}
 }
 
 type conversationListRequest struct {
@@ -205,12 +215,26 @@ func (h *ConversationHandlers) HandleArchiveConversation(ctx context.Context, re
 		writeJSON(resp, http.StatusBadRequest, map[string]any{"ok": false, "error": "conversation_id is required"})
 		return nil
 	}
+	expectedVersion := input.ExpectedVersion
+	if input.Permanent && h.externalRuntime != nil {
+		var err error
+		expectedVersion, err = h.externalRuntime.PrepareConversationDeletion(
+			ctx,
+			subjectActorID(ctx),
+			input.ConversationID,
+			expectedVersion,
+		)
+		if err != nil {
+			writeJSON(resp, http.StatusConflict, map[string]any{"ok": false, "error": err.Error()})
+			return nil
+		}
+	}
 	if err := h.convService.ArchiveConversation(
 		ctx,
 		subjectActorID(ctx),
 		input.ConversationID,
 		input.Permanent,
-		input.ExpectedVersion,
+		expectedVersion,
 	); err != nil {
 		writeJSON(resp, http.StatusInternalServerError, map[string]any{"ok": false, "error": err.Error()})
 		return nil
@@ -248,6 +272,30 @@ func (h *ConversationHandlers) HandleRestoreConversation(ctx context.Context, re
 		"conversation": conversationToJSON(conversation),
 	})
 	return nil
+}
+
+func (h *ConversationHandlers) HandleResetConversationRuntime(
+	ctx context.Context,
+	req *model.ResetConversationRuntimeRequest,
+) (*model.ResetConversationRuntimeResponse, error) {
+	if h.externalRuntime == nil {
+		return nil, toHandlerError(
+			errcode.NewRuntimeUnavailable("external_agent", "adapter_unavailable"),
+		)
+	}
+	result, err := h.externalRuntime.ResetConversationRuntime(
+		ctx,
+		subjectActorID(ctx),
+		req,
+	)
+	if err != nil {
+		return nil, toHandlerError(err)
+	}
+	return &model.ResetConversationRuntimeResponse{
+		Conversation:               revisionConversationToProto(result.Conversation),
+		ClosedExternalSessionEpoch: result.ClosedEpoch,
+		Replayed:                   result.Replayed,
+	}, nil
 }
 
 func (h *ConversationHandlers) HandleListMessages(ctx context.Context, req server.Request, resp server.Response) error {
@@ -516,6 +564,9 @@ func conversationRuntimeBindingToJSON(
 		"capability_snapshot_hash": binding.GetCapabilitySnapshotHash(),
 		"config_snapshot_hash":     binding.GetConfigSnapshotHash(),
 		"bound_at":                 binding.GetBoundAt(),
+		"state":                    binding.GetState(),
+		"last_error_code":          binding.GetLastErrorCode(),
+		"updated_at":               binding.GetUpdatedAt(),
 	}
 }
 

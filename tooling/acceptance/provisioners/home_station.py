@@ -34,6 +34,10 @@ from tooling.acceptance.fixtures.chat_native_actors import (
     persist_actor_manifest,
     produce_actor_manifest,
 )
+from tooling.acceptance.gates.agent.external_runtime_fixture import (
+    external_runtime_environment,
+    external_runtime_root,
+)
 from tooling.acceptance.provisioners.remote_source_identity import (
     reviewed_remote_transport,
     resolve_remote_source_identity,
@@ -50,6 +54,7 @@ GATE_ROLES = {
     "agent-v2-mcp-lifecycle-e2e": ("bob",),
     "agent-v2-connector-invocation-e2e": ("bob",),
     "agent-v2-evaluation-lab-e2e": ("alice", "bob"),
+    "agent-v2-external-runtime-e2e": ("bob",),
     "agent-marketplace-catalog-e2e": ("alice",),
     "chat-native-two-client-e2e": ("alice", "bob"),
     "chat-presence-layout-e2e": ("alice", "bob"),
@@ -71,6 +76,7 @@ AGENT_V2_GOVERNED_TOOL_GATE = "agent-v2-governed-tool-loop-e2e"
 AGENT_V2_MCP_GATE = "agent-v2-mcp-lifecycle-e2e"
 AGENT_V2_CONNECTOR_GATE = "agent-v2-connector-invocation-e2e"
 AGENT_V2_EVALUATION_GATE = "agent-v2-evaluation-lab-e2e"
+AGENT_V2_EXTERNAL_RUNTIME_GATE = "agent-v2-external-runtime-e2e"
 AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
 AGENT_CLI_PROVIDER_GATE = "agent-cli-provider-primary-native-e2e"
 AGENT_CORE_LIFECYCLE_GATE = "agent-core-lifecycle-native-e2e"
@@ -94,6 +100,7 @@ AGENT_V2_BINDING_GATES = frozenset(
         AGENT_V2_MCP_GATE,
         AGENT_V2_CONNECTOR_GATE,
         AGENT_V2_EVALUATION_GATE,
+        AGENT_V2_EXTERNAL_RUNTIME_GATE,
         AGENT_MARKETPLACE_GATE,
     }
 )
@@ -512,6 +519,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             "home": "PT_AGENT_V2_HOME",
             "mcp": "PT_AGENT_V2_MCP",
             "connector": "PT_AGENT_V2_CONNECTOR",
+            "external-runtime": "PT_AGENT_V2_EXTERNAL_RUNTIME",
         }
         try:
             environment_prefix = environment_prefixes[runtime_name]
@@ -1117,6 +1125,151 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             cleanup_resources=self.contract.cleanup.resources,
         )
 
+    def _deploy_agent_v2_external_runtime(
+        self,
+        *,
+        run_id: str,
+        profile_env: dict[str, str],
+        deployment_environment: str,
+    ) -> None:
+        runtime_env = external_runtime_environment(run_id)
+        deploy_env = os.environ.copy()
+        deploy_env.update(profile_env)
+        deploy_env.update(runtime_env)
+        completed = subprocess.run(
+            ["make", "station"],
+            cwd=REPO_ROOT,
+            env=deploy_env,
+            capture_output=True,
+            text=True,
+            timeout=1_800,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "Station deployment failed"
+            )
+            raise BlockedError(
+                reason=(
+                    "P12 external runtime Station deployment failed: "
+                    + detail[-4_000:]
+                ),
+                resource="station:external-runtime-deploy",
+            )
+
+        def cleanup_external_runtime() -> None:
+            transport, environment = reviewed_remote_transport(
+                deployment_environment
+            )
+            compose_project = environment.get(
+                "PT_ACCEPTANCE_COMPOSE_PROJECT",
+                "",
+            ).strip()
+            if not compose_project:
+                raise RuntimeError(
+                    "P12 external runtime cleanup has no Compose project"
+                )
+            root = external_runtime_root(run_id)
+            remote_command = (
+                "set -eu; "
+                "container_id=\"$(docker ps --quiet "
+                f"--filter {shlex.quote(f'label=com.docker.compose.project={compose_project}')} "
+                f"--filter {shlex.quote('label=com.docker.compose.service=station')} "
+                "| sed -n '1p')\"; "
+                "test -n \"$container_id\"; "
+                f"docker exec \"$container_id\" rm -rf -- {shlex.quote(root)}"
+            )
+            result = transport.run_argv(
+                ["bash", "-lc", remote_command],
+                timeout=60,
+                check=False,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    "P12 external runtime storage cleanup failed"
+                )
+            restore_env = os.environ.copy()
+            restore_env.update(profile_env)
+            restore_env.update(
+                {
+                    name: ""
+                    for name in runtime_env
+                }
+            )
+            restored = subprocess.run(
+                ["make", "station"],
+                cwd=REPO_ROOT,
+                env=restore_env,
+                capture_output=True,
+                text=True,
+                timeout=1_800,
+                check=False,
+            )
+            if restored.returncode != 0:
+                detail = (
+                    restored.stderr.strip()
+                    or restored.stdout.strip()
+                    or "Station restore failed"
+                )
+                raise RuntimeError(
+                    "P12 external runtime Station restore failed: "
+                    + detail[-4_000:]
+                )
+
+        self.register_cleanup(
+            f"agent-v2-external-runtime:{run_id}",
+            cleanup_external_runtime,
+        )
+
+    def _agent_v2_external_runtime_manifest(
+        self,
+        manifest: RuntimeManifest,
+        *,
+        station_url: str,
+        deployment_environment: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> RuntimeManifest:
+        if profile_env.get("CHAT_ACCEPTANCE_RESET") != "1":
+            raise BlockedError(
+                reason=(
+                    "P12 external runtime actor Fixture reset requires "
+                    "CHAT_ACCEPTANCE_RESET=1 in Profile two"
+                ),
+                resource="fixture-reset:authorization",
+            )
+        if not profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", ""):
+            raise BlockedError(
+                reason=(
+                    "P12 external runtime requires "
+                    "CHAT_NATIVE_DEMO_PASSWORD in Profile two"
+                ),
+                resource="profile:CHAT_NATIVE_DEMO_PASSWORD",
+            )
+        _, _, actor_ref = produce_actor_manifest(
+            environment_id=self.environment_id,
+            run_id=manifest.run_id,
+            station_url=station_url,
+            deployment_environment=deployment_environment,
+            roles=("bob",),
+            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
+            reset_authorized=True,
+        )
+        return dataclasses.replace(
+            manifest,
+            actor_manifest_ref=actor_ref,
+            credential_refs=("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+            clients=self._agent_v2_binding_clients(
+                manifest.run_id,
+                slot,
+                profile_env,
+                runtime_name="external-runtime",
+            ),
+            cleanup_resources=self.contract.cleanup.resources,
+        )
+
     def _agent_v2_evaluation_manifest(
         self,
         manifest: RuntimeManifest,
@@ -1304,6 +1457,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_MCP_GATE,
                     AGENT_V2_CONNECTOR_GATE,
                     AGENT_V2_EVALUATION_GATE,
+                    AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 }
                 or gate_id in AGENT_NATIVE_GATES
             ):
@@ -1331,6 +1485,20 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 self.acquire_remote_git_source_lease(
                     deployment_environment,
                     f"acceptance:{gate_id}:{manifest.run_id}",
+                )
+            if gate_id == AGENT_V2_EXTERNAL_RUNTIME_GATE:
+                if manifest.workspace_digest != "clean":
+                    raise BlockedError(
+                        reason=(
+                            f"{gate_id} requires a clean candidate "
+                            "worktree before remote deployment"
+                        ),
+                        resource="source-identity:workspace",
+                    )
+                self._deploy_agent_v2_external_runtime(
+                    run_id=manifest.run_id,
+                    profile_env=profile_env,
+                    deployment_environment=deployment_environment,
                 )
             if not self._station_ready(station_url, health_url):
                 if profile_env.get("PT_STATION_MODE", "local") != "remote":
@@ -1407,6 +1575,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             if gate_id in {
                 AGENT_V2_FOUNDATION_GATE,
                 AGENT_V2_HOME_GATE,
+                AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 AGENT_MARKETPLACE_GATE,
             }:
                 if manifest.workspace_digest != "clean":
@@ -1426,6 +1595,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_MCP_GATE,
                     AGENT_V2_CONNECTOR_GATE,
                     AGENT_V2_EVALUATION_GATE,
+                    AGENT_V2_EXTERNAL_RUNTIME_GATE,
                     AGENT_MARKETPLACE_GATE,
                 }
                 and not attestation.is_clean_workspace
@@ -1515,6 +1685,16 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 return self._ready(manifest)
             if gate_id == AGENT_V2_EVALUATION_GATE:
                 manifest = self._agent_v2_evaluation_manifest(
+                    manifest,
+                    station_url=station_url,
+                    deployment_environment=deployment_environment,
+                    slot=slot,
+                    profile_env=profile_env,
+                )
+                self._manifest = manifest
+                return self._ready(manifest)
+            if gate_id == AGENT_V2_EXTERNAL_RUNTIME_GATE:
+                manifest = self._agent_v2_external_runtime_manifest(
                     manifest,
                     station_url=station_url,
                     deployment_environment=deployment_environment,

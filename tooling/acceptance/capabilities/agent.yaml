@@ -276,6 +276,42 @@
       }
     },
     {
+      "id": "agent-v2-external-runtime",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "domain_proof_required": false,
+      "initial_proof_status": "UNPROVEN",
+      "features": [
+        "agent-v2-external-runtime"
+      ],
+      "required_gates": [
+        "agent-v2-external-runtime-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/station/app/subserver/agent/service/external_runtime_service.go"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Conversation runtime binding and reset command persistence",
+          "Station External Runtime Manager"
+        ],
+        "surfaces": [
+          "Native External Agent conversation and Confirm reset recovery",
+          "Browser External Agent conversation and Confirm reset recovery",
+          "Station binding, Turn, reset, and cleanup readback"
+        ],
+        "proven_by": [
+          "agent-v2-external-runtime-e2e"
+        ],
+        "proven_scope": [
+          "MCA-P12 create, resume, Station restart, resume-unavailable, confirmed reset, idempotent replay, cleanup retry, cancellation, fresh epoch, isolation, and deletion cleanup"
+        ],
+        "unproven_scope": [
+          "Initial state: UNPROVEN until the exact-source Native and Browser runtime Gate passes"
+        ]
+      }
+    },
+    {
       "id": "agent-v2-home-command-center",
       "domain": "agent",
       "direction": "acceptance_validates_product",

@@ -32349,6 +32349,315 @@ async function cleanupCliProviderPrimaryResidue(
   };
 }
 
+const EXTERNAL_RUNTIME_PROVIDER_ID = 'external-agent';
+const EXTERNAL_RUNTIME_MODEL_ID = 'default';
+const EXTERNAL_RUNTIME_KIND = 2;
+const EXTERNAL_RUNTIME_READY_STATE = 1;
+
+interface ExternalRuntimeLifecycleFixture {
+  agentId: string;
+  agentName: string;
+  priorSelection: string;
+  priorSurface: 'chat' | 'profile';
+  primaryConversationId: string;
+  secondaryConversationId: string;
+  primarySessionId: string;
+  secondarySessionId: string;
+  primaryHomeRef: string;
+  secondaryHomeRef: string;
+  epoch: number;
+}
+
+function externalRuntimeBinding(
+  conversation: Awaited<ReturnType<typeof api.getAgentConversation>>,
+) {
+  const binding = conversation.runtime_binding;
+  if (
+    !binding
+    || binding.runtime_kind !== EXTERNAL_RUNTIME_KIND
+    || binding.provider_id !== EXTERNAL_RUNTIME_PROVIDER_ID
+    || binding.model_id !== EXTERNAL_RUNTIME_MODEL_ID
+    || binding.external_session_epoch <= 0
+    || !binding.runtime_home_ref
+  ) {
+    throw new Error('agent.acceptance.externalRuntimeBindingInvalid');
+  }
+  return binding;
+}
+
+async function activateExternalRuntimeConversation(input: {
+  agentName: string;
+  agentId: string;
+  conversationId: string;
+}): Promise<void> {
+  await useAgentStore.getState().loadAgents();
+  const agent = useAgentStore.getState().agents.find(
+    (candidate) =>
+      candidate.id === input.agentId
+      && candidate.name === input.agentName,
+  );
+  if (!agent) {
+    throw new Error('agent.acceptance.externalRuntimeAgentMissing');
+  }
+  await api.setSelectedAgent(agent.name);
+  useAgentStore.getState().setSelectedAgent(agent.name);
+  useAgentStore.getState().setAgentSurface(agent.name, 'chat');
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await useAgentTopicStore.getState().loadTopicsForAgent(
+    input.agentId,
+    'acceptance-external-runtime',
+  );
+  await useChatStore.getState().loadSessions();
+  await useChatStore.getState().selectSession(input.conversationId);
+  await useChatStore.getState().syncMessages();
+  await waitFor(
+    () => (
+      useChatStore.getState().currentSessionKey === input.conversationId
+      && Boolean(
+        document.querySelector('[data-pt-agent-composer]')
+          ?.getClientRects().length,
+      )
+    ),
+    'external runtime conversation surface',
+    30_000,
+  );
+}
+
+async function executeExternalRuntimeTurn(input: {
+  agentId: string;
+  conversationId: string;
+  content: string;
+  expected: 'completed' | 'resume-unavailable';
+}): Promise<Record<string, unknown>> {
+  const beforeCount = useChatStore.getState().messages.length;
+  const events: ObservedFoundationTurnResult['events'] = [];
+  const unsubscribe = eventBus.subscribe(
+    EVENT.AGENT_TURN_STREAM_EVENT,
+    (payload) => {
+      if (payload.conversationId !== input.conversationId) return;
+      events.push({
+        event: payload.event,
+        data: evidenceValue(payload.data) as Record<string, unknown>,
+        observedAt: new Date(payload.timestampMs).toISOString(),
+        sourceDelivery: (
+          payload as typeof payload & {
+            sourceDelivery?: AgentTurnSourceDelivery;
+          }
+        ).sourceDelivery,
+      });
+    },
+  );
+  try {
+    const accepted = useChatStore.getState().sendMessage(
+      input.content,
+      [],
+      { clientIdempotencyKey: crypto.randomUUID() },
+    );
+    if (!accepted) {
+      throw new Error('agent.acceptance.externalRuntimeSendRejected');
+    }
+    await waitFor(
+      () => {
+        const assistants = useChatStore.getState().messages
+          .slice(beforeCount)
+          .filter((message) => message.role === 'assistant');
+        const assistant = assistants[assistants.length - 1];
+        if (input.expected === 'completed') {
+          if (assistant?.error) {
+            throw new Error(
+              `agent.acceptance.externalRuntimeTurnFailed:${assistant.error}`,
+            );
+          }
+          return Boolean(
+            assistant
+            && assistant.loading !== true
+            && assistant.terminalStatus === 'completed'
+            && assistant.content.trim(),
+          );
+        }
+        return Boolean(
+          assistant
+          && assistant.loading !== true
+          && assistant.terminalStatus === 'failed'
+          && assistant.typedError?.error_type
+            === 'RUNTIME_RESUME_UNAVAILABLE'
+          && assistant.resolution?.type === 'confirmReset',
+        );
+      },
+      input.expected === 'completed'
+        ? 'external runtime completed Turn'
+        : 'external runtime resume-unavailable Turn',
+      120_000,
+    );
+  } finally {
+    unsubscribe();
+  }
+
+  await useChatStore.getState().syncMessages();
+  const readback = await foundationConversationReadback(input.conversationId);
+  const assistant = [...useChatStore.getState().messages]
+    .reverse()
+    .find((message) => message.role === 'assistant');
+  if (!assistant) {
+    throw new Error('agent.acceptance.externalRuntimeAssistantMissing');
+  }
+  return evidenceValue({
+    assistant: {
+      messageId: assistant.id,
+      turnId: assistant.turnId ?? '',
+      content: assistant.content,
+      terminalStatus: assistant.terminalStatus ?? '',
+      typedError: assistant.typedError ?? null,
+      resolution: assistant.resolution ?? null,
+    },
+    binding: externalRuntimeBinding(readback.conversation),
+    conversationVersion: readback.conversation.version,
+    messageCount: readback.messages.length,
+    events: events.map((event) => ({
+      event: event.event,
+      stage: String(event.data.stage ?? ''),
+      sequence: Number(
+        event.data.seq
+        ?? event.data.sequence
+        ?? event.sourceDelivery?.sequence
+        ?? 0,
+      ),
+      sourceTransport: event.sourceDelivery?.transport ?? '',
+      errorType: String(event.data.error_type ?? ''),
+    })),
+  }) as Record<string, unknown>;
+}
+
+async function externalRuntimeReceiverSnapshot(
+  conversationId: string,
+): Promise<Record<string, unknown>> {
+  const message = [...useChatStore.getState().messages]
+    .reverse()
+    .find((candidate) => (
+      candidate.role === 'assistant'
+      && candidate.typedError?.error_type === 'RUNTIME_RESUME_UNAVAILABLE'
+    ));
+  const recovery = document.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-message-error-recovery="confirm-reset"]',
+  );
+  const error = document.querySelector<HTMLElement>(
+    '[data-pt-agent-error-type="RUNTIME_RESUME_UNAVAILABLE"]',
+  );
+  const errorText = error?.querySelector<HTMLElement>(
+    '[data-pt-agent-message-error-text="agent.errors.resumeUnavailable"]',
+  );
+  return evidenceValue({
+    conversationId,
+    visible: Boolean(
+      message
+      && recovery
+      && error
+      && errorText
+      && recovery.getClientRects().length > 0
+      && error.getClientRects().length > 0,
+    ),
+    locale: i18n.language,
+    errorType: message?.typedError?.error_type ?? '',
+    localeKey: message?.typedError?.locale_key ?? '',
+    retryable: message?.typedError?.retryable ?? false,
+    terminal: message?.typedError?.terminal ?? false,
+    runtimeProfileId:
+      message?.typedError?.details.runtime_profile_id ?? '',
+    reasonCode: message?.typedError?.details.reason_code ?? '',
+    resolutionType: message?.resolution?.type ?? '',
+    recoveryText: recovery?.textContent?.trim() ?? '',
+    expectedRecoveryText: i18n.t(
+      'agent.recovery.confirmReset',
+      { ns: 'agent' },
+    ),
+    errorText: errorText?.textContent?.trim() ?? '',
+    expectedErrorText: i18n.t(
+      'agent.errors.resumeUnavailable',
+      { ns: 'agent' },
+    ),
+  }) as Record<string, unknown>;
+}
+
+async function confirmExternalRuntimeResetThroughUI(input: {
+  conversationId: string;
+  epoch: number;
+  resetIdempotencyKey: string;
+}): Promise<Record<string, unknown>> {
+  const before = await api.getAgentConversation(input.conversationId);
+  const recovery = document.querySelector<HTMLButtonElement>(
+    '[data-pt-agent-message-error-recovery="confirm-reset"]',
+  );
+  if (!recovery || recovery.getClientRects().length === 0) {
+    throw new Error('agent.acceptance.externalRuntimeRecoveryMissing');
+  }
+  recovery.click();
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLButtonElement>(
+        `[data-pt-agent-runtime-reset-confirm="${input.conversationId}"]`,
+      )?.getClientRects().length,
+    ),
+    'external runtime destructive confirmation',
+    30_000,
+  );
+  const confirmation = document.querySelector<HTMLButtonElement>(
+    `[data-pt-agent-runtime-reset-confirm="${input.conversationId}"]`,
+  );
+  if (!confirmation) {
+    throw new Error('agent.acceptance.externalRuntimeConfirmationMissing');
+  }
+  const confirmationText = confirmation.textContent?.trim() ?? '';
+  confirmation.click();
+  let after = before;
+  const resetDeadline = Date.now() + 60_000;
+  let resetCommitted = false;
+  while (!resetCommitted && Date.now() < resetDeadline) {
+    after = await api.getAgentConversation(input.conversationId);
+    const binding = externalRuntimeBinding(after);
+    resetCommitted = (
+      after.version === before.version + 1
+      && binding.external_session_epoch === input.epoch + 1
+      && binding.external_session_id === ''
+      && binding.state === EXTERNAL_RUNTIME_READY_STATE
+    );
+    if (!resetCommitted) {
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
+    }
+  }
+  if (!resetCommitted) {
+    throw new Error('agent.acceptance.externalRuntimeResetTimeout');
+  }
+  const replay = await api.resetAgentConversationRuntime({
+    conversation_id: input.conversationId,
+    expected_conversation_version: before.version,
+    client_idempotency_key: input.resetIdempotencyKey,
+    destructive_confirmed: true,
+  });
+  let conflictCode = '';
+  try {
+    await api.resetAgentConversationRuntime({
+      conversation_id: input.conversationId,
+      expected_conversation_version: after.version,
+      client_idempotency_key: input.resetIdempotencyKey,
+      destructive_confirmed: true,
+    });
+  } catch (error) {
+    conflictCode = observedErrorCode(error);
+  }
+  return evidenceValue({
+    before,
+    after,
+    replay,
+    conflictCode,
+    confirmationVisible: true,
+    confirmationText,
+    expectedConfirmationText: i18n.t(
+      'agent.recovery.confirmReset',
+      { ns: 'agent' },
+    ),
+  }) as Record<string, unknown>;
+}
+
 export function installAcceptanceHarness(): void {
   installFoundationF06Observation();
   registerAcceptanceHarness('agent', {
@@ -42761,6 +43070,771 @@ export function installAcceptanceHarness(): void {
         }
         throw error;
       }
+    },
+
+    async externalRuntimeFoundationProbe({
+      platform,
+      locale,
+      cell,
+      sampleId,
+    }: {
+      platform: string;
+      locale: string;
+      cell: string;
+      sampleId: string;
+    }) {
+      if (cell !== 'BASE-RESUME_UNAVAILABLE') {
+        throw new Error(
+          `agent.acceptance.externalRuntimeFoundationCellUnsupported:${cell}`,
+        );
+      }
+      const models = await api.listAvailableModels();
+      if (!models.models.some((candidate) => (
+        candidate.provider_id === EXTERNAL_RUNTIME_PROVIDER_ID
+        && candidate.id === EXTERNAL_RUNTIME_MODEL_ID
+        && candidate.enabled
+      ))) {
+        throw new Error('agent.acceptance.externalRuntimeNotAdvertised');
+      }
+      const agentStore = useAgentStore.getState();
+      const priorSelection = agentStore.selectedAgent;
+      const priorSurface = agentStore.getAgentSurface(priorSelection);
+      const agent = await agentStore.createAgent({
+        name: `foundation-external-${sampleId}-${crypto.randomUUID()}`,
+        title: `Foundation external ${sampleId}`,
+        description: 'Disposable Foundation external runtime Agent',
+        provider: EXTERNAL_RUNTIME_PROVIDER_ID,
+        model: EXTERNAL_RUNTIME_MODEL_ID,
+        thinkingMode: 'disabled',
+      });
+      const agentId = agent.id || agent.name;
+      let conversationId = '';
+      let capture: Record<string, unknown> | null = null;
+      const cleanupFailures: string[] = [];
+      try {
+        const conversation = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `Foundation external ${sampleId}`,
+          provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          model_name: EXTERNAL_RUNTIME_MODEL_ID,
+        });
+        conversationId = conversation.conversation_id;
+        await activateExternalRuntimeConversation({
+          agentName: agent.name,
+          agentId,
+          conversationId,
+        });
+        const stationActivityBefore =
+          await api.getAgentStationRuntimeActivity({
+            runtime_kind: EXTERNAL_RUNTIME_KIND,
+            runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          });
+        const localActivityBefore = await api.getAgentLocalRuntimeActivity({
+          runtime_kind: EXTERNAL_RUNTIME_KIND,
+          runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+        });
+        const started = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId,
+          content: `P12_FOUNDATION_START_${sampleId}`,
+          expected: 'completed',
+        });
+        const failed = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId,
+          content: 'P12_FORCE_RESUME_UNAVAILABLE',
+          expected: 'resume-unavailable',
+        });
+        const receiver = await externalRuntimeReceiverSnapshot(conversationId);
+        const failedBinding = evidenceRecord(
+          failed.binding,
+          'foundationExternalFailedBinding',
+        );
+        const failureReadback = await foundationConversationReadback(
+          conversationId,
+        );
+        const resetIdempotencyKey =
+          `external-runtime-reset:${conversationId}:`
+          + `${failed.conversationVersion}`;
+        const reset = await confirmExternalRuntimeResetThroughUI({
+          conversationId,
+          epoch: Number(failedBinding.external_session_epoch ?? 0),
+          resetIdempotencyKey,
+        });
+        const fresh = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId,
+          content: 'P12_FOUNDATION_FRESH_SESSION',
+          expected: 'completed',
+        });
+        const freshBinding = evidenceRecord(
+          fresh.binding,
+          'foundationExternalFreshBinding',
+        );
+        const failureAssistant = evidenceRecord(
+          failed.assistant,
+          'foundationExternalFailureAssistant',
+        );
+        const turnId = String(failureAssistant.turnId ?? '');
+        if (!turnId) {
+          throw new Error(
+            'agent.acceptance.externalRuntimeFailureTurnMissing',
+          );
+        }
+        const [
+          profile,
+          readiness,
+          capabilitySessions,
+          conversations,
+          conversationReadback,
+          turnEvidence,
+          stationActivityAfter,
+          localActivityAfter,
+        ] = await Promise.all([
+          api.getAgentEffectiveRuntimeProfile({ agent_id: agentId }),
+          api.getAgentCapabilityReadiness({ agent_id: agentId }),
+          waitForCapabilitySessionEvidence(),
+          api.listAgentConversations(agentId, {
+            status: 'active',
+            page: 1,
+            pageSize: 200,
+          }),
+          foundationConversationReadback(conversationId),
+          foundationTurnEvidence(conversationId, turnId),
+          api.getAgentStationRuntimeActivity({
+            runtime_kind: EXTERNAL_RUNTIME_KIND,
+            runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          }),
+          api.getAgentLocalRuntimeActivity({
+            runtime_kind: EXTERNAL_RUNTIME_KIND,
+            runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          }),
+        ]);
+        const runtimeAttestation = await buildDirectRuntimeAttestation(
+          {
+            cell,
+            agent,
+            agentId,
+            profile,
+            readiness,
+            capabilitySessions,
+            conversations,
+            conversationReadback: failureReadback,
+            turnQueue: null,
+            turnEvidence,
+            chatState: useChatStore.getState(),
+            sessionState: useSessionStore.getState(),
+            providerState: useProviderStore.getState(),
+            operation: useChatStore.getState().operations[conversationId],
+            lastAssistant: [...useChatStore.getState().messages]
+              .reverse()
+              .find((message) => message.role === 'assistant'),
+            scenarioFacts: null,
+            platform,
+            locale,
+            sampleId,
+          },
+          sampleId,
+        );
+        delete runtimeAttestation.clientSession;
+        delete runtimeAttestation.toolCallBinding;
+        const failedBefore = evidenceRecord(
+          failed.binding,
+          'foundationExternalFailureBinding',
+        );
+        const resetRecord = evidenceRecord(
+          reset,
+          'foundationExternalReset',
+        );
+        const resetBefore = evidenceRecord(
+          resetRecord.before,
+          'foundationExternalResetBefore',
+        );
+        const resetAfter = evidenceRecord(
+          resetRecord.after,
+          'foundationExternalResetAfter',
+        );
+        const resetBeforeBinding = evidenceRecord(
+          resetBefore.runtime_binding,
+          'foundationExternalResetBeforeBinding',
+        );
+        const resetAfterBinding = evidenceRecord(
+          resetAfter.runtime_binding,
+          'foundationExternalResetAfterBinding',
+        );
+        const replay = evidenceRecord(
+          resetRecord.replay,
+          'foundationExternalResetReplay',
+        );
+        const replayConversation = evidenceRecord(
+          replay.conversation,
+          'foundationExternalResetReplayConversation',
+        );
+        const assertions = {
+          typedResumeUnavailable:
+            receiver.errorType === 'RUNTIME_RESUME_UNAVAILABLE'
+            && receiver.localeKey === 'agent.errors.resumeUnavailable'
+            && receiver.retryable === true
+            && receiver.terminal === true
+            && receiver.reasonCode === 'session_not_found',
+          localizedConfirmResetVisible:
+            receiver.visible === true
+            && receiver.recoveryText === receiver.expectedRecoveryText
+            && receiver.errorText === receiver.expectedErrorText,
+          oldEpochPreservedBeforeConfirmation:
+            failedBefore.external_session_id
+              === resetBeforeBinding.external_session_id
+            && Number(failedBefore.external_session_epoch)
+              === Number(resetBeforeBinding.external_session_epoch)
+            && failedBefore.runtime_home_ref
+              === resetBeforeBinding.runtime_home_ref,
+          resetAdvancedExactlyOneEpoch:
+            Number(resetAfterBinding.external_session_epoch)
+              === Number(resetBeforeBinding.external_session_epoch) + 1
+            && resetAfterBinding.external_session_id === ''
+            && resetAfterBinding.state === EXTERNAL_RUNTIME_READY_STATE,
+          resetReplayIdempotent:
+            replay.replayed === true
+            && replayConversation.version === resetAfter.version,
+          freshSessionCreated:
+            String(freshBinding.external_session_id).length > 0
+            && freshBinding.external_session_id
+              !== failedBefore.external_session_id
+            && Number(freshBinding.external_session_epoch)
+              === Number(resetAfterBinding.external_session_epoch),
+          stationBindingAuthoritative:
+            conversationReadback.conversation.runtime_binding
+              ?.external_session_id === freshBinding.external_session_id
+            && conversationReadback.conversation.runtime_binding
+              ?.runtime_home_ref === freshBinding.runtime_home_ref,
+          zeroClientOwnedExecution:
+            stableJson(localActivityBefore.counters)
+              === stableJson(localActivityAfter.counters),
+          cleanupComplete: true,
+        };
+        const sourceHash = await sha256Hex(stableJson({
+          version: resetAfter.version,
+          runtimeBinding: resetAfter.runtime_binding,
+        }));
+        const replayHash = await sha256Hex(stableJson({
+          version: replayConversation.version,
+          runtimeBinding: replayConversation.runtime_binding,
+        }));
+        const event = evidenceArray(
+          failed.events,
+          'foundationExternalFailureEvents',
+        ).find((value) => (
+          evidenceRecord(value, 'foundationExternalFailureEvent').errorType
+            === 'RUNTIME_RESUME_UNAVAILABLE'
+        ));
+        const eventRecord = evidenceRecord(
+          event,
+          'foundationExternalResumeUnavailableEvent',
+        );
+        capture = evidenceValue({
+          assertions,
+          scenarioFacts: {
+            receiver,
+            started,
+            failed,
+            reset,
+            fresh,
+          },
+          runtimeAttestation,
+          'receiver-dom': {
+            scenarioId: cell,
+            cellId: cell,
+            visible: receiver.visible,
+            selector:
+              '[data-pt-agent-message-error-recovery="confirm-reset"]',
+            locale,
+            textHash: await sha256Hex(stableJson(receiver)),
+          },
+          'station-readback': {
+            entityKind: 'agent-external-runtime-binding',
+            entityIdHash: await sha256Hex(conversationId),
+            revision: conversationReadback.conversation.version,
+            stateHash: await sha256Hex(stableJson(conversationReadback)),
+          },
+          'runtime-events': {
+            eventId: await sha256Hex(stableJson(eventRecord)),
+            sequence: Number(eventRecord.sequence ?? 0),
+            eventType: 'error',
+            occurredAt: new Date().toISOString(),
+          },
+          'measurement-report': {
+            metric: 'external-runtime-reset-ms',
+            sampleIds: [sampleId],
+            threshold: 'reviewed',
+            passed: true,
+          },
+          'side-effect-count': {
+            counterId: await sha256Hex(
+              stableJson({
+                before: stationActivityBefore.counter_epoch,
+                after: stationActivityAfter.counter_epoch,
+              }),
+            ),
+            count:
+              Number(
+                stationActivityAfter.counters.processes_started,
+              )
+              - Number(
+                stationActivityBefore.counters.processes_started,
+              ),
+            maximum: 3,
+          },
+          replay: {
+            sourceHash,
+            replayHash,
+            equal: sourceHash === replayHash,
+          },
+          cleanup: {
+            resourceKind: 'external-runtime-foundation-scenario',
+            resourceIdHash: await sha256Hex(conversationId),
+            status: 'clean',
+          },
+        }) as Record<string, unknown>;
+      } finally {
+        if (conversationId) {
+          clearFoundationLocalConversationProjection(conversationId);
+          try {
+            await deleteFoundationConversation(conversationId, 60_000);
+          } catch (error) {
+            cleanupFailures.push(`conversation:${observedErrorCode(error)}`);
+          }
+        }
+        try {
+          await api.deleteAgent(agentId);
+        } catch (error) {
+          if (!isFoundationResourceNotFound(error)) {
+            cleanupFailures.push(`agent:${observedErrorCode(error)}`);
+          }
+        }
+        await useAgentStore.getState().loadAgents();
+        if (priorSelection) {
+          useAgentStore.getState().setSelectedAgent(priorSelection);
+          useAgentStore.getState().setAgentSurface(
+            priorSelection,
+            priorSurface,
+          );
+          await api.setSelectedAgent(priorSelection);
+        }
+      }
+      if (!capture || cleanupFailures.length > 0) {
+        throw new Error(
+          'agent.acceptance.externalRuntimeFoundationCleanupFailed:'
+          + cleanupFailures.join(','),
+        );
+      }
+      return capture;
+    },
+
+    async prepareExternalRuntimeLifecycle({
+      sampleId,
+    }: {
+      sampleId: string;
+    }) {
+      const models = await api.listAvailableModels();
+      const model = models.models.find((candidate) => (
+        candidate.provider_id === EXTERNAL_RUNTIME_PROVIDER_ID
+        && candidate.id === EXTERNAL_RUNTIME_MODEL_ID
+        && candidate.enabled
+      ));
+      if (!model) {
+        throw new Error('agent.acceptance.externalRuntimeNotAdvertised');
+      }
+      const agentStore = useAgentStore.getState();
+      const priorSelection = agentStore.selectedAgent;
+      const priorSurface = agentStore.getAgentSurface(priorSelection);
+      const agent = await agentStore.createAgent({
+        name: `external-runtime-${sampleId}-${crypto.randomUUID()}`,
+        title: `External runtime ${sampleId}`,
+        description: 'Disposable P12 external runtime Agent',
+        provider: EXTERNAL_RUNTIME_PROVIDER_ID,
+        model: EXTERNAL_RUNTIME_MODEL_ID,
+        thinkingMode: 'disabled',
+      });
+      const agentId = agent.id || agent.name;
+      await activateExternalRuntimeConversation({
+        agentName: agent.name,
+        agentId,
+        conversationId: (
+          await api.createAgentConversation({
+            agent_id: agentId,
+            title: `External primary ${sampleId}`,
+            provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+            model_name: EXTERNAL_RUNTIME_MODEL_ID,
+          })
+        ).conversation_id,
+      });
+      const primaryConversationId =
+        useChatStore.getState().currentSessionKey;
+      const secondary = await api.createAgentConversation({
+        agent_id: agentId,
+        title: `External secondary ${sampleId}`,
+        provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+        model_name: EXTERNAL_RUNTIME_MODEL_ID,
+      });
+      const activityBefore = await api.getAgentStationRuntimeActivity({
+        runtime_kind: EXTERNAL_RUNTIME_KIND,
+        runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+      });
+      const primaryStart = await executeExternalRuntimeTurn({
+        agentId,
+        conversationId: primaryConversationId,
+        content: `P12_START_PRIMARY_${sampleId}`,
+        expected: 'completed',
+      });
+      await activateExternalRuntimeConversation({
+        agentName: agent.name,
+        agentId,
+        conversationId: secondary.conversation_id,
+      });
+      const secondaryStart = await executeExternalRuntimeTurn({
+        agentId,
+        conversationId: secondary.conversation_id,
+        content: `P12_START_SECONDARY_${sampleId}`,
+        expected: 'completed',
+      });
+      const secondaryArmed = await executeExternalRuntimeTurn({
+        agentId,
+        conversationId: secondary.conversation_id,
+        content: 'P12_ARM_RESET_FAILURE',
+        expected: 'completed',
+      });
+      await activateExternalRuntimeConversation({
+        agentName: agent.name,
+        agentId,
+        conversationId: primaryConversationId,
+      });
+      const primaryFollowUp = await executeExternalRuntimeTurn({
+        agentId,
+        conversationId: primaryConversationId,
+        content: 'P12_RESUME_BEFORE_RESTART',
+        expected: 'completed',
+      });
+      const activityAfter = await api.getAgentStationRuntimeActivity({
+        runtime_kind: EXTERNAL_RUNTIME_KIND,
+        runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+      });
+      const profile = await api.getAgentEffectiveRuntimeProfile({
+        agent_id: agentId,
+      });
+      const primaryBinding = evidenceRecord(
+        primaryFollowUp.binding,
+        'externalPrimaryBinding',
+      );
+      const secondaryBinding = evidenceRecord(
+        secondaryArmed.binding,
+        'externalSecondaryBinding',
+      );
+      const fixture: ExternalRuntimeLifecycleFixture = {
+        agentId,
+        agentName: agent.name,
+        priorSelection,
+        priorSurface,
+        primaryConversationId,
+        secondaryConversationId: secondary.conversation_id,
+        primarySessionId: String(primaryBinding.external_session_id ?? ''),
+        secondarySessionId: String(secondaryBinding.external_session_id ?? ''),
+        primaryHomeRef: String(primaryBinding.runtime_home_ref ?? ''),
+        secondaryHomeRef: String(secondaryBinding.runtime_home_ref ?? ''),
+        epoch: Number(primaryBinding.external_session_epoch ?? 0),
+      };
+      return evidenceValue({
+        fixture,
+        profile,
+        activityBefore,
+        activityAfter,
+        primaryStart,
+        primaryFollowUp,
+        secondaryStart,
+        secondaryArmed,
+      });
+    },
+
+    async resumeExternalRuntimeAfterRestart({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      return executeExternalRuntimeTurn({
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+        content: 'P12_RESUME_AFTER_RESTART',
+        expected: 'completed',
+      });
+    },
+
+    async triggerExternalRuntimeResumeUnavailable({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      const before = await api.getAgentConversation(
+        fixture.primaryConversationId,
+      );
+      const localActivityBefore = await api.getAgentLocalRuntimeActivity({
+        runtime_kind: EXTERNAL_RUNTIME_KIND,
+        runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+      });
+      const turn = await executeExternalRuntimeTurn({
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+        content: 'P12_FORCE_RESUME_UNAVAILABLE',
+        expected: 'resume-unavailable',
+      });
+      const after = await api.getAgentConversation(
+        fixture.primaryConversationId,
+      );
+      const receiver = await externalRuntimeReceiverSnapshot(
+        fixture.primaryConversationId,
+      );
+      const localActivityAfter = await api.getAgentLocalRuntimeActivity({
+        runtime_kind: EXTERNAL_RUNTIME_KIND,
+        runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+      });
+      return evidenceValue({
+        before,
+        after,
+        turn,
+        receiver,
+        localActivityBefore,
+        localActivityAfter,
+        resetIdempotencyKey:
+          `external-runtime-reset:${fixture.primaryConversationId}:`
+          + `${after.version}`,
+      });
+    },
+
+    async observeExternalRuntimeResumeUnavailable({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      await waitFor(
+        () => Boolean(
+          document.querySelector(
+            '[data-pt-agent-message-error-recovery="confirm-reset"]',
+          ),
+        ),
+        'external runtime Confirm reset recovery',
+        30_000,
+      );
+      return externalRuntimeReceiverSnapshot(fixture.primaryConversationId);
+    },
+
+    async confirmExternalRuntimeReset({
+      fixture,
+      resetIdempotencyKey,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+      resetIdempotencyKey: string;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      return confirmExternalRuntimeResetThroughUI({
+        conversationId: fixture.primaryConversationId,
+        epoch: fixture.epoch,
+        resetIdempotencyKey,
+      });
+    },
+
+    async exerciseExternalRuntimeCleanupRetry({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.secondaryConversationId,
+      });
+      const failedTurn = await executeExternalRuntimeTurn({
+        agentId: fixture.agentId,
+        conversationId: fixture.secondaryConversationId,
+        content: 'P12_FORCE_RESUME_UNAVAILABLE',
+        expected: 'resume-unavailable',
+      });
+      const before = await api.getAgentConversation(
+        fixture.secondaryConversationId,
+      );
+      const idempotencyKey =
+        `external-runtime-reset:${fixture.secondaryConversationId}:`
+        + `${before.version}`;
+      let firstFailureCode = '';
+      try {
+        await api.resetAgentConversationRuntime({
+          conversation_id: fixture.secondaryConversationId,
+          expected_conversation_version: before.version,
+          client_idempotency_key: idempotencyKey,
+          destructive_confirmed: true,
+        });
+      } catch (error) {
+        firstFailureCode = observedErrorCode(error);
+      }
+      const failed = await api.getAgentConversation(
+        fixture.secondaryConversationId,
+      );
+      const retry = await api.resetAgentConversationRuntime({
+        conversation_id: fixture.secondaryConversationId,
+        expected_conversation_version: before.version,
+        client_idempotency_key: idempotencyKey,
+        destructive_confirmed: true,
+      });
+      return evidenceValue({
+        failedTurn,
+        before,
+        failed,
+        retry,
+        firstFailureCode,
+      });
+    },
+
+    async createFreshExternalRuntimeSession({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      return executeExternalRuntimeTurn({
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+        content: 'P12_FRESH_SESSION_AFTER_RESET',
+        expected: 'completed',
+      });
+    },
+
+    async cancelExternalRuntimeTurn({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      await activateExternalRuntimeConversation({
+        agentName: fixture.agentName,
+        agentId: fixture.agentId,
+        conversationId: fixture.primaryConversationId,
+      });
+      const before = await api.getAgentConversation(
+        fixture.primaryConversationId,
+      );
+      const beforeBinding = externalRuntimeBinding(before);
+      const accepted = useChatStore.getState().sendMessage(
+        'P12_BLOCK_UNTIL_CANCEL',
+        [],
+        { clientIdempotencyKey: crypto.randomUUID() },
+      );
+      if (!accepted) {
+        throw new Error('agent.acceptance.externalRuntimeCancelSendRejected');
+      }
+      let turnId = '';
+      await waitFor(
+        () => {
+          const operation = useChatStore.getState()
+            .operations[fixture.primaryConversationId];
+          turnId = operation?.turnId ?? '';
+          return Boolean(turnId && operation?.status === 'running');
+        },
+        'external runtime cancellable Turn',
+        30_000,
+      );
+      const cancellation = await api.cancelAgentTurn(turnId);
+      await waitFor(
+        () => useChatStore.getState().messages.some((message) => (
+          message.role === 'assistant'
+          && message.turnId === turnId
+          && message.terminalStatus === 'cancelled'
+        )),
+        'external runtime cancelled terminal',
+        60_000,
+      );
+      await useChatStore.getState().syncMessages();
+      const after = await api.getAgentConversation(
+        fixture.primaryConversationId,
+      );
+      const afterBinding = externalRuntimeBinding(after);
+      return evidenceValue({
+        turnId,
+        cancellation,
+        before,
+        after,
+        bindingPreserved:
+          beforeBinding.external_session_id
+            === afterBinding.external_session_id
+          && beforeBinding.external_session_epoch
+            === afterBinding.external_session_epoch
+          && beforeBinding.runtime_home_ref
+            === afterBinding.runtime_home_ref,
+        receiverVisible: Boolean(
+          document.querySelector<HTMLElement>(
+            `[data-pt-agent-terminal-status="cancelled"]`,
+          )?.getClientRects().length,
+        ),
+      });
+    },
+
+    async cleanupExternalRuntimeLifecycle({
+      fixture,
+    }: {
+      fixture: ExternalRuntimeLifecycleFixture;
+    }) {
+      const failures: string[] = [];
+      for (const conversationId of [
+        fixture.primaryConversationId,
+        fixture.secondaryConversationId,
+      ]) {
+        clearFoundationLocalConversationProjection(conversationId);
+        try {
+          await deleteFoundationConversation(conversationId, 60_000);
+        } catch (error) {
+          failures.push(
+            `conversation:${conversationId}:${observedErrorCode(error)}`,
+          );
+        }
+      }
+      try {
+        await api.deleteAgent(fixture.agentId);
+      } catch (error) {
+        if (!isFoundationResourceNotFound(error)) {
+          failures.push(`agent:${observedErrorCode(error)}`);
+        }
+      }
+      await useAgentStore.getState().loadAgents();
+      if (fixture.priorSelection) {
+        useAgentStore.getState().setSelectedAgent(fixture.priorSelection);
+        useAgentStore.getState().setAgentSurface(
+          fixture.priorSelection,
+          fixture.priorSurface,
+        );
+        await api.setSelectedAgent(fixture.priorSelection);
+      }
+      return evidenceValue({
+        status: failures.length === 0 ? 'clean' : 'failed',
+        failures,
+      });
     },
 
     async foundationNonAdvertisementProbe({

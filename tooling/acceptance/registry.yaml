@@ -1400,6 +1400,33 @@
       ]
     },
     {
+      "id": "agent-v2-external-runtime",
+      "features": [
+        "agent-v2-external-runtime"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/agent/agent.proto",
+          "apps/station/app/subserver/agent/service/external_runtime*",
+          "apps/station/app/subserver/agent/service/externalruntime/**",
+          "apps/station/app/subserver/agent/infrastructure/persistence/external_runtime_reset.go",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src/store/chat.ts",
+          "apps/desktop/src/components/messages/AssistantMessage.tsx",
+          "apps/desktop/src/acceptance/agent/harness.ts",
+          "packages/locales/en/agent.json",
+          "packages/locales/zh-CN/agent.json",
+          "tooling/acceptance/gates/agent/external_runtime_*.py",
+          "tooling/docker/compose.yml"
+        ]
+      },
+      "require": [
+        "station-agent-unit",
+        "desktop-check",
+        "agent-v2-external-runtime-e2e"
+      ]
+    },
+    {
       "id": "agent-v2-kernel-foundation",
       "features": [
         "agent-v2-kernel-foundation"

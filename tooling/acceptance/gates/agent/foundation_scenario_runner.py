@@ -64,6 +64,10 @@ from tooling.acceptance.gates.agent.foundation_candidate_producer import (
     FoundationCandidateProducer,
     load_foundation_tuples,
 )
+from tooling.acceptance.gates.agent.external_runtime_fixture import (
+    external_runtime_environment,
+    external_runtime_root,
+)
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeFoundationAdapter,
     DirectRuntimeProbeInput,
@@ -95,6 +99,9 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationRuntimePair,
 )
 from tooling.acceptance.transports import SshTarget, SshTransport, SshTunnel
+from tooling.acceptance.provisioners.remote_source_identity import (
+    reviewed_remote_transport,
+)
 
 
 class ScenarioRunnerError(RuntimeError):
@@ -2295,6 +2302,157 @@ class FoundationForbiddenActorCoordinator:
                 )
 
 
+class FoundationExternalRuntimeCoordinator:
+    def __init__(
+        self,
+        runtime_pair: FoundationRuntimePair,
+        runtime_manifest: Mapping[str, Any],
+        profile_env: Mapping[str, str],
+        run_id: str,
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._runtime_manifest = dict(runtime_manifest)
+        self._profile_env = dict(profile_env)
+        self._run_id = run_id
+        self._enabled = False
+
+    def _deploy(self, enabled: bool) -> None:
+        environment = os.environ.copy()
+        environment.update(self._profile_env)
+        environment.update(
+            external_runtime_environment(self._run_id)
+            if enabled
+            else {
+                name: ""
+                for name in external_runtime_environment(self._run_id)
+            }
+        )
+        completed = subprocess.run(
+            ["make", "station"],
+            cwd=REPO_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=1_800,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "no output"
+            )
+            raise ScenarioRunnerError(
+                "Foundation external runtime deployment failed: "
+                + detail[-4_000:]
+            )
+
+    def _enable(self) -> None:
+        if self._enabled:
+            return
+        self._deploy(True)
+        self._enabled = True
+        for client in (self._runtime_pair.native, self._runtime_pair.browser):
+            client.restart()
+        _authenticate_clients(self._runtime_pair, self._profile_env)
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        self._enable()
+        client = (
+            self._runtime_pair.native
+            if probe_input.platform == "desktop_app"
+            else self._runtime_pair.browser
+        )
+        locale = client.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "Foundation external runtime locale did not converge"
+            )
+        result = client.harness(
+            "externalRuntimeFoundationProbe",
+            {
+                "platform": probe_input.platform,
+                "locale": probe_input.locale,
+                "cell": probe_input.cell,
+                "sampleId": probe_input.sample_id,
+            },
+            timeout=300,
+        )
+        if not isinstance(result, Mapping):
+            raise ScenarioRunnerError(
+                "Foundation external runtime capture is invalid"
+            )
+        assert_group_one_capture(probe_input, result)
+        return result
+
+    def cleanup(self) -> dict[str, Any]:
+        if not self._enabled:
+            return {"status": "clean", "enabled": False}
+        failures: list[str] = []
+        try:
+            services = self._runtime_manifest.get("services")
+            station = (
+                services.get("station")
+                if isinstance(services, Mapping)
+                else None
+            )
+            deployment_environment = (
+                str(station.get("deploymentEnvironment") or "").strip()
+                if isinstance(station, Mapping)
+                else ""
+            )
+            transport, environment = reviewed_remote_transport(
+                deployment_environment
+            )
+            compose_project = environment.get(
+                "PT_ACCEPTANCE_COMPOSE_PROJECT",
+                "",
+            ).strip()
+            if not compose_project:
+                raise ScenarioRunnerError(
+                    "Foundation external cleanup has no Compose project"
+                )
+            root = external_runtime_root(self._run_id)
+            command = (
+                "set -eu; "
+                "container_id=\"$(docker ps --quiet "
+                f"--filter {shlex.quote(f'label=com.docker.compose.project={compose_project}')} "
+                f"--filter {shlex.quote('label=com.docker.compose.service=station')} "
+                "| sed -n '1p')\"; "
+                "test -n \"$container_id\"; "
+                f"docker exec \"$container_id\" rm -rf -- {shlex.quote(root)}"
+            )
+            result = transport.run_argv(
+                ["bash", "-lc", command],
+                timeout=60,
+                check=False,
+            )
+            if result.returncode != 0:
+                failures.append("external runtime storage cleanup failed")
+        except BaseException as error:
+            failures.append(f"external runtime storage cleanup: {error}")
+        try:
+            self._deploy(False)
+        except BaseException as error:
+            failures.append(f"external runtime Station restore: {error}")
+        self._enabled = False
+        return {
+            "status": "clean" if not failures else "failed",
+            "enabled": True,
+            "failures": failures,
+        }
+
+
 def _make_direct_probe(
     client: Any,
     *,
@@ -2314,6 +2472,8 @@ def _make_direct_probe(
         "FoundationForbiddenActorCoordinator | None" = None,
     rate_limit_coordinator:
         "FoundationRateLimitCoordinator | None" = None,
+    external_runtime_coordinator:
+        "FoundationExternalRuntimeCoordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -2322,6 +2482,12 @@ def _make_direct_probe(
     full capture dictionary expected by DirectRuntimeFoundationAdapter.
     """
     def probe(probe_input: DirectRuntimeProbeInput) -> Mapping[str, Any]:
+        if probe_input.cell == "BASE-RESUME-UNAVAILABLE":
+            if external_runtime_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-RESUME-UNAVAILABLE requires external runtime orchestration"
+                )
+            return external_runtime_coordinator.capture(probe_input)
         if probe_input.cell == "BASE-FORBIDDEN_ACTOR":
             if forbidden_actor_coordinator is None:
                 raise ScenarioRunnerError(
@@ -4245,6 +4411,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
     primary_error: BaseException | None = None
     cleanup_clients: tuple[FoundationRuntimeClient, ...] | None = None
     rate_limit_coordinators: tuple[FoundationRateLimitCoordinator, ...] = ()
+    external_runtime_coordinator: FoundationExternalRuntimeCoordinator | None = None
     try:
         runtime_pair.start()
 
@@ -4290,6 +4457,12 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             profile_env,
             alice_actor_ids,
         )
+        external_runtime_coordinator = FoundationExternalRuntimeCoordinator(
+            runtime_pair,
+            runtime_manifest,
+            profile_env,
+            run.run_id,
+        )
         deployment_environment = profile_env.get(
             "PT_STATION_DEPLOY_ENV",
             "",
@@ -4330,6 +4503,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                     ),
                     forbidden_actor_coordinator=forbidden_actor_coordinator,
                     rate_limit_coordinator=native_rate_limit_coordinator,
+                    external_runtime_coordinator=external_runtime_coordinator,
                 ),
                 cooldown_seconds=provider_cooldown_seconds,
             ),
@@ -4355,6 +4529,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                     ),
                     forbidden_actor_coordinator=forbidden_actor_coordinator,
                     rate_limit_coordinator=browser_rate_limit_coordinator,
+                    external_runtime_coordinator=external_runtime_coordinator,
                 ),
                 cooldown_seconds=provider_cooldown_seconds,
             ),
@@ -4474,6 +4649,20 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         cleanup_result = runtime_pair.stop(
             remove_storage=not restoration_errors,
         )
+        try:
+            external_runtime_cleanup = (
+                external_runtime_coordinator.cleanup()
+                if external_runtime_coordinator is not None
+                else {"status": "clean", "enabled": False}
+            )
+        except BaseException as error:
+            external_runtime_cleanup = {
+                "status": "failed",
+                "failures": [f"{type(error).__name__}: {error}"],
+            }
+        cleanup_result["externalRuntime"] = external_runtime_cleanup
+        if external_runtime_cleanup.get("status") != "clean":
+            cleanup_result["status"] = "failed"
         primary_failure = _failure_summary(primary_error, profile_env)
         if primary_failure:
             cleanup_result["primaryFailure"] = primary_failure

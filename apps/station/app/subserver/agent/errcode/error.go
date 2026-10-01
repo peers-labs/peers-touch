@@ -25,6 +25,7 @@ const (
 	AgentQueueFull                        Code = "ADMISSION_QUEUE_FULL"
 	AgentAttachmentRejected               Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentRuntimeUnavailable               Code = "RUNTIME_UNAVAILABLE"
+	AgentRuntimeResumeUnavailable         Code = "RUNTIME_RESUME_UNAVAILABLE"
 	AgentRuntimeIncompatibleCapability    Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
 	AgentCapabilityManifestNotFound       Code = "CAPABILITY_MANIFEST_NOT_FOUND"
 	AgentCapabilityManifestVersionStale   Code = "CAPABILITY_MANIFEST_VERSION_STALE"
@@ -75,6 +76,7 @@ const (
 	AgentOwnershipForbiddenActorLocaleKey          = "agent.errors.forbiddenActor"
 	AgentAttachmentRejectedLocaleKey               = "agent.errors.attachmentRejected"
 	AgentRuntimeUnavailableLocaleKey               = "agent.errors.runtimeUnavailable"
+	AgentRuntimeResumeUnavailableLocaleKey         = "agent.errors.resumeUnavailable"
 	AgentRuntimeIncompatibleCapabilityLocaleKey    = "agent.errors.incompatibleCapability"
 	AgentCapabilityManifestNotFoundLocaleKey       = "agent.errors.capabilityManifestNotFound"
 	AgentCapabilityManifestVersionStaleLocaleKey   = "agent.errors.capabilityManifestVersionStale"
@@ -242,6 +244,25 @@ func NewRuntimeUnavailable(runtimeKind, reasonCode string) *BizError {
 			Details: map[string]string{
 				"runtime_kind": runtimeKind,
 				"reason_code":  reasonCode,
+			},
+		},
+	}
+}
+
+func NewRuntimeResumeUnavailable(runtimeProfileID, reasonCode string) *BizError {
+	return &BizError{
+		Code:       AgentRuntimeResumeUnavailable,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentRuntimeResumeUnavailableLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentRuntimeResumeUnavailableLocaleKey,
+			ErrorType: string(AgentRuntimeResumeUnavailable),
+			LocaleKey: AgentRuntimeResumeUnavailableLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"runtime_profile_id": runtimeProfileID,
+				"reason_code":        reasonCode,
 			},
 		},
 	}

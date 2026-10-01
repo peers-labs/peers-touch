@@ -45,8 +45,8 @@ Reviewed runtime matrix:
 
 - `docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml`
 - ID `modern-chat-agent-v2-runtime-matrix`
-- version `2026-09-21.2`
-- SHA-256 `4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c`
+- version `2026-10-01.1`
+- SHA-256 `4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142`
 
 ### 1.1 2026-09-16 Product-First Sequencing Amendment
 
@@ -659,7 +659,7 @@ python3 tooling/scripts/expand-agent-v2-runtime-matrix.py \
   --check \
   docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml
 printf '%s  %s\n' \
-  '4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c' \
+  '4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142' \
   'docs/architecture/agent/execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml' \
   | shasum -a 256 -c -
 test -x apps/mobile/node_modules/.bin/protoc-gen-es
@@ -2083,17 +2083,15 @@ and zero local-path leakage.
     Station message, queue, Conversation-version, Turn-trace, or provider-call
     delta. Provider, Conversation, Fixture, processes, ports, storage, and
     provisioner resources were restored cleanly.
-  - `BASE-RESUME_UNAVAILABLE` remains source-incomplete. The accepted product
-    semantics require explicit `Confirm reset` followed by
-    `ResetConversationRuntime`; the current frozen profile intentionally does
-    not advertise external Agent runtimes and the production reset command is
-    not implemented. Do not map direct-model retry failures to this cell or
-    mutate an external-session epoch before confirmation.
-  - `BASE-RESUME_UNAVAILABLE` is parked at
-    `PRODUCT_AMENDMENT_REQUIRED`: sections 2 and F2 explicitly forbid
-    implementing or advertising P12 `EXTERNAL_AGENT` in this V2 scope, while
-    the error cell requires that stateful runtime's destructive reset
-    lifecycle. The cell cannot be made executable by a direct-model shim.
+  - `BASE-RESUME_UNAVAILABLE` is owned by MCA-P12 and MCA-D29. The 419-cell
+    matrix preserves its tuple count by moving this cell from the Direct Model
+    rows to dedicated Desktop and Browser external-runtime rows. The runtime is
+    advertised only when the complete session adapter is healthy.
+  - The executable closure requires the real
+    `RUNTIME_RESUME_UNAVAILABLE -> Confirm reset ->
+    ResetConversationRuntime` lifecycle. Direct Model retry remains
+    inadmissible evidence, and the old session, epoch, and home remain
+    unchanged until confirmation.
 - **SC3 split**:
   - `BASE-PERMISSION_DENIED` is parked at `DESIGN_AMENDMENT_REQUIRED`.
     Client capability leases expose only a permission state; no authoritative

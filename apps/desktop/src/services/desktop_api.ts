@@ -2626,6 +2626,7 @@ export interface AgentErrorResolutionAction {
     | 'openOriginal'
     | 'editQueue'
     | 'selectRuntime'
+    | 'confirmReset'
     | 'retryLater'
     | 'retry'
     | 'switchAccount'
@@ -2646,6 +2647,7 @@ export interface AgentErrorResolutionAction {
   conversationId?: string;
   capacity?: number;
   runtimeKind?: string;
+  runtimeProfileId?: string;
   retryAfterMs?: number;
   deadline?: string;
   resourceKind?: string;
@@ -2677,6 +2679,10 @@ export const AGENT_QUEUE_FULL_LOCALE_KEY = 'agent.errors.queueFull';
 export const AGENT_RUNTIME_UNAVAILABLE_ERROR_TYPE = 'RUNTIME_UNAVAILABLE';
 export const AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY =
   'agent.errors.runtimeUnavailable';
+export const AGENT_RUNTIME_RESUME_UNAVAILABLE_ERROR_TYPE =
+  'RUNTIME_RESUME_UNAVAILABLE';
+export const AGENT_RUNTIME_RESUME_UNAVAILABLE_LOCALE_KEY =
+  'agent.errors.resumeUnavailable';
 export const AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE = 'PROVIDER_RATE_LIMIT';
 export const AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY =
   'agent.errors.providerRateLimit';
@@ -2744,6 +2750,13 @@ export type AgentQueueFullError = AgentTypedErrorPayload & {
 export type AgentRuntimeUnavailableError = AgentTypedErrorPayload & {
   details: {
     runtime_kind: string;
+    reason_code: string;
+  };
+};
+
+export type AgentRuntimeResumeUnavailableError = AgentTypedErrorPayload & {
+  details: {
+    runtime_profile_id: string;
     reason_code: string;
   };
 };
@@ -2870,6 +2883,7 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'conversation_id',
   'capacity',
   'runtime_kind',
+  'runtime_profile_id',
   'provider_id',
   'model_id',
   'deadline',
@@ -3095,6 +3109,27 @@ export function isAgentRuntimeUnavailableError(
     && detailKeys[0] === 'reason_code'
     && detailKeys[1] === 'runtime_kind'
     && error.details.runtime_kind.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
+export function isAgentRuntimeResumeUnavailableError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentRuntimeResumeUnavailableError {
+  if (
+    error?.error_type !== AGENT_RUNTIME_RESUME_UNAVAILABLE_ERROR_TYPE
+    || error.locale_key !== AGENT_RUNTIME_RESUME_UNAVAILABLE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reason_code'
+    && detailKeys[1] === 'runtime_profile_id'
+    && error.details.runtime_profile_id.trim().length > 0
     && error.details.reason_code.trim().length > 0
   );
 }
@@ -3455,6 +3490,14 @@ export function resolveAgentTypedErrorAction(
       runtimeKind: error.details.runtime_kind,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.selectRuntime',
+    };
+  }
+  if (isAgentRuntimeResumeUnavailableError(error)) {
+    return {
+      type: 'confirmReset',
+      runtimeProfileId: error.details.runtime_profile_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.confirmReset',
     };
   }
   if (isAgentQueueFullError(error)) {
@@ -3957,6 +4000,9 @@ export interface AgentConversation {
     capability_snapshot_hash: string;
     config_snapshot_hash: string;
     bound_at: { seconds: number; nanos: number } | null;
+    state: number;
+    last_error_code: string;
+    updated_at: { seconds: number; nanos: number } | null;
   };
   meta?: Record<string, string>;
   created_at: string;
@@ -4030,6 +4076,19 @@ export interface AgentConversationUpdateInput {
 export interface AgentConversationRestoreInput {
   conversation_id: string;
   expected_version: number;
+}
+
+export interface AgentConversationRuntimeResetInput {
+  conversation_id: string;
+  expected_conversation_version: number;
+  client_idempotency_key: string;
+  destructive_confirmed: boolean;
+}
+
+export interface AgentConversationRuntimeResetResult {
+  conversation: AgentConversation;
+  closed_external_session_epoch: number;
+  replayed: boolean;
 }
 
 export interface AgentRuntimeBudgetInput {
@@ -6793,6 +6852,12 @@ export const api = {
         expected_version: expectedVersion,
       },
     ).then((result) => result.conversation),
+
+  resetAgentConversationRuntime: (input: AgentConversationRuntimeResetInput) =>
+    invokeRustDataFromStatus<
+      AgentConversationRuntimeResetInput,
+      AgentConversationRuntimeResetResult
+    >('agent_conversation_runtime_reset', input),
 
   retryAgentTurn: (input: AgentRetryTurnInput) =>
     invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),

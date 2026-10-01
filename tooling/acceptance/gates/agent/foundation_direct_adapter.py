@@ -32,6 +32,8 @@ EXPECTED_ROLES = frozenset(
 PLATFORM_BY_ROW = {
     "foundation-desktop-direct": "desktop_app",
     "foundation-browser-direct": "browser",
+    "foundation-z-desktop-external-runtime": "desktop_app",
+    "foundation-z-browser-external-runtime": "browser",
 }
 REQUIRED_ASSERTIONS = {
     "AS-F01": frozenset(
@@ -418,6 +420,19 @@ REQUIRED_ASSERTIONS = {
             "cleanupComplete",
         }
     ),
+    "BASE-RESUME-UNAVAILABLE": frozenset(
+        {
+            "typedResumeUnavailable",
+            "localizedConfirmResetVisible",
+            "oldEpochPreservedBeforeConfirmation",
+            "resetAdvancedExactlyOneEpoch",
+            "resetReplayIdempotent",
+            "freshSessionCreated",
+            "stationBindingAuthoritative",
+            "zeroClientOwnedExecution",
+            "cleanupComplete",
+        }
+    ),
 }
 
 
@@ -487,25 +502,38 @@ class DirectRuntimeFoundationAdapter:
         self,
         runtime_tuple: FoundationTuple,
     ) -> FoundationTupleObservation:
-        return self._observe(runtime_tuple, expected_row="foundation-desktop-direct")
+        return self._observe(
+            runtime_tuple,
+            expected_rows={
+                "foundation-desktop-direct",
+                "foundation-z-desktop-external-runtime",
+            },
+        )
 
     def observe_browser(
         self,
         runtime_tuple: FoundationTuple,
     ) -> FoundationTupleObservation:
-        return self._observe(runtime_tuple, expected_row="foundation-browser-direct")
+        return self._observe(
+            runtime_tuple,
+            expected_rows={
+                "foundation-browser-direct",
+                "foundation-z-browser-external-runtime",
+            },
+        )
 
     def _observe(
         self,
         runtime_tuple: FoundationTuple,
         *,
-        expected_row: str,
+        expected_rows: set[str],
     ) -> FoundationTupleObservation:
-        if runtime_tuple.row != expected_row:
+        if runtime_tuple.row not in expected_rows:
             raise DirectRuntimeEvidenceError(
-                f"adapter row mismatch: expected {expected_row}, got {runtime_tuple.row}"
+                "adapter row mismatch: expected one of "
+                f"{sorted(expected_rows)}, got {runtime_tuple.row}"
             )
-        if runtime_tuple.platform != PLATFORM_BY_ROW[expected_row]:
+        if runtime_tuple.platform != PLATFORM_BY_ROW[runtime_tuple.row]:
             raise DirectRuntimeEvidenceError(
                 f"{runtime_tuple.row}: platform identity mismatch"
             )

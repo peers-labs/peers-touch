@@ -15,6 +15,7 @@ import (
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/errcode"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/model"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -97,6 +98,144 @@ func TestPersistRuntimeAuthorityStoresBindingAndAttemptSnapshot(t *testing.T) {
 	}
 	if attempt.RuntimeSnapshotHash != expectedHash {
 		t.Fatalf("runtime snapshot hash=%q, want %q", attempt.RuntimeSnapshotHash, expectedHash)
+	}
+}
+
+func TestPersistRuntimeAuthorityCreatesExternalBindingAtEpochOne(t *testing.T) {
+	db := openRuntimeAuthorityDB(t, "runtime_authority_external")
+	seedRuntimeAuthorityRows(t, db, "turn-1", "attempt-1")
+
+	admission := runtimeAuthorityAdmission("provider-1", "model-1", 1)
+	admission.RuntimeKind = model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT
+	admission.RuntimeProfileID = modernChatAgentProfileID
+	admission.Capabilities.Runtime.ExternalResume = true
+	config := runtimeAuthorityConfig("turn-1", "attempt-1")
+	config.RuntimeBudget = cloneRuntimeBudget(admission.Budget)
+	if err := (&TurnService{}).persistRuntimeAuthority(
+		context.Background(),
+		config,
+		admission,
+		runtimeAuthorityReadiness(config, admission),
+		11,
+	); err != nil {
+		t.Fatalf("persist external runtime authority: %v", err)
+	}
+
+	binding := loadExternalRuntimeBinding(t, db, config.ConversationID)
+	if binding.GetRuntimeKind() != model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT ||
+		binding.GetExternalSessionEpoch() != 1 ||
+		binding.GetExternalSessionId() != "" ||
+		binding.GetRuntimeHomeRef() != externalHomeRef(t, config.ConversationID, 1) ||
+		binding.GetState() !=
+			model.ExternalRuntimeBindingState_EXTERNAL_RUNTIME_BINDING_STATE_READY {
+		t.Fatalf("external runtime binding = %+v", binding)
+	}
+	var attempt persistence.TurnAttempt
+	if err := db.First(&attempt, "id = ?", config.AttemptID).Error; err != nil {
+		t.Fatalf("load external runtime attempt: %v", err)
+	}
+	snapshot, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		t.Fatalf("decode external runtime snapshot: %v", err)
+	}
+	if snapshot.GetRuntimeKind() != model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT ||
+		snapshot.GetExternalSessionEpoch() != 1 {
+		t.Fatalf("external runtime snapshot = %+v", snapshot)
+	}
+}
+
+func TestExternalRuntimeResetAllowsFreshSessionInNextEpoch(t *testing.T) {
+	db := openRuntimeAuthorityDB(t, "runtime_authority_external_reset")
+	if err := db.AutoMigrate(
+		&persistence.ToolCall{},
+		&persistence.ExternalRuntimeResetCommand{},
+	); err != nil {
+		t.Fatalf("migrate external reset authority: %v", err)
+	}
+	seedRuntimeAuthorityRows(t, db, "turn-1", "attempt-1")
+
+	admission := runtimeAuthorityAdmission("provider-1", "model-1", 1)
+	admission.RuntimeKind = model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT
+	admission.RuntimeProfileID = modernChatAgentProfileID
+	admission.Capabilities.Runtime.ExternalResume = true
+	config := runtimeAuthorityConfig("turn-1", "attempt-1")
+	config.RuntimeBudget = cloneRuntimeBudget(admission.Budget)
+	turns := &TurnService{}
+	if err := turns.persistRuntimeAuthority(
+		context.Background(),
+		config,
+		admission,
+		runtimeAuthorityReadiness(config, admission),
+		11,
+	); err != nil {
+		t.Fatalf("persist first external authority: %v", err)
+	}
+
+	manager := &externalRuntimeManagerStub{available: true}
+	manager.execute = func(
+		ctx context.Context,
+		_ externalruntime.ExecuteRequest,
+		_ externalruntime.DeltaSink,
+		sessionSink externalruntime.SessionSink,
+		_ externalruntime.ActivitySink,
+	) (*externalruntime.ExecuteResult, error) {
+		if err := sessionSink(ctx, "session-epoch-1"); err != nil {
+			return nil, err
+		}
+		return &externalruntime.ExecuteResult{
+			SessionID: "session-epoch-1",
+			Content:   "first",
+		}, nil
+	}
+	external := NewExternalRuntimeService(db, manager, nil, nil)
+	if _, err := external.ExecuteTurn(
+		context.Background(),
+		externalTurnRequest("conversation-1", "attempt-1", "first"),
+		nil,
+	); err != nil {
+		t.Fatalf("create first external session: %v", err)
+	}
+	if err := db.Model(&persistence.AgentTurn{}).
+		Where("id = ?", "turn-1").
+		Update("status", string(domain.TurnStatusCompleted)).Error; err != nil {
+		t.Fatalf("complete first external Turn: %v", err)
+	}
+	if _, err := external.ResetConversationRuntime(
+		context.Background(),
+		"ptid:person:owner",
+		&model.ResetConversationRuntimeRequest{
+			ConversationId:              "conversation-1",
+			ExpectedConversationVersion: 2,
+			ClientIdempotencyKey:        "reset-between-turns",
+			DestructiveConfirmed:        true,
+		},
+	); err != nil {
+		t.Fatalf("reset external runtime: %v", err)
+	}
+
+	seedRuntimeAuthorityAttempt(t, db, "turn-2", "attempt-2")
+	nextConfig := runtimeAuthorityConfig("turn-2", "attempt-2")
+	nextConfig.RuntimeBudget = cloneRuntimeBudget(admission.Budget)
+	if err := turns.persistRuntimeAuthority(
+		context.Background(),
+		nextConfig,
+		admission,
+		runtimeAuthorityReadiness(nextConfig, admission),
+		11,
+	); err != nil {
+		t.Fatalf("persist next external authority: %v", err)
+	}
+	var attempt persistence.TurnAttempt
+	if err := db.First(&attempt, "id = ?", "attempt-2").Error; err != nil {
+		t.Fatalf("load next external attempt: %v", err)
+	}
+	snapshot, err := persistence.UnmarshalRuntimeSnapshot(attempt.RuntimeSnapshot)
+	if err != nil {
+		t.Fatalf("decode next external snapshot: %v", err)
+	}
+	if snapshot.GetExternalSessionEpoch() != 2 ||
+		snapshot.GetExternalSessionId() != "" {
+		t.Fatalf("post-reset snapshot = %+v", snapshot)
 	}
 }
 
