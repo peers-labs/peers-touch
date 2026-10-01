@@ -36,6 +36,11 @@
       "verificationClass": "SOURCE_CHECK"
     },
     {
+      "id": "dev-ui-acceptance-source",
+      "command": "python3 -m unittest tooling.acceptance.gates.dev.dev_ui_browser_e2e_test && python3 tooling/scripts/acceptance-validate-test.py",
+      "verificationClass": "SOURCE_CHECK"
+    },
+    {
       "id": "dev-ui-browser",
       "command": "node tooling/acceptance/gates/dev/dev-ui-browser-e2e.mjs",
       "verificationClass": "FUNCTIONAL_CHECK"
