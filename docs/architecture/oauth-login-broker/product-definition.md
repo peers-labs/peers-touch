@@ -124,10 +124,10 @@ benchmark disposition document is required.
 
 ## 9. Product Gate
 
-Current status: broker-local behavior is verified in deterministic local
-runtime cells. The native Desktop-to-Station handoff and live provider,
-GitHub App, and Vercel deployment remain unproven until the
-`OLB-LIVE-20261001` Plan completes.
+Current status: the standalone OAuth2 API/repository scope is verified. Native
+Desktop-to-Station behavior and production provider, GitHub App, and Vercel
+deployment remain unproven after `OLB-LIVE-20261001` and require separately
+authorized follow-up work.
 
 No material UI prototype is required. The operator surface is a read-only table
 with no workflow decisions beyond authentication and filtering-free inspection;

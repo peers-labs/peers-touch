@@ -82,9 +82,9 @@ so a dedicated service or database can take over without changing OAuth use case
 - Product: accepted for capabilities OLB-C01 through OLB-C09 and OLB-C12
   through OLB-C13.
 - Architecture: accepted through decisions OLB-D01 through OLB-D17.
-- Delivery: `OLB-20260930` and `OLB-HARDEN-20260930` are completed;
-  `OLB-FINAL-20260930` is completed; `OLB-LIVE-20261001` tracks the native
-  handoff and live-readiness closure.
-- Proof: broker-local deterministic evidence is proven. Native
-  Desktop-to-Station and isolated live provider/Vercel evidence remain
-  unproven until `OLB-LIVE-20261001` completes.
+- Delivery: `OLB-20260930`, `OLB-HARDEN-20260930`, and
+  `OLB-FINAL-20260930` are completed; `OLB-LIVE-20261001` closes the native
+  handoff source and the standalone OAuth2 API/repository proof.
+- Proof: the standalone OAuth2 API/repository scope is proven. Native
+  Desktop-to-Station and production/Vercel evidence remain unproven and require
+  separately authorized follow-up work.

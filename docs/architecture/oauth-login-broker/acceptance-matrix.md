@@ -196,9 +196,10 @@ source and service evidence, not native Desktop proof.
 - Evidence identifies the native runtime, source, broker, Station, provider,
   account, and cleanup without secret values.
 
-OLB-G07B remains `UNPROVEN` until OLB-LIVE-04 runs through
-`pt-dev-runtime-handoff` against the dedicated `oauth2-client-test`
-profile. No local source Gate may claim it.
+OLB-G07B remains `UNPROVEN` after the OAuth2-only
+`OLB-LIVE-20261001` closure. It requires a separately authorized follow-up
+Plan through `pt-dev-runtime-handoff`; no OAuth2 service or local source Gate
+may claim it.
 
 ## 4. Required Runtime Cells
 
