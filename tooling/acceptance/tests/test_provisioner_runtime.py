@@ -1514,8 +1514,8 @@ class ProvisionerBlockingTests(unittest.TestCase):
         native, browser = manifest.clients
         self.assertEqual(native.runtime, "native-tauri")
         self.assertEqual(browser.runtime, "browser")
-        self.assertEqual(native.actor, "bob")
-        self.assertEqual(browser.actor, "bob")
+        self.assertEqual(native.actor, "charlie")
+        self.assertEqual(browser.actor, "charlie")
         self.assertEqual(native.profile, "agent-v2-binding-native")
         self.assertEqual(browser.profile, "agent-v2-binding-browser")
         self.assertNotEqual(native.storage_root, browser.storage_root)
@@ -1530,7 +1530,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         reset_actor_manifest.assert_not_called()
         self.assertEqual(
             [invocation.args[1] for invocation in resolve_actor.call_args_list],
-            ["alice", "bob"],
+            ["alice", "charlie"],
         )
         persisted = actor_manifest.call_args.args[0]
         self.assertEqual(persisted.fixture_id, "chat-native-existing-actors")
@@ -1607,8 +1607,8 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(manifest.services, {"station": attestation})
         self.assertEqual(len(manifest.clients), 2)
         native, browser = manifest.clients
-        self.assertEqual(native.actor, "bob")
-        self.assertEqual(browser.actor, "bob")
+        self.assertEqual(native.actor, "charlie")
+        self.assertEqual(browser.actor, "charlie")
         self.assertEqual(native.profile, "agent-v2-governed-tool-native")
         self.assertEqual(browser.profile, "agent-v2-governed-tool-browser")
         self.assertEqual(native.webdriver_port, 26445)
@@ -1685,11 +1685,11 @@ class ProvisionerBlockingTests(unittest.TestCase):
         self.assertEqual(len(manifest.clients), 2)
         native, browser = manifest.clients
         self.assertEqual(native.runtime, "native-tauri")
-        self.assertEqual(native.actor, "bob")
+        self.assertEqual(native.actor, "charlie")
         self.assertEqual(native.profile, "agent-v2-mcp-native")
         self.assertEqual(native.webdriver_port, 27445)
         self.assertEqual(browser.runtime, "browser")
-        self.assertEqual(browser.actor, "bob")
+        self.assertEqual(browser.actor, "charlie")
         self.assertEqual(browser.profile, "agent-v2-mcp-browser")
         self.assertEqual(browser.webdriver_port, 27446)
         self.assertIn("pt-agent-v2-mcp-", native.storage_root)

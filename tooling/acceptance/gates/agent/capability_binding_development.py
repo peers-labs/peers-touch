@@ -44,18 +44,6 @@ WORKSPACE_ID = workspace_id(ROOT)
 WORK_ITEM_ID = "MCA-V2-ALIGNMENT-J02"
 JOURNEY_ID = "V2-J02"
 PROFILE = "two"
-J02_ACTOR_ACCOUNT = "bob@p.t"
-J02_IDENTITY_FIXTURE = (
-    Path.home()
-    / ".peers-touch"
-    / "dev"
-    / "workspaces"
-    / WORKSPACE_ID
-    / "runtime"
-    / PROFILE
-    / "fixtures"
-    / "agent-v2-capability-binding"
-)
 OPERATION_SCENARIO_ACTOR_ACCOUNT = "carol@p.t"
 OPERATION_SCENARIO_IDENTITY_FIXTURE = (
     Path.home()
@@ -68,6 +56,8 @@ OPERATION_SCENARIO_IDENTITY_FIXTURE = (
     / "fixtures"
     / "agent-v2-operation-scenarios"
 )
+J02_ACTOR_ACCOUNT = OPERATION_SCENARIO_ACTOR_ACCOUNT
+J02_IDENTITY_FIXTURE = OPERATION_SCENARIO_IDENTITY_FIXTURE
 
 
 class CapabilityBindingDevelopmentError(RuntimeError):
@@ -228,6 +218,7 @@ def persist_native_actor_identity(
     station_accepted: bool,
     profile: str = PROFILE,
     account: str = J02_ACTOR_ACCOUNT,
+    allow_actor_rebinding: bool = False,
 ) -> dict[str, Any]:
     require(
         station_accepted,
@@ -248,11 +239,40 @@ def persist_native_actor_identity(
             profile=profile,
             account=account,
         )
+        if seeded.get("actorId") == actor_id:
+            return dict(seeded)
         require(
-            seeded.get("actorId") == actor_id,
+            allow_actor_rebinding,
             "retained actor identity belongs to another actor",
         )
-        return dict(seeded)
+        source_keys = tuple(
+            path for path in source_root.rglob("*.key") if path.is_file()
+        )
+        fixture_keys = tuple(
+            path
+            for path in (fixture_root / "actor-identity").rglob("*.key")
+            if path.is_file()
+        )
+        require(
+            len(source_keys) == 1
+            and len(fixture_keys) == 1
+            and source_keys[0].read_bytes() == fixture_keys[0].read_bytes(),
+            "retained actor identity key changed during actor rebinding",
+        )
+        metadata_path = fixture_root / "fixture.json"
+        temporary_metadata = metadata_path.with_name(
+            f".{metadata_path.name}.tmp-{os.getpid()}"
+        )
+        try:
+            temporary_metadata.write_text(
+                json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temporary_metadata.chmod(0o600)
+            os.replace(temporary_metadata, metadata_path)
+        finally:
+            temporary_metadata.unlink(missing_ok=True)
+        return metadata
 
     fixture_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary = fixture_root.parent / f".{fixture_root.name}.tmp-{os.getpid()}"
@@ -601,6 +621,7 @@ def main() -> int:
             station_url=profile_env["PT_STATION_URL"],
             actor_id=str(login["actorId"]),
             station_accepted=True,
+            allow_actor_rebinding=True,
         )
         capture["identityFixture"] = identity_fixture_evidence(
             identity_metadata,

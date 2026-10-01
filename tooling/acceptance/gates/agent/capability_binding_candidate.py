@@ -43,6 +43,13 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 from tooling.acceptance.gates.agent.foundation_scenario_runner import (
     _build_client_manifest,
 )
+from tooling.acceptance.gates.agent.capability_binding_development import (
+    OPERATION_SCENARIO_ACTOR_ACCOUNT,
+    OPERATION_SCENARIO_IDENTITY_FIXTURE,
+    confirm_native_actor_identity_enrollment,
+    persist_native_actor_identity,
+    seed_native_actor_identity,
+)
 from tooling.acceptance.gates.agent.home_command_center_candidate import (
     _authenticate,
     _load_script,
@@ -55,7 +62,7 @@ from tooling.acceptance.provisioners.home_station import (
 
 
 PROFILE = "two"
-ACTOR_ACCOUNT = "bob@p.t"
+ACTOR_ACCOUNT = OPERATION_SCENARIO_ACTOR_ACCOUNT
 SECONDARY_ACCOUNT = "alice@p.t"
 WORK_ITEM_ID = "MCA-A03-PR112"
 MOBILE_TEST_PATH = Path("apps/mobile/src/contracts/agentV2Contract.test.ts")
@@ -135,7 +142,8 @@ class CapabilityBindingRuntimeAdapter:
             len(set(actors.values())) == 1,
             "J02 Native and Browser clients authenticated different actors",
         )
-        self.actor_identity_hash = _hash_text(next(iter(actors.values())))
+        self.actor_id = next(iter(actors.values()))
+        self.actor_identity_hash = _hash_text(self.actor_id)
         self._fixture = _mapping(
             runtime_pair.native.harness(
                 "prepareCapabilityBindingCandidate",
@@ -665,11 +673,33 @@ def main() -> int:
             profile_env=profile_env,
             startup_timeout=900,
         )
+        for client in (runtime_pair.native, runtime_pair.browser):
+            seed_native_actor_identity(
+                fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+                target_root=client.actor_identity_root,
+                station_url=profile_env["PT_STATION_URL"],
+                profile=PROFILE,
+                account=ACTOR_ACCOUNT,
+            )
         runtime_pair.start()
         runtime_adapter = CapabilityBindingRuntimeAdapter(
             runtime_pair,
             profile_env,
             run.run_id,
+        )
+        enrollment = confirm_native_actor_identity_enrollment(
+            runtime_pair.native,
+            actor_id=runtime_adapter.actor_id,
+        )
+        persist_native_actor_identity(
+            source_root=runtime_pair.native.actor_identity_root,
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+            station_url=profile_env["PT_STATION_URL"],
+            actor_id=runtime_adapter.actor_id,
+            station_accepted=enrollment["accepted"] is True,
+            profile=PROFILE,
+            account=ACTOR_ACCOUNT,
+            allow_actor_rebinding=True,
         )
         producer = CapabilityBindingCandidateProducer(
             runtime_adapter,

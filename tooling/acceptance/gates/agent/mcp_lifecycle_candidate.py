@@ -248,6 +248,7 @@ class McpLifecycleRuntimeAdapter:
             station_accepted=enrollment["accepted"] is True,
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            allow_actor_rebinding=True,
         )
 
     def _client(
@@ -798,13 +799,14 @@ def main() -> int:
             profile_env=profile_env,
             startup_timeout=900,
         )
-        seed_native_actor_identity(
-            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
-            target_root=runtime_pair.native.actor_identity_root,
-            station_url=profile_env["PT_STATION_URL"],
-            profile=PROFILE,
-            account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
-        )
+        for client in (runtime_pair.native, runtime_pair.browser):
+            seed_native_actor_identity(
+                fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+                target_root=client.actor_identity_root,
+                station_url=profile_env["PT_STATION_URL"],
+                profile=PROFILE,
+                account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            )
         runtime_pair.start()
         observations = McpLifecycleCandidateProducer(
             McpLifecycleRuntimeAdapter(
