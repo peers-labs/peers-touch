@@ -177,6 +177,149 @@ class RuntimeOwnerTest(unittest.TestCase):
             execution_source.index("SuiteRuntimeAction.SCENARIO_START"),
         )
 
+    def test_w8_suite_publishes_results_after_receiver_proof_and_cleanup(
+        self,
+    ) -> None:
+        source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
+        execution_loop = source.rindex("for spec in W8_SCENARIOS:")
+        execution_source = source[execution_loop:]
+
+        self.assertIn("result_root=raw_result_root", execution_source)
+        self.assertNotRegex(
+            execution_source,
+            r"(?<!final_)result_root=self\.result_root",
+        )
+        self.assertLess(
+            execution_source.index("_w8_receiver_ui_probe("),
+            execution_source.index("_stage_w8_child_result("),
+        )
+        self.assertLess(
+            source.index("SuiteRuntimeAction.CLEANUP_COMPLETE"),
+            source.index("_publish_w8_result_generation("),
+        )
+
+    def test_w8_result_generation_is_hidden_until_atomic_publication(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_root = root / "raw"
+            publish_root = root / "publish"
+            final_root = root / "final"
+            run_id = "w8-suite-test"
+            relative = (
+                Path("W8")
+                / COMMIT
+                / "subtype"
+                / run_id
+                / "result.json"
+            )
+            raw_result_path = raw_root / relative
+            raw_result_path.parent.mkdir(parents=True)
+            raw_result_path.write_text("{}\n", encoding="utf-8")
+            runtime_manifest_path = root / "runtime.json"
+            runtime_manifest_path.write_text("{}\n", encoding="utf-8")
+            ui_evidence_path = root / "receiver-visible-evidence.json"
+            ui_evidence_path.write_text("{}\n", encoding="utf-8")
+            result = {
+                "workstreamId": "W8",
+                "generationId": COMMIT,
+                "variantId": "subtype",
+                "runId": run_id,
+                "artifactRefs": [
+                    str(raw_result_path),
+                    str(runtime_manifest_path),
+                ],
+                "result": "PASS",
+                "resultDigest": "0" * 64,
+                "startedAt": "2026-10-01T08:00:00.000Z",
+                "completedAt": "2026-10-01T08:00:01.000Z",
+                "durationMs": 1000,
+            }
+
+            staged = runtime_owner_module._stage_w8_child_result(
+                result,
+                raw_result_root=raw_root,
+                publish_root=publish_root,
+                final_result_root=final_root,
+                ui_evidence_path=ui_evidence_path,
+            )
+
+            final_result_path = final_root / relative
+            staged_result_path = publish_root / relative
+            self.assertFalse(final_result_path.exists())
+            self.assertTrue(staged_result_path.is_file())
+            self.assertEqual(
+                str(final_result_path.resolve()),
+                staged["artifactRefs"][0],
+            )
+            self.assertIn(
+                str(ui_evidence_path.resolve()),
+                staged["artifactRefs"],
+            )
+            self.assertGreaterEqual(staged["durationMs"], 1000)
+            self.assertNotEqual(
+                "2026-10-01T08:00:01.000Z",
+                staged["completedAt"],
+            )
+            digest_payload = dict(staged)
+            digest = digest_payload.pop("resultDigest")
+            self.assertEqual(
+                runtime_manifest.canonical_digest(digest_payload),
+                digest,
+            )
+
+            published = runtime_owner_module._publish_w8_result_generation(
+                publish_root=publish_root,
+                final_result_root=final_root,
+                generation_id=COMMIT,
+            )
+
+            self.assertEqual((final_root / "W8" / COMMIT).resolve(), published)
+            self.assertTrue(final_result_path.is_file())
+            self.assertFalse((publish_root / "W8" / COMMIT).exists())
+
+    def test_w8_result_is_not_staged_without_receiver_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_root = root / "raw"
+            publish_root = root / "publish"
+            final_root = root / "final"
+            relative = (
+                Path("W8")
+                / COMMIT
+                / "subtype"
+                / "w8-suite-test"
+                / "result.json"
+            )
+            raw_result_path = raw_root / relative
+            raw_result_path.parent.mkdir(parents=True)
+            raw_result_path.write_text("{}\n", encoding="utf-8")
+            result = {
+                "workstreamId": "W8",
+                "generationId": COMMIT,
+                "variantId": "subtype",
+                "runId": "w8-suite-test",
+                "artifactRefs": [str(raw_result_path)],
+                "result": "PASS",
+                "resultDigest": "0" * 64,
+            }
+
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "receiver-visible evidence is unavailable",
+            ):
+                runtime_owner_module._stage_w8_child_result(
+                    result,
+                    raw_result_root=raw_root,
+                    publish_root=publish_root,
+                    final_result_root=final_root,
+                    ui_evidence_path=root / "missing-ui-evidence.json",
+                )
+
+            self.assertFalse((publish_root / relative).exists())
+            self.assertFalse((final_root / relative).exists())
+
     def test_w8_suite_cli_is_the_only_w8_entry(self) -> None:
         self.assertEqual(
             "run-w8-suite",

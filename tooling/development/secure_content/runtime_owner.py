@@ -3359,6 +3359,167 @@ def _w8_receiver_ui_probe(
     }
 
 
+def _w8_result_relative_path(result: Mapping[str, Any]) -> Path:
+    coordinates = {
+        "workstreamId": W8_TASK_ID,
+        "generationId": None,
+        "variantId": None,
+        "runId": None,
+    }
+    resolved: dict[str, str] = {}
+    for field, expected in coordinates.items():
+        value = result.get(field)
+        if (
+            not isinstance(value, str)
+            or not value
+            or Path(value).name != value
+            or (expected is not None and value != expected)
+        ):
+            raise RuntimeOwnerBlocked(
+                "RESULT_PUBLICATION_INVALID",
+                f"W8 staged result has invalid {field}",
+                resource="result:secure-content-w8",
+            )
+        resolved[field] = value
+    return (
+        Path(resolved["workstreamId"])
+        / resolved["generationId"]
+        / resolved["variantId"]
+        / resolved["runId"]
+        / "result.json"
+    )
+
+
+def _stage_w8_child_result(
+    result: Mapping[str, Any],
+    *,
+    raw_result_root: Path,
+    publish_root: Path,
+    final_result_root: Path,
+    ui_evidence_path: Path,
+) -> Mapping[str, Any]:
+    relative_path = _w8_result_relative_path(result)
+    raw_root = raw_result_root.resolve()
+    raw_result_path = (raw_root / relative_path).resolve()
+    final_result_path = (final_result_root.resolve() / relative_path).resolve()
+    if not raw_result_path.is_file():
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_INVALID",
+            "W8 staged result is unavailable before receiver proof publication",
+            resource="result:secure-content-w8",
+        )
+    if not ui_evidence_path.resolve().is_file():
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_INVALID",
+            "W8 receiver-visible evidence is unavailable before result publication",
+            resource="result:secure-content-w8",
+        )
+
+    artifact_refs = result.get("artifactRefs")
+    if not isinstance(artifact_refs, list) or any(
+        not isinstance(reference, str) or not reference
+        for reference in artifact_refs
+    ):
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_INVALID",
+            "W8 staged result artifact references are invalid",
+            resource="result:secure-content-w8",
+        )
+    normalized_refs: list[str] = []
+    observed_self_ref = False
+    for reference in artifact_refs:
+        artifact_path = Path(reference).resolve()
+        if artifact_path == raw_result_path:
+            normalized_refs.append(str(final_result_path))
+            observed_self_ref = True
+            continue
+        if artifact_path == raw_root or raw_root in artifact_path.parents:
+            raise RuntimeOwnerBlocked(
+                "RESULT_PUBLICATION_INVALID",
+                "W8 staged result contains an unsupported unpublished artifact",
+                resource="result:secure-content-w8",
+            )
+        normalized_refs.append(str(artifact_path))
+    if not observed_self_ref:
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_INVALID",
+            "W8 staged result does not reference its unpublished result",
+            resource="result:secure-content-w8",
+        )
+
+    ui_ref = str(ui_evidence_path.resolve())
+    if ui_ref not in normalized_refs:
+        normalized_refs.append(ui_ref)
+    published = json.loads(json.dumps(result))
+    completed_at = _utc_now()
+    try:
+        started_at = datetime.fromisoformat(
+            str(published["startedAt"]).replace("Z", "+00:00")
+        )
+        completed = datetime.fromisoformat(
+            completed_at.replace("Z", "+00:00")
+        )
+        if started_at.tzinfo is None:
+            raise ValueError("startedAt must include a timezone")
+    except (KeyError, ValueError) as error:
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_INVALID",
+            "W8 staged result timestamps are invalid",
+            resource="result:secure-content-w8",
+        ) from error
+    published["artifactRefs"] = normalized_refs
+    published["completedAt"] = completed_at
+    published["durationMs"] = max(
+        int(published.get("durationMs") or 0),
+        int((completed - started_at).total_seconds() * 1000),
+    )
+    published.pop("resultDigest", None)
+    published["resultDigest"] = runtime_manifest.canonical_digest(published)
+    _write_immutable_json(publish_root.resolve() / relative_path, published)
+    return published
+
+
+def _publish_w8_result_generation(
+    *,
+    publish_root: Path,
+    final_result_root: Path,
+    generation_id: str,
+) -> Path:
+    generation = Path(generation_id)
+    if generation.name != generation_id:
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_INVALID",
+            "W8 result generation ID is invalid",
+            resource="result:secure-content-w8",
+        )
+    staged = (publish_root.resolve() / W8_TASK_ID / generation).resolve()
+    destination = (
+        final_result_root.resolve() / W8_TASK_ID / generation
+    ).resolve()
+    if not staged.is_dir():
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_INVALID",
+            "W8 result generation is incomplete before publication",
+            resource="result:secure-content-w8",
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_CONFLICT",
+            "W8 result generation already exists",
+            resource="result:secure-content-w8",
+        )
+    try:
+        os.rename(staged, destination)
+    except OSError as error:
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_FAILED",
+            f"W8 result generation could not be published: {error}",
+            resource="result:secure-content-w8",
+        ) from error
+    return destination
+
+
 def _start_client(
     client: FoundationRuntimeClient,
     *,
@@ -6993,6 +7154,8 @@ class W7RuntimeOwner:
         )
         variant_results: dict[str, str] = {}
         ui_evidence_refs: dict[str, dict[str, str]] = {}
+        raw_result_root = owner_root / "unpublished-results"
+        publish_root = owner_root / "publish-ready"
         with _runtime_cleanup_scope(transport_stack) as stack:
             accounts, password = _provision_runtime_accounts(
                 primary_station_url=station_url,
@@ -7289,7 +7452,7 @@ class W7RuntimeOwner:
                     ),
                     clients=selected_client_ids,
                     runtime_manifest_path=manifests[spec.scenario_id],
-                    result_root=self.result_root,
+                    result_root=raw_result_root,
                     workspace_identity=identity,
                     fixture_action_client=fixture_action_client,
                 )
@@ -7335,6 +7498,13 @@ class W7RuntimeOwner:
                     / "receiver-visible-evidence.json",
                     ui_artifact,
                 )
+                result = _stage_w8_child_result(
+                    result,
+                    raw_result_root=raw_result_root,
+                    publish_root=publish_root,
+                    final_result_root=self.result_root,
+                    ui_evidence_path=ui_artifact_path,
+                )
                 ui_artifact_ref = {
                     "path": ui_artifact_path.relative_to(
                         owner_root
@@ -7377,6 +7547,11 @@ class W7RuntimeOwner:
         suite_report_path = _write_immutable_json(
             owner_root / "suite-runtime.json",
             suite_report,
+        )
+        _publish_w8_result_generation(
+            publish_root=publish_root,
+            final_result_root=self.result_root,
+            generation_id=str(identity["head"]),
         )
         return {
             "status": "FUNCTIONAL_PASS",
