@@ -231,6 +231,17 @@ test('healthy reuse remains pending until its runtime owner confirms it', () => 
     assert.equal(prepared.resourceResults[0].action, 'REUSE');
     assert.equal(prepared.resourceResults[0].status, 'PENDING');
     assert.equal(prepared.runtimeState, 'PENDING');
+    expectCode('RESOURCE_PLAN_NOT_READY', () =>
+      validatePreparedResourceClaim(
+        {
+          ...options,
+          declaration,
+          resourceKind: 'service',
+          resourceId: 'station-four',
+        },
+        { inspectGitWorkspace: sourceIdentity },
+      ),
+    );
 
     const recorded = recordDevelopmentResourceResult(
       {
@@ -256,6 +267,22 @@ test('healthy reuse remains pending until its runtime owner confirms it', () => 
 
     assert.equal(recorded.resourceResults[0].status, 'READY');
     assert.equal(recorded.runtimeState, 'READY');
+    assert.deepEqual(
+      validatePreparedResourceClaim(
+        {
+          ...options,
+          declaration,
+          resourceKind: 'service',
+          resourceId: 'station-four',
+        },
+        { inspectGitWorkspace: sourceIdentity },
+      ),
+      {
+        authority: 'resource-plan',
+        allocationDigest: prepared.allocationDigest,
+        fencingToken: prepared.fencingToken,
+      },
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -2002,6 +2029,17 @@ test('owner results are fenced and quarantine the prepared plan', () => {
         resourcePlanFile: receiptFile,
       }).runtimeState,
       'QUARANTINED',
+    );
+    expectCode('RESOURCE_PLAN_NOT_READY', () =>
+      validatePreparedResourceClaim(
+        {
+          ...options,
+          declaration,
+          resourceKind: 'service',
+          resourceId: 'station-four',
+        },
+        { inspectGitWorkspace: sourceIdentity },
+      ),
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -902,6 +902,9 @@ accepts an idempotent identical result. A second result with different content
 for the same fenced resource is `RESOURCE_RESULT_CONFLICT`.
 Expected-digest validation joins through the exact `idempotencyKeys`; a bare
 `requirementId` never links results across compatibility or lifecycle scopes.
+Planner-owned lease admission requires a valid `allocationDigest`, a positive
+`fencingToken`, and exactly one matching resource result in `READY`; `PENDING`,
+`QUARANTINED`, missing, or duplicate results fail closed.
 `baseRuntimeClaims` preserves declaration claims that predate the planner.
 Replanning removes only prior `plannedRuntimeClaims`; it never adopts or
 releases a pre-existing claim with the same resource identity. Physical lease

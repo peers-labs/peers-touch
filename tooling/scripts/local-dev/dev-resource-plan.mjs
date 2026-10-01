@@ -86,6 +86,7 @@ const RESOURCE_ACTIONS = new Set([
   'PROVISION',
 ]);
 const RESULT_STATES = new Set(['READY', 'QUARANTINED']);
+const PLAN_RESULT_STATES = new Set(['READY', 'PENDING', 'QUARANTINED']);
 const ACTION_PRECEDENCE = new Map([
   ['REUSE', 0],
   ['RESTART', 1],
@@ -170,6 +171,18 @@ const RESULT_KEYS = new Set([
   'status',
   'manifestRef',
   'digests',
+]);
+const PLAN_RESOURCE_RESULT_KEYS = new Set([
+  'resourceKind',
+  'resourceId',
+  'action',
+  'status',
+  'owner',
+  'manifestRef',
+  'digests',
+  'targetIds',
+  'requirementIds',
+  'idempotencyKeys',
 ]);
 
 export class ResourcePlanError extends Error {
@@ -2477,6 +2490,63 @@ function validateOwnerResult(value) {
   };
 }
 
+function validatePlanResourceResult(value, position) {
+  const field = `resource plan resourceResults[${position}]`;
+  assertClosedObject(value, PLAN_RESOURCE_RESULT_KEYS, field);
+  if (
+    !RESOURCE_ACTIONS.has(value.action)
+    || !PLAN_RESULT_STATES.has(value.status)
+  ) {
+    fail('RESOURCE_PLAN_INVALID', `${field} action or status is invalid`);
+  }
+  if (
+    value.manifestRef !== null
+    && typeof value.manifestRef !== 'string'
+  ) {
+    fail(
+      'RESOURCE_PLAN_INVALID',
+      `${field}.manifestRef must be null or a string`,
+    );
+  }
+  return {
+    ...value,
+    resourceKind: requiredIdentifier(
+      value.resourceKind,
+      `${field}.resourceKind`,
+    ),
+    resourceId: requiredIdentifier(
+      value.resourceId,
+      `${field}.resourceId`,
+    ),
+    owner: requiredIdentifier(value.owner, `${field}.owner`),
+    manifestRef:
+      value.manifestRef === null
+        ? null
+        : requiredText(value.manifestRef, `${field}.manifestRef`, 2048),
+    digests: validateDigests(value.digests, `${field}.digests`),
+    targetIds: uniqueStrings(
+      value.targetIds,
+      `${field}.targetIds`,
+      { allowEmpty: false },
+    ).map((targetId, index) =>
+      requiredIdentifier(targetId, `${field}.targetIds[${index}]`)),
+    requirementIds: uniqueStrings(
+      value.requirementIds,
+      `${field}.requirementIds`,
+      { allowEmpty: false },
+    ).map((requirementId, index) =>
+      requiredIdentifier(
+        requirementId,
+        `${field}.requirementIds[${index}]`,
+      )),
+    idempotencyKeys: uniqueStrings(
+      value.idempotencyKeys,
+      `${field}.idempotencyKeys`,
+      { allowEmpty: false },
+    ),
+  };
+}
+
 function claimsCover(currentClaims, plannedClaims) {
   return plannedClaims.every((planned) => {
     const current = currentClaims.find(
@@ -2525,10 +2595,20 @@ export function validatePreparedResourceClaim(options, dependencies = {}) {
   if (
     !Array.isArray(receipt.baseRuntimeClaims)
     || !Array.isArray(receipt.plannedRuntimeClaims)
+    || !Array.isArray(receipt.resourceResults)
     || !isObject(receipt.source)
+    || !Number.isInteger(receipt.fencingToken)
+    || receipt.fencingToken < 1
   ) {
     fail('RESOURCE_PLAN_INVALID', 'resource plan admission data is invalid');
   }
+  const allocationDigest = requiredDigest(
+    receipt.allocationDigest,
+    'resource plan allocationDigest',
+  );
+  const resourceResults = receipt.resourceResults.map(
+    validatePlanResourceResult,
+  );
   const planned = receipt.plannedRuntimeClaims.find(
     (claim) =>
       claim.kind === options.resourceKind
@@ -2557,11 +2637,38 @@ export function validatePreparedResourceClaim(options, dependencies = {}) {
       'planner-owned runtime claim does not match its declaration',
     );
   }
+  const matchingResults = resourceResults.filter(
+    (result) =>
+      result.resourceKind === options.resourceKind
+      && result.resourceId === options.resourceId,
+  );
+  if (matchingResults.length !== 1) {
+    fail(
+      'RESOURCE_PLAN_INVALID',
+      'planner-owned runtime claim must have one resource result',
+      {
+        resourceKind: options.resourceKind,
+        resourceId: options.resourceId,
+        matches: matchingResults.length,
+      },
+    );
+  }
+  if (matchingResults[0].status !== 'READY') {
+    fail(
+      'RESOURCE_PLAN_NOT_READY',
+      'planner-owned runtime claim is not ready for lease admission',
+      {
+        resourceKind: options.resourceKind,
+        resourceId: options.resourceId,
+        status: matchingResults[0].status,
+      },
+    );
+  }
   const source = inspectCurrentSource(options, dependencies);
   assertCurrentSource(receipt.source, source);
   return {
     authority: 'resource-plan',
-    allocationDigest: receipt.allocationDigest,
+    allocationDigest,
     fencingToken: receipt.fencingToken,
   };
 }
