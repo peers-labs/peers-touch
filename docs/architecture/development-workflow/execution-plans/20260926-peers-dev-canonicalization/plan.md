@@ -29,6 +29,8 @@
     ],
     "canonical-contracts": [],
     "canonical-final-proof": [
+      "development-workflow-control-plane",
+      "acceptance-workflow-contract",
       "acceptance-infra-validation",
       "acceptance-plan-self",
       "acceptance-runtime-provisioning-self",
