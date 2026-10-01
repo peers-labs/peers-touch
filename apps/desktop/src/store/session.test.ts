@@ -20,7 +20,16 @@ vi.mock('../services/desktop_api', () => ({
     ensureStationSession: mocks.ensureStationSession,
     authLogout: mocks.authLogout,
   },
-  AuthCommandException: class AuthCommandException extends Error {},
+  AuthCommandException: class AuthCommandException extends Error {
+    code: string;
+    details?: Record<string, unknown>;
+
+    constructor(error: { code: string; message: string; details?: Record<string, unknown> }) {
+      super(error.message);
+      this.code = error.code;
+      this.details = error.details;
+    }
+  },
 }));
 
 vi.mock('../services/identity_event', () => ({
@@ -31,6 +40,7 @@ vi.mock('../services/identityPipeline', () => ({
   runIdentityPipeline: mocks.runIdentityPipeline,
 }));
 
+const { AuthCommandException } = await import('../services/desktop_api');
 const { useSessionStore } = await import('./session');
 
 const authenticatedResponse = {
@@ -121,6 +131,21 @@ describe('session authentication convergence', () => {
     expect(mocks.authRestoreSession).toHaveBeenCalledOnce();
     expect(mocks.stationBindingComplete).toHaveBeenCalledOnce();
     expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:new');
+  });
+
+  it('keeps OAuth acknowledgement recovery pending instead of clearing identity', async () => {
+    const pending = new AuthCommandException({
+      code: 'UNAUTHORIZED',
+      message: 'oauth session activation pending',
+      details: { reason: 'oauth_acknowledgement_pending' },
+    });
+    mocks.authRestoreSession.mockRejectedValueOnce(pending);
+
+    await expect(useSessionStore.getState().restoreSession()).rejects.toBe(pending);
+
+    expect(useSessionStore.getState().authenticated).toBe(true);
+    expect(useSessionStore.getState().currentUser?.actorPtid).toBe('ptid:person:alice');
+    expect(useSessionStore.getState().restoring).toBe(false);
   });
 
   it('rolls back the native session when Station binding cannot complete', async () => {

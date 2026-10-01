@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,6 +91,18 @@ func sanitizeReturnTo(raw string, allowed []string) string {
 		if err != nil || approved.User != nil {
 			continue
 		}
+		if isNativeLoopbackTemplate(approved) {
+			port, portErr := strconv.ParseUint(u.Port(), 10, 16)
+			if portErr == nil &&
+				port > 0 &&
+				u.Scheme == "http" &&
+				u.Hostname() == "127.0.0.1" &&
+				u.EscapedPath() == approved.EscapedPath() &&
+				u.Fragment == "" {
+				return u.String()
+			}
+			continue
+		}
 		if strings.EqualFold(u.Scheme, approved.Scheme) &&
 			strings.EqualFold(u.Host, approved.Host) &&
 			u.EscapedPath() == approved.EscapedPath() {
@@ -98,4 +111,13 @@ func sanitizeReturnTo(raw string, allowed []string) string {
 		}
 	}
 	return ""
+}
+
+func isNativeLoopbackTemplate(candidate *url.URL) bool {
+	return candidate.Scheme == "http" &&
+		candidate.Hostname() == "127.0.0.1" &&
+		candidate.Port() == "" &&
+		candidate.EscapedPath() == "/callback" &&
+		candidate.RawQuery == "" &&
+		candidate.Fragment == ""
 }

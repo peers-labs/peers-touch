@@ -1,8 +1,8 @@
 # OAuth Login Broker - Experience Contract
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
 ---
@@ -15,6 +15,7 @@
 | OLB-J02 | Refresh an expired provider credential | OLB-C03, OLB-C05, OLB-C06 |
 | OLB-J03 | Inspect login operations | OLB-C02, OLB-C04, OLB-C07 |
 | OLB-J04 | Rotate the record encryption key | OLB-C03, OLB-C06 |
+| OLB-J05 | Sign in to Desktop through the broker | OLB-C09, OLB-C12, OLB-C13 |
 
 ## 2. OLB-J01: Durable Login
 
@@ -42,16 +43,24 @@ include a keyed code fingerprint, never the code itself.
 
 ## 3. OLB-J02: Credential Refresh
 
-1. A server-side caller requests refresh for one stored identity.
-2. The broker decrypts the credential and rejects missing, corrupt, or
+1. A server-side caller requests refresh for one stored identity and supplies
+   an opaque idempotency key.
+2. The broker durably claims that operation against the current credential
+   generation before contacting the provider.
+3. The broker decrypts the credential and rejects missing, corrupt, or
    non-refreshable records.
-3. The provider refresh endpoint returns a new token set.
-4. If the provider omits a new refresh token, the broker retains the previous
+4. The provider refresh endpoint returns a new token set.
+5. If the provider omits a new refresh token, the broker retains the previous
    refresh token.
-5. Credential replacement and `credential_refreshed` audit are committed
+6. Credential replacement, operation completion, and
+   `credential_refreshed` audit are committed
    atomically.
-6. The use case returns sanitized token metadata to its server-side caller; no
+7. The use case returns sanitized token metadata to its server-side caller; no
    browser route exposes token values.
+
+An operation left claimed after a process crash or ambiguous provider response
+is not retried against the provider. It becomes an explicit
+`credential_refresh_uncertain` result and requires fresh authorization.
 
 ## 4. OLB-J03: Operator Readback
 
@@ -78,7 +87,33 @@ include a keyed code fingerprint, never the code itself.
 6. Removing an old key before all records are rewritten makes those records
    unreadable and fails closed.
 
-## 6. Failure And Recovery
+## 6. OLB-J05: Native Desktop Account Login
+
+1. A logged-out Desktop starts an account-login attempt without requiring an
+   existing actor or Station token.
+2. Desktop opens the broker in the system browser and supplies its run-scoped
+   `http://127.0.0.1:<ephemeral>/callback` receiver.
+3. The broker accepts that destination only when the site explicitly allows
+   the canonical loopback callback template.
+4. Provider success is durably committed by the broker before redirect.
+5. The broker signs the versioned canonical identity assertion, including
+   email-verification state, and redirects to the exact loopback receiver.
+6. Desktop forwards the unmodified assertion to Station. Station rejects a
+   missing secret, unsupported version, stale timestamp, malformed identity,
+   or invalid signature before resolving an actor.
+7. Station is the only component that issues the session. Desktop persists the
+   local account and session only after that response succeeds.
+8. Provider denial returns to the same transaction-owned receiver as a typed
+   failure, consumes and audits the transaction, and never becomes a local
+   account or session.
+9. Provider usernames that do not satisfy the Station handle grammar are
+   normalized to a stable provider-scoped handle; display names remain
+   presentation data.
+
+Authenticated connector linking uses a separate intent and requires an
+existing actor. It cannot enter the account-login session issuance path.
+
+## 7. Failure And Recovery
 
 | Failure | Observable behavior | Durable result |
 |---|---|---|
@@ -90,13 +125,26 @@ include a keyed code fingerprint, never the code itself.
 | Admin auth failure | `401` | no repository read |
 | Unapproved `return_to` | configured success URL is used | no attacker-selected redirect |
 | Missing production bridge secret | startup fails | no unsigned identity redirect |
+| Missing Station bridge secret | bridge returns unavailable | no actor or session is created |
+| Invalid/stale broker assertion | Station returns unauthorized | no local account or session is activated |
+| Lost Station acknowledgement response | bounded replay plus attempt-state readback | one active candidate session; no cancellation after observed activation |
+| Later Access Gate is abandoned or expires | Desktop reports expiry | pending Desktop entry removed; inactive Station session revoked; envelope deleted |
+| Provider denies consent | transaction-owned error redirect | typed failure audit; no provider exchange |
+| Provider has no usable email | stable provider-scoped synthetic address | no cross-provider email linking |
+| Refresh interrupted after durable claim | `credential_refresh_uncertain` | no second provider refresh call |
 | Missing storage config on Vercel | startup fails closed | no memory fallback |
 | Refresh token absent | non-refreshable typed error | credential unchanged |
 
-## 7. Forbidden Experiences
+## 8. Forbidden Experiences
 
 - Callback success after only an in-memory or partial write.
 - Raw secrets in redirects, logs, errors, audit records, dashboard HTML, or JSON.
 - Silently accepting replay because two callbacks raced.
 - Falling back to process memory on Vercel.
 - Admin actions that mutate identity, credential, audit, or repository state.
+- Starting Desktop account login through a command that requires a current
+  authenticated actor.
+- Persisting an active local OAuth account or connector before Station verifies
+  the signed broker assertion.
+- Retrying a rotating refresh token after a durable claim has an uncertain
+  outcome.

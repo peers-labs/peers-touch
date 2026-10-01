@@ -1,8 +1,8 @@
 # OAuth Login Broker - Product Definition
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
 ---
@@ -41,6 +41,8 @@ application.
 | OLB-C09 | Redirect trust boundary | required | Only configured callback destinations receive a production signed identity result |
 | OLB-C10 | Dedicated database backend | deferred | Future scale can replace GitHub without changing use cases |
 | OLB-C11 | Multi-operator RBAC | deferred | Initial deployment has one administrator |
+| OLB-C12 | Native Desktop account handoff | required | A logged-out Desktop can complete provider consent and receive a Station session only after Station verifies the broker assertion |
+| OLB-C13 | Provider-compatible identity | required | Verified provider email is used when available; providers without email receive a stable non-linking Station identity |
 
 GitHub, Google, and Weixin are integrations, not product benchmarks. No
 benchmark disposition document is required.
@@ -75,10 +77,16 @@ benchmark disposition document is required.
   every old-key record class under the active key.
 - Provider refresh keeps the previous refresh token when a provider rotates
   only the access token.
+- A refresh operation is durably claimed before the provider call; an
+  interrupted rotating-token exchange becomes an explicit reauthorization
+  state rather than silently retrying an invalidated token.
 - All operator responses are non-cacheable and protected by Basic auth over
   HTTPS.
 - Production startup requires a bridge signing secret for every configured
   site; callback errors route only through the transaction's site.
+- Desktop account login and authenticated connector linking are distinct
+  intents. Account login does not require an existing local session, while
+  connector linking never creates or replaces the active Station identity.
 
 ## 6. Non-Goals
 
@@ -87,7 +95,8 @@ benchmark disposition document is required.
 - Exposing provider tokens to the browser or administrator.
 - Building user account linking, account merging, deletion, or consent
   management.
-- Replacing Station authentication or issuing Station sessions.
+- Replacing Station authentication or issuing Station sessions inside the
+  broker. Station remains the only session issuer.
 - Performing production deployment, creating the GitHub App, or creating the
   private repository in this Plan.
 
@@ -100,6 +109,7 @@ benchmark disposition document is required.
 | Memory persistence | unsupported | development-only | no direct access |
 | Operator dashboard | required | required | out of scope |
 | Credential refresh use case | server-side | server-side | no public token API |
+| Account-login handoff | redirect producer | redirect producer | Desktop native consumes; browser-only Desktop is unsupported |
 
 ## 8. Delivery Evidence
 
@@ -110,12 +120,14 @@ benchmark disposition document is required.
 | OLB-C05 | normalized token sets and refresh methods | provider HTTP fixture tests |
 | OLB-C06/C08 | GitHub App repository adapter behind domain ports | optimistic conflict/retry tests |
 | OLB-C07 | authenticated and sanitized read-only administration | local HTTP handler tests and browser check |
+| OLB-C12/C13 | signed broker assertion becomes a Station-issued Desktop session | native callback, Station route, signature, and no-email identity tests |
 
 ## 9. Product Gate
 
-Current status: implemented and verified in deterministic local runtime cells.
-Live provider consent, GitHub App installation, and Vercel deployment remain
-unproven.
+Current status: broker-local behavior is verified in deterministic local
+runtime cells. The native Desktop-to-Station handoff and live provider,
+GitHub App, and Vercel deployment remain unproven until the
+`OLB-LIVE-20261001` Plan completes.
 
 No material UI prototype is required. The operator surface is a read-only table
 with no workflow decisions beyond authentication and filtering-free inspection;

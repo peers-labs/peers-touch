@@ -309,7 +309,8 @@ api.reEmbed()                              // → { ok: boolean; reembedded_coun
 api.oauth2ListProviders()                  // → OAuth2ProviderSummary[]
 api.oauth2GetProvider(id)                  // → OAuth2ProviderDetail
 api.oauth2Authorize(id, environment?, returnTo?) // → { auth_url: string }
-api.oauth2HandleCallback(input)            // → { status: string }
+api.oauth2StartLoopback(id, environment?, purpose) // purpose: account_login | connector_link
+api.oauth2PollLoopback(sessionId)          // → pending | completed | failed | expired
 api.oauth2ListConnections()                // → OAuth2Connection[]
 api.oauth2Disconnect(id)                   // → { status: string }
 api.oauth2RefreshToken(id)                 // → { status: string }

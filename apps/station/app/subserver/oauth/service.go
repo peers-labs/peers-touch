@@ -35,12 +35,14 @@ var pkceVerifierPattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
 
 type accessCoordinator interface {
 	ValidateStation(context.Context, string) error
-	Validate(context.Context, string, string, string, accessgatepb.AccessGateType) error
+	Validate(context.Context, string, string, string, string, uint64, accessgatepb.AccessGateType) error
 	BindCandidate(
 		context.Context,
 		string,
 		string,
 		string,
+		string,
+		uint64,
 		*model.ActorRef,
 		string,
 		string,
@@ -56,6 +58,7 @@ type sessionCredentialIssuer interface {
 	Prepare(
 		context.Context,
 		*dbmodel.OAuthSessionCandidate,
+		string,
 		uint64,
 		time.Time,
 	) (*session.SessionRecord, *model.LoginResponse, error)
@@ -89,6 +92,10 @@ func newOAuthService(
 	}
 }
 
+func (s *oauthService) SweepExpired(ctx context.Context) (int, error) {
+	return s.repository.SweepExpired(ctx, s.now())
+}
+
 func (s *oauthService) Start(
 	ctx context.Context,
 	req *oauthpb.StartOAuthAttemptRequest,
@@ -101,6 +108,8 @@ func (s *oauthService) Start(
 		strings.TrimSpace(req.GetAccessAttemptId()),
 		strings.TrimSpace(req.GetStationPeerId()),
 		strings.TrimSpace(req.GetGateId()),
+		strings.TrimSpace(req.GetDeviceId()),
+		req.GetLifecycleGeneration(),
 		req.GetActionType(),
 	); err != nil {
 		return nil, fmt.Errorf("validate OAuth access binding: %w", err)
@@ -241,12 +250,24 @@ func (s *oauthService) Complete(
 		attempt.AccessAttemptID,
 		attempt.StationPeerID,
 		attempt.GateID,
+		attempt.DeviceID,
+		attempt.LifecycleGeneration,
 		actorRef,
 		candidate.ActorUsername,
 		candidate.ActorEmail,
 	)
 	if err != nil {
-		_ = s.repository.MarkDenied(ctx, binding, "OAUTH_ACCESS_REEVALUATION_FAILED")
+		if markErr := s.repository.MarkDenied(
+			ctx,
+			binding,
+			"OAUTH_ACCESS_REEVALUATION_FAILED",
+		); markErr != nil {
+			return nil, fmt.Errorf(
+				"re-evaluate Access Gate after OAuth: %w; persist denial: %v",
+				err,
+				markErr,
+			)
+		}
 		return nil, fmt.Errorf("re-evaluate Access Gate after OAuth: %w", err)
 	}
 	return s.completeFromDecision(ctx, binding, candidate, decision)
@@ -422,6 +443,7 @@ func (s *oauthService) finalize(
 		record, credential, err := s.issuer.Prepare(
 			ctx,
 			candidate,
+			accessAttempt.Platform,
 			accessAttempt.DecisionRevision,
 			s.now(),
 		)
@@ -698,15 +720,25 @@ func (stationAccessCoordinator) ValidateStation(_ context.Context, stationPeerID
 
 func (stationAccessCoordinator) Validate(
 	ctx context.Context,
-	accessAttemptID, stationPeerID, gateID string,
+	accessAttemptID, stationPeerID, gateID, deviceID string,
+	lifecycleGeneration uint64,
 	actionType accessgatepb.AccessGateType,
 ) error {
-	return accessgate.ValidateOAuthBinding(ctx, accessAttemptID, stationPeerID, gateID, actionType)
+	return accessgate.ValidateOAuthBinding(
+		ctx,
+		accessAttemptID,
+		stationPeerID,
+		gateID,
+		deviceID,
+		lifecycleGeneration,
+		actionType,
+	)
 }
 
 func (stationAccessCoordinator) BindCandidate(
 	ctx context.Context,
-	accessAttemptID, stationPeerID, gateID string,
+	accessAttemptID, stationPeerID, gateID, deviceID string,
+	lifecycleGeneration uint64,
 	actorRef *model.ActorRef,
 	username, email string,
 ) (*accessgatepb.AccessDecision, error) {
@@ -715,6 +747,8 @@ func (stationAccessCoordinator) BindCandidate(
 		accessAttemptID,
 		stationPeerID,
 		gateID,
+		deviceID,
+		lifecycleGeneration,
 		actorRef,
 		username,
 		email,
@@ -751,10 +785,15 @@ type stationSessionCredentialIssuer struct{}
 func (stationSessionCredentialIssuer) Prepare(
 	ctx context.Context,
 	candidate *dbmodel.OAuthSessionCandidate,
+	platform string,
 	decisionRevision uint64,
 	now time.Time,
 ) (*session.SessionRecord, *model.LoginResponse, error) {
 	actorRecord, err := touchactor.GetActorByPTID(ctx, candidate.ActorPTID)
+	if err != nil {
+		return nil, nil, err
+	}
+	deviceType, err := oauthSessionDeviceType(platform)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -766,6 +805,7 @@ func (stationSessionCredentialIssuer) Prepare(
 			AccessAttemptID:        candidate.AccessAttemptID,
 			StationPeerID:          candidate.StationPeerID,
 			AccessDecisionRevision: decisionRevision,
+			DeviceType:             deviceType,
 			DeviceID:               candidate.DeviceID,
 			LifecycleGeneration:    candidate.LifecycleGeneration,
 		},
@@ -776,4 +816,17 @@ func (stationSessionCredentialIssuer) Prepare(
 	}
 	response.ActorRef.Kind = model.ActorKind(candidate.ActorKind)
 	return record, response, nil
+}
+
+func oauthSessionDeviceType(platform string) (session.DeviceType, error) {
+	switch strings.TrimSpace(platform) {
+	case string(session.DeviceTypeDesktop):
+		return session.DeviceTypeDesktop, nil
+	case string(session.DeviceTypeMobile):
+		return session.DeviceTypeMobile, nil
+	case string(session.DeviceTypeWeb):
+		return session.DeviceTypeWeb, nil
+	default:
+		return "", fmt.Errorf("unsupported OAuth client platform %q", platform)
+	}
 }

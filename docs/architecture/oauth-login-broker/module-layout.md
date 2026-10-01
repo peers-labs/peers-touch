@@ -1,8 +1,8 @@
 # OAuth Login Broker - Module Layout
 
 > **Status**: active
-> **Version**: v1.0
-> **Created**: 2026-09-30 | **Updated**: 2026-09-30
+> **Version**: v1.1
+> **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 > **Module**: `apps/oauth2-client/`
 
@@ -86,7 +86,21 @@ Forbidden:
 | cross-container journey | `internal/bootstrap` or acceptance Gate fixture |
 | full-prefix key rotation | GitHub store contract tests plus maintenance command test |
 
-## 5. Public Surface
+## 5. Cross-Runtime Handoff
+
+| Path | Owns |
+|---|---|
+| `model/domain/oauth/oauth.proto` | signed broker bridge request and response wrapper |
+| `model/domain/oauth/mobile_oauth.proto` | canonical Station OAuth candidate, credential envelope, status, cancellation, and acknowledgement contracts |
+| `apps/station/frame/touch/auth/oauth_bridge.go` | assertion verification, one-time consumption, provider identity resolution |
+| `apps/station/app/subserver/oauth/` | Access Attempt binding, inactive candidate, encrypted credential delivery, acknowledgement |
+| `apps/desktop/src-tauri/src/application/oauth2/` | loopback receiver proof, candidate decryption, durable local commit, acknowledgement |
+
+The bridge handler must delegate session lifecycle work to
+`apps/station/app/subserver/oauth/`; it must not create a parallel candidate or
+session store.
+
+## 6. Public Surface
 
 Existing start, callback, and health routes remain stable. New public paths are
 limited to authenticated read-only administration:

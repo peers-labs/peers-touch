@@ -1,7 +1,7 @@
 # OAuth Login Broker - Architecture Design
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.3
 > **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 > **Module**: `apps/oauth2-client/`
@@ -23,6 +23,12 @@
 6. Missing persistence or cryptographic configuration fails closed on Vercel.
 7. Redirect destinations are site-owned configuration, never request or
    callback authority.
+8. Broker identity assertions are versioned protocol messages; Station verifies
+   them before binding an inactive OAuth candidate to the canonical Access
+   Attempt.
+9. Account login and authenticated connector linking are separate intents.
+10. Station activates a candidate session and replaces older sessions only
+    after Desktop acknowledges durable local credential persistence.
 
 ## 2. Evidence Ledger
 
@@ -35,12 +41,20 @@
 | GitHub private repositories support authenticated Git Data writes | verified_fact | GitHub REST Git Data documentation | high | live App installation |
 | One private repository is sufficient for current single-operator volume | inference | accepted operating scope and GitHub App rate limits | medium | production traffic observation |
 | A domain store can later be replaced by a database | proposal | repository ports below | high | future adapter |
+| Logged-out Desktop cannot call the current loopback command | verified_fact | `interface/tauri_commands/oauth2.rs` requires `ptid_for_window` | high | none |
+| Desktop loopback is rejected by the current exact return allowlist | verified_fact | random `127.0.0.1:<port>` sender versus configured custom-scheme callback | high | none |
+| Broker and Station sign different byte strings | verified_fact | broker URL-encodes sorted fields; Station concatenates four fields with colons | high | none |
+| Station does not register the declared OAuth bridge handler | verified_fact | `RouterURLOAuthLogin` exists but `GetActorHandlers` omits it | high | none |
+| GitHub `/user.email` can be null | verified_fact | GitHub REST contract and current adapter | high | live private-email account proof |
+| GitHub refresh-token rotation invalidates prior tokens | verified_fact | GitHub App OAuth token documentation | high | live fault-window proof |
 
 ## 3. System Architecture
 
 ```mermaid
 flowchart LR
     CALLER["Peers caller"]
+    DESKTOP["Desktop native identity runtime"]
+    STATION["Station session authority"]
     BROWSER["User browser"]
     VERCEL["Vercel OAuth functions"]
     USECASE["OAuth application use cases"]
@@ -52,7 +66,8 @@ flowchart LR
     REPO[("Private data repository")]
     ADMIN["Read-only admin handler"]
 
-    CALLER --> BROWSER
+    CALLER --> DESKTOP
+    DESKTOP --> BROWSER
     BROWSER --> VERCEL
     VERCEL --> USECASE
     USECASE --> PROVIDER
@@ -65,6 +80,8 @@ flowchart LR
     ADMIN --> STORE
     VERCEL --> ADMIN
     PROVIDER --> BROWSER
+    VERCEL --> DESKTOP
+    DESKTOP --> STATION
 ```
 
 ## 4. Sources Of Truth And Ownership
@@ -80,10 +97,18 @@ flowchart LR
 | Encryption key ring | Vercel secret environment | deployment operator |
 | Git branch head | dedicated private repository branch | GitHub adapter CAS |
 | Admin projection | derived at request time | no mutation |
+| Native callback attempt | Desktop Rust process | Desktop OAuth runtime |
+| Broker assertion verification | Station | Station OAuth bridge handler |
+| Access Attempt and OAuth candidate | Station Access Gate and OAuth service | Station |
+| Actor and login session | Station database/session facility | Station OAuth acknowledgement |
+| Local account/session projection | Desktop encrypted local stores | Desktop identity runtime, before acknowledgement |
 
-No Station business truth is moved into this module. A later Station
-integration consumes the signed redirect contract or replaces the adapter
-through a separate accepted design.
+No Station business truth moves into the broker. The broker produces one
+signed identity assertion; Station remains the sole actor and session authority.
+The bridge handler does not implement a second session path: it delegates
+candidate persistence, later-gate evaluation, encrypted credential delivery,
+status, cancellation, and acknowledgement to the existing Station OAuth
+service.
 
 ## 5. Application Contracts
 
@@ -94,8 +119,9 @@ type OAuthStore interface {
     CompleteAuthorization(context.Context, AuthorizationCompletion) error
     RecordAuthorizationFailure(context.Context, AuthorizationFailure) error
     LoadCredential(context.Context, identityID string) (*OAuthCredential, error)
-    LoadCredentialForRefresh(context.Context, identityID, operationID string) (*OAuthCredential, bool, error)
-    ReplaceCredential(context.Context, CredentialRefresh) (*OAuthCredential, error)
+    ClaimCredentialRefresh(context.Context, CredentialRefreshClaim) (*OAuthCredential, RefreshClaimResult, error)
+    CompleteCredentialRefresh(context.Context, CredentialRefresh) (*OAuthCredential, error)
+    MarkCredentialRefreshUncertain(context.Context, CredentialRefreshFailure) error
     AdminSnapshot(context.Context, int) (AdminSnapshot, error)
 }
 
@@ -165,12 +191,19 @@ The store treats an already committed identical event as success, remembers
 completed refresh IDs across later refreshes, and rejects a different second
 completion for the same authorization transaction.
 
-Refresh replacement is optimistic: the use case supplies the credential
-generation observed before calling the provider. A generation conflict discards
-the stale provider response and retries from the current credential.
-If a provider call fails, the use case performs one durable readback for the
-same operation ID so a concurrent committed winner is returned without another
-provider call; otherwise the original provider failure is preserved.
+Refresh starts with an atomic durable claim that binds the operation ID to the
+credential generation before the provider call. The claimant may call the
+provider once. A duplicate or restarted process that observes a non-terminal
+claim never calls the provider. Successful replacement, operation completion,
+and audit append commit atomically. An ambiguous provider response or a
+successful provider response followed by storage failure leaves an explicit
+uncertain operation that requires reauthorization.
+
+A failure before the provider call releases the claim under the same claim ID.
+A later caller may reacquire that released operation with a new claim ID;
+released claims do not block another operation for the unchanged credential
+generation. Once the provider is called, the operation can only become
+`committed` or `uncertain`.
 
 ## 8. Cryptographic Boundary
 
@@ -209,6 +242,11 @@ state.
   the provider.
 - Provider errors are mapped to stable codes; raw response bodies are not
   returned to callers.
+- GitHub resolves a missing public profile email through `/user/emails`,
+  selecting a verified primary address first and otherwise a verified address.
+- Email is optional provider evidence. Station may match an existing actor only
+  with a verified email; otherwise it creates a provider-scoped synthetic
+  address and relies on `(provider, provider_user_id)` for future resolution.
 
 ## 10. Administration Boundary
 
@@ -231,6 +269,38 @@ state.
   never trusts callback `site_id`.
 - Vercel startup requires a bridge signing secret for every configured site.
 - Raw state is not copied into success/error redirects or response bodies.
+- Native loopback is opt-in through the exact template
+  `http://127.0.0.1/callback`. It matches only HTTP, literal IPv4 loopback, a
+  non-zero ephemeral port, fixed `/callback` path, no userinfo, and no fragment.
+- The signed assertion uses one canonical sorted URL-encoded field set:
+  `bridge_version`, `site_id`, `purpose`, `assertion_id`, `receiver_id`,
+  provider subject/profile fields, `email_verified`, and `ts`.
+- Station requires `bridge_version=v1`, a configured secret, a timestamp inside
+  the accepted window, and a matching HMAC before durably consuming the
+  purpose-bound assertion and resolving the actor.
+- Desktop starts a canonical Access Attempt, forwards its Station/gate/device
+  binding with the assertion, and supplies a per-attempt X25519 public key.
+- Station reuses the existing OAuth candidate and credential-envelope
+  lifecycle. The candidate session remains revoked during credential delivery.
+- Desktop commits local account/session state, then calls the canonical OAuth
+  acknowledgement endpoint. Only acknowledgement activates the candidate and
+  revokes replaced sessions.
+- Before local mutation, Desktop durably records the acknowledgement binding
+  and rollback snapshot. A lost acknowledgement response keeps that record and
+  the local credential, then converges through bounded replay and canonical
+  status readback during loopback polling or session restoration. Desktop must
+  not roll back or cancel while activation remains unobservable.
+- If another Access Gate action is required, Desktop keeps the candidate
+  pending, completes the same Access Attempt, and resumes status before local
+  persistence and acknowledgement.
+- The renderer uses the native loopback expiry and sends an explicit
+  cancellation before reporting timeout. A callback cannot cross a concurrent
+  cancellation into silent activation.
+- Station owns startup and periodic expiry sweeps. Abandoned or expired pending
+  attempts are terminalized without requiring later request traffic, revoke
+  the inactive candidate session, and delete its credential envelope.
+- Authenticated connector linking is a distinct command path and cannot issue
+  or replace the active Station session.
 
 ## 12. Allowed And Forbidden Dependencies
 
@@ -251,6 +321,11 @@ browser -> GitHub repository or OAuth token
 admin handler -> credential plaintext fields
 provider adapter -> repository implementation
 memory store -> Vercel production fallback
+Desktop -> trust unsigned callback identity
+broker -> issue Station actor or session truth
+connector link -> account-login session issuance
+bridge handler -> direct session issuance or post-hoc Access Gate checks
+Desktop -> advertise an OAuth session before Station acknowledgement
 ```
 
 ## 13. Quality Gates
@@ -266,7 +341,10 @@ memory store -> Vercel production fallback
   rotation and second-run no-op proof.
 - `go test -race ./...`, module governance, Plan validation, and registered
   OAuth Acceptance Gate.
+- Native Desktop account login from logged-out state, provider denial,
+  private-email GitHub identity, signed-field tamper, missing Station secret,
+  bridge failure before local persistence, and refresh crash-window tests.
 
 Current status: implemented and verified in deterministic local runtime cells.
 Live provider consent, GitHub App installation, and Vercel deployment remain
-unproven.
+unproven; the native handoff amendment is tracked by `OLB-LIVE-20261001`.

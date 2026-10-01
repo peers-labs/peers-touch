@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/port"
@@ -18,6 +19,7 @@ type Endpoints struct {
 	Authorize string
 	Token     string
 	User      string
+	Emails    string
 }
 
 type Provider struct {
@@ -31,6 +33,7 @@ func New() *Provider {
 		Authorize: "https://github.com/login/oauth/authorize",
 		Token:     "https://github.com/login/oauth/access_token",
 		User:      "https://api.github.com/user",
+		Emails:    "https://api.github.com/user/emails",
 	})
 }
 
@@ -80,32 +83,85 @@ func (p *Provider) ExchangeCode(ctx context.Context, code, verifier string, cfg 
 		_ = userResp.Body.Close()
 		return nil, errors.New("github_userinfo_failed")
 	}
-	var userBody map[string]any
+	var userBody struct {
+		ID        uint64  `json:"id"`
+		Login     string  `json:"login"`
+		Name      string  `json:"name"`
+		Email     *string `json:"email"`
+		AvatarURL string  `json:"avatar_url"`
+	}
 	if err := common.DecodeJSON(userResp, &userBody); err != nil {
 		return nil, errors.New("github_userinfo_failed")
 	}
-	id, _ := userBody["id"].(float64)
-	login, _ := userBody["login"].(string)
-	name, _ := userBody["name"].(string)
-	email, _ := userBody["email"].(string)
-	avatar, _ := userBody["avatar_url"].(string)
-	displayName := name
-	if displayName == "" {
-		displayName = login
+	profileEmail := ""
+	if userBody.Email != nil {
+		profileEmail = *userBody.Email
 	}
-	if id == 0 {
+	email, emailVerified := p.verifiedEmail(ctx, tokens.AccessToken, profileEmail)
+	displayName := userBody.Name
+	if displayName == "" {
+		displayName = userBody.Login
+	}
+	if userBody.ID == 0 {
 		return nil, errors.New("github_userinfo_invalid")
 	}
 	return &entity.AuthorizationGrant{
 		Identity: entity.ProviderIdentity{
-			ProviderUserID: fmt.Sprintf("%.0f", id),
-			Username:       login,
+			ProviderUserID: fmt.Sprintf("%d", userBody.ID),
+			Username:       userBody.Login,
 			DisplayName:    displayName,
-			AvatarURL:      avatar,
+			AvatarURL:      userBody.AvatarURL,
 			Email:          email,
+			EmailVerified:  emailVerified,
 		},
 		Tokens: *tokens,
 	}, nil
+}
+
+func (p *Provider) verifiedEmail(
+	ctx context.Context,
+	accessToken, profileEmail string,
+) (string, bool) {
+	if p.endpoints.Emails == "" {
+		return "", false
+	}
+	response, err := common.Get(ctx, p.client, p.endpoints.Emails, map[string]string{
+		"Accept":        "application/vnd.github+json",
+		"Authorization": fmt.Sprintf("Bearer %s", accessToken),
+	})
+	if err != nil {
+		return "", false
+	}
+	if response.StatusCode >= http.StatusBadRequest {
+		_ = response.Body.Close()
+		return "", false
+	}
+	var emails []struct {
+		Email    string `json:"email"`
+		Primary  bool   `json:"primary"`
+		Verified bool   `json:"verified"`
+	}
+	if err := common.DecodeJSON(response, &emails); err != nil {
+		return "", false
+	}
+	var firstVerified string
+	for _, candidate := range emails {
+		email := strings.TrimSpace(candidate.Email)
+		if !candidate.Verified || email == "" {
+			continue
+		}
+		if candidate.Primary {
+			return email, true
+		}
+		if firstVerified == "" ||
+			strings.EqualFold(email, strings.TrimSpace(profileEmail)) {
+			firstVerified = email
+		}
+	}
+	if firstVerified == "" {
+		return "", false
+	}
+	return firstVerified, true
 }
 
 func (p *Provider) RefreshToken(ctx context.Context, refreshToken string, cfg port.ProviderConfig) (*entity.TokenSet, error) {

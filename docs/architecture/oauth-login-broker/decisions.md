@@ -1,7 +1,7 @@
 # OAuth Login Broker - Design Decisions
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.3
 > **Created**: 2026-09-30 | **Updated**: 2026-10-01
 > **Owner**: Identity and Access
 
@@ -21,6 +21,13 @@
 | OLB-D08 | Provider-supported PKCE is mandatory | accepted |
 | OLB-D09 | Redirects are restricted to site-owned destinations | accepted |
 | OLB-D10 | Audit paths are chronologically sortable | accepted |
+| OLB-D11 | Native loopback uses one explicit callback template | accepted |
+| OLB-D12 | Broker assertions use one versioned canonical signature | accepted |
+| OLB-D13 | Station verifies before Desktop activates local identity | accepted |
+| OLB-D14 | Missing provider email never implies account linking | accepted |
+| OLB-D15 | Refresh is claimed durably before provider rotation | accepted |
+| OLB-D16 | Native bridge assertions are purpose-bound and one-time | accepted |
+| OLB-D17 | Broker login reuses the Station OAuth candidate lifecycle | accepted |
 
 ## OLB-D01: Durable Store Is Mandatory On Vercel
 
@@ -352,3 +359,298 @@ state, provider subject, codes, tokens, and payload fields remain opaque or
 encrypted. HMAC-only legacy audit paths are rejected before blob reads; this is
 a hard cut, so a repository containing that pre-release layout requires a
 separately authorized migration or a fresh data branch before rollout.
+
+## OLB-D11: Native Loopback Uses One Explicit Callback Template
+
+**Status**: accepted
+
+**Date**: 2026-10-01
+
+### Context
+
+Desktop already owns a run-scoped loopback listener, but the broker's exact
+allowlist only accepts a custom-scheme callback. The random loopback port is
+therefore discarded and the caller waits until timeout.
+
+### Decision
+
+Use loopback as the sole native Desktop callback transport. A site may opt in
+with `http://127.0.0.1/callback`; this template accepts only a literal IPv4
+loopback host, a non-zero ephemeral port, fixed path, no userinfo, and no
+fragment. Other destinations retain exact normalized matching.
+
+### Rationale
+
+Loopback works for local development and packaged Desktop without depending on
+OS custom-scheme registration while preserving a narrow, reviewable trust
+boundary.
+
+### Alternatives Considered
+
+- Restore custom-scheme deep links: rejected because development and packaged
+  registration behavior differs by platform.
+- Allow arbitrary localhost URLs: rejected as an identity exfiltration path.
+
+### Consequences
+
+Deployments must opt in explicitly. Browser-only Desktop cannot claim native
+account-login support.
+
+## OLB-D12: Broker Assertions Use One Versioned Canonical Signature
+
+**Status**: accepted
+
+**Date**: 2026-10-01
+
+### Context
+
+The broker signs sorted URL-encoded callback fields while Station verifies a
+four-field colon-delimited string, so legitimate callbacks cannot pass.
+
+### Decision
+
+`bridge_version=v1` defines one sorted URL-encoded canonical field set shared
+by broker tests, the protobuf contract, Desktop forwarding, and Station
+verification. Station rejects missing secrets, unsupported versions, stale
+timestamps, malformed signatures, and any field modification.
+
+### Rationale
+
+One canonical message eliminates independently reconstructed security
+contracts and makes interoperability testable.
+
+### Alternatives Considered
+
+- Retain the legacy four-field signature: rejected because it omits material
+  identity fields.
+- Verify in Desktop: rejected because a public client cannot custody the
+  shared signing secret.
+
+### Consequences
+
+The bridge protobuf expands before consumers, and broker and Station contract
+tests must use the same vectors.
+
+## OLB-D13: Station Verifies Before Desktop Activates Local Identity
+
+**Status**: accepted
+
+**Date**: 2026-10-01
+
+### Context
+
+Desktop currently persists an active connection before bridge success and
+swallows bridge failure. The login command also requires an actor that cannot
+exist for a logged-out user.
+
+### Decision
+
+Account login and connector linking are explicit loopback intents. Login starts
+without a local actor, calls the public verified Station bridge, and persists
+the returned local account/session only after success. Connector linking
+requires an existing actor and uses an authenticated Station verification path
+that does not issue or replace a login session.
+
+Desktop stages the prior account, session, and connector projections while
+applying the verified result. Any local persistence failure restores those
+snapshots instead of publishing a partially active identity.
+
+### Rationale
+
+Station remains the sole session authority and local state cannot advertise an
+unverified identity.
+
+### Alternatives Considered
+
+- Retry an unsigned connection later: rejected as fail-open authentication.
+- Treat connector linking as login: rejected because the two capabilities have
+  different actors and side effects.
+
+### Consequences
+
+The old generic callback persistence path is removed. Bridge unavailability is
+a visible terminal attempt failure.
+
+## OLB-D14: Missing Provider Email Never Implies Account Linking
+
+**Status**: accepted
+
+**Date**: 2026-10-01
+
+### Context
+
+GitHub may omit public email and Weixin does not provide email, while Station
+currently requires email and uses it to find an existing actor.
+
+### Decision
+
+GitHub verifies profile email through `/user/emails` and, when profile email is
+empty, selects a verified address while preferring primary. The broker signs
+`email_verified`.
+Station may match by email only when that flag is true. Otherwise it creates a
+stable provider-scoped synthetic address under the reserved invalid domain and
+uses the provider binding for subsequent login.
+
+Station also normalizes provider usernames into its lowercase ASCII handle
+grammar. If normalization is empty or shorter than the signup minimum, a
+stable provider-and-subject hash suffix supplies the canonical handle.
+
+### Rationale
+
+Provider subject is the authentication identity. Missing or unverified email
+must neither block supported providers nor merge unrelated accounts.
+
+### Alternatives Considered
+
+- Require email from every provider: rejected because valid providers omit it.
+- Link using any returned email: rejected as an account-takeover risk.
+
+### Consequences
+
+Synthetic addresses are internal identifiers and must not be presented as a
+verified user contact address.
+
+## OLB-D15: Refresh Is Claimed Durably Before Provider Rotation
+
+**Status**: accepted
+
+**Date**: 2026-10-01
+
+### Context
+
+GitHub may invalidate both old tokens when it returns a rotated refresh token.
+A crash or durable-store failure after that response can otherwise cause a
+retry with the invalid old token.
+
+### Decision
+
+Commit a generation-bound refresh claim before the provider call. Only the
+claim creator may call the provider. Commit replacement, completion marker, and
+audit atomically. A retry observing an unresolved claim returns
+`credential_refresh_uncertain` and requires reauthorization.
+
+### Rationale
+
+The broker cannot make a third-party rotating-token exchange transactional, so
+it must expose uncertainty instead of risking a second destructive call.
+
+### Alternatives Considered
+
+- Keep optimistic replacement after the provider call: rejected because it
+  cannot distinguish safe retry from token loss.
+- Persist provider tokens before the call returns: impossible without provider
+  transaction support.
+
+### Consequences
+
+Rare ambiguous failures require user reauthorization, trading availability for
+credential integrity.
+
+## OLB-D16: Native Bridge Assertions Are Purpose-Bound And One-Time
+
+**Status**: accepted
+
+**Date**: 2026-10-01
+
+### Context
+
+A valid signed callback could be replayed during its timestamp window, and the
+same assertion could be submitted to either the public account-login route or
+the authenticated connector-link route.
+
+### Decision
+
+Every native broker assertion carries a signed `purpose`, opaque
+`assertion_id`, and Desktop `receiver_id`. Desktop rejects a callback whose
+receiver or purpose does not match the active loopback attempt. Station
+requires the route to match the signed purpose and atomically inserts a hash of
+the assertion ID into its durable store before actor or session mutation. A
+duplicate insert fails as `OAuth bridge assertion already consumed`. Expired
+replay records are removed while consuming later assertions.
+
+### Rationale
+
+Timestamp validation bounds age but does not provide one-time semantics.
+Purpose binding prevents a connector authorization from being upgraded into an
+account-login session.
+
+### Alternatives Considered
+
+- An in-memory replay cache: rejected because restart and multi-instance
+  Station deployments would lose the fence.
+- Trusting the Desktop-selected endpoint: rejected because Desktop is not the
+  assertion signer.
+
+### Consequences
+
+A Station failure after assertion consumption requires a fresh provider
+authorization. This fail-closed recovery is preferable to issuing two sessions
+from one captured callback.
+
+## OLB-D17: Broker Login Reuses The Station OAuth Candidate Lifecycle
+
+**Status**: accepted
+
+**Date**: 2026-10-01
+
+### Context
+
+The public broker bridge currently calls `IssueTokenAndSession` directly and
+checks only the legacy actor allowlist afterward. That bypasses the canonical
+Access Attempt gate chain and revokes an existing session before Desktop has
+durably stored the replacement. Station already has one native OAuth lifecycle
+that binds an inactive candidate to an Access Attempt, seals credential
+delivery for the requesting device, and activates the session only after
+acknowledgement.
+
+### Decision
+
+Broker-backed Desktop login starts a normal Access Attempt and submits the
+signed broker identity assertion as the `auth.oauth` action for its current
+login gate. `/actor/oauth-bridge` delegates candidate creation, later-gate
+evaluation, credential-envelope creation, status, cancellation, and
+acknowledgement to the existing Station OAuth service and persistence model.
+
+The signed receiver challenge is also the hash of the Desktop-held attempt
+secret. Desktop supplies a per-attempt X25519 public key, persists the decrypted
+credential and local account projections, and only then calls the existing
+OAuth acknowledgement endpoint. Station keeps the candidate session revoked
+until that acknowledgement atomically activates it and revokes replaced
+sessions.
+
+### Rationale
+
+One Station-owned candidate lifecycle preserves Access Gate policy, device and
+lifecycle binding, encrypted credential delivery, crash recovery, and
+acknowledged session takeover for both native provider exchange and broker
+identity exchange.
+
+### Alternatives Considered
+
+- Keep direct bridge session issuance and add more post-checks: rejected
+  because it still bypasses the Access Attempt state machine and revokes the
+  prior session before Desktop persistence.
+- Add a second bridge-only candidate table and acknowledgement endpoint:
+  rejected as duplicate session truth and protocol drift.
+- Move provider tokens or the bridge secret into Desktop: rejected because a
+  public client cannot own server credentials.
+
+### Consequences
+
+The bridge request carries Station, Access Attempt, gate, device, lifecycle,
+and credential-delivery bindings in addition to the signed broker assertion.
+The bridge response no longer carries an active plaintext session; it carries
+the canonical OAuth candidate, Access Decision, and encrypted credential
+envelope. A later actionable gate is completed against the same Access Attempt,
+after which Desktop resumes the candidate and acknowledges only after durable
+local persistence. Acknowledgement replay is idempotent, lost responses are
+resolved by canonical status readback, and Desktop durably retains the
+acknowledgement binding plus rollback snapshot until activation is confirmed.
+Polling and process restart both resume that record; an unobservable outcome
+does not delete the only local credential. The renderer takes its timeout from
+the native receiver and sends cancellation before presenting timeout.
+
+Station performs the same transactional expiration at startup and on a
+periodic sweep, so cleanup does not depend on a later OAuth request. Expiry
+revokes any unacknowledged candidate session before deleting its recoverable
+envelope.

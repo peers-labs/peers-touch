@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"sort"
@@ -18,8 +19,16 @@ type Store struct {
 	sessions    map[string]entity.AuthSession
 	identities  map[string]entity.OAuthIdentity
 	credentials map[string]entity.OAuthCredential
-	refreshOps  map[string]map[string]struct{}
+	refreshOps  map[string]map[string]refreshOperation
 	events      map[string]entity.AuditEvent
+}
+
+type refreshOperation struct {
+	claimID              string
+	credentialGeneration uint64
+	state                entity.CredentialRefreshClaimState
+	claimedAt            time.Time
+	errorCode            string
 }
 
 func NewStore() *Store {
@@ -27,7 +36,7 @@ func NewStore() *Store {
 		sessions:    make(map[string]entity.AuthSession),
 		identities:  make(map[string]entity.OAuthIdentity),
 		credentials: make(map[string]entity.OAuthCredential),
-		refreshOps:  make(map[string]map[string]struct{}),
+		refreshOps:  make(map[string]map[string]refreshOperation),
 		events:      make(map[string]entity.AuditEvent),
 	}
 }
@@ -166,26 +175,30 @@ func (s *Store) RecordAuthorizationFailure(_ context.Context, failure entity.Aut
 	transactionID := digest(failure.State)
 	occurredAt := failure.OccurredAt.UTC()
 	eventID := digest("failure\x00" + transactionID + "\x00" + failure.CodeFingerprint + "\x00" + failure.ErrorCode + "\x00" + occurredAt.Format(time.RFC3339Nano))
-	if _, exists := s.events[eventID]; exists {
-		return nil
-	}
+	_, eventExists := s.events[eventID]
 	siteID := ""
 	provider := failure.Provider
 	if session, ok := s.sessions[failure.State]; ok {
 		siteID = session.SiteID
 		provider = session.Provider
+		if failure.Terminal && session.ConsumedAt == nil {
+			session.ConsumedAt = &occurredAt
+			s.sessions[failure.State] = session
+		}
 	}
-	s.events[eventID] = entity.AuditEvent{
-		SchemaVersion:   1,
-		EventID:         eventID,
-		EventType:       entity.AuditLoginFailed,
-		OccurredAt:      occurredAt,
-		SiteID:          siteID,
-		Provider:        provider,
-		TransactionID:   transactionID,
-		CodeFingerprint: failure.CodeFingerprint,
-		Result:          "failure",
-		ErrorCode:       failure.ErrorCode,
+	if !eventExists {
+		s.events[eventID] = entity.AuditEvent{
+			SchemaVersion:   1,
+			EventID:         eventID,
+			EventType:       entity.AuditLoginFailed,
+			OccurredAt:      occurredAt,
+			SiteID:          siteID,
+			Provider:        provider,
+			TransactionID:   transactionID,
+			CodeFingerprint: failure.CodeFingerprint,
+			Result:          "failure",
+			ErrorCode:       failure.ErrorCode,
+		}
 	}
 	return nil
 }
@@ -201,24 +214,126 @@ func (s *Store) LoadCredential(_ context.Context, identityID string) (*entity.OA
 	return &out, nil
 }
 
-func (s *Store) LoadCredentialForRefresh(_ context.Context, identityID, operationID string) (*entity.OAuthCredential, bool, error) {
+func (s *Store) ClaimCredentialRefresh(
+	_ context.Context,
+	identityID, operationID string,
+	claimedAt time.Time,
+) (*entity.CredentialRefreshClaim, error) {
 	identityID = strings.TrimSpace(identityID)
 	operationID = strings.TrimSpace(operationID)
 	if identityID == "" || operationID == "" {
-		return nil, false, repository.ErrRecordCorrupt
+		return nil, repository.ErrRecordCorrupt
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	claimID, err := newRefreshClaimID()
+	if err != nil {
+		return nil, repository.ErrStorageUnavailable
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	credential, ok := s.credentials[identityID]
 	if !ok {
-		return nil, false, repository.ErrCredentialNotFound
+		return nil, repository.ErrCredentialNotFound
 	}
-	_, completed := s.refreshOps[identityID][operationID]
+	if operation, found := s.refreshOps[identityID][operationID]; found {
+		state := operation.state
+		if state == entity.CredentialRefreshClaimCommitted {
+			return refreshClaim(credential, operationID, "", state), nil
+		}
+		if state == entity.CredentialRefreshClaimReleased {
+			for candidateID, candidate := range s.refreshOps[identityID] {
+				if candidateID != operationID &&
+					candidate.credentialGeneration == credential.Generation &&
+					(candidate.state == entity.CredentialRefreshClaimAcquired ||
+						candidate.state == entity.CredentialRefreshClaimUncertain) {
+					return refreshClaim(
+						credential,
+						operationID,
+						"",
+						entity.CredentialRefreshClaimUncertain,
+					), nil
+				}
+			}
+			operation.claimID = claimID
+			operation.credentialGeneration = credential.Generation
+			operation.state = entity.CredentialRefreshClaimAcquired
+			operation.claimedAt = claimedAt.UTC()
+			operation.errorCode = ""
+			s.refreshOps[identityID][operationID] = operation
+			return refreshClaim(
+				credential,
+				operationID,
+				claimID,
+				entity.CredentialRefreshClaimAcquired,
+			), nil
+		}
+		return refreshClaim(
+			credential,
+			operationID,
+			"",
+			entity.CredentialRefreshClaimUncertain,
+		), nil
+	}
 	if credential.LastRefreshOperationID == operationID {
-		completed = true
+		return refreshClaim(
+			credential,
+			operationID,
+			"",
+			entity.CredentialRefreshClaimCommitted,
+		), nil
 	}
-	out := credential
-	return &out, completed, nil
+	for _, operation := range s.refreshOps[identityID] {
+		if operation.credentialGeneration == credential.Generation &&
+			(operation.state == entity.CredentialRefreshClaimAcquired ||
+				operation.state == entity.CredentialRefreshClaimUncertain) {
+			return refreshClaim(
+				credential,
+				operationID,
+				"",
+				entity.CredentialRefreshClaimUncertain,
+			), nil
+		}
+	}
+	if s.refreshOps[identityID] == nil {
+		s.refreshOps[identityID] = make(map[string]refreshOperation)
+	}
+	s.refreshOps[identityID][operationID] = refreshOperation{
+		claimID:              claimID,
+		credentialGeneration: credential.Generation,
+		state:                entity.CredentialRefreshClaimAcquired,
+		claimedAt:            claimedAt.UTC(),
+	}
+	return refreshClaim(
+		credential,
+		operationID,
+		claimID,
+		entity.CredentialRefreshClaimAcquired,
+	), nil
+}
+
+func (s *Store) ReleaseCredentialRefreshClaim(
+	_ context.Context,
+	claim entity.CredentialRefreshClaim,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	operation, found := s.refreshOps[claim.IdentityID][claim.OperationID]
+	if !found ||
+		operation.claimID != claim.ClaimID ||
+		operation.credentialGeneration != claim.CredentialGeneration {
+		return repository.ErrCredentialRefreshUncertain
+	}
+	switch operation.state {
+	case entity.CredentialRefreshClaimCommitted,
+		entity.CredentialRefreshClaimReleased:
+		return nil
+	case entity.CredentialRefreshClaimAcquired:
+		operation.state = entity.CredentialRefreshClaimReleased
+		operation.errorCode = ""
+		s.refreshOps[claim.IdentityID][claim.OperationID] = operation
+		return nil
+	default:
+		return repository.ErrCredentialRefreshUncertain
+	}
 }
 
 func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRefresh) (*entity.OAuthCredential, error) {
@@ -226,6 +341,7 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 	refresh.OperationID = strings.TrimSpace(refresh.OperationID)
 	if refresh.IdentityID == "" ||
 		refresh.OperationID == "" ||
+		refresh.ClaimID == "" ||
 		refresh.ExpectedGeneration == 0 {
 		return nil, repository.ErrRecordCorrupt
 	}
@@ -235,13 +351,20 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 	if !ok {
 		return nil, repository.ErrCredentialNotFound
 	}
-	if _, completed := s.refreshOps[refresh.IdentityID][refresh.OperationID]; completed ||
+	operation, found := s.refreshOps[refresh.IdentityID][refresh.OperationID]
+	if (found && operation.state == entity.CredentialRefreshClaimCommitted) ||
 		credential.LastRefreshOperationID == refresh.OperationID {
 		out := credential
 		return &out, nil
 	}
+	if !found ||
+		operation.claimID != refresh.ClaimID ||
+		operation.credentialGeneration != refresh.ExpectedGeneration ||
+		operation.state != entity.CredentialRefreshClaimAcquired {
+		return nil, repository.ErrCredentialRefreshUncertain
+	}
 	if credential.Generation != refresh.ExpectedGeneration {
-		return nil, repository.ErrCredentialGeneration
+		return nil, repository.ErrCredentialRefreshUncertain
 	}
 	if strings.TrimSpace(refresh.Tokens.AccessToken) == "" {
 		return nil, repository.ErrRecordCorrupt
@@ -275,10 +398,8 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 	credential.Generation++
 	credential.LastRefreshOperationID = refresh.OperationID
 	s.credentials[refresh.IdentityID] = credential
-	if s.refreshOps[refresh.IdentityID] == nil {
-		s.refreshOps[refresh.IdentityID] = make(map[string]struct{})
-	}
-	s.refreshOps[refresh.IdentityID][refresh.OperationID] = struct{}{}
+	operation.state = entity.CredentialRefreshClaimCommitted
+	s.refreshOps[refresh.IdentityID][refresh.OperationID] = operation
 	event := entity.AuditEvent{
 		SchemaVersion: 1,
 		EventID:       digest("refresh\x00" + refresh.IdentityID + "\x00" + refresh.OperationID),
@@ -292,6 +413,46 @@ func (s *Store) ReplaceCredential(_ context.Context, refresh entity.CredentialRe
 	s.events[event.EventID] = event
 	out := credential
 	return &out, nil
+}
+
+func (s *Store) MarkCredentialRefreshUncertain(
+	_ context.Context,
+	claim entity.CredentialRefreshClaim,
+	errorCode string,
+	occurredAt time.Time,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	operation, found := s.refreshOps[claim.IdentityID][claim.OperationID]
+	if !found ||
+		operation.claimID != claim.ClaimID ||
+		operation.credentialGeneration != claim.CredentialGeneration {
+		return repository.ErrCredentialRefreshUncertain
+	}
+	if operation.state == entity.CredentialRefreshClaimCommitted ||
+		operation.state == entity.CredentialRefreshClaimUncertain {
+		return nil
+	}
+	operation.state = entity.CredentialRefreshClaimUncertain
+	operation.errorCode = errorCode
+	s.refreshOps[claim.IdentityID][claim.OperationID] = operation
+	credential, found := s.credentials[claim.IdentityID]
+	if !found {
+		return repository.ErrCredentialNotFound
+	}
+	event := entity.AuditEvent{
+		SchemaVersion: 1,
+		EventID:       digest("refresh-uncertain\x00" + claim.IdentityID + "\x00" + claim.OperationID),
+		EventType:     entity.AuditCredentialRefreshUncertain,
+		OccurredAt:    occurredAt.UTC(),
+		SiteID:        credential.SiteID,
+		Provider:      credential.Provider,
+		IdentityID:    credential.IdentityID,
+		Result:        "failure",
+		ErrorCode:     errorCode,
+	}
+	s.events[event.EventID] = event
+	return nil
 }
 
 func (s *Store) AdminSnapshot(_ context.Context, limit int) (entity.AdminSnapshot, error) {
@@ -351,6 +512,29 @@ func (s *Store) AdminSnapshot(_ context.Context, limit int) (entity.AdminSnapsho
 func digest(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
+}
+
+func newRefreshClaimID() (string, error) {
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value), nil
+}
+
+func refreshClaim(
+	credential entity.OAuthCredential,
+	operationID, claimID string,
+	state entity.CredentialRefreshClaimState,
+) *entity.CredentialRefreshClaim {
+	return &entity.CredentialRefreshClaim{
+		IdentityID:           credential.IdentityID,
+		OperationID:          operationID,
+		ClaimID:              claimID,
+		CredentialGeneration: credential.Generation,
+		State:                state,
+		Credential:           credential,
+	}
 }
 
 func cloneIdentity(value entity.OAuthIdentity) *entity.OAuthIdentity {

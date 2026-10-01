@@ -295,25 +295,6 @@ pub struct OAuthAuthorizeInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OAuthCallbackInput {
-    pub provider: String,
-    pub provider_user_id: String,
-    pub username: Option<String>,
-    pub display_name: Option<String>,
-    pub email: Option<String>,
-    pub avatar_url: Option<String>,
-    pub profile_url: Option<String>,
-    pub expires_at: Option<String>,
-    pub created_at: Option<String>,
-    /// HMAC timestamp from Station relay for oauth-bridge verification
-    pub ts: Option<String>,
-    /// HMAC signature from Station relay for oauth-bridge verification
-    pub sig: Option<String>,
-    #[serde(default)]
-    pub scopes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountIdInput {
     pub id: String,
 }
@@ -702,6 +683,7 @@ pub struct ExternalUrlInput {
 pub struct OAuthLoopbackStartInput {
     pub id: String,
     pub environment: Option<String>,
+    pub purpose: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

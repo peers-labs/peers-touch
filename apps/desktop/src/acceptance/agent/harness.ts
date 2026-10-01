@@ -22286,69 +22286,24 @@ async function runMcpLifecycleDevelopmentJourney(
 
 async function completeConnectorOAuthFixture(input: {
   connectorId: string;
-  sampleId: string;
-  scopes: string[];
-  expiresAt: string;
 }): Promise<OAuth2Connection> {
   const currentUser = useSessionStore.getState().currentUser;
   if (!currentUser?.actorPtid) {
     throw new Error('agent.acceptance.connectorActorMissing');
   }
-  const loopback = await api.oauth2StartLoopback(
+  await useOAuth2Store.getState().startAuth(
     input.connectorId,
     'acceptance',
+    'connector_link',
   );
-  const authorizeUrl = new URL(loopback.auth_url);
-  const returnTo = authorizeUrl.searchParams.get('return_to');
-  if (!returnTo) {
-    throw new Error('agent.acceptance.connectorLoopbackMissing');
+  await useAgentConnectorStore.getState().loadConnectors();
+  const connection = useOAuth2Store.getState().connections.find(
+    (candidate) => candidate.provider_id === input.connectorId,
+  );
+  if (!connection) {
+    throw new Error('agent.acceptance.connectorConnectionMissing');
   }
-  const callback = new URL(returnTo);
-  callback.searchParams.set('provider', input.connectorId);
-  callback.searchParams.set(
-    'provider_user_id',
-    `mca-j05-${input.sampleId}`,
-  );
-  callback.searchParams.set('username', `mca-j05-${input.sampleId}`);
-  callback.searchParams.set(
-    'display_name',
-    `Connector fixture ${input.sampleId}`,
-  );
-  callback.searchParams.set(
-    'email',
-    currentUser.email || `mca-j05-${input.sampleId}@example.test`,
-  );
-  callback.searchParams.set('scope', input.scopes.join(' '));
-  callback.searchParams.set('expires_at', input.expiresAt);
-  try {
-    await fetch(callback.toString(), {
-      cache: 'no-store',
-      mode: 'no-cors',
-    });
-  } catch {
-    // A no-CORS response may be opaque; the poll result is authoritative.
-  }
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < 30_000) {
-    const result = await api.oauth2PollLoopback(loopback.session_id);
-    if (result.completed) {
-      if (result.status !== 'completed') {
-        throw new Error(
-          `agent.acceptance.connectorLoopbackFailed:${result.error ?? result.status}`,
-        );
-      }
-      await useAgentConnectorStore.getState().loadConnectors();
-      const connection = useOAuth2Store.getState().connections.find(
-        (candidate) => candidate.provider_id === input.connectorId,
-      );
-      if (!connection) {
-        throw new Error('agent.acceptance.connectorConnectionMissing');
-      }
-      return connection;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error('agent.acceptance.connectorLoopbackTimedOut');
+  return connection;
 }
 
 async function connectorDevelopmentFixture(
@@ -22506,9 +22461,6 @@ async function runConnectorInvocationDevelopmentJourney(
   try {
     const connected = await completeConnectorOAuthFixture({
       connectorId,
-      sampleId: `${input.sampleId}-connected`,
-      scopes: ['read:user', 'user:email'],
-      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
     runtimeFixture = await createGovernedToolRuntimeFixture(
       'connector-invocation',
@@ -22688,9 +22640,6 @@ async function runConnectorInvocationDevelopmentJourney(
 
     const reconnected = await completeConnectorOAuthFixture({
       connectorId,
-      sampleId: `${input.sampleId}-reconnected`,
-      scopes: ['read:user', 'user:email'],
-      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     });
     const rebound = await connectorDevelopmentFixture(
       disposableAgentId,

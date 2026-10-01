@@ -35,14 +35,16 @@ func (h *OAuthHandler) StartWithProvider(w http.ResponseWriter, r *http.Request,
 func (h *OAuthHandler) CallbackWithProvider(w http.ResponseWriter, r *http.Request, provider valueobject.Provider) {
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
-	if state == "" || code == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_code_or_state"})
+	providerError := strings.TrimSpace(r.URL.Query().Get("error"))
+	if state == "" || (code == "" && providerError == "") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing_callback_result_or_state"})
 		return
 	}
 	out, err := h.HandleCallback.Execute(r.Context(), usecase.HandleCallbackInput{
-		Provider: provider,
-		State:    state,
-		Code:     code,
+		Provider:      provider,
+		State:         state,
+		Code:          code,
+		ProviderError: providerError,
 	})
 	if err != nil {
 		if out != nil && out.RedirectURL != "" {

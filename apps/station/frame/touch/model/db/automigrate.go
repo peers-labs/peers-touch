@@ -28,6 +28,7 @@ func init() {
 			// OAuth models
 			&OAuthClient{}, &OAuthAuthCode{}, &OAuthToken{},
 			&OAuth2IdentityBinding{}, &OAuth2TokenState{}, &OAuth2ConnectionState{},
+			&OAuthBridgeAssertion{},
 			// Chat models
 			&Conversation{}, &ConvMember{}, &Message{},
 			&Attachment{}, &Receipt{}, &Reaction{}, &KeyEpoch{},
