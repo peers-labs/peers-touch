@@ -160,7 +160,8 @@ async function capabilityScenarioStep<T>(
     );
     throw new Error(
       `agent.acceptance.capabilityScenarioCommandFailed:`
-      + `${stage}:${error.code}:${detailCode}`,
+      + `${stage}:${error.code}:${detailCode}:`
+      + `${error.message}:${stableJson(error.details ?? {})}`,
     );
   }
 }
