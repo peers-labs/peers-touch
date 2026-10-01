@@ -1,10 +1,15 @@
 package bootstrap
 
 import (
+	"crypto/rand"
+	"net/http"
+
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/port"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/application/oauth/usecase"
+	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/repository"
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/domain/oauth/valueobject"
-	"github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/persistence/memory"
+	recordcrypto "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/crypto"
+	githubstore "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/persistence/github"
 	providergithub "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/provider/github"
 	providergoogle "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/provider/google"
 	providerweixin "github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/provider/weixin"
@@ -12,7 +17,10 @@ import (
 )
 
 type Container struct {
-	Handler *handler.OAuthHandler
+	Handler     *handler.OAuthHandler
+	Admin       *handler.AdminHandler
+	Store       repository.OAuthStore
+	Maintenance repository.OAuthMaintenanceStore
 }
 
 func BuildContainer() (*Container, error) {
@@ -20,7 +28,25 @@ func BuildContainer() (*Container, error) {
 	if err != nil {
 		return nil, err
 	}
-	sessionStore := memory.NewSessionStore()
+	storageConfig, err := LoadStorageConfig()
+	if err != nil {
+		return nil, err
+	}
+	store, maintenance, err := BuildOAuthStore(storageConfig, storageHTTPClient())
+	if err != nil {
+		return nil, err
+	}
+	adminAuth, err := LoadAdminAuthenticator()
+	if err != nil {
+		return nil, err
+	}
+	auditKey := storageConfig.AuditHMACKey
+	if len(auditKey) == 0 {
+		auditKey = make([]byte, 32)
+		if _, err := rand.Read(auditKey); err != nil {
+			return nil, err
+		}
+	}
 	providers := map[valueobject.Provider]port.ProviderGateway{
 		valueobject.ProviderGitHub: providergithub.New(),
 		valueobject.ProviderGoogle: providergoogle.New(),
@@ -28,21 +54,31 @@ func BuildContainer() (*Container, error) {
 	}
 	startUC := usecase.StartAuthUseCase{
 		Sites:     sites,
-		Sessions:  sessionStore,
+		Store:     store,
 		Providers: providers,
 		Clock:     usecase.RealClock{},
 	}
 	callbackUC := usecase.HandleCallbackUseCase{
-		Sites:     sites,
-		Sessions:  sessionStore,
-		Providers: providers,
-		Clock:     usecase.RealClock{},
+		Sites:         sites,
+		Store:         store,
+		Providers:     providers,
+		Fingerprinter: recordcrypto.NewFingerprinter(auditKey),
+		Clock:         usecase.RealClock{},
 	}
 	return &Container{
 		Handler: &handler.OAuthHandler{
 			StartAuth:      startUC,
 			HandleCallback: callbackUC,
-			Sites:          sites,
 		},
+		Admin: &handler.AdminHandler{
+			Store: store,
+			Auth:  adminAuth,
+		},
+		Store:       store,
+		Maintenance: maintenance,
 	}, nil
+}
+
+func storageHTTPClient() *http.Client {
+	return githubstore.NewDefaultHTTPClient()
 }
