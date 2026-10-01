@@ -1304,7 +1304,7 @@ def _validate_clients(
             label="runtime manifest client",
             code="CLIENT_CLOSURE_MISMATCH",
         )
-        client_id = _service_identifier(
+        client_id = _identifier_for_code(
             client["id"],
             "runtime manifest client id",
             "CLIENT_CLOSURE_MISMATCH",
@@ -1892,7 +1892,7 @@ def _validate_continuation_shape(
         "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",
     )
     _identifier(continuation["restart_request_id"], "restart request id")
-    client_id = _service_identifier(
+    client_id = _identifier_for_code(
         continuation["retained_client_id"],
         "continuation retained_client_id",
         "RUNTIME_CONTINUATION_IDENTITY_MISMATCH",

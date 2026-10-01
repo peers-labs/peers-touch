@@ -102,6 +102,10 @@ The authoritative binding deliberately excludes Git HEAD. Commands capture
 current source from Git at operation time; Development declarations and
 runtime build identity fence source-sensitive mutation.
 
+The authoritative binding deliberately excludes Git HEAD. Commands capture
+current source from Git at operation time; Development declarations and
+runtime build identity fence source-sensitive mutation.
+
 ## 5. 文档导航
 
 | 文档 | 说明 |

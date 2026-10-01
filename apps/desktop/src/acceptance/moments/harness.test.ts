@@ -1,7 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { api } from '../../services/desktop_api';
-import { Audience_Kind } from '../../gen/proto/domain/social/post_pb';
+import {
+  socialBlockActor,
+  socialFollow,
+  socialUnblockActor,
+} from '../../services/social_api';
+import {
+  Audience_Kind,
+  ReactionKind,
+} from '../../gen/proto/domain/social/post_pb';
+import {
+  SocialRelationshipCommandResultKind,
+} from '../../gen/proto/domain/social/relationship_pb';
+import { privateMomentsNative } from '../../services/privateMomentsNative';
 
 declare const __PT_SOURCE_COMMIT__: string;
 
@@ -14,6 +26,11 @@ const momentsState = {
       postIds: [] as string[],
     },
   },
+  reactions: {} as Record<string, Array<{
+    kind: number;
+    count: bigint;
+    reactedByViewer: boolean;
+  }>>,
   postsById: {} as Record<string, unknown>,
   setComposerDraft: vi.fn((draft: Record<string, unknown>) => {
     momentsState.composerDraft = draft;
@@ -22,6 +39,9 @@ const momentsState = {
     momentsState.composerDraft = null;
   }),
   createPost: vi.fn(),
+  deletePost: vi.fn(),
+  reactToPost: vi.fn(),
+  unreactToPost: vi.fn(),
   loadFeed: vi.fn(),
 };
 
@@ -39,6 +59,7 @@ const privateState = {
   readMoment: vi.fn(),
   recoverMoment: vi.fn(),
   openMedia: vi.fn(),
+  purgeMoment: vi.fn(),
   clearPublishState: vi.fn(() => {
     privateState.publish = { state: 'IDLE' };
   }),
@@ -100,15 +121,26 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('../../services/desktop_api', () => ({
   api: {
+    federationCreate: vi.fn(),
     federationGetSelf: vi.fn(),
+    federationJoin: vi.fn(),
     federationListFederations: vi.fn(),
+    federationListMemberStations: vi.fn(),
+    federationResolve: vi.fn(),
     ossResolveUrl: vi.fn(),
+    ossUploadAttachmentSocial: vi.fn(),
     ossUploadEncryptedAttachmentSocial: vi.fn(),
     socialFriendRequestAccept: vi.fn(),
     socialFriendRequestList: vi.fn(),
     socialFriendRequestSend: vi.fn(),
     stationList: vi.fn(),
   },
+}));
+
+vi.mock('../../services/social_api', () => ({
+  socialBlockActor: vi.fn(),
+  socialFollow: vi.fn(),
+  socialUnblockActor: vi.fn(),
 }));
 
 vi.mock('../../store/moments', () => ({
@@ -182,10 +214,14 @@ describe('Moments acceptance harness', () => {
     })));
     momentsState.composerDraft = null;
     momentsState.feeds.explore.postIds = [];
+    momentsState.reactions = {};
     momentsState.postsById = {};
     momentsState.setComposerDraft.mockClear();
     momentsState.clearComposerDraft.mockClear();
     momentsState.createPost.mockReset();
+    momentsState.deletePost.mockReset();
+    momentsState.reactToPost.mockReset();
+    momentsState.unreactToPost.mockReset();
     momentsState.loadFeed.mockReset();
     privateState.platform = 'browser';
     privateState.scope = {
@@ -198,6 +234,7 @@ describe('Moments acceptance harness', () => {
     privateState.readMoment.mockReset();
     privateState.recoverMoment.mockReset();
     privateState.openMedia.mockReset();
+    privateState.purgeMoment.mockReset();
     privateState.clearPublishState.mockClear();
     privateCommentsState.threadsByPost = {};
     privateCommentsState.submitComment.mockReset();
@@ -206,9 +243,17 @@ describe('Moments acceptance harness', () => {
     sessionState.currentUser = { actorPtid: 'ptid:test:alice' };
     vi.mocked(invoke).mockReset();
     vi.mocked(api.ossResolveUrl).mockReset();
+    vi.mocked(api.ossUploadAttachmentSocial).mockReset();
     vi.mocked(api.ossUploadEncryptedAttachmentSocial).mockReset();
+    vi.mocked(socialBlockActor).mockReset();
+    vi.mocked(socialFollow).mockReset();
+    vi.mocked(socialUnblockActor).mockReset();
+    vi.mocked(api.federationCreate).mockReset();
     vi.mocked(api.federationGetSelf).mockReset();
+    vi.mocked(api.federationJoin).mockReset();
     vi.mocked(api.federationListFederations).mockReset();
+    vi.mocked(api.federationListMemberStations).mockReset();
+    vi.mocked(api.federationResolve).mockReset();
     vi.mocked(api.socialFriendRequestAccept).mockReset();
     vi.mocked(api.socialFriendRequestList).mockReset();
     vi.mocked(api.socialFriendRequestSend).mockReset();
@@ -250,7 +295,10 @@ describe('Moments acceptance harness', () => {
       joinedFederations: [],
     } as never);
     vi.mocked(api.federationListFederations).mockResolvedValue({
-      federations: [{ federationId: 'federation-1' }],
+      federations: [{
+        federationId: 'federation-1',
+        status: 'active',
+      }],
     } as never);
     vi.mocked(api.socialFriendRequestSend).mockResolvedValue({
       request: { requestId: 'friend-request-1' },
@@ -299,6 +347,170 @@ describe('Moments acceptance harness', () => {
     });
   });
 
+  it('reads and resolves a federated Actor identity through production APIs', async () => {
+    vi.mocked(api.federationGetSelf).mockResolvedValue({
+      federatedHandle: '@alice@four.invalid',
+      homeStationPeerId: 'station-four',
+    } as never);
+    vi.mocked(api.federationResolve).mockResolvedValue({
+      federatedHandle: '@remote@five-arm.invalid',
+      homeStationPeerId: 'station-five-arm',
+      profile: {
+        ref: { ptid: 'ptid:test:remote' },
+      },
+    } as never);
+
+    await expect(harness().federatedActorIdentity()).resolves.toEqual({
+      actorPtid: 'ptid:test:alice',
+      federatedHandle: '@alice@four.invalid',
+      homeStationPeerId: 'station-four',
+    });
+    await expect(harness().resolveFederatedActorIdentity({
+      federatedHandle: '@remote@five-arm.invalid',
+    })).resolves.toEqual({
+      actorPtid: 'ptid:test:remote',
+      federatedHandle: '@remote@five-arm.invalid',
+      homeStationPeerId: 'station-five-arm',
+    });
+    expect(api.federationResolve).toHaveBeenCalledWith(
+      '@remote@five-arm.invalid',
+    );
+  });
+
+  it('joins and verifies the shared Federation through production APIs', async () => {
+    vi.mocked(api.federationGetSelf).mockResolvedValue({
+      homeStationPeerId: 'station-five-arm',
+    } as never);
+    vi.mocked(api.federationListFederations).mockResolvedValue({
+      federations: [{
+        federationId: 'federation-1',
+        sequencerStationPeerId: 'station-four',
+        status: 'active',
+      }],
+    } as never);
+    vi.mocked(api.federationJoin).mockResolvedValue({
+      status: 'active',
+      proposalId: 'proposal-1',
+    } as never);
+    vi.mocked(api.federationListMemberStations).mockResolvedValue({
+      stations: [
+        {
+          stationPeerId: 'station-five-arm',
+          stationUrl: 'https://five-arm.invalid',
+          status: 'active',
+        },
+        {
+          stationPeerId: 'station-four',
+          stationUrl: 'https://four.invalid',
+          status: 'active',
+        },
+        {
+          stationPeerId: 'station-retired',
+          stationUrl: 'https://retired.invalid',
+          status: 'left',
+        },
+      ],
+    } as never);
+
+    await expect(harness().federationJoinAuthority()).resolves.toEqual({
+      federationEndpoint: 'https://four.invalid',
+      federationId: 'federation-1',
+      homeStationPeerId: 'station-five-arm',
+    });
+    await expect(harness().joinAcceptanceFederation({
+      federationEndpoint: 'https://four.invalid',
+      federationId: 'federation-1',
+    })).resolves.toEqual({
+      federationId: 'federation-1',
+      status: 'active',
+      proposalId: 'proposal-1',
+    });
+    await expect(harness().federationMemberStations({
+      federationId: 'federation-1',
+    })).resolves.toEqual({
+      federationId: 'federation-1',
+      stationPeerIds: ['station-five-arm', 'station-four'],
+    });
+
+    expect(api.federationJoin).toHaveBeenCalledWith({
+      federation_endpoint: 'https://four.invalid',
+      federation_id: 'federation-1',
+      message: 'secure-content-w8 remote recipient fixture',
+    });
+    expect(api.federationListMemberStations).toHaveBeenCalledWith(
+      'federation-1',
+    );
+  });
+
+  it('creates a Federation when active membership has no sequencer endpoint', async () => {
+    vi.mocked(api.federationGetSelf).mockResolvedValue({
+      homeStationPeerId: 'station-four',
+    } as never);
+    vi.mocked(api.federationListFederations).mockResolvedValue({
+      federations: [{
+        federationId: 'stale-federation',
+        sequencerStationPeerId: 'station-four',
+        status: 'active',
+      }],
+    } as never);
+    vi.mocked(api.federationListMemberStations)
+      .mockResolvedValueOnce({
+        stations: [{
+          stationPeerId: 'station-four',
+          stationUrl: '',
+          status: 'active',
+        }],
+      } as never)
+      .mockResolvedValueOnce({
+        stations: [{
+          stationPeerId: 'station-four',
+          stationUrl: 'https://four.invalid',
+          status: 'active',
+        }],
+      } as never);
+    vi.mocked(api.federationCreate).mockResolvedValue({
+      federationId: 'created-federation',
+    } as never);
+
+    await expect(harness().federationJoinAuthority()).resolves.toEqual({
+      federationEndpoint: 'https://four.invalid',
+      federationId: 'created-federation',
+      homeStationPeerId: 'station-four',
+    });
+    expect(api.federationCreate).toHaveBeenCalledWith({
+      name: 'Secure Content W8 Fixture',
+      description: 'Acceptance-owned cross-Station Social fixture',
+      policy_type: 'single_admin',
+    });
+    expect(api.federationListMemberStations).toHaveBeenNthCalledWith(
+      2,
+      'created-federation',
+    );
+  });
+
+  it('follows an actor through the production Social API', async () => {
+    vi.mocked(socialFollow).mockResolvedValue({
+      success: true,
+      relationship: {
+        targetActorPtid: 'ptid:test:alice',
+        following: true,
+      },
+    } as never);
+
+    const result = await harness().followActor({
+      actorPtid: 'ptid:test:alice',
+    });
+
+    expect(socialFollow).toHaveBeenCalledWith('ptid:test:alice');
+    expect(result).toMatchObject({
+      followed: true,
+    });
+    expect(
+      (result as { actorPtidSha256: string }).actorPtidSha256,
+    ).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(result)).not.toContain('ptid:test:alice');
+  });
+
   it('keeps private draft plaintext and paths out of returned evidence', async () => {
     const plaintext = 'private browser draft';
     const filePath = '/tmp/private-image.png';
@@ -327,7 +539,7 @@ describe('Moments acceptance harness', () => {
       revision: 2,
       text: 'circle only',
       audienceKind: 'CIRCLE',
-      targetId: '77',
+      circleId: '77',
     });
 
     expect(staged).toMatchObject({
@@ -339,7 +551,34 @@ describe('Moments acceptance harness', () => {
       expect.objectContaining({
         audience: expect.objectContaining({
           kind: Audience_Kind.CIRCLE,
-          targetId: 77n,
+          target: {
+            case: 'circleId',
+            value: 77n,
+          },
+        }),
+      }),
+    );
+  });
+
+  it('stages a Group audience with its canonical Conversation identity', async () => {
+    const groupConversationId = '01J9Z7Y6M5N4P3Q2R1S0TUVWXY';
+
+    await harness().stagePrivateDraft({
+      draftId: 'draft-group',
+      revision: 3,
+      text: 'group only',
+      audienceKind: 'GROUP',
+      groupConversationId,
+    });
+
+    expect(momentsState.setComposerDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: expect.objectContaining({
+          kind: Audience_Kind.GROUP,
+          target: {
+            case: 'groupConversationId',
+            value: groupConversationId,
+          },
         }),
       }),
     );
@@ -369,7 +608,422 @@ describe('Moments acceptance harness', () => {
     expect(result).not.toHaveProperty('transientPostId');
   });
 
-  it('uses Native-verified private media evidence without refetching local URLs', async () => {
+  it('returns Native pre-prepare rejection and local cleanup counters', async () => {
+    await harness().stagePrivateDraft({
+      draftId: 'draft-remote',
+      revision: 1,
+      text: 'remote private publish',
+      audienceKind: 'CUSTOM_ALLOW',
+      actorPtids: ['ptid:test:remote'],
+    });
+    privateState.platform = 'native';
+    momentsState.createPost.mockImplementation(async () => {
+      privateState.publish = {
+        state: 'PRIVATE_UNSUPPORTED',
+        errorCode: 'PRIVATE_UNSUPPORTED',
+        rejectionEvidence: {
+          publishPhase: 'PREPARE_REJECTED',
+          prepareSucceeded: false,
+          receivedPreparePlanCount: 0,
+          desktopLocalDurableRowCount: 0,
+          localDraftRowCount: 0,
+          localCommandRowCount: 0,
+          localProjectionRowCount: 0,
+          localUploadRowCount: 0,
+          claimCountScope: 'NATIVE_RECEIVED_PREPARE_PLAN',
+          partialRowScope: 'DESKTOP_LOCAL_DURABLE_STATE',
+          serverWriteProof: 'STATION_SOURCE_TEST_REQUIRED',
+        },
+      };
+      throw new Error('PRIVATE_UNSUPPORTED');
+    });
+
+    const result = await harness().publishPrivateDraft();
+
+    expect(result).toMatchObject({
+      platform: 'native',
+      state: 'PRIVATE_UNSUPPORTED',
+      errorCode: 'PRIVATE_UNSUPPORTED',
+      rejectionEvidence: {
+        publishPhase: 'PREPARE_REJECTED',
+        prepareSucceeded: false,
+        receivedPreparePlanCount: 0,
+        desktopLocalDurableRowCount: 0,
+        claimCountScope: 'NATIVE_RECEIVED_PREPARE_PLAN',
+        partialRowScope: 'DESKTOP_LOCAL_DURABLE_STATE',
+        serverWriteProof: 'STATION_SOURCE_TEST_REQUIRED',
+      },
+    });
+    expect(result).not.toHaveProperty('transientPostId');
+  });
+
+  it('normalizes Native rejection evidence without synthesizing counters', async () => {
+    vi.stubGlobal('window', {
+      __TAURI_INTERNALS__: {},
+      location: new URL('tauri://localhost/moments'),
+    });
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        state: 'PRIVATE_UNSUPPORTED',
+        draftId: 'draft-remote',
+        errorCode: 'PRIVATE_UNSUPPORTED',
+        stationErrorCode: 'ERROR_CODE_INVALID_REQUEST',
+        evidence: {
+          publishPhase: 'PREPARE_REJECTED',
+          prepareSucceeded: false,
+          receivedPreparePlanCount: 0,
+          desktopLocalDurableRowCount: 0,
+          localDraftRowCount: 0,
+          localCommandRowCount: 0,
+          localProjectionRowCount: 0,
+          localUploadRowCount: 0,
+          claimCountScope: 'NATIVE_RECEIVED_PREPARE_PLAN',
+          partialRowScope: 'DESKTOP_LOCAL_DURABLE_STATE',
+          serverWriteProof: 'STATION_SOURCE_TEST_REQUIRED',
+        },
+      },
+    });
+
+    const result = await privateMomentsNative.publish({
+      actorPtid: 'ptid:test:alice',
+      rendererGeneration: 9,
+      draftId: 'draft-remote',
+      draftRevision: 1,
+      audience: {
+        kind: 'CUSTOM_ALLOW',
+        actorPtids: ['ptid:test:remote'],
+      },
+      momentKind: 'TEXT',
+      text: 'remote private publish',
+      files: [],
+    });
+
+    expect(result).toMatchObject({
+      state: 'PRIVATE_UNSUPPORTED',
+      evidence: {
+        publishPhase: 'PREPARE_REJECTED',
+        prepareSucceeded: false,
+        receivedPreparePlanCount: 0,
+        desktopLocalDurableRowCount: 0,
+      },
+    });
+  });
+
+  it('keeps CUSTOM_DENY(PUBLIC) on the build-gated Acceptance probe', async () => {
+    vi.stubGlobal('window', {
+      __TAURI_INTERNALS__: {},
+      location: new URL('tauri://localhost/moments'),
+    });
+    privateState.platform = 'native';
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        state: 'PRIVATE_UNSUPPORTED',
+        draftId: 'draft-public-deny',
+        errorCode: 'PRIVATE_UNSUPPORTED',
+        stationErrorCode: 'SOCIAL_PRIVATE_UNSUPPORTED',
+        evidence: {
+          publishPhase: 'PREPARE_REJECTED',
+          prepareSucceeded: false,
+          receivedPreparePlanCount: 0,
+          desktopLocalDurableRowCount: 0,
+          localDraftRowCount: 0,
+          localCommandRowCount: 0,
+          localProjectionRowCount: 0,
+          localUploadRowCount: 0,
+          claimCountScope: 'NATIVE_RECEIVED_PREPARE_PLAN',
+          partialRowScope: 'DESKTOP_LOCAL_DURABLE_STATE',
+          serverWriteProof: 'STATION_SOURCE_TEST_REQUIRED',
+        },
+      },
+    });
+
+    const result = await harness().publishUnsupportedCustomDenyPublic({
+      draftId: 'draft-public-deny',
+      revision: 1,
+      text: 'unsupported public deny',
+      audienceKind: 'CUSTOM_DENY',
+      baseKind: 'PUBLIC',
+      actorPtids: ['ptid:test:eve'],
+    });
+
+    expect(result).toMatchObject({
+      state: 'PRIVATE_UNSUPPORTED',
+      rejectionEvidence: {
+        receivedPreparePlanCount: 0,
+        desktopLocalDurableRowCount: 0,
+      },
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      'social_private_moment_publish',
+      {
+        input: expect.objectContaining({
+          audience: {
+            kind: 'CUSTOM_DENY',
+            actorPtids: ['ptid:test:eve'],
+            baseKind: 'PUBLIC',
+          },
+        }),
+      },
+    );
+  });
+
+  it.each([
+    {
+      momentKind: 'VIDEO',
+      extra: {
+        files: [{ intentId: 'video-source', filePath: '/private/video.mp4' }],
+      },
+      expected: {
+        kind: 'video',
+        localFiles: [{
+          intentId: 'video-source',
+          filePath: '/private/video.mp4',
+          previewSrc: '',
+        }],
+      },
+    },
+    {
+      momentKind: 'LINK',
+      extra: {
+        link: {
+          url: 'https://example.test/private',
+          title: 'Private link',
+        },
+      },
+      expected: {
+        kind: 'link',
+        link: {
+          url: 'https://example.test/private',
+          title: 'Private link',
+        },
+      },
+    },
+    {
+      momentKind: 'POLL',
+      extra: {
+        poll: {
+          question: 'Choose one',
+          options: ['First', 'Second'],
+          minChoices: 1,
+          maxChoices: 1,
+          expiresAtSeconds: 4_000_000_000,
+        },
+      },
+      expected: {
+        kind: 'poll',
+        poll: {
+          question: 'Choose one',
+          options: ['First', 'Second'],
+          minChoices: 1,
+          maxChoices: 1,
+          expiresAtSeconds: 4_000_000_000,
+          durationHours: 1,
+          multipleChoice: false,
+        },
+      },
+    },
+    {
+      momentKind: 'LOCATION',
+      extra: {
+        location: {
+          name: 'Central Park',
+          latitude: 40.7829,
+          longitude: -73.9654,
+          address: 'New York',
+        },
+      },
+      expected: {
+        kind: 'location',
+        location: {
+          name: 'Central Park',
+          latitude: 40.7829,
+          longitude: -73.9654,
+          address: 'New York',
+        },
+      },
+    },
+  ])('publishes $momentKind through the production Moments store', async ({
+    momentKind,
+    extra,
+    expected,
+  }) => {
+    privateState.platform = 'native';
+    momentsState.createPost.mockImplementation(async () => {
+      privateState.publish = { state: 'PUBLISHED' };
+      return `post-${momentKind.toLowerCase()}`;
+    });
+
+    const result = await harness().publishTypedPrivateMoment({
+      draftId: `draft-${momentKind.toLowerCase()}`,
+      revision: 1,
+      text: `private ${momentKind.toLowerCase()}`,
+      audienceKind: 'FRIENDS',
+      momentKind,
+      ...extra,
+    });
+
+    expect(momentsState.createPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: expect.objectContaining({ kind: Audience_Kind.FRIENDS }),
+        draftId: `draft-${momentKind.toLowerCase()}`,
+        draftRevision: 1,
+        ...expected,
+      }),
+    );
+    expect(result).toMatchObject({
+      state: 'PUBLISHED',
+      transientPostId: `post-${momentKind.toLowerCase()}`,
+    });
+    expect(invoke).not.toHaveBeenCalledWith(
+      'social_private_moment_publish',
+      expect.anything(),
+    );
+  });
+
+  it('reports typed private Moment rejection without fabricating a post', async () => {
+    privateState.platform = 'native';
+    momentsState.createPost.mockImplementation(async () => {
+      privateState.publish = {
+        state: 'PUBLISH_FAILED',
+        errorCode: 'PRIVATE_NATIVE_COMMAND_FAILED',
+      };
+      throw new Error('private Moment publish intent is invalid');
+    });
+
+    const result = await harness().probeTypedPrivateMomentRejection({
+      draftId: 'draft-over-limit',
+      revision: 1,
+      text: 'over limit',
+      audienceKind: 'FRIENDS',
+      momentKind: 'IMAGE',
+      files: Array.from({ length: 11 }, (_, index) => ({
+        intentId: `file-${index}`,
+        filePath: `/tmp/file-${index}`,
+      })),
+    });
+
+    expect(result).toEqual({
+      rejected: true,
+      state: 'PUBLISH_FAILED',
+      errorCode: 'PRIVATE_NATIVE_COMMAND_FAILED',
+      transientPostId: undefined,
+    });
+  });
+
+  it('uses the production reaction store for private Moment add and remove', async () => {
+    momentsState.reactToPost.mockImplementation(async (postId: string) => {
+      momentsState.reactions[postId] = [{
+        kind: ReactionKind.REACTION_LOVE,
+        count: 1n,
+        reactedByViewer: true,
+      }];
+    });
+    momentsState.unreactToPost.mockImplementation(async (postId: string) => {
+      momentsState.reactions[postId] = [];
+    });
+
+    const reacted = await harness().reactToPrivateMoment({
+      postId: 'private-post',
+      kind: 'LOVE',
+    });
+    const unreacted = await harness().unreactToPrivateMoment({
+      postId: 'private-post',
+      kind: 'LOVE',
+    });
+
+    expect(momentsState.reactToPost).toHaveBeenCalledWith(
+      'private-post',
+      ReactionKind.REACTION_LOVE,
+    );
+    expect(reacted).toEqual({
+      reactions: [{
+        kind: ReactionKind.REACTION_LOVE,
+        count: 1,
+        reactedByViewer: true,
+      }],
+    });
+    expect(momentsState.unreactToPost).toHaveBeenCalledWith(
+      'private-post',
+      ReactionKind.REACTION_LOVE,
+    );
+    expect(unreacted).toEqual({ reactions: [] });
+  });
+
+  it('deletes through the production Moments store', async () => {
+    privateState.postsById['private-post'] = {
+      postId: 'private-post',
+      state: 'CONTENT_READY',
+    };
+    momentsState.deletePost.mockImplementation(async (postId: string) => {
+      delete privateState.postsById[postId];
+    });
+
+    const result = await harness().deletePrivateMoment({
+      postId: 'private-post',
+    });
+
+    expect(momentsState.deletePost).toHaveBeenCalledWith('private-post');
+    expect(result).toEqual({
+      deleted: true,
+      localProjectionPresent: false,
+    });
+  });
+
+  it('blocks and unblocks through signed production relationship commands', async () => {
+    vi.mocked(socialBlockActor).mockResolvedValue({
+      result: {
+        kind: SocialRelationshipCommandResultKind.COMMITTED,
+        projection: {
+          blockedByViewer: true,
+          interactionAllowed: false,
+          revision: 1n,
+        },
+      },
+    } as never);
+    vi.mocked(socialUnblockActor).mockResolvedValue({
+      result: {
+        kind: SocialRelationshipCommandResultKind.COMMITTED,
+        projection: {
+          blockedByViewer: false,
+          interactionAllowed: true,
+          revision: 2n,
+        },
+      },
+    } as never);
+
+    const blocked = await harness().blockActor({
+      actorPtid: 'ptid:test:bob',
+      homeStationPeerId: 'peer-station-four',
+      observedRevision: 0,
+    });
+    const unblocked = await harness().unblockActor({
+      actorPtid: 'ptid:test:bob',
+      homeStationPeerId: 'peer-station-four',
+      observedRevision: 1,
+    });
+
+    expect(socialBlockActor).toHaveBeenCalledWith({
+      targetActorPtid: 'ptid:test:bob',
+      targetHomeStationPeerId: 'peer-station-four',
+      observedRevision: 0,
+    });
+    expect(blocked).toMatchObject({
+      state: 'BLOCKED',
+      revision: 1,
+      interactionAllowed: false,
+    });
+    expect(unblocked).toMatchObject({
+      state: 'UNBLOCKED',
+      revision: 2,
+      interactionAllowed: true,
+    });
+  });
+
+  it.each(['IMAGE', 'VIDEO'] as const)(
+    'uses Native-verified private %s media evidence without refetching local URLs',
+    async (kind) => {
     const plaintextSha256 = 'a'.repeat(64);
     privateState.platform = 'native';
     privateState.readMoment.mockImplementation(async (postId: string) => {
@@ -381,7 +1035,7 @@ describe('Moments acceptance harness', () => {
         audienceKind: 'FRIENDS',
         state: 'CONTENT_READY',
         content: {
-          kind: 'IMAGE',
+          kind,
           text: 'private image text',
           media: [{
             objectId: 'object-1',
@@ -406,7 +1060,7 @@ describe('Moments acceptance harness', () => {
     expect(result).toMatchObject({
       platform: 'native',
       state: 'CONTENT_READY',
-      contentKind: 'IMAGE',
+      contentKind: kind,
       textByteLength: 18,
       media: [{
         state: 'MEDIA_READY',
@@ -418,6 +1072,7 @@ describe('Moments acceptance harness', () => {
     expect(fetchMedia).not.toHaveBeenCalled();
     expect(serialized).not.toContain('private image text');
     expect(serialized).not.toContain('asset://localhost/private-image');
+    expect(privateState.openMedia).toHaveBeenCalledWith('post-1', 'object-1');
   });
 
   it('reads historical private content through the recovery path', async () => {
@@ -451,6 +1106,12 @@ describe('Moments acceptance harness', () => {
   });
 
   it('submits and reads private Comment evidence without exposing plaintext', async () => {
+    const mentions = [{
+      actorPtid: 'ptid:test:alice',
+      offset: 8,
+      length: 5,
+      display: 'Alice',
+    }];
     const comment = {
       authorPtid: 'ptid:test:bob',
       commentId: 'comment-1',
@@ -459,7 +1120,8 @@ describe('Moments acceptance harness', () => {
       postId: 'post-1',
       replyToCommentId: '',
       state: 'COMMENT_POSTED',
-      text: 'private comment text',
+      text: 'private Alice comment',
+      mentions,
       reactionsCount: 0,
       repliesCount: 0,
     };
@@ -477,6 +1139,7 @@ describe('Moments acceptance harness', () => {
     const submitted = await harness().submitPrivateComment({
       postId: 'post-1',
       text: comment.text,
+      mentions,
     });
     const read = await harness().readPrivateComments({
       postId: 'post-1',
@@ -486,11 +1149,13 @@ describe('Moments acceptance harness', () => {
     expect(submitted).toMatchObject({
       state: 'COMMENT_POSTED',
       textByteLength: comment.text.length,
+      mentionCount: 1,
     });
     expect(read).toMatchObject({
       comments: [{
         state: 'COMMENT_POSTED',
         textByteLength: comment.text.length,
+        mentionCount: 1,
       }],
       loaded: true,
     });
@@ -498,6 +1163,8 @@ describe('Moments acceptance harness', () => {
     expect(privateCommentsState.submitComment).toHaveBeenCalledWith(
       'post-1',
       comment.text,
+      undefined,
+      mentions,
     );
   });
 
@@ -700,6 +1367,16 @@ describe('Moments acceptance harness', () => {
   });
 
   it('persists a typed marker for the exact observed interval', async () => {
+    const nativeFetch = vi.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => ({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => new TextEncoder().encode('renderer bundle').buffer,
+    }));
+    vi.stubGlobal('fetch', nativeFetch);
+    installAcceptanceHarness();
     const actionId = 'browser-private-read';
     const runtimeManifestDigest = 'a'.repeat(64);
     const capture = await harness().beginNetworkCapture({
@@ -762,10 +1439,20 @@ describe('Moments acceptance harness', () => {
     expect(marker.captureIntervalDigest).not.toBe('f'.repeat(64));
     expect(marker.markerDigest).toBe(expectedMarkerDigest);
 
-    const markCalls = vi.mocked(performance.mark).mock.calls;
-    const markCall = markCalls[markCalls.length - 1];
-    expect(markCall?.[0]).toMatch(/^sc-terminal-v1:[A-Za-z0-9_-]+$/);
-    const encoded = String(markCall?.[0]).slice('sc-terminal-v1:'.length);
+    const markerCall = nativeFetch.mock.calls[nativeFetch.mock.calls.length - 1];
+    const markerUrl = new URL(String(markerCall?.[0]));
+    expect(markerUrl.origin).toBe(window.location.origin);
+    expect(markerUrl.pathname).toMatch(
+      /^\/__pt_acceptance\/network-terminal\/[A-Za-z0-9_-]+$/,
+    );
+    expect(markerCall?.[1]).toEqual({
+      cache: 'no-store',
+      credentials: 'same-origin',
+      method: 'GET',
+    });
+    const encoded = markerUrl.pathname.slice(
+      '/__pt_acceptance/network-terminal/'.length,
+    );
     const padded = encoded.replace(/-/g, '+').replace(/_/g, '/')
       .padEnd(Math.ceil(encoded.length / 4) * 4, '=');
     expect(JSON.parse(atob(padded))).toEqual({
@@ -777,7 +1464,6 @@ describe('Moments acceptance harness', () => {
       runtimeManifestDigest,
       schemaVersion: 1,
     });
-    expect(markCall?.[1]).toEqual({ detail: marker });
 
     const persisted = JSON.stringify(marker);
     socket.emitMessage('post-marker');
@@ -797,7 +1483,7 @@ describe('Moments acceptance harness', () => {
     };
     expect(JSON.stringify(marker)).toBe(persisted);
     expect(nextCapture.initialObserverSequence).toBe(
-      marker.finalObserverSequence + 1,
+      marker.finalObserverSequence + 3,
     );
     expect(nextMarker.finalObserverSequence).toBe(
       nextCapture.initialObserverSequence,
@@ -972,5 +1658,33 @@ describe('Moments acceptance harness', () => {
     expect(serialized).not.toContain(publicText);
     expect(serialized).not.toContain('oss://station/public-image');
     expect(serialized).not.toContain('https://station.invalid/public-image');
+  });
+
+  it('publishes public media without the private encryption wrapper', async () => {
+    vi.mocked(api.ossUploadAttachmentSocial).mockResolvedValue({
+      cid: 'oss://station/public-image',
+    } as never);
+    momentsState.createPost.mockResolvedValue('public-post');
+
+    const result = await harness().publishPublicMoment({
+      text: 'public image control',
+      filePath: '/tmp/public-image.png',
+    });
+
+    expect(api.ossUploadAttachmentSocial).toHaveBeenCalledWith(
+      '/tmp/public-image.png',
+    );
+    expect(api.ossUploadEncryptedAttachmentSocial).not.toHaveBeenCalled();
+    expect(momentsState.createPost).toHaveBeenCalledWith(
+      expect.objectContaining({
+        imageIds: ['oss://station/public-image'],
+        audience: expect.objectContaining({ kind: Audience_Kind.PUBLIC }),
+      }),
+    );
+    expect(result).toMatchObject({
+      published: true,
+      mediaCount: 1,
+      transientPostId: 'public-post',
+    });
   });
 });

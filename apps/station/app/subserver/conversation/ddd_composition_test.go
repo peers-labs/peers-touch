@@ -4195,6 +4195,8 @@ func TestConversationDDDTestCompositionGroupMembershipSettingsReadAndLeave(t *te
 		t.Fatal(err)
 	}
 	if len(membershipPlan.Changes) != 1 ||
+		membershipPlan.Changes[0].Action != entity.MembershipActionAddActor ||
+		membershipPlan.Changes[0].Device != charlie.Device ||
 		membershipPlan.Changes[0].HomeStation != "station-b" {
 		t.Fatalf("membership plan did not bind the identity-owned Home Station: %+v", membershipPlan.Changes)
 	}

@@ -188,6 +188,20 @@ function taskSliceFor(entry) {
   };
 }
 
+function runtimeReuseContract() {
+  return {
+    scope: 'suite',
+    entryCheckId: 'functional-task-a',
+    scenarioIds: ['scenario-a', 'scenario-b'],
+    maxProvisioningRuns: 1,
+    maxClientLaunches: 2,
+    minWarmReuseRate: 0.5,
+    requireAttachOnlyScenarios: true,
+    requireReceiverVisibleProof: true,
+    allowClientReplacement: false,
+  };
+}
+
 function acceptanceForTasks(tasks) {
   const closures = {};
   const gates = [];
@@ -833,6 +847,65 @@ test('rejects closed-schema additions, duplicate IDs, cycles, current, and exhau
     await expectPlanError(
       loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
       'PLAN_SCHEMA_INVALID',
+    );
+  });
+
+  await t.test('functional Task accepts a closed runtime reuse contract', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        const task = taskSlices.get('task-a');
+        task.runtimeClass = 'native-desktop';
+        task.runtimeReuse = runtimeReuseContract();
+      },
+    });
+    const planPackage = await loadPlanPackage(fixture.planPath, {
+      repoRoot: fixture.root,
+    });
+    assert.deepEqual(
+      planPackage.taskSlices.get('task-a').runtimeReuse,
+      runtimeReuseContract(),
+    );
+  });
+
+  await t.test('runtime reuse rejects scenario scope', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        const task = taskSlices.get('task-a');
+        task.runtimeClass = 'native-desktop';
+        task.runtimeReuse = runtimeReuseContract();
+        task.runtimeReuse.scope = 'scenario';
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_SCHEMA_INVALID',
+    );
+  });
+
+  await t.test('runtime reuse rejects duplicate scenarios', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        const task = taskSlices.get('task-a');
+        task.runtimeClass = 'native-desktop';
+        task.runtimeReuse = runtimeReuseContract();
+        task.runtimeReuse.scenarioIds = ['scenario-a', 'scenario-a'];
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_DUPLICATE',
+    );
+  });
+
+  await t.test('runtime reuse rejects source-only runtime', async (t) => {
+    const fixture = await makeFixture(t, {
+      mutateTaskSlices(taskSlices) {
+        taskSlices.get('task-a').runtimeReuse = runtimeReuseContract();
+      },
+    });
+    await expectPlanError(
+      loadPlanPackage(fixture.planPath, { repoRoot: fixture.root }),
+      'PLAN_TASK_RUNTIME_INVALID',
     );
   });
 

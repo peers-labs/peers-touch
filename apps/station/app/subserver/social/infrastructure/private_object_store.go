@@ -1688,9 +1688,9 @@ func authorizePrivateCurrentAudience(
 	case "FOLLOWERS":
 		return authorizePrivateFollower(tx, ownerPTID, viewerPTID)
 	case "CIRCLE":
-		targetID := audience.GetTargetId()
+		targetID := audience.GetCircleId()
 		if targetID == 0 ||
-			snapshot.AudienceTargetID != strconv.FormatUint(targetID, 10) {
+			snapshot.AudienceTarget != strconv.FormatUint(targetID, 10) {
 			return ErrPrivateContentNotFound
 		}
 		var count int64
@@ -1710,7 +1710,10 @@ func authorizePrivateCurrentAudience(
 			return ErrPrivateContentNotFound
 		}
 	case "GROUP":
-		return ErrPrivateContentNotFound
+		if audience.GetGroupConversationId() == "" ||
+			snapshot.AudienceTarget != audience.GetGroupConversationId() {
+			return ErrPrivateContentNotFound
+		}
 	case "CUSTOM_ALLOW", "CUSTOM_DENY":
 		if audience.GetKind() == actormodel.Audience_CUSTOM_DENY &&
 			audience.GetBaseKind() == actormodel.Audience_FOLLOWERS {
@@ -1732,6 +1735,8 @@ func loadPrivatePostAudience(
 		"plan_id",
 		"audience_bytes",
 		"audience_sha256",
+		"group_recipient_snapshot_bytes",
+		"group_recipient_snapshot_sha256",
 		"subtype_prepare_authority_bytes",
 		"subtype_prepare_authority_sha256",
 	).Where(
@@ -1742,8 +1747,14 @@ func loadPrivatePostAudience(
 		return nil, ErrPrivateContentNotFound
 	}
 	binding := PrivatePrepareBinding{
-		AudienceBytes:                cloneBytes(model.AudienceBytes),
-		AudienceSHA256:               cloneBytes(model.AudienceSHA256),
+		AudienceBytes:  cloneBytes(model.AudienceBytes),
+		AudienceSHA256: cloneBytes(model.AudienceSHA256),
+		GroupRecipientSnapshotBytes: cloneBytes(
+			model.GroupRecipientSnapshotBytes,
+		),
+		GroupRecipientSnapshotSHA256: cloneBytes(
+			model.GroupRecipientSnapshotSHA256,
+		),
 		SubtypePrepareAuthorityBytes: cloneBytes(model.SubtypePrepareAuthorityBytes),
 		SubtypePrepareAuthoritySHA256: cloneBytes(
 			model.SubtypePrepareAuthoritySHA256,

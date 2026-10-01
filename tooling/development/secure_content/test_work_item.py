@@ -17,6 +17,18 @@ MANIFEST = (
     / "docs/architecture/secure-content/execution-plans/"
     "20260913-secure-content-work-items.yaml"
 )
+W12D_TASK = (
+    REPO_ROOT
+    / "docs/architecture/secure-content/execution-plans/"
+    "20260913-secure-content-hard-cut/tasks/W12D.md"
+)
+
+
+def _load_task_slice(path: Path) -> dict[str, object]:
+    document = path.read_text(encoding="utf-8")
+    start = document.index("```json\n") + len("```json\n")
+    end = document.index("\n```", start)
+    return json.loads(document[start:end])
 
 
 class WorkItemProjectionTest(unittest.TestCase):
@@ -48,7 +60,111 @@ class WorkItemProjectionTest(unittest.TestCase):
         self.assertEqual((), projection.runtime_claim_arguments)
 
     def test_w12a_projections_bind_explicit_parent_task(self) -> None:
-        for workstream in ("W12A", "W12A-FOUR", "W12A-FIVEARM"):
+        cases = (
+            ("W12A", "sc-dj-mobile-matrix", "W12A"),
+            ("W12B", "sc-dj-mobile-matrix", "W12B"),
+            ("W12C", "sc-dj-runtime-manifest-v3", "W12C"),
+            ("W12D", "sc-dj-canonical-schema-activation", "W12D"),
+            ("W12A-FOUR", "sc-dj-canonical-schema-activation", "W12D"),
+            ("W12A-FIVEARM", "sc-dj-canonical-schema-activation", "W12D"),
+        )
+        for workstream, journey, task_id in cases:
+            with self.subTest(workstream=workstream):
+                projection = work_item.load_projection(
+                    MANIFEST,
+                    workstream=workstream,
+                    journey=journey,
+                    repo_root=REPO_ROOT,
+                )
+
+                self.assertEqual(task_id, projection.task_id)
+                self.assertEqual(
+                    "docs/architecture/secure-content/execution-plans/"
+                    "20260913-secure-content-hard-cut/plan.md",
+                    projection.plan_ref,
+                )
+
+    def test_w12_source_projections_cover_task_read_roots(self) -> None:
+        cases = (
+            (
+                "W12A",
+                "sc-dj-mobile-matrix",
+                (
+                    "shared-read:apps/desktop/src-tauri/src/social",
+                    "shared-read:docs/architecture/secure-content",
+                    "shared-read:packages/secure-content-core",
+                ),
+            ),
+            (
+                "W12B",
+                "sc-dj-mobile-matrix",
+                (
+                    "shared-read:apps/desktop/src/acceptance/moments",
+                    "shared-read:docs/architecture/social",
+                    "shared-read:packages/secure-content-core",
+                ),
+            ),
+            (
+                "W12C",
+                "sc-dj-runtime-manifest-v3",
+                (
+                    "shared-read:apps/desktop",
+                    "shared-read:apps/mobile",
+                    "shared-read:apps/station",
+                ),
+            ),
+            (
+                "W12D",
+                "sc-dj-canonical-schema-activation",
+                (
+                    "shared-read:apps/desktop",
+                    "shared-read:apps/dev",
+                    "shared-read:apps/mobile",
+                    "shared-read:apps/station",
+                    "shared-read:docs/architecture",
+                    "shared-read:tooling",
+                ),
+            ),
+        )
+        for workstream, journey, claims in cases:
+            with self.subTest(workstream=workstream):
+                projection = work_item.load_projection(
+                    MANIFEST,
+                    workstream=workstream,
+                    journey=journey,
+                    repo_root=REPO_ROOT,
+                )
+                for claim in claims:
+                    self.assertIn(claim, projection.source_claim_arguments)
+
+    def test_w12d_projection_owns_the_source_freeze_contract(self) -> None:
+        projection = work_item.load_projection(
+            MANIFEST,
+            workstream="W12D",
+            journey="sc-dj-canonical-schema-activation",
+            repo_root=REPO_ROOT,
+        )
+
+        for path in (
+            "docs/architecture/secure-content/execution-plans/"
+            "20260913-secure-content-work-items.yaml",
+            "tooling/development/secure_content/schema_activation.py",
+            "tooling/development/secure_content/test_schema_activation.py",
+            "apps/station/app/subserver/social/infrastructure/"
+            "secure_content_reset_types.go",
+        ):
+            self.assertIn(
+                f"exclusive-write:{path}",
+                projection.source_claim_arguments,
+            )
+        self.assertEqual(
+            "allowed",
+            projection.authorization["checkpoint"]["amend"],
+        )
+
+    def test_w12d_activation_children_cover_parent_task_source_scope(self) -> None:
+        task = _load_task_slice(W12D_TASK)
+        for workstream in ("W12A-FOUR", "W12A-FIVEARM"):
             with self.subTest(workstream=workstream):
                 projection = work_item.load_projection(
                     MANIFEST,
@@ -56,13 +172,30 @@ class WorkItemProjectionTest(unittest.TestCase):
                     journey="sc-dj-canonical-schema-activation",
                     repo_root=REPO_ROOT,
                 )
-
-                self.assertEqual("W12A", projection.task_id)
-                self.assertEqual(
-                    "docs/architecture/secure-content/execution-plans/"
-                    "20260913-secure-content-hard-cut/plan.md",
-                    projection.plan_ref,
+                claims = tuple(
+                    (mode, path)
+                    for mode, path in (
+                        claim.split(":", 1)
+                        for claim in projection.source_claim_arguments
+                    )
                 )
+                for path in task["writeSet"]:
+                    self.assertTrue(
+                        any(
+                            mode == "exclusive-write"
+                            and (path == prefix or path.startswith(f"{prefix}/"))
+                            for mode, prefix in claims
+                        ),
+                        f"{workstream} does not cover W12D write path {path}",
+                    )
+                for path in task["readSet"]:
+                    self.assertTrue(
+                        any(
+                            path == prefix or path.startswith(f"{prefix}/")
+                            for _, prefix in claims
+                        ),
+                        f"{workstream} does not cover W12D read path {path}",
+                    )
 
     def test_w7_projection_covers_its_task_level_read_roots(self) -> None:
         projection = work_item.load_projection(
@@ -79,6 +212,37 @@ class WorkItemProjectionTest(unittest.TestCase):
         ):
             with self.subTest(claim=claim):
                 self.assertIn(claim, projection.source_claim_arguments)
+
+    def test_w8_projection_covers_its_task_level_read_roots(self) -> None:
+        projection = work_item.load_projection(
+            MANIFEST,
+            workstream="W8",
+            journey="sc-dj-social-expansion",
+            repo_root=REPO_ROOT,
+        )
+
+        for path in (
+            "apps/station/app/subserver/social",
+            "apps/desktop",
+            "packages/locales",
+            "tooling/development/secure_content/scenarios/private_comment.py",
+            "tooling/development/secure_content/scenarios/social_expansion.py",
+            "tooling/development/secure_content/scenarios/social_subtype.py",
+            "tooling/development/secure_content/scenarios/social_object.py",
+            "tooling/development/secure_content/scenarios/social_delete_block.py",
+            "tooling/development/secure_content/scenarios/social_bounds.py",
+            "docs/architecture/secure-content",
+            "docs/architecture/social",
+            "tooling/acceptance",
+        ):
+            with self.subTest(path=path):
+                self.assertTrue(
+                    any(
+                        claim == f"shared-read:{path}"
+                        or claim.startswith(f"exclusive-write:{path}")
+                        for claim in projection.source_claim_arguments
+                    )
+                )
 
     def test_loads_w2_source_and_runtime_subphases(self) -> None:
         source = work_item.load_projection(
@@ -365,6 +529,177 @@ class WorkItemProjectionTest(unittest.TestCase):
             ],
             calls[2],
         )
+
+    def test_ensure_active_projection_restarts_terminal_declaration(self) -> None:
+        projection = work_item.load_projection(
+            MANIFEST,
+            workstream="W12A-FOUR",
+            journey="sc-dj-canonical-schema-activation",
+            repo_root=REPO_ROOT,
+        )
+        calls: list[list[str]] = []
+        declaration = {
+            "declarationId": f"{projection.work_item_id}-9eb2cb904c9ae460",
+            "workItemId": projection.work_item_id,
+            "sessionId": "released-session",
+            "workspaceId": "9eb2cb904c9ae460",
+            "branch": "feat/federation",
+            "sourceHead": "1" * 40,
+            "journeyId": projection.journey_id,
+            "planPath": projection.plan_ref,
+            "taskId": projection.task_id,
+            "purpose": "stale terminal declaration",
+            "state": "RELEASED",
+            "sourceClaims": [],
+            "runtimeClaims": [],
+            "declarationDigest": "1" * 64,
+        }
+
+        def fresh_declaration(state: str, digest: str) -> dict[str, object]:
+            return {
+                "declarationId": (
+                    f"{projection.work_item_id}-9eb2cb904c9ae460"
+                ),
+                "workItemId": projection.work_item_id,
+                "sessionId": projection.work_item_id,
+                "workspaceId": "9eb2cb904c9ae460",
+                "branch": "feat/federation",
+                "sourceHead": "2" * 40,
+                "journeyId": projection.journey_id,
+                "planPath": projection.plan_ref,
+                "taskId": projection.task_id,
+                "purpose": projection.purpose,
+                "state": state,
+                "sourceClaims": [
+                    {
+                        "mode": claim.split(":", 1)[0],
+                        "pathPrefix": claim.split(":", 1)[1],
+                    }
+                    for claim in projection.source_claim_arguments
+                ],
+                "runtimeClaims": [
+                    {
+                        "mode": claim.split(":", 2)[0],
+                        "kind": claim.split(":", 2)[1],
+                        "resourceId": claim.split(":", 2)[2],
+                    }
+                    for claim in projection.runtime_claim_arguments
+                ],
+                "declarationDigest": digest,
+            }
+
+        def fake_runner(
+            command: list[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            nonlocal declaration
+            self.assertEqual(REPO_ROOT, cwd)
+            calls.append(command)
+            if command == ["git", "config", "user.email"]:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout="acceptance@test.invalid\n",
+                    stderr="",
+                )
+            action = command[2]
+            if action == "start":
+                declaration = fresh_declaration("DECLARED", "2" * 64)
+            elif action == "check":
+                declaration = fresh_declaration("ACTIVE", "3" * 64)
+            stdout = (
+                json.dumps(
+                    {
+                        "workspaceId": declaration["workspaceId"],
+                        "declarations": [declaration],
+                    }
+                )
+                if action == "status"
+                else json.dumps(declaration)
+            )
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=stdout,
+                stderr="",
+            )
+
+        result = work_item.ensure_active_projection(
+            projection,
+            repo_root=REPO_ROOT,
+            session=projection.work_item_id,
+            command_runner=fake_runner,
+        )
+
+        self.assertEqual("ACTIVE", result["state"])
+        self.assertEqual("3" * 64, result["declarationDigest"])
+        self.assertEqual(
+            ["status", "start", "status", "check", "status"],
+            [
+                command[2]
+                for command in calls
+                if command[0] == "node"
+            ],
+        )
+
+    def test_ensure_active_projection_preserves_resource_conflict(self) -> None:
+        projection = work_item.load_projection(
+            MANIFEST,
+            workstream="W12A-FOUR",
+            journey="sc-dj-canonical-schema-activation",
+            repo_root=REPO_ROOT,
+        )
+        released = {
+            "state": "RELEASED",
+            "workspaceId": "9eb2cb904c9ae460",
+        }
+
+        def conflict_runner(
+            command: list[str],
+            cwd: Path,
+        ) -> subprocess.CompletedProcess[str]:
+            self.assertEqual(REPO_ROOT, cwd)
+            if command == ["git", "config", "user.email"]:
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout="acceptance@test.invalid\n",
+                    stderr="",
+                )
+            if command[2] == "status":
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps(
+                        {
+                            "workspaceId": released["workspaceId"],
+                            "declarations": [released],
+                        }
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(
+                command,
+                2,
+                stdout="",
+                stderr=json.dumps(
+                    {
+                        "code": "RESOURCE_DECLARATION_CONFLICT",
+                        "status": "BLOCKED",
+                    }
+                ),
+            )
+
+        with self.assertRaisesRegex(
+            work_item.CommandError,
+            "RESOURCE_DECLARATION_CONFLICT",
+        ):
+            work_item.ensure_active_projection(
+                projection,
+                repo_root=REPO_ROOT,
+                session=projection.work_item_id,
+                command_runner=conflict_runner,
+            )
 
     def test_plan_locator_readback_mismatch_fails_closed(self) -> None:
         projection = work_item.load_projection(

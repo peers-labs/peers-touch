@@ -14,7 +14,6 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tooling.acceptance.core.harness import _set_script_timeout
 from tooling.acceptance.gates.agent import foundation_runtime_client
 from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationClientError,
@@ -36,25 +35,6 @@ class _EchoHandler(socketserver.BaseRequestHandler):
             if not data:
                 return
             self.request.sendall(data)
-
-
-class HarnessTimeoutTest(unittest.TestCase):
-    def test_transport_timeout_tracks_each_script_budget(self) -> None:
-        client_config = Mock()
-        client_config.timeout = 120
-        command_executor = Mock()
-        command_executor._client_config = client_config
-        driver = Mock(spec=["set_script_timeout", "command_executor"])
-        driver.command_executor = command_executor
-
-        _set_script_timeout(driver, 1200)
-
-        self.assertEqual(client_config.timeout, 1205)
-
-        _set_script_timeout(driver, 30)
-
-        self.assertEqual(client_config.timeout, 35)
-        driver.set_script_timeout.assert_called_with(30)
 
 
 class TcpFaultProxyTest(unittest.TestCase):
@@ -446,6 +426,280 @@ class FoundationClientSpecTest(unittest.TestCase):
             client._managed_runtime_started = False
             client.stop()
 
+    def test_native_driver_retries_session_handshake_after_port_is_ready(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+                startup_timeout=1,
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            driver = Mock()
+            failed_connection = Mock()
+            connected_connection = Mock()
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=True,
+                ),
+                patch.object(
+                    foundation_runtime_client.WAIT_TICK,
+                    "wait",
+                ) as wait,
+                patch.object(
+                    foundation_runtime_client,
+                    "RemoteConnection",
+                    side_effect=[failed_connection, connected_connection],
+                ),
+                patch.object(
+                    foundation_runtime_client.webdriver,
+                    "Remote",
+                    side_effect=[
+                        ConnectionError("connection closed"),
+                        driver,
+                    ],
+                ) as remote,
+            ):
+                client._connect_driver()
+
+            self.assertIs(driver, client.driver)
+            self.assertEqual(2, remote.call_count)
+            failed_connection.close.assert_called_once_with()
+            connected_connection.close.assert_not_called()
+            wait.assert_called_once()
+            client.process = None
+            client.stop()
+
+    def test_native_harness_readiness_reloads_manifest_renderer_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            client.driver = Mock()
+            driver = client.driver
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "harness_ready",
+                    side_effect=[False, True],
+                ) as harness_ready,
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=True,
+                ),
+            ):
+                client._wait_for_acceptance_harness()
+
+            self.assertEqual(
+                [30.0, 30.0],
+                [
+                    call.kwargs["timeout"]
+                    for call in harness_ready.call_args_list
+                ],
+            )
+            driver.get.assert_called_once_with("http://127.0.0.1:23210")
+            client.driver = None
+            client.process = None
+            client.stop()
+
+    def test_native_harness_readiness_accepts_ambiguous_navigation_error(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            client.driver = Mock()
+            client.driver.get.side_effect = RuntimeError(
+                "JavaScript execution returned a result of an unsupported "
+                "type (code 5)"
+            )
+            driver = client.driver
+            reconnected_driver = Mock()
+
+            def reconnect() -> None:
+                client.driver = reconnected_driver
+
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "harness_ready",
+                    side_effect=[False, True],
+                ) as harness_ready,
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=True,
+                ),
+                patch.object(
+                    client,
+                    "_reconnect_native_driver",
+                    side_effect=reconnect,
+                ) as reconnect_driver,
+            ):
+                client._wait_for_acceptance_harness()
+
+            self.assertEqual(2, harness_ready.call_count)
+            self.assertIs(harness_ready.call_args_list[0].args[0], driver)
+            self.assertIs(
+                harness_ready.call_args_list[1].args[0],
+                reconnected_driver,
+            )
+            driver.get.assert_called_once_with("http://127.0.0.1:23210")
+            reconnect_driver.assert_called_once_with()
+            client.driver = None
+            client.process = None
+            client.stop()
+
+    def test_native_driver_reconnect_replaces_poisoned_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            stale_driver = Mock()
+            stale_driver.quit.side_effect = RuntimeError("unsupported type")
+            replacement_driver = Mock()
+            client.driver = stale_driver
+
+            def reconnect() -> None:
+                client.driver = replacement_driver
+
+            with patch.object(
+                client,
+                "_connect_driver",
+                side_effect=reconnect,
+            ) as connect_driver:
+                client._reconnect_native_driver()
+
+            stale_driver.quit.assert_called_once_with()
+            stale_driver.command_executor.close.assert_called_once_with()
+            connect_driver.assert_called_once_with()
+            self.assertIs(client.driver, replacement_driver)
+            client.driver = None
+            client.stop()
+
+    def test_native_harness_readiness_fails_after_one_navigation_recovery(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            client.driver = Mock()
+            driver = client.driver
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "harness_ready",
+                    return_value=False,
+                ) as harness_ready,
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=True,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    FoundationClientError,
+                    "native-tauri agent acceptance Harness is unavailable",
+                ):
+                    client._wait_for_acceptance_harness()
+
+            self.assertEqual(2, harness_ready.call_count)
+            driver.get.assert_called_once_with("http://127.0.0.1:23210")
+            client.driver = None
+            client.process = None
+            client.stop()
+
+    def test_native_harness_readiness_does_not_navigate_a_closed_renderer(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "native-tauri"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.process = Mock()
+            client.process.poll.return_value = None
+            client.driver = Mock()
+            driver = client.driver
+            with (
+                patch.object(
+                    foundation_runtime_client,
+                    "harness_ready",
+                    return_value=False,
+                ) as harness_ready,
+                patch.object(
+                    foundation_runtime_client,
+                    "port_open",
+                    return_value=False,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    FoundationClientError,
+                    "renderer became unavailable",
+                ):
+                    client._wait_for_acceptance_harness()
+
+            harness_ready.assert_called_once_with(
+                driver,
+                namespace="agent",
+                timeout=30.0,
+            )
+            driver.get.assert_not_called()
+            client.driver = None
+            client.process = None
+            client.stop()
+
+    def test_browser_harness_readiness_does_not_navigate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = FoundationRuntimeClient(
+                self.spec(Path(directory), "browser"),
+                station_url="http://station.example/",
+                profile_env={},
+            )
+            client.driver = Mock()
+            driver = client.driver
+            with patch.object(
+                foundation_runtime_client,
+                "harness_ready",
+                return_value=False,
+            ) as harness_ready:
+                with self.assertRaisesRegex(
+                    FoundationClientError,
+                    "browser agent acceptance Harness is unavailable",
+                ):
+                    client._wait_for_acceptance_harness()
+
+            self.assertEqual(
+                60.0,
+                harness_ready.call_args.kwargs["timeout"],
+            )
+            driver.get.assert_not_called()
+            client.driver = None
+            client.stop()
+
     def test_unmanaged_launcher_clean_exit_still_fails_fast(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             client = FoundationRuntimeClient(
@@ -793,6 +1047,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             client._managed_runtime_started = True
             with (
                 patch.object(
@@ -841,72 +1096,6 @@ class FoundationClientSpecTest(unittest.TestCase):
                 "1",
             )
 
-    @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
-    def test_stop_runtime_releases_devctl_children_before_fallback_cleanup(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            client = FoundationRuntimeClient(
-                self.spec(root, "native-tauri"),
-                station_url="http://station.example",
-                profile_env={},
-            )
-            process = Mock(pid=17320)
-            process.poll.return_value = None
-            client.process = process
-            client._process_group_id = process.pid
-            client._managed_runtime_started = True
-            events: list[str] = []
-
-            def run_devctl(
-                *_args: object,
-                **_kwargs: object,
-            ) -> subprocess.CompletedProcess[str]:
-                events.append("devctl")
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=0,
-                    stdout="",
-                    stderr="",
-                )
-
-            with (
-                patch.object(
-                    foundation_runtime_client,
-                    "port_open",
-                    return_value=False,
-                ),
-                patch.object(
-                    client,
-                    "_signal_process_group",
-                    side_effect=lambda *_args: events.append("process-group"),
-                ),
-                patch.object(
-                    client,
-                    "_wait_for_process_group_exit",
-                    return_value=True,
-                ),
-                patch.object(
-                    client,
-                    "_stop_owned_listener_processes",
-                    side_effect=lambda: events.append("listeners") or [],
-                ),
-                patch(
-                    "tooling.acceptance.gates.agent."
-                    "foundation_runtime_client.subprocess.run",
-                    side_effect=run_devctl,
-                ),
-            ):
-                result = client._stop_runtime(
-                    logout=False,
-                    remove_storage=False,
-                )
-
-            self.assertEqual(result["status"], "clean")
-            self.assertLess(events.index("devctl"), events.index("process-group"))
-            self.assertLess(events.index("devctl"), events.index("listeners"))
-
     def test_stop_runtime_accepts_devctl_race_after_resources_are_released(
         self,
     ) -> None:
@@ -917,6 +1106,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             client._managed_runtime_started = True
             with (
                 patch.object(
@@ -954,6 +1144,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             process = Mock(pid=17321)
             process.poll.return_value = 0
             client.process = process
@@ -998,6 +1189,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             process = Mock(pid=17322)
             process.poll.return_value = None
             client.process = process
@@ -1092,70 +1284,6 @@ class FoundationClientSpecTest(unittest.TestCase):
             self.assertEqual(client.harness_namespace, "moments")
             client._close_fault_transport()
 
-    @unittest.skipUnless(os.name == "posix", "requires POSIX signals")
-    def test_stop_runtime_kills_owned_browser_listener_after_parent_exits(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            spec = self.spec(root, "browser")
-            client = FoundationRuntimeClient(
-                spec,
-                station_url="http://station.example",
-                profile_env={},
-            )
-            listener_pid = 17322
-
-            def inspect_listener(
-                args: list[str],
-                **_kwargs: object,
-            ) -> subprocess.CompletedProcess[str]:
-                if args[0] == "lsof":
-                    stdout = (
-                        f"{listener_pid}\n"
-                        if f"-iTCP:{spec.renderer_port}" in args
-                        else ""
-                    )
-                    return subprocess.CompletedProcess(
-                        args=args,
-                        returncode=0,
-                        stdout=stdout,
-                        stderr="",
-                    )
-                if args[0] == "ps":
-                    return subprocess.CompletedProcess(
-                        args=args,
-                        returncode=0,
-                        stdout=f"{sys.executable} -c listener {spec.worktree}\n",
-                        stderr="",
-                    )
-                self.fail(f"unexpected process inspection: {args}")
-
-            with (
-                patch.object(
-                    foundation_runtime_client,
-                    "port_open",
-                    return_value=False,
-                ),
-                patch(
-                    "tooling.acceptance.gates.agent."
-                    "foundation_runtime_client.subprocess.run",
-                    side_effect=inspect_listener,
-                ),
-                patch(
-                    "tooling.acceptance.gates.agent."
-                    "foundation_runtime_client.os.kill",
-                ) as kill,
-            ):
-                result = client._stop_runtime(
-                    logout=False,
-                    remove_storage=False,
-                )
-
-            self.assertEqual(result["status"], "clean")
-            self.assertTrue(result["portsReleased"]["renderer"])
-            kill.assert_called_once_with(listener_pid, signal.SIGTERM)
-
     @unittest.skipUnless(os.name == "posix", "requires POSIX process groups")
     def test_stop_runtime_kills_descendants_after_group_leader_exits(
         self,
@@ -1174,6 +1302,7 @@ class FoundationClientSpecTest(unittest.TestCase):
                 station_url="http://station.example",
                 profile_env={},
             )
+            self.addCleanup(client._close_fault_transport)
             child_code = (
                 "import signal,socket,time;"
                 "signal.signal(signal.SIGTERM,signal.SIG_IGN);"

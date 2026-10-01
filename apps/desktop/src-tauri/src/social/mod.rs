@@ -1,5 +1,6 @@
 mod crypto;
 mod private_comment;
+mod private_mention;
 mod private_moment;
 mod projection;
 
@@ -409,7 +410,8 @@ fn grant_private_media_preview(
     object_id: &str,
 ) -> Result<(), String> {
     let media = match projection.content.as_mut() {
-        Some(self::projection::PrivateMomentContentProjection::Image { media, .. }) => {
+        Some(self::projection::PrivateMomentContentProjection::Image { media, .. })
+        | Some(self::projection::PrivateMomentContentProjection::Video { media, .. }) => {
             media.iter_mut().find(|item| item.object_id == object_id)
         }
         _ => None,

@@ -120,7 +120,8 @@ pub use recovery::{
     decode_recovery_revision, encode_recovery_revision, DecodedRecoveryRevision,
     EncodedRecoveryRevision, MessagingRecoveryArchive, RecoveryAttachmentMetadata,
     RecoveryAuthorityHead, RecoveryConversationProjection, RecoveryMessageProjection,
-    RecoveryMessageRedactionTombstone, RecoveryReconciliation, RecoveryTrustRecord,
+    RecoveryMessageRedactionTombstone, RecoveryReconciliation, RecoveryRetentionFloor,
+    RecoveryTrustRecord,
 };
 pub use send::{DirectSessionBootstrap, EditTextIntent, SendPreparer, SendTextIntent};
 pub use store::{

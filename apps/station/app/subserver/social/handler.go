@@ -31,30 +31,21 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// Route constants. The legacy `/api/v1/social/posts*` routes are
-// preserved for backward compatibility with the desktop scaffold; new
-// clients SHOULD prefer the `/api/v1/social/moments*` family which
-// exposes the Audience-aware semantics directly. Both groups route to
-// the same MomentService internally.
+// Route constants. The `/api/v1/social/moments*` family exposes the
+// Audience-aware semantics directly.
 //
 // Reactions and circles are first-class P1 surfaces with their own
 // route prefixes.
 const (
-	// Posts (legacy aliases)
-	routeSocialPosts        = "/api/v1/social/posts"
-	routeSocialPost         = "/api/v1/social/posts/:id"
-	routeSocialPostRepost   = "/api/v1/social/posts/:id/repost"
-	routeSocialPostComments = "/api/v1/social/posts/:id/comments"
-	routeSocialUserPosts    = "/api/v1/social/users/:userId/posts"
-
-	// Moments (preferred)
+	// Moments
 	routeSocialMoments               = "/api/v1/social/moments"
-	routeSocialMoment                = "/api/v1/social/moments/:id"
-	routeSocialMomentComment         = "/api/v1/social/moments/:id/comments"
+	routeSocialMoment                = "/api/v1/social/moments/:post_id"
+	routeSocialMomentComment         = "/api/v1/social/moments/:post_id/comments"
+	routeSocialMomentCommentResource = "/api/v1/social/moments/:post_id/comments/:comment_id"
 	routeSocialPreparePrivateMoment  = "/api/v1/social/moments/prepare-private"
 	routeSocialSubmitPrivateMoment   = "/api/v1/social/moments/submit-private"
-	routeSocialPreparePrivateComment = "/api/v1/social/moments/:id/comments/prepare-private"
-	routeSocialSubmitPrivateComment  = "/api/v1/social/moments/:id/comments/submit-private"
+	routeSocialPreparePrivateComment = "/api/v1/social/moments/:post_id/comments/prepare-private"
+	routeSocialSubmitPrivateComment  = "/api/v1/social/moments/:post_id/comments/submit-private"
 	routeSocialObjectUploadBegin     = "/api/v1/social/moments/objects/uploads/begin"
 	routeSocialObjectUploadStatus    = "/api/v1/social/moments/objects/uploads/:upload_id"
 	routeSocialObjectUploadChunk     = "/api/v1/social/moments/objects/uploads/:upload_id/chunks/:chunk_index"
@@ -63,8 +54,8 @@ const (
 	routeSocialObjectDownload        = "/api/v1/social/moments/objects/:object_id"
 
 	// Reactions
-	routeSocialPostReact   = "/api/v1/social/posts/:id/react"
-	routeSocialPostUnreact = "/api/v1/social/posts/:id/unreact"
+	routeSocialMomentReact   = "/api/v1/social/moments/:post_id/react"
+	routeSocialMomentUnreact = "/api/v1/social/moments/:post_id/unreact"
 
 	// Comments (top-level)
 	routeSocialComment = "/api/v1/social/comments/:commentId"
@@ -97,8 +88,8 @@ const (
 
 	// Circles
 	routeSocialCircles      = "/api/v1/social/circles"
-	routeSocialCircle       = "/api/v1/social/circles/:id"
-	routeSocialCircleMember = "/api/v1/social/circles/:id/members"
+	routeSocialCircle       = "/api/v1/social/circles/:circle_id"
+	routeSocialCircleMember = "/api/v1/social/circles/:circle_id/members"
 
 	// Friend Requests
 	routeSocialFriendRequestSend   = "/api/v1/social/friend-request/send"
@@ -120,8 +111,7 @@ func (s *subServer) Handlers() []server.Handler {
 	)
 
 	return []server.Handler{
-		// Moments / Posts (write)
-		server.NewTypedHandler("social-create-post", routeSocialPosts, server.POST, s.handleCreatePost, cw, jw),
+		// Moments (write)
 		server.NewTypedHandler("social-create-moment", routeSocialMoments, server.POST, s.handleCreatePost, cw, jw),
 		server.NewStrictTypedHandler("social-prepare-private-moment", routeSocialPreparePrivateMoment, server.POST, s.handlePreparePrivateMoment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewStrictTypedHandler("social-submit-private-moment", routeSocialSubmitPrivateMoment, server.POST, s.handleSubmitPrivateMoment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
@@ -131,27 +121,21 @@ func (s *subServer) Handlers() []server.Handler {
 		server.NewStrictTypedHandler("social-private-object-upload-complete", routeSocialObjectUploadComplete, server.POST, s.handleCompletePrivateObjectUpload, socialObjectPathWrapper("/api/v1/social/moments/objects/uploads/", "/complete"), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewStrictTypedHandler("social-private-object-upload-cancel", routeSocialObjectUploadCancel, server.POST, s.handleCancelPrivateObjectUpload, socialObjectPathWrapper("/api/v1/social/moments/objects/uploads/", "/cancel"), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewHTTPHandler("social-private-object-download", routeSocialObjectDownload, server.GET, socialObjectRawHandler(s.handlePrivateObjectDownload), cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
-		server.NewTypedHandler("social-update-post", routeSocialPost, server.PUT, s.handleUpdatePost, cw, jw),
-		server.NewTypedHandler("social-delete-post", routeSocialPost, server.DELETE, s.handleDeletePost, cw, jw),
 		server.NewTypedHandler("social-delete-moment", routeSocialMoment, server.DELETE, s.handleDeletePost, cw, jw),
-		server.NewTypedHandler("social-repost-post", routeSocialPostRepost, server.POST, s.handleRepostPost, cw, jw),
 
-		// Moments / Posts (read)
-		server.NewTypedHandler("social-get-post", routeSocialPost, server.GET, s.handleGetPost, cw, ojw),
+		// Moments (read)
 		server.NewStrictTypedHandler("social-list-recoverable-private-content", routeSocialRecoverablePrivateContent, server.GET, s.handleListRecoverablePrivateContent, socialRecoverableQueryWrapper, cw, privateContentAuthenticationFailureWrapper, privateContentJWTWrapper),
 		server.NewTypedHandler("social-get-moment", routeSocialMoment, server.GET, s.handleGetMomentResource, socialMomentPathWrapper, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
 		server.NewTypedHandler("social-get-timeline", routeSocialTimeline, server.GET, s.handleGetTimeline, cw, ojw),
 		server.NewTypedHandler("social-sync-moments-projection", routeSocialMomentsSync, server.POST, s.handleSyncMomentsProjection, cw, jw),
-		server.NewTypedHandler("social-get-user-posts", routeSocialUserPosts, server.GET, s.handleGetUserPosts, cw, ojw),
 
 		// Reactions
-		server.NewTypedHandler("social-react", routeSocialPostReact, server.POST, s.handleReact, cw, jw),
-		server.NewTypedHandler("social-unreact", routeSocialPostUnreact, server.POST, s.handleUnreact, cw, jw),
+		server.NewTypedHandler("social-react", routeSocialMomentReact, server.POST, s.handleReact, cw, jw),
+		server.NewTypedHandler("social-unreact", routeSocialMomentUnreact, server.POST, s.handleUnreact, cw, jw),
 
 		// Comments
-		server.NewTypedHandler("social-get-post-comments", routeSocialPostComments, server.GET, s.handleGetPostComments, cw, ojw),
-		server.NewTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleGetPostComments, cw, ojw),
-		server.NewTypedHandler("social-create-comment", routeSocialPostComments, server.POST, s.handleCreateComment, cw, jw),
+		server.NewStrictTypedHandler("social-get-moment-comments", routeSocialMomentComment, server.GET, s.handleListMomentComments, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
+		server.NewStrictTypedHandler("social-get-moment-comment", routeSocialMomentCommentResource, server.GET, s.handleGetMomentCommentResource, cw, privateContentAuthenticationFailureWrapper, deviceIDWrapper, privateContentOptionalJWTWrapper),
 		server.NewTypedHandler("social-create-moment-comment", routeSocialMomentComment, server.POST, s.handleCreateComment, cw, jw),
 		server.NewStrictTypedHandler("social-prepare-private-comment", routeSocialPreparePrivateComment, server.POST, s.handlePreparePrivateComment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
 		server.NewStrictTypedHandler("social-submit-private-comment", routeSocialSubmitPrivateComment, server.POST, s.handleSubmitPrivateComment, cw, privateContentAuthenticationFailureWrapper, privateContentDeviceWrapper, privateContentJWTWrapper),
@@ -911,6 +895,7 @@ func privateContentAuthenticationFailureWrapper(
 		body, err := privateContentErrorResponseBody(
 			model.ErrorCode_ERROR_CODE_UNAUTHORIZED,
 			"unauthorized",
+			nil,
 		)
 		if err != nil {
 			return err
@@ -1077,7 +1062,7 @@ func privateContentResponseError(
 	message string,
 	cause error,
 ) error {
-	body, err := privateContentErrorResponseBody(code, message)
+	body, err := privateContentErrorResponseBody(code, message, cause)
 	if err != nil {
 		return server.InternalErrorWithCause(
 			"encode private-content error response",
@@ -1098,11 +1083,17 @@ func privateContentResponseError(
 func privateContentErrorResponseBody(
 	code model.ErrorCode,
 	message string,
+	cause error,
 ) ([]byte, error) {
+	details := map[string]string{}
+	if privateCode := domain.PrivateContentCodeOf(cause); privateCode != "" {
+		details["private_content_code"] = string(privateCode)
+	}
 	return proto.MarshalOptions{Deterministic: true}.Marshal(
 		&model.ErrorResponse{
 			Code:    code,
 			Message: message,
+			Details: details,
 		},
 	)
 }
@@ -1154,14 +1145,6 @@ func (s *subServer) handleCreatePost(ctx context.Context, req *model.CreatePostR
 	return &model.CreatePostResponse{Post: post}, nil
 }
 
-// handleUpdatePost is intentionally unsupported in v1 — the new
-// audience model freezes audience at creation, and editing the body
-// after publication needs a separate edit-history pipeline that's out
-// of scope. Returns a clear 501.
-func (s *subServer) handleUpdatePost(_ context.Context, _ *model.UpdatePostRequest) (*model.UpdatePostResponse, error) {
-	return nil, server.BadRequest("post update is not supported in v1; delete and re-create instead")
-}
-
 func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostRequest) (*model.DeletePostResponse, error) {
 	actorPTID, ok := getActorPTID(ctx)
 	if !ok {
@@ -1170,74 +1153,34 @@ func (s *subServer) handleDeletePost(ctx context.Context, req *model.DeletePostR
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
+	if _, public := canonicalPublicSocialID(req.PostId); !public {
+		if s.privateContentSvc == nil {
+			return nil, server.InternalError(
+				"Social private-content service is unavailable",
+			)
+		}
+		if _, err := s.privateContentSvc.DeletePrivateMoment(
+			ctx,
+			req.PostId,
+			actorPTID,
+		); err != nil {
+			logger.Error(
+				ctx,
+				"failed to delete private moment",
+				"error",
+				err,
+				"post_id",
+				req.PostId,
+			)
+			return nil, privateContentHandlerError(err)
+		}
+		return &model.DeletePostResponse{Success: true}, nil
+	}
 	if err := s.momentSvc.DeleteMoment(ctx, req.PostId, actorPTID); err != nil {
 		logger.Error(ctx, "failed to delete moment", "error", err, "post_id", req.PostId)
 		return nil, server.InternalErrorWithCause("failed to delete moment", err)
 	}
 	return &model.DeletePostResponse{Success: true}, nil
-}
-
-// handleRepostPost wraps the legacy `/repost` endpoint by constructing
-// a CreatePostRequest with `Type=REPOST` and forwarding to MomentService.
-func (s *subServer) handleRepostPost(ctx context.Context, req *model.RepostRequest) (*model.RepostResponse, error) {
-	actorPTID, ok := getActorPTID(ctx)
-	if !ok {
-		return nil, server.Unauthorized("authentication required")
-	}
-	if req.PostId == "" {
-		return nil, server.BadRequest("post_id is required")
-	}
-	createReq := &model.CreatePostRequest{
-		Type:     model.PostType_REPOST,
-		Audience: &model.Audience{Kind: model.Audience_PUBLIC},
-		Content: &model.CreatePostRequest_Repost{
-			Repost: &model.CreateRepostRequest{
-				OriginalPostId: req.PostId,
-				Comment:        req.GetComment(),
-			},
-		},
-	}
-	post, err := s.momentSvc.CreateMoment(ctx, createReq, actorPTID)
-	if err != nil {
-		logger.Error(ctx, "failed to repost", "error", err, "original_post_id", req.PostId)
-		return nil, server.InternalErrorWithCause("failed to repost", err)
-	}
-	return &model.RepostResponse{Repost: post}, nil
-}
-
-func (s *subServer) handleGetPost(ctx context.Context, req *model.GetPostRequest) (*model.GetPostResponse, error) {
-	if req.PostId == "" {
-		return nil, server.BadRequest("post_id is required")
-	}
-	var viewerPTID string
-	if ptid, ok := getActorPTID(ctx); ok {
-		viewerPTID = ptid
-	}
-	post, outcome, err := s.momentSvc.GetMomentDetail(ctx, req.PostId, viewerPTID)
-	if err != nil {
-		logger.Error(ctx, "failed to get post", "error", err, "post_id", req.PostId)
-		return nil, server.InternalErrorWithCause("failed to get post", err)
-	}
-	if outcome != model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE {
-		return &model.GetPostResponse{Outcome: outcome}, nil
-	}
-	if post == nil {
-		return &model.GetPostResponse{
-			Outcome: model.PostDetailOutcome_POST_DETAIL_OUTCOME_UNAVAILABLE,
-		}, nil
-	}
-	if blocked, err := s.moderationSvc.IsPostAuthorStationBlocked(ctx, post); err != nil {
-		return nil, server.InternalErrorWithCause("station moderation check failed", err)
-	} else if blocked {
-		return &model.GetPostResponse{
-			Outcome: model.PostDetailOutcome_POST_DETAIL_OUTCOME_HIDDEN,
-		}, nil
-	}
-	return &model.GetPostResponse{
-		Post:        post,
-		Explanation: application.BuildFeedObjectExplanation(post, model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW),
-		Outcome:     model.PostDetailOutcome_POST_DETAIL_OUTCOME_AVAILABLE,
-	}, nil
 }
 
 func (s *subServer) handleGetMomentResource(
@@ -1296,6 +1239,26 @@ func (s *subServer) handleGetMomentResourceWithReader(
 			)
 		} else if publicPost != nil &&
 			domain.IsPublic(publicPost.GetAudience()) {
+			authorRecord, actorErr := actor.GetActorByPTID(
+				ctx,
+				publicPost.GetAuthorPtid(),
+			)
+			if actorErr != nil {
+				return nil, server.InternalErrorWithCause(
+					"resolve public moment author",
+					actorErr,
+				)
+			}
+			authorRef, actorErr := canonicalPrivateContentActorRef(
+				publicPost.GetAuthorPtid(),
+				authorRecord,
+			)
+			if actorErr != nil {
+				return nil, server.InternalErrorWithCause(
+					"resolve canonical public moment author",
+					actorErr,
+				)
+			}
 			return &privatecontentpb.GetMomentResourceResponse{
 				Post: publicPost,
 				Explanation: application.BuildFeedObjectExplanation(
@@ -1306,7 +1269,7 @@ func (s *subServer) handleGetMomentResourceWithReader(
 					Metadata: &privatecontentpb.PostMetadata{
 						PostId:       publicPost.GetId(),
 						ContentId:    publicPost.GetId(),
-						Author:       &model.ActorRef{Ptid: publicPost.GetAuthorPtid()},
+						Author:       authorRef,
 						Type:         publicPost.GetType(),
 						AudienceKind: model.Audience_PUBLIC,
 						CreatedAt:    publicPost.GetCreatedAt(),
@@ -1367,46 +1330,6 @@ func (s *subServer) handleGetMomentResourceWithReader(
 	return response, nil
 }
 
-func (s *subServer) handleGetUserPosts(ctx context.Context, req *model.ListPostsRequest) (*model.ListPostsResponse, error) {
-	if req.Filter == nil {
-		req.Filter = &model.PostFilter{}
-	}
-	authorPTID := req.Filter.AuthorPtid
-	if authorPTID == "" {
-		return nil, server.BadRequest("author_ptid is required")
-	}
-	var viewerPTID string
-	if ptid, ok := getActorPTID(ctx); ok {
-		viewerPTID = ptid
-	}
-
-	posts, nextCursor, hasMore, err := s.momentSvc.ListByAuthor(ctx, authorPTID, viewerPTID, "", int(req.Limit))
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to list user posts", err)
-	}
-	return &model.ListPostsResponse{
-		Posts:        posts,
-		NextCursor:   nextCursor,
-		HasMore:      hasMore,
-		Explanations: buildProfileExplanations(posts),
-	}, nil
-}
-
-func buildProfileExplanations(posts []*model.Post) []*model.FeedObjectExplanation {
-	if len(posts) == 0 {
-		return nil
-	}
-
-	explanations := make([]*model.FeedObjectExplanation, 0, len(posts))
-	for _, post := range posts {
-		explanation := application.BuildFeedObjectExplanation(post, model.RelationshipReason_RELATIONSHIP_REASON_PROFILE_VIEW)
-		if explanation != nil {
-			explanations = append(explanations, explanation)
-		}
-	}
-	return explanations
-}
-
 // --- Reaction handlers ----------------------------------------------------
 
 func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostRequest) (*model.ReactToPostResponse, error) {
@@ -1420,11 +1343,14 @@ func (s *subServer) handleReact(ctx context.Context, req *model.ReactToPostReque
 	if req.Kind == model.ReactionKind_REACTION_UNSPECIFIED {
 		return nil, server.BadRequest("reaction kind is required")
 	}
-	if err := s.assertReadable(ctx, req.PostId, actorPTID); err != nil {
+	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err
 	}
 	summaries, err := s.reactionSvc.React(ctx, req.PostId, actorPTID, req.Kind)
 	if err != nil {
+		if domain.PrivateContentCodeOf(err) != "" {
+			return nil, privateContentHandlerError(err)
+		}
 		return nil, server.InternalErrorWithCause("react failed", err)
 	}
 	return &model.ReactToPostResponse{Success: true, Reactions: summaries}, nil
@@ -1438,32 +1364,37 @@ func (s *subServer) handleUnreact(ctx context.Context, req *model.UnreactToPostR
 	if req.PostId == "" {
 		return nil, server.BadRequest("post_id is required")
 	}
-	if err := s.assertReadable(ctx, req.PostId, actorPTID); err != nil {
+	if err := s.assertReactionTargetReadable(ctx, req.PostId, actorPTID); err != nil {
 		return nil, err
 	}
 	summaries, err := s.reactionSvc.Unreact(ctx, req.PostId, actorPTID, req.Kind)
 	if err != nil {
+		if domain.PrivateContentCodeOf(err) != "" {
+			return nil, privateContentHandlerError(err)
+		}
 		return nil, server.InternalErrorWithCause("unreact failed", err)
 	}
 	return &model.UnreactToPostResponse{Success: true, Reactions: summaries}, nil
 }
 
-// assertReadable is the single-source-of-truth visibility gate used by
-// every endpoint that mutates a post-bound resource WITHOUT going
-// through MomentService directly (React / Unreact / list-comments).
-//
-// It must be called BEFORE the underlying service operates on the
-// post — otherwise the service would happily write a row keyed on a
-// post id the caller has no right to know exists, leaking existence
-// + state through side-channels (reaction count bumps, comment-list
-// non-emptiness).
-//
-// The check is intentionally identical in shape to the read path:
-// MomentService.GetMoment applies CanRead with the viewer's own
-// relationship graph. A nil result here means "post doesn't exist OR
-// caller can't read it" — surfaced as 404, never 403, so the wire
-// shape doesn't disclose existence to non-readers.
-func (s *subServer) assertReadable(ctx context.Context, postID, viewerPTID string) error {
+func (s *subServer) assertReactionTargetReadable(
+	ctx context.Context,
+	postID string,
+	viewerPTID string,
+) error {
+	if _, public := canonicalPublicSocialID(postID); !public {
+		if err := domain.ValidatePrivateContentID(
+			postID,
+			"post_id",
+			"social.reaction.assert_target",
+		); err != nil {
+			return server.NotFound("post not found")
+		}
+		// Private reaction authorization and mutation share one transaction in
+		// ReactionService, avoiding a stale device-bound ciphertext pre-read.
+		return nil
+	}
+
 	post, err := s.momentSvc.GetMoment(ctx, postID, viewerPTID)
 	if err != nil {
 		return server.InternalErrorWithCause("visibility check failed", err)
@@ -1476,28 +1407,237 @@ func (s *subServer) assertReadable(ctx context.Context, postID, viewerPTID strin
 
 // --- Comment handlers ----------------------------------------------------
 
-func (s *subServer) handleGetPostComments(ctx context.Context, req *model.GetCommentsRequest) (*model.GetCommentsResponse, error) {
-	if req.PostId == "" {
-		return nil, server.BadRequest("post_id is required")
+type privateCommentReader interface {
+	GetPrivateComment(
+		context.Context,
+		*model.ActorDeviceRef,
+		string,
+		string,
+	) (*privatecontentpb.GetMomentCommentResourceResponse, error)
+	ListPrivateComments(
+		context.Context,
+		*model.ActorDeviceRef,
+		*privatecontentpb.ListMomentCommentsRequest,
+	) (*privatecontentpb.ListMomentCommentsResponse, error)
+}
+
+func (s *subServer) handleGetMomentCommentResource(
+	ctx context.Context,
+	req *privatecontentpb.GetMomentCommentResourceRequest,
+) (*privatecontentpb.GetMomentCommentResourceResponse, error) {
+	var privateReader privateCommentReader
+	if s.privateContentSvc != nil {
+		privateReader = s.privateContentSvc
 	}
-	postID := domain.ParseID(req.PostId)
-	if postID == 0 {
-		return nil, server.BadRequest("invalid post_id")
+	return s.handleGetMomentCommentResourceWithReader(ctx, req, privateReader)
+}
+
+func (s *subServer) handleGetMomentCommentResourceWithReader(
+	ctx context.Context,
+	req *privatecontentpb.GetMomentCommentResourceRequest,
+	privateReader privateCommentReader,
+) (*privatecontentpb.GetMomentCommentResourceResponse, error) {
+	if req == nil || req.GetPostId() == "" || req.GetCommentId() == "" {
+		return nil, server.BadRequest("post_id and comment_id are required")
 	}
-	// Comments inherit visibility from the parent post — gate on the
-	// parent BEFORE listing rows, otherwise we'd happily return a
-	// SELF post's comment thread to anyone holding the post id.
-	// Anonymous viewers (viewerID == 0) get the same gate; PUBLIC
-	// posts pass, anything else 404s on them.
 	var viewerPTID string
 	if ptid, ok := getActorPTID(ctx); ok {
 		viewerPTID = ptid
 	}
-	resp, err := s.commentSvc.ListByPost(ctx, postID, viewerPTID, req.Cursor, int(req.Limit))
-	if err != nil {
-		return nil, server.InternalErrorWithCause("failed to list comments", err)
+	if postID, postOK := canonicalPublicSocialID(req.GetPostId()); postOK {
+		if commentID, commentOK := canonicalPublicSocialID(
+			req.GetCommentId(),
+		); commentOK {
+			comment, err := s.commentSvc.GetByPost(
+				ctx,
+				postID,
+				commentID,
+				viewerPTID,
+			)
+			if err != nil {
+				return nil, server.InternalErrorWithCause(
+					"failed to get public comment",
+					err,
+				)
+			}
+			if comment == nil {
+				return nil, momentCommentNotFound()
+			}
+			return &privatecontentpb.GetMomentCommentResourceResponse{
+				Comment: application.ProjectPublicCommentResource(comment),
+			}, nil
+		}
+		return nil, momentCommentNotFound()
 	}
-	return resp, nil
+	if err := validatePrivateCommentReadIDs(
+		req.GetPostId(),
+		req.GetCommentId(),
+		"social.get_moment_comment_resource",
+	); err != nil {
+		return nil, momentCommentNotFound()
+	}
+	viewer, ok := privateCommentViewer(ctx)
+	if !ok {
+		return nil, momentCommentNotFound()
+	}
+	if privateReader == nil {
+		return nil, server.InternalError(
+			"Social private-content service is unavailable",
+		)
+	}
+	response, err := privateReader.GetPrivateComment(
+		ctx,
+		viewer,
+		req.GetPostId(),
+		req.GetCommentId(),
+	)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func (s *subServer) handleListMomentComments(
+	ctx context.Context,
+	req *privatecontentpb.ListMomentCommentsRequest,
+) (*privatecontentpb.ListMomentCommentsResponse, error) {
+	var privateReader privateCommentReader
+	if s.privateContentSvc != nil {
+		privateReader = s.privateContentSvc
+	}
+	return s.handleListMomentCommentsWithReader(ctx, req, privateReader)
+}
+
+func (s *subServer) handleListMomentCommentsWithReader(
+	ctx context.Context,
+	req *privatecontentpb.ListMomentCommentsRequest,
+	privateReader privateCommentReader,
+) (*privatecontentpb.ListMomentCommentsResponse, error) {
+	if req == nil || req.GetPostId() == "" {
+		return nil, server.BadRequest("post_id is required")
+	}
+	if req.GetLimit() == 0 {
+		req.Limit = 20
+	}
+	if req.GetLimit() > 100 {
+		return nil, server.BadRequest("limit must be between 1 and 100")
+	}
+	var viewerPTID string
+	if ptid, ok := getActorPTID(ctx); ok {
+		viewerPTID = ptid
+	}
+	if postID, ok := canonicalPublicSocialID(req.GetPostId()); ok {
+		parent, err := s.momentSvc.GetMoment(ctx, req.GetPostId(), viewerPTID)
+		if err != nil {
+			return nil, server.InternalErrorWithCause(
+				"failed to resolve public comment parent",
+				err,
+			)
+		}
+		if parent == nil || !domain.IsPublic(parent.GetAudience()) {
+			return nil, momentCommentNotFound()
+		}
+		legacy, err := s.commentSvc.ListByPost(
+			ctx,
+			postID,
+			viewerPTID,
+			req.GetCursor(),
+			int(req.GetLimit()),
+		)
+		if err != nil {
+			return nil, server.InternalErrorWithCause(
+				"failed to list public comments",
+				err,
+			)
+		}
+		comments := make(
+			[]*privatecontentpb.CommentResource,
+			0,
+			len(legacy.GetComments()),
+		)
+		for _, comment := range legacy.GetComments() {
+			comments = append(
+				comments,
+				application.ProjectPublicCommentResource(comment),
+			)
+		}
+		return &privatecontentpb.ListMomentCommentsResponse{
+			Comments:   comments,
+			NextCursor: legacy.GetNextCursor(),
+			HasMore:    legacy.GetHasMore(),
+		}, nil
+	}
+	if err := domain.ValidatePrivateContentID(
+		req.GetPostId(),
+		"post_id",
+		"social.list_moment_comments",
+	); err != nil {
+		return nil, momentCommentNotFound()
+	}
+	viewer, ok := privateCommentViewer(ctx)
+	if !ok {
+		return nil, momentCommentNotFound()
+	}
+	if privateReader == nil {
+		return nil, server.InternalError(
+			"Social private-content service is unavailable",
+		)
+	}
+	response, err := privateReader.ListPrivateComments(ctx, viewer, req)
+	if err != nil {
+		return nil, privateContentHandlerError(err)
+	}
+	return response, nil
+}
+
+func canonicalPublicSocialID(value string) (uint64, bool) {
+	id, err := strconv.ParseUint(value, 10, 64)
+	return id, err == nil && id != 0 && strconv.FormatUint(id, 10) == value
+}
+
+func validatePrivateCommentReadIDs(
+	postID string,
+	commentID string,
+	operation string,
+) error {
+	if err := domain.ValidatePrivateContentID(
+		postID,
+		"post_id",
+		operation,
+	); err != nil {
+		return err
+	}
+	return domain.ValidatePrivateContentID(
+		commentID,
+		"comment_id",
+		operation,
+	)
+}
+
+func privateCommentViewer(
+	ctx context.Context,
+) (*model.ActorDeviceRef, bool) {
+	actorPTID, ok := getActorPTID(ctx)
+	deviceID := strings.TrimSpace(serverwrapper.GetDeviceID(ctx))
+	if !ok || deviceID == "" {
+		return nil, false
+	}
+	return &model.ActorDeviceRef{
+		Actor: &model.ActorRef{
+			Ptid: actorPTID,
+			Kind: model.ActorKind_ACTOR_KIND_PERSON,
+		},
+		DeviceId: deviceID,
+	}, true
+}
+
+func momentCommentNotFound() error {
+	return privateContentResponseError(
+		nethttp.StatusNotFound,
+		model.ErrorCode_ERROR_CODE_POST_NOT_FOUND,
+		"comment not found",
+		nil,
+	)
 }
 
 func (s *subServer) handleCreateComment(ctx context.Context, req *model.CreateCommentRequest) (*model.CreateCommentResponse, error) {

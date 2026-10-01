@@ -31,8 +31,13 @@ func BuildFeedObjectExplanation(post *model.Post, reason model.RelationshipReaso
 	targetID := ""
 	if audience := post.GetAudience(); audience != nil {
 		audienceKind = audience.GetKind()
-		if audience.GetTargetId() != 0 {
-			targetID = strconv.FormatUint(audience.GetTargetId(), 10)
+		switch audience.GetKind() {
+		case model.Audience_CIRCLE:
+			if audience.GetCircleId() != 0 {
+				targetID = strconv.FormatUint(audience.GetCircleId(), 10)
+			}
+		case model.Audience_GROUP:
+			targetID = audience.GetGroupConversationId()
 		}
 	}
 

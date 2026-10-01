@@ -242,7 +242,7 @@ describe('Moment detail', () => {
             message: 'post not found',
             status: 404,
             method: 'GET',
-            path: '/api/v1/social/posts/post-1',
+            path: '/api/v1/social/moments/post-1',
           },
         })),
       } as never,

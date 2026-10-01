@@ -98,8 +98,10 @@ func TestP3_Circle_AlreadyEnforced(t *testing.T) {
 	}
 
 	created := seedPrivatePost(t, f, &model.Audience{
-		Kind:     model.Audience_CIRCLE,
-		TargetId: circle.GetId(),
+		Kind: model.Audience_CIRCLE,
+		Target: &model.Audience_CircleId{
+			CircleId: circle.GetId(),
+		},
 	}, "circle-only", author)
 
 	if got := getAnyMoment(t, f, created.IDStr, fixturePTID(author)); got == nil {
@@ -129,8 +131,10 @@ func TestP3_Group_CreateRejectedUnderNoop(t *testing.T) {
 	_, err := f.moments.CreateMoment(ctx, &model.CreatePostRequest{
 		Type: model.PostType_TEXT,
 		Audience: &model.Audience{
-			Kind:     model.Audience_GROUP,
-			TargetId: 12345,
+			Kind: model.Audience_CIRCLE,
+			Target: &model.Audience_CircleId{
+				CircleId: 12345,
+			},
 		},
 		Content: textBody("group post"),
 	}, fixturePTID(100))

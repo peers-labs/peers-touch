@@ -1,8 +1,8 @@
 # Secure Content
 
 > **Status**: active
-> **Version**: v1.4
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.5
+> **Created**: 2026-09-13 | **Updated**: 2026-09-24
 > **Owner**: Architecture Team
 > **Module**: `model/domain/secure_content/`, `packages/secure-content-core/`, `apps/station/app/internal/securecontent/`
 
@@ -83,6 +83,9 @@ wire, storage, and recovery behavior.
 | [execution-plans/20260917-runtime-reset-closure-amendment-review-prompt.md](./execution-plans/20260917-runtime-reset-closure-amendment-review-prompt.md) | Completed Owner acceptance record for `SC-D22`/`SC-D23` and the W7-W12 evidence/reset correction |
 | [execution-plans/20260919-canonical-schema-activation-amendment-review-prompt.md](./execution-plans/20260919-canonical-schema-activation-amendment-review-prompt.md) | Completed review and Owner acceptance record for `SC-D24` schema activation and reset ordering |
 | [execution-plans/20260921-runtime-endpoint-ownership-amendment-review-prompt.md](./execution-plans/20260921-runtime-endpoint-ownership-amendment-review-prompt.md) | Completed independent review contract for accepted `SC-D28` runtime endpoint ownership |
+| [execution-plans/20260924-audience-contract-amendment-review-prompt.md](./execution-plans/20260924-audience-contract-amendment-review-prompt.md) | Independent review contract for accepted `SC-D29` typed audience targets and locally enumerable v1 recipients |
+| [execution-plans/20260925-dashboard-peer-trust-route-amendment-review-prompt.md](./execution-plans/20260925-dashboard-peer-trust-route-amendment-review-prompt.md) | Review contract for the W12A Dashboard federation peer route scope correction |
+| [execution-plans/20260925-mobile-runtime-source-plan-amendment-review-prompt.md](./execution-plans/20260925-mobile-runtime-source-plan-amendment-review-prompt.md) | Review contract for splitting Mobile product source, platform runtime ownership, and schema activation into bounded Tasks |
 | [execution-plans/20260913-secure-content-work-items.yaml](./execution-plans/20260913-secure-content-work-items.yaml) | Machine-shaped DevelopmentWorkItem contracts |
 | [execution-plans/20260913-secure-content-journeys.yaml](./execution-plans/20260913-secure-content-journeys.yaml) | Machine-shaped DevelopmentJourney contracts and budgets |
 
@@ -98,7 +101,7 @@ Accepted product inputs:
 - [`../social/acceptance-matrix.md`](../social/acceptance-matrix.md):
   `SOC-SEC-AS01` through `SOC-SEC-AS16`.
 
-The product contract and `SC-D01` through `SC-D28` are accepted. `SC-D21`
+The product contract and `SC-D01` through `SC-D29` are accepted. `SC-D21`
 defines the deterministic lifecycle barriers, runtime-owner restart
 continuation, WebSocket/SSE terminal marker, and owner-provisioned fixture
 handles required to resume W7S; it was accepted by the Owner on 2026-09-16.
@@ -112,6 +115,11 @@ declarations, exact profile/scope authorization, leases, and evidence gates.
 proved that the canonical private Post writer cannot run before SC-D23 removes
 retained plaintext-era `NOT NULL` columns. It authorizes a mechanical plan
 amendment, not implementation or reset execution.
+`SC-D29` was accepted by the Owner on 2026-09-24 after W8 exact-source evidence
+proved the old numeric `Audience.target_id`, `CUSTOM_DENY(PUBLIC)`, and
+single-Station W8 fixture contract could not satisfy the accepted product
+boundary. W12A was reopened and prior W7/W8 source-bound evidence was
+invalidated before implementation.
 `SC-D20`, the
 client-facing Content PreKey boundary required by W7, passed independent
 security and architecture/ownership review and was accepted by the Owner on

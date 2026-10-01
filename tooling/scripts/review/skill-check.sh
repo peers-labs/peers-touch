@@ -19,6 +19,9 @@ review_runner="tooling/scripts/review/run.sh"
 gap_skill="tooling/skills/pt-acceptance-gap-detector/SKILL.md"
 gap_procedures="tooling/skills/pt-acceptance-gap-detector/PROCEDURES.md"
 gap_detector="tooling/scripts/acceptance-gap-detect.py"
+pipeline_auditor_skill="tooling/skills/pt-acceptance-pipeline-auditor/SKILL.md"
+pipeline_auditor="tooling/scripts/acceptance-pipeline-audit.py"
+pipeline_auditor_test="tooling/scripts/acceptance-pipeline-audit-test.py"
 plan_skill="tooling/skills/pt-plan-and-document/SKILL.md"
 architecture_execution_skill="tooling/skills/pt-architecture-execution-methodology/SKILL.md"
 dev_workflow_skill="tooling/skills/pt-dev-workflow/SKILL.md"
@@ -89,6 +92,9 @@ require_file "$review_runner"
 require_file "$gap_skill"
 require_file "$gap_procedures"
 require_file "$gap_detector"
+require_file "$pipeline_auditor_skill"
+require_file "$pipeline_auditor"
+require_file "$pipeline_auditor_test"
 require_file "$plan_skill"
 require_file "$architecture_execution_skill"
 require_file "$dev_workflow_skill"
@@ -134,6 +140,25 @@ require_file "$trae_host_adapter"
 require_file "$cursor_host_adapter"
 require_file "$codex_host_adapter"
 require_file "$workflow_architecture"
+
+for marker in \
+  "Expensive resources belong to Task or Suite scope." \
+  "pt-acceptance-infra-engineering" \
+  "pt-acceptance-engineering" \
+  "PASS/SUPPORTING"; do
+  if ! grep -Fq "$marker" "$pipeline_auditor_skill"; then
+    fail "$pipeline_auditor_skill missing Suite Runtime audit marker: $marker"
+  fi
+done
+
+for marker in \
+  "RUNTIME_REUSE_CONTRACT_MISSING" \
+  "validate_suite_runtime_report" \
+  "acceptance-pipeline-audit"; do
+  if ! grep -Fq "$marker" "$pipeline_auditor"; then
+    fail "$pipeline_auditor missing executable audit marker: $marker"
+  fi
+done
 require_file "$agents_contract"
 require_file "$continuous_plan_invariant"
 require_file "$host_neutral_invariant"
