@@ -57,7 +57,6 @@ const REGISTRATION_KEYS = new Set([
   'canonicalRoot',
   'name',
   'branch',
-  'head',
   'profile',
   'slot',
   'allowedCapabilities',
@@ -244,6 +243,15 @@ export function captureWorkspace(workspaceRoot = repoRoot) {
     name: path.basename(canonicalRoot),
     branch,
     head,
+  };
+}
+
+function registrationIdentity(workspace) {
+  return {
+    workspaceId: workspace.workspaceId,
+    canonicalRoot: workspace.canonicalRoot,
+    name: workspace.name,
+    branch: workspace.branch,
   };
 }
 
@@ -559,7 +567,6 @@ function normalizeRegistration(value) {
     canonicalRoot: value.canonicalRoot,
     name: value.name,
     branch: value.branch,
-    head: value.head,
     profile: value.profile,
     slot: value.slot,
     allowedCapabilities: value.allowedCapabilities,
@@ -574,8 +581,7 @@ function normalizeRegistration(value) {
     !path.isAbsolute(normalized.canonicalRoot) ||
     workspaceIdForCanonicalPath(normalized.canonicalRoot) !==
       normalized.workspaceId ||
-    path.basename(normalized.canonicalRoot) !== normalized.name ||
-    !HEAD_PATTERN.test(normalized.head)
+    path.basename(normalized.canonicalRoot) !== normalized.name
   ) {
     fail('MACHINE_REGISTRY_INVALID', 'registration identity is invalid', {
       workspaceId: normalized.workspaceId,
@@ -1008,7 +1014,7 @@ export function registerWorkspace(options) {
     assertSlotAvailable(registry, workspace.workspaceId, slot);
     const timestamp = now.toISOString();
     const registration = {
-      ...workspace,
+      ...registrationIdentity(workspace),
       profile,
       slot,
       allowedCapabilities,
@@ -1063,7 +1069,7 @@ export function updateWorkspace(options) {
 
     const updated = {
       ...current,
-      ...workspace,
+      ...registrationIdentity(workspace),
       profile,
       slot,
       allowedCapabilities,
@@ -1132,12 +1138,11 @@ export function checkWorkspace(options = {}) {
   );
   if (
     registration.canonicalRoot !== workspace.canonicalRoot ||
-    registration.branch !== workspace.branch ||
-    registration.head !== workspace.head
+    registration.branch !== workspace.branch
   ) {
     fail(
       'WORKTREE_IDENTITY_MISMATCH',
-      'registered workspace identity does not match current Git state',
+      'registered workspace identity does not match current worktree state',
       { registered: registration, actual: workspace },
     );
   }
@@ -1188,6 +1193,10 @@ export function checkWorkspace(options = {}) {
   return {
     authority: registry.authority,
     binding: registration,
+    source: {
+      branch: workspace.branch,
+      head: workspace.head,
+    },
     profile: definition,
     ports: slotPorts(registration.slot),
     workspaceStateRoot: workspaceStatePath({
@@ -1197,7 +1206,13 @@ export function checkWorkspace(options = {}) {
   };
 }
 
-function validateRuntimeIntent(options, binding, resourceKind, resourceId) {
+function validateRuntimeIntent(
+  options,
+  binding,
+  source,
+  resourceKind,
+  resourceId,
+) {
   const now = options.now ?? new Date();
   const file =
     options.workLedgerPath ??
@@ -1206,8 +1221,8 @@ function validateRuntimeIntent(options, binding, resourceKind, resourceId) {
   const declaration = Object.values(ledger.declarations).find((candidate) => {
     if (
       candidate.workspaceId !== binding.workspaceId ||
-      candidate.branch !== binding.branch ||
-      candidate.sourceHead !== binding.head ||
+      candidate.branch !== source.branch ||
+      candidate.sourceHead !== source.head ||
       !LIVE_STATES.has(candidate.state) ||
       Date.parse(candidate.expiresAt) <= now.getTime()
     ) {
@@ -1294,6 +1309,7 @@ export function prepareLease(options) {
   const declaration = validateRuntimeIntent(
     options,
     resolved.binding,
+    resolved.source,
     resourceKind,
     resourceId,
   );
@@ -1318,12 +1334,11 @@ function registrationState(registration) {
     const workspace = captureWorkspace(registration.canonicalRoot);
     if (
       workspace.workspaceId !== registration.workspaceId ||
-      workspace.branch !== registration.branch ||
-      workspace.head !== registration.head
+      workspace.branch !== registration.branch
     ) {
       return {
         activity: 'stale',
-        reason: 'registered source identity does not match current Git state',
+        reason: 'registered workspace identity does not match current worktree state',
       };
     }
     return { activity: 'idle', reason: null };

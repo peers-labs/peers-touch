@@ -40,6 +40,7 @@ from tooling.acceptance.gates.agent.capability_binding_development import (
     copy_native_runtime_logs,
     identity_fixture_evidence,
     persist_native_actor_identity,
+    resolve_operation_scenario_actor,
     resolve_machine_profile,
     seed_native_actor_identity,
 )
@@ -721,12 +722,14 @@ def main() -> int:
             startup_timeout=900,
         )
         client = runtime_pair.native
+        expected_actor_id = resolve_operation_scenario_actor(profile_env)
         seeded_identity = seed_native_actor_identity(
             fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
             target_root=client.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            expected_actor_id=expected_actor_id,
         )
         client.start()
         login = authenticate_native_client(
@@ -734,6 +737,10 @@ def main() -> int:
             profile_env,
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+        )
+        require(
+            login["actorId"] == expected_actor_id,
+            "Native actor differs from the provisioned fixture",
         )
         identity_enrollment = confirm_native_actor_identity_enrollment(
             client,

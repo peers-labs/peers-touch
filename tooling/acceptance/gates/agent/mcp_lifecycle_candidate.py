@@ -43,6 +43,7 @@ from tooling.acceptance.gates.agent.capability_binding_development import (
     authenticate_native_client,
     confirm_native_actor_identity_enrollment,
     persist_native_actor_identity,
+    resolve_operation_scenario_actor,
     seed_native_actor_identity,
 )
 from tooling.acceptance.gates.agent.foundation_mobile_contract_adapter import (
@@ -799,12 +800,14 @@ def main() -> int:
             profile_env=profile_env,
             startup_timeout=900,
         )
+        expected_actor_id = resolve_operation_scenario_actor(profile_env)
         seed_native_actor_identity(
             fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
             target_root=runtime_pair.native.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
             profile=PROFILE,
             account=OPERATION_SCENARIO_ACTOR_ACCOUNT,
+            expected_actor_id=expected_actor_id,
         )
         runtime_pair.start()
         observations = McpLifecycleCandidateProducer(

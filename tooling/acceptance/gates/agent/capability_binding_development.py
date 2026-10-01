@@ -37,6 +37,7 @@ from tooling.acceptance.gates.agent.foundation_scenario_runner import (
 from tooling.acceptance.provisioners.home_station import (
     AGENT_V2_BINDING_GATE,
     HomeStationProvisioner,
+    resolve_existing_actor,
 )
 
 
@@ -95,17 +96,19 @@ def resolve_machine_profile() -> tuple[str, Path, int, dict[str, str]]:
     binding = resolved.get("binding")
     profile = resolved.get("profile")
     ports = resolved.get("ports")
+    source = resolved.get("source")
     require(
         resolved.get("authority") == "machine-control-plane"
         and isinstance(binding, Mapping)
         and isinstance(profile, Mapping)
-        and isinstance(ports, Mapping),
+        and isinstance(ports, Mapping)
+        and isinstance(source, Mapping),
         "machine control plane resolution is incomplete",
     )
     require(
         binding.get("workspaceId") == WORKSPACE_ID
         and binding.get("canonicalRoot") == str(ROOT)
-        and binding.get("head") == source_identity(ROOT)["commit"],
+        and source.get("head") == source_identity(ROOT)["commit"],
         "machine control plane worktree identity mismatch",
     )
     require(
@@ -190,6 +193,7 @@ def seed_native_actor_identity(
     station_url: str,
     profile: str = PROFILE,
     account: str = J02_ACTOR_ACCOUNT,
+    expected_actor_id: str | None = None,
 ) -> dict[str, Any] | None:
     if not fixture_root.exists():
         return None
@@ -199,6 +203,11 @@ def seed_native_actor_identity(
         profile=profile,
         account=account,
     )
+    if (
+        expected_actor_id is not None
+        and metadata.get("actorId") != expected_actor_id
+    ):
+        return None
     identity_root = fixture_root / "actor-identity"
     require(
         not target_root.exists(),
@@ -207,6 +216,16 @@ def seed_native_actor_identity(
     target_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     shutil.copytree(identity_root, target_root, symlinks=False)
     return dict(metadata)
+
+
+def resolve_operation_scenario_actor(
+    profile_env: Mapping[str, str],
+) -> str:
+    return resolve_existing_actor(
+        profile_env["PT_STATION_URL"],
+        "charlie",
+        profile_env["CHAT_NATIVE_DEMO_PASSWORD"],
+    ).ptid
 
 
 def persist_native_actor_identity(
@@ -232,6 +251,7 @@ def persist_native_actor_identity(
         "actorId": actor_id,
         "stationUrl": station_url.rstrip("/"),
     }
+    fixture_matches_source = False
     if fixture_root.exists():
         seeded = _load_actor_identity_fixture(
             fixture_root,
@@ -239,44 +259,36 @@ def persist_native_actor_identity(
             profile=profile,
             account=account,
         )
-        if seeded.get("actorId") == actor_id:
-            return dict(seeded)
-        require(
-            allow_actor_rebinding,
-            "retained actor identity belongs to another actor",
-        )
         source_keys = tuple(
             path for path in source_root.rglob("*.key") if path.is_file()
         )
+        fixture_identity_root = fixture_root / "actor-identity"
         fixture_keys = tuple(
-            path
-            for path in (fixture_root / "actor-identity").rglob("*.key")
+            path for path in fixture_identity_root.rglob("*.key")
             if path.is_file()
         )
-        require(
-            len(source_keys) == 1
+        fixture_matches_source = (
+            seeded.get("actorId") == actor_id
+            and len(source_keys) == 1
             and len(fixture_keys) == 1
-            and source_keys[0].read_bytes() == fixture_keys[0].read_bytes(),
-            "retained actor identity key changed during actor rebinding",
+            and source_keys[0].relative_to(source_root)
+            == fixture_keys[0].relative_to(fixture_identity_root)
+            and source_keys[0].read_bytes() == fixture_keys[0].read_bytes()
         )
-        metadata_path = fixture_root / "fixture.json"
-        temporary_metadata = metadata_path.with_name(
-            f".{metadata_path.name}.tmp-{os.getpid()}"
+        if fixture_matches_source:
+            return dict(seeded)
+        require(
+            allow_actor_rebinding,
+            "retained actor identity differs from the Station-accepted identity",
         )
-        try:
-            temporary_metadata.write_text(
-                json.dumps(metadata, indent=2, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            temporary_metadata.chmod(0o600)
-            os.replace(temporary_metadata, metadata_path)
-        finally:
-            temporary_metadata.unlink(missing_ok=True)
-        return metadata
 
     fixture_root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    temporary = fixture_root.parent / f".{fixture_root.name}.tmp-{os.getpid()}"
+    operation_id = f"{os.getpid()}-{time.time_ns()}"
+    temporary = fixture_root.parent / f".{fixture_root.name}.tmp-{operation_id}"
+    backup = fixture_root.parent / f".{fixture_root.name}.bak-{operation_id}"
     shutil.rmtree(temporary, ignore_errors=True)
+    shutil.rmtree(backup, ignore_errors=True)
+    moved_existing = False
     try:
         shutil.copytree(source_root, temporary / "actor-identity", symlinks=False)
         metadata_path = temporary / "fixture.json"
@@ -285,9 +297,20 @@ def persist_native_actor_identity(
             encoding="utf-8",
         )
         metadata_path.chmod(0o600)
+        if fixture_root.exists():
+            os.replace(fixture_root, backup)
+            moved_existing = True
         os.replace(temporary, fixture_root)
+        shutil.rmtree(backup, ignore_errors=True)
+        moved_existing = False
+    except BaseException:
+        if moved_existing and not fixture_root.exists() and backup.exists():
+            os.replace(backup, fixture_root)
+        raise
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
+        if not moved_existing:
+            shutil.rmtree(backup, ignore_errors=True)
     return metadata
 
 
@@ -578,13 +601,19 @@ def main() -> int:
             startup_timeout=900,
         )
         client = runtime_pair.native
+        expected_actor_id = resolve_operation_scenario_actor(profile_env)
         seeded_identity = seed_native_actor_identity(
             fixture_root=J02_IDENTITY_FIXTURE,
             target_root=client.actor_identity_root,
             station_url=profile_env["PT_STATION_URL"],
+            expected_actor_id=expected_actor_id,
         )
         client.start()
         login = authenticate_native_client(client, profile_env)
+        require(
+            login["actorId"] == expected_actor_id,
+            "Native actor differs from the provisioned fixture",
+        )
         sample_id = f"mca-j02-{artifact_run_id}"
         capture["capabilityPreflight"] = client.harness(
             "debugCapabilitySnapshot",

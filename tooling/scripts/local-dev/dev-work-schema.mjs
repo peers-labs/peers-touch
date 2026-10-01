@@ -20,8 +20,14 @@ export const RUNTIME_KINDS = new Set([
   'relay.connect',
   'relay.deploy',
   'database',
+  'service',
+  'account',
+  'client',
+  'device',
   'client.storage',
   'fixture',
+  'automation.session',
+  'resource.plan',
 ]);
 export const LIVE_STATES = new Set(['DECLARED', 'ACTIVE', 'RELEASING']);
 export const DECLARATION_STATES = new Set([

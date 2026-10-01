@@ -20,6 +20,7 @@ from tooling.acceptance.gates.agent.agent_v2_candidate_producer import (
     load_gate_tuples,
 )
 from tooling.acceptance.gates.agent.capability_binding_candidate import (
+    ACTOR_ACCOUNT,
     CapabilityBindingCandidateProducer,
     CapabilityBindingMobileAdapter,
     CapabilityBindingRetirementAdapter,
@@ -261,6 +262,8 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
                     }
                 if method == "getAcceptanceHarnessStatus":
                     return {"ready": True}
+                if method == "navigateToAgent":
+                    return {"navigated": True}
                 if method == "prepareCapabilityBindingCandidate":
                     return {
                         "agentId": "agent-candidate",
@@ -306,7 +309,10 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
         browser = Client("browser")
         adapter = CapabilityBindingRuntimeAdapter(
             SimpleNamespace(native=native, browser=browser),
-            {"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+            {
+                "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
+                "PT_DEV_PROFILE": "two",
+            },
             "run-1",
         )
 
@@ -322,6 +328,12 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
             if method == "runCapabilityBindingScenario"
         )
         self.assertEqual(scenario_call["agentName"], "candidate-agent")
+        login_accounts = [
+            payload["account"]
+            for method, payload in native.calls + browser.calls
+            if method == "loginWithPassword"
+        ]
+        self.assertEqual(login_accounts, [ACTOR_ACCOUNT, ACTOR_ACCOUNT])
         self.assertTrue(any(
             method == "cleanupCapabilityBindingCandidate"
             for method, _ in native.calls

@@ -318,6 +318,10 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(checked.ports.mobileWeb, 5673);
     assert.equal(checked.profile.stationDeployEnvironment, 'station-four');
     assert.equal(checked.profile.resetPolicy, 'agent-resettable');
+    assert.equal(
+      checked.source.head,
+      git(scope.workspaceA, 'rev-parse', 'HEAD'),
+    );
 
     const updated = updateWorkspace(
       registrationOptions(scope, {
@@ -384,6 +388,7 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
       sessionId: declaration.sessionId,
     });
 
+    const sourceHead = git(scope.workspaceA, 'rev-parse', 'HEAD');
     const activeWork = updateActiveWorkRecord(
       {
         workspaceId: registered.workspaceId,
@@ -400,8 +405,8 @@ test('unregisters an idle owned workspace and rejects owner mismatch', () => {
         journeyId: 'MACHINE-DEV-J01',
         devState: null,
         branch: registered.branch,
-        initialHead: registered.head,
-        expectedHead: registered.head,
+        initialHead: sourceHead,
+        expectedHead: sourceHead,
       },
       {
         home: scope.home,
