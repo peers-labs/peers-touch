@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-30
-covered_docs_hash: e58c6e919f0b3ed1950da1b36d1a5f90fdb2a7dee7ded4144ba32ffb76f590ff
+last_verified_at: 2026-10-01
+covered_docs_hash: 6bc6d6374ea9e4979c36ab02923df13a108b5a50049f8ef5e2a8d5ffd6952013
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,15 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-01 Review
+
+Resource-plan selection no longer treats healthy reusable inventory as
+Runtime Owner readiness, and incompatible non-null digest expectations cannot
+be merged onto one physical resource. Existing runtime ownership, exact-source
+identity, and fail-closed resource conflict rules already cover this behavior.
+Dedicated resource-plan regressions prove both boundaries; no `SKILL.md`,
+generic review fixture, or additional knowledge entry is required.
 
 ## 2026-09-30 Review
 
