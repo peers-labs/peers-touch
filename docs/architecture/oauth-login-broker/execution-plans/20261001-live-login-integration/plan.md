@@ -53,7 +53,46 @@
     "oauth-login-broker-operator",
     "oauth2-client-live-api-repository",
     "oauth-login-broker-architecture",
-    "oauth-login-broker-contract"
+    "oauth-login-broker-contract",
+    "oauth-login-broker-handoff-contract",
+    "oauth-login-broker-provider-identity",
+    "proto-build",
+    "station-api-ownership",
+    "station-access-capability-contract",
+    "station-access-auth-e2e",
+    "station-access-scope-isolation-e2e",
+    "station-federation-unit",
+    "federation-three-node-e2e",
+    "station-access-federation-boundary-e2e",
+    "chat-lifecycle-tree-zero-reference-e2e",
+    "station-messaging-unit",
+    "messaging-platform-contract",
+    "desktop-check",
+    "chat-native-visible-static",
+    "chat-native-interactions-e2e",
+    "chat-lifecycle-onboarding-e2e",
+    "chat-lifecycle-direct-e2e",
+    "chat-native-current-profile-two-client-e2e",
+    "chat-native-two-client-e2e",
+    "chat-native-multi-device-e2e",
+    "chat-native-recovery-e2e",
+    "chat-native-group-mls-e2e",
+    "chat-desktop-gateway-e2e",
+    "mobile-contract-static",
+    "mobile-identity-contract",
+    "mobile-simulator-access-e2e",
+    "agent-v2-kernel-foundation-e2e",
+    "station-agent-unit",
+    "agent-stream-resilience-e2e",
+    "acceptance-plan-self",
+    "acceptance-infra-validation",
+    "acceptance-workflow-contract",
+    "acceptance-runtime-provisioning-self",
+    "agent-native-knowledge-binding-e2e",
+    "agent-native-connector-lifecycle-e2e",
+    "agent-v2-connector-invocation-e2e",
+    "agent-marketplace-catalog-e2e",
+    "agent-quick-completion-e2e"
   ]
 }
 ```
@@ -104,3 +143,6 @@ untouched.
 - No Desktop, Station, native, or broader Peers-Touch Acceptance claim.
 - No Vercel deployment, production-scale, or production-traffic claim.
 - No push, pull request, merge, release, or history rewrite.
+- The `full` Gate inventory records all registry-impacted validation. Only the
+  seven `completion` Gates are authorized and claimed by this OAuth2-only Plan
+  Run; the remaining full-only Gates stay unrun and unproven.
