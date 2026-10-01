@@ -1,4 +1,4 @@
-# OLB-LIVE-04: Integrated Proof And Environment Handoff
+# OLB-LIVE-04: OAuth2 API And Repository Proof
 
 ## Task Slice
 
@@ -8,48 +8,20 @@
   "planId": "OLB-LIVE-20261001",
   "taskId": "OLB-LIVE-04",
   "workstreamId": "OLB-LIVE",
-  "title": "Prove the integrated source and define isolated live inputs",
+  "title": "Prove the OAuth2 API and GitHub repository persistence",
   "workClass": "product-behavior",
-  "completionClass": "functional",
+  "completionClass": "acceptance-aggregate",
   "executionMode": "build",
   "closureId": "olb-live-proof",
-  "journeyId": "OLB-J05",
-  "runtimeClass": "native-desktop",
+  "journeyId": "OLB-J01",
+  "runtimeClass": "service",
   "writeSet": [
     "docs/architecture/oauth-login-broker",
-    "docs/architecture/architecture-module-governance/architecture-modules.json",
-    "tooling/acceptance",
-    "tooling/docker/compose.yml"
+    "tooling/acceptance"
   ],
   "readSet": [
     "apps/oauth2-client",
-    "apps/desktop/src/kernel/identityRuntime.ts",
-    "apps/desktop/src/pages/login",
-    "apps/desktop/src/services/desktop_api.ts",
-    "apps/desktop/src/store/oauth2.ts",
-    "apps/desktop/src/store/session.ts",
-    "apps/desktop/src-tauri/build.rs",
-    "apps/desktop/src-tauri/src/application/auth",
-    "apps/desktop/src-tauri/src/application/oauth2",
-    "apps/desktop/src-tauri/src/contracts.rs",
-    "apps/desktop/src-tauri/src/interface/contracts/mod.rs",
-    "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
-    "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
-    "apps/desktop/src-tauri/src/main.rs",
-    "apps/desktop/src-tauri/src/model/mod.rs",
-    "apps/station/app/subserver/oauth",
-    "apps/station/frame/core/auth/oauth2.go",
-    "apps/station/frame/touch/actor_handler.go",
-    "apps/station/frame/touch/auth/oauth_bridge.go",
-    "apps/station/frame/touch/oauth_handler.go",
-    "model/domain/oauth/oauth.proto",
-    "model/domain/oauth/broker_bridge.proto",
-    "apps/station/frame/touch/model/oauth.pb.go",
-    "apps/station/frame/touch/model/oauthbridge",
-    "apps/desktop/src/gen/proto/domain/oauth/oauth_pb.ts",
-    "apps/desktop/src/gen/proto/domain/oauth/broker_bridge_pb.ts",
-    "docs/architecture/station-access-lifecycle",
-    "docs/client/desktop",
+    "docs/architecture/oauth-login-broker",
     "docs/knowledge"
   ],
   "budgets": {
@@ -64,40 +36,21 @@
       "verificationClass": "SOURCE_CHECK"
     },
     {
-      "id": "olb-live-station",
-      "command": "cd apps/station && go test ./frame/touch ./frame/touch/auth",
-      "verificationClass": "SOURCE_CHECK"
-    },
-    {
-      "id": "olb-live-desktop",
-      "command": "cd apps/desktop && pnpm run check && pnpm run test",
-      "verificationClass": "SOURCE_CHECK"
-    },
-    {
-      "id": "olb-live-architecture",
-      "command": "node tooling/scripts/architecture/module-governance.mjs validate",
-      "verificationClass": "SOURCE_CHECK"
-    },
-    {
-      "id": "olb-live-integrated-functional",
-      "command": "make dev-functional-result WORK_ITEM=OLB-LIVE-04 RUNTIME_CELL=desktop-macos-native REASON='verify native Desktop OAuth login against the isolated oauth2-client-test profile'",
-      "verificationClass": "FUNCTIONAL_CHECK"
-    },
-    {
-      "id": "olb-live-acceptance",
-      "command": "make acceptance-run-completion",
+      "id": "olb-live-oauth2-acceptance",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate oauth-login-broker-durable-login --gate oauth-login-broker-refresh-idempotency --gate oauth-login-broker-key-rotation --gate oauth-login-broker-operator",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [
-    "All focused regression suites pass",
-    "Local exact-source Desktop-to-Station login Journey reaches FUNCTIONAL_PASS",
-    "Acceptance gates select bridge, denial, no-email, and refresh-uncertainty regressions",
+    "All oauth2-client race-enabled tests pass",
+    "The four OAuth2 durability, refresh, rotation, and operator Gates are DONE and PROVEN",
+    "Live GitHub and Google authorization callbacks return normalized signed identity data",
+    "Transaction, identity, credential, refresh-operation, and audit records remain encrypted in the private GitHub repository",
     "The env handoff lists required variable names and probes without secret values"
   ],
   "failureBehavior": [
-    "Do not claim live provider or Vercel readiness from local fixtures",
-    "Do not write the env repository from this source-bound conversation",
+    "Do not claim Vercel or production readiness from local provider proof",
+    "Do not claim Desktop or Station behavior from OAuth2 API proof",
     "Do not log or persist secret values in evidence"
   ],
   "updatedAt": "2026-10-01T00:00:00.000Z",
@@ -107,26 +60,25 @@
 
 ## Current Snapshot
 
-- `oauth-login-broker-handoff-contract` proves source behavior only and is not
-  native Desktop evidence.
-- The separate environment repository now contains the authorized
-  `oauth2-client-test` broker and remote Station definition.
+- The sibling environment repository contains the authorized
+  `oauth2-client-test` broker configuration.
+- GitHub and Google authorization have completed against isolated clients.
+- GitHub-backed transactions, identities, credentials, and audit records have
+  been inspected as authenticated encrypted envelopes.
 
-## Native Functional Proof
+## API And Repository Proof
 
-`pt-dev-runtime-handoff` must run `OLB-J05` against the exact
-`oauth2-client-test` profile. The run must use the real native Tauri window,
-the profile-bound test broker and Station, and an isolated non-production
-provider application.
-Its source-bound result must prove callback receipt, Access Gate continuation
-when present, local durable persistence, Station acknowledgement, authenticated
-shell entry, restart recovery, timeout cancellation, and cleanup. Browser-only,
-source/unit, or broker-only evidence cannot satisfy this check.
+The accepted scope is the standalone OAuth2 broker. It requires standards-based
+authorization-code redirects with PKCE, state expiry and replay rejection,
+provider callback normalization, authenticated operator readback, refresh
+idempotency, complete key rotation, and durable encrypted GitHub persistence.
+Desktop, Station, native callback delivery, and broader Peers-Touch product
+Acceptance are explicitly outside this closure.
 
 ## Closure
 
-The source is locally integrated and the next target-bound environment Plan can
-provision and execute live provider scenarios without production reuse.
+The standalone OAuth2 API is verified against isolated provider clients and its
+private GitHub repository without production reuse.
 
 ## Concurrency Decision
 

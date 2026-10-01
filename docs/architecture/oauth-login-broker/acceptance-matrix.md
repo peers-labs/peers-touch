@@ -199,11 +199,14 @@ profile. No local source Gate may claim it.
 
 ## 5. Completion Claim
 
-`OAUTH_LOGIN_BROKER_ACCEPTED` requires OLB-G01, OLB-G02, OLB-G03A,
-OLB-G03B, OLB-G04, OLB-G05A, OLB-G05B, OLB-G06, OLB-G07A, and OLB-G07B,
-plus the registered `oauth-login-broker-contract` Gate, architecture governance
-validation, and the exact-source local HTTP and native Desktop-to-Station
-journeys.
+`OAUTH2_CLIENT_ACCEPTED` requires OLB-G01, OLB-G02, OLB-G03A, OLB-G03B,
+OLB-G04, OLB-G05A, OLB-G05B, and OLB-G06 through the four registered
+oauth2-client durability, refresh, rotation, and operator Gates. It does not
+claim Desktop or Station behavior.
+
+`OAUTH_LOGIN_BROKER_NATIVE_ACCEPTED` additionally requires OLB-G07A and
+OLB-G07B, the registered architecture and contract Gates, and the exact-source
+native Desktop-to-Station journey.
 
 The local claim excludes Vercel deployment, production scale, and migration of
 historical plaintext records. Live GitHub App installation and GitHub/Google
