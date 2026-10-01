@@ -144,11 +144,13 @@ translated, or copied into current authority.
    owner holds an inode-bound recovery claim, reclaims only a dead recovery
    owner through PID/start identity, rejects host-root, retirement-root, reset,
    and canonical-source symlink escape, and validates every reset target before
-   deleting any store. It writes one strict current machine receipt in
-   `INSTALLING`, runs the host-aware audit and exact installed callback proof,
-   then publishes `INSTALLED` or `BLOCKED`. The receipt binds the recursive
-   canonical Skill and plugin catalog, file modes, dirty status, branch, HEAD,
-   and callback proof.
+   deleting any store. After consuming the exact grant, it writes one strict
+   current machine receipt in `INSTALLING`, performs destructive reset inside
+   the guarded lifecycle, runs the host-aware audit and exact installed
+   callback proof, then publishes `INSTALLED` or `BLOCKED`. A reset failure
+   therefore cannot leave an absent or stale lifecycle receipt. The receipt
+   binds the recursive canonical Skill and plugin catalog, file modes, dirty
+   status, branch, HEAD, and callback proof.
 6. Run the read-only audit at any later boundary:
 
    ```bash

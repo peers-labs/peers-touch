@@ -351,6 +351,77 @@ test('one OWNER issues WORKER and REVIEWER children with exact lineage', () => {
   }
 });
 
+test('one assignment has exactly one atomic execution-session claimant', async () => {
+  const scope = fixture();
+  try {
+    seedActiveSession(scope);
+    const owner = bindWorkflowOwner('trae', 'visible-chat', scope.root, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:00.000Z'),
+    }).binding;
+    const assignment = createWorkflowBindingAssignment(
+      ownerProjection(owner),
+      {
+        assignmentId: 'reviewer-exclusive',
+        role: 'REVIEWER',
+        workflowSessionId: 'DEV-SESSION',
+        operationId: 'review-exclusive',
+        leaseUntil: '2026-10-01T00:10:00.000Z',
+      },
+      {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:01.000Z'),
+      },
+    ).assignment;
+    const moduleUrl = pathToFileURL(
+      path.join(
+        process.cwd(),
+        'tooling/scripts/local-dev/workflow-binding-store.mjs',
+      ),
+    ).href;
+    const script = [
+      `import { claimWorkflowChild } from ${JSON.stringify(moduleUrl)};`,
+      'const [sessionId, ownerJson, assignmentJson, machineRoot] = process.argv.slice(-4);',
+      'try {',
+      "  const result = claimWorkflowChild('trae', sessionId, JSON.parse(ownerJson), JSON.parse(assignmentJson), {",
+      '    machineRoot,',
+      "    now: new Date('2026-10-01T00:00:02.000Z'),",
+      '  });',
+      "  process.stdout.write(`PASS:${result.binding.executionSessionHash}`);",
+      '} catch (error) {',
+      "  process.stdout.write(`FAIL:${error.code}`);",
+      '}',
+    ].join('\n');
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        execFileAsync(process.execPath, [
+          '--input-type=module',
+          '--eval',
+          script,
+          `reviewer-session-${index}`,
+          JSON.stringify(owner),
+          JSON.stringify(assignment),
+          scope.machineRoot,
+        ]),
+      ),
+    );
+    const outcomes = results.map((result) => result.stdout);
+    assert.equal(
+      outcomes.filter((outcome) => outcome.startsWith('PASS:')).length,
+      1,
+    );
+    assert.equal(
+      outcomes.filter(
+        (outcome) =>
+          outcome === 'FAIL:WORKFLOW_BINDING_ASSIGNMENT_CLAIMED',
+      ).length,
+      7,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('expired or terminal child cannot provide a live claim', () => {
   const scope = fixture();
   try {

@@ -1191,7 +1191,6 @@ def install(
         if host == "cursor"
         else None
     )
-    purge_legacy_binding_state()
     write_installation_receipt(
         workspace_id,
         branch,
@@ -1203,6 +1202,7 @@ def install(
     )
     skills_root = target_root / "skills"
     try:
+        purge_legacy_binding_state()
         if skills_root.is_symlink():
             skills_root.unlink()
         skills_root.mkdir(mode=0o700, parents=True, exist_ok=True)

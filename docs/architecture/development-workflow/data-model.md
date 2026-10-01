@@ -543,6 +543,16 @@ interface WorkflowBindingAssignment {
   digest: string;
 }
 
+interface WorkflowAssignmentClaim {
+  kind: 'peers-touch-workflow-assignment-claim';
+  assignmentDigest: string;
+  rootBindingDigest: string;
+  host: 'trae' | 'cursor' | 'codex';
+  executionSessionHash: string;
+  workflowSessionId: string;
+  digest: string;
+}
+
 interface WorkflowChildBinding {
   kind: 'peers-touch-workflow-child-binding';
   host: 'trae' | 'cursor' | 'codex';
@@ -569,10 +579,12 @@ interface WorkflowChildTerminalReceipt {
 
 Assignment creation requires a current lineage projection and an active
 matching Development Session. Its `rootBindingDigest` always names the OWNER;
-its `parentBindingDigest` names the direct issuer. Claim is create-once and
-binds the hashed child execution session to exactly one assignment. A child is
-live only before `leaseUntil` and before a terminal receipt exists. OWNER
-liveness has no generic TTL.
+its `parentBindingDigest` names the direct issuer. Before publishing a child
+binding, claim writes one assignment-keyed create-once record. The first
+execution-session hash wins; an idempotent retry by that session reuses the
+claim, while every different session is rejected. A child is live only before
+`leaseUntil` and before a terminal receipt exists. OWNER liveness has no
+generic TTL.
 
 Every hook and claim consumes one read-only projection:
 
@@ -674,8 +686,10 @@ deletes exactly:
 ```
 
 The Kernel creates a create-once grant for that exact OWNER `skills` action.
-The installer atomically consumes the grant before reset; a seeded receipt,
-another action ID, or a second invocation has no installation authority.
+The installer requires exactly one such live action, atomically consumes its
+grant, publishes `INSTALLING`, and only then starts destructive reset. A seeded
+receipt, missing action, another action ID, or a second invocation has no
+installation authority; reset failure publishes `BLOCKED`.
 
 Canonical Completion Review requests and receipts use schema version `2` under
 `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v2/`.
