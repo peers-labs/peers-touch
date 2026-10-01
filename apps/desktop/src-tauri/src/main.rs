@@ -721,6 +721,20 @@ fn main() {
             capability_authority::agent_capability_binding_upsert,
             capability_authority::agent_capability_binding_delete,
             capability_authority::agent_capability_readiness,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_prepare,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_arm,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_wait,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_release,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_clock_advance,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_interrupt,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_cleanup,
             capability_authority::agent_connector_manifest_list,
             capability_authority::agent_knowledge_descriptor_create,
             capability_authority::agent_knowledge_descriptor_update,
