@@ -951,6 +951,167 @@ function childBindings(rootBindingDigest, host, options = {}) {
       }));
 }
 
+export function inspectWorkflowBindingLiveness(options = {}) {
+  const now = operationDate(options.now);
+  const root = bindingsRoot(options, false);
+  if (!existsSync(root)) return { liveAssignments: [] };
+
+  const ownersRoot = path.join(root, 'owners');
+  if (existsSync(ownersRoot)) {
+    assertPrivateDirectory(ownersRoot);
+    for (const hostEntry of readdirSync(ownersRoot, { withFileTypes: true })) {
+      if (!hostEntry.isDirectory() || !HOSTS.has(hostEntry.name)) {
+        fail(
+          'WORKFLOW_BINDING_STORE_INVALID',
+          'Owner store contains an invalid host entry',
+        );
+      }
+      const hostRoot = path.join(ownersRoot, hostEntry.name);
+      assertPrivateDirectory(hostRoot);
+      for (const ownerEntry of readdirSync(hostRoot, { withFileTypes: true })) {
+        if (!ownerEntry.isDirectory() || !SHA256.test(ownerEntry.name)) {
+          fail(
+            'WORKFLOW_BINDING_STORE_INVALID',
+            'Owner store contains an invalid identity entry',
+          );
+        }
+      }
+    }
+  }
+
+  const owners = ownerDirectories(options).map((entry) =>
+    validateWorkflowOwnerBinding(
+      readOwnedJson(
+        path.join(entry.directory, 'owner-binding.json'),
+        'WORKFLOW_OWNER_BINDING_INVALID',
+        true,
+      ),
+      {
+        host: entry.host,
+        rootChatHash: entry.rootChatHash,
+      },
+    ));
+  const ownersByDigest = new Map(owners.map((owner) => [owner.digest, owner]));
+  const childrenByAssignment = new Map();
+  const childrenRoot = path.join(root, 'children');
+  if (existsSync(childrenRoot)) {
+    assertPrivateDirectory(childrenRoot);
+    for (const ownerEntry of readdirSync(childrenRoot, { withFileTypes: true })) {
+      if (
+        !ownerEntry.isDirectory() ||
+        !SHA256.test(ownerEntry.name) ||
+        !ownersByDigest.has(ownerEntry.name)
+      ) {
+        fail(
+          'WORKFLOW_BINDING_STORE_INVALID',
+          'Child store has no exact owner',
+        );
+      }
+      const ownerRoot = path.join(childrenRoot, ownerEntry.name);
+      assertPrivateDirectory(ownerRoot);
+      for (const hostEntry of readdirSync(ownerRoot, { withFileTypes: true })) {
+        if (!hostEntry.isDirectory() || !HOSTS.has(hostEntry.name)) {
+          fail(
+            'WORKFLOW_BINDING_STORE_INVALID',
+            'Child store contains an invalid host entry',
+          );
+        }
+        const hostRoot = path.join(ownerRoot, hostEntry.name);
+        assertPrivateDirectory(hostRoot);
+        for (const childEntry of readdirSync(hostRoot, { withFileTypes: true })) {
+          if (!childEntry.isDirectory() || !SHA256.test(childEntry.name)) {
+            fail(
+              'WORKFLOW_BINDING_STORE_INVALID',
+              'Child store contains an invalid identity entry',
+            );
+          }
+        }
+        for (const child of childBindings(
+          ownerEntry.name,
+          hostEntry.name,
+          options,
+        )) {
+          const matches = childrenByAssignment.get(child.assignmentDigest) ?? [];
+          matches.push(child);
+          childrenByAssignment.set(child.assignmentDigest, matches);
+        }
+      }
+    }
+  }
+
+  const assignmentsByDigest = new Map();
+  const liveAssignments = [];
+  for (const owner of owners) {
+    const released = workflowOwnerIsReleased(owner, options);
+    const assignmentsRoot = path.join(
+      ownerDirectory(owner.host, owner.rootChatHash, options, false),
+      'assignments',
+    );
+    if (!existsSync(assignmentsRoot)) continue;
+    assertPrivateDirectory(assignmentsRoot);
+    for (const entry of readdirSync(assignmentsRoot, { withFileTypes: true })) {
+      const assignmentId = entry.name.endsWith('.json')
+        ? entry.name.slice(0, -'.json'.length)
+        : '';
+      if (!entry.isFile() || !IDENTIFIER.test(assignmentId)) {
+        fail(
+          'WORKFLOW_BINDING_STORE_INVALID',
+          'Assignment store contains an invalid entry',
+        );
+      }
+      const assignment = validateWorkflowBindingAssignment(
+        readOwnedJson(
+          path.join(assignmentsRoot, entry.name),
+          'WORKFLOW_BINDING_ASSIGNMENT_INVALID',
+          true,
+        ),
+        {
+          assignmentId,
+          rootBindingDigest: owner.digest,
+        },
+      );
+      if (assignmentsByDigest.has(assignment.digest)) {
+        fail(
+          'WORKFLOW_BINDING_STORE_INVALID',
+          'Assignment digest resolves more than once',
+        );
+      }
+      assignmentsByDigest.set(assignment.digest, assignment);
+      const children = childrenByAssignment.get(assignment.digest) ?? [];
+      if (children.length > 1) {
+        fail(
+          'WORKFLOW_BINDING_STORE_INVALID',
+          'Assignment was claimed by more than one child',
+        );
+      }
+      const terminal =
+        children.length === 1 ? childTerminal(children[0], options) : null;
+      if (
+        !released &&
+        Date.parse(assignment.leaseUntil) > now.getTime() &&
+        terminal === null
+      ) {
+        liveAssignments.push({
+          assignmentId: assignment.assignmentId,
+          assignmentDigest: assignment.digest,
+          rootBindingDigest: assignment.rootBindingDigest,
+          role: assignment.role,
+          leaseUntil: assignment.leaseUntil,
+        });
+      }
+    }
+  }
+  for (const assignmentDigest of childrenByAssignment.keys()) {
+    if (!assignmentsByDigest.has(assignmentDigest)) {
+      fail(
+        'WORKFLOW_BINDING_STORE_INVALID',
+        'Child binding references no assignment',
+      );
+    }
+  }
+  return { liveAssignments };
+}
+
 export function readWorkflowBindingContextByActor(actor, options = {}) {
   if (
     actor === null ||
@@ -1042,7 +1203,7 @@ export function resolveEventWorkflowBinding(event, executionRoot, options = {}) 
     if (event.event !== 'PRE_TOOL_USE') {
       return { mode: 'PREWARM', projection: null };
     }
-    if (!executionRoot) return { mode: 'OUTSIDE_PROJECT', projection: null };
+    if (!executionRoot) return { mode: 'NEEDS_ROOT', projection: null };
     owner = bindWorkflowOwner(
       event.host,
       identity.rootChatId,

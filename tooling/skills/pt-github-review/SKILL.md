@@ -138,6 +138,13 @@ verify:
   current canonical `BindingProjection`; Completion Review uses the exact
   OWNER command receipt and assigned live REVIEWER rather than enumerating
   worktree bindings;
+- TRAE multi-root integration installs one descriptor-selected bootstrap,
+  never treats bootstrap location or folder order as execution authority, and
+  rejects active-editor/task/target disagreement with
+  `WORKTREE_SELECTION_REQUIRED`;
+- binding rollout proves global workflow quiescence, deletes only the old
+  conversation and workflow-action stores, and contains no compatibility
+  reader, importer, alias, fallback, or dual writer;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under

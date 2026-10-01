@@ -194,6 +194,102 @@ test('first PreToolUse binds once and later cross-worktree reads remain legal', 
   }
 });
 
+test('multi-root first mutation binds its target and rejects active-editor drift', async () => {
+  const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-multi-root-'));
+  try {
+    const bootstrap = projectRoot(temporary, 'bootstrap');
+    const target = projectRoot(temporary, 'target');
+    const machineRoot = path.join(temporary, 'machine');
+    const inspectWorkflowContext = async () => ({
+      status: 'READY',
+      tracked: false,
+      declaration: {
+        sourceClaims: [{ mode: 'exclusive-write', pathPrefix: '.' }],
+      },
+    });
+    const pendingRead = await evaluateWorkflowEvent(
+      event({
+        host: 'trae',
+        hostEvent: 'PreToolUse',
+        bindingIdentity: {
+          rootChatId: 'multi-root-owner',
+          executionSessionId: 'owner-session',
+          assignmentId: null,
+        },
+        workspaceRoots: [bootstrap, target],
+        repositoryWorkingDirectory: bootstrap,
+        toolWorkingDirectory: bootstrap,
+        toolName: 'Read',
+        toolInput: { file_path: path.join(target, 'README.md') },
+      }),
+      {
+        machineRoot,
+        inspectWorkflowContext,
+        recordWorkflowAction: false,
+      },
+    );
+    assert.equal(pendingRead.action, 'ALLOW');
+    assert.equal(pendingRead.enforcementMode, 'PENDING_BINDING');
+    assert.equal(pendingRead.executionRoot, null);
+
+    const selected = await evaluateWorkflowEvent(
+      event({
+        host: 'trae',
+        hostEvent: 'PreToolUse',
+        bindingIdentity: {
+          rootChatId: 'multi-root-owner',
+          executionSessionId: 'owner-session',
+          assignmentId: null,
+        },
+        workspaceRoots: [bootstrap, target],
+        repositoryWorkingDirectory: bootstrap,
+        toolWorkingDirectory: bootstrap,
+        toolName: 'Write',
+        toolInput: { file_path: path.join(target, 'new.txt') },
+      }),
+      {
+        machineRoot,
+        inspectWorkflowContext,
+        recordWorkflowAction: false,
+      },
+    );
+    assert.equal(selected.action, 'ALLOW');
+    assert.equal(selected.executionRoot, target);
+
+    const mismatched = await evaluateWorkflowEvent(
+      event({
+        host: 'trae',
+        hostEvent: 'PreToolUse',
+        bindingIdentity: {
+          rootChatId: 'mismatched-editor-owner',
+          executionSessionId: 'owner-session',
+          assignmentId: null,
+        },
+        workspaceRoots: [bootstrap, target],
+        activeEditorPath: bootstrap,
+        repositoryWorkingDirectory: bootstrap,
+        toolWorkingDirectory: bootstrap,
+        toolName: 'Write',
+        toolInput: { file_path: path.join(target, 'new.txt') },
+      }),
+      {
+        machineRoot,
+        inspectWorkflowContext,
+        recordWorkflowAction: false,
+      },
+    );
+    assert.equal(mismatched.action, 'DENY');
+    assert.equal(mismatched.code, 'WORKTREE_SELECTION_REQUIRED');
+  } finally {
+    rmSync(temporary, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+  }
+});
+
 test('an existing conversation binding denies cross-worktree writes', async () => {
   const temporary = mkdtempSync(path.join(tmpdir(), 'pt-kernel-cross-write-'));
   try {

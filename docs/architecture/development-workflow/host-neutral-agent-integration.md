@@ -108,6 +108,7 @@ Session identity; they do not create another OWNER.
 
    ```bash
    make skills IDE=<trae|cursor|codex>
+   make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>
    ```
 
    The installer moves a real legacy Skill directory under the host's
@@ -124,18 +125,21 @@ Session identity; they do not create another OWNER.
    stores before publishing the bootstrap. The installer has no legacy reader,
    importer, alias, or dual-write path.
    The complete install runs while holding the
-   machine work-ledger lock, rejects every `DECLARED`, `ACTIVE`, or `RELEASING`
-   declaration as `ACTIVE_ACTION_IN_FLIGHT`, validates the ledger through its
-   canonical Node owner while holding that lock, never reclaims another owner's
-   stale lock, waits while a live ledger owner holds an inode-bound recovery
-   claim, reclaims only a dead recovery owner through PID/start identity, rejects
-   host-root, retirement-root, and canonical-source ancestor/descendant symlink
-   escape, and uses no-replace atomic move on macOS, Linux, and Windows when
-   capturing owned lock metadata. It writes one strict current machine receipt
-   in `INSTALLING`, runs the host-aware audit and callback proof, then publishes
-   `INSTALLED` or `BLOCKED`. The receipt binds the recursive canonical Skill
-   and plugin catalog, file modes, dirty status, branch, HEAD, and callback
-   proof.
+   machine work-ledger lock, rejects every live machine declaration, child
+   assignment, canonical workflow action, and Action Store lock as
+   `GLOBAL_WORKFLOW_NOT_IDLE`. One live OWNER `skills` Action Receipt is allowed
+   only when its canonical binding resolves to the selected source worktree.
+   Expired actions are not live. The installer validates the ledger, binding,
+   and Action stores through their canonical owners while holding the lock,
+   never reclaims another owner's stale ledger lock, waits while a live ledger
+   owner holds an inode-bound recovery claim, reclaims only a dead recovery
+   owner through PID/start identity, rejects host-root, retirement-root, reset,
+   and canonical-source symlink escape, and validates every reset target before
+   deleting any store. It writes one strict current machine receipt in
+   `INSTALLING`, runs the host-aware audit and exact installed callback proof,
+   then publishes `INSTALLED` or `BLOCKED`. The receipt binds the recursive
+   canonical Skill and plugin catalog, file modes, dirty status, branch, HEAD,
+   and callback proof.
 6. Run the read-only audit at any later boundary:
 
    ```bash
@@ -190,8 +194,9 @@ Required report fields:
 - `HOST_PROJECTION_INCOMPLETE`: rerun the non-interactive installer.
 - `SOURCE_CONFLICT`: resolve semantically in that branch; never use a raw patch
   as the rollout authority.
-- `ACTIVE_ACTION_IN_FLIGHT`: wait for or safely cancel the owner action, persist
-  state, then restart the session.
+- `GLOBAL_WORKFLOW_NOT_IDLE`: close or expire every live declaration, child
+  assignment, and workflow action other than the current exact OWNER installer
+  action, then retry the hard cut.
 - `MACHINE_WORK_LEDGER_LOCKED`: do not reclaim the lock from the rollout path;
   let the Development ledger owner verify or recover it.
 - `AGENT_RESTART_NOT_OBSERVED`: end the installing host session and ACK only

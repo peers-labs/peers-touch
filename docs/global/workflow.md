@@ -20,6 +20,13 @@ into the current worktree. The Doctor verifies the public promises below. A
 `BLOCKED` result names the owner that must be repaired; it is not permission to
 bypass the workflow or create another worktree.
 
+For a TRAE multi-root workspace, install with
+`make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>`. The
+descriptor's first folder hosts the only managed bootstrap, but it never
+selects execution authority. Installation requires machine-wide workflow
+quiescence and hard-deletes only the old conversation and workflow-action
+stores; there is no compatibility reader or migration.
+
 | Promise ID | What must be true | Normal recovery |
 |---|---|---|
 | `dev.integration.installed` | The selected host has the exact current Skill and hook projection, callback proof, and install receipt. | Run `make skills IDE=<host>` at a durable boundary. |

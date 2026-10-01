@@ -230,3 +230,32 @@ test('normalizes TRAE child lifecycle and explicit assignment identity', () => {
   assert.equal(event.agentType, 'reviewer');
   assert.equal(event.childResult, 'PASS');
 });
+
+test('multi-root TRAE bootstrap location is not an authority hint', () => {
+  const event = normalizeHostPayload(
+    {
+      chat_session_id: 'visible-chat',
+      session_id: 'owner-session',
+      repo_working_dir: '/workspace/bootstrap',
+    },
+    {
+      host: 'trae',
+      event: 'PreToolUse',
+      installationRoot: '/workspace/bootstrap',
+      bootstrapRoot: '/workspace/bootstrap',
+      workspaceRoots: ['/workspace/bootstrap', '/workspace/target'],
+    },
+  );
+  assert.deepEqual(event.workspaceRoots, [
+    '/workspace/bootstrap',
+    '/workspace/target',
+  ]);
+  assert.equal(event.bootstrapRoot, '/workspace/bootstrap');
+  assert.equal(
+    event.executionRootHints.filter(
+      (candidate) => candidate === '/workspace/bootstrap',
+    ).length,
+    1,
+  );
+  assert.equal(event.executionRootHints.includes('/workspace/target'), false);
+});

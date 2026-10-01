@@ -14,6 +14,7 @@ import {
 } from './workflow-binding-store.mjs';
 import {
   projectWorkflowEventRoots,
+  selectOwnerExecutionRoot,
 } from './workflow-binding-projection.mjs';
 import {
   inspectStopContext,
@@ -198,14 +199,39 @@ async function resolveBinding(event, options) {
   }
   const resolver =
     options.resolveEventWorkflowBinding ?? resolveEventWorkflowBinding;
-  const root = options.executionRoot ?? resolveExecutionRoot(event);
-  const resolved = resolver(event, root, {
+  const intent = (options.classifyToolIntent ?? classifyToolIntent)(event);
+  const targetPaths = intent.targets.map((target) =>
+    path.isAbsolute(target)
+      ? path.resolve(target)
+      : path.resolve(
+          event.toolWorkingDirectory ??
+            event.repositoryWorkingDirectory ??
+            process.cwd(),
+          target,
+        ));
+  const storeOptions = {
     machineRoot: options.machineRoot,
     now: options.now,
-  });
+  };
+  let root = options.executionRoot ?? null;
+  let resolved = resolver(event, root, storeOptions);
+  if (resolved.mode === 'NEEDS_ROOT') {
+    if (
+      !intent.mutating &&
+      (event.workspaceRoots ?? []).length > 1 &&
+      !event.explicitTaskRoot
+    ) {
+      return { mode: 'PREWARM', binding: null, executionRoot: null };
+    }
+    root = selectOwnerExecutionRoot(event, {
+      resolveProjectRoot,
+      targetPaths,
+    });
+    if (root === null) return { mode: 'OUTSIDE_PROJECT', binding: null };
+    resolved = resolver(event, root, storeOptions);
+  }
   let projection = resolved.projection ?? null;
   if (projection !== null) {
-    const intent = (options.classifyToolIntent ?? classifyToolIntent)(event);
     const toolRoot = resolveProjectRoot(event.toolWorkingDirectory);
     const targetRoots = intent.targets
       .map((target) =>
@@ -234,7 +260,15 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
       'Hook payload is missing a supported host or event.',
     );
   }
-  const resolved = await resolveBinding(event, options);
+  let resolved;
+  try {
+    resolved = await resolveBinding(event, options);
+  } catch (error) {
+    return deny(
+      error.code ?? 'WORKFLOW_BINDING_RESOLUTION_FAILED',
+      error.message ?? 'Workflow binding could not be resolved.',
+    );
+  }
   if (resolved.mode === 'OUTSIDE_PROJECT') return { action: 'NOOP' };
   if (resolved.mode === 'OBSERVE_ONLY') {
     if (event.event === 'SESSION_START' || event.event === 'BEFORE_PROMPT') {
@@ -270,7 +304,9 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
     };
   }
   if (resolved.mode === 'PREWARM') {
-    const root = resolveExecutionRoot(event);
+    const root = Object.hasOwn(resolved, 'executionRoot')
+      ? resolved.executionRoot
+      : resolveExecutionRoot(event);
     if (event.event !== 'SESSION_START' && event.event !== 'BEFORE_PROMPT') {
       return {
         action: 'ALLOW',

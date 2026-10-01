@@ -618,6 +618,93 @@ export function readWorkspaceActions(options) {
     );
 }
 
+export function inspectWorkflowActionLiveness(options = {}) {
+  const now = operationDate(options.now);
+  const root = path.join(
+    options.machineRoot
+      ? path.resolve(options.machineRoot)
+      : machineDevRoot(options.home),
+    'workspaces',
+  );
+  if (!existsSync(root)) {
+    return { liveReceipts: [], activeLocks: [] };
+  }
+  const rootMetadata = lstatSync(root);
+  if (
+    !rootMetadata.isDirectory() ||
+    rootMetadata.isSymbolicLink() ||
+    !ownedByCurrentUser(rootMetadata)
+  ) {
+    fail('WORKFLOW_ACTION_STORE_INVALID', 'workspace action root is unsafe');
+  }
+
+  const liveReceipts = [];
+  const activeLocks = [];
+  for (const workspaceEntry of readdirSync(root, { withFileTypes: true })) {
+    if (!workspaceEntry.isDirectory() || !WORKSPACE_ID.test(workspaceEntry.name)) {
+      continue;
+    }
+    const directory = path.join(
+      root,
+      workspaceEntry.name,
+      'workflow',
+      'actions',
+    );
+    if (!existsSync(directory)) continue;
+    const metadata = lstatSync(directory);
+    if (
+      !metadata.isDirectory() ||
+      metadata.isSymbolicLink() ||
+      !ownedByCurrentUser(metadata)
+    ) {
+      fail('WORKFLOW_ACTION_STORE_INVALID', 'action root is unsafe');
+    }
+    const entries = readdirSync(directory, { withFileTypes: true });
+    const stores = entries.filter((entry) =>
+      /^[0-9a-f]{64}\.json$/.test(entry.name));
+    if (stores.length > MAX_ACTION_STREAMS) {
+      fail('WORKFLOW_ACTION_STORE_INVALID', 'too many canonical action streams');
+    }
+    for (const entry of stores) {
+      if (!entry.isFile()) {
+        fail('WORKFLOW_ACTION_STORE_INVALID', 'action store entry is unsafe');
+      }
+      const rootBindingDigest = entry.name.slice(0, -'.json'.length);
+      const store = readStoreFile(
+        path.join(directory, entry.name),
+        {
+          workspaceId: workspaceEntry.name,
+          rootBindingDigest,
+        },
+        true,
+      );
+      const latest = new Map();
+      for (const receipt of store.receipts) {
+        latest.set(receipt.actionId, receipt);
+      }
+      for (const receipt of latest.values()) {
+        if (
+          ['RUNNING', 'WAITING'].includes(receipt.result) &&
+          Date.parse(receipt.leaseUntil) > now.getTime()
+        ) {
+          liveReceipts.push(receipt);
+        }
+      }
+    }
+    for (const entry of entries.filter((candidate) =>
+      /^[0-9a-f]{64}\.lock$/.test(candidate.name))) {
+      if (!entry.isFile()) {
+        fail('WORKFLOW_ACTION_STORE_INVALID', 'action lock entry is unsafe');
+      }
+      const file = path.join(directory, entry.name);
+      if (now.getTime() - statSync(file).mtimeMs <= 30_000) {
+        activeLocks.push(file);
+      }
+    }
+  }
+  return { liveReceipts, activeLocks };
+}
+
 export function reduceWorkflowActivity(receipts, options = {}) {
   const now = operationDate(options.now);
   const sorted = [...receipts].sort(

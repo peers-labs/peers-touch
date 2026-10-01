@@ -5,6 +5,7 @@ import {
   projectHostBindingIdentity,
   projectWorkflowBinding,
   projectWorkflowEventRoots,
+  selectOwnerExecutionRoot,
 } from './workflow-binding-projection.mjs';
 
 const DIGEST = 'a'.repeat(64);
@@ -120,5 +121,81 @@ test('expired and terminal child projections cannot appear leased', () => {
       now: new Date('2026-10-01T00:00:01.000Z'),
     }).childState,
     'TERMINAL',
+  );
+});
+
+test('multi-root owner selection ignores bootstrap location and requires one subject', () => {
+  const roots = new Map([
+    ['/workspace/bootstrap', '/workspace/bootstrap'],
+    ['/workspace/target', '/workspace/target'],
+    ['/workspace/other', '/workspace/other'],
+  ]);
+  const resolveProjectRoot = (candidate) =>
+    typeof candidate === 'string' ? roots.get(candidate) ?? null : null;
+  const event = {
+    workspaceRoots: ['/workspace/bootstrap', '/workspace/target'],
+    bootstrapRoot: '/workspace/bootstrap',
+    explicitTaskRoot: null,
+    repositoryWorkingDirectory: '/workspace/bootstrap',
+    toolWorkingDirectory: '/workspace/bootstrap',
+  };
+  assert.equal(
+    selectOwnerExecutionRoot(event, {
+      resolveProjectRoot,
+      targetPaths: ['/workspace/target'],
+    }),
+    '/workspace/target',
+  );
+  assert.throws(
+    () =>
+      selectOwnerExecutionRoot(event, {
+        resolveProjectRoot,
+        targetPaths: [],
+      }),
+    (error) => error.code === 'WORKTREE_SELECTION_REQUIRED',
+  );
+  assert.equal(
+    selectOwnerExecutionRoot(
+      { ...event, explicitTaskRoot: '/workspace/target' },
+      { resolveProjectRoot, targetPaths: [] },
+    ),
+    '/workspace/target',
+  );
+  assert.throws(
+    () =>
+      selectOwnerExecutionRoot(
+        { ...event, explicitTaskRoot: '/workspace/other' },
+        { resolveProjectRoot, targetPaths: [] },
+      ),
+    (error) => error.code === 'WORKTREE_SELECTION_REQUIRED',
+  );
+  assert.throws(
+    () =>
+      selectOwnerExecutionRoot(
+        {
+          ...event,
+          activeEditorPath: '/workspace/other',
+        },
+        {
+          resolveProjectRoot,
+          targetPaths: ['/workspace/target'],
+        },
+      ),
+    (error) => error.code === 'WORKTREE_SELECTION_REQUIRED',
+  );
+  assert.throws(
+    () =>
+      selectOwnerExecutionRoot(
+        {
+          ...event,
+          workspaceRoots: ['/workspace/target'],
+          activeEditorPath: '/workspace/other',
+        },
+        {
+          resolveProjectRoot,
+          targetPaths: ['/workspace/target'],
+        },
+      ),
+    (error) => error.code === 'WORKTREE_SELECTION_REQUIRED',
   );
 });
