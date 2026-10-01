@@ -585,6 +585,7 @@ class _W8ScenarioSpec:
     receiver_client_id: str
     action_text: str
     visible_text: str
+    click_content: bool = False
     open_comments: bool = False
     absent_texts: tuple[str, ...] = ()
 
@@ -602,6 +603,7 @@ W8_SCENARIOS = (
         receiver_client_id=DESKTOP_CLIENTS[0][0],
         action_text="secure-content-w8-private-comment-parent",
         visible_text="secure-content-w8-private-comment-body",
+        click_content=True,
         open_comments=True,
     ),
     _W8ScenarioSpec(
@@ -7473,7 +7475,9 @@ class W7RuntimeOwner:
                     clients[spec.receiver_client_id],
                     workstream_id=W8_TASK_ID,
                     scenario_id=spec.scenario_id,
-                    action_text=spec.action_text,
+                    action_text=(
+                        spec.action_text if spec.click_content else None
+                    ),
                     visible_text=spec.visible_text,
                     open_comments=spec.open_comments,
                     absent_texts=spec.absent_texts,
