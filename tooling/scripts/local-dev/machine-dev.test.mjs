@@ -555,6 +555,8 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
       workItemId: declaration.workItemId,
       workspaceId: registered.workspaceId,
       declarationId: declaration.declarationId,
+      allocationDigest: digestValue({ allocation: 'station-four' }),
+      fencingToken: 1,
       preparationState: 'RESERVING',
       baseRuntimeClaims: [
         {
@@ -585,9 +587,31 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
           mode: 'exclusive',
         },
       ],
+      resourceResults: [
+        {
+          resourceKind: 'station.deploy',
+          resourceId: 'station-four',
+          action: 'REUSE',
+          status: 'PENDING',
+          owner: 'runtime-owner',
+          manifestRef: 'runtime://station-four',
+          digests: {
+            source: null,
+            artifact: null,
+            runtime: null,
+          },
+          targetIds: ['station'],
+          requirementIds: ['station-runtime'],
+          idempotencyKeys: ['DWF-RESOURCE-PLAN:task:station-runtime:station'],
+        },
+      ],
     };
-    receipt.receiptDigest = digestValue(receipt);
-    writeFileSync(file, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
+    const writeReceipt = () => {
+      delete receipt.receiptDigest;
+      receipt.receiptDigest = digestValue(receipt);
+      writeFileSync(file, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
+    };
+    writeReceipt();
     chmodSync(file, 0o600);
 
     expectCode('RESOURCE_PLAN_NOT_COMMITTED', () =>
@@ -600,9 +624,53 @@ test('planner-owned runtime intent requires a committed resource-plan fence', ()
     );
 
     receipt.preparationState = 'COMMITTED';
-    delete receipt.receiptDigest;
-    receipt.receiptDigest = digestValue(receipt);
-    writeFileSync(file, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
+    delete receipt.allocationDigest;
+    writeReceipt();
+    expectCode('RESOURCE_PLAN_INVALID', () =>
+      validateLeaseRequest({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
+      }),
+    );
+
+    receipt.allocationDigest = digestValue({ allocation: 'station-four' });
+    delete receipt.fencingToken;
+    writeReceipt();
+    expectCode('RESOURCE_PLAN_INVALID', () =>
+      validateLeaseRequest({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
+      }),
+    );
+
+    receipt.fencingToken = 1;
+    writeReceipt();
+    expectCode('RESOURCE_PLAN_NOT_READY', () =>
+      validateLeaseRequest({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
+      }),
+    );
+
+    receipt.resourceResults[0].status = 'QUARANTINED';
+    writeReceipt();
+    expectCode('RESOURCE_PLAN_NOT_READY', () =>
+      validateLeaseRequest({
+        ...registrationOptions(scope),
+        resourceKind: 'station.deploy',
+        resourceId: 'station-four',
+        budgetSeconds: 5,
+      }),
+    );
+
+    receipt.resourceResults[0].status = 'READY';
+    writeReceipt();
     const admitted = validateLeaseRequest({
       ...registrationOptions(scope),
       resourceKind: 'station.deploy',

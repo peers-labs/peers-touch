@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-01
-covered_docs_hash: 6bc6d6374ea9e4979c36ab02923df13a108b5a50049f8ef5e2a8d5ffd6952013
+covered_docs_hash: a555fe4e0923647de5f340ac97fac0397de6ddde79a2c9e099ab5f531b016c6e
 
 covered_docs:
   - AGENTS.md
@@ -35,10 +35,13 @@ Updating this file is a review act, not bookkeeping. Execution Plan files are ex
 
 Resource-plan selection no longer treats healthy reusable inventory as
 Runtime Owner readiness, and incompatible non-null digest expectations cannot
-be merged onto one physical resource. Existing runtime ownership, exact-source
+be merged onto one physical resource. Planner-owned lease admission now also
+requires complete allocation fences and one matching `READY` result, rejecting
+pending or quarantined resources. Existing runtime ownership, exact-source
 identity, and fail-closed resource conflict rules already cover this behavior.
-Dedicated resource-plan regressions prove both boundaries; no `SKILL.md`,
-generic review fixture, or additional knowledge entry is required.
+Dedicated resource-plan and lease-admission regressions prove these boundaries;
+no `SKILL.md`, generic review fixture, or additional knowledge entry is
+required.
 
 ## 2026-09-30 Review
 
