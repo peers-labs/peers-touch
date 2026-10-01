@@ -1701,8 +1701,8 @@
     "peers-dev-ui-browser-e2e": {
       "command": "python3 -m tooling.acceptance.gates.dev.peers_dev_ui_browser_e2e",
       "timeout_seconds": 120,
-      "environment": "peers-dev-fixture-browser",
-      "provisioner": "peers-dev-fixture-browser",
+      "environment": "dev-ui-local-browser",
+      "provisioner": "dev-ui-local-browser",
       "tier": "env-evidence",
       "description": "Bind an exact-source Peers Dev runtime, render the Workflow Snapshot through SSE at desktop and narrow viewports, verify three-level progress and action state, capture screenshots, and prove polling preserves the last valid snapshot after disconnect."
     },

@@ -14,12 +14,12 @@ from tooling.acceptance.gates.dev.dev_ui_browser_e2e import (
     validate_snapshot,
 )
 from tooling.acceptance.gates.dev.peers_dev_ui_browser_e2e import (
+    GATE_ID as PROGRESS_GATE_ID,
     validate_driver_summary,
     validate_runtime_manifest,
 )
 from tooling.acceptance.provisioners import (
     DevUiLocalBrowserProvisioner,
-    PeersDevFixtureBrowserProvisioner,
     get_provisioner,
 )
 from tooling.acceptance.core._paths import REPO_ROOT
@@ -168,7 +168,7 @@ class DevUiBrowserAcceptanceTests(unittest.TestCase):
     ) -> None:
         validate_runtime_manifest(
             {
-                "environmentId": "peers-dev-fixture-browser",
+                "environmentId": "dev-ui-local-browser",
                 "profile": {"resolvedName": "dev-ui-local"},
                 "clients": [
                     {
@@ -204,10 +204,61 @@ class DevUiBrowserAcceptanceTests(unittest.TestCase):
 
     def test_progress_environment_resolves_owned_fixture_provisioner(self) -> None:
         contract = EnvironmentContract.from_yaml(
-            ENVIRONMENTS_DIR / "peers-dev-fixture-browser.yaml"
+            ENVIRONMENTS_DIR / "dev-ui-local-browser.yaml"
         )
         provisioner = get_provisioner(contract)
-        self.assertIsInstance(provisioner, PeersDevFixtureBrowserProvisioner)
+        self.assertIsInstance(provisioner, DevUiLocalBrowserProvisioner)
+
+    def test_progress_gate_provisioner_owns_fixture_lifecycle(self) -> None:
+        class FakeProcess:
+            pid = 123
+            stdout = None
+
+            def __init__(self) -> None:
+                self.returncode = None
+                self.terminated = False
+
+            def poll(self) -> int | None:
+                return self.returncode
+
+            def terminate(self) -> None:
+                self.terminated = True
+                self.returncode = 0
+
+            def wait(self, timeout: int) -> int:
+                return self.returncode or 0
+
+            def kill(self) -> None:
+                self.returncode = -9
+
+        process = FakeProcess()
+        contract = EnvironmentContract.from_yaml(
+            ENVIRONMENTS_DIR / "dev-ui-local-browser.yaml"
+        )
+        provisioner = DevUiLocalBrowserProvisioner(
+            contract,
+            popen=lambda *args, **kwargs: process,
+            probe=lambda: {
+                "kind": "peers-touch-dev-server",
+                "endpoint": "http://127.0.0.1:4177",
+                "source": {
+                    "workspaceId": workspace_id(REPO_ROOT),
+                    "branch": "feature/dev-ui",
+                    "head": "a" * 40,
+                    "dirty": False,
+                },
+            },
+        )
+        provisioner._git_commit = lambda: "a" * 40
+        provisioner._git_workspace_digest = lambda: "clean"
+
+        manifest = provisioner.provision(PROGRESS_GATE_ID)
+        completed = provisioner.cleanup()
+
+        self.assertEqual(manifest.state, ProvisioningState.FIXTURE_READY)
+        self.assertEqual(manifest.clients[0].id, "peers-dev-fixture-browser")
+        self.assertEqual(completed, ("peers-dev-fixture-runtime",))
+        self.assertTrue(process.terminated)
 
 
 if __name__ == "__main__":

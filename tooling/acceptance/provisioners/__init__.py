@@ -35,7 +35,6 @@ from .native_tauri_embedded_webdriver import (
 from .native_tauri_current_profile import (
     NativeTauriCurrentProfileProvisioner,
 )
-from .peers_dev_fixture_browser import PeersDevFixtureBrowserProvisioner
 from .station_access_desktop_oauth_native import (
     StationAccessDesktopOAuthNativeProvisioner,
 )
@@ -78,7 +77,6 @@ _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ),
     NativeTauriEmbeddedWebDriverProvisioner.environment_id: NativeTauriEmbeddedWebDriverProvisioner,
     NativeTauriCurrentProfileProvisioner.environment_id: NativeTauriCurrentProfileProvisioner,
-    PeersDevFixtureBrowserProvisioner.environment_id: PeersDevFixtureBrowserProvisioner,
 }
 
 _RUNTIME_CELL_LIFECYCLES: dict[str, type[RuntimeCellLifecycle]] = {
@@ -162,7 +160,6 @@ __all__ = [
     "NativeDesktopWindowsProvisioner",
     "NativeTauriEmbeddedWebDriverProvisioner",
     "NativeTauriCurrentProfileProvisioner",
-    "PeersDevFixtureBrowserProvisioner",
     "get_provisioner",
     "get_runtime_cell_lifecycle",
 ]
