@@ -8,8 +8,10 @@ import json
 import os
 import shlex
 import socket
+import subprocess
 import sys
 import time
+import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -20,6 +22,7 @@ sys.path.insert(0, str(ROOT))
 from tooling.acceptance.core import ArtifactSession, load_runtime_manifest
 from tooling.acceptance.core.evidence_store import current_artifact_ref, source_identity
 from tooling.acceptance.gates.agent.external_runtime_fixture import (
+    external_runtime_environment,
     external_runtime_root,
 )
 from tooling.acceptance.gates.agent.external_runtime_oracle import (
@@ -31,9 +34,6 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
 )
 from tooling.acceptance.gates.agent.foundation_scenario_runner import (
     _build_client_manifest,
-)
-from tooling.acceptance.gates.agent.foundation_station_restart import (
-    restart_foundation_station,
 )
 from tooling.acceptance.gates.agent.home_command_center_candidate import (
     _authenticate,
@@ -80,6 +80,104 @@ def _runtime_manifest() -> dict[str, Any]:
         Path(value).expanduser().resolve(),
         AGENT_V2_EXTERNAL_RUNTIME_GATE,
     )
+
+
+def _station_container_id(deployment_environment: str) -> str:
+    transport, environment = reviewed_remote_transport(deployment_environment)
+    compose_project = environment.get(
+        "PT_ACCEPTANCE_COMPOSE_PROJECT",
+        "",
+    ).strip()
+    require(bool(compose_project), "Station Compose project is missing")
+    completed = transport.run_argv(
+        [
+            "bash",
+            "-lc",
+            (
+                "set -eu; docker ps --quiet "
+                f"--filter {shlex.quote(f'label=com.docker.compose.project={compose_project}')} "
+                f"--filter {shlex.quote('label=com.docker.compose.service=station')} "
+                "| sed -n '1p'"
+            ),
+        ],
+        timeout=30,
+        check=False,
+    )
+    require(
+        completed.returncode == 0 and bool(completed.stdout.strip()),
+        "P12 could not resolve the Station container",
+    )
+    return completed.stdout.strip()
+
+
+def _station_version(station_url: str) -> dict[str, Any]:
+    with urllib.request.urlopen(
+        f"{station_url.rstrip('/')}/app-meta/version",
+        timeout=10,
+    ) as response:
+        value = json.loads(response.read().decode("utf-8"))
+    require(isinstance(value, Mapping), "Station version response is invalid")
+    data = value.get("data")
+    return dict(data if isinstance(data, Mapping) else value)
+
+
+def _restart_external_runtime_station(
+    runtime_manifest: Mapping[str, Any],
+    profile_env: Mapping[str, str],
+) -> dict[str, Any]:
+    services = _mapping(runtime_manifest.get("services"), "runtime services")
+    station = _mapping(services.get("station"), "Station runtime")
+    station_url = str(station.get("endpoint") or "").rstrip("/")
+    deployment_environment = str(
+        station.get("deploymentEnvironment") or ""
+    ).strip()
+    run_id = str(runtime_manifest.get("runId") or "")
+    require(
+        bool(station_url and deployment_environment and run_id),
+        "P12 Station restart identity is incomplete",
+    )
+    before_container = _station_container_id(deployment_environment)
+    before_version = _station_version(station_url)
+    environment = os.environ.copy()
+    environment.update(profile_env)
+    environment.update(external_runtime_environment(run_id))
+    environment["PT_ACCEPTANCE_RUN_ID"] = f"{run_id}-restart"
+    started = time.monotonic()
+    completed = subprocess.run(
+        ["make", "station"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=1_800,
+        check=False,
+    )
+    require(
+        completed.returncode == 0,
+        "P12 Station redeployment failed: "
+        + (
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or "no output"
+        )[-4_000:],
+    )
+    after_container = _station_container_id(deployment_environment)
+    after_version = _station_version(station_url)
+    before_commit = str(before_version.get("build_commit") or "")
+    after_commit = str(after_version.get("build_commit") or "")
+    require(
+        bool(before_commit)
+        and before_commit == after_commit
+        and before_container != after_container,
+        "P12 Station redeployment did not replace the exact-source instance",
+    )
+    return {
+        "stationRestarted": True,
+        "beforeContainerIdHash": _hash(before_container),
+        "afterContainerIdHash": _hash(after_container),
+        "liveCommit": after_commit,
+        "durationMs": int((time.monotonic() - started) * 1000),
+    }
 
 
 def _audit_external_runtime(
@@ -274,9 +372,9 @@ def main() -> int:
                 "P12 preparation",
             )
             fixture = _fixture(preparation)
-            restart = restart_foundation_station(
+            restart = _restart_external_runtime_station(
                 runtime_manifest,
-                repo_root=ROOT,
+                profile_env,
             )
             pair.native.restart()
             pair.browser.restart()
