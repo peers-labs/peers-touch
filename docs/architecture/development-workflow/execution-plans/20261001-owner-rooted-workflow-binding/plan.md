@@ -1,6 +1,6 @@
 # Owner-Rooted Workflow Binding Hard Cut
 
-> **Status**: active
+> **Status**: completed
 > **Branch**: peers-dev-workflow
 > **Workspace ID**: dbd1913c8dd24d52
 > **Initial HEAD**: c8cca6796f5a6e0d632b1328319d2b794f6a5822
@@ -11,7 +11,7 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "DWF-OWNER-BINDING-HARD-CUT-20261001",
-  "status": "active",
+  "status": "completed",
   "binding": {
     "branch": "peers-dev-workflow",
     "workspaceId": "dbd1913c8dd24d52",
@@ -172,7 +172,7 @@
       "dependsOn": [
         "DWF-BIND01-OWNER-CHILD-CUT"
       ],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     }
   ],
