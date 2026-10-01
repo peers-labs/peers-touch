@@ -32,7 +32,7 @@
       "acceptance-infra-validation",
       "acceptance-plan-self",
       "acceptance-runtime-provisioning-self",
-      "dev-ui-browser-e2e",
+      "peers-dev-ui-browser-e2e",
       "peers-dev-product",
       "machine-dev-registry-self"
     ]
@@ -43,7 +43,6 @@
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
     "desktop-dev-runtime-isolation-static",
-    "dev-ui-browser-e2e",
     "development-workflow-control-plane",
     "machine-dev-registry-self",
     "peers-dev-product",
@@ -56,7 +55,6 @@
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
     "desktop-dev-runtime-isolation-static",
-    "dev-ui-browser-e2e",
     "development-workflow-control-plane",
     "machine-dev-registry-self",
     "peers-dev-product",
@@ -70,8 +68,8 @@
 
 Make `peers-dev-workflow` the only canonical owner of the usable Peers Dev
 product, preserve its stronger workflow safety contracts, support sequential
-Plan generations without Agent-created worktrees, and remove the erroneous
-`peers-dev-product` worktree only after canonical proof passes.
+Plan generations without Agent-created worktrees, and complete all canonical
+proof and local workflow cleanup without mutating sibling worktrees.
 
 ## Conflict Policy
 
