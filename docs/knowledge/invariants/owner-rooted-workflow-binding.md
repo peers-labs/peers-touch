@@ -53,9 +53,10 @@ unreleased binding for a worktree and never treats stale child history as
 ownership. Schema-v2 requests and receipts use only
 `completion-reviews-v2`; the pre-hard-cut namespace is not read or migrated.
 
-`PreCompact` writes one bounded current-lineage receipt. `PostCompact` must
-re-resolve the same binding, root, parent, assignment, Development Session,
-workspace, and execution root before context is restored.
+`PreCompact` writes one bounded receipt keyed by the current binding digest.
+`PostCompact` must re-resolve that exact binding, root, parent, assignment,
+Development Session, workspace, and execution root before context is restored.
+Concurrent OWNER, WORKER, and REVIEWER compactions never share a receipt slot.
 
 TRAE multi-root installations expose one descriptor-selected workspace
 bootstrap. Its location is not an authority hint. The first mutating tool event
@@ -95,6 +96,7 @@ authority because a timer elapsed.
 - A FINISHED review action cannot authorize work through an older receipt.
 - Pre-hard-cut Completion Review records cannot block current status or review.
 - Compact restoration fails when any persisted lineage field differs.
+- Concurrent lineage compactions preserve independent receipts.
 - A missing, seeded, or already-consumed installer action has no rollout
   authority.
 - Failed destructive reset leaves a `BLOCKED` installation receipt.

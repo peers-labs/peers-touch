@@ -646,7 +646,7 @@ interface WorkflowOwnerRelease {
 }
 ```
 
-Context compaction persists one bounded current-lineage receipt:
+Context compaction persists one bounded receipt per binding lineage:
 
 ```ts
 interface WorkflowCompactLineage {
@@ -666,9 +666,11 @@ interface WorkflowCompactLineage {
 }
 ```
 
-`PreCompact` atomically replaces this single receipt from the current live
-projection. `PostCompact` resolves the actor again and completes the receipt
-only when every lineage and workspace field is unchanged.
+`PreCompact` atomically replaces only the receipt keyed by the current
+`bindingDigest`. `PostCompact` resolves the actor again, loads that exact
+lineage receipt, and completes it only when every lineage and workspace field
+is unchanged. Concurrent OWNER, WORKER, and REVIEWER compactions therefore do
+not share a writable slot.
 
 OWNER release succeeds only when the exact rendered Anchor is observable in
 the assistant response or host transcript. A conflicting second release fails

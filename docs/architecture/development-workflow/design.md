@@ -289,12 +289,12 @@ The Kernel distinguishes identity from action:
 The Kernel does not mutate Plan, Task, declaration, Development Session,
 active-work, runtime, or evidence state. Its machine-local writes are limited
 to atomically published OWNER bindings, assignments, assignment claims, child
-bindings, child terminal receipts, one current compaction-lineage receipt,
-exact installer-action grants, the latest rendered Anchor receipt, and OWNER
-release receipt. OWNER liveness is never inferred from a generic TTL. Child liveness is
-`ASSIGNED | LEASED | TERMINAL`; an expired or terminal child is diagnostic
-history and cannot participate in current ownership or Completion Review
-selection.
+bindings, child terminal receipts, one current receipt per compacting binding
+lineage, exact installer-action grants, the latest rendered Anchor receipt, and
+OWNER release receipt. OWNER liveness is never inferred from a generic TTL.
+Child liveness is `ASSIGNED | LEASED | TERMINAL`; an expired or terminal child
+is diagnostic history and cannot participate in current ownership or Completion
+Review selection.
 
 Every injection contains the binding role, root/parent digests, binding digest,
 release state, execution root, subject roots, tool root and target roots.

@@ -142,7 +142,8 @@ verify:
   REVIEWER rather than enumerating worktree bindings, and reads only the current
   versioned review namespace;
 - OWNER publication uses atomic create-once semantics, and `PreCompact` /
-  `PostCompact` persist and verify the same complete binding lineage;
+  `PostCompact` persist and verify one receipt per complete binding lineage so
+  concurrent OWNER/WORKER/REVIEWER compactions cannot overwrite each other;
 - TRAE multi-root integration installs one descriptor-selected bootstrap,
   never treats bootstrap location or folder order as execution authority, and
   rejects active-editor/task/target disagreement with
