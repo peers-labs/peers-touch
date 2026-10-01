@@ -32,6 +32,7 @@ from tooling.acceptance.provisioners.secure_content_remote_recipient import (
 )
 from tooling.development.secure_content import runtime_manifest
 from tooling.development.secure_content import runtime_owner as runtime_owner_module
+from tooling.development.secure_content.scenarios import desktop_pilot
 from tooling.development.secure_content.platform_runtime import (
     load_platform_runtime_contract,
 )
@@ -39,6 +40,7 @@ from tooling.development.secure_content.run import RunnerError, ScenarioContext
 from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
     REQUIRED_FIXTURE_CAPABILITIES,
+    W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
     W8_SCENARIOS,
     W9_RUNTIME_REUSE,
@@ -65,6 +67,7 @@ from tooling.development.secure_content.runtime_owner import (
     _prepare_mobile_private_content_keys,
     _prepare_private_content_keys,
     _parse_args,
+    _publish_result_generation,
     _publish_canonical_private_schema_attestation,
     _provision_runtime_accounts,
     _register_runtime_account,
@@ -75,6 +78,7 @@ from tooling.development.secure_content.runtime_owner import (
     _restart_lease,
     _runtime_cleanup_scope,
     _service_payload,
+    _stage_child_result,
     _stage_continuation_evidence,
     _start_client,
     _start_mobile_client,
@@ -85,7 +89,7 @@ from tooling.development.secure_content.runtime_owner import (
     _verify_live_canonical_private_schema_attestation,
     _wait_for_moments_snapshot,
     _write_browser_runtime_manifest_with_recovery,
-    _w8_receiver_ui_probe,
+    _receiver_ui_probe,
     main,
 )
 
@@ -129,6 +133,51 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_w7_desktop_suite_contract_excludes_other_runtimes(self) -> None:
+        self.assertEqual(
+            ("desktop-pre-restart", "desktop-continuity"),
+            W7_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(1, W7_RUNTIME_REUSE.max_provisioning_runs)
+        self.assertEqual(4, W7_RUNTIME_REUSE.max_client_launches)
+        self.assertEqual(0.5, W7_RUNTIME_REUSE.min_warm_reuse_rate)
+        self.assertTrue(W7_RUNTIME_REUSE.allow_client_replacement)
+
+        source = inspect.getsource(
+            W7RuntimeOwner.run_w7_desktop_suite
+        )
+        self.assertNotIn("BROWSER_", source)
+        self.assertNotIn('runtime_kind="browser"', source)
+        self.assertNotIn('runtime="browser"', source)
+        self.assertNotIn('runtime="mobile"', source)
+
+    def test_w7_desktop_suite_publishes_after_ui_proof_and_cleanup(
+        self,
+    ) -> None:
+        source = inspect.getsource(
+            W7RuntimeOwner.run_w7_desktop_suite
+        )
+
+        self.assertEqual(4, source.count("result_root=raw_result_root"))
+        self.assertNotRegex(
+            source,
+            r"(?<!final_)result_root=self\.result_root",
+        )
+        self.assertEqual(2, source.count("_receiver_ui_probe("))
+        self.assertEqual(2, source.count("_stage_child_result("))
+        self.assertLess(
+            source.index("_receiver_ui_probe("),
+            source.index("_stage_child_result("),
+        )
+        self.assertLess(
+            source.index("SuiteRuntimeAction.CLEANUP_COMPLETE"),
+            source.index("_publish_result_generation("),
+        )
+        self.assertNotIn(
+            'call("clearLocalState")',
+            inspect.getsource(desktop_pilot._execute),
+        )
+
     def test_w8_suite_contract_closes_all_scenarios(self) -> None:
         self.assertEqual(
             tuple(spec.scenario_id for spec in W8_SCENARIOS),
@@ -190,12 +239,12 @@ class RuntimeOwnerTest(unittest.TestCase):
             r"(?<!final_)result_root=self\.result_root",
         )
         self.assertLess(
-            execution_source.index("_w8_receiver_ui_probe("),
-            execution_source.index("_stage_w8_child_result("),
+            execution_source.index("_receiver_ui_probe("),
+            execution_source.index("_stage_child_result("),
         )
         self.assertLess(
             source.index("SuiteRuntimeAction.CLEANUP_COMPLETE"),
-            source.index("_publish_w8_result_generation("),
+            source.index("_publish_result_generation("),
         )
 
     def test_w8_result_generation_is_hidden_until_atomic_publication(
@@ -219,6 +268,8 @@ class RuntimeOwnerTest(unittest.TestCase):
             raw_result_path.write_text("{}\n", encoding="utf-8")
             runtime_manifest_path = root / "runtime.json"
             runtime_manifest_path.write_text("{}\n", encoding="utf-8")
+            supporting_path = raw_result_path.parent / "supporting.json"
+            supporting_path.write_text("{}\n", encoding="utf-8")
             ui_evidence_path = root / "receiver-visible-evidence.json"
             ui_evidence_path.write_text("{}\n", encoding="utf-8")
             result = {
@@ -228,6 +279,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "runId": run_id,
                 "artifactRefs": [
                     str(raw_result_path),
+                    str(supporting_path),
                     str(runtime_manifest_path),
                 ],
                 "result": "PASS",
@@ -237,12 +289,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "durationMs": 1000,
             }
 
-            staged = runtime_owner_module._stage_w8_child_result(
+            staged = _stage_child_result(
                 result,
+                workstream_id="W8",
                 raw_result_root=raw_root,
                 publish_root=publish_root,
                 final_result_root=final_root,
-                ui_evidence_path=ui_evidence_path,
+                ui_evidence_paths=(ui_evidence_path,),
             )
 
             final_result_path = final_root / relative
@@ -257,6 +310,18 @@ class RuntimeOwnerTest(unittest.TestCase):
                 str(ui_evidence_path.resolve()),
                 staged["artifactRefs"],
             )
+            final_supporting_path = (
+                final_root / relative.parent / supporting_path.name
+            )
+            self.assertIn(
+                str(final_supporting_path.resolve()),
+                staged["artifactRefs"],
+            )
+            self.assertTrue(
+                (
+                    publish_root / relative.parent / supporting_path.name
+                ).is_file()
+            )
             self.assertGreaterEqual(staged["durationMs"], 1000)
             self.assertNotEqual(
                 "2026-10-01T08:00:01.000Z",
@@ -269,7 +334,8 @@ class RuntimeOwnerTest(unittest.TestCase):
                 digest,
             )
 
-            published = runtime_owner_module._publish_w8_result_generation(
+            published = _publish_result_generation(
+                workstream_id="W8",
                 publish_root=publish_root,
                 final_result_root=final_root,
                 generation_id=COMMIT,
@@ -278,6 +344,73 @@ class RuntimeOwnerTest(unittest.TestCase):
             self.assertEqual((final_root / "W8" / COMMIT).resolve(), published)
             self.assertTrue(final_result_path.is_file())
             self.assertFalse((publish_root / "W8" / COMMIT).exists())
+
+    def test_w7_continuation_results_publish_as_one_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_root = root / "raw"
+            publish_root = root / "publish"
+            final_root = root / "final"
+            ui_evidence_paths: list[Path] = []
+            for scenario_id in (
+                "desktop-pre-restart",
+                "desktop-continuity",
+            ):
+                path = root / scenario_id / "receiver-visible-evidence.json"
+                path.parent.mkdir(parents=True)
+                path.write_text("{}\n", encoding="utf-8")
+                ui_evidence_paths.append(path)
+
+            for run_id, result in (
+                ("parent", "BLOCKED"),
+                ("parent-c-child", "PASS"),
+            ):
+                relative = (
+                    Path("W7")
+                    / COMMIT
+                    / "desktop"
+                    / run_id
+                    / "result.json"
+                )
+                raw_result_path = raw_root / relative
+                raw_result_path.parent.mkdir(parents=True)
+                raw_result_path.write_text("{}\n", encoding="utf-8")
+                staged = {
+                    "workstreamId": "W7",
+                    "generationId": COMMIT,
+                    "variantId": "desktop",
+                    "runId": run_id,
+                    "artifactRefs": [str(raw_result_path)],
+                    "result": result,
+                    "resultDigest": "0" * 64,
+                    "startedAt": "2026-10-01T08:00:00.000Z",
+                    "completedAt": "2026-10-01T08:00:01.000Z",
+                    "durationMs": 1000,
+                }
+                _stage_child_result(
+                    staged,
+                    workstream_id="W7",
+                    raw_result_root=raw_root,
+                    publish_root=publish_root,
+                    final_result_root=final_root,
+                    ui_evidence_paths=tuple(ui_evidence_paths),
+                )
+
+            generation_root = final_root / "W7" / COMMIT
+            self.assertFalse(generation_root.exists())
+
+            published = _publish_result_generation(
+                workstream_id="W7",
+                publish_root=publish_root,
+                final_result_root=final_root,
+                generation_id=COMMIT,
+            )
+
+            self.assertEqual(generation_root.resolve(), published)
+            self.assertEqual(
+                2,
+                len(tuple(generation_root.glob("desktop/*/result.json"))),
+            )
 
     def test_w8_result_is_not_staged_without_receiver_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -309,12 +442,15 @@ class RuntimeOwnerTest(unittest.TestCase):
                 RuntimeOwnerBlocked,
                 "receiver-visible evidence is unavailable",
             ):
-                runtime_owner_module._stage_w8_child_result(
+                _stage_child_result(
                     result,
+                    workstream_id="W8",
                     raw_result_root=raw_root,
                     publish_root=publish_root,
                     final_result_root=final_root,
-                    ui_evidence_path=root / "missing-ui-evidence.json",
+                    ui_evidence_paths=(
+                        root / "missing-ui-evidence.json",
+                    ),
                 )
 
             self.assertFalse((publish_root / relative).exists())
@@ -358,6 +494,18 @@ class RuntimeOwnerTest(unittest.TestCase):
         payload = json.loads(stderr.getvalue())
         self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
         self.assertEqual("runtime:secure-content-w8", payload["resource"])
+
+    def test_w7_desktop_suite_requires_complete_profile_closure(
+        self,
+    ) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            status = main(["run-w7-desktop-suite"])
+
+        self.assertEqual(2, status)
+        payload = json.loads(stderr.getvalue())
+        self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
+        self.assertEqual("runtime:secure-content-w7", payload["resource"])
 
     def test_w8_suite_cli_dispatches_once(self) -> None:
         with patch.object(
@@ -440,8 +588,9 @@ class RuntimeOwnerTest(unittest.TestCase):
             spec=SimpleNamespace(profile="w8-alice"),
         )
 
-        evidence = _w8_receiver_ui_probe(
+        evidence = _receiver_ui_probe(
             client,
+            workstream_id="W8",
             scenario_id="private-comment",
             action_text="parent",
             visible_text="comment",
@@ -489,7 +638,7 @@ class RuntimeOwnerTest(unittest.TestCase):
 
     def test_task_suite_entries_replace_public_leaf_commands(self) -> None:
         suite_arguments = {
-            "run-w7-suite": ["--profiles", "four,fiveArm"],
+            "run-w7-desktop-suite": ["--profiles", "four,fiveArm"],
             "run-w9-suite": [],
             "run-w2-suite": ["--profiles", "four,fiveArm"],
             "run-w10-suite": ["--profiles", "four,fiveArm"],
@@ -508,6 +657,9 @@ class RuntimeOwnerTest(unittest.TestCase):
                 with redirect_stderr(io.StringIO()):
                     with self.assertRaises(SystemExit):
                         _parse_args([action])
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                _parse_args(["run-w7-suite"])
 
     def test_task_suite_contracts_match_plan_tasks(self) -> None:
         plan_root = (
@@ -520,10 +672,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             / "tasks"
         )
         contracts = runtime_owner_module.TASK_SUITE_CONTRACTS
-        self.assertEqual(
-            {"W7", "W9", "W2", "W10", "W11", "W12"},
-            set(contracts),
-        )
+        self.assertEqual({"W7"}, set(contracts))
         for task_id, contract in contracts.items():
             with self.subTest(task_id=task_id):
                 text = (plan_root / f"{task_id}.md").read_text(
@@ -1032,8 +1181,8 @@ class RuntimeOwnerTest(unittest.TestCase):
 
     def test_task_suite_cli_dispatches_once(self) -> None:
         cases = {
-            "run-w7-suite": (
-                "run_w7_suite",
+            "run-w7-desktop-suite": (
+                "run_w7_desktop_suite",
                 ["--profiles", "four,fiveArm"],
             ),
             "run-w9-suite": ("run_w9_suite", []),
@@ -1098,10 +1247,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             / "20260913-secure-content-hard-cut"
             / "tasks"
         )
-        for task_id, contract in (
-            ("W8", W8_RUNTIME_REUSE),
-            ("W9", W9_RUNTIME_REUSE),
-        ):
+        for task_id, contract in (("W8", W8_RUNTIME_REUSE),):
             text = (plan_root / f"{task_id}.md").read_text(encoding="utf-8")
             match = re.search(
                 r"^```json\s*$\s*(\{.*\})\s*^```$",
@@ -2582,7 +2728,9 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_w7_refreshes_station_tunnels_at_long_running_boundaries(
         self,
     ) -> None:
-        source = inspect.getsource(W7RuntimeOwner.run_w7_suite)
+        source = inspect.getsource(
+            W7RuntimeOwner.run_w7_desktop_suite
+        )
         refreshes = [
             match.start()
             for match in re.finditer(
@@ -2591,7 +2739,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             )
         ]
 
-        self.assertEqual(3, len(refreshes))
+        self.assertEqual(2, len(refreshes))
         self.assertEqual(1, source.count("SuiteRuntimeLedger("))
         self.assertEqual(1, source.count("SuiteRuntimeAction.PROVISION"))
         self.assertLess(
@@ -2617,18 +2765,13 @@ class RuntimeOwnerTest(unittest.TestCase):
             source.index("desktop_result = execute_scenario("),
         )
         self.assertLess(
-            source.index("browser: dict[str, FoundationRuntimeClient]"),
-            refreshes[0],
+            source.index('scenario_id="desktop-pre-restart"'),
+            source.index('scenario_id="desktop-continuity"'),
         )
         self.assertNotIn("desktop.clear()", source)
         self.assertIn("work_item_id=WORK_ITEM_ID", source)
         self.assertIn("task_id=TASK_ID", source)
-        self.assertLess(
-            refreshes[2],
-            source.index(
-                "_activate_scenario_journey(self.repo_root, BROWSER_JOURNEY)"
-            ),
-        )
+        self.assertNotIn("BROWSER_JOURNEY", source)
 
     def test_mobile_station_binding_uses_canonical_origin_not_tunnel(self) -> None:
         session = MagicMock()
