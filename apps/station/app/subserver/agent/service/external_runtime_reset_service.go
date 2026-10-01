@@ -316,7 +316,7 @@ func (s *ExternalRuntimeService) prepareNewResetTx(
 		return err
 	}
 	created := &persistence.ExternalRuntimeResetCommand{
-		ID:                  generateID("runtime-reset"),
+		ID:                  generateID("reset"),
 		Ptid:                actorPTID,
 		ConversationID:      conversation.ID,
 		IdempotencyKey:      strings.TrimSpace(request.GetClientIdempotencyKey()),

@@ -214,7 +214,7 @@ func TestExternalRuntimeResetIsFencedIdempotentAndAdvancesOneEpoch(t *testing.T)
 	db := openExternalRuntimeServiceDB(t, "reset-idempotent")
 	seedExternalRuntimeConversation(t, db, "conversation-1", "session-old", 3, 8)
 	manager := &externalRuntimeManagerStub{available: true}
-	service := NewExternalRuntimeService(db, manager, nil, nil)
+	service := NewExternalRuntimeService(db, manager, nil, &ConversationService{})
 	request := &model.ResetConversationRuntimeRequest{
 		ConversationId:              "conversation-1",
 		ExpectedConversationVersion: 8,
@@ -245,6 +245,25 @@ func TestExternalRuntimeResetIsFencedIdempotentAndAdvancesOneEpoch(t *testing.T)
 	if len(manager.cleanupCalls) != 1 ||
 		manager.cleanupCalls[0].SessionID != "session-old" {
 		t.Fatalf("cleanup calls = %+v", manager.cleanupCalls)
+	}
+	var command persistence.ExternalRuntimeResetCommand
+	if err := db.Where("idempotency_key = ?", request.ClientIdempotencyKey).
+		First(&command).Error; err != nil {
+		t.Fatalf("load reset command: %v", err)
+	}
+	if len(command.ID) > 36 {
+		t.Fatalf("reset command id length = %d, want <= 36", len(command.ID))
+	}
+	var event persistence.TurnEvent
+	if err := db.Where(
+		"conversation_id = ? AND event_type = ?",
+		request.ConversationId,
+		"runtime_reset",
+	).First(&event).Error; err != nil {
+		t.Fatalf("load runtime reset event: %v", err)
+	}
+	if event.TurnID != command.ID {
+		t.Fatalf("runtime reset event turn id = %q, want %q", event.TurnID, command.ID)
 	}
 
 	replay, err := service.ResetConversationRuntime(
