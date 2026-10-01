@@ -301,6 +301,19 @@ export async function repairActiveWork(options, dependencies = {}) {
   });
 }
 
+export async function repairActiveWork(options, dependencies = {}) {
+  const input = await deriveActiveWorkInput(options, dependencies);
+  return repairActiveWorkRecord(input, {
+    home: options.home,
+    workspaceRoot: options.workspaceRoot ?? repoRoot,
+    expectedRevision: options.expectedRevision,
+    expectedRecordSha256: options.expectedRecordSha256,
+    now: options.now,
+    clock: options.clock,
+    lockTimeoutMs: options.lockTimeoutMs,
+  });
+}
+
 export function statusActiveWork(options = {}) {
   return readActiveWorkRecord({
     home: options.home,

@@ -42,6 +42,7 @@ pub(super) fn test_attachment_metadata(
         }),
         content_kind: AttachmentContentKind::File as i32,
         duration_ms: 0,
+        voice_note: None,
     }
 }
 

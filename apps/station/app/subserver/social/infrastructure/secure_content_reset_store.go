@@ -3211,7 +3211,7 @@ type canonicalIndexExpectation struct {
 }
 
 func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
-	for _, model := range dbmodel.SocialPrivateContentModels() {
+	for _, model := range canonicalPrivateSchemaModels() {
 		if err := validateCanonicalModelColumns(database, model, nil); err != nil {
 			return err
 		}
@@ -3227,6 +3227,11 @@ func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
 	}
 
 	return nil
+}
+
+func canonicalPrivateSchemaModels() []any {
+	models := append([]any(nil), dbmodel.SocialPrivateContentModels()...)
+	return append(models, &dbmodel.SocialReaction{})
 }
 
 func validateCanonicalModelColumns(
@@ -4856,8 +4861,9 @@ func canonicalPrivateSchemaDigest(database *gorm.DB) (string, error) {
 	if err := validateCanonicalPrivateContentSchema(database); err != nil {
 		return "", err
 	}
-	tables := make([]string, 0, len(dbmodel.SocialPrivateContentModels()))
-	for _, model := range dbmodel.SocialPrivateContentModels() {
+	models := canonicalPrivateSchemaModels()
+	tables := make([]string, 0, len(models))
+	for _, model := range models {
 		statement := &gorm.Statement{DB: database}
 		if err := statement.Parse(model); err != nil {
 			return "", resetError(

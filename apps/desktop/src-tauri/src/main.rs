@@ -620,6 +620,8 @@ fn main() {
             social_commands::social_get_followers,
             social_commands::social_get_following,
             social_commands::social_get_relationship,
+            social_commands::social_block_actor,
+            social_commands::social_unblock_actor,
             social_commands::social_circle_create,
             social_commands::social_circle_rename,
             social_commands::social_circle_delete,
@@ -636,8 +638,17 @@ fn main() {
             social::social_private_moment_recover,
             social::social_private_moment_purge,
             social::social_private_moments_teardown,
+            social::social_private_comments_bootstrap,
+            social::social_private_comment_stage,
+            social::social_private_comment_prepare,
+            social::social_private_comment_submit,
+            social::social_private_comments_list,
             #[cfg(feature = "acceptance-webdriver")]
             social::social_private_moments_acceptance_runtime_identity,
+            #[cfg(feature = "acceptance-webdriver")]
+            social::social_private_moments_acceptance_maintain_prekeys,
+            #[cfg(feature = "acceptance-webdriver")]
+            messaging_recovery::messaging_recovery_acceptance_create_revision,
             profile::profile_get,
             profile::peer_profile_get,
             profile::profile_update,
@@ -730,6 +741,18 @@ fn main() {
             capability_authority::agent_capability_binding_upsert,
             capability_authority::agent_capability_binding_delete,
             capability_authority::agent_capability_readiness,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_prepare,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_arm,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_wait,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_release,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_interrupt,
+            #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_cleanup,
             capability_authority::agent_connector_manifest_list,
             capability_authority::agent_knowledge_descriptor_create,
             capability_authority::agent_knowledge_descriptor_update,
@@ -1013,9 +1036,15 @@ fn main() {
             station::station_add,
             station::station_remove,
             station::station_probe,
+            realtime::group_call_join,
             messaging_commands::messaging_create_direct,
             messaging_commands::messaging_create_group,
             messaging_commands::messaging_membership_transition,
+            messaging_commands::messaging_update_conversation,
+            messaging_commands::messaging_update_member_authority,
+            messaging_commands::messaging_transfer_ownership,
+            messaging_commands::messaging_dissolve_conversation,
+            messaging_commands::messaging_leave_conversation,
             messaging_commands::messaging_submit_leave_intent,
             messaging_commands::messaging_list_leave_intents,
             messaging_commands::messaging_commit_authorized_leave,

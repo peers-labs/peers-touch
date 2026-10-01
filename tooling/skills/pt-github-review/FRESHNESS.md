@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-09-29
-covered_docs_hash: c1d5869698aab5871ce6ea227443848abadcdcff0f81671adccaff03a3ffe28e
+covered_docs_hash: 79accfa2189922ae8eebfacb3785d71e5eb3b691e13f374af76c1688305727cd
 
 covered_docs:
   - AGENTS.md
@@ -43,6 +43,17 @@ The review interface now accepts one range, path/depth, or PR selector and
 derives file classification, advisory signals, source identity, rubric hash,
 verdict fields, and per-file coverage. Reviewers submit semantic findings only;
 the source-bound and fail-closed requirements are unchanged.
+
+## 2026-09-29 Suite Runtime Review
+
+Acceptance Framework D-21 adds a closed, domain-neutral Suite Runtime contract
+for multi-scenario lifecycle reuse. Review must reject Scenario-owned build,
+deploy, account, client/device launch, storage, or login; Harness-only product
+proof; missing receiver assertions; unbounded launch counts; and incomplete
+cleanup. The new `pt-acceptance-pipeline-auditor`, Plan schema regressions,
+Suite Runtime unit tests, and operational invariant provide deterministic
+coverage. Existing GitHub Review severity and evidence rules remain valid, so
+no `pt-github-review/SKILL.md` or golden fixture change is required.
 
 ## 2026-09-28 Review
 

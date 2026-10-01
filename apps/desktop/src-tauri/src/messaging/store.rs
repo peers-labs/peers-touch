@@ -2819,6 +2819,7 @@ impl MessagingStore {
                             Box::new(error),
                         )
                     })?,
+                    voice_note: None,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -4563,6 +4564,7 @@ impl MessagingStore {
                                     Box::new(error),
                                 )
                             })?,
+                            voice_note: None,
                         },
                         local_cache_path: row.get(12)?,
                     })
@@ -5475,7 +5477,7 @@ impl MessagingStore {
         let mut conversation_statement = connection
             .prepare(
                 "SELECT conversation_id, authority_station_id, federation_id,
-                        kind, name, owner_ptid,
+                        kind, name, description, avatar_object_id, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms
                  FROM messaging_conversations
                  WHERE authority_station_id <> ''
@@ -5491,10 +5493,12 @@ impl MessagingStore {
                     row.get::<_, i32>(3)?,
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
-                    row.get::<_, i64>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, bool>(8)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, i64>(8)?,
                     row.get::<_, i64>(9)?,
+                    row.get::<_, bool>(10)?,
+                    row.get::<_, i64>(11)?,
                 ))
             })
             .map_err(|error| error.to_string())?
@@ -5527,13 +5531,15 @@ impl MessagingStore {
                 federation_id: row.2,
                 kind: row.3,
                 name: row.4,
-                owner_ptid: row.5,
+                description: row.5,
+                avatar_object_id: row.6,
+                owner_ptid: row.7,
                 member_ptids,
                 member_roles,
-                membership_epoch: row.6,
-                mls_epoch: row.7,
-                active: row.8,
-                updated_at_unix_ms: row.9,
+                membership_epoch: row.8,
+                mls_epoch: row.9,
+                active: row.10,
+                updated_at_unix_ms: row.11,
             });
         }
         let mut head_statement = connection
@@ -5723,6 +5729,7 @@ impl MessagingStore {
                             Box::new(error),
                         )
                     })?,
+                    voice_note: None,
                 };
                 Ok(RecoveryAttachmentMetadata {
                     message_id: row.get(0)?,
@@ -5823,16 +5830,18 @@ impl MessagingStore {
                 .execute(
                     "INSERT INTO messaging_conversations(
                         conversation_id, authority_station_id, federation_id,
-                        kind, name, owner_ptid,
+                        kind, name, description, avatar_object_id, owner_ptid,
                         membership_epoch, mls_epoch, active, updated_at_unix_ms,
                         recovery_ready
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1)",
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 1)",
                     params![
                         conversation.conversation_id,
                         conversation.authority_station_id,
                         conversation.federation_id,
                         conversation.kind,
                         conversation.name,
+                        conversation.description,
+                        conversation.avatar_object_id,
                         conversation.owner_ptid,
                         conversation.membership_epoch,
                         conversation.mls_epoch,
@@ -11477,6 +11486,7 @@ fn load_attachment_metadata(
                         Box::new(error),
                     )
                 })?,
+                voice_note: None,
             })
         })
         .map_err(|error| error.to_string())?
@@ -11553,6 +11563,7 @@ fn load_staged_attachment_metadata(
                             Box::new(error),
                         )
                     })?,
+                    voice_note: None,
                 })
             },
         )
@@ -14192,6 +14203,38 @@ impl MessagingSchemaBackend for RusqliteMessagingSchema<'_> {
     fn execute_batch(&self, sql: &str) -> Result<(), String> {
         self.0.execute_batch(sql).map_err(|error| error.to_string())
     }
+
+    fn table_columns(&self, table: &str) -> Result<Vec<String>, String> {
+        self.0
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .map_err(|error| error.to_string())?
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())
+    }
+
+    fn table_exists(&self, table: &str) -> Result<bool, String> {
+        self.0
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1
+                 )",
+                params![table],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    fn query_i64(&self, sql: &str) -> Result<i64, String> {
+        self.0
+            .query_row(sql, [], |row| row.get(0))
+            .map_err(|error| error.to_string())
+    }
+
+    fn migrate_legacy_attachment_rows(&self) -> Result<(), String> {
+        Err("legacy Mobile attachment metadata cannot exist in a Desktop profile".to_string())
+    }
 }
 
 fn migrate(connection: &Connection) -> Result<(), String> {
@@ -15566,6 +15609,8 @@ mod tests {
                 federation_id: "federation-1".to_string(),
                 kind: 1,
                 name: String::new(),
+                description: "Restored description".to_string(),
+                avatar_object_id: "oss://chat/restored-avatar".to_string(),
                 owner_ptid: "ptid:alice".to_string(),
                 member_ptids: vec!["ptid:alice".to_string(), "ptid:bob".to_string()],
                 member_roles: BTreeMap::from([

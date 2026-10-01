@@ -141,6 +141,8 @@ pub struct StoredMomentDraft {
     pub intent_sha256: [u8; 32],
     pub content_id: String,
     pub prepare_command_id: String,
+    pub mention_commitment_salt: Option<[u8; 32]>,
+    pub repost_commitment_salt: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -152,6 +154,8 @@ pub struct StoredCommentDraft {
     pub generation: u64,
     pub reply_to_comment_id: String,
     pub text: String,
+    pub mention_intent_json: String,
+    pub mention_commitment_salt: Option<[u8; 32]>,
     pub intent_sha256: [u8; 32],
     pub prepare_command_id: String,
     pub submit_command_id: Option<String>,
@@ -846,8 +850,9 @@ impl SecureContentStore {
             .execute(
                 "INSERT INTO secure_content_moment_drafts(
                     draft_id, draft_revision, intent_sha256, content_id,
-                    prepare_command_id, updated_at_unix_ms
-                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6)
+                    prepare_command_id, mention_commitment_salt,
+                    repost_commitment_salt, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(draft_id, draft_revision) DO NOTHING",
                 params![
                     candidate.draft_id,
@@ -855,6 +860,14 @@ impl SecureContentStore {
                     candidate.intent_sha256.as_slice(),
                     candidate.content_id,
                     candidate.prepare_command_id,
+                    candidate
+                        .mention_commitment_salt
+                        .as_ref()
+                        .map(|salt| salt.as_slice()),
+                    candidate
+                        .repost_commitment_salt
+                        .as_ref()
+                        .map(|salt| salt.as_slice()),
                     now_unix_ms(),
                 ],
             )
@@ -862,7 +875,8 @@ impl SecureContentStore {
         let stored = connection
             .query_row(
                 "SELECT draft_id, draft_revision, intent_sha256, content_id,
-                        prepare_command_id
+                        prepare_command_id, mention_commitment_salt,
+                        repost_commitment_salt
                  FROM secure_content_moment_drafts
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![
@@ -876,6 +890,14 @@ impl SecureContentStore {
                         intent_sha256: fixed_32(row.get(2)?, "draft intent hash")?,
                         content_id: row.get(3)?,
                         prepare_command_id: row.get(4)?,
+                        mention_commitment_salt: row
+                            .get::<_, Option<Vec<u8>>>(5)?
+                            .map(|value| fixed_32(value, "mention commitment salt"))
+                            .transpose()?,
+                        repost_commitment_salt: row
+                            .get::<_, Option<Vec<u8>>>(6)?
+                            .map(|value| fixed_32(value, "repost commitment salt"))
+                            .transpose()?,
                     })
                 },
             )
@@ -1124,10 +1146,10 @@ impl SecureContentStore {
                 .execute(
                     "INSERT INTO secure_content_comment_drafts(
                     draft_id, draft_revision, post_id, content_id,
-                    reply_to_comment_id, plaintext_text, intent_sha256,
-                    prepare_command_id, state, session_generation,
-                    updated_at_unix_ms
-                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                    reply_to_comment_id, plaintext_text, mention_intent_json,
+                    mention_commitment_salt, intent_sha256, prepare_command_id,
+                    state, session_generation, updated_at_unix_ms
+                 ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                  ON CONFLICT(draft_id, draft_revision) DO NOTHING",
                     params![
                         candidate.draft_id,
@@ -1136,6 +1158,11 @@ impl SecureContentStore {
                         candidate.content_id,
                         candidate.reply_to_comment_id,
                         candidate.text,
+                        candidate.mention_intent_json,
+                        candidate
+                            .mention_commitment_salt
+                            .as_ref()
+                            .map(|salt| salt.as_slice()),
                         candidate.intent_sha256.as_slice(),
                         candidate.prepare_command_id,
                         candidate.state as i64,
@@ -1151,6 +1178,7 @@ impl SecureContentStore {
         if stored.post_id != candidate.post_id
             || stored.reply_to_comment_id != candidate.reply_to_comment_id
             || stored.text != candidate.text
+            || stored.mention_intent_json != candidate.mention_intent_json
             || stored.intent_sha256 != candidate.intent_sha256
         {
             return Err("secure content Comment draft replay conflict".to_string());
@@ -1166,12 +1194,11 @@ impl SecureContentStore {
         self.connection()?
             .query_row(
                 "SELECT draft_id, draft_revision, post_id, content_id, generation,
-                        reply_to_comment_id, plaintext_text, intent_sha256,
-                        prepare_command_id, submit_command_id, plan_bytes,
-                        request_bytes, request_sha256, root_key,
-                        publication_state, session_generation, comment_id,
-                        state, error_code, retry_after_seconds,
-                        retry_not_before_unix_ms
+                        reply_to_comment_id, plaintext_text, mention_intent_json,
+                        mention_commitment_salt, intent_sha256, prepare_command_id,
+                        submit_command_id, plan_bytes, request_bytes, request_sha256,
+                        root_key, publication_state, session_generation, comment_id,
+                        state, error_code, retry_after_seconds, retry_not_before_unix_ms
                  FROM secure_content_comment_drafts
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![draft_id, to_i64(draft_revision, "Comment draft revision")?],
@@ -1186,12 +1213,11 @@ impl SecureContentStore {
         let mut statement = connection
             .prepare(
                 "SELECT draft_id, draft_revision, post_id, content_id, generation,
-                        reply_to_comment_id, plaintext_text, intent_sha256,
-                        prepare_command_id, submit_command_id, plan_bytes,
-                        request_bytes, request_sha256, root_key,
-                        publication_state, session_generation, comment_id,
-                        state, error_code, retry_after_seconds,
-                        retry_not_before_unix_ms
+                        reply_to_comment_id, plaintext_text, mention_intent_json,
+                        mention_commitment_salt, intent_sha256, prepare_command_id,
+                        submit_command_id, plan_bytes, request_bytes, request_sha256,
+                        root_key, publication_state, session_generation, comment_id,
+                        state, error_code, retry_after_seconds, retry_not_before_unix_ms
                  FROM secure_content_comment_drafts
                  ORDER BY updated_at_unix_ms DESC, draft_id",
             )
@@ -1387,12 +1413,11 @@ impl SecureContentStore {
         let draft = transaction
             .query_row(
                 "SELECT draft_id, draft_revision, post_id, content_id, generation,
-                        reply_to_comment_id, plaintext_text, intent_sha256,
-                        prepare_command_id, submit_command_id, plan_bytes,
-                        request_bytes, request_sha256, root_key,
-                        publication_state, session_generation, comment_id,
-                        state, error_code, retry_after_seconds,
-                        retry_not_before_unix_ms
+                        reply_to_comment_id, plaintext_text, mention_intent_json,
+                        mention_commitment_salt, intent_sha256, prepare_command_id,
+                        submit_command_id, plan_bytes, request_bytes, request_sha256,
+                        root_key, publication_state, session_generation, comment_id,
+                        state, error_code, retry_after_seconds, retry_not_before_unix_ms
                  FROM secure_content_comment_drafts
                  WHERE draft_id = ?1 AND draft_revision = ?2",
                 params![draft_id, to_i64(draft_revision, "Comment draft revision")?],
@@ -1497,6 +1522,7 @@ impl SecureContentStore {
             .execute(
                 "UPDATE secure_content_comment_drafts
                  SET publication_state = ?1, comment_id = ?2, plaintext_text = '',
+                     mention_intent_json = '[]', mention_commitment_salt = NULL,
                      state = ?3, error_code = 'COMMENT_READBACK_PENDING',
                      retry_after_seconds = NULL,
                      retry_not_before_unix_ms = NULL,
@@ -1565,6 +1591,7 @@ impl SecureContentStore {
             .execute(
                 "UPDATE secure_content_comment_drafts
                  SET publication_state = ?1, comment_id = ?2, plaintext_text = '',
+                     mention_intent_json = '[]', mention_commitment_salt = NULL,
                      state = ?3, error_code = NULL, retry_after_seconds = NULL,
                      retry_not_before_unix_ms = NULL,
                      updated_at_unix_ms = ?4
@@ -2564,23 +2591,27 @@ fn moment_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredMomentComm
 
 fn comment_draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCommentDraft> {
     let request_sha256 = row
-        .get::<_, Option<Vec<u8>>>(12)?
+        .get::<_, Option<Vec<u8>>>(14)?
         .map(|value| fixed_32(value, "Comment request hash"))
         .transpose()?;
     let root_key = row
-        .get::<_, Option<Vec<u8>>>(13)?
+        .get::<_, Option<Vec<u8>>>(15)?
         .map(|value| fixed_32(value, "Comment root key"))
         .transpose()?;
+    let mention_commitment_salt = row
+        .get::<_, Option<Vec<u8>>>(8)?
+        .map(|value| fixed_32(value, "Comment mention commitment salt"))
+        .transpose()?;
     let publication_state = row
-        .get::<_, Option<i64>>(14)?
+        .get::<_, Option<i64>>(16)?
         .map(PublicationState::try_from)
         .transpose()
         .map_err(conversion_error)?;
     let retry_after_seconds = row
-        .get::<_, Option<i64>>(19)?
+        .get::<_, Option<i64>>(21)?
         .map(|value| from_i64(value, "Comment retry after"))
         .transpose()?;
-    let retry_not_before_unix_ms = row.get::<_, Option<i64>>(20)?;
+    let retry_not_before_unix_ms = row.get::<_, Option<i64>>(22)?;
     Ok(StoredCommentDraft {
         draft_id: row.get(0)?,
         draft_revision: from_i64(row.get(1)?, "Comment draft revision")?,
@@ -2589,18 +2620,20 @@ fn comment_draft_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredCom
         generation: from_i64(row.get(4)?, "content generation")?,
         reply_to_comment_id: row.get(5)?,
         text: row.get(6)?,
-        intent_sha256: fixed_32(row.get(7)?, "Comment intent hash")?,
-        prepare_command_id: row.get(8)?,
-        submit_command_id: row.get(9)?,
-        plan_bytes: row.get(10)?,
-        request_bytes: row.get(11)?,
+        mention_intent_json: row.get(7)?,
+        mention_commitment_salt,
+        intent_sha256: fixed_32(row.get(9)?, "Comment intent hash")?,
+        prepare_command_id: row.get(10)?,
+        submit_command_id: row.get(11)?,
+        plan_bytes: row.get(12)?,
+        request_bytes: row.get(13)?,
         request_sha256,
         root_key,
         publication_state,
-        session_generation: from_i64(row.get(15)?, "session generation")?,
-        comment_id: row.get(16)?,
-        state: CommentState::try_from(row.get::<_, i64>(17)?).map_err(conversion_error)?,
-        error_code: row.get(18)?,
+        session_generation: from_i64(row.get(17)?, "session generation")?,
+        comment_id: row.get(18)?,
+        state: CommentState::try_from(row.get::<_, i64>(19)?).map_err(conversion_error)?,
+        error_code: row.get(20)?,
         retry_after_seconds,
         retry_not_before_unix_ms,
     })
@@ -2710,6 +2743,14 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 intent_sha256 BLOB NOT NULL CHECK(length(intent_sha256) = 32),
                 content_id TEXT NOT NULL,
                 prepare_command_id TEXT NOT NULL,
+                mention_commitment_salt BLOB CHECK(
+                    mention_commitment_salt IS NULL
+                    OR length(mention_commitment_salt) = 32
+                ),
+                repost_commitment_salt BLOB CHECK(
+                    repost_commitment_salt IS NULL
+                    OR length(repost_commitment_salt) = 32
+                ),
                 updated_at_unix_ms INTEGER NOT NULL,
                 PRIMARY KEY(draft_id, draft_revision)
              );
@@ -2727,6 +2768,11 @@ fn migrate(connection: &Connection) -> Result<(), String> {
                 content_id TEXT NOT NULL,
                 reply_to_comment_id TEXT NOT NULL,
                 plaintext_text TEXT NOT NULL,
+                mention_intent_json TEXT NOT NULL DEFAULT '[]',
+                mention_commitment_salt BLOB CHECK(
+                    mention_commitment_salt IS NULL
+                    OR length(mention_commitment_salt) = 32
+                ),
                 intent_sha256 BLOB NOT NULL CHECK(length(intent_sha256) = 32),
                 prepare_command_id TEXT NOT NULL,
                 submit_command_id TEXT UNIQUE,
@@ -2807,6 +2853,58 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             )
             .map_err(|error| error.to_string())?;
     }
+    let has_repost_commitment_salt = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(secure_content_moment_drafts)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns
+            .iter()
+            .any(|column| column == "repost_commitment_salt")
+    };
+    if !has_repost_commitment_salt {
+        connection
+            .execute(
+                "ALTER TABLE secure_content_moment_drafts
+                 ADD COLUMN repost_commitment_salt BLOB
+                 CHECK(
+                    repost_commitment_salt IS NULL
+                    OR length(repost_commitment_salt) = 32
+                 )",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let has_mention_commitment_salt = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(secure_content_moment_drafts)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns
+            .iter()
+            .any(|column| column == "mention_commitment_salt")
+    };
+    if !has_mention_commitment_salt {
+        connection
+            .execute(
+                "ALTER TABLE secure_content_moment_drafts
+                 ADD COLUMN mention_commitment_salt BLOB
+                 CHECK(
+                    mention_commitment_salt IS NULL
+                    OR length(mention_commitment_salt) = 32
+                 )",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
     let has_comment_retry_deadline = {
         let mut statement = connection
             .prepare("PRAGMA table_info(secure_content_comment_drafts)")
@@ -2825,6 +2923,45 @@ fn migrate(connection: &Connection) -> Result<(), String> {
             .execute(
                 "ALTER TABLE secure_content_comment_drafts
                  ADD COLUMN retry_not_before_unix_ms INTEGER",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let comment_draft_columns = {
+        let mut statement = connection
+            .prepare("PRAGMA table_info(secure_content_comment_drafts)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns
+    };
+    if !comment_draft_columns
+        .iter()
+        .any(|column| column == "mention_intent_json")
+    {
+        connection
+            .execute(
+                "ALTER TABLE secure_content_comment_drafts
+                 ADD COLUMN mention_intent_json TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    if !comment_draft_columns
+        .iter()
+        .any(|column| column == "mention_commitment_salt")
+    {
+        connection
+            .execute(
+                "ALTER TABLE secure_content_comment_drafts
+                 ADD COLUMN mention_commitment_salt BLOB
+                 CHECK(
+                    mention_commitment_salt IS NULL
+                    OR length(mention_commitment_salt) = 32
+                 )",
                 [],
             )
             .map_err(|error| error.to_string())?;
@@ -2962,6 +3099,8 @@ mod tests {
             intent_sha256: [intent_byte; 32],
             content_id: content_id.to_string(),
             prepare_command_id: "moment-prepare-1".to_string(),
+            mention_commitment_salt: None,
+            repost_commitment_salt: None,
         }
     }
 
@@ -2991,6 +3130,8 @@ mod tests {
             generation: 0,
             reply_to_comment_id: String::new(),
             text: "retained private Comment".to_string(),
+            mention_intent_json: "[]".to_string(),
+            mention_commitment_salt: None,
             intent_sha256: [3; 32],
             prepare_command_id: "comment-prepare-1".to_string(),
             submit_command_id: None,
@@ -3639,14 +3780,18 @@ mod tests {
     #[test]
     fn secure_content_moment_draft_reservation_reuses_content_identity() {
         let store = SecureContentStore::in_memory().unwrap();
-        let first = store
-            .reserve_moment_draft(&moment_draft("content-first", 3))
-            .unwrap();
-        let replay = store
-            .reserve_moment_draft(&moment_draft("content-candidate-ignored", 3))
-            .unwrap();
+        let mut first_candidate = moment_draft("content-first", 3);
+        first_candidate.mention_commitment_salt = Some([7; 32]);
+        first_candidate.repost_commitment_salt = Some([9; 32]);
+        let first = store.reserve_moment_draft(&first_candidate).unwrap();
+        let mut replay_candidate = moment_draft("content-candidate-ignored", 3);
+        replay_candidate.mention_commitment_salt = Some([6; 32]);
+        replay_candidate.repost_commitment_salt = Some([8; 32]);
+        let replay = store.reserve_moment_draft(&replay_candidate).unwrap();
 
         assert_eq!(first.content_id, "content-first");
+        assert_eq!(first.mention_commitment_salt, Some([7; 32]));
+        assert_eq!(first.repost_commitment_salt, Some([9; 32]));
         assert_eq!(replay, first);
         assert!(store
             .reserve_moment_draft(&moment_draft("content-other", 4))
@@ -3656,15 +3801,20 @@ mod tests {
     #[test]
     fn secure_content_comment_retry_preserves_plaintext_and_submission_identity() {
         let store = SecureContentStore::in_memory().unwrap();
-        let candidate = comment_draft();
+        let mut candidate = comment_draft();
+        candidate.mention_intent_json =
+            r#"[{"actor_ptid":"ptid:bob","offset":9,"length":3,"display":"Bob"}]"#.to_string();
+        candidate.mention_commitment_salt = Some([6; 32]);
         let draft = store.reserve_comment_draft(&candidate).unwrap();
         let mut replay_candidate = candidate.clone();
         replay_candidate.content_id = "ignored-new-content-id".to_string();
+        replay_candidate.mention_commitment_salt = Some([7; 32]);
         assert_eq!(
             store.reserve_comment_draft(&replay_candidate).unwrap(),
             draft,
         );
         assert_eq!(draft.state, CommentState::Editing);
+        assert_eq!(draft.mention_commitment_salt, Some([6; 32]));
         assert!(store
             .set_comment_draft_state(
                 &draft.draft_id,
@@ -3715,6 +3865,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(retained.text, "retained private Comment");
+        assert_eq!(retained.mention_intent_json, candidate.mention_intent_json);
+        assert_eq!(retained.mention_commitment_salt, Some([6; 32]));
         assert_eq!(retained.state, CommentState::RateLimited);
         assert_eq!(retained.retry_after_seconds, Some(17));
         assert!(retained
@@ -3753,6 +3905,8 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(reset.text, "retained private Comment");
+        assert_eq!(reset.mention_intent_json, candidate.mention_intent_json);
+        assert_eq!(reset.mention_commitment_salt, Some([6; 32]));
         assert_eq!(reset.content_id, "comment-content-retry");
         assert_eq!(reset.prepare_command_id, "comment-prepare-retry");
         assert_eq!(reset.state, CommentState::Editing);
@@ -3839,6 +3993,8 @@ mod tests {
             .unwrap();
         assert_eq!(posted.state, CommentState::Posted);
         assert!(posted.text.is_empty());
+        assert_eq!(posted.mention_intent_json, "[]");
+        assert!(posted.mention_commitment_salt.is_none());
         assert_eq!(posted.comment_id.as_deref(), Some("comment-1"));
     }
 

@@ -1,18 +1,22 @@
 from __future__ import annotations
 
+import hashlib
+import io
+import inspect
 import json
+import re
 import shutil
 import tempfile
 import threading
 import time
 import unittest
-from contextlib import ExitStack
+from contextlib import ExitStack, redirect_stderr
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Mapping
+from typing import Callable, Mapping
 from unittest.mock import MagicMock, call, patch
 
-from tooling.acceptance.core.errors import BlockedError
+from tooling.acceptance.core.errors import BlockedError, ProvisioningError
 from tooling.acceptance.fixtures.secure_content_w7 import (
     W7FixtureBinding,
     W7FixtureCapabilityHandler,
@@ -20,37 +24,65 @@ from tooling.acceptance.fixtures.secure_content_w7 import (
     W7_FIXTURE_OPERATIONS,
     W7_FIXTURE_OWNERS,
 )
+from tooling.acceptance.gates.agent.foundation_runtime_client import (
+    FoundationClientError,
+)
+from tooling.acceptance.provisioners.secure_content_remote_recipient import (
+    RemotePrivateRecipientProvisioner,
+)
 from tooling.development.secure_content import runtime_manifest
 from tooling.development.secure_content.run import RunnerError, ScenarioContext
 from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
     REQUIRED_FIXTURE_CAPABILITIES,
+    W8_RUNTIME_REUSE,
+    W8_SCENARIOS,
+    W9_RUNTIME_REUSE,
     RuntimeOwnerBlocked,
+    W8_REMOTE_RECIPIENT_CAPABILITY,
+    W8_REMOTE_RECIPIENT_OPERATION,
+    W8RemoteRecipientFixtureOwner,
+    W7RuntimeOwner,
+    _StationEndpoint,
     _activate_scenario_journey,
     _authenticate_running_client,
     _build_fixture_owner,
     _client_payload,
+    _close_fixture_action_channel,
     _continuation_run_id,
     _continuation_services,
     _copy_immutable,
     _error_message_with_cleanup,
+    _generate_mobile_recovery_phrase,
     _make_client,
     _manifest_payload,
     _open_station_tunnels,
     _prepare_accepted_friendship,
+    _prepare_mobile_private_content_keys,
+    _prepare_private_content_keys,
+    _parse_args,
     _publish_canonical_private_schema_attestation,
     _provision_runtime_accounts,
+    _register_runtime_account,
+    _require_mobile_private_runtime,
+    _require_mobile_write_admission,
+    _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
     _restart_lease,
     _runtime_cleanup_scope,
     _service_payload,
     _stage_continuation_evidence,
     _start_client,
+    _start_mobile_client,
     _stop_client_or_raise,
     _storage_identity,
     _validate_fixture,
+    _wait_for_mls_readiness,
     _verify_live_canonical_private_schema_attestation,
     _wait_for_moments_snapshot,
+    _write_browser_runtime_manifest_with_recovery,
+    _w8_receiver_ui_probe,
+    main,
 )
 
 
@@ -61,6 +93,7 @@ IDENTITY = {
     "head": COMMIT,
     "worktreeSetDigest": "7" * 64,
 }
+RECOVERY_PHRASE = " ".join((*("abandon",) * 23, "art"))
 
 
 def fixture_payload() -> dict[str, object]:
@@ -92,6 +125,694 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_w8_suite_contract_closes_all_scenarios(self) -> None:
+        self.assertEqual(
+            tuple(spec.scenario_id for spec in W8_SCENARIOS),
+            W8_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(
+            {
+                "comment",
+                "audience",
+                "subtype",
+                "object",
+                "delete-block",
+                "bounds",
+            },
+            {spec.variant_id for spec in W8_SCENARIOS},
+        )
+        self.assertEqual(1, W8_RUNTIME_REUSE.max_provisioning_runs)
+        self.assertEqual(4, W8_RUNTIME_REUSE.max_client_launches)
+        self.assertTrue(W8_RUNTIME_REUSE.require_attach_only_scenarios)
+        self.assertTrue(W8_RUNTIME_REUSE.require_receiver_visible_proof)
+        self.assertFalse(W8_RUNTIME_REUSE.allow_client_replacement)
+
+    def test_w8_suite_provisions_before_attach_only_scenario_loop(self) -> None:
+        source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
+        scenario_loop = source.index("for spec in W8_SCENARIOS:")
+        execution_loop = source.rindex("for spec in W8_SCENARIOS:")
+        execution_source = source[execution_loop:]
+
+        self.assertEqual(1, source.count("_provision_runtime_accounts("))
+        self.assertLess(
+            source.index("_provision_runtime_accounts("),
+            scenario_loop,
+        )
+        self.assertNotIn("_start_client(", source[scenario_loop:])
+        self.assertNotIn("_make_client(", source[scenario_loop:])
+        self.assertEqual(
+            1,
+            source.count("SuiteRuntimeAction.PROVISION"),
+        )
+        self.assertIn(
+            "SuiteRuntimeAction.CLEANUP_COMPLETE",
+            source,
+        )
+        self.assertLess(
+            execution_source.index("station_endpoints.refresh()"),
+            execution_source.index("SuiteRuntimeAction.SCENARIO_START"),
+        )
+
+    def test_w8_suite_cli_is_the_only_w8_entry(self) -> None:
+        self.assertEqual(
+            "run-w8-suite",
+            _parse_args(
+                [
+                    "run-w8-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                ]
+            ).action,
+        )
+        self.assertEqual(
+            "four,fiveArm",
+            _parse_args(
+                [
+                    "run-w8-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                ]
+            ).profiles,
+        )
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                _parse_args(["run-private-comment"])
+            with self.assertRaises(SystemExit):
+                _parse_args(["run-social-expansion"])
+
+    def test_w8_suite_requires_complete_profile_closure(
+        self,
+    ) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            status = main(["run-w8-suite"])
+
+        self.assertEqual(2, status)
+        payload = json.loads(stderr.getvalue())
+        self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
+        self.assertEqual("runtime:secure-content-w8", payload["resource"])
+
+    def test_w8_suite_cli_dispatches_once(self) -> None:
+        with patch.object(
+            W7RuntimeOwner,
+            "run_w8_suite",
+            return_value={
+                "status": "FUNCTIONAL_PASS",
+                "proofState": "UNPROVEN",
+            },
+        ) as run_suite:
+            status = main(
+                [
+                    "run-w8-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                ]
+            )
+
+        self.assertEqual(0, status)
+        run_suite.assert_called_once_with()
+
+    def test_w8_receiver_probe_binds_real_dom_action_and_assertion(
+        self,
+    ) -> None:
+        class Element:
+            def __init__(self, tag_name: str) -> None:
+                self.tag_name = tag_name
+                self.clicked = False
+
+            def click(self) -> None:
+                self.clicked = True
+
+            def is_displayed(self) -> bool:
+                return True
+
+        class Driver:
+            session_id = "webdriver-session"
+            current_url = "tauri://localhost/moments"
+
+            def __init__(self) -> None:
+                self.nav = Element("button")
+                self.action = Element("p")
+                self.comments = Element("button")
+                self.receiver = Element("p")
+                self.css_selectors: list[str] = []
+                self.xpath_selectors: list[str] = []
+
+            def find_elements(self, using: str, selector: str) -> list[Element]:
+                self.assert_locator(using)
+                if using == "css selector":
+                    self.css_selectors.append(selector)
+                    if 'data-pt-primary-nav="moments"' in selector:
+                        return [self.nav]
+                    if "data-moments-comments-toggle" in selector:
+                        return [self.comments]
+                if using == "xpath":
+                    self.xpath_selectors.append(selector)
+                    if "'parent'" in selector:
+                        return [self.action]
+                    if "'comment'" in selector:
+                        return [self.receiver]
+                return []
+
+            def execute_script(self, script: str, *arguments: object) -> object:
+                self.assert_locator("script")
+                if "scrollIntoView" not in script or len(arguments) != 1:
+                    raise AssertionError(
+                        "the probe must not return DOM elements from script"
+                    )
+                return None
+
+            @staticmethod
+            def assert_locator(using: str) -> None:
+                if using not in {"css selector", "xpath", "script"}:
+                    raise AssertionError(f"unexpected locator strategy: {using}")
+
+        driver = Driver()
+        client = SimpleNamespace(
+            driver=driver,
+            spec=SimpleNamespace(profile="w8-alice"),
+        )
+
+        evidence = _w8_receiver_ui_probe(
+            client,
+            scenario_id="private-comment",
+            action_text="parent",
+            visible_text="comment",
+            open_comments=True,
+        )
+
+        self.assertRegex(
+            evidence["actionResourceId"],
+            r"^dom-action:[0-9a-f]{24}$",
+        )
+        self.assertRegex(
+            evidence["receiverResourceId"],
+            r"^dom-receiver:[0-9a-f]{24}$",
+        )
+        self.assertEqual("webdriver-session", evidence["automationSessionId"])
+        self.assertTrue(driver.nav.clicked)
+        self.assertTrue(driver.action.clicked)
+        self.assertTrue(driver.comments.clicked)
+        self.assertEqual(
+            (
+                '[data-pt-primary-nav="moments"] button, '
+                '[data-pt-primary-nav="moments"] [role="button"]'
+            ),
+            driver.css_selectors[0],
+        )
+        action_selector = next(
+            selector
+            for selector in driver.xpath_selectors
+            if "'parent'" in selector
+        )
+        self.assertIn(
+            "[not(.//*[contains(string(.), 'parent')])]",
+            action_selector,
+        )
+        self.assertNotIn("[not(*)]", action_selector)
+
+    def test_w9_suite_contract_is_single_entry(self) -> None:
+        self.assertEqual(
+            ("ios", "android", "cross-platform"),
+            W9_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(1, W9_RUNTIME_REUSE.max_provisioning_runs)
+        self.assertEqual(6, W9_RUNTIME_REUSE.max_client_launches)
+        self.assertEqual("run-w9-suite", _parse_args(["run-w9-suite"]).action)
+
+    def test_suite_runtime_contracts_match_plan_tasks(self) -> None:
+        plan_root = (
+            Path(__file__).resolve().parents[3]
+            / "docs"
+            / "architecture"
+            / "secure-content"
+            / "execution-plans"
+            / "20260913-secure-content-hard-cut"
+            / "tasks"
+        )
+        for task_id, contract in (
+            ("W8", W8_RUNTIME_REUSE),
+            ("W9", W9_RUNTIME_REUSE),
+        ):
+            text = (plan_root / f"{task_id}.md").read_text(encoding="utf-8")
+            match = re.search(
+                r"^```json\s*$\s*(\{.*\})\s*^```$",
+                text,
+                re.MULTILINE,
+            )
+            self.assertIsNotNone(match)
+            task = json.loads(match.group(1))
+            self.assertEqual(contract.to_dict(), task["runtimeReuse"])
+
+    def test_platform_owner_cli_dispatches_without_manifest_argument(
+        self,
+    ) -> None:
+        parsed = _parse_args(["run-w2-ios", "--profiles", "four,fiveArm"])
+        self.assertEqual("run-w2-ios", parsed.action)
+        self.assertFalse(hasattr(parsed, "runtime_manifest"))
+
+        with patch.object(
+            W7RuntimeOwner,
+            "run_platform_action",
+            return_value={
+                "status": "FUNCTIONAL_PASS",
+                "proofState": "UNPROVEN",
+            },
+        ) as run_platform:
+            status = main(["run-w2-ios", "--profiles", "four,fiveArm"])
+
+        self.assertEqual(0, status)
+        self.assertEqual(
+            "run-w2-ios",
+            run_platform.call_args.args[0].action,
+        )
+
+    def test_platform_owner_cli_rejects_profile_selector_drift(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            status = main(
+                [
+                    "run-w2-ios",
+                    "--profiles",
+                    "four",
+                ]
+            )
+
+        self.assertEqual(2, status)
+        payload = json.loads(stderr.getvalue())
+        self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
+
+    def test_w8_remote_recipient_handle_is_opaque_and_action_bound(self) -> None:
+        actor_ptid = "did:peers:five-arm-actor"
+        owner = W8RemoteRecipientFixtureOwner(
+            source_checkpoint=COMMIT,
+            run_id="w8-remote-recipient",
+            actor_ptid=actor_ptid,
+            home_station_peer_id="five-arm-peer-id",
+            federation_id="federation-1",
+        )
+        manifest = owner.manifest()
+        encoded = json.dumps(manifest, sort_keys=True)
+        handle = manifest["handles"][0]
+
+        self.assertNotIn(actor_ptid, encoded)
+        self.assertNotIn("federation-1", encoded)
+        self.assertEqual(
+            W8_REMOTE_RECIPIENT_CAPABILITY,
+            handle["capability"],
+        )
+        self.assertEqual("actor-identity-provisioner", handle["owner"])
+
+        context, client = owner.open_action_channel(
+            workspace_id=IDENTITY["workspaceId"],
+            gate_id="sc-dj-social-expansion",
+            runtime_manifest_digests={"a" * 64},
+        )
+        try:
+            acknowledgement = client.invoke(
+                W8_REMOTE_RECIPIENT_CAPABILITY,
+                W8_REMOTE_RECIPIENT_OPERATION,
+                {
+                    "handleId": handle["opaque_id"],
+                    "expectedIdentityDigest": handle[
+                        "expected_identity_digest"
+                    ],
+                    "runtimeManifestDigest": "a" * 64,
+                    "actionPayload": {},
+                },
+                timeout_seconds=5,
+            )
+            outcome = acknowledgement["outcome"]
+            self.assertEqual(actor_ptid, outcome["actorPtid"])
+            self.assertEqual("fiveArm", outcome["profileId"])
+            self.assertEqual("station-five-arm", outcome["serviceId"])
+            self.assertEqual("federation-1", outcome["federationId"])
+            self.assertEqual(
+                hashlib.sha256(b"federation-1").hexdigest(),
+                outcome["federationIdSha256"],
+            )
+            self.assertEqual(
+                handle["expected_identity_digest"],
+                outcome["fixtureIdentityDigest"],
+            )
+            identity_projection = dict(outcome)
+            identity_projection.pop("fixtureIdentityDigest")
+            self.assertEqual(
+                handle["expected_identity_digest"],
+                runtime_manifest.canonical_digest(identity_projection),
+            )
+        finally:
+            _close_fixture_action_channel(context, client)
+
+    def test_w8_remote_recipient_is_created_and_bound_by_identity_provisioner(
+        self,
+    ) -> None:
+        registrations: list[tuple[str, str, str, str]] = []
+
+        def register(
+            station_url: str,
+            *,
+            role: str,
+            suffix: str,
+            password: str,
+        ) -> str:
+            registrations.append((station_url, role, suffix, password))
+            return "remote@testnet.local"
+
+        provisioner = RemotePrivateRecipientProvisioner(
+            source_checkpoint=COMMIT,
+            run_id="w8-provisioner",
+            station_url="https://five-arm.invalid",
+            password="fixture-password",
+            account_registrar=register,
+        )
+        self.assertEqual("remote@testnet.local", provisioner.account)
+        primary_client = object()
+        remote_client = object()
+        actions: list[tuple[object, str, Mapping[str, object]]] = []
+
+        def federation_action(
+            client: object,
+            method: str,
+            payload: Mapping[str, object],
+        ) -> Mapping[str, object]:
+            actions.append((client, method, payload))
+            if method == "joinAcceptanceFederation":
+                return {
+                    "federationId": "federation-1",
+                    "status": "active",
+                }
+            if method == "federationMemberStations":
+                if len(actions) == 1:
+                    return {"stationPeerIds": ["station-four-peer"]}
+                return {
+                    "stationPeerIds": [
+                        "station-five-arm-peer",
+                        "station-four-peer",
+                    ]
+                }
+            if method == "resolveFederatedActorIdentity":
+                return {
+                    "actorPtid": "ptid:five-arm",
+                    "federatedHandle": "@remote@five-arm.invalid",
+                    "homeStationPeerId": "station-five-arm-peer",
+                }
+            raise AssertionError(f"unexpected action {method}")
+
+        owner = provisioner.bind_identity(
+            primary_client=primary_client,
+            remote_client=remote_client,
+            identity_reader=lambda _client, _method: {
+                "actorPtid": "ptid:five-arm",
+                "federatedHandle": "@remote@five-arm.invalid",
+                "homeStationPeerId": "station-five-arm-peer",
+            },
+            authority_reader=lambda _client, _method: {
+                "federationEndpoint": "https://four.invalid",
+                "federationId": "federation-1",
+                "homeStationPeerId": "station-four-peer",
+            },
+            federation_action=federation_action,
+        )
+
+        self.assertEqual(1, len(registrations))
+        self.assertEqual(
+            [
+                (
+                    primary_client,
+                    "federationMemberStations",
+                    {"federationId": "federation-1"},
+                ),
+                (
+                    remote_client,
+                    "joinAcceptanceFederation",
+                    {
+                        "federationEndpoint": "https://four.invalid",
+                        "federationId": "federation-1",
+                    },
+                ),
+                (
+                    primary_client,
+                    "federationMemberStations",
+                    {"federationId": "federation-1"},
+                ),
+                (
+                    remote_client,
+                    "federationMemberStations",
+                    {"federationId": "federation-1"},
+                ),
+                (
+                    primary_client,
+                    "resolveFederatedActorIdentity",
+                    {"federatedHandle": "@remote@five-arm.invalid"},
+                ),
+            ],
+            actions,
+        )
+        self.assertEqual(
+            ("https://five-arm.invalid", "remote_recipient"),
+            registrations[0][:2],
+        )
+        self.assertEqual("", provisioner.account)
+        self.assertEqual(
+            "actor-identity-provisioner",
+            owner.manifest()["handles"][0]["owner"],
+        )
+
+    def test_w8_remote_recipient_reuses_an_existing_shared_federation(
+        self,
+    ) -> None:
+        provisioner = RemotePrivateRecipientProvisioner(
+            source_checkpoint=COMMIT,
+            run_id="w8-provisioner-existing-federation",
+            station_url="https://five-arm.invalid",
+            password="fixture-password",
+            account_registrar=lambda *_args, **_kwargs: (
+                "remote@testnet.local"
+            ),
+        )
+        actions: list[str] = []
+
+        def federation_action(
+            _client: object,
+            method: str,
+            _payload: Mapping[str, object],
+        ) -> Mapping[str, object]:
+            actions.append(method)
+            if method == "federationMemberStations":
+                return {
+                    "stationPeerIds": [
+                        "station-four-peer",
+                        "station-five-arm-peer",
+                    ],
+                }
+            if method == "resolveFederatedActorIdentity":
+                return {
+                    "actorPtid": "ptid:five-arm",
+                    "federatedHandle": "@remote@five-arm.invalid",
+                    "homeStationPeerId": "station-five-arm-peer",
+                }
+            raise AssertionError(f"unexpected action {method}")
+
+        provisioner.bind_identity(
+            primary_client=object(),
+            remote_client=object(),
+            identity_reader=lambda _client, _method: {
+                "actorPtid": "ptid:five-arm",
+                "federatedHandle": "@remote@five-arm.invalid",
+                "homeStationPeerId": "station-five-arm-peer",
+            },
+            authority_reader=lambda _client, _method: {
+                "federationEndpoint": "https://four.invalid",
+                "federationId": "federation-1",
+                "homeStationPeerId": "station-four-peer",
+            },
+            federation_action=federation_action,
+        )
+
+        self.assertNotIn("joinAcceptanceFederation", actions)
+
+    def test_w8_remote_recipient_rejects_mismatched_primary_resolution(
+        self,
+    ) -> None:
+        provisioner = RemotePrivateRecipientProvisioner(
+            source_checkpoint=COMMIT,
+            run_id="w8-provisioner-mismatch",
+            station_url="https://five-arm.invalid",
+            password="fixture-password",
+            account_registrar=lambda *_args, **_kwargs: (
+                "remote@testnet.local"
+            ),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "does not match the fiveArm Actor identity",
+        ):
+            provisioner.bind_identity(
+                primary_client=object(),
+                remote_client=object(),
+                identity_reader=lambda _client, _method: {
+                    "actorPtid": "ptid:five-arm",
+                    "federatedHandle": "@remote@five-arm.invalid",
+                    "homeStationPeerId": "station-five-arm-peer",
+                },
+                authority_reader=lambda _client, _method: {
+                    "federationEndpoint": "https://four.invalid",
+                    "federationId": "federation-1",
+                    "homeStationPeerId": "station-four-peer",
+                },
+                federation_action=lambda _client, method, _payload: (
+                    {
+                        "actorPtid": "ptid:unexpected",
+                        "federatedHandle": "@remote@five-arm.invalid",
+                        "homeStationPeerId": "station-five-arm-peer",
+                    }
+                    if method == "resolveFederatedActorIdentity"
+                    else {
+                        "stationPeerIds": [
+                            "station-four-peer",
+                            "station-five-arm-peer",
+                        ],
+                    }
+                ),
+            )
+
+    def test_w8_private_content_keys_require_published_prekeys(self) -> None:
+        client = SimpleNamespace(spec=SimpleNamespace(profile="alice"))
+        with patch(
+            "tooling.development.secure_content.runtime_owner._fixture_harness",
+            return_value={
+                "actorPtid": "ptid:alice",
+                "recoveryPreKeyAvailable": 1,
+            },
+        ) as harness:
+            _prepare_private_content_keys(client)
+        harness.assert_called_once_with(
+            client,
+            "prepareHistoricalRecoveryEpoch",
+        )
+
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._fixture_harness",
+                return_value={
+                    "actorPtid": "ptid:alice",
+                    "recoveryPreKeyAvailable": 0,
+                },
+            ),
+            self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "could not resolve private-content-prekey-availability",
+            ),
+        ):
+            _prepare_private_content_keys(client)
+
+    def test_w8_remote_recipient_waits_for_mls_keypackage(self) -> None:
+        client = MagicMock()
+        client.spec = SimpleNamespace(profile="fiveArm")
+        client.harness_namespace = "moments"
+        states = iter(
+            (
+                {
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "remote-device",
+                    "active": False,
+                    "availableKeyPackages": 0,
+                },
+                {
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "remote-device",
+                    "active": True,
+                    "availableKeyPackages": 0,
+                },
+                {
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "remote-device",
+                    "active": True,
+                    "availableKeyPackages": 1,
+                },
+            )
+        )
+        observed_namespaces: list[str] = []
+
+        def harness(
+            _method: str,
+            _payload: Mapping[str, object],
+            *,
+            timeout: float,
+        ) -> Mapping[str, object]:
+            self.assertEqual(15, timeout)
+            observed_namespaces.append(client.harness_namespace)
+            return next(states)
+
+        def immediate_wait(
+            predicate: Callable[[], Mapping[str, object] | None],
+            description: str,
+            *,
+            timeout: float,
+            interval: float,
+        ) -> Mapping[str, object]:
+            self.assertIn("MLS KeyPackage inventory", description)
+            self.assertEqual(120, timeout)
+            self.assertEqual(1, interval)
+            for _ in range(3):
+                result = predicate()
+                if result:
+                    return result
+            raise AssertionError("MLS readiness did not converge")
+
+        client.harness.side_effect = harness
+        with patch(
+            "tooling.development.secure_content.runtime_owner.wait_until",
+            side_effect=immediate_wait,
+        ):
+            result = _wait_for_mls_readiness(client)
+
+        self.assertEqual(1, result["availableKeyPackages"])
+        self.assertEqual(["chat", "chat", "chat"], observed_namespaces)
+        self.assertEqual("moments", client.harness_namespace)
+        self.assertEqual(
+            [call("mlsReadiness", {}, timeout=15)] * 3,
+            client.harness.call_args_list,
+        )
+
+    def test_w8_remote_recipient_mls_readiness_fails_closed(self) -> None:
+        client = SimpleNamespace(spec=SimpleNamespace(profile="fiveArm"))
+
+        def fail_wait(
+            predicate: Callable[[], Mapping[str, object] | None],
+            _description: str,
+            *,
+            timeout: float,
+            interval: float,
+        ) -> None:
+            self.assertEqual(120, timeout)
+            self.assertEqual(1, interval)
+            self.assertIsNone(predicate())
+            raise FoundationClientError("timed out")
+
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._chat_harness",
+                return_value={
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "remote-device",
+                    "active": True,
+                    "availableKeyPackages": 0,
+                },
+            ),
+            patch(
+                "tooling.development.secure_content.runtime_owner.wait_until",
+                side_effect=fail_wait,
+            ),
+            self.assertRaises(RuntimeOwnerBlocked) as raised,
+        ):
+            _wait_for_mls_readiness(client)
+
+        self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
+        self.assertEqual("fixture-mls:fiveArm", raised.exception.resource)
+
     def test_client_launch_uses_projected_runtime_source_commit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with (
@@ -217,6 +938,65 @@ class RuntimeOwnerTest(unittest.TestCase):
         urls = [call.args[0].full_url for call in open_request.call_args_list]
         self.assertEqual(4, urls.count("http://127.0.0.1:4101/actor/sign-up"))
         self.assertEqual(1, urls.count("http://127.0.0.1:4102/actor/sign-up"))
+
+    def test_runtime_account_name_is_unique_across_roles_and_runs(self) -> None:
+        response = MagicMock()
+        response.status = 201
+        response.read.return_value = b"{}"
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "urllib.request.urlopen",
+            return_value=response,
+        ) as open_request:
+            for role, suffix in (
+                ("browser_actor", "a" * 10),
+                ("browser_anonymous_bootstrap", "a" * 10),
+                ("browser_anonymous_bootstrap", "b" * 10),
+            ):
+                _register_runtime_account(
+                    "http://127.0.0.1:4101",
+                    role=role,
+                    suffix=suffix,
+                    password="password",
+                )
+
+        names = [
+            json.loads(item.args[0].data)["name"]
+            for item in open_request.call_args_list
+        ]
+        self.assertEqual(3, len(set(names)))
+        self.assertTrue(all(name.startswith("sc-") for name in names))
+        self.assertTrue(all(len(name) == 20 for name in names))
+
+    def test_runtime_account_search_uses_registered_preferred_username(
+        self,
+    ) -> None:
+        response = MagicMock()
+        response.status = 201
+        response.read.return_value = b"{}"
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "urllib.request.urlopen",
+            return_value=response,
+        ) as open_request:
+            account = _register_runtime_account(
+                "http://127.0.0.1:4101",
+                role="bob",
+                suffix="a" * 10,
+                password="password",
+            )
+
+        registered = json.loads(open_request.call_args.args[0].data)
+        self.assertEqual(
+            registered["name"],
+            _runtime_account_search_query(account, role="bob"),
+        )
 
     def test_accepted_friendship_uses_social_authority_flow(self) -> None:
         alice = MagicMock()
@@ -380,7 +1160,10 @@ class RuntimeOwnerTest(unittest.TestCase):
             profile="secure-content-desktop-alice"
         )
         client.harness.side_effect = (
-            RuntimeError("moments.acceptance.nativeRuntimeIdentityMissing"),
+            FoundationClientError(
+                "native-tauri harness snapshot failed: "
+                "moments.acceptance.nativeRuntimeIdentityMissing"
+            ),
             snapshot,
         )
 
@@ -399,6 +1182,93 @@ class RuntimeOwnerTest(unittest.TestCase):
             ],
             client.harness.call_args_list,
         )
+
+    def test_moments_readiness_retries_transient_browser_identity_gap(
+        self,
+    ) -> None:
+        snapshot = {
+            "platform": "browser",
+            "bootIdentitySha256": "2" * 64,
+        }
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec = SimpleNamespace(
+            profile="secure-content-browser-authenticated"
+        )
+        client.harness.side_effect = (
+            FoundationClientError(
+                "browser harness snapshot failed: "
+                "moments.acceptance.browserRuntimeIdentityMissing"
+            ),
+            snapshot,
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.harness_ready",
+            return_value=True,
+        ):
+            result = _wait_for_moments_snapshot(client)
+
+        self.assertEqual(snapshot, result)
+        self.assertEqual(2, client.harness.call_count)
+
+    def test_moments_readiness_retries_transient_script_timeout(self) -> None:
+        snapshot = {
+            "platform": "native",
+            "nativeRuntimeIdentitySha256": "1" * 64,
+        }
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec = SimpleNamespace(
+            profile="secure-content-desktop-eve",
+            runtime="native-tauri",
+        )
+        client.harness.side_effect = (
+            FoundationClientError(
+                "native-tauri harness snapshot failed: "
+                "Message: Script execution timed out"
+            ),
+            snapshot,
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.harness_ready",
+            return_value=True,
+        ):
+            result = _wait_for_moments_snapshot(client)
+
+        self.assertEqual(snapshot, result)
+        self.assertEqual(2, client.harness.call_count)
+
+    def test_moments_readiness_retries_transient_browser_platform(
+        self,
+    ) -> None:
+        snapshot = {
+            "platform": "browser",
+            "bootIdentitySha256": "2" * 64,
+        }
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec = SimpleNamespace(
+            profile="secure-content-browser-anonymous",
+            runtime="browser",
+        )
+        client.harness.side_effect = (
+            {
+                "platform": "unknown",
+                "bootIdentitySha256": "1" * 64,
+            },
+            snapshot,
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.harness_ready",
+            return_value=True,
+        ):
+            result = _wait_for_moments_snapshot(client)
+
+        self.assertEqual(snapshot, result)
+        self.assertEqual(2, client.harness.call_count)
 
     def test_moments_readiness_timeout_is_typed(self) -> None:
         client = MagicMock()
@@ -434,8 +1304,10 @@ class RuntimeOwnerTest(unittest.TestCase):
         }
         client = MagicMock()
         client.spec = SimpleNamespace(
-            profile="secure-content-desktop-alice"
+            profile="secure-content-desktop-alice",
+            runtime="native-tauri",
         )
+        client.harness_namespace = "agent"
 
         with (
             patch(
@@ -463,17 +1335,393 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         wait_for_snapshot.assert_called_once_with(client)
         self.assertEqual(snapshot, result)
+        self.assertEqual("agent", client.harness_namespace)
+
+    def test_start_client_converts_exhausted_driver_startup_to_typed_blocker(
+        self,
+    ) -> None:
+        client = MagicMock()
+        client.spec = SimpleNamespace(
+            profile="secure-content-desktop-alice",
+            runtime="native-tauri",
+        )
+        client.start.side_effect = FoundationClientError(
+            "timed out waiting for Native embedded WebDriver session"
+        )
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _start_client(
+                client,
+                account="alice@p.t",
+                password="1",
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertEqual(
+            "client:secure-content-desktop-alice",
+            raised.exception.resource,
+        )
+        self.assertIn(
+            "Native embedded WebDriver session",
+            str(raised.exception),
+        )
+        client.configure_station.assert_not_called()
+
+    def test_start_browser_client_completes_station_binding_after_authentication(
+        self,
+    ) -> None:
+        snapshot = {
+            "platform": "browser",
+            "nativeRuntimeIdentitySha256": "",
+        }
+        client = MagicMock()
+        client.spec = SimpleNamespace(
+            profile="secure-content-browser-authenticated",
+            runtime="browser",
+        )
+        events: list[str] = []
+        client.start.side_effect = lambda: events.append("start")
+        client.configure_station.side_effect = lambda: events.append(
+            "configure-station"
+        )
+
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_authenticate_running_client",
+                side_effect=lambda *_args, **_kwargs: events.append(
+                    "authenticate"
+                ),
+            ),
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_ensure_browser_station_binding",
+                side_effect=lambda *_args, **_kwargs: events.append(
+                    "complete-binding"
+                ),
+            ) as ensure_station_binding,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_wait_for_moments_snapshot",
+                return_value=snapshot,
+            ) as wait_for_snapshot,
+        ):
+            result = _start_client(
+                client,
+                account="alice@p.t",
+                password="1",
+            )
+
+        client.start.assert_called_once_with()
+        client.configure_station.assert_called_once_with()
+        ensure_station_binding.assert_called_once_with(client)
+        wait_for_snapshot.assert_called_once_with(client)
+        self.assertEqual(
+            ["start", "configure-station", "authenticate", "complete-binding"],
+            events,
+        )
+        self.assertEqual(snapshot, result)
+
+    def test_start_anonymous_browser_client_binds_then_clears_session(
+        self,
+    ) -> None:
+        authenticated_snapshot = {
+            "platform": "browser",
+            "authenticationState": "AUTHENTICATED",
+        }
+        anonymous_snapshot = {
+            "platform": "browser",
+            "authenticationState": "ANONYMOUS",
+            "nativeRuntimeIdentitySha256": "",
+        }
+        client = MagicMock()
+        client.spec = SimpleNamespace(
+            profile="secure-content-browser-anonymous",
+            runtime="browser",
+        )
+        client.harness_namespace = "agent"
+        events: list[str] = []
+        client.start.side_effect = lambda: events.append("start")
+        client.configure_station.side_effect = lambda: events.append(
+            "configure-station"
+        )
+        client.harness.side_effect = lambda *_args, **_kwargs: events.append(
+            "logout"
+        )
+
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_authenticate_running_client",
+                side_effect=lambda *_args, **_kwargs: events.append(
+                    "authenticate"
+                ),
+            ) as authenticate,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_ensure_browser_station_binding",
+                side_effect=lambda *_args, **_kwargs: events.append(
+                    "complete-binding"
+                ),
+            ) as ensure_station_binding,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_wait_for_moments_snapshot",
+                side_effect=(
+                    authenticated_snapshot,
+                    anonymous_snapshot,
+                ),
+            ) as wait_for_snapshot,
+        ):
+            result = _start_client(
+                client,
+                account=None,
+                password="1",
+                anonymous_binding_account="anonymous-bootstrap@p.t",
+            )
+
+        authenticate.assert_called_once_with(
+            client,
+            account="anonymous-bootstrap@p.t",
+            password="1",
+        )
+        ensure_station_binding.assert_called_once_with(client)
+        client.harness.assert_called_once_with("logout", timeout=120)
+        self.assertEqual(2, wait_for_snapshot.call_count)
+        self.assertEqual(
+            [
+                "start",
+                "configure-station",
+                "authenticate",
+                "complete-binding",
+                "logout",
+            ],
+            events,
+        )
+        self.assertEqual(anonymous_snapshot, result)
+
+    def test_browser_manifest_attachment_recovers_lost_harness_once(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            storage_root = root / "storage"
+            storage_root.mkdir()
+            output_path = root / "runtime.json"
+            old_driver = SimpleNamespace(
+                session_id="webdriver-old",
+                command_executor=SimpleNamespace(
+                    _client_config=SimpleNamespace(
+                        remote_server_addr="http://127.0.0.1:9515",
+                    ),
+                ),
+            )
+            new_driver = SimpleNamespace(
+                session_id="webdriver-new",
+                command_executor=SimpleNamespace(
+                    _client_config=SimpleNamespace(
+                        remote_server_addr="http://127.0.0.1:9516",
+                    ),
+                ),
+            )
+            client = MagicMock()
+            client.spec = SimpleNamespace(
+                profile="secure-content-browser-authenticated",
+                runtime="browser",
+                storage_root=storage_root,
+            )
+            client.harness_namespace = "agent"
+            client.driver = old_driver
+            client.restart.side_effect = lambda: setattr(
+                client,
+                "driver",
+                new_driver,
+            )
+            previous = {
+                "id": "secure-content-browser-authenticated",
+                "actor_role": "browser_actor",
+                "actor_role_digest": "a" * 64,
+                "runtime_kind": "browser",
+                "required_service_roles": [
+                    "station",
+                    "station-secondary",
+                ],
+                "service_bindings": {
+                    "station": {
+                        "service_id": "station-four",
+                        "required_kind": "station",
+                    },
+                    "station-secondary": {
+                        "service_id": "station-five-arm",
+                        "required_kind": "station",
+                    },
+                },
+                "storage_identity_digest": _storage_identity(storage_root),
+                "boot_identity": "1" * 64,
+                "session_generation": 1,
+            }
+            recovered_snapshot = {
+                "platform": "browser",
+                "actorPtidSha256": "a" * 64,
+                "bootIdentitySha256": "2" * 64,
+                "sessionGeneration": 2,
+            }
+            attachment_error = RunnerError(
+                "runtime client 'secure-content-browser-authenticated' "
+                "did not expose 'moments' acceptance harness"
+            )
+
+            with (
+                patch(
+                    "tooling.development.secure_content.runtime_owner."
+                    "write_attached_runtime_manifest",
+                    side_effect=(attachment_error, output_path),
+                ) as write_manifest,
+                patch(
+                    "tooling.development.secure_content.runtime_owner."
+                    "_wait_for_moments_snapshot",
+                    return_value=recovered_snapshot,
+                ) as wait_for_snapshot,
+            ):
+                result = _write_browser_runtime_manifest_with_recovery(
+                    manifest_payload={"clients": [previous]},
+                    output_path=output_path,
+                    journey_id=BROWSER_JOURNEY,
+                    sessions_by_client={previous["id"]: client},
+                    repo_root=root,
+                )
+
+        self.assertEqual(output_path, result)
+        client.restart.assert_called_once_with()
+        wait_for_snapshot.assert_called_once_with(client)
+        self.assertEqual("agent", client.harness_namespace)
+        self.assertEqual(2, write_manifest.call_count)
+        first_call, recovered_call = write_manifest.call_args_list
+        self.assertEqual(
+            "webdriver-old",
+            first_call.kwargs["automation_refs_by_client"][
+                previous["id"]
+            ]["session_id"],
+        )
+        self.assertEqual(
+            "webdriver-new",
+            recovered_call.kwargs["automation_refs_by_client"][
+                previous["id"]
+            ]["session_id"],
+        )
+        recovered_client = recovered_call.kwargs["manifest_payload"][
+            "clients"
+        ][0]
+        self.assertEqual(
+            previous["storage_identity_digest"],
+            recovered_client["storage_identity_digest"],
+        )
+        self.assertEqual("2" * 64, recovered_client["boot_identity"])
+        self.assertEqual(2, recovered_client["session_generation"])
+
+    def test_browser_manifest_attachment_recovery_is_bounded_per_client(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            storage_root = root / "storage"
+            storage_root.mkdir()
+            driver = SimpleNamespace(
+                session_id="webdriver",
+                command_executor=SimpleNamespace(
+                    _client_config=SimpleNamespace(
+                        remote_server_addr="http://127.0.0.1:9515",
+                    ),
+                ),
+            )
+            client = MagicMock()
+            client.spec = SimpleNamespace(
+                profile="secure-content-browser-authenticated",
+                runtime="browser",
+                storage_root=storage_root,
+            )
+            client.harness_namespace = "agent"
+            client.driver = driver
+            client.restart.side_effect = lambda: setattr(
+                client,
+                "driver",
+                SimpleNamespace(
+                    session_id="webdriver-recovered",
+                    command_executor=driver.command_executor,
+                ),
+            )
+            previous = {
+                "id": "secure-content-browser-authenticated",
+                "actor_role": "browser_actor",
+                "actor_role_digest": "a" * 64,
+                "service_bindings": {
+                    "station": {
+                        "service_id": "station-four",
+                        "required_kind": "station",
+                    },
+                },
+                "storage_identity_digest": _storage_identity(storage_root),
+            }
+            attachment_error = RunnerError(
+                "runtime client 'secure-content-browser-authenticated' "
+                "did not expose 'moments' acceptance harness"
+            )
+
+            with (
+                patch(
+                    "tooling.development.secure_content.runtime_owner."
+                    "write_attached_runtime_manifest",
+                    side_effect=(attachment_error, attachment_error),
+                ) as write_manifest,
+                patch(
+                    "tooling.development.secure_content.runtime_owner."
+                    "_wait_for_moments_snapshot",
+                    return_value={
+                        "actorPtidSha256": "a" * 64,
+                        "bootIdentitySha256": "2" * 64,
+                        "sessionGeneration": 2,
+                    },
+                ),
+                self.assertRaises(RuntimeOwnerBlocked) as raised,
+            ):
+                _write_browser_runtime_manifest_with_recovery(
+                    manifest_payload={"clients": [previous]},
+                    output_path=root / "runtime.json",
+                    journey_id=BROWSER_JOURNEY,
+                    sessions_by_client={previous["id"]: client},
+                    repo_root=root,
+                )
+
+        client.restart.assert_called_once_with()
+        self.assertEqual(2, write_manifest.call_count)
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn("one bounded", str(raised.exception))
 
     def test_station_tunnels_use_reviewed_profile_bindings_and_close(self) -> None:
         primary = MagicMock(local_port=4101)
         primary.is_alive.return_value = False
         secondary = MagicMock(local_port=4102)
         secondary.is_alive.return_value = False
+        renewed_primary = MagicMock(local_port=4101)
+        renewed_primary.is_alive.return_value = False
+        renewed_secondary = MagicMock(local_port=4102)
+        renewed_secondary.is_alive.return_value = False
+        primary_transport = MagicMock()
+        primary_transport.start_local_forward.return_value = renewed_primary
+        secondary_transport = MagicMock()
+        secondary_transport.start_local_forward.return_value = renewed_secondary
         with patch(
             "tooling.development.secure_content.runtime_owner."
             "open_reviewed_remote_tunnel",
             side_effect=(primary, secondary),
-        ) as open_tunnel:
+        ) as open_tunnel, patch(
+            "tooling.development.secure_content.runtime_owner."
+            "reviewed_remote_transport",
+            side_effect=(
+                (primary_transport, {}),
+                (secondary_transport, {}),
+            ),
+        ) as reviewed_transport:
             stack, endpoints = _open_station_tunnels(
                 (
                     (
@@ -481,6 +1729,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                         {
                             "PT_STATION_DEPLOY_ENV": "station-four",
                             "PT_STATION_PORT": "18080",
+                            "PT_STATION_URL": "https://four.example",
                         },
                     ),
                     (
@@ -488,18 +1737,27 @@ class RuntimeOwnerTest(unittest.TestCase):
                         {
                             "PT_STATION_DEPLOY_ENV": "station-five-arm",
                             "PT_STATION_PORT": "18080",
+                            "PT_STATION_URL": "https://five-arm.example",
                         },
                     ),
                 )
             )
+            endpoints.refresh()
             stack.close()
 
         self.assertEqual(
-            {
-                "station-four": "http://127.0.0.1:4101",
-                "station-five-arm": "http://127.0.0.1:4102",
-            },
-            endpoints,
+            _StationEndpoint(
+                transport_url="http://127.0.0.1:4101",
+                canonical_origin="https://four.example",
+            ),
+            endpoints["station-four"],
+        )
+        self.assertEqual(
+            _StationEndpoint(
+                transport_url="http://127.0.0.1:4102",
+                canonical_origin="https://five-arm.example",
+            ),
+            endpoints["station-five-arm"],
         )
         self.assertEqual(
             [
@@ -516,6 +1774,561 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         primary.stop.assert_called_once_with()
         secondary.stop.assert_called_once_with()
+        self.assertEqual(
+            [call("station-four"), call("station-five-arm")],
+            reviewed_transport.call_args_list,
+        )
+        primary_transport.start_local_forward.assert_called_once_with(
+            remote_port=18080,
+            local_port=4101,
+        )
+        secondary_transport.start_local_forward.assert_called_once_with(
+            remote_port=18080,
+            local_port=4102,
+        )
+        renewed_primary.stop.assert_called_once_with()
+        renewed_secondary.stop.assert_called_once_with()
+
+    def test_station_tunnel_refresh_failure_is_typed_and_cleanup_safe(
+        self,
+    ) -> None:
+        primary = MagicMock(local_port=4101)
+        primary.is_alive.return_value = False
+        transport = MagicMock()
+        transport.start_local_forward.side_effect = ProvisioningError(
+            "forward unavailable"
+        )
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "open_reviewed_remote_tunnel",
+            return_value=primary,
+        ), patch(
+            "tooling.development.secure_content.runtime_owner."
+            "reviewed_remote_transport",
+            return_value=(transport, {}),
+        ):
+            stack, endpoints = _open_station_tunnels(
+                (
+                    (
+                        "station-four",
+                        {
+                            "PT_STATION_DEPLOY_ENV": "station-four",
+                            "PT_STATION_PORT": "18080",
+                            "PT_STATION_URL": "https://four.example",
+                        },
+                    ),
+                )
+            )
+            with self.assertRaises(RuntimeOwnerBlocked) as raised:
+                endpoints.refresh()
+            stack.close()
+
+        self.assertEqual(
+            "SERVICE_TRANSPORT_UNAVAILABLE",
+            raised.exception.code,
+        )
+        self.assertIn("forward unavailable", str(raised.exception))
+        self.assertEqual(
+            "station-tunnel:station-four",
+            raised.exception.resource,
+        )
+        self.assertEqual(2, primary.stop.call_count)
+
+    def test_w7_refreshes_station_tunnels_at_long_running_boundaries(
+        self,
+    ) -> None:
+        source = inspect.getsource(W7RuntimeOwner.run)
+        refreshes = [
+            match.start()
+            for match in re.finditer(
+                re.escape("station_endpoints.refresh()"),
+                source,
+            )
+        ]
+
+        self.assertEqual(3, len(refreshes))
+        self.assertLess(
+            source.index("parent_path = write_attached_runtime_manifest("),
+            source.index("blocked_result_path: Path | None = None"),
+        )
+        self.assertLess(
+            source.index("blocked_result_path: Path | None = None"),
+            refreshes[0],
+        )
+        self.assertLess(
+            source.index("_stage_continuation_evidence("),
+            refreshes[1],
+        )
+        self.assertLess(
+            refreshes[1],
+            source.index("desktop_result = execute_scenario("),
+        )
+        self.assertLess(source.index("desktop.clear()"), refreshes[2])
+        self.assertLess(
+            refreshes[2],
+            source.index(
+                "_activate_scenario_journey(self.repo_root, BROWSER_JOURNEY)"
+            ),
+        )
+
+    def test_mobile_station_binding_uses_canonical_origin_not_tunnel(self) -> None:
+        session = MagicMock()
+        calls: list[tuple[str, Mapping[str, object]]] = []
+
+        def mobile_call(
+            _session: object,
+            action: str,
+            payload: Mapping[str, object] | None = None,
+            *,
+            sensitive_values: tuple[str, ...] = (),
+        ) -> Mapping[str, object]:
+            self.assertTrue(
+                not sensitive_values
+                or sensitive_values == (RECOVERY_PHRASE,)
+            )
+            request = dict(payload or {})
+            calls.append((action, request))
+            if action == "station.add":
+                return {"verifiedStationPeerId": "station-peer"}
+            if action == "access.submit" and request["kind"] == "start":
+                return {"decision": {"attemptId": "attempt-1"}}
+            if action == "access.submit" and request["kind"] == "login":
+                return {
+                    "session": {
+                        "actorPtid": "ptid:alice",
+                        "stationPeerId": "station-peer",
+                    }
+                }
+            if action == "lifecycle.restart":
+                return {"requested": True, "scope": "webview"}
+            if action == "lifecycle.scope.read":
+                return {
+                    "phase": "ACTIVE",
+                    "activeStationPeerId": "station-peer",
+                    "activeActorPtid": "ptid:alice",
+                }
+            if action == "moments.private.snapshot":
+                return {
+                    "active": True,
+                    "stationPeerId": "station-peer",
+                    "actorPtid": "ptid:alice",
+                    "errorMessage": None,
+                }
+            if action == "moments.private.storeRecoveryPhrase":
+                return {"stored": True, "recoveryEpoch": 1}
+            if action == "moments.private.reconcile":
+                return {
+                    "active": True,
+                    "report": {
+                        "endpointPrekeysAvailable": 100,
+                        "recoveryPrekeysAvailable": 100,
+                    },
+                }
+            if action == "recovery.snapshot":
+                return {
+                    "writeAdmission": {
+                        "open": True,
+                        "reason": None,
+                    },
+                }
+            if action == "build.identity":
+                return {
+                    "identity": {
+                        "sourceCommit": COMMIT,
+                        "workspaceState": "clean",
+                    }
+                }
+            raise AssertionError(f"unexpected action {action}")
+
+        endpoint = _StationEndpoint(
+            transport_url="http://127.0.0.1:4101",
+            canonical_origin="https://four.example",
+        )
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._mobile_call",
+                side_effect=mobile_call,
+            ),
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_generate_mobile_recovery_phrase",
+                return_value=RECOVERY_PHRASE,
+            ),
+        ):
+            actor_ptid, _scope, _build = _start_mobile_client(
+                session,
+                client_id="ios-alice",
+                account="alice@example.invalid",
+                password="password",
+                station_endpoint=endpoint,
+                station_runtime_identity="station-peer",
+                source_commit=COMMIT,
+                required_actions=("station.add",),
+            )
+
+        self.assertEqual("ptid:alice", actor_ptid)
+        self.assertEqual(
+            ("station.add", {"url": "https://four.example"}),
+            calls[0],
+        )
+        self.assertEqual(
+            [
+                "moments.private.snapshot",
+                "moments.private.storeRecoveryPhrase",
+                "moments.private.reconcile",
+                "recovery.snapshot",
+                "build.identity",
+            ],
+            [action for action, _payload in calls[-5:]],
+        )
+        self.assertEqual(
+            {
+                "recoveryPhrase": RECOVERY_PHRASE,
+                "recoveryEpoch": 1,
+            },
+            calls[-4][1],
+        )
+        self.assertNotIn(
+            RECOVERY_PHRASE,
+            json.dumps((actor_ptid, _scope, _build)),
+        )
+        self.assertNotIn(endpoint.transport_url, json.dumps(calls))
+
+    def test_mobile_recovery_phrase_matches_bip39_256_bit_vector(self) -> None:
+        phrase = _generate_mobile_recovery_phrase(bytes(32))
+
+        self.assertEqual(RECOVERY_PHRASE, phrase)
+        self.assertEqual(24, len(phrase.split()))
+
+    def test_mobile_private_content_keys_require_both_pools(self) -> None:
+        session = MagicMock()
+        session.call_action.side_effect = (
+            {"stored": True, "recoveryEpoch": 1},
+            {
+                "active": True,
+                "report": {
+                    "endpointPrekeysAvailable": 100,
+                    "recoveryPrekeysAvailable": 0,
+                },
+            },
+        )
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _prepare_mobile_private_content_keys(
+                session,
+                client_id="ios-alice",
+                recovery_phrase=RECOVERY_PHRASE,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn("recoveryPrekeysAvailable", str(raised.exception))
+        self.assertEqual(
+            [
+                call(
+                    "moments.private.storeRecoveryPhrase",
+                    {
+                        "recoveryPhrase": RECOVERY_PHRASE,
+                        "recoveryEpoch": 1,
+                    },
+                ),
+                call("moments.private.reconcile", {}),
+            ],
+            session.call_action.call_args_list,
+        )
+
+    def test_mobile_recovery_phrase_is_redacted_from_action_failure(
+        self,
+    ) -> None:
+        session = MagicMock(client_id="ios-alice")
+        session.call_action.side_effect = RuntimeError(
+            f"rejected {RECOVERY_PHRASE}"
+        )
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _prepare_mobile_private_content_keys(
+                session,
+                client_id="ios-alice",
+                recovery_phrase=RECOVERY_PHRASE,
+            )
+
+        self.assertNotIn(RECOVERY_PHRASE, str(raised.exception))
+        self.assertIn("[REDACTED]", str(raised.exception))
+
+    def test_mobile_private_runtime_retries_transient_inactive_snapshot(
+        self,
+    ) -> None:
+        session = MagicMock()
+        session.call_action.side_effect = (
+            {
+                "active": False,
+                "stationPeerId": None,
+                "actorPtid": None,
+                "errorPresent": False,
+            },
+            {
+                "active": True,
+                "stationPeerId": "station-peer",
+                "actorPtid": "ptid:alice",
+                "errorPresent": False,
+            },
+        )
+        now = [0.0]
+        sleeps: list[float] = []
+
+        def sleep(duration: float) -> None:
+            sleeps.append(duration)
+            now[0] += duration
+
+        snapshot = _require_mobile_private_runtime(
+            session,
+            client_id="ios-alice",
+            station_runtime_identity="station-peer",
+            actor_ptid="ptid:alice",
+            timeout_seconds=1.0,
+            poll_interval_seconds=0.25,
+            monotonic=lambda: now[0],
+            sleep=sleep,
+        )
+
+        self.assertTrue(snapshot["active"])
+        self.assertEqual([0.25], sleeps)
+        self.assertEqual(
+            [
+                call("moments.private.snapshot", {}),
+                call("moments.private.snapshot", {}),
+            ],
+            session.call_action.call_args_list,
+        )
+
+    def test_mobile_private_runtime_fails_immediately_on_sanitized_error(
+        self,
+    ) -> None:
+        session = MagicMock()
+        session.call_action.return_value = {
+            "active": False,
+            "stationPeerId": None,
+            "actorPtid": None,
+            "errorPresent": True,
+        }
+        sleep = MagicMock()
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _require_mobile_private_runtime(
+                session,
+                client_id="ios-alice",
+                station_runtime_identity="station-peer",
+                actor_ptid="ptid:alice",
+                timeout_seconds=60.0,
+                monotonic=lambda: 0.0,
+                sleep=sleep,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn("reported an activation failure", str(raised.exception))
+        session.call_action.assert_called_once_with(
+            "moments.private.snapshot",
+            {},
+        )
+        sleep.assert_not_called()
+
+    def test_mobile_private_runtime_rejects_active_stale_identity(self) -> None:
+        session = MagicMock()
+        session.call_action.return_value = {
+            "active": True,
+            "stationPeerId": "stale-station-peer",
+            "actorPtid": "ptid:alice",
+            "errorPresent": False,
+        }
+        sleep = MagicMock()
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _require_mobile_private_runtime(
+                session,
+                client_id="ios-alice",
+                station_runtime_identity="station-peer",
+                actor_ptid="ptid:alice",
+                monotonic=lambda: 0.0,
+                sleep=sleep,
+            )
+
+        self.assertEqual("STALE_CLIENT_IDENTITY", raised.exception.code)
+        sleep.assert_not_called()
+
+    def test_mobile_private_runtime_timeout_is_typed(self) -> None:
+        session = MagicMock()
+        session.call_action.return_value = {
+            "active": False,
+            "stationPeerId": None,
+            "actorPtid": None,
+            "errorPresent": False,
+        }
+        now = [0.0]
+        sleeps: list[float] = []
+
+        def sleep(duration: float) -> None:
+            sleeps.append(duration)
+            now[0] += duration
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _require_mobile_private_runtime(
+                session,
+                client_id="ios-alice",
+                station_runtime_identity="station-peer",
+                actor_ptid="ptid:alice",
+                timeout_seconds=0.5,
+                poll_interval_seconds=0.25,
+                monotonic=lambda: now[0],
+                sleep=sleep,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertEqual("client:ios-alice", raised.exception.resource)
+        self.assertIn("did not become active", str(raised.exception))
+        self.assertEqual([0.25, 0.25], sleeps)
+        self.assertEqual(3, session.call_action.call_count)
+
+    def test_mobile_write_admission_retries_until_open(self) -> None:
+        session = MagicMock()
+        session.call_action.side_effect = (
+            {
+                "writeAdmission": {
+                    "open": False,
+                    "reason": "session_refreshing",
+                },
+            },
+            {
+                "writeAdmission": {
+                    "open": True,
+                    "reason": None,
+                },
+            },
+        )
+        now = [0.0]
+        sleeps: list[float] = []
+
+        def sleep(duration: float) -> None:
+            sleeps.append(duration)
+            now[0] += duration
+
+        snapshot = _require_mobile_write_admission(
+            session,
+            client_id="ios-alice",
+            timeout_seconds=1.0,
+            poll_interval_seconds=0.25,
+            monotonic=lambda: now[0],
+            sleep=sleep,
+        )
+
+        self.assertTrue(snapshot["writeAdmission"]["open"])
+        self.assertEqual([0.25], sleeps)
+        self.assertEqual(
+            [
+                call("recovery.snapshot", {}),
+                call("recovery.snapshot", {}),
+            ],
+            session.call_action.call_args_list,
+        )
+
+    def test_mobile_write_admission_timeout_preserves_last_reason(self) -> None:
+        session = MagicMock()
+        session.call_action.return_value = {
+            "writeAdmission": {
+                "open": False,
+                "reason": "session_refreshing",
+            },
+        }
+        now = [0.0]
+        sleeps: list[float] = []
+
+        def sleep(duration: float) -> None:
+            sleeps.append(duration)
+            now[0] += duration
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _require_mobile_write_admission(
+                session,
+                client_id="ios-alice",
+                timeout_seconds=0.5,
+                poll_interval_seconds=0.25,
+                monotonic=lambda: now[0],
+                sleep=sleep,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertEqual("client:ios-alice", raised.exception.resource)
+        self.assertIn("session_refreshing", str(raised.exception))
+        self.assertEqual([0.25, 0.25], sleeps)
+        self.assertEqual(3, session.call_action.call_count)
+
+    def test_mobile_start_rejects_inactive_private_runtime_with_cause(
+        self,
+    ) -> None:
+        session = MagicMock()
+        calls: list[str] = []
+
+        def mobile_call(
+            _session: object,
+            action: str,
+            payload: Mapping[str, object] | None = None,
+        ) -> Mapping[str, object]:
+            request = dict(payload or {})
+            calls.append(action)
+            if action == "station.add":
+                return {"verifiedStationPeerId": "station-peer"}
+            if action == "access.submit" and request["kind"] == "start":
+                return {"decision": {"attemptId": "attempt-1"}}
+            if action == "access.submit" and request["kind"] == "login":
+                return {
+                    "session": {
+                        "actorPtid": "ptid:alice",
+                        "stationPeerId": "station-peer",
+                    }
+                }
+            if action == "lifecycle.restart":
+                return {"requested": True, "scope": "webview"}
+            if action == "lifecycle.scope.read":
+                return {
+                    "phase": "ACTIVE",
+                    "activeStationPeerId": "station-peer",
+                    "activeActorPtid": "ptid:alice",
+                }
+            if action == "moments.private.snapshot":
+                return {
+                    "active": False,
+                    "stationPeerId": None,
+                    "actorPtid": None,
+                    "errorPresent": True,
+                }
+            raise AssertionError(f"unexpected action {action}")
+
+        endpoint = _StationEndpoint(
+            transport_url="http://127.0.0.1:4101",
+            canonical_origin="http://station.example:18080",
+        )
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._mobile_call",
+                side_effect=mobile_call,
+            ),
+            self.assertRaises(RuntimeOwnerBlocked) as raised,
+        ):
+            _start_mobile_client(
+                session,
+                client_id="ios-alice",
+                account="alice@example.invalid",
+                password="password",
+                station_endpoint=endpoint,
+                station_runtime_identity="station-peer",
+                source_commit=COMMIT,
+                required_actions=("station.add",),
+            )
+
+        self.assertEqual(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            raised.exception.code,
+        )
+        self.assertIn("reported an activation failure", str(raised.exception))
+        self.assertNotIn("build.identity", calls)
 
     def test_station_tunnel_open_failure_preserves_primary_error(self) -> None:
         primary = MagicMock(local_port=4101)
@@ -542,6 +2355,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                             {
                                 "PT_STATION_DEPLOY_ENV": "station-four",
                                 "PT_STATION_PORT": "18080",
+                                "PT_STATION_URL": "https://four.example",
                             },
                         ),
                         (
@@ -549,6 +2363,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                             {
                                 "PT_STATION_DEPLOY_ENV": "station-five-arm",
                                 "PT_STATION_PORT": "18080",
+                                "PT_STATION_URL": "https://five-arm.example",
                             },
                         ),
                     )

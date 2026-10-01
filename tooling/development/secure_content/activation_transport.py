@@ -131,6 +131,7 @@ class ReviewedSchemaActivationTransport:
         *,
         budget_seconds: int,
     ) -> None:
+        self._select_profile(request, budget_seconds=budget_seconds)
         self._deploy_and_attest(request, budget_seconds=budget_seconds)
 
     def deploy(
@@ -414,6 +415,36 @@ class ReviewedSchemaActivationTransport:
             detail = (installed.stderr or installed.stdout)[-4000:].strip()
             raise ActivationTransportError(
                 f"service attestation installation failed: {detail}"
+            )
+
+    def _select_profile(
+        self,
+        request: Mapping[str, Any],
+        *,
+        budget_seconds: int,
+    ) -> None:
+        profile_id = _required(
+            request.get("profile_id"),
+            "profile_id",
+            pattern=IDENTIFIER,
+        )
+        command_environment = dict(os.environ)
+        command_environment["PT_STATION_LEASE_BUDGET_SECONDS"] = str(
+            budget_seconds
+        )
+        selected = self.command_runner(
+            ["make", "profile", f"PROFILE={profile_id}"],
+            cwd=self.repo_root,
+            env=command_environment,
+            capture_output=True,
+            text=True,
+            timeout=min(budget_seconds, 60),
+            check=False,
+        )
+        if selected.returncode != 0:
+            detail = (selected.stderr or selected.stdout)[-4000:].strip()
+            raise ActivationTransportError(
+                f"reviewed Station profile selection failed: {detail}"
             )
 
     def _profile(self, profile_id: str) -> dict[str, str]:

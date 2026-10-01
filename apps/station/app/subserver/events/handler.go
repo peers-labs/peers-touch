@@ -43,6 +43,8 @@ var signalKindMap = map[string]realtime.CallSignal_Kind{
 	"CALL_ACCEPT":  realtime.CallSignal_CALL_ACCEPT,
 	"CALL_REJECT":  realtime.CallSignal_CALL_REJECT,
 	"CALL_END":     realtime.CallSignal_CALL_END,
+	"ROOM_ACTIVE":  realtime.CallSignal_ROOM_ACTIVE,
+	"ROOM_ENDED":   realtime.CallSignal_ROOM_ENDED,
 }
 
 // Heartbeat cadence; see contract §2.4.

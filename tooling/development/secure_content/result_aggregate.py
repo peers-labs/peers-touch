@@ -40,6 +40,9 @@ class ChildSpec:
     journey_id: str
     profiles: frozenset[str]
     clients: frozenset[str]
+    allows_owner_continuation: bool = False
+    required_service_ids: frozenset[str] = frozenset()
+    required_fixture_owners: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,7 @@ SPECS: Mapping[str, AggregateSpec] = {
                         "secure-content-desktop-eve",
                     }
                 ),
+                allows_owner_continuation=True,
             ),
             "browser": ChildSpec(
                 "browser",
@@ -86,14 +90,21 @@ SPECS: Mapping[str, AggregateSpec] = {
                 "desktop",
                 "secure-content-w8",
                 "sc-dj-social-expansion",
-                frozenset({"four"}),
+                frozenset({"four", "fiveArm"}),
                 frozenset(
                     {
                         "secure-content-desktop-alice",
                         "secure-content-desktop-bob",
                         "secure-content-desktop-eve",
+                        "secure-content-desktop-remote-recipient",
                     }
                 ),
+                required_service_ids=frozenset(
+                    {"station-four", "station-five-arm"}
+                ),
+                required_fixture_owners={
+                    "remote-private-recipient": "actor-identity-provisioner",
+                },
             ),
             "comment": ChildSpec(
                 "desktop",
@@ -107,6 +118,63 @@ SPECS: Mapping[str, AggregateSpec] = {
                         "secure-content-desktop-eve",
                     }
                 ),
+                required_service_ids=frozenset({"station-four"}),
+            ),
+            "subtype": ChildSpec(
+                "desktop",
+                "secure-content-w8",
+                "sc-dj-social-expansion",
+                frozenset({"four"}),
+                frozenset(
+                    {
+                        "secure-content-desktop-alice",
+                        "secure-content-desktop-bob",
+                        "secure-content-desktop-eve",
+                    }
+                ),
+                required_service_ids=frozenset({"station-four"}),
+            ),
+            "object": ChildSpec(
+                "desktop",
+                "secure-content-w8",
+                "sc-dj-social-expansion",
+                frozenset({"four"}),
+                frozenset(
+                    {
+                        "secure-content-desktop-alice",
+                        "secure-content-desktop-bob",
+                        "secure-content-desktop-eve",
+                    }
+                ),
+                required_service_ids=frozenset({"station-four"}),
+            ),
+            "delete-block": ChildSpec(
+                "desktop",
+                "secure-content-w8",
+                "sc-dj-social-expansion",
+                frozenset({"four"}),
+                frozenset(
+                    {
+                        "secure-content-desktop-alice",
+                        "secure-content-desktop-bob",
+                        "secure-content-desktop-eve",
+                    }
+                ),
+                required_service_ids=frozenset({"station-four"}),
+            ),
+            "bounds": ChildSpec(
+                "desktop",
+                "secure-content-w8",
+                "sc-dj-social-expansion",
+                frozenset({"four"}),
+                frozenset(
+                    {
+                        "secure-content-desktop-alice",
+                        "secure-content-desktop-bob",
+                        "secure-content-desktop-eve",
+                    }
+                ),
+                required_service_ids=frozenset({"station-four"}),
             ),
         },
     ),
@@ -627,7 +695,21 @@ class ResultAggregateOwner:
             / variant
         )
         paths = sorted(base.glob("*/result.json"))
-        if len(paths) != 1:
+        if len(paths) == 1:
+            path = paths[0]
+            result = schema_activation.read_json_artifact(
+                path,
+                f"{workstream}/{variant} child result",
+            )
+        elif spec.allows_owner_continuation:
+            path, result = self._load_owner_continuation_child(
+                paths=paths,
+                workstream=workstream,
+                generation=generation,
+                variant=variant,
+                spec=spec,
+            )
+        else:
             raise AggregateError(
                 "RESULT_SET_INCOMPLETE",
                 (
@@ -635,11 +717,38 @@ class ResultAggregateOwner:
                     f"result, found {len(paths)}"
                 ),
             )
-        path = paths[0]
-        result = schema_activation.read_json_artifact(
-            path,
-            f"{workstream}/{variant} child result",
+        self._validate_product_child_identity(
+            result=result,
+            path=path,
+            workstream=workstream,
+            generation=generation,
+            variant=variant,
+            spec=spec,
+            expected_result="PASS",
         )
+        if "firstFailure" in result:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{workstream}/{variant} runtime binding is invalid",
+            )
+        digest = _validate_digest(
+            result,
+            "resultDigest",
+            label=f"{workstream}/{variant} child result",
+        )
+        return path, result, digest
+
+    def _validate_product_child_identity(
+        self,
+        *,
+        result: Mapping[str, Any],
+        path: Path,
+        workstream: str,
+        generation: str,
+        variant: str,
+        spec: ChildSpec,
+        expected_result: str,
+    ) -> None:
         expected = {
             "kind": RESULT_KIND,
             "taskId": workstream,
@@ -651,7 +760,7 @@ class ResultAggregateOwner:
             "journeyId": spec.journey_id,
             "runtime": spec.runtime,
             "verificationClass": "FUNCTIONAL_CHECK",
-            "result": "PASS",
+            "result": expected_result,
             "proofState": "UNPROVEN",
             "workspaceId": self.identity["workspaceId"],
             "sourceCommit": generation,
@@ -669,18 +778,289 @@ class ResultAggregateOwner:
             or not _is_sha256(result.get("fixtureManifestDigest"))
             or not isinstance(result.get("serviceIds"), list)
             or not result["serviceIds"]
-            or "firstFailure" in result
         ):
             raise AggregateError(
                 "CHILD_RESULT_INVALID",
                 f"{workstream}/{variant} runtime binding is invalid",
             )
-        digest = _validate_digest(
+        manifest = self._load_runtime_manifest(
             result,
-            "resultDigest",
-            label=f"{workstream}/{variant} child result",
+            label=f"{workstream}/{variant}",
         )
-        return path, result, digest
+        self._validate_runtime_manifest_binding(
+            result=result,
+            manifest=manifest,
+            manifest_path=Path(str(result["runtimeManifestRef"])).resolve(),
+            generation=generation,
+            label=f"{workstream}/{variant}",
+            spec=spec,
+        )
+
+    def _validate_runtime_manifest_binding(
+        self,
+        *,
+        result: Mapping[str, Any],
+        manifest: Mapping[str, Any],
+        manifest_path: Path,
+        generation: str,
+        label: str,
+        spec: ChildSpec,
+    ) -> None:
+        source = manifest.get("source")
+        services = manifest.get("services")
+        clients = manifest.get("clients")
+        if (
+            not isinstance(source, Mapping)
+            or source.get("commit") != generation
+            or not isinstance(services, Mapping)
+            or set(services) != set(result.get("serviceIds", ()))
+            or (
+                spec.required_service_ids
+                and set(services) != set(spec.required_service_ids)
+            )
+            or not isinstance(clients, list)
+            or {
+                str(client.get("id"))
+                for client in clients
+                if isinstance(client, Mapping)
+            }
+            != set(spec.clients)
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} runtime manifest service/client binding is invalid",
+            )
+
+        fixture_ref = manifest.get("fixture_manifest_ref")
+        fixture_digest = manifest.get("fixture_manifest_digest")
+        if (
+            not isinstance(fixture_ref, Mapping)
+            or not isinstance(fixture_ref.get("path"), str)
+            or not _is_sha256(fixture_ref.get("sha256"))
+            or not _is_sha256(fixture_digest)
+            or fixture_digest != result.get("fixtureManifestDigest")
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} fixture manifest binding is invalid",
+            )
+        fixture_candidate = (
+            manifest_path.parent / str(fixture_ref["path"])
+        )
+        if fixture_candidate.is_symlink():
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} fixture manifest path is invalid",
+            )
+        try:
+            fixture_path = fixture_candidate.resolve(strict=True)
+            if manifest_path.parent not in fixture_path.parents:
+                raise AggregateError(
+                    "CHILD_RESULT_INVALID",
+                    f"{label} fixture manifest path is invalid",
+                )
+            fixture_raw = fixture_path.read_bytes()
+        except OSError as error:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} fixture manifest is unavailable",
+            ) from error
+        fixture = schema_activation.read_json_artifact(
+            fixture_path,
+            f"{label} fixture manifest",
+        )
+        unsigned_fixture = dict(fixture)
+        persisted_fixture_digest = unsigned_fixture.pop(
+            "manifest_digest",
+            None,
+        )
+        if (
+            hashlib.sha256(fixture_raw).hexdigest() != fixture_ref["sha256"]
+            or persisted_fixture_digest != fixture_digest
+            or persisted_fixture_digest
+            != schema_activation.canonical_digest(unsigned_fixture)
+            or fixture.get("source_checkpoint") != generation
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} fixture manifest identity is invalid",
+            )
+
+        expected_owners = dict(spec.required_fixture_owners or {})
+        observed_owners = {
+            str(handle.get("capability")): str(handle.get("owner"))
+            for handle in fixture.get("handles", ())
+            if isinstance(handle, Mapping)
+        }
+        if any(
+            observed_owners.get(capability) != owner
+            for capability, owner in expected_owners.items()
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} fixture owner binding is invalid",
+            )
+
+    def _load_runtime_manifest(
+        self,
+        result: Mapping[str, Any],
+        *,
+        label: str,
+    ) -> Mapping[str, Any]:
+        reference = result.get("runtimeManifestRef")
+        if not isinstance(reference, str) or not Path(reference).is_absolute():
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} runtime manifest reference is invalid",
+            )
+        path = Path(reference)
+        if path.is_symlink():
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} runtime manifest must not be a symbolic link",
+            )
+        try:
+            resolved = path.resolve(strict=True)
+        except OSError as error:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} runtime manifest is unavailable",
+            ) from error
+        if self.result_root not in resolved.parents:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} runtime manifest escapes the result root",
+            )
+        manifest = schema_activation.read_json_artifact(
+            resolved,
+            f"{label} runtime manifest",
+        )
+        digest = manifest.get("manifest_digest")
+        unsigned = dict(manifest)
+        unsigned.pop("manifest_digest", None)
+        if (
+            not _is_sha256(digest)
+            or digest != result.get("runtimeManifestDigest")
+            or not hmac.compare_digest(
+                str(digest),
+                schema_activation.canonical_digest(unsigned),
+            )
+            or manifest.get("run_id") != result.get("runId")
+            or manifest.get("journey_id") != result.get("journeyId")
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{label} runtime manifest identity is invalid",
+            )
+        return manifest
+
+    def _load_owner_continuation_child(
+        self,
+        *,
+        paths: Sequence[Path],
+        workstream: str,
+        generation: str,
+        variant: str,
+        spec: ChildSpec,
+    ) -> tuple[Path, Mapping[str, Any]]:
+        if len(paths) != 2:
+            raise AggregateError(
+                "RESULT_SET_INCOMPLETE",
+                (
+                    f"{workstream}/{variant} requires one terminal child or "
+                    "one blocked predecessor plus one passing continuation, "
+                    f"found {len(paths)}"
+                ),
+            )
+        candidates = [
+            (
+                path,
+                schema_activation.read_json_artifact(
+                    path,
+                    f"{workstream}/{variant} continuation result",
+                ),
+            )
+            for path in paths
+        ]
+        passed = [
+            candidate
+            for candidate in candidates
+            if candidate[1].get("result") == "PASS"
+        ]
+        blocked = [
+            candidate
+            for candidate in candidates
+            if candidate[1].get("result") == "BLOCKED"
+        ]
+        if len(passed) != 1 or len(blocked) != 1:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{workstream}/{variant} continuation result set is ambiguous",
+            )
+        parent_path, parent = blocked[0]
+        child_path, child = passed[0]
+        self._validate_product_child_identity(
+            result=parent,
+            path=parent_path,
+            workstream=workstream,
+            generation=generation,
+            variant=variant,
+            spec=spec,
+            expected_result="BLOCKED",
+        )
+        first_failure = parent.get("firstFailure")
+        if (
+            not isinstance(first_failure, Mapping)
+            or first_failure.get("kind") != "BLOCKED_RUNTIME_ACTION_REQUIRED"
+            or first_failure.get("retryable") is not True
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{workstream}/{variant} predecessor is not a restart boundary",
+            )
+        _validate_digest(
+            parent,
+            "resultDigest",
+            label=f"{workstream}/{variant} predecessor result",
+        )
+        parent_manifest = self._load_runtime_manifest(
+            parent,
+            label=f"{workstream}/{variant} predecessor",
+        )
+        child_manifest = self._load_runtime_manifest(
+            child,
+            label=f"{workstream}/{variant} continuation",
+        )
+        continuation = child_manifest.get("continuation")
+        if not isinstance(continuation, Mapping):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{workstream}/{variant} continuation lineage is missing",
+            )
+        restart_request_id = continuation.get("restart_request_id")
+        if not isinstance(restart_request_id, str) or not restart_request_id:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{workstream}/{variant} continuation lineage is invalid",
+            )
+        parent_run_id = parent.get("runId")
+        expected_child_run_id = (
+            f"{parent_run_id}-c-"
+            + hashlib.sha256(
+                f"{parent_run_id}:{restart_request_id}".encode("utf-8")
+            ).hexdigest()[:12]
+        )
+        if (
+            parent_manifest.get("continuation") is not None
+            or continuation.get("parent_manifest_digest")
+            != parent_manifest.get("manifest_digest")
+            or child.get("runId") != expected_child_run_id
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"{workstream}/{variant} continuation lineage is invalid",
+            )
+        return child_path, child
 
     def _load_final_cut_child(
         self,

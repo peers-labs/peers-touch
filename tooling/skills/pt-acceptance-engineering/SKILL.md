@@ -138,6 +138,13 @@ The mandatory execution order is:
 9. Report, release resources, and update coverage
 ```
 
+When two or more Scenarios share expensive services, actors, clients, devices,
+or login state, the owning Task must declare `runtimeReuse` and pass
+`pt-acceptance-pipeline-auditor`. Build, deploy, account provisioning, client
+launch, and login belong to Task or Suite scope. Scenario execution is
+attach-only and owns only namespaced business data, reset, real product actions,
+and receiver-visible assertions.
+
 For tracked work, Step 6 produces an impact projection and validates the
 Acceptance Execution contract already owned by the formal execution plan. It
 does not create another plan, choose the current closure, or promote candidate
@@ -242,6 +249,10 @@ Never:
 - Let a Gate redefine its own success after seeing available evidence.
 - Treat type-check, dry-run, smoke, screenshot, API response, or structural
   validation as proof of a stronger receiver journey.
+- Rebuild accounts, clients, devices, or login state for every Scenario when
+  the Task declares a reusable Suite Runtime.
+- Use Harness actions or internal Store assertions to satisfy a required real
+  UI action or receiver-visible assertion.
 - Run destructive fixture reset without explicit authorization and target
   verification.
 - Hide missing environment, credentials, runtime cells, or evidence.

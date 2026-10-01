@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -33,7 +34,18 @@ def _product_child(
     variant: str,
     run_id: str,
     spec: result_aggregate.ChildSpec,
+    runtime_manifest_digest: str | None = None,
+    runtime_manifest_ref: str | None = None,
 ) -> Path:
+    if runtime_manifest_digest is None or runtime_manifest_ref is None:
+        manifest_path, manifest_digest = _runtime_manifest(
+            root,
+            run_id=run_id,
+            journey_id=spec.journey_id,
+            spec=spec,
+        )
+        runtime_manifest_digest = manifest_digest
+        runtime_manifest_ref = str(manifest_path)
     path = root / workstream / GENERATION / variant / run_id / "result.json"
     value: dict[str, object] = {
         "schemaVersion": 1,
@@ -64,16 +76,83 @@ def _product_child(
         "completedAt": "2026-09-19T10:01:00.000Z",
         "durationMs": 60000,
         "commandDigest": "d" * 64,
-        "runtimeManifestDigest": "e" * 64,
-        "runtimeManifestRef": "/tmp/runtime.json",
-        "serviceIds": ["station-four"],
-        "fixtureManifestDigest": "f" * 64,
+        "runtimeManifestDigest": runtime_manifest_digest,
+        "runtimeManifestRef": runtime_manifest_ref,
+        "serviceIds": sorted(spec.required_service_ids or {"station-four"}),
+        "fixtureManifestDigest": _fixture_manifest_digest(
+            Path(runtime_manifest_ref)
+        ),
         "checks": [],
         "artifactRefs": [str(path)],
     }
     value["resultDigest"] = canonical_digest(value)
     _write_private_json(path, value)
     return path
+
+
+def _runtime_manifest(
+    root: Path,
+    *,
+    run_id: str,
+    journey_id: str,
+    spec: result_aggregate.ChildSpec,
+    continuation: dict[str, object] | None = None,
+) -> tuple[Path, str]:
+    path = root / "runtime-owner" / run_id / "runtime.json"
+    fixture: dict[str, object] = {
+        "schema_version": 1,
+        "kind": "peers-touch-fixture-manifest",
+        "fixture_set_id": f"fixture-{run_id}",
+        "source_checkpoint": GENERATION,
+        "handles": [
+            {
+                "kind": f"{capability}-fixture",
+                "opaque_id": f"handle-{capability}",
+                "owner": owner,
+                "capability": capability,
+                "expected_identity_digest": "f" * 64,
+            }
+            for capability, owner in (
+                spec.required_fixture_owners or {}
+            ).items()
+        ],
+    }
+    fixture["manifest_digest"] = canonical_digest(fixture)
+    fixture_path = path.parent / "fixture.json"
+    _write_private_json(fixture_path, fixture)
+    value: dict[str, object] = {
+        "schema_version": 3,
+        "kind": "peers-touch-runtime-manifest",
+        "run_id": run_id,
+        "journey_id": journey_id,
+        "source": {"commit": GENERATION},
+        "services": {
+            service_id: {}
+            for service_id in sorted(
+                spec.required_service_ids or {"station-four"}
+            )
+        },
+        "clients": [
+            {"id": client_id}
+            for client_id in sorted(spec.clients)
+        ],
+        "fixture_manifest_ref": {
+            "path": fixture_path.name,
+            "sha256": hashlib.sha256(fixture_path.read_bytes()).hexdigest(),
+        },
+        "fixture_manifest_digest": fixture["manifest_digest"],
+    }
+    if continuation is not None:
+        value["continuation"] = continuation
+    digest = canonical_digest(value)
+    value["manifest_digest"] = digest
+    _write_private_json(path, value)
+    return path, digest
+
+
+def _fixture_manifest_digest(runtime_path: Path) -> str:
+    runtime = json.loads(runtime_path.read_text(encoding="utf-8"))
+    return str(runtime["fixture_manifest_digest"])
 
 
 class ResultAggregateOwnerTest(unittest.TestCase):
@@ -86,6 +165,87 @@ class ResultAggregateOwnerTest(unittest.TestCase):
                 "head": GENERATION,
             },
         )
+
+    def test_w8_audience_requires_two_profiles_and_remote_client(self) -> None:
+        audience = result_aggregate.SPECS["W8"].variants["audience"]
+        comment = result_aggregate.SPECS["W8"].variants["comment"]
+        assert audience is not None
+        assert comment is not None
+
+        self.assertEqual(
+            frozenset({"four", "fiveArm"}),
+            audience.profiles,
+        )
+        self.assertEqual(
+            frozenset(
+                {
+                    "secure-content-desktop-alice",
+                    "secure-content-desktop-bob",
+                    "secure-content-desktop-eve",
+                    "secure-content-desktop-remote-recipient",
+                }
+            ),
+            audience.clients,
+        )
+        self.assertEqual(frozenset({"four"}), comment.profiles)
+        for variant in ("subtype", "object", "delete-block", "bounds"):
+            self.assertEqual(
+                frozenset({"four"}),
+                result_aggregate.SPECS["W8"].variants[variant].profiles,
+            )
+
+    def test_w8_aggregate_verifies_runtime_service_and_fixture_bindings(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec = result_aggregate.SPECS["W8"]
+            for variant, child_spec in spec.variants.items():
+                assert child_spec is not None
+                _product_child(
+                    root,
+                    workstream="W8",
+                    variant=variant,
+                    run_id=f"run-{variant}",
+                    spec=child_spec,
+                )
+
+            result = self.owner(root).aggregate(
+                workstream="W8",
+                required=tuple(spec.variants),
+                generation_id=GENERATION,
+            )
+
+            self.assertEqual("PASS", result["result"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec = result_aggregate.SPECS["W8"]
+            for variant, child_spec in spec.variants.items():
+                assert child_spec is not None
+                _product_child(
+                    root,
+                    workstream="W8",
+                    variant=variant,
+                    run_id=f"run-{variant}",
+                    spec=child_spec,
+                )
+            (
+                root
+                / "runtime-owner"
+                / "run-audience"
+                / "fixture.json"
+            ).unlink()
+
+            with self.assertRaisesRegex(
+                result_aggregate.AggregateError,
+                "fixture manifest is unavailable",
+            ):
+                self.owner(root).aggregate(
+                    workstream="W8",
+                    required=tuple(spec.variants),
+                    generation_id=GENERATION,
+                )
 
     def test_aggregates_exact_w2_variant_set_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -206,6 +366,93 @@ class ResultAggregateOwnerTest(unittest.TestCase):
                     required=("desktop", "ios", "android"),
                     generation_id=GENERATION,
                 )
+
+    def test_accepts_one_owner_linked_w7_desktop_continuation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            spec = result_aggregate.SPECS["W7"]
+            desktop = spec.variants["desktop"]
+            browser = spec.variants["browser"]
+            assert desktop is not None
+            assert browser is not None
+            parent_run_id = "w7-parent"
+            parent_manifest_path, parent_manifest_digest = _runtime_manifest(
+                root,
+                run_id=parent_run_id,
+                journey_id=desktop.journey_id,
+                spec=desktop,
+            )
+            parent_path = _product_child(
+                root,
+                workstream="W7",
+                variant="desktop",
+                run_id=parent_run_id,
+                spec=desktop,
+                runtime_manifest_digest=parent_manifest_digest,
+                runtime_manifest_ref=str(parent_manifest_path),
+            )
+            parent = json.loads(parent_path.read_text(encoding="utf-8"))
+            parent["result"] = "BLOCKED"
+            parent["firstFailure"] = {
+                "kind": "BLOCKED_RUNTIME_ACTION_REQUIRED",
+                "owner": "secure-content-w7-runtime",
+                "retryable": True,
+                "stage": "FUNCTIONAL_RUNNING",
+                "summary": "restart required",
+            }
+            parent["resultDigest"] = canonical_digest(
+                {
+                    key: value
+                    for key, value in parent.items()
+                    if key != "resultDigest"
+                }
+            )
+            _write_private_json(parent_path, parent)
+
+            restart_request_id = "restart-bob"
+            child_run_id = (
+                f"{parent_run_id}-c-"
+                + hashlib.sha256(
+                    f"{parent_run_id}:{restart_request_id}".encode("utf-8")
+                ).hexdigest()[:12]
+            )
+            child_manifest_path, child_manifest_digest = _runtime_manifest(
+                root,
+                run_id=child_run_id,
+                journey_id=desktop.journey_id,
+                spec=desktop,
+                continuation={
+                    "parent_manifest_digest": parent_manifest_digest,
+                    "restart_request_id": restart_request_id,
+                },
+            )
+            child_path = _product_child(
+                root,
+                workstream="W7",
+                variant="desktop",
+                run_id=child_run_id,
+                spec=desktop,
+                runtime_manifest_digest=child_manifest_digest,
+                runtime_manifest_ref=str(child_manifest_path),
+            )
+            _product_child(
+                root,
+                workstream="W7",
+                variant="browser",
+                run_id="w7-browser",
+                spec=browser,
+            )
+
+            result = self.owner(root).aggregate(
+                workstream="W7",
+                required=("desktop", "browser"),
+                generation_id=GENERATION,
+            )
+
+            self.assertEqual(
+                child_path.relative_to(root).as_posix(),
+                result["children"][0]["resultRef"]["path"],
+            )
 
     def test_rejects_activation_result_as_final_cut(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 
 from selenium import webdriver
+from selenium.webdriver.remote.command import Command
 from selenium.webdriver.remote.webdriver import WebDriver
 
 from tooling.acceptance.core.harness import call_async_harness, harness_ready
@@ -31,7 +32,7 @@ from tooling.development.secure_content.run import (
 LOOPBACK_HOST = "127.0.0.1"
 NETWORK_CAPTURE_TIMEOUT_SECONDS = 5.0
 NETWORK_CAPTURE_POLL_SECONDS = 0.02
-TERMINAL_MARKER_PREFIX = "sc-terminal-v1:"
+TERMINAL_MARKER_PATH_PREFIX = "/__pt_acceptance/network-terminal/"
 TERMINAL_MARKER_FIELDS = frozenset(
     {
         "schemaVersion",
@@ -121,7 +122,13 @@ class _AttachedRemoteWebDriver(webdriver.Remote):
     def start_session(self, capabilities: Mapping[str, Any]) -> None:
         del capabilities
         self.session_id = self._attached_session_id
-        self.caps = {}
+        self.caps = {"browserName": "chrome"}
+
+    def get_log(self, log_type: str) -> list[dict[str, Any]]:
+        entries = self.execute(Command.GET_LOG, {"type": log_type}).get("value")
+        if not isinstance(entries, list):
+            raise ValueError("WebDriver getLog returned a non-list value")
+        return entries
 
     def detach(self) -> None:
         try:
@@ -342,7 +349,7 @@ class AttachedProductClient:
             if isinstance(error, RunnerError):
                 raise
             raise RunnerError(
-                "browser runtime does not expose performance network logs"
+                f"browser runtime does not expose performance network logs: {type(error).__name__}: {error}"
             ) from error
         self._network_capture_armed = True
         self._network_capture = None
@@ -442,7 +449,7 @@ class AttachedProductClient:
             raise
         except Exception as error:
             raise RunnerError(
-                "browser runtime does not expose performance network logs"
+                f"browser runtime does not expose performance network logs: {type(error).__name__}: {error}"
             ) from error
         finally:
             self._network_capture_armed = False
@@ -746,6 +753,7 @@ class AttachedProductClient:
         pending_http_requests: set[str] = set()
         long_lived_request_ids: set[str] = set()
         collected: list[Any] = []
+        terminal_marker_seen = False
 
         while True:
             batch = self.driver.get_log("performance")
@@ -754,19 +762,38 @@ class AttachedProductClient:
                     "browser runtime returned invalid performance network logs"
                 )
             for entry in batch:
-                collected.append(entry)
-                if _is_terminal_marker(entry, terminal_marker):
-                    pending = pending_http_requests - long_lived_request_ids
-                    if pending:
-                        raise RunnerError(
-                            "browser network capture reached its terminal "
-                            f"marker with {len(pending)} pending HTTP request(s)"
-                        )
-                    return collected
                 event = _network_event(entry)
+                if not terminal_marker_seen and _is_terminal_marker(
+                    entry,
+                    terminal_marker,
+                ):
+                    terminal_marker_seen = True
+                    if not pending_http_requests - long_lived_request_ids:
+                        return collected
+                    continue
                 if event is None:
+                    if not terminal_marker_seen:
+                        collected.append(entry)
                     continue
                 method, params = event
+                request_id = params.get("requestId")
+                if terminal_marker_seen:
+                    if (
+                        isinstance(request_id, str)
+                        and request_id in pending_http_requests
+                    ):
+                        collected.append(entry)
+                        if method in {
+                            "Network.loadingFinished",
+                            "Network.loadingFailed",
+                        }:
+                            pending_http_requests.discard(request_id)
+                        elif method == "Network.eventSourceMessageReceived":
+                            long_lived_request_ids.add(request_id)
+                    if not pending_http_requests - long_lived_request_ids:
+                        return collected
+                    continue
+                collected.append(entry)
                 if method == "Network.requestWillBeSent":
                     request = params.get("request")
                     url = request.get("url") if isinstance(request, Mapping) else None
@@ -795,10 +822,11 @@ class AttachedProductClient:
 
             now = time.monotonic()
             if now >= deadline:
-                if pending_http_requests:
+                pending = pending_http_requests - long_lived_request_ids
+                if pending:
                     raise RunnerError(
                         "browser network capture timed out with "
-                        f"{len(pending_http_requests)} pending HTTP request(s)"
+                        f"{len(pending)} pending HTTP request(s)"
                     )
                 raise RunnerError(
                     "browser network capture timed out before the "
@@ -1156,49 +1184,41 @@ def _is_terminal_marker(
     entry: object,
     expected_marker: Mapping[str, Any],
 ) -> bool:
-    if not isinstance(entry, Mapping):
+    event = _network_event(entry)
+    if event is None:
         return False
-    raw_message = entry.get("message")
-    if not isinstance(raw_message, str):
+    method, params = event
+    if method != "Network.requestWillBeSent":
         return False
-    try:
-        envelope = json.loads(raw_message)
-    except json.JSONDecodeError:
+    request = params.get("request")
+    if not isinstance(request, Mapping) or request.get("method") != "GET":
         return False
-    message = envelope.get("message")
+    url = request.get("url")
+    if not isinstance(url, str):
+        return False
+    parsed = urlparse(url)
     if (
-        not isinstance(message, Mapping)
-        or message.get("method") != "Tracing.dataCollected"
+        parsed.scheme.lower() not in {"http", "https"}
+        or parsed.hostname not in {LOOPBACK_HOST, "localhost"}
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith(TERMINAL_MARKER_PATH_PREFIX)
     ):
         return False
-    params = message.get("params")
-    events = params.get("value") if isinstance(params, Mapping) else None
-    if not isinstance(events, list):
+    encoded = parsed.path.removeprefix(TERMINAL_MARKER_PATH_PREFIX)
+    if re.fullmatch(r"[A-Za-z0-9_-]+", encoded) is None:
         return False
-    for event in events:
-        if (
-            not isinstance(event, Mapping)
-            or event.get("cat") != "blink.user_timing"
-        ):
-            continue
-        name = event.get("name")
-        if (
-            not isinstance(name, str)
-            or not name.startswith(TERMINAL_MARKER_PREFIX)
-        ):
-            continue
-        encoded = name.removeprefix(TERMINAL_MARKER_PREFIX)
-        try:
-            padding = "=" * (-len(encoded) % 4)
-            persisted = json.loads(
-                base64.urlsafe_b64decode(encoded + padding).decode("utf-8")
-            )
-        except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
-            return False
-        expected = dict(expected_marker)
-        expected.pop("markerDigest")
-        return persisted == expected
-    return False
+    try:
+        padding = "=" * (-len(encoded) % 4)
+        decoded = base64.urlsafe_b64decode(encoded + padding)
+        canonical = base64.urlsafe_b64encode(decoded).decode("ascii").rstrip("=")
+        persisted = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    expected = dict(expected_marker)
+    expected.pop("markerDigest")
+    return canonical == encoded and persisted == expected
 
 
 def _is_sha256(value: object) -> bool:

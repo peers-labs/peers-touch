@@ -390,6 +390,64 @@ class ProfileResolutionTests(unittest.TestCase):
             str(reviewed_env.resolve()),
         )
 
+    def test_machine_binding_uses_explicit_environment_repository(self):
+        provisioner = get_provisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_worktree = Path(tmpdir) / "peers-oss"
+            reviewed_env = Path(tmpdir) / "reviewed-env"
+            profile = reviewed_env / "peers-touch" / "two" / "profile.env.example"
+            profile.parent.mkdir(parents=True)
+            profile.write_text(
+                "PT_DEV_PROFILE=two\n",
+                encoding="utf-8",
+            )
+            resolution = {
+                "authority": "machine-control-plane",
+                "binding": {
+                    "canonicalRoot": str(fake_worktree),
+                    "profile": "two",
+                    "slot": 3,
+                    "workspaceId": "0" * 16,
+                },
+                "profile": {
+                    "profileFile": str(profile),
+                    "sourceState": "tracked-clean",
+                },
+                "ports": {
+                    "desktopAppGateway": 3330,
+                    "desktopAppWeb": 3510,
+                    "desktopWebGateway": 3331,
+                    "desktopWebWeb": 3511,
+                    "mobileWeb": 5473,
+                },
+            }
+            with patch(
+                "tooling.acceptance.core.provisioner.REPO_ROOT",
+                fake_worktree,
+            ), patch.dict(
+                os.environ,
+                {"PT_ENV_REPO": str(reviewed_env)},
+            ), patch(
+                "tooling.acceptance.core.provisioner.subprocess.run",
+                return_value=subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=json.dumps(resolution),
+                    stderr="",
+                ),
+            ) as run:
+                provisioner._resolve_active_profile()
+
+        command = run.call_args.args[0]
+        self.assertEqual(
+            command[command.index("--env-repo") + 1],
+            str(reviewed_env.resolve()),
+        )
+
     def test_profile_identity_mismatch_blocks(self):
         provisioner = get_provisioner(
             EnvironmentContract.from_yaml(

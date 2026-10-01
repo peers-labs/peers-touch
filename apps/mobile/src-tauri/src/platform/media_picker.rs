@@ -1,5 +1,5 @@
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -10,7 +10,8 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use prost::Message;
 use secure_content_core::object::{
-    encrypt_object_chunk, ObjectCryptoMaterial, OBJECT_CHUNK_SIZE, OBJECT_TAG_SIZE,
+    decrypt_object_chunk, encrypt_object_chunk, EncryptedObjectChunk, ObjectCryptoMaterial,
+    OBJECT_CHUNK_SIZE, OBJECT_TAG_SIZE,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -25,8 +26,10 @@ use crate::platform::lifecycle_bridge;
 use crate::platform::secure_storage::SecureStorage;
 use crate::runtime::oauth::session::authenticated_native_session;
 use crate::runtime::station_transport::{upload_native_file, NativeFileUpload};
+use crate::secure_content::private_mention::domain_hmac_sha256;
 use crate::secure_content::proto::common::v1::EncryptedMediaDescriptor;
-use crate::secure_content::proto::social::v1::ImageAttachment;
+use crate::secure_content::proto::secure_content::v1 as wire;
+use crate::secure_content::proto::social::v1::{self as social, ImageAttachment};
 
 const MAX_PICK_DEADLINE_MS: u64 = 5 * 60 * 1_000;
 const MAX_PICK_ITEMS: u32 = 10;
@@ -90,14 +93,116 @@ struct StagedMediaMetadata {
     sha256_base64: String,
 }
 
-struct PreparedMomentMedia {
+pub(crate) struct PreparedMomentMedia {
     ciphertext_path: PathBuf,
+    mime_type: String,
     plaintext_size: u64,
     ciphertext_size: u64,
     plaintext_sha256: [u8; 32],
     ciphertext_sha256: [u8; 32],
     material: ObjectCryptoMaterial,
     chunk_count: u32,
+    chunk_ciphertext_sha256: Vec<Vec<u8>>,
+}
+
+impl PreparedMomentMedia {
+    pub(crate) fn upload_spec(
+        &self,
+        resource: &wire::SecureResourceRef,
+        object_id: &str,
+    ) -> wire::EncryptedObjectUploadSpec {
+        wire::EncryptedObjectUploadSpec {
+            resource: Some(resource.clone()),
+            object_id: object_id.to_string(),
+            ciphertext_size: self.ciphertext_size,
+            ciphertext_sha256: self.ciphertext_sha256.to_vec(),
+            chunk_size: self.material.chunk_size(),
+            chunk_count: self.chunk_count,
+            encryption_suite: wire::ObjectEncryptionSuite::Aes256GcmChunked as i32,
+            tag_size: OBJECT_TAG_SIZE,
+            nonce_strategy: wire::ObjectNonceStrategy::Counter32Be as i32,
+            chunk_ciphertext_sha256: self.chunk_ciphertext_sha256.clone(),
+        }
+    }
+
+    pub(crate) fn descriptor_commitment_sha256(
+        &self,
+        resource: &wire::SecureResourceRef,
+        object_id: &str,
+    ) -> [u8; 32] {
+        let input = wire::EncryptedObjectDescriptorCommitmentInput {
+            format_version: 1,
+            resource: Some(resource.clone()),
+            object_id: object_id.to_string(),
+            upload_spec: Some(self.upload_spec(resource, object_id)),
+        };
+        Sha256::digest(input.encode_to_vec()).into()
+    }
+
+    pub(crate) fn chunk_count(&self) -> u32 {
+        self.chunk_count
+    }
+
+    pub(crate) fn chunk_stride(&self) -> u64 {
+        u64::from(self.material.chunk_size() + OBJECT_TAG_SIZE)
+    }
+
+    pub(crate) fn chunk_sha256(&self, chunk_index: u32) -> MobileResult<[u8; 32]> {
+        self.chunk_ciphertext_sha256
+            .get(chunk_index as usize)
+            .ok_or_else(|| picker_error("private Moment media chunk hash is unavailable"))?
+            .as_slice()
+            .try_into()
+            .map_err(|_| picker_error("private Moment media chunk hash is invalid"))
+    }
+
+    pub(crate) fn ciphertext_chunk(&self, chunk_index: u32) -> MobileResult<Vec<u8>> {
+        if chunk_index >= self.chunk_count {
+            return Err(picker_error("private Moment media chunk index is invalid"));
+        }
+        let offset = u64::from(chunk_index)
+            .saturating_mul(u64::from(self.material.chunk_size() + OBJECT_TAG_SIZE));
+        let remaining = self.ciphertext_size.saturating_sub(offset);
+        let length = remaining.min(u64::from(self.material.chunk_size() + OBJECT_TAG_SIZE));
+        let mut file = File::open(&self.ciphertext_path)
+            .map_err(|error| picker_error(format!("open private Moment ciphertext: {error}")))?;
+        file.seek(SeekFrom::Start(offset))
+            .map_err(|error| picker_error(format!("seek private Moment ciphertext: {error}")))?;
+        let mut ciphertext = vec![
+            0_u8;
+            usize::try_from(length).map_err(|_| {
+                picker_error("private Moment ciphertext chunk size is invalid")
+            })?
+        ];
+        file.read_exact(&mut ciphertext)
+            .map_err(|error| picker_error(format!("read private Moment ciphertext: {error}")))?;
+        Ok(ciphertext)
+    }
+
+    pub(crate) fn attachment_metadata(
+        &self,
+        attachment_id: &str,
+        descriptor: wire::EncryptedObjectDescriptor,
+        width: u32,
+        height: u32,
+        duration_ms: u32,
+        alt_text: String,
+    ) -> social::PrivateAttachmentMetadata {
+        social::PrivateAttachmentMetadata {
+            attachment_id: attachment_id.to_string(),
+            filename: attachment_id.to_string(),
+            mime_type: self.mime_type.clone(),
+            plaintext_size: self.plaintext_size,
+            plaintext_sha256: self.plaintext_sha256.to_vec(),
+            object_key: self.material.object_key().to_vec(),
+            base_nonce: self.material.base_nonce().to_vec(),
+            object: Some(descriptor),
+            width,
+            height,
+            duration_ms,
+            alt_text,
+        }
+    }
 }
 
 pub async fn pick<R: Runtime>(
@@ -208,6 +313,202 @@ pub async fn upload_moment_media<R: Runtime>(
     let attachment = build_moment_image_attachment(&prepared, uploaded)?;
     cleanup_staged_handle(&root, &metadata.handle);
     Ok(attachment.encode_to_vec())
+}
+
+pub(crate) fn prepare_private_moment_media<R: Runtime>(
+    app: &AppHandle<R>,
+    station_peer_id: &str,
+    actor_ptid: &str,
+    handle: &str,
+    object_id: &str,
+    object_material_seed: &[u8; 32],
+) -> MobileResult<PreparedMomentMedia> {
+    let root = staging_root(app, station_peer_id, actor_ptid, MOMENT_MEDIA_SURFACE)?;
+    let metadata = load_staged_metadata(&root, handle)?;
+    let object_key = domain_hmac_sha256(
+        object_material_seed,
+        &[
+            b"peers-touch:mobile-private-object-key:v1",
+            object_id.as_bytes(),
+        ],
+    );
+    let nonce_digest = domain_hmac_sha256(
+        object_material_seed,
+        &[
+            b"peers-touch:mobile-private-object-nonce:v1",
+            object_id.as_bytes(),
+        ],
+    );
+    let mut base_nonce = [0_u8; 12];
+    base_nonce.copy_from_slice(&nonce_digest[..12]);
+    let material = ObjectCryptoMaterial::from_parts(
+        object_key,
+        base_nonce,
+        metadata.byte_length,
+        OBJECT_CHUNK_SIZE,
+    )
+    .map_err(picker_error)?;
+    prepare_moment_media_with_material(&root, &metadata, material)
+}
+
+pub(crate) fn discard_private_moment_ciphertext(prepared: &PreparedMomentMedia) {
+    let _ = fs::remove_file(&prepared.ciphertext_path);
+}
+
+pub(crate) fn consume_private_moment_media_handle<R: Runtime>(
+    app: &AppHandle<R>,
+    station_peer_id: &str,
+    actor_ptid: &str,
+    handle: &str,
+) -> MobileResult<()> {
+    if Ulid::from_string(handle).is_err() {
+        return Err(picker_error("staged media handle is invalid"));
+    }
+    let root = staging_root(app, station_peer_id, actor_ptid, MOMENT_MEDIA_SURFACE)?;
+    cleanup_staged_handle(&root, handle);
+    Ok(())
+}
+
+pub(crate) fn purge_private_moment_media_cache<R: Runtime>(
+    app: &AppHandle<R>,
+    station_peer_id: &str,
+    actor_ptid: &str,
+) -> MobileResult<()> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| picker_error(format!("resolve app data directory: {error}")))?
+        .join("private-social-media-cache")
+        .join("v1")
+        .join(scope_digest_parts(
+            station_peer_id,
+            actor_ptid,
+            "private_moment",
+        ));
+    if root.exists() {
+        fs::remove_dir_all(&root)
+            .map_err(|error| picker_error(format!("purge private Moment media cache: {error}")))?;
+    }
+    Ok(())
+}
+
+pub(crate) fn materialize_private_moment_media<R, F>(
+    app: &AppHandle<R>,
+    station_peer_id: &str,
+    actor_ptid: &str,
+    metadata: &social::PrivateAttachmentMetadata,
+    descriptor: &wire::EncryptedObjectDescriptor,
+    mut fetch_chunk: F,
+) -> MobileResult<String>
+where
+    R: Runtime,
+    F: FnMut(u32, u64, u64, &[u8; 32]) -> Result<Vec<u8>, String>,
+{
+    let commitment = descriptor
+        .commitment
+        .as_ref()
+        .ok_or_else(|| picker_error("private Moment object commitment is unavailable"))?;
+    if metadata.object.as_ref() != Some(descriptor)
+        || metadata.object_key.len() != 32
+        || metadata.base_nonce.len() != 12
+        || metadata.plaintext_sha256.len() != 32
+        || metadata.plaintext_size == 0
+        || commitment.chunk_count == 0
+        || commitment.chunk_ciphertext_sha256.len() != commitment.chunk_count as usize
+    {
+        return Err(picker_error("private Moment media metadata is invalid"));
+    }
+    let material = ObjectCryptoMaterial::from_parts(
+        metadata
+            .object_key
+            .as_slice()
+            .try_into()
+            .map_err(|_| picker_error("private Moment object key is invalid"))?,
+        metadata
+            .base_nonce
+            .as_slice()
+            .try_into()
+            .map_err(|_| picker_error("private Moment object nonce is invalid"))?,
+        metadata.plaintext_size,
+        commitment.chunk_size,
+    )
+    .map_err(picker_error)?;
+    let descriptor_sha256: [u8; 32] = Sha256::digest(descriptor.encode_to_vec()).into();
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| picker_error(format!("resolve app data directory: {error}")))?
+        .join("private-social-media-cache")
+        .join("v1")
+        .join(scope_digest_parts(
+            station_peer_id,
+            actor_ptid,
+            "private_moment",
+        ));
+    create_staging_directory(&root)?;
+    let name = hex_digest(&Sha256::digest(descriptor.object_id.as_bytes()).into());
+    let destination = root.join(format!("{name}.media"));
+    let temporary = root.join(format!("{name}.partial"));
+    let result = (|| {
+        let mut writer = BufWriter::new(create_private_file(&temporary)?);
+        let mut plaintext_hasher = Sha256::new();
+        for chunk_index in 0..material.chunk_count() {
+            let start = u64::from(chunk_index)
+                .saturating_mul(u64::from(material.chunk_size() + OBJECT_TAG_SIZE));
+            let remaining = commitment.ciphertext_size.saturating_sub(start);
+            let length = remaining.min(u64::from(material.chunk_size() + OBJECT_TAG_SIZE));
+            let expected_hash: [u8; 32] = commitment.chunk_ciphertext_sha256[chunk_index as usize]
+                .as_slice()
+                .try_into()
+                .map_err(|_| picker_error("private Moment object chunk hash is invalid"))?;
+            let ciphertext = fetch_chunk(
+                chunk_index,
+                start,
+                start.saturating_add(length).saturating_sub(1),
+                &descriptor_sha256,
+            )
+            .map_err(picker_error)?;
+            let plaintext = decrypt_object_chunk(
+                &material,
+                &EncryptedObjectChunk {
+                    chunk_index,
+                    ciphertext,
+                    ciphertext_sha256: expected_hash,
+                },
+            )
+            .map_err(picker_error)?;
+            plaintext_hasher.update(&plaintext);
+            writer
+                .write_all(&plaintext)
+                .map_err(|error| picker_error(format!("write private Moment media: {error}")))?;
+        }
+        writer
+            .flush()
+            .map_err(|error| picker_error(format!("flush private Moment media: {error}")))?;
+        let file = writer
+            .into_inner()
+            .map_err(|error| picker_error(format!("finalize private Moment media: {error}")))?;
+        file.sync_all()
+            .map_err(|error| picker_error(format!("sync private Moment media: {error}")))?;
+        if Sha256::digest([]).as_slice() == metadata.plaintext_sha256.as_slice()
+            || plaintext_hasher.finalize().as_slice() != metadata.plaintext_sha256
+        {
+            return Err(picker_error(
+                "private Moment media plaintext hash mismatched",
+            ));
+        }
+        if destination.exists() {
+            fs::remove_file(&destination)
+                .map_err(|error| picker_error(format!("replace private Moment media: {error}")))?;
+        }
+        fs::rename(&temporary, &destination)
+            .map_err(|error| picker_error(format!("commit private Moment media: {error}")))?;
+        Ok::<_, MobileError>(destination.to_string_lossy().into_owned())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 fn build_moment_image_attachment(
@@ -557,6 +858,15 @@ fn prepare_moment_media(
     root: &Path,
     metadata: &StagedMediaMetadata,
 ) -> MobileResult<PreparedMomentMedia> {
+    let material = ObjectCryptoMaterial::generate(metadata.byte_length).map_err(picker_error)?;
+    prepare_moment_media_with_material(root, metadata, material)
+}
+
+fn prepare_moment_media_with_material(
+    root: &Path,
+    metadata: &StagedMediaMetadata,
+    material: ObjectCryptoMaterial,
+) -> MobileResult<PreparedMomentMedia> {
     let plaintext_path = root.join(format!("{}.stage", metadata.handle));
     let plaintext_metadata = fs::symlink_metadata(&plaintext_path)
         .map_err(|_| picker_error("staged media file is missing"))?;
@@ -566,7 +876,6 @@ fn prepare_moment_media(
     {
         return Err(picker_error("staged media file is invalid"));
     }
-    let material = ObjectCryptoMaterial::generate(metadata.byte_length).map_err(picker_error)?;
     let chunk_count = material.chunk_count();
     let ciphertext_size = metadata
         .byte_length
@@ -593,6 +902,7 @@ fn prepare_moment_media(
         let mut writer = BufWriter::new(create_private_file(&ciphertext_path)?);
         let mut plaintext_hasher = Sha256::new();
         let mut ciphertext_hasher = Sha256::new();
+        let mut chunk_ciphertext_sha256 = Vec::with_capacity(chunk_count as usize);
         for chunk_index in 0..chunk_count {
             let offset = u64::from(chunk_index) * u64::from(OBJECT_CHUNK_SIZE);
             let chunk_length =
@@ -609,6 +919,7 @@ fn prepare_moment_media(
                 .write_all(&encrypted.ciphertext)
                 .map_err(|error| picker_error(format!("write encrypted media chunk: {error}")))?;
             ciphertext_hasher.update(&encrypted.ciphertext);
+            chunk_ciphertext_sha256.push(encrypted.ciphertext_sha256.to_vec());
         }
         let mut trailing = [0_u8; 1];
         if reader
@@ -631,9 +942,9 @@ fn prepare_moment_media(
             return Err(picker_error("staged media changed after selection"));
         }
         let ciphertext_sha256: [u8; 32] = ciphertext_hasher.finalize().into();
-        Ok::<_, MobileError>((plaintext_sha256, ciphertext_sha256))
+        Ok::<_, MobileError>((plaintext_sha256, ciphertext_sha256, chunk_ciphertext_sha256))
     })();
-    let (plaintext_sha256, ciphertext_sha256) = match encryption_result {
+    let (plaintext_sha256, ciphertext_sha256, chunk_ciphertext_sha256) = match encryption_result {
         Ok(result) => result,
         Err(error) => {
             let _ = fs::remove_file(&ciphertext_path);
@@ -648,12 +959,14 @@ fn prepare_moment_media(
     }
     Ok(PreparedMomentMedia {
         ciphertext_path,
+        mime_type: metadata.mime_type.clone(),
         plaintext_size: metadata.byte_length,
         ciphertext_size,
         plaintext_sha256,
         ciphertext_sha256,
         material,
         chunk_count,
+        chunk_ciphertext_sha256,
     })
 }
 
@@ -779,6 +1092,21 @@ mod tests {
         )
         .unwrap();
         let ciphertext = fs::read(&prepared.ciphertext_path).unwrap();
+        let retry_material = ObjectCryptoMaterial::from_parts(
+            *prepared.material.object_key(),
+            *prepared.material.base_nonce(),
+            prepared.plaintext_size,
+            OBJECT_CHUNK_SIZE,
+        )
+        .unwrap();
+        let retry =
+            prepare_moment_media_with_material(&destination_root, &metadata, retry_material)
+                .unwrap();
+        assert_eq!(fs::read(&retry.ciphertext_path).unwrap(), ciphertext);
+        assert_eq!(
+            retry.chunk_ciphertext_sha256,
+            prepared.chunk_ciphertext_sha256
+        );
         let decrypted = decrypt_object_chunk(
             &material,
             &EncryptedObjectChunk {

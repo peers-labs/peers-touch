@@ -4,6 +4,8 @@ use crate::domain::storage::database::{DatabaseOpenSpec, EncryptionLevel};
 use crate::domain::storage::key_management::{KeyMaterial, KeyProvider, KeyProviderError};
 use rusqlite::{ffi, params, Connection};
 use serde_json::Value;
+#[cfg(not(target_os = "windows"))]
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::ffi::CStr;
 #[cfg(target_os = "windows")]
@@ -15,6 +17,13 @@ use std::io::Write;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(not(target_os = "windows"))]
+const SQLITE_PATH_LIMIT_BYTES: usize = 512;
+#[cfg(not(target_os = "windows"))]
+const SQLITE_JOURNAL_SUFFIX_BYTES: usize = 8;
+#[cfg(not(target_os = "windows"))]
+const COMPACT_DATABASE_SCOPE_PREFIX: &str = "scope-";
 
 /// SQLCipher accepts a textual passphrase the same way `PRAGMA key = '...'` does: passphrase
 /// bytes are the UTF-8 encoding of this lossy string (see `sqlite3.c` pragma KEY branch,
@@ -208,7 +217,53 @@ pub fn resolve_database_path(
         StorageKind::Data,
         &["db", "users", &user_scope, &file_name],
     )?;
-    Ok(sqlite_compatible_path(path))
+    Ok(sqlite_compatible_path(compact_database_scope(
+        path,
+        &user_scope,
+    )?))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn compact_database_scope(path: PathBuf, user_scope: &str) -> Result<PathBuf, StorageError> {
+    if sqlite_path_has_journal_headroom(&path) {
+        return Ok(path);
+    }
+    let file_name = path
+        .file_name()
+        .map(|value| value.to_os_string())
+        .ok_or_else(|| StorageError::ResolveFailed("database file name is missing".to_string()))?;
+    let users_dir = path
+        .parent()
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+        .ok_or_else(|| {
+            StorageError::ResolveFailed("database users directory is missing".to_string())
+        })?;
+    let compact_scope = format!(
+        "{COMPACT_DATABASE_SCOPE_PREFIX}{}",
+        hex::encode(Sha256::digest(user_scope.as_bytes()))
+    );
+    let compacted = users_dir.join(compact_scope).join(file_name);
+    if !sqlite_path_has_journal_headroom(&compacted) {
+        return Err(StorageError::ResolveFailed(
+            "database path lacks SQLite journal suffix headroom after scope compaction".to_string(),
+        ));
+    }
+    Ok(compacted)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn sqlite_path_has_journal_headroom(path: &Path) -> bool {
+    path.as_os_str()
+        .as_encoded_bytes()
+        .len()
+        .saturating_add(SQLITE_JOURNAL_SUFFIX_BYTES)
+        <= SQLITE_PATH_LIMIT_BYTES
+}
+
+#[cfg(target_os = "windows")]
+fn compact_database_scope(path: PathBuf, _user_scope: &str) -> Result<PathBuf, StorageError> {
+    Ok(path)
 }
 
 #[cfg(target_os = "windows")]
@@ -497,8 +552,84 @@ fn default_platform_root() -> Result<PathBuf, StorageError> {
 
 #[cfg(test)]
 mod tests {
-    use super::sqlite_compatible_path;
+    use super::{
+        compact_database_scope, sqlite_compatible_path, sqlite_path_has_journal_headroom,
+        SQLITE_JOURNAL_SUFFIX_BYTES, SQLITE_PATH_LIMIT_BYTES,
+    };
     use std::path::PathBuf;
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn long_database_path_uses_a_bounded_stable_scope() {
+        let data_root = PathBuf::from("/")
+            .join("r".repeat(200))
+            .join("s".repeat(95));
+        let user_scope = "a".repeat(194);
+        let direct = data_root
+            .join("db")
+            .join("users")
+            .join(&user_scope)
+            .join("chat.main.db");
+        assert!(!sqlite_path_has_journal_headroom(&direct));
+
+        let first = compact_database_scope(direct.clone(), &user_scope).unwrap();
+        let second = compact_database_scope(direct, &user_scope).unwrap();
+        let other = data_root
+            .join("db")
+            .join("users")
+            .join("b".repeat(194))
+            .join("chat.main.db");
+        let other = compact_database_scope(other, &"b".repeat(194)).unwrap();
+        let compact_scope = first
+            .parent()
+            .and_then(|path| path.file_name())
+            .and_then(|value| value.to_str())
+            .unwrap();
+
+        assert_eq!(first, second);
+        assert_ne!(first, other);
+        assert!(sqlite_path_has_journal_headroom(&first));
+        assert_eq!(compact_scope.len(), 70);
+        assert!(compact_scope.starts_with("scope-"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn database_path_reserves_sqlite_journal_suffix_headroom() {
+        let users_dir = PathBuf::from("/tmp/db/users");
+        let file_name = "secure-content.main.db";
+        let fixed_length = users_dir.as_os_str().as_encoded_bytes().len() + 2 + file_name.len();
+        let unsafe_main_path_length = 506;
+        let user_scope = "a".repeat(unsafe_main_path_length - fixed_length);
+        let direct = users_dir.join(&user_scope).join(file_name);
+
+        assert!(unsafe_main_path_length + SQLITE_JOURNAL_SUFFIX_BYTES > SQLITE_PATH_LIMIT_BYTES);
+        assert_eq!(
+            direct.as_os_str().as_encoded_bytes().len(),
+            unsafe_main_path_length
+        );
+        assert!(direct.as_os_str().as_encoded_bytes().len() < SQLITE_PATH_LIMIT_BYTES);
+        assert!(!sqlite_path_has_journal_headroom(&direct));
+
+        let compacted = compact_database_scope(direct.clone(), &user_scope).unwrap();
+        assert_ne!(compacted, direct);
+        assert!(sqlite_path_has_journal_headroom(&compacted));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn short_database_path_preserves_the_existing_scope() {
+        let path = PathBuf::from("/tmp")
+            .join("db")
+            .join("users")
+            .join("actor-1")
+            .join("chat.main.db");
+
+        assert_eq!(
+            compact_database_scope(path.clone(), "actor-1").unwrap(),
+            path
+        );
+    }
 
     #[cfg(not(target_os = "windows"))]
     #[test]

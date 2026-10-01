@@ -546,6 +546,7 @@ Emit `ACCEPTANCE_PLAN_SELECTED`.
 - Active worktree and branch.
 - Profile definitions and deployment environments.
 - Approved credentials and destructive-reset authorization.
+- The current Task's optional `runtimeReuse` contract.
 
 ### Procedure
 
@@ -679,7 +680,26 @@ Run Fixture setup/reset, then assert the expected initial state. Start clients
 and wait for the namespaced production Harness to become available. A missing
 Harness is a preflight failure, not permission to call Stores directly.
 
-#### 7.8 Record Preflight
+#### 7.8 Enforce Suite Runtime Ownership
+
+When `runtimeReuse` is declared:
+
+- provision services, actors, clients, devices, storage, and login state once
+  at Task or Suite scope;
+- create one immutable Suite Runtime ID, source digest, and Fixture Epoch;
+- attach every Scenario to those existing resources;
+- reset only namespaced Scenario business data between Scenarios;
+- record real UI actions and receiver-visible assertions separately from
+  supporting Harness observations;
+- emit lifecycle metrics and terminal cleanup through the shared Suite Runtime
+  report;
+- run `pt-acceptance-pipeline-auditor` before judging product proof.
+
+An account, client, device, login, build, or deployment action after the first
+Scenario starts is `SCENARIO_OWNED_PROVISIONING`. It is a lifecycle failure,
+not a reason to relax isolation or proof requirements.
+
+#### 7.9 Record Preflight
 
 Record:
 
@@ -690,6 +710,8 @@ Record:
 - Fixture setup/reset status.
 - Harness namespaces.
 - Cleanup policy.
+- Suite Runtime ID, Fixture Epoch, reuse budget, and initial lifecycle counts
+  when `runtimeReuse` is declared.
 
 Emit:
 

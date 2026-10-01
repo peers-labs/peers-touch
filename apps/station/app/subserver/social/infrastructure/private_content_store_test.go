@@ -86,6 +86,24 @@ func TestGORMPrivateContentStoreSchema(t *testing.T) {
 			}
 		}
 	}
+	for _, required := range []string{
+		"audience_bytes",
+		"audience_sha256",
+		"group_recipient_snapshot_bytes",
+		"group_recipient_snapshot_sha256",
+		"subtype_prepare_authority_bytes",
+		"subtype_prepare_authority_sha256",
+	} {
+		if !db.Migrator().HasColumn(
+			&dbmodel.SocialPrivateContentPlan{},
+			required,
+		) {
+			t.Fatalf(
+				"SocialPrivateContentPlan is missing prepare binding column %q",
+				required,
+			)
+		}
+	}
 }
 
 func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
@@ -125,6 +143,12 @@ func TestGORMPrivateContentStorePreparePersistence(t *testing.T) {
 			created.Plan.SubtypePrepareAuthoritySHA256,
 			binding.SubtypePrepareAuthoritySHA256,
 			"subtype authority binding",
+		)
+		assertBytesEqual(
+			t,
+			created.Plan.GroupRecipientSnapshotSHA256,
+			binding.GroupRecipientSnapshotSHA256,
+			"Group recipient snapshot binding",
 		)
 
 		retry := candidate
@@ -816,10 +840,12 @@ func preparingPlan(
 
 func prepareBinding(plan dbmodel.SocialPrivateContentPlan) PrivatePrepareBinding {
 	audience := []byte("audience-" + plan.PlanID)
+	emptyGroupSnapshot := sha256.Sum256(nil)
 	emptySubtype := sha256.Sum256(nil)
 	return PrivatePrepareBinding{
 		AudienceBytes:                 audience,
 		AudienceSHA256:                digest(audience),
+		GroupRecipientSnapshotSHA256:  emptyGroupSnapshot[:],
 		SubtypePrepareAuthoritySHA256: emptySubtype[:],
 	}
 }
@@ -1007,6 +1033,7 @@ func persistSubmitMutation(
 			EncryptedPayloadBytes:     payload,
 			EncryptedPayloadSHA256:    digest(payload),
 			ObjectDescriptorSetSHA256: digest([]byte("objects-" + suffix)),
+			MentionRoutingBytes:       []byte("mentions-" + suffix),
 			MentionRoutingSHA256:      digest([]byte("mentions-" + suffix)),
 			LifecycleState:            "ACTIVE",
 			CreatedAt:                 fixedTime(),
@@ -1026,6 +1053,7 @@ func persistSubmitMutation(
 			EncryptedPayloadBytes:     payload,
 			EncryptedPayloadSHA256:    digest(payload),
 			ObjectDescriptorSetSHA256: digest([]byte("objects-" + suffix)),
+			MentionRoutingBytes:       []byte("mentions-" + suffix),
 			MentionRoutingSHA256:      digest([]byte("mentions-" + suffix)),
 			LifecycleState:            "ACTIVE",
 			CreatedAt:                 fixedTime(),

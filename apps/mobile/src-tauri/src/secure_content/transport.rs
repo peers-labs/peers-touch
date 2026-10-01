@@ -1,5 +1,4 @@
 use std::io::Read;
-use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -8,8 +7,9 @@ use ed25519_dalek::pkcs8::{DecodePublicKey, EncodePublicKey};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
-use reqwest::blocking::{Client, Response};
-use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER};
+use reqwest::blocking::{Client, RequestBuilder, Response};
+use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, RANGE, RETRY_AFTER};
+use secure_content_core::prekey::canonicalize_publish_content_prekeys_request;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -21,6 +21,7 @@ use crate::secure_content::proto::{
     federation::v1 as federation, secure_content::v1 as wire, social::v1 as social,
 };
 use crate::secure_content::{NativeSocialSession, PrivateSocialScope, TrustedStationSigningKey};
+use crate::station_origin::{normalize_station_origin, StationOriginError, StationOriginPolicy};
 
 const MAX_PROTO_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const CLIENT_SIGNING_DOMAIN: &[u8] = b"peers-touch:secure-content:client-command:v1\0";
@@ -29,6 +30,8 @@ const INVENTORY_CAPABILITY: &str = "key_exchange.content_prekey.inventory";
 const PROFILE_MAX_LIFETIME_MS: i64 = 60 * 60 * 1_000;
 const PROFILE_CLOCK_SKEW_MS: i64 = 30_000;
 const FEDERATION_KEY_ID_LENGTH: usize = 26;
+const FEDERATION_SELF_TYPE_URL: &str =
+    "type.googleapis.com/peers_touch.model.federation.v1.FederationSelfView";
 const FEDERATION_RESOLVE_TYPE_URL: &str =
     "type.googleapis.com/peers_touch.model.federation.v1.FederationResolveView";
 
@@ -45,6 +48,7 @@ pub struct TransportError {
     pub http_status: Option<u16>,
     pub stable_code: i32,
     pub typed_error: bool,
+    pub private_content_code: Option<String>,
     pub retry_after_seconds: Option<u64>,
     pub disposition: TransportDisposition,
 }
@@ -53,8 +57,10 @@ impl std::fmt::Display for TransportError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             formatter,
-            "private Social transport failed (status={:?}, code={})",
-            self.http_status, self.stable_code
+            "private Social transport failed (status={:?}, code={}, private_content_code={})",
+            self.http_status,
+            self.stable_code,
+            self.private_content_code.as_deref().unwrap_or("none"),
         )
     }
 }
@@ -142,17 +148,25 @@ impl NativeSocialTransport {
         &self,
         proof_free_request: &[u8],
     ) -> Result<wire::PublishContentPreKeysResponse, TransportError> {
-        let mut request = wire::PublishContentPreKeysRequest::decode(proof_free_request)
-            .map_err(|_| local_error(20005))?;
+        let canonical_proof_free = canonicalize_publish_content_prekeys_request(proof_free_request)
+            .map_err(|_| local_error(20002))?;
+        if canonical_proof_free != proof_free_request {
+            return Err(local_error(20002));
+        }
+        let mut request =
+            wire::PublishContentPreKeysRequest::decode(canonical_proof_free.as_slice())
+                .map_err(|_| local_error(20005))?;
         if request.command_id.trim().is_empty() || request.proof.is_some() {
             return Err(local_error(20002));
         }
-        let request_sha256 = Sha256::digest(proof_free_request).into();
+        let request_sha256 = Sha256::digest(&canonical_proof_free).into();
         request.proof =
             Some(self.client_proof(PUBLISH_CAPABILITY, &request.command_id, request_sha256)?);
-        self.post_proto(
+        let request_bytes =
+            canonical_publication_bytes(&request).map_err(|_| local_error(20002))?;
+        self.post_proto_bytes(
             "/key-exchange/content-prekeys/publish",
-            &request,
+            &request_bytes,
             CommitSemantics::MayCommit,
         )
     }
@@ -179,6 +193,139 @@ impl NativeSocialTransport {
         )
     }
 
+    pub fn begin_private_object_upload(
+        &self,
+        request: &wire::BeginEncryptedObjectUploadRequest,
+    ) -> Result<wire::BeginEncryptedObjectUploadResponse, TransportError> {
+        self.post_proto(
+            "/api/v1/social/moments/objects/uploads/begin",
+            request,
+            CommitSemantics::MayCommit,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn put_private_object_chunk(
+        &self,
+        upload_id: &str,
+        generation: u64,
+        object_id: &str,
+        chunk_index: u32,
+        chunk_offset: u64,
+        ciphertext: &[u8],
+        ciphertext_sha256: &[u8; 32],
+    ) -> Result<wire::PutEncryptedObjectChunkResponse, TransportError> {
+        if upload_id.trim().is_empty() || generation == 0 || object_id.trim().is_empty() {
+            return Err(local_error(20002));
+        }
+        decode_proto_response(
+            self.request(
+                reqwest::Method::PUT,
+                &format!("/api/v1/social/moments/objects/uploads/{upload_id}/chunks/{chunk_index}"),
+            )
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .header("X-Upload-Generation", generation)
+            .header("X-Chunk-Offset", chunk_offset)
+            .header("X-Ciphertext-Size", ciphertext.len())
+            .header("X-Ciphertext-SHA256", hex(ciphertext_sha256))
+            .header("Idempotency-Key", format!("{object_id}:{chunk_index}"))
+            .body(ciphertext.to_vec())
+            .send()
+            .map_err(network_error)?,
+            CommitSemantics::MayCommit,
+        )
+    }
+
+    pub fn complete_private_object_upload(
+        &self,
+        upload_id: &str,
+        request: &wire::CompleteEncryptedObjectUploadRequest,
+    ) -> Result<wire::CompleteEncryptedObjectUploadResponse, TransportError> {
+        if upload_id.trim().is_empty() || request.upload_id != upload_id {
+            return Err(local_error(20002));
+        }
+        self.post_proto(
+            &format!("/api/v1/social/moments/objects/uploads/{upload_id}/complete"),
+            request,
+            CommitSemantics::MayCommit,
+        )
+    }
+
+    pub fn download_private_object_chunk(
+        &self,
+        object_id: &str,
+        descriptor_sha256: &[u8; 32],
+        start: u64,
+        end: u64,
+    ) -> Result<Vec<u8>, TransportError> {
+        if object_id.trim().is_empty() || end < start {
+            return Err(local_error(20002));
+        }
+        let response = self
+            .request(
+                reqwest::Method::GET,
+                &format!(
+                    "/api/v1/social/moments/objects/{object_id}?expected_descriptor_sha256={}",
+                    hex(descriptor_sha256)
+                ),
+            )
+            .header(RANGE, format!("bytes={start}-{end}"))
+            .send()
+            .map_err(network_error)?;
+        let status = response.status();
+        if status != reqwest::StatusCode::PARTIAL_CONTENT {
+            let body = bounded_response_body(response)?;
+            return Err(decode_typed_error(
+                status.as_u16(),
+                &body,
+                None,
+                CommitSemantics::ReadOnly,
+            ));
+        }
+        let body = bounded_response_body(response)?;
+        if body.len() as u64 != end.saturating_sub(start).saturating_add(1) {
+            return Err(local_error(20005));
+        }
+        Ok(body)
+    }
+
+    pub fn prepare_private_comment(
+        &self,
+        post_id: &str,
+        request: &social::PreparePrivateCommentRequest,
+    ) -> Result<social::PreparePrivateCommentResponse, TransportError> {
+        self.post_proto(
+            &format!("/api/v1/social/moments/{post_id}/comments/prepare-private"),
+            request,
+            CommitSemantics::MayCommit,
+        )
+    }
+
+    pub fn submit_private_comment(
+        &self,
+        post_id: &str,
+        request: &social::SubmitPrivateCommentRequest,
+    ) -> Result<social::SubmitPrivateCommentResponse, TransportError> {
+        self.post_proto(
+            &format!("/api/v1/social/moments/{post_id}/comments/submit-private"),
+            request,
+            CommitSemantics::MayCommit,
+        )
+    }
+
+    pub fn list_moment_comments(
+        &self,
+        post_id: &str,
+        cursor: &str,
+        limit: u32,
+    ) -> Result<social::ListMomentCommentsResponse, TransportError> {
+        let query = [("cursor", cursor.to_string()), ("limit", limit.to_string())];
+        self.get_proto(
+            &format!("/api/v1/social/moments/{post_id}/comments"),
+            Some(&query),
+        )
+    }
+
     pub fn get_private_moment(
         &self,
         post_id: &str,
@@ -187,6 +334,15 @@ impl NativeSocialTransport {
             return Err(local_error(20002));
         }
         self.get_proto(&format!("/api/v1/social/moments/{post_id}"), None)
+    }
+
+    pub fn list_recoverable(
+        &self,
+        cursor: &str,
+        limit: u32,
+    ) -> Result<social::ListRecoverablePrivateContentResponse, TransportError> {
+        let query = [("cursor", cursor.to_string()), ("limit", limit.to_string())];
+        self.get_proto("/api/v1/social/moments/recoverable", Some(&query))
     }
 
     pub fn sender_signing_key(
@@ -315,11 +471,21 @@ impl NativeSocialTransport {
         Req: Message,
         Resp: Message + Default,
     {
+        self.post_proto_bytes(path, &request.encode_to_vec(), semantics)
+    }
+
+    fn post_proto_bytes<Resp>(
+        &self,
+        path: &str,
+        request: &[u8],
+        semantics: CommitSemantics,
+    ) -> Result<Resp, TransportError>
+    where
+        Resp: Message + Default,
+    {
         decode_proto_response(
-            self.request(reqwest::Method::POST, path)
-                .header(CONTENT_TYPE, "application/protobuf")
-                .header(ACCEPT, "application/protobuf")
-                .body(request.encode_to_vec())
+            with_proto_content_negotiation(self.request(reqwest::Method::POST, path))
+                .body(request.to_vec())
                 .send()
                 .map_err(network_error)?,
             semantics,
@@ -334,18 +500,18 @@ impl NativeSocialTransport {
     where
         Resp: Message + Default,
     {
-        let request = self
-            .client
-            .request(
-                reqwest::Method::GET,
-                endpoint_url(&self.session.scope.station_origin, path, query)?,
-            )
-            .header(
-                AUTHORIZATION,
-                format!("Bearer {}", self.session.access_token()),
-            )
-            .header("X-Device-ID", &self.session.scope.device_id)
-            .header(ACCEPT, "application/protobuf");
+        let request = with_proto_content_negotiation(
+            self.client
+                .request(
+                    reqwest::Method::GET,
+                    endpoint_url(&self.session.scope.station_origin, path, query)?,
+                )
+                .header(
+                    AUTHORIZATION,
+                    format!("Bearer {}", self.session.access_token()),
+                )
+                .header("X-Device-ID", &self.session.scope.device_id),
+        );
         decode_proto_response(
             request.send().map_err(network_error)?,
             CommitSemantics::ReadOnly,
@@ -361,18 +527,18 @@ impl NativeSocialTransport {
     where
         Resp: Message + Default,
     {
-        let request = self
-            .client
-            .request(
-                reqwest::Method::GET,
-                endpoint_url(&self.session.scope.station_origin, path, query)?,
-            )
-            .header(
-                AUTHORIZATION,
-                format!("Bearer {}", self.session.access_token()),
-            )
-            .header("X-Device-ID", &self.session.scope.device_id)
-            .header(ACCEPT, "application/protobuf");
+        let request = with_proto_content_negotiation(
+            self.client
+                .request(
+                    reqwest::Method::GET,
+                    endpoint_url(&self.session.scope.station_origin, path, query)?,
+                )
+                .header(
+                    AUTHORIZATION,
+                    format!("Bearer {}", self.session.access_token()),
+                )
+                .header("X-Device-ID", &self.session.scope.device_id),
+        );
         decode_peers_proto_response(request.send().map_err(network_error)?, expected_type_url)
     }
 
@@ -394,6 +560,12 @@ impl NativeSocialTransport {
     }
 }
 
+fn with_proto_content_negotiation(request: RequestBuilder) -> RequestBuilder {
+    request
+        .header(CONTENT_TYPE, "application/protobuf")
+        .header(ACCEPT, "application/protobuf")
+}
+
 pub fn resolve_trusted_station_signing_key(
     scope: &PrivateSocialScope,
     access_token: &str,
@@ -401,8 +573,7 @@ pub fn resolve_trusted_station_signing_key(
 ) -> Result<TrustedStationSigningKey, String> {
     require_authenticated_transport(&scope.station_origin)?;
     let client = http_client()?;
-    let federation_self: federation::FederationSelfView =
-        get_proto_at(&client, scope, access_token, "/actor/federation/me", None)?;
+    let federation_self = get_federation_self_at(&client, scope, access_token)?;
     if federation_self.home_station_peer_id != scope.station_peer_id
         || federation_self
             .actor_ref
@@ -447,14 +618,23 @@ pub fn jwt_session_id(token: &str) -> Result<String, String> {
         .ok_or_else(|| "private Social session token has no validated session ID".to_string())
 }
 
-pub fn publication_command_id(request: &wire::PublishContentPreKeysRequest) -> String {
+pub fn canonical_publication_bytes(
+    request: &wire::PublishContentPreKeysRequest,
+) -> Result<Vec<u8>, String> {
+    canonicalize_publish_content_prekeys_request(&request.encode_to_vec())
+        .map_err(|error| format!("canonicalize Content PreKey publication: {error}"))
+}
+
+pub fn publication_command_id(
+    request: &wire::PublishContentPreKeysRequest,
+) -> Result<String, String> {
     let mut request = request.clone();
     request.command_id.clear();
     request.proof = None;
-    format!(
-        "mobile-cpk-publish-{}",
-        hex(&Sha256::digest(request.encode_to_vec()))
-    )
+    Ok(format!(
+        "cpk-pub-v1-{}",
+        hex(&Sha256::digest(canonical_publication_bytes(&request)?))
+    ))
 }
 
 fn content_prekey_target(
@@ -484,16 +664,43 @@ fn get_proto_at<Resp: Message + Default>(
     path: &str,
     query: Option<&[(&str, String)]>,
 ) -> Result<Resp, String> {
-    let request = client
-        .get(endpoint_url(&scope.station_origin, path, query).map_err(|error| error.to_string())?)
-        .header(AUTHORIZATION, format!("Bearer {access_token}"))
-        .header("X-Device-ID", &scope.device_id)
-        .header(ACCEPT, "application/protobuf");
+    let request = with_proto_content_negotiation(
+        client
+            .get(
+                endpoint_url(&scope.station_origin, path, query)
+                    .map_err(|error| error.to_string())?,
+            )
+            .header(AUTHORIZATION, format!("Bearer {access_token}"))
+            .header("X-Device-ID", &scope.device_id),
+    );
     decode_proto_response(
         request
             .send()
             .map_err(|error| format!("load private Social trust material: {error}"))?,
         CommitSemantics::ReadOnly,
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn get_federation_self_at(
+    client: &Client,
+    scope: &PrivateSocialScope,
+    access_token: &str,
+) -> Result<federation::FederationSelfView, String> {
+    let request = with_proto_content_negotiation(
+        client
+            .get(
+                endpoint_url(&scope.station_origin, "/actor/federation/me", None)
+                    .map_err(|error| error.to_string())?,
+            )
+            .header(AUTHORIZATION, format!("Bearer {access_token}"))
+            .header("X-Device-ID", &scope.device_id),
+    );
+    decode_peers_proto_response(
+        request
+            .send()
+            .map_err(|error| format!("load private Social trust material: {error}"))?,
+        FEDERATION_SELF_TYPE_URL,
     )
     .map_err(|error| error.to_string())
 }
@@ -748,20 +955,24 @@ fn base32_no_pad(bytes: &[u8]) -> String {
 }
 
 fn require_authenticated_transport(station_origin: &str) -> Result<(), String> {
-    let url = reqwest::Url::parse(station_origin)
-        .map_err(|_| "private Social Station origin is invalid".to_string())?;
-    let host = url
-        .host_str()
-        .ok_or_else(|| "private Social Station origin has no host".to_string())?;
-    let loopback = host.eq_ignore_ascii_case("localhost")
-        || host
-            .parse::<IpAddr>()
-            .map(|address| address.is_loopback())
-            .unwrap_or(false);
-    if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
-        return Err("private Social first-use trust requires HTTPS or loopback HTTP".to_string());
-    }
-    Ok(())
+    require_authenticated_transport_with_policy(
+        station_origin,
+        StationOriginPolicy::current_build(),
+    )
+}
+
+fn require_authenticated_transport_with_policy(
+    station_origin: &str,
+    policy: StationOriginPolicy,
+) -> Result<(), String> {
+    normalize_station_origin(station_origin, policy)
+        .map(|_| ())
+        .map_err(|error| match error {
+            StationOriginError::Insecure => {
+                "private Social first-use trust requires HTTPS".to_string()
+            }
+            _ => "private Social Station origin is not canonical".to_string(),
+        })
 }
 
 fn http_client() -> Result<Client, String> {
@@ -801,6 +1012,7 @@ fn decode_proto_response<Resp: Message + Default>(
         http_status: Some(status.as_u16()),
         stable_code: 20005,
         typed_error: false,
+        private_content_code: None,
         retry_after_seconds: None,
         disposition: match semantics {
             CommitSemantics::ReadOnly => TransportDisposition::Terminal,
@@ -873,6 +1085,11 @@ fn decode_typed_error(
 ) -> TransportError {
     let typed = error_model::ErrorResponse::decode(body).ok();
     let stable_code = typed.as_ref().map(|error| error.code).unwrap_or(1);
+    let private_content_code = typed
+        .as_ref()
+        .and_then(|error| error.details.get("private_content_code"))
+        .filter(|code| !code.trim().is_empty())
+        .cloned();
     let disposition = match (typed.is_some(), stable_code) {
         (false, _) if matches!(semantics, CommitSemantics::MayCommit) => {
             TransportDisposition::UnknownOutcome
@@ -886,6 +1103,7 @@ fn decode_typed_error(
         http_status: Some(status),
         stable_code,
         typed_error: typed.is_some(),
+        private_content_code,
         retry_after_seconds,
         disposition,
     }
@@ -896,6 +1114,7 @@ fn network_error(_error: impl std::fmt::Display) -> TransportError {
         http_status: None,
         stable_code: 1,
         typed_error: false,
+        private_content_code: None,
         retry_after_seconds: None,
         disposition: TransportDisposition::UnknownOutcome,
     }
@@ -906,6 +1125,7 @@ fn local_error(code: i32) -> TransportError {
         http_status: None,
         stable_code: code,
         typed_error: false,
+        private_content_code: None,
         retry_after_seconds: None,
         disposition: TransportDisposition::Terminal,
     }
@@ -968,8 +1188,64 @@ fn sender_federated_handle(sender: &actor::ActorRef) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read as _, Write as _};
+    use std::net::TcpListener;
+    use std::thread;
+
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+
+    #[test]
+    fn private_social_proto_requests_declare_request_and_response_media_types() {
+        let request =
+            with_proto_content_negotiation(Client::new().get("http://127.0.0.1/secure-content"))
+                .build()
+                .unwrap();
+
+        assert_eq!(
+            request.headers().get(CONTENT_TYPE).unwrap(),
+            "application/protobuf"
+        );
+        assert_eq!(
+            request.headers().get(ACCEPT).unwrap(),
+            "application/protobuf"
+        );
+    }
+
+    fn spawn_peers_proto_response<Payload: Message>(
+        payload: &Payload,
+        type_url: &str,
+    ) -> (String, thread::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test Station");
+        let origin = format!(
+            "http://{}",
+            listener.local_addr().expect("test Station address")
+        );
+        let body = common::PeersResponse {
+            code: "200".to_string(),
+            msg: "ok".to_string(),
+            data: Some(prost_types::Any {
+                type_url: type_url.to_string(),
+                value: payload.encode_to_vec(),
+            }),
+        }
+        .encode_to_vec();
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept trust request");
+            let mut request = vec![0_u8; 8_192];
+            let read = stream.read(&mut request).expect("read trust request");
+            request.truncate(read);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/protobuf\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .expect("write response headers");
+            stream.write_all(&body).expect("write response body");
+            String::from_utf8(request).expect("request is HTTP text")
+        });
+        (origin, handle)
+    }
 
     fn signed_sender_profile(
         station_key: &SigningKey,
@@ -1033,10 +1309,111 @@ mod tests {
     }
 
     #[test]
-    fn remote_plaintext_transport_is_rejected() {
-        assert!(require_authenticated_transport("https://station.test").is_ok());
-        assert!(require_authenticated_transport("http://127.0.0.1:18080").is_ok());
-        assert!(require_authenticated_transport("http://station.test").is_err());
+    fn typed_private_content_error_preserves_the_domain_code() {
+        let body = error_model::ErrorResponse {
+            code: 20002,
+            message: "invalid private-content command".to_string(),
+            details: [(
+                "private_content_code".to_string(),
+                "SOCIAL_PRIVATE_UNSUPPORTED".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+        }
+        .encode_to_vec();
+
+        let error = decode_typed_error(400, &body, None, CommitSemantics::MayCommit);
+
+        assert_eq!(
+            error.private_content_code.as_deref(),
+            Some("SOCIAL_PRIVATE_UNSUPPORTED")
+        );
+        assert!(error.to_string().contains("SOCIAL_PRIVATE_UNSUPPORTED"));
+    }
+
+    #[test]
+    fn private_social_uses_the_shared_station_origin_policy() {
+        assert!(require_authenticated_transport_with_policy(
+            "https://station.test",
+            StationOriginPolicy::HttpsOnly,
+        )
+        .is_ok());
+        assert!(require_authenticated_transport_with_policy(
+            "http://station.test:18080",
+            StationOriginPolicy::Development,
+        )
+        .is_ok());
+        assert!(require_authenticated_transport_with_policy(
+            "http://station.test:18080",
+            StationOriginPolicy::HttpsOnly,
+        )
+        .is_err());
+        assert!(require_authenticated_transport_with_policy(
+            "http://station.test/path",
+            StationOriginPolicy::Development,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn content_prekey_publication_matches_the_shared_canonical_vector() {
+        let publisher = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:test".to_string(),
+                ..Default::default()
+            }),
+            device_id: "device-test".to_string(),
+        };
+        let request = wire::PublishContentPreKeysRequest {
+            publisher: Some(publisher.clone()),
+            publisher_signing_key_id: "signing-test".to_string(),
+            publisher_profile_version: 1,
+            expected_pool_epoch: 0,
+            prekeys: vec![wire::ContentOneTimePreKey {
+                kind: wire::ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+                key_id: "key-test".to_string(),
+                x25519_public_key: vec![1; 32],
+                principal: Some(wire::content_one_time_pre_key::Principal::Endpoint(
+                    publisher.clone(),
+                )),
+                profile_or_recovery_epoch: 1,
+                issuer_signature: vec![2; 64],
+            }],
+            command_id: "command-test".to_string(),
+            proof: Some(wire::ContentPreKeyClientProof {
+                input: Some(wire::ContentPreKeyClientSigningInput {
+                    format_version: 1,
+                    capability_id: PUBLISH_CAPABILITY.to_string(),
+                    station_peer_id: "station-test".to_string(),
+                    session_id: "session-test".to_string(),
+                    publisher: Some(publisher),
+                    publisher_signing_key_id: "signing-test".to_string(),
+                    publisher_profile_version: 1,
+                    request_id: "command-test".to_string(),
+                    request_sha256: vec![3; 32],
+                    nonce: vec![4; 32],
+                    issued_at: Some(prost_types::Timestamp {
+                        seconds: 1,
+                        nanos: 0,
+                    }),
+                }),
+                signature: vec![5; 64],
+            }),
+        };
+        let canonical = canonical_publication_bytes(&request).unwrap();
+        assert_ne!(request.encode_to_vec(), canonical);
+        assert_eq!(
+            hex(&canonical),
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../model/domain/secure_content/testdata/content_prekey_publication.hex"
+            ))
+            .trim()
+        );
+        assert_eq!(
+            publication_command_id(&request).unwrap(),
+            "cpk-pub-v1-5ca0fee4658c8956feeca6d8a9272e70ce8c6127e41cd81a2961dbf1a4dd0d8c"
+        );
     }
 
     #[test]
@@ -1168,6 +1545,45 @@ mod tests {
             FEDERATION_RESOLVE_TYPE_URL,
         )
         .is_err());
+    }
+
+    #[test]
+    fn federation_self_request_decodes_peers_response_envelope() {
+        let view = federation::FederationSelfView {
+            federated_handle: "@alice@station.test".to_string(),
+            home_station_peer_id: "station-1".to_string(),
+            actor_ref: Some(actor::ActorRef {
+                ptid: "ptid:alice".to_string(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let (station_origin, request) = spawn_peers_proto_response(
+            &view,
+            "type.googleapis.com/peers_touch.model.federation.v1.FederationSelfView",
+        );
+        let scope = PrivateSocialScope {
+            profile_id: "profile-1".to_string(),
+            station_peer_id: "station-1".to_string(),
+            station_origin,
+            actor_ptid: "ptid:alice".to_string(),
+            device_id: "device-1".to_string(),
+        };
+
+        let decoded = get_federation_self_at(
+            &http_client().expect("build test client"),
+            &scope,
+            "access-token",
+        )
+        .expect("decode Federation self envelope");
+        assert_eq!(decoded, view);
+
+        let request = request.join().expect("join test Station").to_lowercase();
+        assert!(request.starts_with("get /actor/federation/me http/1.1"));
+        assert!(request.contains("authorization: bearer access-token"));
+        assert!(request.contains("x-device-id: device-1"));
+        assert!(request.contains("content-type: application/protobuf"));
+        assert!(request.contains("accept: application/protobuf"));
     }
 
     #[test]

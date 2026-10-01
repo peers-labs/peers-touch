@@ -77,6 +77,7 @@ class ChromeDriver(DomDriver):
             options.add_argument(f"--window-size={self.width},{self.height}")
             for arg in self.extra_args:
                 options.add_argument(arg)
+            options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
             self._driver = webdriver.Chrome(options=options)
             self._driver.set_script_timeout(10)
             self._driver.set_page_load_timeout(30)

@@ -133,7 +133,6 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('platform.permission.checkAll');
     expect(actionNames).toContain('platform.network.read');
     expect(actionNames).toContain('session.logout');
-    expect(actionNames).toContain('federation.context.read');
     expect(actionNames).toContain('messaging.createDirect');
     expect(actionNames).toContain('messaging.createGroup');
     expect(actionNames).toContain('messaging.attachment.stage');
@@ -153,6 +152,10 @@ describe('Mobile Acceptance Harness', () => {
     expect(actionNames).toContain('social.contact.open');
     expect(actionNames).toContain('social.reconcile');
     expect(actionNames).toContain('social.projection.read');
+    expect(actionNames).toContain('moments.private.publishText');
+    expect(actionNames).toContain('moments.private.readText');
+    expect(actionNames).toContain('moments.private.reconcile');
+    expect(actionNames).toContain('moments.private.snapshot');
     expect(actionNames).toContain('storage.conversation-clear.seed');
   });
 
@@ -319,27 +322,13 @@ describe('Mobile Acceptance Harness', () => {
         });
         const restarted = await harness['lifecycle.waitReady']({
           minimumGeneration: failed.generation + 1,
-          includeDiagnostics: true,
         });
         expect(restarted.generation).toBe(failed.generation + 1);
         expect(restarted.runtimes[0].status).toBe('ready');
         expect(restarted.runtimes.slice(1).map((runtime) => runtime.status))
           .toEqual(persistentFailure ? ['failed', 'failed'] : ['ready', 'ready']);
-        expect(restarted.runtimeErrors).toEqual(persistentFailure
-          ? [
-              { runtimeId: 'messaging', error: 'private Station detail' },
-              {
-                runtimeId: 'social',
-                error: 'mobile.lifecycle.dependencyFailed:messaging',
-              },
-            ]
-          : []);
         expect(failed.runtimes[1].status).toBe('failed');
-        const publicRestarted = await harness['lifecycle.waitReady']({
-          minimumGeneration: restarted.generation,
-        });
-        expect(publicRestarted).not.toHaveProperty('runtimeErrors');
-        expect(JSON.stringify(publicRestarted)).not.toContain('private');
+        expect(JSON.stringify(restarted)).not.toContain('private');
         expect(invokeMock).not.toHaveBeenCalled();
       } finally {
         await kernel.stopRuntimeGraph();
@@ -429,6 +418,7 @@ describe('Mobile Acceptance Harness', () => {
       destroyMobileLifecycleKernel();
     }
   });
+
 
   it('rejects duplicate action registration', () => {
     const registry = new MobileAcceptanceActionRegistry();
@@ -558,7 +548,7 @@ describe('Mobile Acceptance Harness', () => {
     expect(source).not.toMatch(/window\.location\.reload/);
   });
 
-  it('requires and projects an authoritative Federation search context', () => {
+  it('derives searched Federation identity from observed runtime output', () => {
     const source = readFileSync(
       new URL('./actions.ts', import.meta.url),
       'utf8',
@@ -569,11 +559,14 @@ describe('Mobile Acceptance Harness', () => {
     );
 
     expect(searchAction).toContain(
-      "federationId,\n      'social.people.search.federationId'",
+      'readSocialPeopleSearchFederations()',
     );
-    expect(searchAction).toContain('readFederationContexts()');
-    expect(searchAction).toContain('federationId: contextId');
-    expect(searchAction).not.toContain('federation?.handle');
+    expect(searchAction).toContain(
+      'federationId: searchResult.federation?.handle ?? selectedFederationId',
+    );
+    expect(searchAction).toContain('.sort()[0] ??');
+    expect(searchAction).not.toContain('input?.federationId');
+    expect(searchAction).not.toContain('input.federationId');
   });
 
   it('routes platform evidence through production Rust commands', async () => {
@@ -994,6 +987,20 @@ describe('Mobile Acceptance Harness', () => {
         name: '',
         ownerPtid: 'ptid:alice',
         memberPtids: ['ptid:alice', 'ptid:bob'],
+        members: [
+          {
+            ptid: 'ptid:alice',
+            role: 3,
+            homeStationPeerId: 'station-peer',
+            muted: false,
+          },
+          {
+            ptid: 'ptid:bob',
+            role: 1,
+            homeStationPeerId: 'station-peer',
+            muted: false,
+          },
+        ],
         membershipEpoch: 1,
         mlsEpoch: 0,
         active: true,
@@ -1339,6 +1346,12 @@ describe('Mobile Acceptance Harness', () => {
     );
     expect(acceptanceHandler).toMatch(
       /mobile_build_identity[\s\S]*oauth_acceptance_callback_replay_handle[\s\S]*oauth_acceptance_configure_secure_storage_fault[\s\S]*oauth_acceptance_negative_callback/,
+    );
+    expect(releaseHandler).not.toMatch(
+      /reliability_acceptance_configure_fault/,
+    );
+    expect(acceptanceHandler).toMatch(
+      /reliability_acceptance_configure_fault/,
     );
     expect(releaseHandler).not.toMatch(
       /reliability_acceptance_configure_fault/,

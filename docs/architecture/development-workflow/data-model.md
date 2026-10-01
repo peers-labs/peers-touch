@@ -210,6 +210,17 @@ interface TaskSlice {
     functionalRunSeconds: number;
     cleanupSeconds: number;
   };
+  runtimeReuse?: {
+    scope: 'suite';
+    entryCheckId: string;
+    scenarioIds: string[];
+    maxProvisioningRuns: number;
+    maxClientLaunches: number;
+    minWarmReuseRate: number;
+    requireAttachOnlyScenarios: boolean;
+    requireReceiverVisibleProof: boolean;
+    allowClientReplacement: boolean;
+  };
   checks: Array<{
     id: string;
     command: string;
@@ -257,6 +268,15 @@ Task checks must make the Session path reachable:
   terminal source closures and do not require a runtime proof successor;
 - a `functional` Task declares at least one `FUNCTIONAL_CHECK`; when its
   Acceptance closure is non-empty it also declares `ACCEPTANCE_PROOF`;
+- a multi-scenario executable-runtime Task that shares expensive resources
+  declares closed `runtimeReuse`; `entryCheckId` names one functional check,
+  Scenario IDs are unique, and count/rate budgets are valid;
+- `runtimeReuse` is invalid for source or acceptance-aggregate Tasks and for
+  `runtimeClass=source-only`;
+- a `functional` Task with an empty Acceptance closure runs its declared
+  `FUNCTIONAL_CHECK` commands directly through the Session owner, seals their
+  bounded output plus the stable Git/workspace content digest, and does not
+  invoke an Acceptance Gate;
 - an `acceptance-aggregate` Task declares no `FUNCTIONAL_CHECK`, declares
   `ACCEPTANCE_PROOF`, and owns a non-empty Acceptance closure; its
   `runtimeClass` names the strongest runtime class in the aggregate;

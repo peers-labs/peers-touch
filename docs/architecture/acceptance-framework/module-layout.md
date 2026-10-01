@@ -1,8 +1,8 @@
 # Acceptance Framework — 模块目录结构
 
 > **Status**: active
-> **Version**: v2.2
-> **Created**: 2026-08-15 | **Updated**: 2026-09-16
+> **Version**: v2.3
+> **Created**: 2026-08-15 | **Updated**: 2026-09-29
 
 
 > **Owner**: Architecture Team
@@ -39,6 +39,7 @@ tooling/acceptance/
 │   ├── finalizer_worker.py         # [D-19 ACCEPTED TARGET] isolated Python worker bootstrap
 │   ├── finalization_supervisor.c   # [D-19 ACCEPTED TARGET] POSIX hard-deadline worker supervisor
 │   ├── runtime_cell.py              # [D-13] Cell contract/manifest/matrix/lease schema
+│   ├── suite_runtime.py             # [D-21] Suite lifecycle/reuse ledger and report validation
 │   ├── attestation.py              # Station deployment/runtime attestation producer
 │   ├── drivers/
 │   │   ├── __init__.py
@@ -174,6 +175,7 @@ tooling/acceptance/
 | `core/finalizer_worker.py` | **D-19 accepted target**：`-I -S -E -B` isolated worker bootstrap，验证request/runtime/bundle/FD identity后分派fixed worker kind，包括authority-runtime persistence；不得持有Evidence Store API |
 | `core/finalization_supervisor.c` | **D-19 accepted target**：在spawn Python worker前解除signal mask、安装default-action real-time timer，并在runner EOF/timeout时kill/reap worker group |
 | `core/runtime_cell.py` | Runtime Cell manifest、lease state与typed validation；只消费并验证从`core/result_contracts.py`导入的canonical matrix contract，不定义或拥有第二份matrix result |
+| `core/suite_runtime.py` | **D-21** domain-neutral `runtimeReuse` contract、Suite lifecycle ledger、reuse metrics、report digest与fail-closed validation；不启动资源、不包含业务Scenario或断言 |
 | `core/attestation.py` | 从 live Station 和 deployment worktree 生产 commit/workspace/proto attestation |
 | `core/drivers/base.py` | BaseDriver 定义生命周期；DomDriver 定义 DOM/JS/截图能力 |
 | `core/drivers/launcher.py` | 定义 launcher metadata、start/stop/alive 资源所有权契约 |
@@ -225,6 +227,7 @@ core/power_controller.py → core/trust_admission.py + core/finalization_contrac
 core/proof_admission.py → core/evidence_store.py + core/finalization_contracts.py
 core/finalizer_worker.py → core/result_contracts.py + core/finalization_contracts.py
 core/runtime_cell.py → core/result_contracts.py + core/errors.py + core/redaction.py
+core/suite_runtime.py → core/errors.py + core/redaction.py
 core/attestation.py → core/provisioning.py + injected RemoteSourceIdentityProvider
 core/harness.py → core/drivers/base.py
 core/drivers/base.py → core/errors.py
@@ -254,6 +257,8 @@ fixtures/*.py → core/fixtures/base.py
   `finalizers/*.py`不得transitively获得Evidence Store mutation APIs
 - `core/result_contracts.py`不得import `core/finalization_contracts.py`、
   `core/evidence_store.py`或执行I/O；canonical result algebra不得在其它模块复制
+- `core/suite_runtime.py`不得import Gate、Provisioner、Driver、Fixture、产品
+  Domain或Development runner；业务只通过closed contract和lifecycle event注入
 - `core/power_controller.py`不得import `core/evidence_store.py`、
   `core/evidence_finalization.py`、Gate、Provisioner或domain finalizer；Evidence Store
   可持久化和resolve typed controller artifacts，但不得拥有controller key、journal
