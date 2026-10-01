@@ -664,6 +664,48 @@ def inspect_workflow_liveness(
     return value
 
 
+def claim_installer_action_grant(
+    root: Path,
+    receipt: dict[str, object],
+    now: datetime,
+) -> None:
+    completed = subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "--eval",
+            (
+                "import fs from 'node:fs';"
+                "import { pathToFileURL } from 'node:url';"
+                "const [actionPath, machineRoot, now] = process.argv.slice(-3);"
+                "try {"
+                "const action = await import(pathToFileURL(actionPath));"
+                "const receipt = JSON.parse(fs.readFileSync(0, 'utf8'));"
+                "action.claimWorkflowActionGrant(receipt, { machineRoot, now });"
+                "} catch (error) {"
+                "console.error(error?.code ?? error?.message ?? String(error));"
+                "process.exit(2);"
+                "}"
+            ),
+            "claim-workflow-action-grant",
+            str(root / "tooling/scripts/local-dev/workflow-action-store.mjs"),
+            str(machine_root()),
+            now.isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        ],
+        cwd=root,
+        input=json.dumps(receipt),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            completed.stderr.strip()
+            or completed.stdout.strip()
+            or "WORKFLOW_ACTION_GRANT_UNAVAILABLE"
+        )
+
+
 def require_global_idle(root: Path, current_workspace_id: str) -> None:
     now = datetime.now(timezone.utc)
     ledger = validated_work_ledger(root)
@@ -717,6 +759,13 @@ def require_global_idle(root: Path, current_workspace_id: str) -> None:
     ]
     if non_installer or len(live_actions) > 1:
         raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live workflow action")
+    if live_actions:
+        exact_receipt = {
+            key: value
+            for key, value in live_actions[0].items()
+            if key != "actorProjection"
+        }
+        claim_installer_action_grant(root, exact_receipt, now)
 
 
 def purge_legacy_binding_state() -> None:

@@ -885,10 +885,14 @@ export function resolveCompletionReviewBinding(
       ? dependencies.clock()
       : new Date();
   const now = clock instanceof Date ? clock : new Date(clock);
-  const recent = readActions({
+  const latestByAction = new Map();
+  for (const receipt of readActions({
     machineRoot: dependencies.machineRoot,
     workspaceId: context.workspaceId,
-  })
+  })) {
+    latestByAction.set(receipt.actionId, receipt);
+  }
+  const recent = [...latestByAction.values()]
     .filter(
       (receipt) =>
         receipt.operation.family === 'OWNER_CONTROL' &&

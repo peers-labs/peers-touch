@@ -103,7 +103,32 @@ class AgentIntegrationTests(unittest.TestCase):
             "tooling/scripts/plan/workspace-plan-binding.mjs":
                 "export function resolveWorkspacePlanBinding() { throw new Error('fixture only'); }\n",
             "tooling/scripts/local-dev/dev-session-store.mjs":
-                "export function loadSessionStore() { throw new Error('fixture only'); }\n",
+                """
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+export function loadSessionStore() { throw new Error('fixture only'); }
+export function createSessionStore(state, options) {
+  const directory = path.join(
+    process.env.PT_MACHINE_DEV_ROOT,
+    'workspaces',
+    options.workspaceId,
+    'workflow',
+    options.workItemId,
+  );
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    path.join(directory, 'session.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      kind: 'peers-touch-development-session',
+      state,
+      eventCount: 1,
+      eventDigest: 'a'.repeat(64),
+    }),
+    { mode: 0o600 },
+  );
+}
+""".lstrip(),
         }
         for relative, source in module_stubs.items():
             stub = self.root / relative
@@ -282,6 +307,12 @@ export function processStartIdentity() { return 'fixture'; }
             "const binding = await import(pathToFileURL(bindingPath));"
             "const projection = await import(pathToFileURL(projectionPath));"
             "const action = await import(pathToFileURL(actionPath));"
+            "const sessionSchema = await import(pathToFileURL("
+            "repoRoot + '/tooling/scripts/local-dev/dev-session-schema.mjs'));"
+            "const sessionStore = await import(pathToFileURL("
+            "repoRoot + '/tooling/scripts/local-dev/dev-session-store.mjs'));"
+            "const activeWork = await import(pathToFileURL("
+            "repoRoot + '/tooling/scripts/local-dev/active-work-store.mjs'));"
             "const now = new Date();"
             "const owner = binding.bindWorkflowOwner("
             "'trae', 'visible-chat', repoRoot, { machineRoot, now }"
@@ -290,15 +321,47 @@ export function processStartIdentity() { return 'fixture'; }
             "binding: owner, now"
             "});"
             "if (mode === 'assignment') {"
+            "const sessionId = 'SESSION-1';"
+            "const workItemId = 'WORK-1';"
+            "const state = sessionSchema.createInitialSessionState({"
+            "sessionId,"
+            "workItemId,"
+            "planId: 'PLAN-1',"
+            "taskId: 'TASK-1',"
+            "workspaceId: owner.workspaceId,"
+            "branch: 'test',"
+            "journeyId: 'JOURNEY-1',"
+            "executionMode: 'build'"
+            "}, now.toISOString());"
+            "sessionStore.createSessionStore(state, {"
+            "workspaceId: owner.workspaceId, workItemId, now"
+            "});"
+            "activeWork.updateActiveWorkRecord({"
+            "workspaceId: owner.workspaceId,"
+            "workItemId,"
+            "planId: 'PLAN-1',"
+            "planPath: 'docs/architecture/test/execution-plans/test/plan.md',"
+            "planStatus: 'active',"
+            "currentTaskId: 'TASK-1',"
+            "currentTaskPath: "
+            "'docs/architecture/test/execution-plans/test/tasks/TASK-1.md',"
+            "taskStatus: 'in_progress',"
+            "sessionId,"
+            "journeyId: 'JOURNEY-1',"
+            "devState: 'BOUND',"
+            "branch: 'test',"
+            "initialHead: '1'.repeat(40),"
+            "expectedHead: '2'.repeat(40)"
+            "}, { workspaceId: owner.workspaceId, now });"
             "binding.createWorkflowBindingAssignment(ownerProjection, {"
             "assignmentId: 'reviewer-1',"
             "role: 'REVIEWER',"
-            "workflowSessionId: 'SESSION-1',"
+            "workflowSessionId: sessionId,"
             "operationId: 'review-1',"
             "leaseMs: 60_000"
             "}, { machineRoot, now });"
             "} else {"
-            "action.recordWorkflowAction({"
+            "const receipt = action.recordWorkflowAction({"
             "machineRoot,"
             "rootBindingDigest: owner.digest,"
             "binding: {"
@@ -318,13 +381,16 @@ export function processStartIdentity() { return 'fixture'; }
             "},"
             "operation: {"
             "family: 'OWNER_CONTROL',"
-            "label: mode === 'installer-action' ? 'skills' : 'status',"
+            "label: mode.startsWith('installer-') ? 'skills' : 'status',"
             "targetRef: null"
             "},"
             "progressStamp: 'c'.repeat(64),"
             "leaseMs: 60_000,"
             "now"
             "});"
+            "if (mode === 'installer-authorized') {"
+            "action.issueWorkflowActionGrant(receipt, { machineRoot, now });"
+            "}"
             "}"
         )
         completed = subprocess.run(
@@ -785,8 +851,25 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertIn("GLOBAL_WORKFLOW_NOT_IDLE", completed.stdout)
         self.assertTrue(legacy.exists())
 
-    def test_hard_cut_accepts_only_the_current_owner_installer_action(self) -> None:
+    def test_hard_cut_rejects_an_unrelated_seeded_installer_action(self) -> None:
         self.seed_live_workflow_state("installer-action")
+        legacy = self.machine / "conversations/trae/legacy"
+        legacy.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("WORKFLOW_ACTION_GRANT_UNAVAILABLE", completed.stdout)
+        self.assertTrue(legacy.exists())
+
+    def test_hard_cut_accepts_the_exact_granted_installer_action_once(self) -> None:
+        self.seed_live_workflow_state("installer-authorized")
         legacy = self.machine / "conversations/trae/legacy"
         legacy.mkdir(parents=True)
 

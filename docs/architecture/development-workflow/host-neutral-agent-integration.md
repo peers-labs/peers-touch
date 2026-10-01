@@ -69,15 +69,17 @@ value, or a mutable workspace pointer.
 An execution session without an assignment uses the OWNER projection for
 admission and cannot claim child independence. WORKER/REVIEWER assignment is
 create-once, carries root/parent binding digests plus the Development Session
-and operation IDs, and has a bounded lease. Terminal receipts close child
+and operation IDs, and has a bounded lease. Creation requires the exact current
+`active-work.json` and `session.json` identity. Terminal receipts close child
 liveness; expired or terminal children never participate in current owner or
 Completion Review selection.
 
 TRAE `SubagentStart` and `SubagentStop` are the lifecycle boundaries for
 assignment claim and terminalization. `PreCompact` records the current
-projection digest and `PostCompact` requires the same root/lineage before the
-next prompt or tool action. Task changes update only the projected Development
-Session identity; they do not create another OWNER.
+projection into one bounded machine receipt and `PostCompact` re-resolves and
+requires the same root, parent, assignment, Session, workspace, and execution
+root before restoring context. Task changes update only the projected
+Development Session identity; they do not create another OWNER.
 
 ## Required Sequence
 
@@ -128,9 +130,12 @@ Session identity; they do not create another OWNER.
    machine work-ledger lock, rejects every live machine declaration, child
    assignment, canonical workflow action, and Action Store lock as
    `GLOBAL_WORKFLOW_NOT_IDLE`. One live OWNER `skills` Action Receipt is allowed
-   only when its canonical binding resolves to the selected source worktree.
-   Expired actions are not live. The installer validates the ledger, binding,
-   and Action stores through their canonical owners while holding the lock,
+   only when its canonical binding resolves to the selected source worktree and
+   the Kernel issued a create-once grant for that exact action ID. The installer
+   atomically consumes the grant, so a seeded receipt or second invocation
+   cannot reuse it. Expired actions are not live. The installer validates the
+   ledger, binding, and Action stores through their canonical owners while
+   holding the lock,
    never reclaims another owner's stale ledger lock, waits while a live ledger
    owner holds an inode-bound recovery claim, reclaims only a dead recovery
    owner through PID/start identity, rejects host-root, retirement-root, reset,

@@ -125,6 +125,49 @@ test('SessionStart prewarms but never creates the immutable binding', async () =
   assert.equal(bindCalls, 0);
 });
 
+test('PreCompact records lineage and PostCompact verifies it before restoring context', async () => {
+  const calls = [];
+  const options = injectedBinding('/workspace', {
+    inspectWorkflowContext: async () => ({ status: 'IDLE' }),
+    recordWorkflowPreCompact: (projection) => {
+      calls.push(['PRE', projection.bindingDigest]);
+    },
+    verifyWorkflowPostCompact: (projection) => {
+      calls.push(['POST', projection.bindingDigest]);
+    },
+  });
+  const pre = await evaluateWorkflowEvent(
+    event({ event: 'PRE_COMPACT', hostEvent: 'PreCompact' }),
+    options,
+  );
+  const post = await evaluateWorkflowEvent(
+    event({ event: 'POST_COMPACT', hostEvent: 'PostCompact' }),
+    options,
+  );
+  assert.equal(pre.action, 'CONTEXT');
+  assert.equal(post.action, 'CONTEXT');
+  assert.deepEqual(calls, [
+    ['PRE', 'b'.repeat(64)],
+    ['POST', 'b'.repeat(64)],
+  ]);
+});
+
+test('PostCompact denies restoration when persisted lineage changed', async () => {
+  const result = await evaluateWorkflowEvent(
+    event({ event: 'POST_COMPACT', hostEvent: 'PostCompact' }),
+    injectedBinding('/workspace', {
+      inspectWorkflowContext: async () => ({ status: 'IDLE' }),
+      verifyWorkflowPostCompact: () => {
+        const error = new Error('compact lineage differs');
+        error.code = 'WORKFLOW_COMPACT_LINEAGE_MISMATCH';
+        throw error;
+      },
+    }),
+  );
+  assert.equal(result.action, 'DENY');
+  assert.equal(result.code, 'WORKFLOW_COMPACT_LINEAGE_MISMATCH');
+});
+
 test('missing stable conversation identity denies mutation but permits safe reads', async () => {
   const mutation = await evaluateWorkflowEvent(
     event({
@@ -841,6 +884,45 @@ test('PreToolUse starts heartbeat and PostToolUse records terminal completion', 
   );
   assert.equal(heartbeats.length, 1);
   assert.equal(heartbeats[0].actionId, 'tool-call-1');
+});
+
+test('the exact OWNER skills action receives one installer grant', async () => {
+  const grants = [];
+  const inspection = {
+    status: 'READY',
+    tracked: true,
+    declaration: {
+      workItemId: 'WORK-1',
+      planId: 'PLAN-1',
+      taskId: 'TASK-1',
+      sessionId: 'SESSION-1',
+      sourceClaims: [],
+    },
+    session: {
+      eventDigest: 'c'.repeat(64),
+      state: { state: 'IMPLEMENTING' },
+    },
+  };
+  const result = await evaluateWorkflowEvent(
+    event({
+      actionId: 'skills-action',
+      toolWorkingDirectory: '/workspace',
+      toolName: 'Shell',
+      command: 'make skills IDE=codex',
+      toolInput: {
+        command: 'make skills IDE=codex',
+        working_directory: '/workspace',
+      },
+    }),
+    injectedBinding('/workspace', {
+      inspectWorkflowContext: async () => inspection,
+      recordWorkflowAction: () => ({ actionId: 'skills-action' }),
+      issueWorkflowActionGrant: (receipt) => grants.push(receipt.actionId),
+      startWorkflowActionHeartbeat: false,
+    }),
+  );
+  assert.equal(result.action, 'ALLOW');
+  assert.deepEqual(grants, ['skills-action']);
 });
 
 test('PostToolUse cannot create the first binding or emit an action receipt', async () => {

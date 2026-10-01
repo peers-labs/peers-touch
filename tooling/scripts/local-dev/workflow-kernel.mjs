@@ -7,9 +7,11 @@ import {
   renderWorkflowAnchor,
 } from './workflow-anchor.mjs';
 import {
+  recordWorkflowPreCompact,
   releaseWorkflowOwner,
   resolveEventWorkflowBinding,
   terminalizeWorkflowChild,
+  verifyWorkflowPostCompact,
   writeWorkflowAnchorReceipt,
 } from './workflow-binding-store.mjs';
 import {
@@ -23,6 +25,7 @@ import {
   resolveProjectRoot,
 } from './workflow-state-inspector.mjs';
 import {
+  issueWorkflowActionGrant,
   recordWorkflowAction,
   startWorkflowActionHeartbeat,
 } from './workflow-action-store.mjs';
@@ -337,10 +340,42 @@ async function evaluateWorkflowEventInternal(event, options = {}) {
   if (
     event.event === 'SESSION_START' ||
     event.event === 'BEFORE_PROMPT' ||
-    event.event === 'SUBAGENT_START' ||
-    event.event === 'PRE_COMPACT' ||
-    event.event === 'POST_COMPACT'
+    event.event === 'SUBAGENT_START'
   ) {
+    const inspection = await inspectStopContext(binding, inspect);
+    return {
+      action: 'CONTEXT',
+      additionalContext: contextText(binding, inspection, 'ENFORCED'),
+      enforcementMode: 'ENFORCED',
+      executionRoot: binding.executionRoot,
+    };
+  }
+  if (event.event === 'PRE_COMPACT' || event.event === 'POST_COMPACT') {
+    try {
+      if (event.event === 'PRE_COMPACT') {
+        (options.recordWorkflowPreCompact ?? recordWorkflowPreCompact)(
+          binding,
+          {
+            machineRoot: options.machineRoot,
+            now: options.now,
+          },
+        );
+      } else {
+        (options.verifyWorkflowPostCompact ?? verifyWorkflowPostCompact)(
+          binding,
+          {
+            machineRoot: options.machineRoot,
+            now: options.now,
+          },
+        );
+      }
+    } catch (error) {
+      return deny(
+        error?.code ?? 'WORKFLOW_COMPACT_LINEAGE_INVALID',
+        error?.message ?? 'Compact lineage could not be verified.',
+        binding,
+      );
+    }
     const inspection = await inspectStopContext(binding, inspect);
     return {
       action: 'CONTEXT',
@@ -669,6 +704,22 @@ async function reportWorkflowAction(event, result, options) {
   };
   try {
     const receipt = writer(recordInput);
+    const issueGrant =
+      options.issueWorkflowActionGrant === undefined
+        ? issueWorkflowActionGrant
+        : options.issueWorkflowActionGrant;
+    if (
+      receiptEvent === 'STARTED' &&
+      receipt?.actionId &&
+      recordInput.operation.family === 'OWNER_CONTROL' &&
+      recordInput.operation.label === 'skills' &&
+      issueGrant !== false
+    ) {
+      issueGrant(receipt, {
+        machineRoot: options.machineRoot,
+        now: options.now,
+      });
+    }
     const startHeartbeat =
       options.startWorkflowActionHeartbeat === undefined
         ? startWorkflowActionHeartbeat
