@@ -13,6 +13,10 @@ from tooling.acceptance.gates.dev.dev_ui_browser_e2e import (
     count_refresh_requests,
     validate_snapshot,
 )
+from tooling.acceptance.gates.dev.peers_dev_ui_browser_e2e import (
+    validate_driver_summary,
+    validate_runtime_manifest,
+)
 from tooling.acceptance.provisioners import (
     DevUiLocalBrowserProvisioner,
     get_provisioner,
@@ -157,6 +161,37 @@ class DevUiBrowserAcceptanceTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(count_refresh_requests(path), 2)
+
+    def test_progress_gate_accepts_canonical_browser_runtime_and_artifacts(
+        self,
+    ) -> None:
+        validate_runtime_manifest(
+            {
+                "environmentId": "dev-ui-local-browser",
+                "profile": {"resolvedName": "dev-ui-local"},
+                "clients": [{"runtime": "browser"}],
+            }
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            output_directory = Path(temp)
+            for filename in ("desktop.png", "narrow.png"):
+                (output_directory / filename).write_bytes(b"x" * 10_001)
+            screenshots = validate_driver_summary(
+                {
+                    "ok": True,
+                    "viewports": ["1440x1000", "390x844"],
+                    "screenshots": ["desktop.png", "narrow.png"],
+                    "disconnectFallback": "PASS",
+                    "sseRecovery": "PASS",
+                },
+                output_directory,
+            )
+            self.assertEqual(set(screenshots), {"desktop", "narrow"})
+
+    def test_progress_gate_rejects_incomplete_driver_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(Exception, "summary is invalid"):
+                validate_driver_summary({"ok": True}, Path(temp))
 
 
 if __name__ == "__main__":

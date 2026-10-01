@@ -1699,7 +1699,7 @@
       "description": "Render the exact-source Peers Dev worktree governance surface in Chromium and prove discovery, selection controls, provenance-bearing metrics, protected serving-source removal, automatic refresh, responsive capture, and public-response privacy."
     },
     "peers-dev-ui-browser-e2e": {
-      "command": "node tooling/acceptance/gates/dev/dev-ui-browser-e2e.mjs",
+      "command": "python3 -m tooling.acceptance.gates.dev.peers_dev_ui_browser_e2e",
       "timeout_seconds": 120,
       "environment": "dev-ui-local-browser",
       "provisioner": "dev-ui-local-browser",
