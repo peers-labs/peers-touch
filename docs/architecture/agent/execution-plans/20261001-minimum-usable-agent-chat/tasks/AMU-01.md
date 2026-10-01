@@ -45,12 +45,12 @@
     },
     {
       "id": "minimum-agent-chat-functional",
-      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item AGENT-MINIMUM-USABLE-CHAT-20261001 --gate agent-conversation-e2e --gate agent-v2-capability-binding-e2e --gate agent-v2-governed-tool-loop-e2e --gate agent-v2-mcp-lifecycle-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item AGENT-MINIMUM-USABLE-CHAT-20261001 --gate agent-core-lifecycle-native-e2e --gate agent-v2-capability-binding-e2e --gate agent-v2-governed-tool-loop-e2e --gate agent-v2-mcp-lifecycle-e2e",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
       "id": "minimum-agent-chat-proof",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate agent-conversation-e2e --gate agent-v2-capability-binding-e2e --gate agent-v2-governed-tool-loop-e2e --gate agent-v2-mcp-lifecycle-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate agent-core-lifecycle-native-e2e --gate agent-v2-capability-binding-e2e --gate agent-v2-governed-tool-loop-e2e --gate agent-v2-mcp-lifecycle-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
