@@ -25,7 +25,6 @@
       "desktop-dev-runtime-isolation-static"
     ],
     "canonical-dev-ui": [
-      "dev-ui-browser-e2e",
       "peers-dev-ui-browser-e2e"
     ],
     "canonical-contracts": [],
