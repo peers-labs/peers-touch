@@ -32658,6 +32658,45 @@ async function confirmExternalRuntimeResetThroughUI(input: {
   }) as Record<string, unknown>;
 }
 
+async function cleanupExternalRuntimeResidue(): Promise<void> {
+  const store = useAgentStore.getState();
+  await store.loadAgents();
+  const targets = useAgentStore.getState().agents.filter(
+    (agent) =>
+      agent.description === 'Disposable P12 external runtime Agent',
+  );
+  const failures: string[] = [];
+  for (const agent of targets) {
+    const agentId = agent.id || agent.name;
+    try {
+      const conversations = await api.listAgentConversations(agentId, {
+        page: 1,
+        pageSize: 200,
+      });
+      for (const conversation of conversations) {
+        if (conversation.status === 'deleted') continue;
+        clearFoundationLocalConversationProjection(
+          conversation.conversation_id,
+        );
+        await deleteFoundationConversation(
+          conversation.conversation_id,
+          60_000,
+        );
+      }
+      await api.deleteAgent(agentId);
+    } catch (error) {
+      failures.push(`${agentId}:${observedErrorCode(error)}`);
+    }
+  }
+  await store.loadAgents();
+  if (failures.length > 0) {
+    throw new Error(
+      `agent.acceptance.externalRuntimeResidueCleanupFailed:`
+      + failures.join(','),
+    );
+  }
+}
+
 export function installAcceptanceHarness(): void {
   installFoundationF06Observation();
   registerAcceptanceHarness('agent', {
@@ -43435,123 +43474,191 @@ export function installAcceptanceHarness(): void {
     }: {
       sampleId: string;
     }) {
-      const models = await api.listAvailableModels();
-      const model = models.models.find((candidate) => (
-        candidate.provider_id === EXTERNAL_RUNTIME_PROVIDER_ID
-        && candidate.id === EXTERNAL_RUNTIME_MODEL_ID
-        && candidate.enabled
-      ));
-      if (!model) {
-        throw new Error('agent.acceptance.externalRuntimeNotAdvertised');
-      }
       const agentStore = useAgentStore.getState();
-      const priorSelection = agentStore.selectedAgent;
-      const priorSurface = agentStore.getAgentSurface(priorSelection);
-      const agent = await agentStore.createAgent({
-        name: `external-runtime-${sampleId}-${crypto.randomUUID()}`,
-        title: `External runtime ${sampleId}`,
-        description: 'Disposable P12 external runtime Agent',
-        provider: EXTERNAL_RUNTIME_PROVIDER_ID,
-        model: EXTERNAL_RUNTIME_MODEL_ID,
-        thinkingMode: 'disabled',
-      });
-      const agentId = agent.id || agent.name;
-      await activateExternalRuntimeConversation({
-        agentName: agent.name,
-        agentId,
-        conversationId: (
-          await api.createAgentConversation({
-            agent_id: agentId,
-            title: `External primary ${sampleId}`,
-            provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
-            model_name: EXTERNAL_RUNTIME_MODEL_ID,
-          })
-        ).conversation_id,
-      });
-      const primaryConversationId =
-        useChatStore.getState().currentSessionKey;
-      const secondary = await api.createAgentConversation({
-        agent_id: agentId,
-        title: `External secondary ${sampleId}`,
-        provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
-        model_name: EXTERNAL_RUNTIME_MODEL_ID,
-      });
-      const activityBefore = await api.getAgentStationRuntimeActivity({
-        runtime_kind: EXTERNAL_RUNTIME_KIND,
-        runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
-      });
-      const primaryStart = await executeExternalRuntimeTurn({
-        agentId,
-        conversationId: primaryConversationId,
-        content: `P12_START_PRIMARY_${sampleId}`,
-        expected: 'completed',
-      });
-      await activateExternalRuntimeConversation({
-        agentName: agent.name,
-        agentId,
-        conversationId: secondary.conversation_id,
-      });
-      const secondaryStart = await executeExternalRuntimeTurn({
-        agentId,
-        conversationId: secondary.conversation_id,
-        content: `P12_START_SECONDARY_${sampleId}`,
-        expected: 'completed',
-      });
-      const secondaryArmed = await executeExternalRuntimeTurn({
-        agentId,
-        conversationId: secondary.conversation_id,
-        content: 'P12_ARM_RESET_FAILURE',
-        expected: 'completed',
-      });
-      await activateExternalRuntimeConversation({
-        agentName: agent.name,
-        agentId,
-        conversationId: primaryConversationId,
-      });
-      const primaryFollowUp = await executeExternalRuntimeTurn({
-        agentId,
-        conversationId: primaryConversationId,
-        content: 'P12_RESUME_BEFORE_RESTART',
-        expected: 'completed',
-      });
-      const activityAfter = await api.getAgentStationRuntimeActivity({
-        runtime_kind: EXTERNAL_RUNTIME_KIND,
-        runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
-      });
-      const profile = await api.getAgentEffectiveRuntimeProfile({
-        agent_id: agentId,
-      });
-      const primaryBinding = evidenceRecord(
-        primaryFollowUp.binding,
-        'externalPrimaryBinding',
-      );
-      const secondaryBinding = evidenceRecord(
-        secondaryArmed.binding,
-        'externalSecondaryBinding',
-      );
-      const fixture: ExternalRuntimeLifecycleFixture = {
-        agentId,
-        agentName: agent.name,
-        priorSelection,
-        priorSurface,
-        primaryConversationId,
-        secondaryConversationId: secondary.conversation_id,
-        primarySessionId: String(primaryBinding.external_session_id ?? ''),
-        secondarySessionId: String(secondaryBinding.external_session_id ?? ''),
-        primaryHomeRef: String(primaryBinding.runtime_home_ref ?? ''),
-        secondaryHomeRef: String(secondaryBinding.runtime_home_ref ?? ''),
-        epoch: Number(primaryBinding.external_session_epoch ?? 0),
-      };
-      return evidenceValue({
-        fixture,
-        profile,
-        activityBefore,
-        activityAfter,
-        primaryStart,
-        primaryFollowUp,
-        secondaryStart,
-        secondaryArmed,
-      });
+      let priorSelection = agentStore.selectedAgent;
+      let priorSurface = agentStore.getAgentSurface(priorSelection);
+      let stage = 'available-models';
+      let agentId = '';
+      let agentName = '';
+      const conversationIds: string[] = [];
+      try {
+        stage = 'residue-cleanup';
+        await cleanupExternalRuntimeResidue();
+        priorSelection = useAgentStore.getState().selectedAgent;
+        priorSurface = useAgentStore.getState().getAgentSurface(
+          priorSelection,
+        );
+        stage = 'available-models';
+        const models = await api.listAvailableModels();
+        const model = models.models.find((candidate) => (
+          candidate.provider_id === EXTERNAL_RUNTIME_PROVIDER_ID
+          && candidate.id === EXTERNAL_RUNTIME_MODEL_ID
+          && candidate.enabled
+        ));
+        if (!model) {
+          throw new Error('agent.acceptance.externalRuntimeNotAdvertised');
+        }
+        stage = 'agent-create';
+        const agent = await agentStore.createAgent({
+          name: `external-runtime-${sampleId}-${crypto.randomUUID()}`,
+          title: `External runtime ${sampleId}`,
+          description: 'Disposable P12 external runtime Agent',
+          provider: EXTERNAL_RUNTIME_PROVIDER_ID,
+          model: EXTERNAL_RUNTIME_MODEL_ID,
+          thinkingMode: 'disabled',
+        });
+        agentId = agent.id || agent.name;
+        agentName = agent.name;
+        stage = 'primary-conversation-create';
+        const primary = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `External primary ${sampleId}`,
+          provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          model_name: EXTERNAL_RUNTIME_MODEL_ID,
+        });
+        const primaryConversationId = primary.conversation_id;
+        conversationIds.push(primaryConversationId);
+        stage = 'primary-conversation-activate';
+        await activateExternalRuntimeConversation({
+          agentName,
+          agentId,
+          conversationId: primaryConversationId,
+        });
+        stage = 'secondary-conversation-create';
+        const secondary = await api.createAgentConversation({
+          agent_id: agentId,
+          title: `External secondary ${sampleId}`,
+          provider_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+          model_name: EXTERNAL_RUNTIME_MODEL_ID,
+        });
+        conversationIds.push(secondary.conversation_id);
+        stage = 'activity-before';
+        const activityBefore = await api.getAgentStationRuntimeActivity({
+          runtime_kind: EXTERNAL_RUNTIME_KIND,
+          runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+        });
+        stage = 'primary-start';
+        const primaryStart = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId: primaryConversationId,
+          content: `P12_START_PRIMARY_${sampleId}`,
+          expected: 'completed',
+        });
+        stage = 'secondary-conversation-activate';
+        await activateExternalRuntimeConversation({
+          agentName,
+          agentId,
+          conversationId: secondary.conversation_id,
+        });
+        stage = 'secondary-start';
+        const secondaryStart = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId: secondary.conversation_id,
+          content: `P12_START_SECONDARY_${sampleId}`,
+          expected: 'completed',
+        });
+        stage = 'secondary-arm-cleanup-failure';
+        const secondaryArmed = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId: secondary.conversation_id,
+          content: 'P12_ARM_RESET_FAILURE',
+          expected: 'completed',
+        });
+        stage = 'primary-conversation-reactivate';
+        await activateExternalRuntimeConversation({
+          agentName,
+          agentId,
+          conversationId: primaryConversationId,
+        });
+        stage = 'primary-follow-up';
+        const primaryFollowUp = await executeExternalRuntimeTurn({
+          agentId,
+          conversationId: primaryConversationId,
+          content: 'P12_RESUME_BEFORE_RESTART',
+          expected: 'completed',
+        });
+        stage = 'activity-after';
+        const activityAfter = await api.getAgentStationRuntimeActivity({
+          runtime_kind: EXTERNAL_RUNTIME_KIND,
+          runtime_id: EXTERNAL_RUNTIME_PROVIDER_ID,
+        });
+        stage = 'effective-profile';
+        const profile = await api.getAgentEffectiveRuntimeProfile({
+          agent_id: agentId,
+        });
+        const primaryBinding = evidenceRecord(
+          primaryFollowUp.binding,
+          'externalPrimaryBinding',
+        );
+        const secondaryBinding = evidenceRecord(
+          secondaryArmed.binding,
+          'externalSecondaryBinding',
+        );
+        const fixture: ExternalRuntimeLifecycleFixture = {
+          agentId,
+          agentName,
+          priorSelection,
+          priorSurface,
+          primaryConversationId,
+          secondaryConversationId: secondary.conversation_id,
+          primarySessionId: String(primaryBinding.external_session_id ?? ''),
+          secondarySessionId: String(
+            secondaryBinding.external_session_id ?? '',
+          ),
+          primaryHomeRef: String(primaryBinding.runtime_home_ref ?? ''),
+          secondaryHomeRef: String(secondaryBinding.runtime_home_ref ?? ''),
+          epoch: Number(primaryBinding.external_session_epoch ?? 0),
+        };
+        return evidenceValue({
+          fixture,
+          profile,
+          activityBefore,
+          activityAfter,
+          primaryStart,
+          primaryFollowUp,
+          secondaryStart,
+          secondaryArmed,
+        });
+      } catch (error) {
+        const cleanupFailures: string[] = [];
+        for (const conversationId of conversationIds.reverse()) {
+          clearFoundationLocalConversationProjection(conversationId);
+          try {
+            await deleteFoundationConversation(conversationId, 60_000);
+          } catch (cleanupError) {
+            cleanupFailures.push(
+              `conversation:${observedErrorCode(cleanupError)}`,
+            );
+          }
+        }
+        if (agentId) {
+          try {
+            await api.deleteAgent(agentId);
+          } catch (cleanupError) {
+            if (!isFoundationResourceNotFound(cleanupError)) {
+              cleanupFailures.push(
+                `agent:${observedErrorCode(cleanupError)}`,
+              );
+            }
+          }
+        }
+        await useAgentStore.getState().loadAgents();
+        if (priorSelection) {
+          useAgentStore.getState().setSelectedAgent(priorSelection);
+          useAgentStore.getState().setAgentSurface(
+            priorSelection,
+            priorSurface,
+          );
+          await api.setSelectedAgent(priorSelection);
+        }
+        const original = error instanceof Error
+          ? error.message
+          : String(error);
+        throw new Error(
+          `agent.acceptance.externalRuntimePreparationFailed:${stage}:`
+          + `${original}:cleanup=${cleanupFailures.join(',') || 'clean'}`,
+        );
+      }
     },
 
     async resumeExternalRuntimeAfterRestart({
