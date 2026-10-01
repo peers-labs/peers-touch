@@ -590,6 +590,7 @@ def main() -> int:
     parser.add_argument("--changed-file", action="append", default=[])
     parser.add_argument("--plan")
     parser.add_argument("--run")
+    parser.add_argument("--session")
     parser.add_argument("--require-gate", action="append", default=[])
     parser.add_argument(
         "--contract",
@@ -600,7 +601,7 @@ def main() -> int:
     try:
         require_acceptance_admission(
             REPO_ROOT,
-            args.run,
+            args.session,
             "gap",
         )
         store = EvidenceStore.from_environment(
