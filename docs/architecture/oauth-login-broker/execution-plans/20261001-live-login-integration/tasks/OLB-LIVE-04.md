@@ -10,7 +10,7 @@
   "workstreamId": "OLB-LIVE",
   "title": "Prove the OAuth2 API and GitHub repository persistence",
   "workClass": "product-behavior",
-  "completionClass": "acceptance-aggregate",
+  "completionClass": "functional",
   "executionMode": "build",
   "closureId": "olb-live-proof",
   "journeyId": "OLB-J01",
@@ -34,6 +34,11 @@
       "id": "olb-live-all-go",
       "command": "cd apps/oauth2-client && go test -race ./...",
       "verificationClass": "SOURCE_CHECK"
+    },
+    {
+      "id": "olb-live-api-functional",
+      "command": "OAUTH2_CLIENT_TEST_ENV_FILE=../env/peers-touch/oauth2-client-test/runtime.env tooling/acceptance/gates/oauth2_client/live_api.sh",
+      "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
       "id": "olb-live-oauth2-acceptance",
