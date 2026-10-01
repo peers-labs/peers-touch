@@ -85,13 +85,13 @@ Do not retry, downgrade, substitute, or edit evidence to change the state.
 ```bash
 python3 tooling/scripts/acceptance-gap-detect.py \
   --claim "<claim>" \
-  --range <range>
+  --range <range> \
+  --session <development-session.json>
 
 python3 tooling/scripts/acceptance-gap-detect-test.py
 ```
-
-The default detector execution is read-only and writes no artifact. Use
-`--output` only when a review workflow explicitly requires a report file.
+`--run` only to select an Acceptance run artifact; it never substitutes for
+the required `--session` admission input.
 
 ## Artifacts
 

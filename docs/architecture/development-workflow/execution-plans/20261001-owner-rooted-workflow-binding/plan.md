@@ -92,6 +92,14 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "tooling/scripts/acceptance-gap-detect-test.py",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/acceptance-gap-detect.py",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "tooling/scripts/install-agent-integration.sh",
         "mode": "exclusive-write"
       },
@@ -109,6 +117,10 @@
       },
       {
         "pathPrefix": "tooling/skills/pt-completion-auditor",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/skills/pt-acceptance-gap-detector",
         "mode": "exclusive-write"
       },
       {

@@ -26,9 +26,12 @@
     "tooling/scripts/agent-integration-audit-test.py",
     "tooling/scripts/agent-integration-audit.py",
     "tooling/scripts/agent-integration-control.py",
+    "tooling/scripts/acceptance-gap-detect-test.py",
+    "tooling/scripts/acceptance-gap-detect.py",
     "tooling/scripts/install-agent-integration.sh",
     "tooling/scripts/local-dev",
     "tooling/scripts/review/skill-check.sh",
+    "tooling/skills/pt-acceptance-gap-detector",
     "tooling/skills/pt-completion-auditor",
     "tooling/skills/pt-context-anchor",
     "tooling/skills/pt-dev-workflow",
@@ -58,7 +61,7 @@
     },
     {
       "id": "bootstrap-source-suite",
-      "command": "python3 -m unittest tooling/scripts/agent-integration-audit-test.py",
+      "command": "python3 -m unittest tooling/scripts/agent-integration-audit-test.py && python3 tooling/scripts/acceptance-gap-detect-test.py",
       "verificationClass": "SOURCE_CHECK"
     },
     {
