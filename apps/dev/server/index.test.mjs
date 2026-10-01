@@ -199,6 +199,10 @@ test('compatible launch is idempotent and HTTP surface is read-only', async () =
       envRepo,
       port,
       identity: identity(port),
+      buildSnapshot: async ({ server }) => ({
+        kind: 'peers-touch-dev-snapshot',
+        server,
+      }),
     });
     const reused = await ensureDevServer({
       envRepo,
