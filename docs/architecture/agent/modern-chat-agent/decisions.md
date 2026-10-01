@@ -1,8 +1,8 @@
 # Modern Chat Agent — Design Decisions
 
 > **Status**: approved
-> **Version**: v1.3
-> **Created**: 2026-07-30 | **Updated**: 2026-09-25
+> **Version**: v1.4
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -46,12 +46,13 @@
 | MCA-D25 | Make governed ToolCall role applicability follow the executed boundary | approved |
 | MCA-D26 | Make Connector evidence follow OAuth-owner execution | approved |
 | MCA-D27 | Make client permission denial a typed lease fact | approved |
+| MCA-D29 | Run stateful external Agents through a Station-owned session lifecycle | approved |
 
 ---
 
 ## MCA-D01: Station Owns The Canonical Single-Agent Kernel
 
-**Status**: approved  
+**Status**: approved
 **Date**: 2026-07-30
 
 ### Context
@@ -2088,3 +2089,88 @@ closed enum or when the product accepts a privileged remote settings command.
 Neither case may fall back to capability-ID parsing.
 
 The agent-led findings-first architecture review passed on 2026-09-25.
+
+## MCA-D29: Station-Owned Stateful External Runtime Lifecycle
+
+**Status**: approved
+**Date**: 2026-10-01
+
+### Context
+
+The runtime contract already distinguishes `DIRECT_MODEL` from
+`EXTERNAL_AGENT` and persists conversation runtime bindings, but production
+execution currently hard-codes Direct Model snapshots. The Foundation matrix
+therefore reaches `BASE-RESUME_UNAVAILABLE` without an executable external
+session path.
+
+The Owner selected full MCA-P12 implementation on 2026-10-01. This supersedes
+the prior frozen-profile decision to keep P12 permanently `NOT_ADVERTISED`;
+P12 remains optional and is advertised only when a complete session adapter is
+healthy.
+
+### Decision
+
+Station owns a provider-neutral External Runtime Manager with a closed session
+CLI protocol:
+
+- one Conversation and external-session epoch own one opaque runtime home;
+- the first Turn starts a session and persists its opaque handle before
+  forwarding runtime output;
+- later Turns and Station restarts resume exactly that handle;
+- resume failure emits `RUNTIME_RESUME_UNAVAILABLE` with only
+  `runtime_profile_id` and `reason_code`;
+- no automatic fallback or replacement session is allowed;
+- `ResetConversationRuntime` is actor-scoped, version-fenced, idempotent, and
+  requires explicit destructive confirmation;
+- reset persists a durable fence before external cleanup, then atomically
+  advances the epoch and clears the session handle;
+- cleanup failure remains durable and blocks new Turn admission;
+- cancellation terminates the active process group but preserves the session;
+- Conversation deletion uses the same cleanup owner.
+
+Deployment configuration supplies shell-free start, resume, and reset argv
+templates. A runtime is `READY` only when all commands and the executable are
+available. Vendor-specific event formats are translated behind the adapter;
+the canonical product ID remains `external-agent`.
+
+Desktop and Browser only project Station state and submit reset intent.
+Neither client receives a filesystem path, owns the external session, starts a
+runtime process, or increments the epoch.
+
+### Rationale
+
+This activates the already accepted P12 Journey without weakening the
+Station-only truth boundary. Durable reset fencing prevents a crash or
+duplicate command from creating two epochs, while conditional advertisement
+keeps deployments without a configured external runtime honest.
+
+### Alternatives Considered
+
+- Reuse one-shot CLI execution: rejected because it rebuilds context and owns
+  no resumable session.
+- Let the client host the external runtime: rejected because Browser and
+  restart behavior would diverge.
+- Auto-create a replacement session after resume failure: rejected because it
+  destroys private runtime continuity without consent.
+- Hold a database transaction open during process cleanup: rejected because
+  external execution is unbounded and would couple locks to process latency.
+- Remove `BASE-RESUME_UNAVAILABLE`: rejected because P12 is now explicitly
+  selected for implementation.
+
+### Consequences
+
+- Shared proto adds runtime binding state and reset command/receipt messages.
+- Station adds an external runtime process/session owner and durable reset
+  command record.
+- Provider admission and execution must preserve external session identity.
+- Desktop adds a typed `Confirm reset` recovery and exposes only safe binding
+  metadata.
+- Foundation adds real create/resume/restart/failure/reset/isolation/cleanup
+  evidence for Desktop and Browser.
+- Evidence before the D29 cutover cannot prove P12.
+
+### Review Condition
+
+Revisit when another adapter requires a non-CLI transport or when process-local
+sessions move to a remote runtime service. The Station binding, epoch,
+confirmation, idempotency, and cleanup semantics remain unchanged.

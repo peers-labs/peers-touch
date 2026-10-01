@@ -1,8 +1,8 @@
 # Modern Chat Agent — Integration
 
 > **Status**: accepted
-> **Version**: v1.2
-> **Created**: 2026-07-30 | **Updated**: 2026-09-19
+> **Version**: v1.3
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -410,8 +410,38 @@ Cutover requirements:
    identity, revision, epoch, or counter regression.
 5. Old provider-list and TurnTrace-only proof code is deleted rather than kept
    as a fallback.
-6. P12 remains unavailable. Stateless CLI Provider activation is governed by
-   MCA-D28 and does not imply external-session resume or reset support.
+6. P12 is conditionally advertised under MCA-D29 only when a complete
+   session-capable adapter is configured and healthy. Stateless CLI Provider
+   activation remains governed by MCA-D28 and does not imply external-session
+   resume or reset support.
+
+### 9.2 Stateful External Runtime Integration
+
+The Station `externalruntime.Manager` is the only process/session owner:
+
+```text
+RuntimeAdmissionResolver
+  -> ConversationRuntimeBinding(epoch, opaque home, opaque session)
+  -> externalruntime.Manager start | resume
+  -> bounded JSONL event translation
+  -> TurnService durable events/messages/trace
+
+ResetConversationRuntime
+  -> durable reset fence
+  -> manager cleanup
+  -> binding epoch advance
+  -> Conversation readback + runtime_reset event
+```
+
+Provider catalog entries may select this runtime through
+`runtime_kind=external-agent` and `protocol=session-cli-v1`. Deployment-owned
+argv configuration is required for advertisement. Browser uses the same
+Station routes and receives no process, filesystem, credential, or session
+mutation authority.
+
+The cutover is atomic: external providers are rejected until manager health,
+binding persistence, reset recovery, client confirmation, and P12 Acceptance
+are present. No Direct Model code path is repurposed as external-session truth.
 
 ## 10. Resolved Integration Policies
 

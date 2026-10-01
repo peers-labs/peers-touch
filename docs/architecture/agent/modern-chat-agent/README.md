@@ -1,8 +1,8 @@
 # Modern Chat Agent
 
 > **Status**: product-accepted / design-accepted / execution-active
-> **Version**: v1.2
-> **Created**: 2026-07-30 | **Updated**: 2026-09-19
+> **Version**: v1.3
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `packages/agent-catalog/`,
 > `apps/station/app/subserver/agent/`, `apps/desktop/`, `apps/mobile/`
@@ -90,6 +90,8 @@ A Modern Chat Agent is:
 | [MCA-D24 review record](./proposals/20260919-mca-d24-evaluation-scenario-control-plane-review.md) | Approval criteria and delegated Owner verdict for the J06 execution boundary |
 | [MCA-D25 Tool zero-execution evidence amendment](./proposals/20260919-mca-d25-tool-zero-execution-evidence.md) | **ACCEPTED** — make J03 receipt and zero-execution roles match the boundary that actually ran |
 | [MCA-D26 Connector execution evidence amendment](./proposals/20260921-mca-d26-connector-execution-evidence.md) | **ACCEPTED** — bind executed J05 tuples to the OAuth-owner client and rejected tuples to explicit zero execution |
+| [MCA-D29 stateful external runtime amendment](./proposals/20261001-mca-d29-stateful-external-runtime.md) | **ACCEPTED** — activate P12 through a Station-owned session CLI lifecycle with explicit resume/reset semantics |
+| [MCA-D29 review record](./proposals/20261001-mca-d29-stateful-external-runtime-review.md) | Findings-first review of P12 ownership, fencing, isolation, failure semantics, and proof |
 | [prototype/README.md](./prototype/README.md) | Peers-owned executable product prototype, review states, and confirmation blockers |
 | [Current V2 Alignment Plan Package](../execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | **CURRENT EXECUTION SOURCE** — V2-J01..V2-J06, X3 trusted catalog, and aggregate Acceptance as bounded vertical Task Slices |
 | [Product plan](../execution-plans/20260817-modern-chat-agent-v2.md) | Active product and scope source; execution tracking moved to the current Plan Package |
@@ -139,6 +141,9 @@ accepted to require Station-authorized higher-fence restart takeover. MCA-D19D
 was accepted on 2026-08-25 to make P12/CLI non-advertisement falsifiable through
 Station/Desktop production snapshots and isolated Browser evidence. G1-A,
 G1-B, G1-C, G1-D, G1-E, and G1-F are complete; Acceptance D-12 and the
-G1-XR matrix/schema/validator cutover are complete, while real adapters are active.
-No production capability currently advertises external idempotency, and all V2
-product Gates remain `UNPROVEN`.
+G1-XR matrix/schema/validator cutover are complete, while real adapters are
+active. The Owner selected full P12 implementation on 2026-10-01 and accepted
+MCA-D29: a provider-neutral Station session lifecycle with conditional
+advertisement, exact-session resume, explicit reset, epoch fencing, and
+cleanup. Production implementation and all V2 product Gates remain
+`UNPROVEN`.
