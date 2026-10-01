@@ -218,7 +218,7 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
             harness,
         )
         self.assertIn(
-            "loadAgent(agentId, readinessInput)",
+            "() => useAgentCapabilityStore.getState().loadAgent(",
             scenario,
         )
         self.assertIn(

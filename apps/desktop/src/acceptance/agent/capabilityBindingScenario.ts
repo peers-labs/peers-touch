@@ -145,6 +145,26 @@ function typedMutationError(error: unknown): AgentTypedErrorPayload {
   return typed;
 }
 
+async function capabilityScenarioStep<T>(
+  stage: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    if (!(error instanceof RustCommandException)) throw error;
+    const detailCode = String(
+      error.details?.error_code
+      ?? error.details?.reason_code
+      ?? 'unknown',
+    );
+    throw new Error(
+      `agent.acceptance.capabilityScenarioCommandFailed:`
+      + `${stage}:${error.code}:${detailCode}`,
+    );
+  }
+}
+
 function issueTypedError(issue: CapabilityCatalogIssue): AgentTypedErrorPayload {
   if (!issue.error) {
     throw new Error('agent.acceptance.capabilityCatalogIssueErrorMissing');
@@ -344,21 +364,24 @@ export async function runCapabilityBindingScenario(
     throw new Error('agent.acceptance.capabilitySessionUnavailable');
   }
   const readinessInput = { clientCapabilitySessionId };
-  const prepared = await api.prepareCapabilityAcceptanceScenario(create(
-    PrepareCapabilityAcceptanceScenarioRequestSchema,
-    {
-      runId: input.runId,
-      scenarioExecutionId: input.scenarioExecutionId,
-      cell: input.cell,
-      platform: input.platform,
-      locale: input.locale,
-      ordering: input.ordering,
-      sampleId: input.sampleId,
-      family: CapabilityAcceptanceScenarioFamily.BINDING_J02,
-      runtimeAttestationProfile:
-        CapabilityAcceptanceRuntimeProfile.STATION_CONTROL_PLANE,
-    },
-  ));
+  const prepared = await capabilityScenarioStep(
+    'prepare',
+    () => api.prepareCapabilityAcceptanceScenario(create(
+      PrepareCapabilityAcceptanceScenarioRequestSchema,
+      {
+        runId: input.runId,
+        scenarioExecutionId: input.scenarioExecutionId,
+        cell: input.cell,
+        platform: input.platform,
+        locale: input.locale,
+        ordering: input.ordering,
+        sampleId: input.sampleId,
+        family: CapabilityAcceptanceScenarioFamily.BINDING_J02,
+        runtimeAttestationProfile:
+          CapabilityAcceptanceRuntimeProfile.STATION_CONTROL_PLANE,
+      },
+    )),
+  );
   const resources = scenarioResources(prepared.opaqueResourceIds);
   const capabilityKey = `${encodeURIComponent(resources.capabilityId)}@`
     + encodeURIComponent(resources.requestedVersion);
@@ -372,15 +395,30 @@ export async function runCapabilityBindingScenario(
   > | null = null;
   let capture: Record<string, unknown> | null = null;
   let primaryError: unknown = null;
-  const tracesBefore = await api.listAgentTurnTraces(
-    agentId,
-    { page: 1, pageSize: 200 },
+  const tracesBefore = await capabilityScenarioStep(
+    'trace-before',
+    () => api.listAgentTurnTraces(
+      agentId,
+      { page: 1, pageSize: 200 },
+    ),
   );
 
   try {
-    await useAgentCapabilityStore.getState().loadCatalog();
-    await showCapabilitySurface(agent.name);
-    await useAgentCapabilityStore.getState().loadAgent(agentId, readinessInput);
+    await capabilityScenarioStep(
+      'catalog',
+      () => useAgentCapabilityStore.getState().loadCatalog(),
+    );
+    await capabilityScenarioStep(
+      'surface',
+      () => showCapabilitySurface(agent.name),
+    );
+    await capabilityScenarioStep(
+      'agent-readiness',
+      () => useAgentCapabilityStore.getState().loadAgent(
+        agentId,
+        readinessInput,
+      ),
+    );
 
     if (input.cell === 'ERR-CAT03') {
       const issue = useAgentCapabilityStore.getState().catalogIssues.find(
@@ -548,10 +586,13 @@ export async function runCapabilityBindingScenario(
       }
     }
 
-    const readiness = await api.readAgentCapabilityReadiness({
-      agent_id: agentId,
-      client_capability_session_id: clientCapabilitySessionId,
-    });
+    const readiness = await capabilityScenarioStep(
+      'readiness',
+      () => api.readAgentCapabilityReadiness({
+        agent_id: agentId,
+        client_capability_session_id: clientCapabilitySessionId,
+      }),
+    );
     const state = readinessState(
       readiness,
       resources.capabilityId,
