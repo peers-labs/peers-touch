@@ -31,6 +31,7 @@
     "apps/station/app/subserver/agent/service/turn_service.go",
     "apps/desktop/src-tauri/src",
     "apps/desktop/src/services/desktop_api.ts",
+    "apps/desktop/src/services/api.test.ts",
     "apps/desktop/src/store/chat.ts",
     "apps/desktop/src/components/messages/AssistantMessage.tsx",
     "apps/desktop/src/acceptance/agent/harness.ts",
