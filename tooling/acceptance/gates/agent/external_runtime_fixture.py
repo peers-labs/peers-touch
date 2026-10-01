@@ -49,6 +49,7 @@ RESET_SCRIPT = (
     'if [ -f "$home/.fail-reset-once" ]; then '
     'rm -f "$home/.fail-reset-once"; printf \'failed\\n\' >> "$audit"; exit 9; '
     'fi; '
+    'sleep 1; '
     'printf \'success\\n\' >> "$audit"'
 )
 

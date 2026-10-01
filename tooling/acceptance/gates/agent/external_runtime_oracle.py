@@ -21,6 +21,7 @@ EXPECTED_ASSERTIONS = frozenset(
         "browserOwnsNoExternalProcess",
         "destructiveConfirmationVisible",
         "resetAdvancedExactlyOneEpoch",
+        "concurrentResetSerialized",
         "resetReplayIdempotent",
         "resetConflictRejected",
         "cleanupFailureDurable",
@@ -143,6 +144,14 @@ def evaluate_external_runtime_capture(
     reset_after_binding = _binding(
         reset_after.get("runtime_binding"),
         "reset binding after",
+    )
+    concurrent_replay = _mapping(
+        reset.get("concurrentReplay"),
+        "concurrent reset result",
+    )
+    concurrent_replay_conversation = _mapping(
+        concurrent_replay.get("conversation"),
+        "concurrent reset conversation",
     )
     replay = _mapping(reset.get("replay"), "reset replay")
     replay_conversation = _mapping(
@@ -319,6 +328,12 @@ def evaluate_external_runtime_capture(
             == int(reset_before_binding.get("external_session_epoch") or 0) + 1
             and reset_after_binding.get("external_session_id") == ""
             and reset_after_binding.get("state") == EXTERNAL_RUNTIME_READY_STATE,
+        "concurrentResetSerialized":
+            int(concurrent_replay.get("closed_external_session_epoch") or 0)
+            == int(reset_before_binding.get("external_session_epoch") or 0)
+            and int(concurrent_replay_conversation.get("version") or 0)
+            == int(reset_after.get("version") or 0)
+            and isinstance(concurrent_replay.get("replayed"), bool),
         "resetReplayIdempotent":
             replay.get("replayed") is True
             and int(replay.get("closed_external_session_epoch") or 0)

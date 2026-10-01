@@ -130,6 +130,8 @@ The command is two-phase:
 Failure persists `CLEANUP_FAILED`; retry of the same command continues cleanup.
 An identical committed replay returns the original response. A changed payload
 under the same idempotency key returns `IDEMPOTENCY_CONFLICT`.
+Concurrent delivery of one actor/idempotency key is serialized so only one
+caller may enter external cleanup; later callers replay the committed receipt.
 
 ## 7. Security And Isolation
 
