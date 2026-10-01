@@ -1436,11 +1436,13 @@ class ProvisionerBlockingTests(unittest.TestCase):
         )
         allocate_client.assert_not_called()
 
-    def test_agent_v2_binding_provisions_profile_two_isolated_clients(self):
+    def test_agent_v2_binding_reuses_profile_two_actors_without_reset(self):
         contract = EnvironmentContract.from_yaml(
             ENVIRONMENTS_DIR / "home-station.yaml"
         )
         provisioner = get_provisioner(contract)
+        profile = self._two_profile()
+        profile[3].pop("CHAT_ACCEPTANCE_RESET")
         attestation = dataclasses.replace(
             self._station_attestation(),
             deployment_environment="station-2",
@@ -1448,7 +1450,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
         with patch.object(
             provisioner,
             "_resolve_active_profile",
-            return_value=self._two_profile(),
+            return_value=profile,
         ), patch.object(
             provisioner,
             "_git_commit",
@@ -1469,6 +1471,11 @@ class ProvisionerBlockingTests(unittest.TestCase):
             return_value="proto-digest",
         ), patch(
             "tooling.acceptance.provisioners.home_station.produce_actor_manifest",
+        ) as reset_actor_manifest, patch(
+            "tooling.acceptance.provisioners.home_station.resolve_existing_actor",
+            side_effect=(MagicMock(name="alice"), MagicMock(name="bob")),
+        ) as resolve_actor, patch(
+            "tooling.acceptance.provisioners.home_station.persist_actor_manifest",
             return_value=(
                 None,
                 None,
@@ -1520,15 +1527,19 @@ class ProvisionerBlockingTests(unittest.TestCase):
             manifest.credential_refs,
             ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
         )
-        actor_manifest.assert_called_once_with(
-            environment_id="home-station",
-            run_id=manifest.run_id,
-            station_url="http://station.example:28080",
-            deployment_environment="station-2",
-            roles=("alice", "bob"),
-            credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD",
-            reset_authorized=True,
+        reset_actor_manifest.assert_not_called()
+        self.assertEqual(
+            [invocation.args[1] for invocation in resolve_actor.call_args_list],
+            ["alice", "bob"],
         )
+        persisted = actor_manifest.call_args.args[0]
+        self.assertEqual(persisted.fixture_id, "chat-native-existing-actors")
+        self.assertEqual(
+            persisted.credential_refs,
+            ("profile:CHAT_NATIVE_DEMO_PASSWORD",),
+        )
+        self.assertFalse(persisted.reset_authorized)
+        self.assertTrue(persisted.target_verified)
         self.assertIsNotNone(manifest.actor_manifest_ref)
         profile_lease.assert_called_once_with(
             "station-2",
