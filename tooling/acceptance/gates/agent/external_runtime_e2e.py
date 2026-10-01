@@ -13,6 +13,7 @@ import sys
 import time
 import urllib.request
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -141,7 +142,13 @@ def _restart_external_runtime_station(
     environment = os.environ.copy()
     environment.update(profile_env)
     environment.update(external_runtime_environment(run_id))
-    environment["PT_ACCEPTANCE_RUN_ID"] = f"{run_id}-restart"
+    environment["PT_ACCEPTANCE_ENVIRONMENT"] = "home-station"
+    environment["PT_AGENT_CAPABILITY_SCENARIO_CONTROL"] = "1"
+    environment["PT_ACCEPTANCE_RUN_ID"] = (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        + "-"
+        + hashlib.sha256(f"{run_id}:restart".encode("utf-8")).hexdigest()[:32]
+    )
     started = time.monotonic()
     completed = subprocess.run(
         ["make", "station"],

@@ -1136,6 +1136,8 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         deploy_env = os.environ.copy()
         deploy_env.update(profile_env)
         deploy_env.update(runtime_env)
+        deploy_env["PT_ACCEPTANCE_ENVIRONMENT"] = "home-station"
+        deploy_env["PT_AGENT_CAPABILITY_SCENARIO_CONTROL"] = "1"
         completed = subprocess.run(
             ["make", "station"],
             cwd=REPO_ROOT,
@@ -1196,6 +1198,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 {
                     name: ""
                     for name in runtime_env
+                }
+            )
+            restore_env.update(
+                {
+                    "PT_ACCEPTANCE_ENVIRONMENT": "",
+                    "PT_AGENT_CAPABILITY_SCENARIO_CONTROL": "",
+                    "PT_ACCEPTANCE_RUN_ID": "",
                 }
             )
             restored = subprocess.run(
