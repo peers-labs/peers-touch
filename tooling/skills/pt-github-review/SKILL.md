@@ -135,15 +135,19 @@ For Goal, execution-skill, or tracked-work workflow changes, additionally
 verify:
 
 - every status, handoff, worker result, and review verdict consumes the
-  current canonical `BindingProjection`; Completion Review uses the exact
-  OWNER command receipt and assigned live REVIEWER rather than enumerating
-  worktree bindings;
+  current canonical `BindingProjection`; child assignment validates the exact
+  current active-work and Development Session records; Completion Review
+  reduces each action to its latest receipt and uses the exact live OWNER
+  command or assigned REVIEWER rather than enumerating worktree bindings;
+- OWNER publication uses atomic create-once semantics, and `PreCompact` /
+  `PostCompact` persist and verify the same complete binding lineage;
 - TRAE multi-root integration installs one descriptor-selected bootstrap,
   never treats bootstrap location or folder order as execution authority, and
   rejects active-editor/task/target disagreement with
   `WORKTREE_SELECTION_REQUIRED`;
 - binding rollout proves global workflow quiescence, deletes only the old
-  conversation and workflow-action stores, and contains no compatibility
+  conversation and workflow-action stores, consumes a create-once grant for
+  the exact current OWNER `skills` action, and contains no compatibility
   reader, importer, alias, fallback, or dual writer;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;

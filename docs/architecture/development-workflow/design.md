@@ -268,7 +268,9 @@ The child claims that assignment with its execution-session hash; the resulting
 child binding records `rootBindingDigest`, `parentBindingDigest`, role,
 Development Session identity, lease, and terminal receipt. Unassigned internal
 sessions inherit the OWNER projection for admission but cannot claim worker or
-reviewer independence.
+reviewer independence. Assignment creation first validates that
+`active-work.json` and the canonical `session.json` identify the same current
+workspace, Work Item, Plan, Task, Session, and Development state.
 
 The Kernel distinguishes identity from action:
 
@@ -284,18 +286,21 @@ The Kernel distinguishes identity from action:
 
 The Kernel does not mutate Plan, Task, declaration, Development Session,
 active-work, runtime, or evidence state. Its machine-local writes are limited
-to OWNER/child bindings, assignments, child terminal receipts, latest rendered
-Anchor receipt, and OWNER release receipt. OWNER liveness is never inferred
-from a generic TTL. Child liveness is `ASSIGNED | LEASED | TERMINAL`; an
-expired or terminal child is diagnostic history and cannot participate in
-current ownership or Completion Review selection.
+to atomically published OWNER/child bindings, assignments, child terminal
+receipts, one current compaction-lineage receipt, exact installer-action grants,
+the latest rendered Anchor receipt, and OWNER release receipt. OWNER liveness
+is never inferred from a generic TTL. Child liveness is
+`ASSIGNED | LEASED | TERMINAL`; an expired or terminal child is diagnostic
+history and cannot participate in current ownership or Completion Review
+selection.
 
 Every injection contains the binding role, root/parent digests, binding digest,
 release state, execution root, subject roots, tool root and target roots.
 Every status, readiness, handoff and final claim revalidates the same
 projection. Completion Review resolves the exact OWNER or assigned REVIEWER
-from the current owner-command receipt; it never falls back to enumerating all
-unreleased bindings in a worktree.
+from the latest receipt for the current owner-command action ID; a terminal
+receipt suppresses every earlier STARTED or HEARTBEAT receipt. It never falls
+back to enumerating all unreleased bindings in a worktree.
 
 TRAE multi-root startup uses one workspace bootstrap hook selected from the
 workspace descriptor, not one competing hook owner per worktree. The bootstrap

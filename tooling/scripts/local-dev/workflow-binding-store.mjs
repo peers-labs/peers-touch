@@ -23,6 +23,12 @@ import {
 import {
   projectWorkflowBinding,
 } from './workflow-binding-projection.mjs';
+import {
+  validateActiveWorkRecord,
+} from './active-work-store.mjs';
+import {
+  validateSession,
+} from './dev-session-schema.mjs';
 
 const HOSTS = new Set(['trae', 'cursor', 'codex']);
 const CHILD_ROLES = new Set(['WORKER', 'REVIEWER']);
@@ -88,6 +94,21 @@ const RELEASE_KEYS = new Set([
   'kind',
   'releasedAt',
   'rootBindingDigest',
+]);
+const COMPACT_KEYS = new Set([
+  'assignmentDigest',
+  'bindingDigest',
+  'compactId',
+  'digest',
+  'executionRoot',
+  'kind',
+  'parentBindingDigest',
+  'postCompactAt',
+  'preCompactAt',
+  'role',
+  'rootBindingDigest',
+  'workflowSessionId',
+  'workspaceId',
 ]);
 
 export class WorkflowBindingError extends Error {
@@ -297,7 +318,13 @@ function temporaryPath(file) {
   );
 }
 
-function publishCreateOnce(file, value, validator) {
+function publishCreateOnce(
+  file,
+  value,
+  validator,
+  equivalent = (left, right) =>
+    JSON.stringify(canonicalize(left)) === JSON.stringify(canonicalize(right)),
+) {
   const temporary = temporaryPath(file);
   try {
     writeFileDurably(temporary, value);
@@ -309,10 +336,7 @@ function publishCreateOnce(file, value, validator) {
     const existing = validator(
       readOwnedJson(file, 'WORKFLOW_BINDING_STORE_INVALID', true),
     );
-    if (
-      JSON.stringify(canonicalize(existing)) !==
-      JSON.stringify(canonicalize(value))
-    ) {
+    if (!equivalent(existing, value)) {
       fail(
         'WORKFLOW_BINDING_IMMUTABLE',
         'Create-once workflow binding record already has different bytes',
@@ -502,6 +526,43 @@ function validateRelease(value, expected = {}) {
   return value;
 }
 
+function validateCompactReceipt(value, expected = {}) {
+  validateDigestRecord(
+    value,
+    COMPACT_KEYS,
+    'peers-touch-workflow-compact-lineage',
+    'WORKFLOW_COMPACT_RECEIPT_INVALID',
+  );
+  const child = value.role !== 'OWNER';
+  if (
+    !IDENTIFIER.test(value.compactId) ||
+    !['OWNER', 'WORKER', 'REVIEWER'].includes(value.role) ||
+    !SHA256.test(value.bindingDigest) ||
+    !SHA256.test(value.rootBindingDigest) ||
+    (child !== (value.parentBindingDigest !== null)) ||
+    (child !== (value.assignmentDigest !== null)) ||
+    (child !== (value.workflowSessionId !== null)) ||
+    (value.parentBindingDigest !== null &&
+      !SHA256.test(value.parentBindingDigest)) ||
+    (value.assignmentDigest !== null &&
+      !SHA256.test(value.assignmentDigest)) ||
+    (value.workflowSessionId !== null &&
+      !IDENTIFIER.test(value.workflowSessionId)) ||
+    !timestamp(value.preCompactAt) ||
+    (value.postCompactAt !== null && !timestamp(value.postCompactAt)) ||
+    value.executionRoot !== realpathSync(value.executionRoot) ||
+    value.workspaceId !== workspaceIdForRoot(value.executionRoot) ||
+    (expected.rootBindingDigest !== undefined &&
+      expected.rootBindingDigest !== value.rootBindingDigest)
+  ) {
+    fail(
+      'WORKFLOW_COMPACT_RECEIPT_INVALID',
+      'Workflow compact receipt fields are invalid',
+    );
+  }
+  return value;
+}
+
 export function workflowOwnerBindingPath(host, rootChatId, options = {}) {
   return path.join(
     ownerDirectory(host, rootChatHash(host, rootChatId), options),
@@ -536,18 +597,23 @@ export function bindWorkflowOwner(host, rootChatId, executionRoot, options = {})
     rootChatHash: unsigned.rootChatHash,
   });
   const file = workflowOwnerBindingPath(host, rootChatId, options);
-  try {
-    writeFileDurably(file, binding);
-    fsyncDirectory(path.dirname(file));
-    return { binding, created: true };
-  } catch (error) {
-    if (error?.code !== 'EEXIST') throw error;
-    const existing = validateWorkflowOwnerBinding(
-      readOwnedJson(file, 'WORKFLOW_OWNER_BINDING_INVALID', true),
-      { host, rootChatHash: unsigned.rootChatHash },
-    );
-    return { binding: existing, created: false };
-  }
+  const result = publishCreateOnce(
+    file,
+    binding,
+    (value) =>
+      validateWorkflowOwnerBinding(value, {
+        host,
+        rootChatHash: unsigned.rootChatHash,
+      }),
+    (existing, candidate) =>
+      existing.host === candidate.host &&
+      existing.rootChatHash === candidate.rootChatHash &&
+      existing.role === candidate.role &&
+      existing.executionRoot === candidate.executionRoot &&
+      existing.workspaceId === candidate.workspaceId &&
+      existing.bindingEvent === candidate.bindingEvent,
+  );
+  return { binding: result.value, created: result.created };
 }
 
 function ownerDirectories(options = {}) {
@@ -628,6 +694,69 @@ export function workflowOwnerIsReleased(owner, options = {}) {
   return releaseRecords(owner, options).length > 0;
 }
 
+function validateActiveWorkflowSession(owner, workflowSessionId, options = {}) {
+  const workflowRoot = path.join(
+    machineRoot(options),
+    'workspaces',
+    owner.workspaceId,
+    'workflow',
+  );
+  try {
+    const active = validateActiveWorkRecord(
+      readOwnedJson(
+        path.join(workflowRoot, 'active-work.json'),
+        'WORKFLOW_BINDING_SESSION_INVALID',
+        true,
+      ),
+      owner.workspaceId,
+    );
+    if (
+      active.sessionId !== workflowSessionId ||
+      active.planStatus !== 'active' ||
+      active.taskStatus !== 'in_progress' ||
+      active.devState === null
+    ) {
+      fail(
+        'WORKFLOW_BINDING_SESSION_INVALID',
+        'Assignment does not target the active Development Session',
+      );
+    }
+    const session = validateSession(
+      readOwnedJson(
+        path.join(workflowRoot, active.workItemId, 'session.json'),
+        'WORKFLOW_BINDING_SESSION_INVALID',
+        true,
+      ),
+    );
+    if (
+      session.state.sessionId !== active.sessionId ||
+      session.state.workItemId !== active.workItemId ||
+      session.state.planId !== active.planId ||
+      session.state.taskId !== active.currentTaskId ||
+      session.state.workspaceId !== owner.workspaceId ||
+      session.state.state !== active.devState
+    ) {
+      fail(
+        'WORKFLOW_BINDING_SESSION_INVALID',
+        'Active-work and Development Session identity do not match',
+      );
+    }
+    return session;
+  } catch (error) {
+    if (
+      error instanceof WorkflowBindingError &&
+      error.code === 'WORKFLOW_BINDING_SESSION_INVALID'
+    ) {
+      throw error;
+    }
+    fail(
+      'WORKFLOW_BINDING_SESSION_INVALID',
+      'Active Development Session could not be validated',
+      { cause: error?.code ?? error?.message ?? String(error) },
+    );
+  }
+}
+
 export function createWorkflowBindingAssignment(
   issuerProjection,
   input,
@@ -674,6 +803,7 @@ export function createWorkflowBindingAssignment(
       'Released owner cannot issue child assignments',
     );
   }
+  validateActiveWorkflowSession(owner, input.workflowSessionId, options);
   const leaseUntil = operationDate(
     input.leaseUntil ?? new Date(now.getTime() + (input.leaseMs ?? 30 * 60_000)),
   );
@@ -1189,6 +1319,109 @@ export function readWorkflowBindingContextByActor(actor, options = {}) {
 
 export function readWorkflowProjectionByActor(actor, options = {}) {
   return readWorkflowBindingContextByActor(actor, options).projection;
+}
+
+function compactReceiptPath(owner, options = {}) {
+  return path.join(
+    ownerDirectory(owner.host, owner.rootChatHash, options),
+    'compact-lineage.json',
+  );
+}
+
+function compactLineage(projection) {
+  return {
+    role: projection.role,
+    bindingDigest: projection.bindingDigest,
+    rootBindingDigest: projection.rootBindingDigest,
+    parentBindingDigest: projection.parentBindingDigest,
+    assignmentDigest: projection.assignmentDigest,
+    workflowSessionId: projection.workflowSessionId,
+    executionRoot: projection.executionRoot,
+    workspaceId: projection.workspaceId,
+  };
+}
+
+function currentProjection(projection, options = {}) {
+  const context = readWorkflowBindingContextByActor(
+    {
+      host: projection.host,
+      bindingDigest: projection.bindingDigest,
+      role: projection.role,
+      rootBindingDigest: projection.rootBindingDigest,
+      parentBindingDigest: projection.parentBindingDigest,
+      assignmentDigest: projection.assignmentDigest,
+    },
+    options,
+  );
+  if (
+    context.projection.released ||
+    (context.projection.role !== 'OWNER' &&
+      context.projection.childState !== 'LEASED')
+  ) {
+    fail(
+      'WORKFLOW_COMPACT_LINEAGE_MISMATCH',
+      'Compact lineage is no longer live',
+    );
+  }
+  return context;
+}
+
+export function recordWorkflowPreCompact(projection, options = {}) {
+  const context = currentProjection(projection, options);
+  const unsigned = {
+    kind: 'peers-touch-workflow-compact-lineage',
+    compactId: `compact-${randomBytes(12).toString('hex')}`,
+    ...compactLineage(context.projection),
+    preCompactAt: operationDate(options.now).toISOString(),
+    postCompactAt: null,
+  };
+  const receipt = { ...unsigned, digest: digest(unsigned) };
+  validateCompactReceipt(receipt, {
+    rootBindingDigest: context.owner.digest,
+  });
+  replaceCurrent(compactReceiptPath(context.owner, options), receipt);
+  return receipt;
+}
+
+export function verifyWorkflowPostCompact(projection, options = {}) {
+  let context;
+  try {
+    context = currentProjection(projection, options);
+  } catch (error) {
+    fail(
+      'WORKFLOW_COMPACT_LINEAGE_MISMATCH',
+      'PostCompact binding lineage cannot resolve to the PreCompact owner',
+      { cause: error?.code ?? error?.message ?? String(error) },
+    );
+  }
+  const file = compactReceiptPath(context.owner, options);
+  const receipt = validateCompactReceipt(
+    readOwnedJson(file, 'WORKFLOW_COMPACT_RECEIPT_INVALID', true),
+    { rootBindingDigest: context.owner.digest },
+  );
+  const expected = compactLineage(context.projection);
+  if (
+    Object.entries(expected).some(
+      ([field, value]) => receipt[field] !== value,
+    )
+  ) {
+    fail(
+      'WORKFLOW_COMPACT_LINEAGE_MISMATCH',
+      'PostCompact binding lineage differs from PreCompact',
+    );
+  }
+  if (receipt.postCompactAt !== null) return receipt;
+  const unsigned = {
+    ...receipt,
+    postCompactAt: operationDate(options.now).toISOString(),
+  };
+  delete unsigned.digest;
+  const completed = { ...unsigned, digest: digest(unsigned) };
+  validateCompactReceipt(completed, {
+    rootBindingDigest: context.owner.digest,
+  });
+  replaceCurrent(file, completed);
+  return completed;
 }
 
 export function resolveEventWorkflowBinding(event, executionRoot, options = {}) {

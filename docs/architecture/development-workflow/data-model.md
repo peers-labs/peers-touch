@@ -634,6 +634,30 @@ interface WorkflowOwnerRelease {
 }
 ```
 
+Context compaction persists one bounded current-lineage receipt:
+
+```ts
+interface WorkflowCompactLineage {
+  kind: 'peers-touch-workflow-compact-lineage';
+  compactId: string;
+  role: 'OWNER' | 'WORKER' | 'REVIEWER';
+  bindingDigest: string;
+  rootBindingDigest: string;
+  parentBindingDigest: string | null;
+  assignmentDigest: string | null;
+  workflowSessionId: string | null;
+  executionRoot: string;
+  workspaceId: string;
+  preCompactAt: string;
+  postCompactAt: string | null;
+  digest: string;
+}
+```
+
+`PreCompact` atomically replaces this single receipt from the current live
+projection. `PostCompact` resolves the actor again and completes the receipt
+only when every lineage and workspace field is unchanged.
+
 OWNER release succeeds only when the exact rendered Anchor is observable in
 the assistant response or host transcript. A conflicting second release fails
 closed. It does not terminate or revive a child; child terminal receipts own
@@ -648,6 +672,10 @@ deletes exactly:
 ~/.peers-touch/dev/conversations/
 ~/.peers-touch/dev/workspaces/*/workflow/actions/
 ```
+
+The Kernel creates a create-once grant for that exact OWNER `skills` action.
+The installer atomically consumes the grant before reset; a seeded receipt,
+another action ID, or a second invocation has no installation authority.
 
 It does not delete Plan bindings, Plan generations, active-work, Development
 Sessions, Completion Review records, runtime leases, or Acceptance evidence.
@@ -1575,11 +1603,17 @@ Rules:
 ├── owners/<host>/<rootChatHash>/
 │   ├── owner-binding.json
 │   ├── anchor-receipt.json
+│   ├── compact-lineage.json
 │   ├── assignments/<assignmentId>.json
 │   └── releases/<anchorDigest>.json
 └── children/<rootBindingDigest>/<host>/<executionSessionHash>/
     ├── child-binding.json
     └── terminal.json
+
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/actions/
+├── <rootBindingDigest>.json
+├── <actionGrantHash>.grant.json
+└── <actionGrantHash>.grant-consumed.json
 ```
 
 Constraints:

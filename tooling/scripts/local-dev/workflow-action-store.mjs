@@ -6,6 +6,8 @@ import {
   closeSync,
   constants,
   existsSync,
+  fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -58,6 +60,19 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const WORKSPACE_ID = /^[0-9a-f]{16}$/;
 const OPERATION_TEXT = /^[A-Za-z0-9][A-Za-z0-9._:/ -]{0,127}$/;
 const TARGET_REF = /^[A-Za-z0-9][A-Za-z0-9._/@+-]*(?:\/[A-Za-z0-9._@+-]+)*$/;
+const ACTION_GRANT_KIND = 'peers-touch-workflow-action-grant';
+const ACTION_GRANT_KEYS = new Set([
+  'actionId',
+  'actorBindingDigest',
+  'digest',
+  'issuedAt',
+  'kind',
+  'leaseUntil',
+  'operationFingerprint',
+  'rootBindingDigest',
+  'startedReceiptDigest',
+  'workspaceId',
+]);
 
 export class WorkflowActionError extends Error {
   constructor(code, message, detail = {}) {
@@ -409,6 +424,199 @@ function writeStore(file, store) {
   const temporary = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
   writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' });
   renameSync(temporary, file);
+}
+
+function syncDirectory(directory) {
+  if (process.platform === 'win32') return;
+  const descriptor = openSync(directory, 'r');
+  try {
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function grantPaths(receipt, options = {}) {
+  const directory = workflowActionPaths({
+    home: options.home,
+    machineRoot: options.machineRoot,
+    workspaceId: receipt.binding.workspaceId,
+    rootBindingDigest: receipt.actor.rootBindingDigest,
+  }).directory;
+  const stem = digest({
+    rootBindingDigest: receipt.actor.rootBindingDigest,
+    actionId: receipt.actionId,
+  });
+  return {
+    directory,
+    pending: path.join(directory, `${stem}.grant.json`),
+    consumed: path.join(directory, `${stem}.grant-consumed.json`),
+  };
+}
+
+function validateActionGrant(grant, expected = {}) {
+  if (
+    grant === null ||
+    typeof grant !== 'object' ||
+    Array.isArray(grant) ||
+    Object.keys(grant).length !== ACTION_GRANT_KEYS.size ||
+    !Object.keys(grant).every((key) => ACTION_GRANT_KEYS.has(key)) ||
+    grant.kind !== ACTION_GRANT_KIND ||
+    !IDENTIFIER.test(grant.actionId) ||
+    !WORKSPACE_ID.test(grant.workspaceId) ||
+    !SHA256.test(grant.rootBindingDigest) ||
+    !SHA256.test(grant.actorBindingDigest) ||
+    !SHA256.test(grant.operationFingerprint) ||
+    !SHA256.test(grant.startedReceiptDigest) ||
+    timestamp(grant.issuedAt, 'issuedAt') !== grant.issuedAt ||
+    timestamp(grant.leaseUntil, 'leaseUntil') !== grant.leaseUntil ||
+    Date.parse(grant.leaseUntil) <= Date.parse(grant.issuedAt)
+  ) {
+    fail('WORKFLOW_ACTION_GRANT_INVALID', 'action grant is invalid');
+  }
+  const unsigned = { ...grant };
+  delete unsigned.digest;
+  if (!SHA256.test(grant.digest) || digest(unsigned) !== grant.digest) {
+    fail('WORKFLOW_ACTION_GRANT_INVALID', 'action grant digest is invalid');
+  }
+  for (const [field, value] of Object.entries(expected)) {
+    if (value !== undefined && grant[field] !== value) {
+      fail(
+        'WORKFLOW_ACTION_GRANT_INVALID',
+        `action grant ${field} mismatches`,
+      );
+    }
+  }
+  return grant;
+}
+
+function readActionGrant(file, expected = {}) {
+  if (!existsSync(file)) return null;
+  const metadata = lstatSync(file);
+  if (
+    !metadata.isFile() ||
+    metadata.isSymbolicLink() ||
+    !ownedByCurrentUser(metadata) ||
+    (process.platform !== 'win32' && (metadata.mode & 0o077) !== 0) ||
+    metadata.size > 16 * 1024
+  ) {
+    fail('WORKFLOW_ACTION_GRANT_INVALID', 'action grant file is unsafe');
+  }
+  try {
+    return validateActionGrant(
+      JSON.parse(readFileSync(file, 'utf8')),
+      expected,
+    );
+  } catch (error) {
+    if (error instanceof WorkflowActionError) throw error;
+    fail('WORKFLOW_ACTION_GRANT_INVALID', 'action grant is not valid JSON');
+  }
+}
+
+function publishActionGrant(file, grant) {
+  const temporary = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    writeFileSync(
+      temporary,
+      `${JSON.stringify(canonicalize(grant), null, 2)}\n`,
+      { mode: 0o600, flag: 'wx' },
+    );
+    linkSync(temporary, file);
+    syncDirectory(path.dirname(file));
+    return grant;
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    return readActionGrant(file, {
+      actionId: grant.actionId,
+      startedReceiptDigest: grant.startedReceiptDigest,
+    });
+  } finally {
+    if (existsSync(temporary)) unlinkSync(temporary);
+  }
+}
+
+export function issueWorkflowActionGrant(receipt, options = {}) {
+  validateWorkflowActionReceipt(receipt);
+  if (
+    receipt.event !== 'STARTED' ||
+    receipt.result !== 'RUNNING' ||
+    receipt.actor.role !== 'OWNER' ||
+    receipt.operation.family !== 'OWNER_CONTROL' ||
+    receipt.operation.label !== 'skills' ||
+    receipt.operation.targetRef !== null
+  ) {
+    fail(
+      'WORKFLOW_ACTION_GRANT_INVALID',
+      'Only the exact live OWNER skills action may receive a grant',
+    );
+  }
+  const unsigned = {
+    kind: ACTION_GRANT_KIND,
+    actionId: receipt.actionId,
+    workspaceId: receipt.binding.workspaceId,
+    rootBindingDigest: receipt.actor.rootBindingDigest,
+    actorBindingDigest: receipt.actor.bindingDigest,
+    operationFingerprint: receipt.fingerprint,
+    startedReceiptDigest: receipt.digest,
+    issuedAt: receipt.at,
+    leaseUntil: receipt.leaseUntil,
+  };
+  const grant = { ...unsigned, digest: digest(unsigned) };
+  validateActionGrant(grant);
+  const paths = grantPaths(receipt, options);
+  assertPrivateDirectory(paths.directory);
+  return publishActionGrant(paths.pending, grant);
+}
+
+export function claimWorkflowActionGrant(receipt, options = {}) {
+  validateWorkflowActionReceipt(receipt);
+  const now = operationDate(options.now);
+  if (
+    !['STARTED', 'HEARTBEAT'].includes(receipt.event) ||
+    receipt.result !== 'RUNNING' ||
+    receipt.leaseUntil === null ||
+    Date.parse(receipt.leaseUntil) < now.getTime()
+  ) {
+    fail(
+      'WORKFLOW_ACTION_GRANT_UNAVAILABLE',
+      'Installer action is not live',
+    );
+  }
+  const paths = grantPaths(receipt, options);
+  assertPrivateDirectory(paths.directory);
+  if (existsSync(paths.consumed)) {
+    fail(
+      'WORKFLOW_ACTION_GRANT_UNAVAILABLE',
+      'Installer action grant was already consumed',
+    );
+  }
+  const grant = readActionGrant(paths.pending, {
+    actionId: receipt.actionId,
+    workspaceId: receipt.binding.workspaceId,
+    rootBindingDigest: receipt.actor.rootBindingDigest,
+    actorBindingDigest: receipt.actor.bindingDigest,
+    operationFingerprint: receipt.fingerprint,
+  });
+  if (grant === null) {
+    fail(
+      'WORKFLOW_ACTION_GRANT_UNAVAILABLE',
+      'No live grant exists for this installer action',
+    );
+  }
+  try {
+    linkSync(paths.pending, paths.consumed);
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      fail(
+        'WORKFLOW_ACTION_GRANT_UNAVAILABLE',
+        'Installer action grant was already consumed',
+      );
+    }
+    throw error;
+  }
+  unlinkSync(paths.pending);
+  syncDirectory(paths.directory);
+  return grant;
 }
 
 function compactStore(store) {

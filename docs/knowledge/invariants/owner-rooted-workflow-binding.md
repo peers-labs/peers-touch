@@ -30,9 +30,10 @@ process-global identity fallbacks are forbidden.
 
 WORKER and REVIEWER sessions exist only through a create-once assignment that
 records role, root and parent binding digests, Development Session identity,
-operation identity, and lease. Child claim hashes the execution-session ID.
-Child liveness comes from assignment, lease, and terminal receipts. OWNER
-liveness never comes from a generic TTL.
+operation identity, and lease. Assignment creation validates the exact current
+active-work and Development Session records. Child claim hashes the
+execution-session ID. Child liveness comes from assignment, lease, and terminal
+receipts. OWNER liveness never comes from a generic TTL.
 
 Every hook, Action Receipt, status, readiness, handoff, Stop, worker result,
 and Completion Review consumes one canonical `BindingProjection`. The
@@ -44,8 +45,14 @@ inside the OWNER execution root and the active declaration's source claims.
 Dynamic or unparseable shell structure fails closed.
 
 Completion Review selects the exact OWNER or assigned REVIEWER from the
-current owner-command Action Receipt. It never enumerates every unreleased
-binding for a worktree and never treats stale child history as ownership.
+latest receipt for the current owner-command action ID. A FINISHED receipt
+invalidates earlier STARTED and HEARTBEAT receipts. It never enumerates every
+unreleased binding for a worktree and never treats stale child history as
+ownership.
+
+`PreCompact` writes one bounded current-lineage receipt. `PostCompact` must
+re-resolve the same binding, root, parent, assignment, Development Session,
+workspace, and execution root before context is restored.
 
 TRAE multi-root installations expose one descriptor-selected workspace
 bootstrap. Its location is not an authority hint. The first mutating tool event
@@ -55,6 +62,8 @@ Managed per-worktree hook entries are not parallel authorities.
 Rollout is a hard cut: after proving the workflow idle, delete prior
 conversation and workflow-action stores before installing the current
 bootstrap. No legacy reader, importer, alias, or dual writer is allowed.
+The sole live OWNER `skills` action is admissible only with its create-once
+Kernel grant, which the installer atomically consumes exactly once.
 
 ## Why this is non-negotiable
 
@@ -72,8 +81,13 @@ authority because a timer elapsed.
   tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs` passes.
 - TRAE accepts `chat_session_id`, never `session_id` alone as OWNER identity.
 - One OWNER plus WORKER and REVIEWER children retain exact root/parent lineage.
+- Assignment creation rejects a missing or non-current Development Session.
+- Interrupted and concurrent OWNER publication leaves one valid immutable file.
 - Expired and terminal children are excluded from current projections.
 - Twenty stale child records do not block exact Completion Review resolution.
+- A FINISHED review action cannot authorize work through an older receipt.
+- Compact restoration fails when any persisted lineage field differs.
+- A seeded or already-consumed installer action has no rollout authority.
 - BeforePrompt injects role, lineage, release, execution, subject, tool, and
   target roots; wrong-binding status/final claims fail closed.
 - Sibling-worktree reads pass and writes fail with

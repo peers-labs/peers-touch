@@ -1152,3 +1152,71 @@ test('exact action receipts ignore twenty stale child histories', () => {
     reviewer.bindingDigest,
   );
 });
+
+test('exact action receipt selection ignores a terminalized action', () => {
+  const executor = {
+    kind: 'peers-touch-workflow-binding-projection',
+    host: 'trae',
+    role: 'OWNER',
+    executionRoot: '/workspace',
+    workspaceId: '0123456789abcdef',
+    bindingDigest: '1'.repeat(64),
+    rootBindingDigest: '1'.repeat(64),
+    parentBindingDigest: null,
+    assignmentDigest: null,
+    workflowSessionId: null,
+    released: false,
+    childState: null,
+  };
+  const binding = {
+    workspaceId: '0123456789abcdef',
+    workItemId: 'WORK-1',
+    planId: 'PLAN-1',
+    taskId: 'TASK-1',
+    sessionId: 'SESSION-1',
+  };
+  const started = {
+    actionId: 'completed-review-action',
+    actor: {
+      host: executor.host,
+      bindingDigest: executor.bindingDigest,
+      role: executor.role,
+      rootBindingDigest: executor.rootBindingDigest,
+      parentBindingDigest: executor.parentBindingDigest,
+      assignmentDigest: executor.assignmentDigest,
+    },
+    binding,
+    event: 'STARTED',
+    operation: {
+      family: 'OWNER_CONTROL',
+      label: 'completion-review-prepare',
+      targetRef: null,
+    },
+    result: 'RUNNING',
+    at: '2026-09-26T00:00:30.000Z',
+    leaseUntil: '2026-09-26T00:02:00.000Z',
+  };
+  const dependencies = {
+    clock: () => new Date('2026-09-26T00:01:00.000Z'),
+    readWorkspaceActions: () => [
+      started,
+      {
+        ...started,
+        event: 'FINISHED',
+        result: 'PASS',
+        at: '2026-09-26T00:00:40.000Z',
+        leaseUntil: null,
+      },
+    ],
+    readWorkflowProjectionByActor: () => executor,
+  };
+  assert.throws(
+    () =>
+      resolveCompletionReviewBinding('/workspace', dependencies, {
+        ...binding,
+        ownerCommand: 'completion-review-prepare',
+        expectedRole: 'OWNER',
+      }),
+    (error) => error.code === 'COMPLETION_REVIEW_BINDING_REQUIRED',
+  );
+});

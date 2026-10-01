@@ -5,7 +5,9 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+  claimWorkflowActionGrant,
   inspectWorkflowActionLiveness,
+  issueWorkflowActionGrant,
   MAX_ACTION_RECEIPTS,
   readWorkflowActions,
   readWorkspaceActions,
@@ -132,6 +134,78 @@ test('hard-cut inspection validates streams and returns only live actions', () =
         now: new Date('2026-09-26T00:00:32.000Z'),
       }).liveReceipts,
       [],
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('installer action grant is bound to one exact live receipt and consumed once', () => {
+  const scope = fixture();
+  try {
+    const receipt = record(scope.home, {
+      actionId: 'installer-action',
+      leaseMs: 1_000,
+      operation: {
+        family: 'OWNER_CONTROL',
+        label: 'skills',
+        targetRef: null,
+      },
+    });
+    issueWorkflowActionGrant(receipt, {
+      home: scope.home,
+      now: new Date('2026-09-26T00:00:00.000Z'),
+    });
+    const heartbeat = record(scope.home, {
+      actionId: 'installer-action',
+      event: 'HEARTBEAT',
+      result: 'RUNNING',
+      leaseMs: 60_000,
+      now: new Date('2026-09-26T00:00:02.000Z'),
+      operation: {
+        family: 'OWNER_CONTROL',
+        label: 'skills',
+        targetRef: null,
+      },
+    });
+    const grant = claimWorkflowActionGrant(heartbeat, {
+      home: scope.home,
+      now: new Date('2026-09-26T00:00:03.000Z'),
+    });
+    assert.equal(grant.actionId, receipt.actionId);
+    assert.equal(grant.startedReceiptDigest, receipt.digest);
+    assert.throws(
+      () =>
+        claimWorkflowActionGrant(heartbeat, {
+          home: scope.home,
+          now: new Date('2026-09-26T00:00:04.000Z'),
+        }),
+      (error) => error.code === 'WORKFLOW_ACTION_GRANT_UNAVAILABLE',
+    );
+  } finally {
+    scope.close();
+  }
+});
+
+test('an unrelated seeded installer receipt has no invocation authority', () => {
+  const scope = fixture();
+  try {
+    const receipt = record(scope.home, {
+      actionId: 'seeded-installer-action',
+      leaseMs: 60_000,
+      operation: {
+        family: 'OWNER_CONTROL',
+        label: 'skills',
+        targetRef: null,
+      },
+    });
+    assert.throws(
+      () =>
+        claimWorkflowActionGrant(receipt, {
+          home: scope.home,
+          now: new Date('2026-09-26T00:00:01.000Z'),
+        }),
+      (error) => error.code === 'WORKFLOW_ACTION_GRANT_UNAVAILABLE',
     );
   } finally {
     scope.close();
