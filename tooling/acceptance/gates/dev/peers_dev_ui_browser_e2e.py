@@ -19,7 +19,7 @@ from tooling.acceptance.core import (
 
 
 GATE_ID = "peers-dev-ui-browser-e2e"
-ENVIRONMENT_ID = "dev-ui-local-browser"
+ENVIRONMENT_ID = "peers-dev-fixture-browser"
 PROFILE_ID = "dev-ui-local"
 DRIVER = Path(__file__).with_name("dev-ui-browser-e2e.mjs")
 SCREENSHOTS = ("desktop.png", "narrow.png")
@@ -32,7 +32,9 @@ def validate_runtime_manifest(manifest: dict[str, Any]) -> None:
         or manifest.get("profile", {}).get("resolvedName") != PROFILE_ID
         or not isinstance(clients, list)
         or len(clients) != 1
+        or clients[0].get("id") != "peers-dev-fixture-browser"
         or clients[0].get("runtime") != "browser"
+        or clients[0].get("renderer_port") != 4177
     ):
         raise GateError("Peers Dev Runtime Manifest is invalid")
 
@@ -46,6 +48,8 @@ def validate_driver_summary(
         or summary.get("viewports") != ["1440x1000", "390x844"]
         or summary.get("disconnectFallback") != "PASS"
         or summary.get("sseRecovery") != "PASS"
+        or summary.get("singletonReuse") != "PASS"
+        or summary.get("unregisteredVisible") != "PASS"
         or summary.get("screenshots") != list(SCREENSHOTS)
     ):
         raise GateError("Peers Dev browser journey summary is invalid")
@@ -76,10 +80,19 @@ class PeersDevUiBrowserGate(AcceptanceGate):
 
     def run(self) -> dict[str, Any]:
         manifest = self._manifest()
+        client = manifest["clients"][0]
+        endpoint = f"http://127.0.0.1:{client['renderer_port']}"
         with tempfile.TemporaryDirectory(prefix="pt-peers-dev-ui-browser-") as temp:
             output_directory = Path(temp)
             completed = subprocess.run(
-                ["node", str(DRIVER), str(output_directory)],
+                [
+                    "node",
+                    str(DRIVER),
+                    "--endpoint",
+                    endpoint,
+                    "--output",
+                    str(output_directory),
+                ],
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
@@ -108,6 +121,8 @@ class PeersDevUiBrowserGate(AcceptanceGate):
             "desktop_and_narrow_viewports",
             "disconnect_preserves_last_snapshot",
             "sse_recovers_after_disconnect",
+            "unregistered_worktree_remains_visible",
+            "machine_wide_listener_is_reused",
         ):
             self.assert_condition(assertion, True)
         return {
@@ -116,6 +131,8 @@ class PeersDevUiBrowserGate(AcceptanceGate):
             "viewports": summary["viewports"],
             "disconnectFallback": summary["disconnectFallback"],
             "sseRecovery": summary["sseRecovery"],
+            "singletonReuse": summary["singletonReuse"],
+            "unregisteredVisible": summary["unregisteredVisible"],
             "evidence": evidence,
         }
 

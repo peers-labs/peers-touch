@@ -7,8 +7,11 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 import {
+  buildServerIdentity,
   createDevHttpServer,
-  DEV_SERVER_KIND,
+  DEV_SERVER_HOST,
+  DEV_SERVER_PORT,
+  ensureDevServer,
 } from '../../../../apps/dev/server/index.mjs';
 import {
   machineDevRoot,
@@ -21,6 +24,7 @@ const require = createRequire(
 );
 const { chromium } = require('@playwright/test');
 const fixtureWorkspaceId = workspaceIdForRoot(repoRoot);
+const unregisteredWorkspaceId = '0f0e0d0c0b0a0908';
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -49,23 +53,12 @@ function close(server) {
   });
 }
 
-function workflowSnapshot(port) {
+function workflowSnapshot(port, serverIdentity) {
   return {
     kind: 'peers-touch-dev-snapshot',
     observedAt: '2026-09-26T00:00:00.000Z',
     digest: 'a'.repeat(64),
-    server: {
-      kind: DEV_SERVER_KIND,
-      endpoint: `http://127.0.0.1:${port}`,
-      startedAt: '2026-09-26T00:00:00.000Z',
-      source: {
-        workspaceId: fixtureWorkspaceId,
-        branch: 'acceptance/fixture',
-        head: '1'.repeat(40),
-        dirty: true,
-        workspaceDigest: `sha256:${'2'.repeat(64)}`,
-      },
-    },
+    server: serverIdentity,
     authority: 'machine-control-plane',
     verdict: 'HEALTHY',
     continuation: 'CONTINUE',
@@ -89,7 +82,7 @@ function workflowSnapshot(port) {
     declarations: [],
     activeLeases: [],
     staleLeaseCount: 0,
-    unregisteredObservationCount: 0,
+    unregisteredObservationCount: 1,
     worktrees: [
       {
         workspaceId: fixtureWorkspaceId,
@@ -173,6 +166,60 @@ function workflowSnapshot(port) {
         },
         leases: [],
       },
+      {
+        workspaceId: unregisteredWorkspaceId,
+        name: 'unregistered-fixture',
+        branches: ['acceptance/unregistered'],
+        workState: 'observed',
+        activity: 'unregistered',
+        freshness: {
+          state: 'stale',
+          lastReportedAt: null,
+          stateUpdatedAt: null,
+          checkedAt: '2026-09-26T00:00:00.000Z',
+          derivedUpdatedAt: '2026-09-26T00:00:00.000Z',
+        },
+        agentActivity: {
+          state: 'idle',
+          lastAction: null,
+          loopCount: 0,
+          receiptCount: 0,
+        },
+        workflow: {
+          verdict: 'UNREGISTERED',
+          continuation: 'REGISTER',
+          stages: [],
+          plan: null,
+          task: null,
+          session: null,
+          review: null,
+          findings: [
+            {
+              severity: 'warning',
+              owner: 'machine-control-plane',
+              code: 'WORKTREE_UNREGISTERED',
+            },
+          ],
+        },
+        environmentHealth: {
+          state: 'blocked',
+          issues: ['Workspace is not registered'],
+        },
+        requirements: [],
+        environment: {
+          profile: null,
+          slot: null,
+          resetPolicy: null,
+          sourceState: 'unregistered',
+        },
+        resources: {
+          station: { url: null, claims: [] },
+          relay: { url: null, claims: [] },
+          databases: [],
+          other: [],
+        },
+        leases: [],
+      },
     ],
     occupancy: [
       {
@@ -195,17 +242,23 @@ async function assertViewport(page, endpoint, viewport, screenshot) {
     waitUntil: 'domcontentloaded',
   });
   await page.waitForFunction(() => window.__PEERS_DEV_READY__ === true);
-  await page.locator(`[data-workspace-id="${fixtureWorkspaceId}"]`).waitFor();
-  assert.equal(await page.locator('.stage-rail .segment').count(), 5);
-  assert.equal(await page.locator('.task-segments .segment').count(), 4);
+  const primary = page.locator(
+    `[data-workspace-id="${fixtureWorkspaceId}"]`,
+  );
+  await primary.waitFor();
+  await page
+    .locator(`[data-workspace-id="${unregisteredWorkspaceId}"]`)
+    .waitFor();
+  assert.equal(await primary.locator('.stage-rail .segment').count(), 5);
+  assert.equal(await primary.locator('.task-segments .segment').count(), 4);
   assert.equal(
-    await page.locator('[role="progressbar"]').getAttribute('aria-valuenow'),
+    await primary
+      .locator('[role="progressbar"]')
+      .getAttribute('aria-valuenow'),
     '60',
   );
   assert.equal(
-    await page
-      .locator(`[data-workspace-id="${fixtureWorkspaceId}"]`)
-      .getAttribute('data-activity-state'),
+    await primary.getAttribute('data-activity-state'),
     'looping',
   );
   const geometry = await page.evaluate(() => {
@@ -236,16 +289,22 @@ async function assertViewport(page, endpoint, viewport, screenshot) {
   await page.screenshot({ path: screenshot, fullPage: true });
 }
 
-async function main(outputDirectory = null) {
-  const port = await freePort();
-  const endpoint = `http://127.0.0.1:${port}`;
-  const identity = workflowSnapshot(port).server;
-  const server = createDevHttpServer({
-    envRepo: repoRoot,
-    identity,
-    buildSnapshot: async () => workflowSnapshot(port),
-    brokerOptions: { intervalMs: 100, keepAliveMs: 500 },
+async function runBrowserJourney({ endpoint: requestedEndpoint, outputDirectory }) {
+  const ownsServer = requestedEndpoint === null;
+  const port = ownsServer ? await freePort() : Number(new URL(requestedEndpoint).port);
+  const endpoint = requestedEndpoint ?? `http://${DEV_SERVER_HOST}:${port}`;
+  const identity = buildServerIdentity({
+    host: DEV_SERVER_HOST,
+    port,
   });
+  const server = ownsServer
+    ? createDevHttpServer({
+        envRepo: repoRoot,
+        identity,
+        buildSnapshot: async () => workflowSnapshot(port, identity),
+        brokerOptions: { intervalMs: 100, keepAliveMs: 500 },
+      })
+    : null;
   const artifactRoot = outputDirectory
     ? path.resolve(outputDirectory)
     : path.join(
@@ -259,7 +318,16 @@ async function main(outputDirectory = null) {
   const browser = await chromium.launch({ headless: true });
   const consoleErrors = [];
   try {
-    await listen(server, port);
+    if (server !== null) await listen(server, port);
+    let singletonReuse = 'NOT_RUN';
+    if (endpoint === `http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`) {
+      const reuse = await ensureDevServer({ sourceRoot: repoRoot });
+      assert.equal(reuse.state, 'existing');
+      assert.equal(reuse.server, null);
+      assert.equal(reuse.identity.source.workspaceId, fixtureWorkspaceId);
+      assert.equal(reuse.identity.source.head, identity.source.head);
+      singletonReuse = 'PASS';
+    }
     const desktopContext = await browser.newContext({
       baseURL: endpoint,
       viewport: { width: 1440, height: 1000 },
@@ -339,8 +407,7 @@ async function main(outputDirectory = null) {
     await disconnect.goto(endpoint, { waitUntil: 'domcontentloaded' });
     await disconnect.waitForFunction(() => window.__PEERS_DEV_READY__ === true);
     await disconnect.locator('#transport[data-state="polling"]').waitFor();
-    server.snapshotBroker.close();
-    await close(server);
+    await disconnect.route('**/api/status', (route) => route.abort());
     await disconnect.locator('#refresh').click();
     await disconnect.locator('#transport[data-state="stale"]').waitFor();
     assert.equal(
@@ -358,15 +425,73 @@ async function main(outputDirectory = null) {
         screenshots: ['desktop.png', 'narrow.png'],
         disconnectFallback: 'PASS',
         sseRecovery: 'PASS',
+        singletonReuse,
+        unregisteredVisible: 'PASS',
       })}\n`,
     );
   } finally {
     await browser.close();
-    if (server.listening) {
+    if (server?.listening) {
       server.snapshotBroker.close();
       await close(server);
     }
   }
 }
 
-await main(process.argv[2] ?? null);
+async function serveFixture() {
+  const port = DEV_SERVER_PORT;
+  const identity = buildServerIdentity({
+    host: DEV_SERVER_HOST,
+    port,
+  });
+  const server = createDevHttpServer({
+    envRepo: repoRoot,
+    identity,
+    buildSnapshot: async () => workflowSnapshot(port, identity),
+    brokerOptions: { intervalMs: 100, keepAliveMs: 500 },
+  });
+  await listen(server, port);
+  process.stdout.write(
+    `${JSON.stringify({ ready: true, endpoint: identity.endpoint })}\n`,
+  );
+  await new Promise((resolve) => {
+    process.once('SIGINT', resolve);
+    process.once('SIGTERM', resolve);
+  });
+  server.snapshotBroker.close();
+  await close(server);
+}
+
+function parseCommand(argv) {
+  if (argv.length === 1 && argv[0] === '--serve-fixture') {
+    return { action: 'serve-fixture' };
+  }
+  if (argv.length <= 1 && !argv[0]?.startsWith('--')) {
+    return {
+      action: 'run',
+      endpoint: null,
+      outputDirectory: argv[0] ?? null,
+    };
+  }
+  const options = {};
+  for (let index = 0; index < argv.length; index += 2) {
+    const name = argv[index];
+    const value = argv[index + 1];
+    if (!['--endpoint', '--output'].includes(name) || !value) {
+      throw new Error(`unsupported browser Gate argument: ${name ?? '<missing>'}`);
+    }
+    options[name.slice(2)] = value;
+  }
+  return {
+    action: 'run',
+    endpoint: options.endpoint ?? null,
+    outputDirectory: options.output ?? null,
+  };
+}
+
+const command = parseCommand(process.argv.slice(2));
+if (command.action === 'serve-fixture') {
+  await serveFixture();
+} else {
+  await runBrowserJourney(command);
+}
