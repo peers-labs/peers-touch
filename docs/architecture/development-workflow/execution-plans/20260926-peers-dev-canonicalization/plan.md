@@ -21,7 +21,8 @@
       "workspace-plan-generation-self"
     ],
     "canonical-control-plane": [
-      "acceptance-workflow-contract"
+      "acceptance-workflow-contract",
+      "desktop-dev-runtime-isolation-static"
     ],
     "canonical-dev-ui": [
       "peers-dev-ui-browser-e2e"
@@ -41,6 +42,7 @@
     "acceptance-plan-self",
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
+    "desktop-dev-runtime-isolation-static",
     "dev-ui-browser-e2e",
     "development-workflow-control-plane",
     "machine-dev-registry-self",
@@ -53,6 +55,7 @@
     "acceptance-plan-self",
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
+    "desktop-dev-runtime-isolation-static",
     "dev-ui-browser-e2e",
     "development-workflow-control-plane",
     "machine-dev-registry-self",

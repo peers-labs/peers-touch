@@ -51,7 +51,7 @@
     },
     {
       "id": "workflow-control-plane-proof",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-workflow-contract",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-workflow-contract --gate desktop-dev-runtime-isolation-static",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
