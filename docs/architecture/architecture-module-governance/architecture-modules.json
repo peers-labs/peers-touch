@@ -34,7 +34,7 @@
       "governedPaths": [
         "docs/architecture/architecture-module-governance",
         "docs/global/architecture-document-standard.md",
-        "docs/knowledge/invariants/conversation-bound-workflow-kernel.md",
+        "docs/knowledge/invariants/owner-rooted-workflow-binding.md",
         "tooling/acceptance/gates.yaml",
         "tooling/plugins/pt-ew-plugin",
         "tooling/scripts/agent-integration-audit-test.py",
@@ -135,7 +135,8 @@
         "DWF-D29",
         "DWF-D30",
         "DWF-D31",
-        "DWF-D32"
+        "DWF-D32",
+        "DWF-D33"
       ],
       "governedPaths": [
         "docs/architecture/development-workflow",

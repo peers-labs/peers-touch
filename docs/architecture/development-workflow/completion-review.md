@@ -1,7 +1,7 @@
 # Completion Review 产品合同
 
 > **Status**: active
-> **Created**: 2026-09-26 | **Updated**: 2026-09-26
+> **Created**: 2026-09-26 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -29,8 +29,9 @@ current-source Gate。它必须识别遗漏义务、残留 forbidden path、stal
 | Human merge judgment | PR reviewer |
 
 Implementation Session 不能签发关闭自身 Task 的 receipt。Review owner 必须从
-DWF-D26 immutable conversation binding 派生不同的 reviewer context，调用者
-不能提供或覆盖 reviewer identity。
+DWF-D33 OWNER binding 预先签发 REVIEWER assignment；reviewer child claim
+必须携带同一 assignment、root/parent lineage 和 Development Session identity。
+调用者不能提供或覆盖 reviewer binding digest。
 
 ## 3. Request And Receipt
 
@@ -49,6 +50,8 @@ interface CompletionReviewRequest {
   workItemId: string;
   implementationSessionIds: string[];
   executorContextDigests: string[];
+  ownerBindingDigest: string;
+  reviewerAssignmentDigest: string;
   source: {
     branch: string;
     commit: string;
@@ -68,6 +71,9 @@ interface CompletionReviewReceipt {
   reviewId: string;
   requestDigest: string;
   reviewerContextDigest: string;
+  rootBindingDigest: string;
+  parentBindingDigest: string;
+  assignmentDigest: string;
   verdict: 'PASS' | 'FAIL';
   findings: Array<{
     id: string;
@@ -83,6 +89,12 @@ interface CompletionReviewReceipt {
 Request 和 receipt 都是 create-once。`obligationsDigest` 覆盖 Task 的
 `doneWhen`、`failureBehavior`、checks、read/write set、Acceptance closure
 以及 Plan-level deletion/quality obligations。
+
+`prepare` 只接受当前 `completion-review-prepare` Action Receipt 指向的 OWNER
+projection，并据此创建 REVIEWER assignment。`submit` 只接受当前
+`completion-review-submit` Action Receipt 指向的、与 request assignment
+精确相同且仍 live 的 REVIEWER child。任一路径缺少精确 receipt 都 fail
+closed；禁止回退为枚举 worktree 下所有未 release binding。
 
 Reviewer 提交 owner-only assessment。至少包含以下 mandatory finding：
 
@@ -110,6 +122,8 @@ Receipt 仅在以下条件全部成立时为 current：
 
 - Plan、Task、work item 和 implementation Session identity 匹配；
 - Reviewer context 与 request 覆盖的所有 implementation context 不同；
+- Reviewer role、assignment、root/parent lineage 和 Development Session
+  identity 与 request 完全匹配，且 child lease 未过期、未 terminal；
 - Branch、commit、tree 和 workspace digest 与当前 Git state 匹配；
 - Obligation digest 与当前 Plan/Task/Acceptance source 匹配；
 - Implementation source 和 obligation digest 与 reviewed request 匹配；

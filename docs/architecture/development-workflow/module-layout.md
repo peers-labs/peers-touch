@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Module Layout
 
 > **Status**: active
-> **Created**: 2026-09-16 | **Updated**: 2026-09-30
+> **Created**: 2026-09-16 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -48,7 +48,10 @@ tooling/scripts/local-dev/
 ├── workflow-action-store.mjs
 ├── workflow-action-store.test.mjs
 ├── workflow-anchor.mjs
-├── workflow-conversation-binding.mjs
+├── workflow-binding-projection.mjs
+├── workflow-binding-projection.test.mjs
+├── workflow-binding-store.mjs
+├── workflow-binding-store.test.mjs
 ├── workflow-doctor.mjs
 ├── workflow-host-adapters.mjs
 ├── workflow-kernel.mjs
@@ -102,10 +105,15 @@ tooling/scripts/
         ├── migration.lock
         └── migration.lock.recovery
 
-~/.peers-touch/dev/conversations/<host>/<conversationHash>/
-├── execution-binding.json
-├── anchor-receipt.json
-└── releases/<anchorDigest>.json
+~/.peers-touch/dev/bindings/
+├── owners/<host>/<rootChatHash>/
+│   ├── owner-binding.json
+│   ├── anchor-receipt.json
+│   ├── assignments/<assignmentId>.json
+│   └── releases/<anchorDigest>.json
+└── children/<rootBindingDigest>/<host>/<executionSessionHash>/
+    ├── child-binding.json
+    └── terminal.json
 ```
 
 ## 2. File Responsibilities
@@ -114,7 +122,7 @@ tooling/scripts/
 |---|---|
 | `README.md` | Module scope, verified problem and navigation |
 | `design.md` | Ownership, boundaries, data flow, resume and cutover contracts |
-| `decisions.md` | DWF-D01..DWF-D32 ADR-lite decisions |
+| `decisions.md` | DWF-D01..DWF-D33 ADR-lite decisions |
 | `data-model.md` | Closed schemas and state transition guards |
 | `integration.md` | Skill, Make, Acceptance, Quality and migration mapping |
 | `execution-plans/*/plan.md` | Stable Plan Package manifest and Acceptance contract |
@@ -139,8 +147,9 @@ tooling/scripts/
 | `dev-session.test.mjs` | State, identity, guard, clock and symlink regressions |
 | `completion-review.mjs` | Independent current-source review request, assessment, receipt, and freshness owner |
 | `workflow-action-store.mjs` | Bounded redacted Action Receipt chain and activity reduction |
-| `workflow-host-adapters.mjs` | TRAE/Cursor/Codex payload normalization and native response rendering |
-| `workflow-conversation-binding.mjs` | Atomic immutable conversation execution-root binding, Anchor receipt, and create-once release |
+| `workflow-host-adapters.mjs` | TRAE/Cursor/Codex event normalization and native response rendering; no cross-host identity aliases |
+| `workflow-binding-projection.mjs` | Pure host-specific root/execution identity projection plus role, lineage and subject/tool/target roots |
+| `workflow-binding-store.mjs` | Atomic OWNER binding, child assignment/claim/lease/terminal lifecycle, Anchor receipt and OWNER release |
 | `workflow-tool-intent.mjs` | Structured shell/tool intent parsing without regex command admission |
 | `workflow-anchor.mjs` | Deterministic Context Anchor rendering and response/transcript verification |
 | `workflow-state-inspector.mjs` | Read-only declaration, Plan binding, active-work, Session, Git and terminal-state validation |
@@ -162,9 +171,9 @@ tooling/scripts/
 | `tooling/skills/pt-goal-orchestrator/` | Host-neutral Goal scheduling contract, template, and review rubric |
 | `tooling/skills/pt-dev-runtime-handoff/` | Project runtime, Journey, Session result, and cleanup owner |
 | `tooling/skills/pt-{trae,cursor,codex}-host-adapter/` | Optional host tool transports with no project-state authority |
-| `tooling/scripts/install-agent-integration.sh` | Non-interactive worktree-local Skill, Codex plugin, and TRAE hook projection |
-| `tooling/scripts/agent-integration-audit.py` | Fail-closed single/fleet source, hook, recursive catalog, identity, receipt, and projection audit |
-| `tooling/scripts/agent-integration-control.py` | Work-ledger-locked installer, merge/preservation guard, path containment, and source/session-bound receipt |
+| `tooling/scripts/install-agent-integration.sh` | Non-interactive Skill/plugin projection plus one TRAE multi-root workspace bootstrap |
+| `tooling/scripts/agent-integration-audit.py` | Fail-closed source, workspace-bootstrap, recursive catalog, binding-store, receipt, and projection audit |
+| `tooling/scripts/agent-integration-control.py` | Work-ledger-locked hard-cut installer, binding/action-store reset, bootstrap preservation guard, path containment, and source/session-bound receipt |
 | `tooling/scripts/skill-overlay-control.py` | Machine-local user Overlay install/list/enable/disable/uninstall/resolve owner with immutable-copy and digest validation |
 | `tooling/scripts/skill-overlay-control-test.py` | Overlay lifecycle, ordering, collision, symlink, registry, and tamper regression coverage |
 | `tooling/skills/pt-ew/` | Shared Overlay host and mandatory delegation boundary to `pt-god-view` |
@@ -223,8 +232,9 @@ pt-ew
 
 pt-ew-plugin
   -> host payload adapter
-  -> immutable conversation executionRoot
-  -> ToolIntent AST + subjectRoot
+  -> host-specific root-chat / execution-session identity
+  -> canonical BindingProjection
+  -> ToolIntent AST + subject/tool/target roots
   -> workflow-kernel.mjs
        -> Plan binding / declaration / active-work / Session owner reads
        -> machine-rendered Anchor + atomic release receipt
@@ -253,7 +263,10 @@ Forbidden dependencies:
 - canonical agent integration -> user Overlay registry or installed copies;
 - IDE plugin or hook -> Plan, Task, Session, declaration, active-work, or
   evidence mutation;
-- tool `cwd` or target -> conversation execution-root rebinding;
+- tool `cwd`, target, or internal execution `session_id` -> OWNER execution-root rebinding;
+- unassigned child session -> WORKER/REVIEWER claim;
+- completion review -> worktree-wide unreleased binding enumeration;
+- current binding reader -> legacy conversation/action store;
 - archive parser -> current plan/task status;
 - Skills -> private parsing logic that bypasses `planctl`.
 

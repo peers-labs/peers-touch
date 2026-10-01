@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Created**: 2026-09-13 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -42,6 +42,7 @@
 | DWF-D30 | Make documentation claims executable through Workflow Doctor | accepted |
 | DWF-D31 | Advance completed workspace bindings by explicit Plan generation | accepted |
 | DWF-D32 | Aggregate module impacts before resource acquisition | accepted |
+| DWF-D33 | Root workflow authority in one owner binding with assigned child lineage | accepted |
 
 ## DWF-D01: EXECUTE Owns A Mandatory Inner State Machine
 
@@ -1187,6 +1188,11 @@ Conversation-bound execution authority prevents command working directories from
 - Core owner commands remain the final state-transition authority; the Kernel
   is an earlier admission and handoff-completeness boundary.
 
+**Supersession**: DWF-D33 replaces this decision's identity, lifecycle,
+review-selection, and rollout contracts. DWF-D26 remains registered only
+because immutable completed Plan Packages reference its original safety
+boundary.
+
 ## DWF-D27: Project Workflow Status Through One Snapshot
 
 **Status**: accepted
@@ -1438,3 +1444,87 @@ resource lifecycle must remain with their existing owners.
 - Planner tests must cover multi-module closure, account/service reuse,
   parallel capacity shortage, all-or-none target claims, fencing, quarantine
   replacement, and cross-Plan conflicts.
+
+## DWF-D33: Root Workflow Authority In One Owner Binding With Assigned Child Lineage
+
+**Status**: accepted
+**Date**: 2026-10-01
+
+### Context
+
+TRAE exposes a stable visible-chat `chat_session_id` and may expose a different
+`session_id` for reviewer, retry, or subtask execution. The existing generic
+adapter treated `conversation_id`, `conversationId`, `session_id`, and
+`sessionId` as interchangeable owner keys. Every internal execution could
+therefore create another peer owner binding for the same worktree.
+
+The binding store considered every record without a release receipt active.
+Completion Review first tried a recent Action Receipt and then fell back to a
+global `candidates.length === 1` check. In the reproduced high-chat workspace,
+twenty old records remained active by that definition even though most latest
+RUNNING receipts had expired. The review path was blocked by persistence
+history rather than a live ownership conflict.
+
+### Decision
+
+- A visible development chat owns exactly one immutable OWNER binding. TRAE
+  derives it only from `chat_session_id`; `session_id` never creates owner
+  authority. Cursor and Codex use only their documented host-specific fields.
+- Internal WORKER and REVIEWER sessions require a create-once assignment from
+  an existing OWNER or child. The assignment records role, root and parent
+  binding digests, Development Session identity, operation identity, and a
+  bounded lease.
+- Child claim binds a hashed execution-session identity to one assignment.
+  Child liveness comes only from assignment/lease/terminal receipts. OWNER
+  liveness has no generic TTL.
+- One pure `BindingProjection` joins host identity, owner or child binding,
+  role, lineage, release state, execution root, and per-event subject/tool/
+  target roots. Hook context, status, readiness, handoff, Stop, Action Receipt,
+  worker result, and Completion Review consume that projection.
+- Completion Review selects the exact OWNER or assigned REVIEWER from the
+  current owner-command Action Receipt. There is no worktree-wide active
+  binding fallback.
+- `CROSS_WORKTREE_WRITE_DENIED` remains unchanged: all lineage members inherit
+  the OWNER execution root, may read sibling roots, and cannot write them.
+- TRAE multi-root installations have one workspace bootstrap hook. That hook
+  dispatches to the selected canonical integration instead of installing
+  competing owner hooks in every worktree.
+- Rollout is a hard cut. After proving no live declaration, child assignment,
+  or workflow action exists on the machine other than the current exact
+  OWNER-bound installer command, the installer deletes
+  `~/.peers-touch/dev/conversations/` and every
+  `~/.peers-touch/dev/workspaces/*/workflow/actions/` directory before
+  installing the new bootstrap. Plan/Session/Review/Acceptance stores remain.
+  No legacy schema reader, importer, alias, fallback, or dual-write is allowed.
+
+### Rationale
+
+The visible chat is the authorization boundary; internal execution sessions are
+bounded delegates. Persisting this distinction prevents stale review activity
+from becoming owner authority and makes completion identity exact instead of
+heuristic.
+
+### Alternatives Considered
+
+- Treat every host `session_id` as an owner: rejected because retries,
+  reviewers, and subtasks create false peer owners.
+- Keep worktree-wide enumeration but add TTL: rejected because OWNER
+  authorization must not silently expire and history is not identity.
+- Accept old and new schemas during migration: rejected because it preserves
+  ambiguous ownership and leaves two active truth models.
+- Add adapter routes around Completion Review only: rejected because status,
+  handoff, Stop, and worker attribution would remain inconsistent.
+
+### Consequences
+
+- Internal worker/reviewer launchers must issue and terminalize assignments.
+- A child without a valid assignment cannot claim independent worker or
+  reviewer authority.
+- Machine-local conversation and Action Receipt history is intentionally
+  discarded at rollout; closed Plan/Session/evidence owners remain unchanged.
+- Multi-root bootstrap installation is a separately declared cross-root
+  rollout operation and is not performed implicitly by source implementation.
+- Tests must cover one owner plus two child roles, nested parent linkage,
+  expired and terminal child behavior, compaction/task switching, subject-root
+  projection, exact Completion Review selection with twenty stale children,
+  and wrong-binding status/final claims.

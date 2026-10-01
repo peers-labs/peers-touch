@@ -1,7 +1,7 @@
 # Host-Neutral Agent Integration
 
 > **Status**: accepted
-> **Created**: 2026-09-19 | **Updated**: 2026-09-23
+> **Created**: 2026-09-19 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ## Goal
@@ -17,9 +17,17 @@ semantic integration, not filesystem copying.
 
 The `peers-dev-workflow` repository owns the canonical implementation and
 distribution contract. It is not the runtime-state source for consuming
-worktrees. Each installed adapter contributes its own canonical root as a
-binding hint. The first blockable tool event for a stable host conversation
-atomically selects one hint as the immutable `executionRoot`.
+worktrees. Each installed adapter contributes a canonical integration candidate.
+One workspace bootstrap receives every multi-root hook event and resolves the
+explicit target worktree before the first blockable event creates the immutable
+OWNER `executionRoot`.
+
+The bootstrap's own filesystem location is never an execution-root hint. The
+first `PreToolUse` uses a host-provided task root only when it matches one
+declared workspace root. Without that field, every mutation target must map to
+the same single workspace root. Missing or conflicting evidence returns
+`WORKTREE_SELECTION_REQUIRED`; folder order and active-editor guesses are not
+authority.
 
 The canonical source includes repository-owned `tooling/skills/pt-*` and the
 thin `tooling/plugins/pt-ew-plugin/` adapter. Machine-local user Overlays are
@@ -29,32 +37,47 @@ managed by this integration.
 
 ## Kernel Model
 
-The adapter and Kernel deliberately distinguish three identities:
+The adapter and Kernel deliberately distinguish five identities:
 
 | Identity | Meaning | Mutability |
 |---|---|---|
-| host conversation | one IDE chat/session, persisted only as a hash | stable |
-| `executionRoot` | the worktree authorized for writes by that conversation | create-once |
+| root chat | one visible development chat, persisted only as a hash | stable |
+| execution session | host-internal owner/worker/reviewer invocation, persisted only for assigned children | per invocation |
+| binding role | `OWNER`, `WORKER`, or `REVIEWER` | assignment-bound |
+| binding lineage | root, parent, and assignment digests | create-once |
+| `executionRoot` | the worktree authorized for writes by the OWNER lineage | create-once |
 | `subjectRoot` | the repository targeted by one read/write/tool invocation | per event |
 
 `SessionStart` is optional prewarming. It cannot establish authority. Cursor
 Cloud has no `sessionStart`, so local and cloud correctness both begin at the
-first `preToolUse`. If the host has no stable conversation ID or cannot block
-that event, the mode is `OBSERVE_ONLY`.
+first `preToolUse`. If the host has no host-specific root-chat identity or
+cannot block that event, the mode is `OBSERVE_ONLY`.
 
 Cross-worktree reads are legal. A write whose subject root differs from the
 conversation execution root fails with `CROSS_WORKTREE_WRITE_DENIED`.
 
-| Host | Stable identity | Blocking boundary | Startup behavior |
+| Host | OWNER identity key | Assigned-child identity key | Blocking boundary |
 |---|---|---|---|
-| TRAE | `session_id` | `PreToolUse` | `SessionStart` prewarm |
-| Cursor local | `conversation_id` | `preToolUse` + `failClosed` | `sessionStart` prewarm |
-| Cursor Cloud | `conversation_id` | `preToolUse` + `failClosed` | no `sessionStart`; first tool binds |
-| Codex plugin | `session_id` / `conversation_id` | `PreToolUse` | `SessionStart` prewarm |
+| TRAE | `chat_session_id` | `session_id` | `PreToolUse` |
+| Cursor local/cloud | `conversation_id` | `conversation_id` | `preToolUse` + `failClosed` |
+| Codex plugin | `session_id` | `session_id` | `PreToolUse` |
 
-Conflicting non-empty identity fields fail with
-`HOST_CONVERSATION_ID_AMBIGUOUS`. Missing identity never falls back to a
-process-global or mutable workspace pointer.
+Adapters read only the named fields for their host. Missing identity never
+falls back to another host's alias, `ICUBE_CODEMAIN_SESSION`, a process-global
+value, or a mutable workspace pointer.
+
+An execution session without an assignment uses the OWNER projection for
+admission and cannot claim child independence. WORKER/REVIEWER assignment is
+create-once, carries root/parent binding digests plus the Development Session
+and operation IDs, and has a bounded lease. Terminal receipts close child
+liveness; expired or terminal children never participate in current owner or
+Completion Review selection.
+
+TRAE `SubagentStart` and `SubagentStop` are the lifecycle boundaries for
+assignment claim and terminalization. `PreCompact` records the current
+projection digest and `PostCompact` requires the same root/lineage before the
+next prompt or tool action. Task changes update only the projected Development
+Session identity; they do not create another OWNER.
 
 ## Required Sequence
 
@@ -79,7 +102,8 @@ process-global or mutable workspace pointer.
    references, and workflow identity mismatches. A bound workspace requires a
    tracked declaration locator; only an unbound pre-Plan workspace may carry an
    untracked declaration during this source-only audit.
-5. Release the active Development declaration, then install the current host
+5. Release the active Development declaration, prove no live action except the
+   current exact OWNER-bound installer command, then install the current host
    projection without prompting:
 
    ```bash
@@ -91,9 +115,14 @@ process-global or mutable workspace pointer.
    every canonical `pt-*` Skill. Codex additionally receives
    `.agents/plugins/pt-ew-plugin`; Cursor receives merged project-native
    `.cursor/hooks.json` entries for `sessionStart`, `beforeSubmitPrompt`,
-   `preToolUse`, and `stop`, all with `failClosed: true`; TRAE receives a
-   merged `.trae/hooks.json` that preserves unrelated entries. No user-global
-   hook file is modified.
+   `preToolUse`, and `stop`, all with `failClosed: true`; TRAE receives one
+   workspace bootstrap hook selected from the active `.code-workspace`
+   descriptor, including `SubagentStart`, `SubagentStop`, `PreCompact`, and
+   `PostCompact`. Per-worktree managed TRAE hook entries are removed. No
+   user-global hook file is modified.
+   This hard cut deletes prior machine-local conversation and workflow-action
+   stores before publishing the bootstrap. The installer has no legacy reader,
+   importer, alias, or dual-write path.
    The complete install runs while holding the
    machine work-ledger lock, rejects every `DECLARED`, `ACTIVE`, or `RELEASING`
    declaration as `ACTIVE_ACTION_IN_FLIGHT`, validates the ledger through its
@@ -115,7 +144,8 @@ process-global or mutable workspace pointer.
 
    There is no acknowledgement command or session-hash bypass. Restart the IDE
    only when changed hooks cannot be reloaded by the current host, then rerun
-   the audit. The audit verifies receipt schema/kind, workspace, branch, HEAD,
+   the audit. The audit verifies receipt schema/kind, workspace descriptor and
+   bootstrap root, branch, HEAD,
    recursive catalog identity, dirty catalog status, callback proof, and every
    projected symlink's exact canonical target before it reports `PASS`. It also
    invokes the canonical
@@ -172,20 +202,22 @@ Required report fields:
   do not project a symlinked external implementation.
 - `CANONICAL_PLUGIN_SOURCE_INVALID`: restore the current worktree's canonical
   `tooling/plugins/pt-ew-plugin` source.
-- `TRAE_HOOKS_INVALID`: repair the workspace hook file without replacing
-  unrelated hook entries.
+- `TRAE_WORKSPACE_BOOTSTRAP_INVALID`: repair the one descriptor-selected
+  bootstrap hook without replacing unrelated hook entries.
 - `CURSOR_HOOKS_INVALID`: repair the project hook file without replacing
   unrelated hook entries.
-- `CONVERSATION_BINDING_INVALID`: repair the owner-controlled machine record;
-  never infer a replacement execution root from the current tool `cwd`.
+- `WORKFLOW_BINDING_INVALID`: repair the owner-controlled current binding
+  store; never infer a replacement execution root from the current tool `cwd`
+  or read a legacy conversation record.
 - `CROSS_WORKTREE_WRITE_DENIED`: execute the write from a conversation bound
   to that worktree; a read from the current conversation remains legal.
 
 ## Completion
 
 Fleet integration is complete only when every selected active worktree reports
-audit `PASS`, no host discovery root exposes the legacy scheduler, each
-conversation proves immutable execution-root binding and cross-root write
-denial, global hooks remain unchanged, and each resumed Plan advances at least
-one legal owner-controlled action. Stop proof additionally requires the exact
-machine-rendered Anchor and its create-once release receipt.
+audit `PASS`, no host discovery root exposes the legacy scheduler, the
+multi-root workspace has exactly one managed bootstrap, each owner lineage
+proves immutable execution-root binding and cross-root write denial, global
+hooks remain unchanged, and each resumed Plan advances at least one legal
+owner-controlled action. Stop proof additionally requires the exact
+machine-rendered Anchor and its create-once OWNER release receipt.

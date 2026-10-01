@@ -101,5 +101,5 @@ of the project architecture.
 - DWF-D21 defines the host-neutral owner and adapter boundary.
 - DWF-D20 defines the continuous Plan Run that consumes the scheduler output.
 - DWF-D22 separates workflow source distribution from runtime-state ownership.
-- DWF-D26 binds IDE enforcement to one immutable conversation execution root
+- DWF-D33 roots IDE enforcement in one OWNER binding, assigns child lineage,
   and treats each hook target as a separate subject root.

@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Data Model
 
 > **Status**: active
-> **Created**: 2026-09-13 | **Updated**: 2026-09-30
+> **Created**: 2026-09-13 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -496,25 +496,29 @@ Rules:
 - the registry controls interaction policy only and is not Plan, Session,
   declaration, authorization, or Acceptance state.
 
-## 6.2 Conversation Execution Binding
+## 6.2 Workflow Binding Projection
 
-The Workflow Kernel stores no raw host conversation identifier. It derives
-`conversationHash = sha256(host + NUL + stableConversationId)` and uses:
+Raw host identities are never persisted. Each host adapter extracts exactly
+the fields defined for that host and hashes them independently:
 
-```text
-~/.peers-touch/dev/conversations/<host>/<conversationHash>/
-├── execution-binding.json
-├── anchor-receipt.json
-└── releases/<anchorDigest>.json
-```
+| Host | OWNER identity key | Assigned-child identity key |
+|---|---|---|
+| TRAE | `chat_session_id` | `session_id` |
+| Cursor | `conversation_id` | `conversation_id` |
+| Codex | `session_id` | `session_id` |
 
-The create-once binding is:
+An absent required root-chat field produces `OBSERVE_ONLY`. Adapters do not
+probe aliases from another host and do not read process-global identity
+fallbacks.
+
+The create-once OWNER binding is:
 
 ```ts
-interface ConversationExecutionBinding {
-  kind: 'peers-touch-workflow-conversation-binding';
+interface WorkflowOwnerBinding {
+  kind: 'peers-touch-workflow-owner-binding';
   host: 'trae' | 'cursor' | 'codex';
-  conversationHash: string;
+  rootChatHash: string;
+  role: 'OWNER';
   executionRoot: string;
   workspaceId: string;
   boundAt: string;
@@ -523,9 +527,85 @@ interface ConversationExecutionBinding {
 }
 ```
 
-`executionRoot` is machine-local and canonicalized through Git plus
-`realpath`. It is immutable for the conversation. It is not a lease, resource
-claim, Plan binding, or declaration.
+An active OWNER or child may issue a bounded child assignment:
+
+```ts
+interface WorkflowBindingAssignment {
+  kind: 'peers-touch-workflow-binding-assignment';
+  assignmentId: string;
+  role: 'WORKER' | 'REVIEWER';
+  rootBindingDigest: string;
+  parentBindingDigest: string;
+  workflowSessionId: string;
+  operationId: string;
+  issuedAt: string;
+  leaseUntil: string;
+  digest: string;
+}
+
+interface WorkflowChildBinding {
+  kind: 'peers-touch-workflow-child-binding';
+  host: 'trae' | 'cursor' | 'codex';
+  executionSessionHash: string;
+  role: 'WORKER' | 'REVIEWER';
+  assignmentDigest: string;
+  rootBindingDigest: string;
+  parentBindingDigest: string;
+  workflowSessionId: string;
+  executionRoot: string;
+  workspaceId: string;
+  boundAt: string;
+  digest: string;
+}
+
+interface WorkflowChildTerminalReceipt {
+  kind: 'peers-touch-workflow-child-terminal';
+  childBindingDigest: string;
+  result: 'PASS' | 'FAIL' | 'BLOCKED' | 'CANCELLED';
+  terminalAt: string;
+  digest: string;
+}
+```
+
+Assignment creation requires a current lineage projection and an active
+matching Development Session. Its `rootBindingDigest` always names the OWNER;
+its `parentBindingDigest` names the direct issuer. Claim is create-once and
+binds the hashed child execution session to exactly one assignment. A child is
+live only before `leaseUntil` and before a terminal receipt exists. OWNER
+liveness has no generic TTL.
+
+Every hook and claim consumes one read-only projection:
+
+```ts
+interface WorkflowBindingProjection {
+  kind: 'peers-touch-workflow-binding-projection';
+  host: 'trae' | 'cursor' | 'codex';
+  role: 'OWNER' | 'WORKER' | 'REVIEWER';
+  bindingDigest: string;
+  rootBindingDigest: string;
+  parentBindingDigest: string | null;
+  assignmentDigest: string | null;
+  workflowSessionId: string | null;
+  executionRoot: string;
+  workspaceId: string;
+  subjectRoots: string[];
+  toolRoot: string | null;
+  targetRoots: string[];
+  released: boolean;
+  childState: null | 'ASSIGNED' | 'LEASED' | 'TERMINAL';
+}
+```
+
+`executionRoot` is canonicalized through Git plus `realpath` and inherited by
+the entire lineage. `subjectRoots`, `toolRoot`, and `targetRoots` are per-event
+facts and never change authority. Status, readiness, handoff, Stop, worker
+result, and Completion Review use this same projection rather than searching
+for an arbitrary unreleased binding by worktree.
+
+For a new OWNER in a multi-root workspace, the bootstrap location is excluded
+from root selection. An explicit host task root must match one declared
+workspace root; otherwise all mutation targets must resolve to one root.
+Zero or multiple candidates produce `WORKTREE_SELECTION_REQUIRED`.
 
 The latest Anchor receipt is atomically replaceable because it projects current
 owner state:
@@ -533,7 +613,7 @@ owner state:
 ```ts
 interface WorkflowAnchorReceipt {
   kind: 'peers-touch-workflow-anchor-receipt';
-  bindingDigest: string;
+  rootBindingDigest: string;
   anchorDigest: string;
   renderedAt: string;
   status: string;
@@ -545,18 +625,34 @@ interface WorkflowAnchorReceipt {
 The release receipt is create-once:
 
 ```ts
-interface ConversationRelease {
-  kind: 'peers-touch-workflow-conversation-release';
-  bindingDigest: string;
+interface WorkflowOwnerRelease {
+  kind: 'peers-touch-workflow-owner-release';
+  rootBindingDigest: string;
   anchorDigest: string;
   releasedAt: string;
   digest: string;
 }
 ```
 
-Release succeeds only when the exact rendered Anchor is observable in the
-assistant response or host transcript. A conflicting second release fails
-closed.
+OWNER release succeeds only when the exact rendered Anchor is observable in
+the assistant response or host transcript. A conflicting second release fails
+closed. It does not terminate or revive a child; child terminal receipts own
+that lifecycle.
+
+This schema is a hard cut. Installation requires no live declaration, child
+assignment, or workflow action on the machine other than the current
+OWNER-bound installer command identified by its exact Action Receipt, then
+deletes exactly:
+
+```text
+~/.peers-touch/dev/conversations/
+~/.peers-touch/dev/workspaces/*/workflow/actions/
+```
+
+It does not delete Plan bindings, Plan generations, active-work, Development
+Sessions, Completion Review records, runtime leases, or Acceptance evidence.
+After the reset it publishes the current bootstrap. No legacy parser, importer,
+alias, or dual-write exists.
 
 ## 7. Development Work Item
 
@@ -1475,10 +1571,15 @@ Rules:
     ├── migration.lock
     └── migration.lock.recovery
 
-~/.peers-touch/dev/conversations/<host>/<conversationHash>/
-├── execution-binding.json
-├── anchor-receipt.json
-└── releases/<anchorDigest>.json
+~/.peers-touch/dev/bindings/
+├── owners/<host>/<rootChatHash>/
+│   ├── owner-binding.json
+│   ├── anchor-receipt.json
+│   ├── assignments/<assignmentId>.json
+│   └── releases/<anchorDigest>.json
+└── children/<rootBindingDigest>/<host>/<executionSessionHash>/
+    ├── child-binding.json
+    └── terminal.json
 ```
 
 Constraints:
@@ -1489,5 +1590,6 @@ Constraints:
 - injected clock for deterministic tests;
 - no credential or private key;
 - no raw host conversation identifier;
+- no legacy conversation/action store compatibility;
 - no repository writer;
 - no fallback to Acceptance Evidence Store.
