@@ -30,15 +30,19 @@
     "apps/station/app/subserver/agent/service/runtime_evidence_service.go",
     "apps/station/app/subserver/agent/service/turn_service.go",
     "apps/desktop/src-tauri/src",
+    "apps/desktop/src/gen/proto/domain/agent/agent_pb.ts",
     "apps/desktop/src/services/desktop_api.ts",
     "apps/desktop/src/services/api.test.ts",
+    "apps/desktop/src/services/desktop_api.runtimeResumeUnavailable.test.ts",
     "apps/desktop/src/store/chat.ts",
+    "apps/desktop/src/store/chat.externalRuntimeReset.test.ts",
     "apps/desktop/src/components/messages/AssistantMessage.tsx",
+    "apps/desktop/src/components/messages/AssistantMessage.runtimeResumeUnavailable.test.ts",
     "apps/desktop/src/acceptance/agent/harness.ts",
     "packages/locales/en/agent.json",
     "packages/locales/zh-CN/agent.json",
-    "tooling/acceptance/gates/agent",
-    "tooling/acceptance/tests/test_profile_lease.py",
+    "packages/prototypes/desktop/features/modern-chat-agent",
+    "tooling/acceptance",
     "tooling/docker/compose.yml",
     "tooling/scripts/deploy/deploy.sh",
     "docs/architecture/agent"
@@ -88,7 +92,7 @@
     "Do not let Browser or Desktop own session, epoch, process, or cleanup truth",
     "Return only the first deterministic failure to its owning layer"
   ],
-  "updatedAt": "2026-10-01T01:50:00Z",
+  "updatedAt": "2026-10-01T07:18:00Z",
   "durableEvidence": []
 }
 ```
