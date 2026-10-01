@@ -22,8 +22,8 @@ formal Acceptance.
 3. Each functional Task owns one Suite Runtime. Accounts, clients, devices,
    isolated storage, login state, service attestations, and one Fixture Epoch
    are provisioned once before the first Scenario.
-4. Scenario execution is attach-only and may reset only namespaced business
-   Fixture state after receiver-visible evidence is captured.
+4. Scenario execution is attach-only. Any required cleanup occurs only in the
+   Scenario's owner-controlled namespace after receiver-visible evidence.
 5. Product-required restart or recovery is a recorded client replacement, not
    whole-Suite reprovisioning.
 6. Mutable runtime resources do not cross Task ownership boundaries. Task
@@ -48,8 +48,7 @@ formal Acceptance.
    Deploy ownership remains only with W12D activation and W12 FINAL_CUT reset
    children.
 5. Suite reports prove one provisioning run, bounded client launches,
-   attach-only Scenarios, receiver-visible evidence, scenario reset
-   acknowledgements, and terminal cleanup.
+   attach-only Scenarios, receiver-visible evidence, and terminal cleanup.
 6. W12 product results bind both FINAL_CUT children, reset IDs, schema
    attestations, service runtime identities, and the post-cut Fixture Epoch.
 7. Plan validation, runtime-owner focused tests, aggregate tests, and the

@@ -553,6 +553,45 @@ def load(
 
 
 class RuntimeManifestV3Test(unittest.TestCase):
+    def test_post_cut_binding_is_closed_and_optional(self) -> None:
+        bindings = {
+            profile: {
+                "result_digest": digest(f"result:{profile}"),
+                "reset_id": f"reset-{profile}",
+                "schema_attestation_digest": digest(f"schema:{profile}"),
+                "station_runtime_identity": f"runtime-{profile}",
+            }
+            for profile in ("four", "fiveArm")
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            payload = manifest_payload()
+            payload["post_cut_epoch_id"] = "post-cut-epoch"
+            payload["final_cut_bindings"] = bindings
+            path = write_manifest(root, payload)
+
+            loaded = load(path)
+
+            self.assertEqual(
+                "post-cut-epoch",
+                loaded.payload["post_cut_epoch_id"],
+            )
+            self.assertEqual(bindings, loaded.payload["final_cut_bindings"])
+
+        for missing in ("post_cut_epoch_id", "final_cut_bindings"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                payload = manifest_payload()
+                payload["post_cut_epoch_id"] = "post-cut-epoch"
+                payload["final_cut_bindings"] = bindings
+                payload.pop(missing)
+                path = write_manifest(root, payload)
+                with self.assertRaisesRegex(
+                    runtime_manifest.RuntimeManifestError,
+                    "must be declared together",
+                ):
+                    load(path)
+
     def test_rfc3339_nano_accepts_variable_fractional_precision(self) -> None:
         parsed = runtime_manifest._timestamp_for_code(
             "2026-09-20T18:34:17.98966Z",

@@ -244,22 +244,22 @@ class WorkItemProjectionTest(unittest.TestCase):
                     )
                 )
 
-    def test_loads_w2_source_and_runtime_subphases(self) -> None:
+    def test_loads_w2_source_and_single_suite_runtime_owner(self) -> None:
         source = work_item.load_projection(
             MANIFEST,
             workstream="W2A",
             journey=None,
             repo_root=REPO_ROOT,
         )
-        desktop = work_item.load_projection(
+        suite = work_item.load_projection(
             MANIFEST,
-            workstream="W2B-DESKTOP",
+            workstream="W2",
             journey="sc-dj-chat-attachment-atomic",
             repo_root=REPO_ROOT,
         )
-        mobile = work_item.load_projection(
+        mobile_journey = work_item.load_projection(
             MANIFEST,
-            workstream="W2B-MOBILE",
+            workstream="W2",
             journey="sc-dj-chat-attachment-mobile",
             repo_root=REPO_ROOT,
         )
@@ -271,17 +271,65 @@ class WorkItemProjectionTest(unittest.TestCase):
             "exclusive-write:packages/secure-content-core",
             source.source_claim_arguments,
         )
-        self.assertEqual("secure-content-w2b-desktop", desktop.work_item_id)
-        self.assertEqual("W2", desktop.task_id)
+        self.assertEqual("secure-content-w2", suite.work_item_id)
+        self.assertEqual("W2", suite.task_id)
+        self.assertEqual(suite.work_item_id, mobile_journey.work_item_id)
+        self.assertEqual(
+            suite.runtime_claim_arguments,
+            mobile_journey.runtime_claim_arguments,
+        )
         self.assertIn(
             "exclusive:fixture:secure-content-chat-desktop",
-            desktop.runtime_claim_arguments,
+            suite.runtime_claim_arguments,
         )
-        self.assertEqual("secure-content-w2b-mobile", mobile.work_item_id)
-        self.assertEqual("W2", mobile.task_id)
         self.assertIn(
             "exclusive:fixture:mobile-ios-simulator-native",
-            mobile.runtime_claim_arguments,
+            suite.runtime_claim_arguments,
+        )
+        self.assertNotIn(
+            "exclusive:station.deploy:station-four",
+            suite.runtime_claim_arguments,
+        )
+
+    def test_product_suites_attach_without_station_deploy_ownership(self) -> None:
+        cases = (
+            ("W7", "sc-dj-desktop-pilot"),
+            ("W8", "sc-dj-social-expansion"),
+            ("W9", "sc-dj-mobile-matrix"),
+            ("W2", "sc-dj-chat-attachment-atomic"),
+            ("W10", "sc-dj-chat-revalidation"),
+            ("W11", "sc-dj-hardcut-regression"),
+            ("W12", "sc-dj-authorized-reset"),
+            ("W13", "sc-dj-acceptance-promotion"),
+        )
+        for workstream, journey in cases:
+            with self.subTest(workstream=workstream):
+                projection = work_item.load_projection(
+                    MANIFEST,
+                    workstream=workstream,
+                    journey=journey,
+                    repo_root=REPO_ROOT,
+                )
+                self.assertFalse(
+                    any(
+                        ":station.deploy:" in claim
+                        for claim in projection.runtime_claim_arguments
+                    )
+                )
+
+        acceptance = work_item.load_projection(
+            MANIFEST,
+            workstream="W13",
+            journey="sc-dj-acceptance-promotion",
+            repo_root=REPO_ROOT,
+        )
+        self.assertIn(
+            "shared:station.connect:four",
+            acceptance.runtime_claim_arguments,
+        )
+        self.assertIn(
+            "exclusive:fixture:secure-content-acceptance",
+            acceptance.runtime_claim_arguments,
         )
 
     def test_rejects_unknown_fields_path_escape_and_runtime_kind(self) -> None:

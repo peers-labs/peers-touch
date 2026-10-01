@@ -174,13 +174,14 @@ items:
     taskId: W2
     productRefs: [MP-C13, MP-G13]
     architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, SC-D22, MP-D23]
-    journeyIds: [sc-dj-chat-attachment-atomic]
+    journeyIds: [sc-dj-chat-attachment-atomic, sc-dj-chat-attachment-mobile]
     scope:
-      include: [tooling/development/secure_content/drivers, tooling/development/secure_content/scenarios/chat_attachment_atomic.py, tooling/development/secure_content/scenarios/chat_attachment_mobile.py, tooling/development/secure_content/scenarios/test_chat_attachment.py, packages/secure-content-core, packages/messaging-core, apps/station/app/subserver/conversation, apps/desktop, apps/mobile, tooling/acceptance, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
+      include: [tooling/development/secure_content/drivers, tooling/development/secure_content/runtime_owner.py, tooling/development/secure_content/scenarios/chat_attachment_atomic.py, tooling/development/secure_content/scenarios/chat_attachment_mobile.py, tooling/development/secure_content/scenarios/test_chat_attachment.py, packages/secure-content-core, packages/messaging-core, apps/station/app/subserver/conversation, apps/desktop, apps/mobile, tooling/acceptance, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
       exclude: [source mutation, Conversation authority changes, formal Acceptance]
     resources:
       sourceClaims:
         - { pathPrefix: tooling/development/secure_content/drivers, mode: shared-read }
+        - { pathPrefix: tooling/development/secure_content/runtime_owner.py, mode: shared-read }
         - { pathPrefix: tooling/development/secure_content/scenarios/chat_attachment_atomic.py, mode: shared-read }
         - { pathPrefix: tooling/development/secure_content/scenarios/chat_attachment_mobile.py, mode: shared-read }
         - { pathPrefix: tooling/development/secure_content/scenarios/test_chat_attachment.py, mode: shared-read }
@@ -191,7 +192,25 @@ items:
         - { pathPrefix: apps/mobile, mode: shared-read }
         - { pathPrefix: tooling/acceptance, mode: shared-read }
         - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, mode: exclusive-write }
-      runtimeClaims: []
+      runtimeClaims:
+        - { kind: profile, resourceId: four, mode: shared }
+        - { kind: profile, resourceId: fiveArm, mode: shared }
+        - { kind: station.connect, resourceId: four, mode: shared }
+        - { kind: station.connect, resourceId: fiveArm, mode: shared }
+        - { kind: client.storage, resourceId: four-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: four-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
+        - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: ios_alice, mode: exclusive }
+        - { kind: client.storage, resourceId: ios_bob, mode: exclusive }
+        - { kind: client.storage, resourceId: android_alice, mode: exclusive }
+        - { kind: client.storage, resourceId: android_bob, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-desktop, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-mobile-ios, mode: exclusive }
+        - { kind: fixture, resourceId: secure-content-chat-mobile-android, mode: exclusive }
+        - { kind: local.slot, resourceId: "5", mode: exclusive }
     authorization:
       checkpoint: { localCommit: denied, amend: denied }
       delivery: { push: denied, pullRequest: denied }
@@ -227,89 +246,6 @@ items:
       checkpoint: { localCommit: allowed, amend: denied }
       delivery: { push: denied, pullRequest: denied }
       runtime: { deployProfiles: [], destructiveResetScopes: [] }
-      history: { rewrite: denied }
-
-  -
-    id: secure-content-w2b-desktop
-    workClass: refactor
-    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/plan.md
-    workstreamId: W2B-DESKTOP
-    taskId: W2
-    productRefs: [MP-C13, MP-G13]
-    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, SC-D22, MP-D23]
-    journeyIds: [sc-dj-chat-attachment-atomic]
-    scope:
-      include: [packages/secure-content-core, packages/messaging-core, apps/station/app/internal/securecontent, apps/station/app/subserver/conversation, apps/desktop/src-tauri, tooling/development/secure_content, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
-      exclude: [source mutation, Mobile proof, model/domain/chat, Conversation route/table/grant changes]
-    resources:
-      sourceClaims:
-        - { pathPrefix: packages/secure-content-core, mode: shared-read }
-        - { pathPrefix: packages/messaging-core, mode: shared-read }
-        - { pathPrefix: apps/station/app/internal/securecontent, mode: shared-read }
-        - { pathPrefix: apps/station/app/subserver/conversation, mode: shared-read }
-        - { pathPrefix: apps/desktop/src-tauri, mode: shared-read }
-        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
-        - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, mode: exclusive-write }
-      runtimeClaims:
-        - { kind: profile, resourceId: four, mode: shared }
-        - { kind: profile, resourceId: fiveArm, mode: shared }
-        - { kind: station.connect, resourceId: four, mode: shared }
-        - { kind: station.connect, resourceId: fiveArm, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
-        - { kind: client.storage, resourceId: four-alice, mode: exclusive }
-        - { kind: client.storage, resourceId: four-bob, mode: exclusive }
-        - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
-        - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
-        - { kind: fixture, resourceId: secure-content-chat-desktop, mode: exclusive }
-        - { kind: local.slot, resourceId: "5", mode: exclusive }
-    authorization:
-      checkpoint: { localCommit: denied, amend: denied }
-      delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
-      history: { rewrite: denied }
-
-  -
-    id: secure-content-w2b-mobile
-    workClass: refactor
-    planRef: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut/plan.md
-    workstreamId: W2B-MOBILE
-    taskId: W2
-    productRefs: [MP-C13, MP-G13]
-    architectureRefs: [SC-A01, SC-A03, SC-D02, SC-D03, SC-D13, SC-D22, MP-D23]
-    journeyIds: [sc-dj-chat-attachment-mobile]
-    scope:
-      include: [packages/secure-content-core, packages/messaging-core, apps/station/app/internal/securecontent, apps/station/app/subserver/conversation, apps/mobile/src-tauri, tooling/development/secure_content, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
-      exclude: [source mutation, Desktop proof, model/domain/chat, Conversation route/table/grant changes]
-    resources:
-      sourceClaims:
-        - { pathPrefix: packages/secure-content-core, mode: shared-read }
-        - { pathPrefix: packages/messaging-core, mode: shared-read }
-        - { pathPrefix: apps/station/app/internal/securecontent, mode: shared-read }
-        - { pathPrefix: apps/station/app/subserver/conversation, mode: shared-read }
-        - { pathPrefix: apps/mobile/src-tauri, mode: shared-read }
-        - { pathPrefix: tooling/development/secure_content, mode: shared-read }
-        - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, mode: exclusive-write }
-      runtimeClaims:
-        - { kind: profile, resourceId: four, mode: shared }
-        - { kind: profile, resourceId: fiveArm, mode: shared }
-        - { kind: station.connect, resourceId: four, mode: shared }
-        - { kind: station.connect, resourceId: fiveArm, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-chat-ios-alice, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-chat-ios-bob, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-chat-android-alice, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-chat-android-bob, mode: exclusive }
-        - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
-        - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
-        - { kind: fixture, resourceId: secure-content-chat-mobile-ios, mode: exclusive }
-        - { kind: fixture, resourceId: secure-content-chat-mobile-android, mode: exclusive }
-        - { kind: local.slot, resourceId: "5", mode: exclusive }
-    authorization:
-      checkpoint: { localCommit: denied, amend: denied }
-      delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
       history: { rewrite: denied }
 
   -
@@ -717,7 +653,7 @@ items:
     architectureRefs: [SC-D21, SC-D22, SC-D28]
     journeyIds: [sc-dj-runtime-manifest-v3]
     scope:
-      include: [tooling/development/secure_content, tooling/acceptance/provisioners/mobile_simulator.py, tooling/acceptance/tests/test_mobile_simulator_provisioner.py, tooling/acceptance/environments, tooling/acceptance/gates/mobile, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
+      include: [tooling/development/secure_content, tooling/acceptance/provisioners/mobile_simulator.py, tooling/acceptance/tests/test_mobile_simulator_provisioner.py, tooling/acceptance/environments, tooling/acceptance/gates/mobile, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml]
       exclude: [product semantics, Station reset, formal Acceptance execution]
     resources:
       sourceClaims:
@@ -727,6 +663,7 @@ items:
         - { pathPrefix: tooling/acceptance/environments, mode: exclusive-write }
         - { pathPrefix: tooling/acceptance/gates/mobile, mode: exclusive-write }
         - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut, mode: exclusive-write }
+        - { pathPrefix: docs/architecture/secure-content/execution-plans/20260913-secure-content-work-items.yaml, mode: exclusive-write }
         - { pathPrefix: apps/desktop, mode: shared-read }
         - { pathPrefix: apps/mobile, mode: shared-read }
         - { pathPrefix: apps/station, mode: shared-read }
@@ -941,8 +878,6 @@ items:
         - { kind: profile, resourceId: fiveArm, mode: shared }
         - { kind: station.connect, resourceId: four, mode: shared }
         - { kind: station.connect, resourceId: fiveArm, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-eve, mode: exclusive }
@@ -953,7 +888,7 @@ items:
     authorization:
       checkpoint: { localCommit: allowed, amend: allowed }
       delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
       history: { rewrite: denied }
 
   -
@@ -1055,8 +990,6 @@ items:
         - { kind: profile, resourceId: fiveArm, mode: shared }
         - { kind: station.connect, resourceId: four, mode: shared }
         - { kind: station.connect, resourceId: fiveArm, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-eve, mode: exclusive }
@@ -1066,7 +999,7 @@ items:
     authorization:
       checkpoint: { localCommit: denied, amend: denied }
       delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
       history: { rewrite: denied }
 
   -
@@ -1095,13 +1028,12 @@ items:
       runtimeClaims:
         - { kind: profile, resourceId: four, mode: shared }
         - { kind: station.connect, resourceId: four, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-ios-alice, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-ios-bob, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-ios-eve, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-android-alice, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-android-bob, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-android-eve, mode: exclusive }
+        - { kind: client.storage, resourceId: ios_alice, mode: exclusive }
+        - { kind: client.storage, resourceId: ios_bob, mode: exclusive }
+        - { kind: client.storage, resourceId: ios_eve, mode: exclusive }
+        - { kind: client.storage, resourceId: android_alice, mode: exclusive }
+        - { kind: client.storage, resourceId: android_bob, mode: exclusive }
+        - { kind: client.storage, resourceId: android_eve, mode: exclusive }
         - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
         - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
         - { kind: fixture, resourceId: secure-content-mobile-matrix, mode: exclusive }
@@ -1109,7 +1041,7 @@ items:
     authorization:
       checkpoint: { localCommit: denied, amend: denied }
       delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four], destructiveResetScopes: [] }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
       history: { rewrite: denied }
 
   -
@@ -1138,16 +1070,14 @@ items:
         - { kind: profile, resourceId: fiveArm, mode: shared }
         - { kind: station.connect, resourceId: four, mode: shared }
         - { kind: station.connect, resourceId: fiveArm, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
         - { kind: client.storage, resourceId: four-alice, mode: exclusive }
         - { kind: client.storage, resourceId: four-bob, mode: exclusive }
         - { kind: client.storage, resourceId: fiveArm-alice, mode: exclusive }
         - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-chat-ios-alice, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-chat-ios-bob, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-chat-android-alice, mode: exclusive }
-        - { kind: client.storage, resourceId: secure-content-chat-android-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: ios_alice, mode: exclusive }
+        - { kind: client.storage, resourceId: ios_bob, mode: exclusive }
+        - { kind: client.storage, resourceId: android_alice, mode: exclusive }
+        - { kind: client.storage, resourceId: android_bob, mode: exclusive }
         - { kind: fixture, resourceId: mobile-ios-simulator-native, mode: exclusive }
         - { kind: fixture, resourceId: mobile-android-emulator-native, mode: exclusive }
         - { kind: fixture, resourceId: secure-content-chat-mobile-ios, mode: exclusive }
@@ -1157,7 +1087,7 @@ items:
     authorization:
       checkpoint: { localCommit: allowed, amend: denied }
       delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
       history: { rewrite: denied }
 
   -
@@ -1202,8 +1132,6 @@ items:
         - { kind: profile, resourceId: fiveArm, mode: shared }
         - { kind: station.connect, resourceId: four, mode: shared }
         - { kind: station.connect, resourceId: fiveArm, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-four-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-four-bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-four-eve, mode: exclusive }
@@ -1213,9 +1141,11 @@ items:
         - { kind: client.storage, resourceId: fiveArm-bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-ios-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-ios-remote_bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-ios-eve, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-android-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-android-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-hardcut-android-remote_bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-hardcut-android-eve, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-browser-authenticated, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-browser-anonymous, mode: exclusive }
@@ -1227,7 +1157,7 @@ items:
     authorization:
       checkpoint: { localCommit: allowed, amend: denied }
       delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
       history: { rewrite: denied }
 
   -
@@ -1257,16 +1187,16 @@ items:
         - { kind: profile, resourceId: fiveArm, mode: shared }
         - { kind: station.connect, resourceId: four, mode: shared }
         - { kind: station.connect, resourceId: fiveArm, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-eve, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-ios-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-remote_bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-ios-eve, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-android-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-android-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-remote_bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-android-eve, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-browser-authenticated, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-browser-anonymous, mode: exclusive }
@@ -1282,7 +1212,7 @@ items:
     authorization:
       checkpoint: { localCommit: denied, amend: denied }
       delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
       history: { rewrite: denied }
 
   -
@@ -1359,7 +1289,7 @@ items:
     taskId: W13
     productRefs: [SOC-SEC-C01, SOC-SEC-C02, SOC-SEC-C03, SOC-SEC-C04, SOC-SEC-C05, SOC-SEC-C06, SOC-SEC-C07, SOC-SEC-C08, SOC-SEC-C09, SOC-SEC-AS01, SOC-SEC-AS02, SOC-SEC-AS03, SOC-SEC-AS04, SOC-SEC-AS05, SOC-SEC-AS06, SOC-SEC-AS07, SOC-SEC-AS08, SOC-SEC-AS09, SOC-SEC-AS10, SOC-SEC-AS11, SOC-SEC-AS12, SOC-SEC-AS13, SOC-SEC-AS14, SOC-SEC-AS15, SOC-SEC-AS16, MP-G13]
     architectureRefs: [SC-A01, SC-A02, SC-A03, SC-A04, SC-A05, SC-A06, SC-A07, SC-A08, SC-D01, SC-D02, SC-D03, SC-D04, SC-D05, SC-D06, SC-D07, SC-D08, SC-D09, SC-D10, SC-D11, SC-D12, SC-D13, SC-D14, SC-D15, SC-D16, SC-D17, SC-D18, SC-D19, SC-D20, SC-D21, SC-D22, SC-D23, SC-D24, MP-D23]
-    journeyIds: [sc-dj-content-prekey-client-boundary, sc-dj-social-uow-atomicity, sc-dj-final-desktop, sc-dj-final-mobile, sc-dj-browser-private-boundary, sc-dj-chat-revalidation, sc-dj-chat-attachment-mobile]
+    journeyIds: [sc-dj-acceptance-promotion, sc-dj-content-prekey-client-boundary, sc-dj-social-uow-atomicity, sc-dj-final-desktop, sc-dj-final-mobile, sc-dj-browser-private-boundary, sc-dj-chat-revalidation, sc-dj-chat-attachment-mobile]
     scope:
       include: [tooling/acceptance, docs/architecture/secure-content/execution-plans/20260913-secure-content-hard-cut]
       exclude: [product/design changes]
@@ -1377,16 +1307,16 @@ items:
         - { kind: profile, resourceId: fiveArm, mode: shared }
         - { kind: station.connect, resourceId: four, mode: shared }
         - { kind: station.connect, resourceId: fiveArm, mode: shared }
-        - { kind: station.deploy, resourceId: station-four, mode: exclusive }
-        - { kind: station.deploy, resourceId: station-five-arm, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-desktop-eve, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-ios-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-ios-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-ios-remote_bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-ios-eve, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-android-alice, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-android-bob, mode: exclusive }
+        - { kind: client.storage, resourceId: secure-content-android-remote_bob, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-android-eve, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-browser-authenticated, mode: exclusive }
         - { kind: client.storage, resourceId: secure-content-browser-anonymous, mode: exclusive }
@@ -1402,5 +1332,5 @@ items:
     authorization:
       checkpoint: { localCommit: allowed, amend: denied }
       delivery: { push: denied, pullRequest: denied }
-      runtime: { deployProfiles: [four, fiveArm], destructiveResetScopes: [] }
+      runtime: { deployProfiles: [], destructiveResetScopes: [] }
       history: { rewrite: denied }
