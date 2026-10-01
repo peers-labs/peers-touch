@@ -55,7 +55,14 @@ Review the narrow W12D source amendment that synchronizes the canonical closed
 runtime-resource kind set and adds its parser regression coverage. Product,
 deployment, reset, and Acceptance semantics are unchanged.
 
-**Review status**: pending
+**Review status**: PASS
+
+Evidence:
+
+- Canonical runtime-kind schema matches the Development Workflow owner.
+- All 16 runtime kinds plus unknown-kind rejection have parser coverage.
+- `node --test tooling/scripts/local-dev/dev-work.test.mjs`: 20 PASS.
+- Plan validation, W12D work-item scope tests, and `git diff --check`: PASS.
 
 ## Reviewer Output
 
