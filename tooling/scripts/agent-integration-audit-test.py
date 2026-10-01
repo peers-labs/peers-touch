@@ -264,6 +264,7 @@ export function processStartIdentity() { return 'fixture'; }
         self,
         workspace: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        self.seed_live_workflow_state("installer-authorized")
         command = ["make", "skills", "IDE=trae"]
         if workspace is not None:
             command.append(f"WORKSPACE={workspace}")
@@ -300,6 +301,8 @@ export function processStartIdentity() { return 'fixture'; }
         )
 
     def seed_live_workflow_state(self, mode: str) -> None:
+        self.machine.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.machine.chmod(0o700)
         script = (
             "import { pathToFileURL } from 'node:url';"
             "const [bindingPath, projectionPath, actionPath, repoRoot, "
@@ -481,6 +484,7 @@ export function processStartIdentity() { return 'fixture'; }
         unrelated.mkdir(parents=True)
         (unrelated / "keep.txt").write_text("keep\n", encoding="utf-8")
         environment = self.environment("installing-session")
+        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -628,6 +632,7 @@ export function processStartIdentity() { return 'fixture'; }
         )
         (trae / "custom.json").write_text('{"preserved":true}\n', encoding="utf-8")
 
+        self.seed_live_workflow_state("installer-authorized")
         installed = subprocess.run(
             ["make", "skills", "IDE=trae"],
             cwd=self.root,
@@ -788,6 +793,7 @@ export function processStartIdentity() { return 'fixture'; }
     def test_hard_cut_purges_only_legacy_conversations_and_action_stores(
         self,
     ) -> None:
+        self.seed_live_workflow_state("installer-authorized")
         conversations = self.machine / "conversations/trae/legacy"
         actions = self.machine / "workspaces/0123456789abcdef/workflow/actions"
         preserved = (
@@ -816,6 +822,22 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertFalse((self.machine / "conversations").exists())
         self.assertFalse(actions.exists())
         self.assertTrue(preserved.is_file())
+
+    def test_hard_cut_requires_an_exact_installer_action_grant(self) -> None:
+        legacy = self.machine / "conversations/trae/legacy"
+        legacy.mkdir(parents=True)
+
+        completed = subprocess.run(
+            ["make", "skills", "IDE=codex"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            env=self.environment(),
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("WORKFLOW_ACTION_GRANT_UNAVAILABLE", completed.stdout)
+        self.assertTrue(legacy.exists())
 
     def test_hard_cut_refuses_a_live_child_assignment(self) -> None:
         self.seed_live_workflow_state("assignment")
@@ -1028,6 +1050,7 @@ export function processStartIdentity() { return 'fixture'; }
         self,
     ) -> None:
         environment = self.environment("installing-session")
+        self.seed_live_workflow_state("installer-authorized")
         initial = subprocess.run(
             ["make", "skills", "IDE=trae"],
             cwd=self.root,
@@ -1053,6 +1076,7 @@ export function processStartIdentity() { return 'fixture'; }
             "#!/usr/bin/env node\nprocess.stdout.write('\\n{}\\n');\n",
             encoding="utf-8",
         )
+        self.seed_live_workflow_state("installer-authorized")
         failed = subprocess.run(
             ["make", "skills", "IDE=trae"],
             cwd=self.root,
@@ -1106,6 +1130,7 @@ export function processStartIdentity() { return 'fixture'; }
             ),
             encoding="utf-8",
         )
+        self.seed_live_workflow_state("installer-authorized")
         installed = subprocess.run(
             ["make", "skills", "IDE=cursor"],
             cwd=self.root,
@@ -1213,6 +1238,7 @@ export function processStartIdentity() { return 'fixture'; }
                 )
 
     def test_audit_rejects_a_versioned_integration_receipt(self) -> None:
+        self.seed_live_workflow_state("installer-authorized")
         installed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -1276,6 +1302,7 @@ export function processStartIdentity() { return 'fixture'; }
         external = self.root / "external"
         external.mkdir()
         (self.root / ".agents").symlink_to(external, target_is_directory=True)
+        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -1298,6 +1325,8 @@ export function processStartIdentity() { return 'fixture'; }
             retired_external,
             target_is_directory=True,
         )
+        shutil.rmtree(self.machine / "workspaces", ignore_errors=True)
+        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -1311,6 +1340,8 @@ export function processStartIdentity() { return 'fixture'; }
         self.assertIn("HOST_PROJECTION_ESCAPE", completed.stdout)
         shutil.rmtree(self.root / ".agents")
 
+        shutil.rmtree(self.machine / "workspaces", ignore_errors=True)
+        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -1349,6 +1380,7 @@ export function processStartIdentity() { return 'fixture'; }
         external.mkdir()
         (external / "SKILL.md").write_text("external\n", encoding="utf-8")
         source.symlink_to(external, target_is_directory=True)
+        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -1469,6 +1501,7 @@ export function processStartIdentity() { return 'fixture'; }
             ),
             encoding="utf-8",
         )
+        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -1487,6 +1520,7 @@ export function processStartIdentity() { return 'fixture'; }
         content = nested / "contract.md"
         content.write_text("version one\n", encoding="utf-8")
         installing = self.environment("installing-session")
+        self.seed_live_workflow_state("installer-authorized")
         completed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,
@@ -1547,6 +1581,7 @@ export function processStartIdentity() { return 'fixture'; }
         self,
     ) -> None:
         environment = self.environment("installing-session")
+        self.seed_live_workflow_state("installer-authorized")
         installed = subprocess.run(
             ["make", "skills", "IDE=codex"],
             cwd=self.root,

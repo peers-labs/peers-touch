@@ -759,13 +759,14 @@ def require_global_idle(root: Path, current_workspace_id: str) -> None:
     ]
     if non_installer or len(live_actions) > 1:
         raise RuntimeError("GLOBAL_WORKFLOW_NOT_IDLE: live workflow action")
-    if live_actions:
-        exact_receipt = {
-            key: value
-            for key, value in live_actions[0].items()
-            if key != "actorProjection"
-        }
-        claim_installer_action_grant(root, exact_receipt, now)
+    if len(live_actions) != 1:
+        raise RuntimeError("WORKFLOW_ACTION_GRANT_UNAVAILABLE")
+    exact_receipt = {
+        key: value
+        for key, value in live_actions[0].items()
+        if key != "actorProjection"
+    }
+    claim_installer_action_grant(root, exact_receipt, now)
 
 
 def purge_legacy_binding_state() -> None:
