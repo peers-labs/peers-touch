@@ -162,7 +162,7 @@
       "workstreamId": "DWF-BINDING-CORE",
       "path": "tasks/DWF-BIND01-OWNER-CHILD-CUT.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -172,7 +172,7 @@
       "dependsOn": [
         "DWF-BIND01-OWNER-CHILD-CUT"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     }
   ],

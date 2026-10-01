@@ -80,6 +80,7 @@
 
 ## Current Snapshot
 
-- State: pending on the atomic binding/bootstrap closure.
-- Completion requires independent review and zero live legacy runtime imports.
+- State: active after BIND01 checkpoint `e81e314d1` and independent review PASS.
+- Completion requires the final seven-Gate proof, Plan-scoped independent
+  review, and zero live legacy runtime imports.
 - Actual shared-workspace bootstrap installation is not claimed by this Task.
