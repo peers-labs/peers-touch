@@ -711,6 +711,8 @@ items:
         - { pathPrefix: tooling/development/secure_content/schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/dev-work-schema.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/dev-work.test.mjs, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/local-dev/machine-dev-registry.mjs, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/local-dev/machine-dev.test.mjs, mode: exclusive-write }
         - { pathPrefix: docs/architecture/local-dev-control-plane, mode: exclusive-write }
@@ -761,6 +763,8 @@ items:
         - { pathPrefix: tooling/development/secure_content/schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/dev-work-schema.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/dev-work.test.mjs, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/local-dev/machine-dev-registry.mjs, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/local-dev/machine-dev.test.mjs, mode: exclusive-write }
         - { pathPrefix: docs/architecture/local-dev-control-plane, mode: exclusive-write }
@@ -819,6 +823,8 @@ items:
         - { pathPrefix: tooling/development/secure_content/schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_schema_activation.py, mode: exclusive-write }
         - { pathPrefix: tooling/development/secure_content/test_work_item.py, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/dev-work-schema.mjs, mode: exclusive-write }
+        - { pathPrefix: tooling/scripts/local-dev/dev-work.test.mjs, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/local-dev/machine-dev-registry.mjs, mode: exclusive-write }
         - { pathPrefix: tooling/scripts/local-dev/machine-dev.test.mjs, mode: exclusive-write }
         - { pathPrefix: docs/architecture/local-dev-control-plane, mode: exclusive-write }
