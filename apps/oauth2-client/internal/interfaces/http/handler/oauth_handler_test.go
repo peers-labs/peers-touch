@@ -15,6 +15,74 @@ import (
 	"github.com/peers-labs/peers-touch/oauth2-client/internal/infrastructure/persistence/memory"
 )
 
+func TestOAuthEndpointsRejectNonGetMethods(t *testing.T) {
+	handler := OAuthHandler{}
+	for name, invoke := range map[string]func(http.ResponseWriter, *http.Request){
+		"start": func(w http.ResponseWriter, r *http.Request) {
+			handler.StartWithProvider(w, r, valueobject.ProviderGitHub)
+		},
+		"callback": func(w http.ResponseWriter, r *http.Request) {
+			handler.CallbackWithProvider(w, r, valueobject.ProviderGitHub)
+		},
+		"health": handler.Healthz,
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			invoke(recorder, httptest.NewRequest(http.MethodPost, "/", nil))
+			if recorder.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, want %d", recorder.Code, http.StatusMethodNotAllowed)
+			}
+			if recorder.Header().Get("Allow") != http.MethodGet {
+				t.Fatalf("Allow = %q, want GET", recorder.Header().Get("Allow"))
+			}
+		})
+	}
+}
+
+func TestOAuthCallbackRejectsCodeAndErrorTogether(t *testing.T) {
+	handler := OAuthHandler{}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/callback?state=state&code=code&error=access_denied",
+		nil,
+	)
+
+	handler.CallbackWithProvider(recorder, request, valueobject.ProviderGitHub)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+	if recorder.Body.String() != "{\"error\":\"invalid_callback_result\"}\n" {
+		t.Fatalf("unexpected response: %s", recorder.Body.String())
+	}
+}
+
+func TestOAuthResponsesDisableCaching(t *testing.T) {
+	handler := OAuthHandler{}
+	recorder := httptest.NewRecorder()
+
+	handler.CallbackWithProvider(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/callback", nil),
+		valueobject.ProviderGitHub,
+	)
+
+	for name, expected := range map[string]string{
+		"Cache-Control":          "no-store",
+		"Pragma":                 "no-cache",
+		"Referrer-Policy":        "no-referrer",
+		"X-Content-Type-Options": "nosniff",
+	} {
+		if actual := recorder.Header().Get(name); actual != expected {
+			t.Fatalf("%s = %q, want %q", name, actual, expected)
+		}
+	}
+	if contentType := recorder.Header().Get("Content-Type"); contentType != "application/json; charset=utf-8" {
+		t.Fatalf("Content-Type = %q", contentType)
+	}
+}
+
 func TestOAuthCallbackRedirectsProviderDenialWithoutCode(t *testing.T) {
 	store := memory.NewStore()
 	now := time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC)
