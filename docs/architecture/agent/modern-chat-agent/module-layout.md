@@ -1,8 +1,8 @@
 # Modern Chat Agent — Module Layout
 
 > **Status**: accepted
-> **Version**: v1.1
-> **Created**: 2026-07-30 | **Updated**: 2026-09-17
+> **Version**: v1.2
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -48,7 +48,10 @@ apps/station/app/subserver/agent/
 │   ├── prompt_assembly_service.go
 │   ├── runtime_resolver_service.go
 │   ├── provider_service.go
-│   ├── external_runtime_service.go
+│   ├── external_runtime_service.go # Binding/reset transaction owner
+│   ├── externalruntime/
+│   │   ├── manager.go              # Session/process/home lifecycle
+│   │   └── protocol.go             # Bounded session CLI JSONL adapter
 │   ├── tool_registry_service.go
 │   ├── tool_dispatch_service.go
 │   ├── client_capability_proof_service.go
@@ -130,6 +133,8 @@ mechanical file creation.
 |---|---|
 | Shared contracts | `model/domain/agent/*.proto` |
 | Provider/model/runtime capabilities | Station catalog/runtime resolver |
+| External runtime binding/reset commands | Station ExternalRuntimeService |
+| External process/session/home lifecycle | Station `service/externalruntime` |
 | Turn state machine | Station TurnService |
 | Tool schemas and execution owner | Station ToolRegistryService |
 | Tool decision/claim/outbox/result/continuation | Station ToolDispatchService |
