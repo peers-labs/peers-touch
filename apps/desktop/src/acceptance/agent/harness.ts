@@ -32918,7 +32918,19 @@ export function installAcceptanceHarness(): void {
     async runCapabilityBindingScenario(
       input: CapabilityBindingScenarioInput,
     ) {
-      return executeCapabilityBindingScenario(input);
+      if (input.platform !== 'desktop_app') {
+        return executeCapabilityBindingScenario(input);
+      }
+      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      const clientCapabilitySessionId =
+        capabilitySessions.selectedStationSession?.session_id;
+      if (!clientCapabilitySessionId) {
+        throw new Error('agent.acceptance.capabilitySessionUnavailable');
+      }
+      return executeCapabilityBindingScenario({
+        ...input,
+        clientCapabilitySessionId,
+      });
     },
 
     async prepareCapabilityBindingCandidate({

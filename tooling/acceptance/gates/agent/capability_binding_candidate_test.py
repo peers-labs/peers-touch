@@ -199,6 +199,33 @@ class RecordingAdapter:
 
 
 class CapabilityBindingCandidateTest(unittest.TestCase):
+    def test_native_scenario_supplies_capability_session_to_readiness(self) -> None:
+        scenario = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/capabilityBindingScenario.ts"
+        ).read_text(encoding="utf-8")
+        harness = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/harness.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "input.platform !== 'desktop_app'",
+            harness,
+        )
+        self.assertIn(
+            "clientCapabilitySessionId,",
+            harness,
+        )
+        self.assertIn(
+            "loadAgent(agentId, readinessInput)",
+            scenario,
+        )
+        self.assertIn(
+            "client_capability_session_id: clientCapabilitySessionId",
+            scenario,
+        )
+
     def test_deploys_station_with_run_scoped_scenario_control(self) -> None:
         completed = subprocess.CompletedProcess(
             args=["make", "station"],
