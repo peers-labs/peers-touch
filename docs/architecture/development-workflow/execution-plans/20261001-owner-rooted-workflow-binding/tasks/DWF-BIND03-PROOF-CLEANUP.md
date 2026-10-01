@@ -83,17 +83,43 @@
     "Do not claim real shared-workspace rollout from temporary fixture proof",
     "Do not modify sibling worktrees, push, open a pull request, merge, or rewrite history"
   ],
-  "updatedAt": "2026-10-01T18:18:00.000Z",
-  "durableEvidence": []
+  "updatedAt": "2026-10-01T18:49:30.000Z",
+  "durableEvidence": [
+    {
+      "verificationClass": "SOURCE_CHECK",
+      "result": "PASS",
+      "ref": "checkpoint cc9342d9a290e24f82ec386328b3632f9d24c2a3"
+    },
+    {
+      "verificationClass": "ACCEPTANCE_PROOF",
+      "result": "PASS",
+      "ref": "acceptance://dbd1913c8dd24d52/acceptance-run/20261001T183202781664Z-20fbbfa2f01d82dd4b6be0722b6ba342"
+    },
+    {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "acceptance://dbd1913c8dd24d52/acceptance-gap-detect/20261001T184844618530Z-6dbbadae02f6127d3d2c81fcfb10bae4"
+    },
+    {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "acceptance://dbd1913c8dd24d52/code-structure-review/20261001T183124324278Z-29c5b60b58be75a08cf475d80e2a9e40"
+    },
+    {
+      "verificationClass": "STRUCTURAL_CHECK",
+      "result": "PASS",
+      "ref": "acceptance://dbd1913c8dd24d52/quality-evidence/20261001T184855017976Z-0018b334dfdb723291a5ee5184052543"
+    }
+  ]
 }
 ```
 
 ## Current Snapshot
 
-- State: Plan-scoped review remediation after reviewer receipt
-  `0f965947b42b341af89746f3969fb55800cdb67e6b4f3f0e1e0067e633745565`.
-- The storage contract must list the per-binding compact-lineage path and the
+- State: delivery-ready on exact clean checkpoint `cc9342d9a`; seven-Gate
+  Acceptance, 55-path Gap Detector, code-structure review, and quality evidence
+  are current and passing.
+- The storage contract lists the per-binding compact-lineage path and the
   assignment-claim path used by the implementation.
-- Completion requires fresh full-range Gap Detector, code-structure, quality,
-  seven-Gate, and Plan-scoped independent review evidence.
+- Completion requires one fresh Plan-scoped independent review receipt.
 - Actual shared-workspace bootstrap installation is not claimed by this Task.
