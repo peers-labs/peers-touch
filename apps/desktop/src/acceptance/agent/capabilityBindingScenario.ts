@@ -46,6 +46,8 @@ export interface CapabilityBindingScenarioInput {
   clientCapabilitySessionId?: string;
 }
 
+export type CapabilitySessionIdResolver = () => Promise<string>;
+
 interface ScenarioResources {
   capabilityId: string;
   requestedVersion: string;
@@ -335,6 +337,7 @@ function crossDeviceRejected(
 
 export async function runCapabilityBindingScenario(
   input: CapabilityBindingScenarioInput,
+  resolveClientCapabilitySessionId?: CapabilitySessionIdResolver,
 ): Promise<Record<string, unknown>> {
   const startedAt = performance.now();
   const initialActor = useSessionStore.getState().currentUser?.actorPtid ?? '';
@@ -360,11 +363,11 @@ export async function runCapabilityBindingScenario(
   }
   const agentId = agent.id || agent.name;
   const priorSurface = useAgentStore.getState().getAgentSurface(agent.name);
-  const clientCapabilitySessionId = input.clientCapabilitySessionId;
+  let clientCapabilitySessionId = input.clientCapabilitySessionId;
   if (input.platform === 'desktop_app' && !clientCapabilitySessionId) {
     throw new Error('agent.acceptance.capabilitySessionUnavailable');
   }
-  const readinessInput = { clientCapabilitySessionId };
+  let readinessInput = { clientCapabilitySessionId };
   const prepared = await capabilityScenarioStep(
     'prepare',
     () => api.prepareCapabilityAcceptanceScenario(create(
@@ -573,6 +576,13 @@ export async function runCapabilityBindingScenario(
           input.primaryAccount,
           input.password,
         );
+        if (input.platform === 'desktop_app') {
+          if (!resolveClientCapabilitySessionId) {
+            throw new Error('agent.acceptance.capabilitySessionResolverUnavailable');
+          }
+          clientCapabilitySessionId = await resolveClientCapabilitySessionId();
+          readinessInput = { clientCapabilitySessionId };
+        }
         actorIsolation = {
           secondaryActorHash: await sha256Hex(secondaryActor),
           primaryActorRestored: restoredActor === initialActor,

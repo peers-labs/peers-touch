@@ -32921,16 +32921,21 @@ export function installAcceptanceHarness(): void {
       if (input.platform !== 'desktop_app') {
         return executeCapabilityBindingScenario(input);
       }
-      const capabilitySessions = await waitForCapabilitySessionEvidence();
+      const resolveClientCapabilitySessionId = async () => {
+        const capabilitySessions = await waitForCapabilitySessionEvidence();
+        const clientCapabilitySessionId =
+          capabilitySessions.selectedStationSession?.session_id;
+        if (!clientCapabilitySessionId) {
+          throw new Error('agent.acceptance.capabilitySessionUnavailable');
+        }
+        return clientCapabilitySessionId;
+      };
       const clientCapabilitySessionId =
-        capabilitySessions.selectedStationSession?.session_id;
-      if (!clientCapabilitySessionId) {
-        throw new Error('agent.acceptance.capabilitySessionUnavailable');
-      }
+        await resolveClientCapabilitySessionId();
       return executeCapabilityBindingScenario({
         ...input,
         clientCapabilitySessionId,
-      });
+      }, resolveClientCapabilitySessionId);
     },
 
     async prepareCapabilityBindingCandidate({

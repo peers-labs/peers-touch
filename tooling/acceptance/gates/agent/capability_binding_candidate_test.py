@@ -218,11 +218,23 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
             harness,
         )
         self.assertIn(
+            "}, resolveClientCapabilitySessionId);",
+            harness,
+        )
+        self.assertIn(
             "() => useAgentCapabilityStore.getState().loadAgent(",
             scenario,
         )
         self.assertIn(
             "client_capability_session_id: clientCapabilitySessionId",
+            scenario,
+        )
+        self.assertIn(
+            "clientCapabilitySessionId = await resolveClientCapabilitySessionId();",
+            scenario,
+        )
+        self.assertIn(
+            "readinessInput = { clientCapabilitySessionId };",
             scenario,
         )
 
