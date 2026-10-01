@@ -54,12 +54,12 @@
   "doneWhen": [
     "Workflow source, Doctor, and both browser viewports pass from canonical root",
     "No migrated file references the erroneous workspace identity",
-    "No operation mutates or removes a sibling worktree",
+    "No operation mutates or removes the sibling peers-dev-product worktree",
     "peers-touch-git remains unchanged",
     "No push, pull request, merge, or history rewrite is created"
   ],
   "failureBehavior": [
-    "Do not mutate or remove a sibling worktree under this Plan Run",
+    "Do not mutate or remove the sibling peers-dev-product worktree under this Plan Run",
     "Do not claim historical receipts as canonical proof",
     "Do not hide tests that were not run"
   ],
@@ -71,5 +71,5 @@
 ## Current Snapshot
 
 - State: ready after all implementation lanes reconciled.
-- Cleanup boundary: local workflow state only; sibling worktrees are untouched.
+- Cleanup boundary: local workflow state only; `peers-dev-product` is untouched.
 - Delivery boundary: working tree only; commit and push remain denied.
