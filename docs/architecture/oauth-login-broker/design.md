@@ -345,6 +345,7 @@ Desktop -> advertise an OAuth session before Station acknowledgement
   private-email GitHub identity, signed-field tamper, missing Station secret,
   bridge failure before local persistence, and refresh crash-window tests.
 
-Current status: implemented and verified in deterministic local runtime cells.
-Live provider consent, GitHub App installation, and Vercel deployment remain
-unproven; the native handoff amendment is tracked by `OLB-LIVE-20261001`.
+Current status: the native handoff source is implemented, and the standalone
+OAuth2 API/repository scope is proven. Native Desktop-to-Station proof, live
+provider consent, GitHub App installation, and Vercel deployment remain
+unproven and require separately authorized follow-up work.
