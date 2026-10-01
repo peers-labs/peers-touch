@@ -154,7 +154,7 @@ class OAuth2ClientContractTests(unittest.TestCase):
                     ),
                     (
                         "./internal/application/oauth/usecase",
-                        "TestRefreshCredentialRetriesAfterGenerationConflict",
+                        "TestRefreshCredentialResolvesCommittedLostStoreResponseWithoutSecondProviderCall",
                     ),
                     (
                         "./internal/application/oauth/usecase",
