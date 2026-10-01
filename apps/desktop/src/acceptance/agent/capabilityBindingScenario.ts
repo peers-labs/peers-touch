@@ -43,6 +43,7 @@ export interface CapabilityBindingScenarioInput {
   primaryAccount: string;
   secondaryAccount: string;
   password: string;
+  clientCapabilitySessionId?: string;
 }
 
 interface ScenarioResources {
@@ -338,6 +339,11 @@ export async function runCapabilityBindingScenario(
   }
   const agentId = agent.id || agent.name;
   const priorSurface = useAgentStore.getState().getAgentSurface(agent.name);
+  const clientCapabilitySessionId = input.clientCapabilitySessionId;
+  if (input.platform === 'desktop_app' && !clientCapabilitySessionId) {
+    throw new Error('agent.acceptance.capabilitySessionUnavailable');
+  }
+  const readinessInput = { clientCapabilitySessionId };
   const prepared = await api.prepareCapabilityAcceptanceScenario(create(
     PrepareCapabilityAcceptanceScenarioRequestSchema,
     {
@@ -374,7 +380,7 @@ export async function runCapabilityBindingScenario(
   try {
     await useAgentCapabilityStore.getState().loadCatalog();
     await showCapabilitySurface(agent.name);
-    await useAgentCapabilityStore.getState().loadAgent(agentId);
+    await useAgentCapabilityStore.getState().loadAgent(agentId, readinessInput);
 
     if (input.cell === 'ERR-CAT03') {
       const issue = useAgentCapabilityStore.getState().catalogIssues.find(
@@ -409,6 +415,7 @@ export async function runCapabilityBindingScenario(
         expectedAgentVersion: agent.version,
         expectedBindingRevision: 0n,
         idempotencyKey: crypto.randomUUID(),
+        ...readinessInput,
       };
       if (input.cell === 'TAX-02') {
         const mutation = useAgentCapabilityStore.getState().upsertBinding(intent);
@@ -469,7 +476,10 @@ export async function runCapabilityBindingScenario(
             barrier: resources.barrier,
           },
         ));
-        await useAgentCapabilityStore.getState().loadAgent(agentId);
+        await useAgentCapabilityStore.getState().loadAgent(
+          agentId,
+          readinessInput,
+        );
       }
       if (input.cell === 'AS-11' && binding) {
         await useAgentCapabilityStore.getState().deleteBinding({
@@ -531,12 +541,16 @@ export async function runCapabilityBindingScenario(
         };
         await useAgentStore.getState().loadAgents();
         await showCapabilitySurface(agent.name);
-        await useAgentCapabilityStore.getState().loadAgent(agentId);
+        await useAgentCapabilityStore.getState().loadAgent(
+          agentId,
+          readinessInput,
+        );
       }
     }
 
     const readiness = await api.readAgentCapabilityReadiness({
       agent_id: agentId,
+      client_capability_session_id: clientCapabilitySessionId,
     });
     const state = readinessState(
       readiness,
