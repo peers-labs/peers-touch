@@ -1184,8 +1184,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-09-21.2",
-        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 419
       },
       "required_artifact_roles": [
@@ -1205,6 +1205,23 @@
         "runner-attestation"
       ]
     },
+    "agent-v2-external-runtime-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/external_runtime_e2e.py",
+      "timeout_seconds": 3600,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "P12 External Agent: create, exact-session resume, Station restart, resume-unavailable, confirmed reset, cleanup retry, fresh epoch, isolation, and deletion cleanup across Native and Browser.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "runtime-events",
+        "side-effect-count",
+        "replay",
+        "cleanup"
+      ]
+    },
     "agent-v2-home-command-center-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-home-command-center-e2e",
       "timeout_seconds": 600,
@@ -1215,8 +1232,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-09-21.2",
-        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 33
       },
       "required_artifact_roles": [
@@ -1245,8 +1262,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-09-21.2",
-        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 69
       },
       "required_artifact_roles": [
@@ -1276,8 +1293,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-09-21.2",
-        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 86
       },
       "required_artifact_roles": [
@@ -1306,8 +1323,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-09-21.2",
-        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 41
       },
       "required_artifact_roles": [
@@ -1337,8 +1354,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-09-21.2",
-        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 37
       },
       "required_artifact_roles": [
@@ -1368,8 +1385,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-09-21.2",
-        "sha256": "4f935570172c7f5a9fca91062d95d3d8638f3d217cd2a3362122cf891c52176c",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 57
       },
       "required_artifact_roles": [

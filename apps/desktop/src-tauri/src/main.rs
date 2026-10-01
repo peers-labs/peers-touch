@@ -743,6 +743,7 @@ fn main() {
             agent_turn::agent_conversation_update,
             agent_turn::agent_conversation_archive,
             agent_turn::agent_conversation_restore,
+            agent_turn::agent_conversation_runtime_reset,
             agent_turn::agent_retry_turn,
             agent_turn::agent_regenerate_turn,
             agent_turn::agent_edit_and_resend,

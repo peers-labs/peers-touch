@@ -718,6 +718,66 @@ func TestRuntimeAdmissionListAvailableModels(t *testing.T) {
 	}
 }
 
+func TestRuntimeAdmissionConditionallyAdvertisesExternalAgent(t *testing.T) {
+	catalog.SetForTesting([]catalog.CatalogProvider{{
+		ID:          "external-agent",
+		Name:        "External Agent",
+		Enabled:     true,
+		ShowAPIKey:  runtimeAdmissionBoolPointer(false),
+		RuntimeKind: "external-agent",
+		Protocol:    "session-cli-v1",
+		Models: []catalog.CatalogModel{{
+			ID:            "default",
+			DisplayName:   "Default",
+			Type:          "chat",
+			Enabled:       true,
+			ContextWindow: 200000,
+			Capabilities:  []string{"text-input", "text-output", "streaming", "external-resume"},
+		}},
+	}})
+	defer catalog.RestoreForTesting()
+	openAdmissionTestDB(t, "admission_external_runtime")
+
+	resolver := NewRuntimeAdmissionResolver(
+		NewProviderConfigService(),
+		NewModelConfigService(),
+	)
+	models, err := resolver.ListAvailableModels(context.Background(), "actor-1")
+	if err != nil {
+		t.Fatalf("list without external adapter: %v", err)
+	}
+	if len(models) != 0 {
+		t.Fatalf("unhealthy external adapter was advertised: %+v", models)
+	}
+
+	resolver.SetExternalRuntimeAvailability(func() bool { return true })
+	models, err = resolver.ListAvailableModels(context.Background(), "actor-1")
+	if err != nil {
+		t.Fatalf("list with external adapter: %v", err)
+	}
+	if len(models) != 1 || models[0].ProviderID != "external-agent" {
+		t.Fatalf("healthy external adapter models = %+v", models)
+	}
+	admission, err := resolver.Resolve(
+		context.Background(),
+		"actor-1",
+		"external-agent",
+		"default",
+	)
+	if err != nil {
+		t.Fatalf("resolve external runtime: %v", err)
+	}
+	if admission.RuntimeKind != model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT ||
+		admission.RuntimeProfileID != modernChatAgentProfileID ||
+		!admission.Capabilities.GetRuntime().GetExternalResume() {
+		t.Fatalf("external admission = %+v", admission)
+	}
+}
+
+func runtimeAdmissionBoolPointer(value bool) *bool {
+	return &value
+}
+
 func TestCatalogProviderAvailableRequiresCLIExecutable(t *testing.T) {
 	available := catalog.CatalogProvider{
 		RuntimeKind: "cli",

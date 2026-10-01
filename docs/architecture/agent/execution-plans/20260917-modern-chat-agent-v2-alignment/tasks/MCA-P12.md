@@ -33,9 +33,11 @@
     "apps/desktop/src/services/desktop_api.ts",
     "apps/desktop/src/store/chat.ts",
     "apps/desktop/src/components/messages/AssistantMessage.tsx",
+    "apps/desktop/src/acceptance/agent/harness.ts",
     "packages/locales/en/agent.json",
     "packages/locales/zh-CN/agent.json",
     "tooling/acceptance/gates/agent",
+    "tooling/docker/compose.yml",
     "docs/architecture/agent"
   ],
   "readSet": [
@@ -51,13 +53,18 @@
   "checks": [
     {
       "id": "p12-contract-and-runtime",
-      "command": "cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler/... ./app/subserver/agent/infrastructure/persistence/... -count=1 && cd ../.. && pnpm --dir apps/desktop check && python3 -m unittest tooling.acceptance.gates.agent.foundation_direct_adapter_test tooling.acceptance.gates.agent.foundation_scenario_runner_test tooling.acceptance.gates.agent.agent_native_static_test",
+      "command": "cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler/... ./app/subserver/agent/infrastructure/persistence/... -count=1 && cd ../.. && pnpm --dir apps/desktop check && python3 -m unittest tooling.acceptance.gates.agent.external_runtime_e2e_test tooling.acceptance.gates.agent.foundation_candidate_producer_test tooling.acceptance.gates.agent.foundation_direct_adapter_test tooling.acceptance.gates.agent.foundation_scenario_runner_test tooling.acceptance.gates.agent.agent_native_static_test tooling.acceptance.tests.test_agent_v2_runtime_matrix",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "p12-external-runtime-functional",
       "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item MCA-P12-PR112 --gate agent-v2-external-runtime-e2e",
       "verificationClass": "FUNCTIONAL_CHECK"
+    },
+    {
+      "id": "p12-external-runtime-proof",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate agent-v2-external-runtime-e2e",
+      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [

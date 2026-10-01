@@ -1237,6 +1237,8 @@
   "agent.recovery.selectRuntime": "选择运行时",
   "agent.recovery.chooseCompatibleModel": "选择兼容模型",
   "agent.recovery.confirmReset": "确认重置",
+  "agent.recovery.confirmResetDescription": "这会永久删除不可恢复的外部会话及其运行时文件。对话历史会保留，下一轮将创建新的运行时会话。",
+  "agent.recovery.runtimeResetCompleted": "外部运行时已重置，下一轮将创建新会话。",
   "agent.recovery.reconnectExecutor": "重新连接执行器",
   "agent.recovery.reconcile": "核对状态",
   "agent.recovery.openPermissionSettings": "打开权限设置",

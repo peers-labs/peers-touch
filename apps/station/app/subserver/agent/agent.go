@@ -29,6 +29,7 @@ import (
 	agentevent "github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/event"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/infrastructure/persistence"
 	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service"
+	"github.com/peers-labs/peers-touch/station/app/subserver/agent/service/externalruntime"
 	ossservice "github.com/peers-labs/peers-touch/station/app/subserver/oss/service"
 	coreauth "github.com/peers-labs/peers-touch/station/frame/core/auth"
 	hertzadapter "github.com/peers-labs/peers-touch/station/frame/core/auth/adapter/hertz"
@@ -49,16 +50,17 @@ type ossFileServiceProvider interface {
 }
 
 type agentSubServer struct {
-	opts              *Options
-	addrs             []string
-	status            server.Status
-	jwtWrapper        server.Wrapper
-	turnService       *service.TurnService
-	chatTaskService   *service.ChatTaskService
-	operationService  *service.CapabilityOperationService
-	evaluationService *service.EvaluationService
-	deviceKeys        *touchactor.DeviceStore
-	agentDB           *gorm.DB
+	opts                   *Options
+	addrs                  []string
+	status                 server.Status
+	jwtWrapper             server.Wrapper
+	turnService            *service.TurnService
+	chatTaskService        *service.ChatTaskService
+	operationService       *service.CapabilityOperationService
+	evaluationService      *service.EvaluationService
+	externalRuntimeService *service.ExternalRuntimeService
+	deviceKeys             *touchactor.DeviceStore
+	agentDB                *gorm.DB
 }
 
 func (s *agentSubServer) Init(ctx context.Context, opts ...option.Option) error {
@@ -132,6 +134,11 @@ func (s *agentSubServer) Start(ctx context.Context, opts ...option.Option) error
 	workerCtx := ctx
 	if s.turnService != nil {
 		workerCtx = s.turnService.SetExecutionLifecycle(ctx)
+	}
+	if s.externalRuntimeService != nil {
+		if err := s.externalRuntimeService.RecoverPendingResets(workerCtx); err != nil {
+			logger.Warnf(ctx, "external runtime reset recovery incomplete: %v", err)
+		}
 	}
 	if s.chatTaskService != nil {
 		if err := s.chatTaskService.RecoverRunningChatTasks(workerCtx); err != nil {
@@ -239,6 +246,28 @@ func (s *agentSubServer) Handlers() []server.Handler {
 
 	// Conversation service — owns conversation CRUD, message listing, seq allocation, and event persistence.
 	convSvc := service.NewConversationService()
+	var externalManager *externalruntime.Manager
+	if externalruntime.EnvironmentConfigured() {
+		var externalManagerErr error
+		externalManager, externalManagerErr =
+			externalruntime.NewManagerFromEnvironment()
+		if externalManagerErr != nil {
+			logger.Warnf(
+				context.Background(),
+				"external runtime adapter is not advertised: %v",
+				externalManagerErr,
+			)
+			externalManager = nil
+		}
+	}
+	externalRuntimeSvc := service.NewExternalRuntimeService(
+		s.agentDB,
+		externalManager,
+		runtimeEvidenceSvc,
+		convSvc,
+	)
+	runtimeEvidenceSvc.SetExternalRuntimeAvailability(externalRuntimeSvc.Available)
+	admissionResolver.SetExternalRuntimeAvailability(externalRuntimeSvc.Available)
 
 	// Session Search — cross-session learning via keyword search.
 	sessionSearchSvc := service.NewSessionSearchService()
@@ -270,6 +299,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		convSvc,
 	)
 	turnSvc.SetEventBus(eventBus)
+	turnSvc.SetExternalRuntimeService(externalRuntimeSvc)
 
 	// Dogfood self-verification service.
 	dogfoodSvc := service.NewDogfoodService(memorySvc, skillSvc, growthMetricsSvc)
@@ -292,7 +322,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	turnSvc.SetTurnAdmissionService(turnAdmissionSvc)
 	turnAdmissionSvc.SetRequestPreflight(turnSvc.PreflightTurn)
 	turnQueueHandlers := handler.NewTurnQueueHandlers(turnAdmissionSvc)
-	convHandlers := handler.NewConversationHandlers(convSvc, turnSvc)
+	convHandlers := handler.NewConversationHandlers(
+		convSvc,
+		turnSvc,
+		externalRuntimeSvc,
+	)
 	revisionHandlers := handler.NewRevisionHandlers(service.NewRevisionService(convSvc, turnSvc))
 	threadHandlers := handler.NewThreadHandlers(service.NewThreadService())
 	memoryHandlers := handler.NewMemoryHandlers(memorySvc)
@@ -412,6 +446,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 	s.chatTaskService = chatTaskSvc
 	s.operationService = operationSvc
 	s.evaluationService = evaluationSvc
+	s.externalRuntimeService = externalRuntimeSvc
 
 	handlers := []server.Handler{
 		server.NewTypedHandler("agent-list", "/agent/list", server.POST, agentHandlers.HandleListAgents, logIDWrapper, jwtWrapper),
@@ -470,6 +505,7 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewHTTPHandler("agent-conversation-update", "/agent/conversation/update", server.POST, convHandlers.HandleUpdateConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-archive", "/agent/conversation/archive", server.POST, convHandlers.HandleArchiveConversation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-restore", "/agent/conversation/restore", server.POST, convHandlers.HandleRestoreConversation, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-conversation-runtime-reset", "/agent/conversation/runtime/reset", server.POST, convHandlers.HandleResetConversationRuntime, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-messages", "/agent/conversation/messages", server.POST, convHandlers.HandleListMessages, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-message-translate", "/agent/conversation/message/translate", server.POST, convHandlers.HandleSetMessageTranslation, logIDWrapper, jwtWrapper),
 		server.NewHTTPHandler("agent-conversation-events", "/agent/conversation/events", server.POST, convHandlers.HandleStreamConversationEvents, logIDWrapper, jwtWrapper),

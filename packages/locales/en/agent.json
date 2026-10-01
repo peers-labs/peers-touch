@@ -1237,6 +1237,8 @@
   "agent.recovery.selectRuntime": "Select runtime",
   "agent.recovery.chooseCompatibleModel": "Choose compatible model",
   "agent.recovery.confirmReset": "Confirm reset",
+  "agent.recovery.confirmResetDescription": "This permanently removes the unavailable external session and its runtime files. Conversation history is kept, and the next turn starts a new runtime session.",
+  "agent.recovery.runtimeResetCompleted": "External runtime reset. The next turn will start a new session.",
   "agent.recovery.reconnectExecutor": "Reconnect executor",
   "agent.recovery.reconcile": "Reconcile",
   "agent.recovery.openPermissionSettings": "Open permission settings",

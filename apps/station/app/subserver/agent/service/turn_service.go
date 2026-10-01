@@ -108,6 +108,8 @@ type TurnConfig struct {
 	RequestedBudgetJSON       json.RawMessage
 	RuntimeBudget             *model.RuntimeBudget
 	RuntimeCapabilities       *model.RuntimeCapabilitySnapshot
+	RuntimeKind               model.RuntimeKind
+	RuntimeProfileID          string
 	PinnedRuntimeSnapshot     *model.RuntimeSnapshot
 	PinnedReadinessSnapshot   *model.CapabilityReadinessSnapshot
 	ExpectedAgentVersion      uint64
@@ -290,6 +292,7 @@ type TurnService struct {
 	capabilityReadiness  *CapabilityAuthorityReadinessService
 	turnAdmission        *TurnAdmissionService
 	attachmentAdmission  *AttachmentAdmissionService
+	externalRuntime      *ExternalRuntimeService
 	resumeProviderCall   continuationProviderCall
 	providerCall         turnProviderCall
 }
@@ -310,6 +313,10 @@ func (s *TurnService) SetTurnAdmissionService(admission *TurnAdmissionService) {
 
 func (s *TurnService) SetAttachmentAdmissionService(admission *AttachmentAdmissionService) {
 	s.attachmentAdmission = admission
+}
+
+func (s *TurnService) SetExternalRuntimeService(runtime *ExternalRuntimeService) {
+	s.externalRuntime = runtime
 }
 
 func (s *TurnService) PreflightTurn(
@@ -344,6 +351,16 @@ func (s *TurnService) PreflightTurn(
 	)
 	if err != nil {
 		return err
+	}
+	if s.externalRuntime != nil {
+		if err := s.externalRuntime.ValidateTurnAdmission(
+			ctx,
+			config.ActorID,
+			config.ConversationID,
+			runtimeSnapshot.RuntimeKind,
+		); err != nil {
+			return err
+		}
 	}
 	effectiveBudget, err := effectiveRuntimeBudget(
 		runtimeSnapshot.Budget,
@@ -1399,6 +1416,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	config.RuntimeCapabilities = proto.Clone(
 		runtimeSnapshot.Capabilities,
 	).(*model.RuntimeCapabilitySnapshot)
+	config.RuntimeKind = runtimeSnapshot.RuntimeKind
+	config.RuntimeProfileID = runtimeSnapshot.RuntimeProfileID
 	if maxDepth := config.RuntimeBudget.GetMaxDelegationDepth(); maxDepth > 0 &&
 		uint32(config.Depth) > maxDepth {
 		budgetErr := runtimeBudgetExhausted(
@@ -1531,6 +1550,11 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 		config.AuthorizedCapabilities.ToolNames(),
 		config.RestrictedTools,
 	)
+	externalAgentRuntime :=
+		runtimeSnapshot.RuntimeKind == model.RuntimeKind_RUNTIME_KIND_EXTERNAL_AGENT
+	if externalAgentRuntime {
+		config.AvailableTools = nil
+	}
 	if err := validateAuthorizedRuntimeCapabilities(
 		config.AvailableTools,
 		runtimeSnapshot.Capabilities,
@@ -1664,7 +1688,8 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	estimatedTokens := s.compression.EstimateTokens(messages) +
 		assemblyResult.InjectedTokens +
 		int(toolDefinitionTokens)
-	shouldCompress := s.compression.ShouldCompress(estimatedTokens, config.ContextWindowSize)
+	shouldCompress := !externalAgentRuntime &&
+		s.compression.ShouldCompress(estimatedTokens, config.ContextWindowSize)
 
 	logger.Infof(ctx, "compression check: turn_id=%s tokens=%d window=%d should_compress=%v",
 		turnID, estimatedTokens, config.ContextWindowSize, shouldCompress)
@@ -1786,9 +1811,29 @@ func (s *TurnService) ExecuteTurn(ctx context.Context, config *TurnConfig, userI
 	}); err != nil {
 		return nil, settleRunningFailure("failed to persist provider start event", err)
 	}
-	assistantResponse, providerToolCalls, providerCalls, streamed, err := s.providerCallWithRetry(
-		ctx, config, turnID, trace, assemblyResult.SystemPrompt, messages,
-	)
+	var assistantResponse string
+	var providerToolCalls []ProviderToolCall
+	var providerCalls []domain.ProviderCallRecord
+	var streamed bool
+	if externalAgentRuntime {
+		assistantResponse, providerCalls, streamed, err = s.executeExternalRuntimeTurn(
+			ctx,
+			config,
+			turnID,
+			assemblyResult.SystemPrompt,
+			processedInput,
+		)
+	} else {
+		assistantResponse, providerToolCalls, providerCalls, streamed, err =
+			s.providerCallWithRetry(
+				ctx,
+				config,
+				turnID,
+				trace,
+				assemblyResult.SystemPrompt,
+				messages,
+			)
+	}
 	trace.ProviderCalls = append(trace.ProviderCalls, providerCalls...)
 	if err != nil {
 		terminalCtx := context.WithoutCancel(ctx)

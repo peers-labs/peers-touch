@@ -2425,6 +2425,34 @@ class FoundationScenarioRunnerProfileTest(unittest.TestCase):
         self.assertTrue(result["assertions"]["autoPolicyExecutedOnce"])
         self.assertEqual(client.locales, ["en"])
 
+    def test_resume_unavailable_dispatches_external_runtime_coordinator(
+        self,
+    ) -> None:
+        probe_input = DirectRuntimeProbeInput(
+            platform="browser",
+            locale="zh-CN",
+            cell="BASE-RESUME-UNAVAILABLE",
+            sample_id="sample-001",
+        )
+        expected = {"assertions": {"typedResumeUnavailable": True}}
+
+        class Coordinator:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def capture(self, value):
+                self.calls.append(value)
+                return expected
+
+        coordinator = Coordinator()
+        result = foundation_scenario_runner._make_direct_probe(
+            DirectProbeHarnessClient(),
+            external_runtime_coordinator=coordinator,
+        )(probe_input)
+
+        self.assertIs(result, expected)
+        self.assertEqual(coordinator.calls, [probe_input])
+
     def test_direct_probe_rejects_harness_assertion_drift(self) -> None:
         probe_input = DirectRuntimeProbeInput(
             platform="desktop_app",
