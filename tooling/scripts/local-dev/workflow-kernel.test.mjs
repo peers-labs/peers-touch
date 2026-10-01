@@ -35,7 +35,11 @@ function event(overrides = {}) {
     host: 'cursor',
     event: 'PRE_TOOL_USE',
     hostEvent: 'preToolUse',
-    stableConversationId: 'conversation-1',
+    bindingIdentity: {
+      rootChatId: 'conversation-1',
+      executionSessionId: 'conversation-1',
+      assignmentId: null,
+    },
     executionRootHints: [],
     workspaceRoots: [],
     repositoryWorkingDirectory: null,
@@ -54,20 +58,52 @@ function event(overrides = {}) {
 
 function binding(root) {
   return {
-    kind: 'peers-touch-workflow-conversation-binding',
+    kind: 'peers-touch-workflow-binding-projection',
     host: 'cursor',
-    conversationHash: 'a'.repeat(64),
+    role: 'OWNER',
+    bindingDigest: 'b'.repeat(64),
+    rootBindingDigest: 'b'.repeat(64),
+    parentBindingDigest: null,
+    assignmentDigest: null,
+    workflowSessionId: null,
     executionRoot: root,
     workspaceId: '0123456789abcdef',
-    boundAt: '2026-09-23T00:00:00.000Z',
-    bindingEvent: 'PRE_TOOL_USE',
-    digest: 'b'.repeat(64),
+    subjectRoots: [],
+    toolRoot: null,
+    targetRoots: [],
+    released: false,
+    childState: null,
   };
 }
 
 function injectedBinding(root, extras = {}) {
   return {
-    readConversationBinding: () => binding(root),
+    resolveEventWorkflowBinding: () => ({
+      mode: 'ENFORCED',
+      projection: binding(root),
+      binding: {
+        kind: 'peers-touch-workflow-owner-binding',
+        host: 'cursor',
+        role: 'OWNER',
+        rootChatHash: 'a'.repeat(64),
+        executionRoot: root,
+        workspaceId: '0123456789abcdef',
+        boundAt: '2026-09-23T00:00:00.000Z',
+        bindingEvent: 'PRE_TOOL_USE',
+        digest: 'b'.repeat(64),
+      },
+      owner: {
+        kind: 'peers-touch-workflow-owner-binding',
+        host: 'cursor',
+        role: 'OWNER',
+        rootChatHash: 'a'.repeat(64),
+        executionRoot: root,
+        workspaceId: '0123456789abcdef',
+        boundAt: '2026-09-23T00:00:00.000Z',
+        bindingEvent: 'PRE_TOOL_USE',
+        digest: 'b'.repeat(64),
+      },
+    }),
     recordWorkflowAction: false,
     ...extras,
   };
@@ -78,10 +114,10 @@ test('SessionStart prewarms but never creates the immutable binding', async () =
   const result = await evaluateWorkflowEvent(
     event({ event: 'SESSION_START', hostEvent: 'sessionStart' }),
     {
-      readConversationBinding: () => null,
-      bindConversation: () => {
-        bindCalls += 1;
-      },
+      resolveEventWorkflowBinding: () => ({
+        mode: 'PREWARM',
+        projection: null,
+      }),
     },
   );
   assert.equal(result.action, 'CONTEXT');
@@ -92,7 +128,11 @@ test('SessionStart prewarms but never creates the immutable binding', async () =
 test('missing stable conversation identity denies mutation but permits safe reads', async () => {
   const mutation = await evaluateWorkflowEvent(
     event({
-      stableConversationId: null,
+      bindingIdentity: {
+        rootChatId: null,
+        executionSessionId: null,
+        assignmentId: null,
+      },
       toolName: 'Write',
       toolInput: { file_path: '/tmp/file' },
     }),
@@ -103,7 +143,11 @@ test('missing stable conversation identity denies mutation but permits safe read
 
   const read = await evaluateWorkflowEvent(
     event({
-      stableConversationId: null,
+      bindingIdentity: {
+        rootChatId: null,
+        executionSessionId: null,
+        assignmentId: null,
+      },
       toolName: 'Read',
       toolInput: { file_path: '/tmp/file' },
     }),
@@ -173,6 +217,101 @@ test('an existing conversation binding denies cross-worktree writes', async () =
       retryDelay: 50,
     });
   }
+});
+
+test('expired child lineage is denied before workflow inspection', async () => {
+  const root = '/workspace';
+  let inspections = 0;
+  const owner = injectedBinding(root).resolveEventWorkflowBinding().owner;
+  const result = await evaluateWorkflowEvent(
+    event({
+      host: 'trae',
+      bindingIdentity: {
+        rootChatId: 'visible-chat',
+        executionSessionId: 'worker-session',
+        assignmentId: 'worker-1',
+      },
+    }),
+    injectedBinding(root, {
+      resolveEventWorkflowBinding: () => ({
+        mode: 'ENFORCED',
+        owner,
+        binding: {
+          host: 'trae',
+          role: 'WORKER',
+          executionSessionHash: 'c'.repeat(64),
+          rootBindingDigest: 'b'.repeat(64),
+          digest: 'd'.repeat(64),
+        },
+        projection: {
+          ...binding(root),
+          host: 'trae',
+          role: 'WORKER',
+          bindingDigest: 'd'.repeat(64),
+          rootBindingDigest: 'b'.repeat(64),
+          parentBindingDigest: 'b'.repeat(64),
+          assignmentDigest: 'e'.repeat(64),
+          workflowSessionId: 'SESSION-1',
+          childState: 'ASSIGNED',
+        },
+      }),
+      inspectWorkflowContext: async () => {
+        inspections += 1;
+      },
+    }),
+  );
+  assert.equal(result.action, 'DENY');
+  assert.equal(result.code, 'WORKFLOW_CHILD_BINDING_NOT_LIVE');
+  assert.equal(inspections, 0);
+});
+
+test('SubagentStop terminalizes the exact assigned child', async () => {
+  const root = '/workspace';
+  const calls = [];
+  const owner = injectedBinding(root).resolveEventWorkflowBinding().owner;
+  const storedChild = {
+    host: 'trae',
+    role: 'REVIEWER',
+    executionSessionHash: 'c'.repeat(64),
+    rootBindingDigest: 'b'.repeat(64),
+    digest: 'd'.repeat(64),
+  };
+  const result = await evaluateWorkflowEvent(
+    event({
+      host: 'trae',
+      event: 'SUBAGENT_STOP',
+      hostEvent: 'SubagentStop',
+      childResult: 'PASS',
+      bindingIdentity: {
+        rootChatId: 'visible-chat',
+        executionSessionId: 'reviewer-session',
+        assignmentId: 'reviewer-1',
+      },
+    }),
+    injectedBinding(root, {
+      resolveEventWorkflowBinding: () => ({
+        mode: 'ENFORCED',
+        owner,
+        binding: storedChild,
+        projection: {
+          ...binding(root),
+          host: 'trae',
+          role: 'REVIEWER',
+          bindingDigest: storedChild.digest,
+          rootBindingDigest: 'b'.repeat(64),
+          parentBindingDigest: 'b'.repeat(64),
+          assignmentDigest: 'e'.repeat(64),
+          workflowSessionId: 'SESSION-1',
+          childState: 'LEASED',
+        },
+      }),
+      terminalizeWorkflowChild: (...args) => calls.push(args),
+    }),
+  );
+  assert.equal(result.action, 'ALLOW');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], storedChild);
+  assert.equal(calls[0][1], 'PASS');
 });
 
 test('shell arguments cannot move a mutation into a sibling worktree', async () => {
@@ -375,7 +514,7 @@ test('Stop blocks an active Plan even when an anchor is already present', async 
         branch: 'main',
         head: 'head',
       }),
-      writeAnchorReceipt: () => {},
+      writeWorkflowAnchorReceipt: () => {},
     }),
   );
   assert.equal(result.action, 'CONTINUE');
@@ -401,8 +540,8 @@ test('Stop requires the exact rendered anchor before atomic release', async () =
       branch: 'main',
       head: 'head',
     }),
-    writeAnchorReceipt: () => {},
-    releaseConversation: () => {
+    writeWorkflowAnchorReceipt: () => {},
+    releaseWorkflowOwner: () => {
       releaseCount += 1;
     },
   });
@@ -459,6 +598,8 @@ test('bound mutations emit one redacted action receipt without changing admissio
   assert.equal(result.action, 'ALLOW');
   assert.equal(receipts.length, 1);
   assert.equal(receipts[0].event, 'STARTED');
+  assert.equal(receipts[0].actor.role, 'OWNER');
+  assert.equal(receipts[0].actor.rootBindingDigest, 'b'.repeat(64));
   assert.equal(receipts[0].operation.family, 'WRITE');
   assert.equal(receipts[0].operation.targetRef, 'tooling/scripts/file.mjs');
   assert.equal('toolInput' in receipts[0], false);
@@ -623,11 +764,10 @@ test('PostToolUse cannot create the first binding or emit an action receipt', as
         toolInput: { file_path: path.join(root, 'file.txt') },
       }),
       {
-        readConversationBinding: () => null,
-        bindConversation: () => {
-          bindCalls += 1;
-          throw new Error('PostToolUse must not bind');
-        },
+        resolveEventWorkflowBinding: () => ({
+          mode: 'PREWARM',
+          projection: null,
+        }),
         recordWorkflowAction: () => {
           receiptCalls += 1;
         },

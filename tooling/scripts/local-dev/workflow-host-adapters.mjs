@@ -1,3 +1,7 @@
+import {
+  projectHostBindingIdentity,
+} from './workflow-binding-projection.mjs';
+
 const HOSTS = new Set(['codex', 'cursor', 'trae']);
 
 const EVENT_ALIASES = new Map([
@@ -11,6 +15,10 @@ const EVENT_ALIASES = new Map([
   ['postToolUse', 'POST_TOOL_USE'],
   ['PostToolUseFailure', 'POST_TOOL_FAILURE'],
   ['postToolUseFailure', 'POST_TOOL_FAILURE'],
+  ['SubagentStart', 'SUBAGENT_START'],
+  ['SubagentStop', 'SUBAGENT_STOP'],
+  ['PreCompact', 'PRE_COMPACT'],
+  ['PostCompact', 'POST_COMPACT'],
   ['Stop', 'STOP'],
   ['stop', 'STOP'],
 ]);
@@ -68,20 +76,7 @@ export function normalizeHostPayload(raw, options = {}) {
     };
   }
 
-  const conversationIds = uniqueStrings([
-    payload.conversation_id,
-    payload.conversationId,
-    payload.session_id,
-    payload.sessionId,
-  ]);
-  if (conversationIds.length > 1) {
-    return {
-      valid: false,
-      code: 'HOST_CONVERSATION_ID_AMBIGUOUS',
-      host,
-      hostEvent,
-    };
-  }
+  const bindingIdentity = projectHostBindingIdentity(host, payload);
   const workspaceRoots = uniqueStrings([
     ...stringArray(payload.workspace_roots),
     ...stringArray(payload.workspaceRoots),
@@ -107,7 +102,7 @@ export function normalizeHostPayload(raw, options = {}) {
     host,
     event,
     hostEvent,
-    stableConversationId: conversationIds[0] ?? null,
+    bindingIdentity,
     actionId: firstString(
       payload.tool_use_id,
       payload.toolUseId,
@@ -155,6 +150,8 @@ export function normalizeHostPayload(raw, options = {}) {
       Number.isInteger(payload.loop_count) && payload.loop_count >= 0
         ? payload.loop_count
         : null,
+    agentType: firstString(payload.agent_type),
+    childResult: firstString(payload.result),
   };
 }
 

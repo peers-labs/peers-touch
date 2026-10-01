@@ -204,9 +204,19 @@ export function validateWorkflowActionReceipt(receipt) {
     receipt.actor === null ||
     typeof receipt.actor !== 'object' ||
     Array.isArray(receipt.actor) ||
-    Object.keys(receipt.actor).sort().join(',') !== 'bindingDigest,host' ||
+    Object.keys(receipt.actor).sort().join(',') !==
+      'assignmentDigest,bindingDigest,host,parentBindingDigest,role,rootBindingDigest' ||
     !HOSTS.has(receipt.actor.host) ||
-    !SHA256.test(receipt.actor.bindingDigest)
+    !SHA256.test(receipt.actor.bindingDigest) ||
+    !SHA256.test(receipt.actor.rootBindingDigest) ||
+    !new Set(['OWNER', 'WORKER', 'REVIEWER']).has(receipt.actor.role) ||
+    (receipt.actor.role === 'OWNER' &&
+      (receipt.actor.bindingDigest !== receipt.actor.rootBindingDigest ||
+        receipt.actor.parentBindingDigest !== null ||
+        receipt.actor.assignmentDigest !== null)) ||
+    (receipt.actor.role !== 'OWNER' &&
+      (!SHA256.test(receipt.actor.parentBindingDigest ?? '') ||
+        !SHA256.test(receipt.actor.assignmentDigest ?? '')))
   ) {
     fail('WORKFLOW_ACTION_INVALID', 'action actor is invalid');
   }
@@ -251,13 +261,12 @@ export function validateWorkflowActionReceipt(receipt) {
   return receipt;
 }
 
-function emptyStore(workspaceId, host, conversationHash) {
+function emptyStore(workspaceId, rootBindingDigest) {
   return {
     schemaVersion: 1,
     kind: ACTION_STORE_KIND,
     workspaceId,
-    host,
-    conversationHash,
+    rootBindingDigest,
     compactedThrough: null,
     receipts: [],
   };
@@ -266,10 +275,9 @@ function emptyStore(workspaceId, host, conversationHash) {
 function validateStore(store, expected = {}) {
   const keys = [
     'compactedThrough',
-    'conversationHash',
-    'host',
     'kind',
     'receipts',
+    'rootBindingDigest',
     'schemaVersion',
     'workspaceId',
   ];
@@ -281,8 +289,7 @@ function validateStore(store, expected = {}) {
     store.schemaVersion !== 1 ||
     store.kind !== ACTION_STORE_KIND ||
     !WORKSPACE_ID.test(store.workspaceId) ||
-    !HOSTS.has(store.host) ||
-    !SHA256.test(store.conversationHash) ||
+    !SHA256.test(store.rootBindingDigest) ||
     (store.compactedThrough !== null && !SHA256.test(store.compactedThrough)) ||
     !Array.isArray(store.receipts) ||
     store.receipts.length > MAX_ACTION_RECEIPTS
@@ -300,7 +307,7 @@ function validateStore(store, expected = {}) {
     validateWorkflowActionReceipt(receipt);
     if (
       receipt.binding.workspaceId !== store.workspaceId ||
-      receipt.actor.host !== store.host ||
+      receipt.actor.rootBindingDigest !== store.rootBindingDigest ||
       receipt.previousDigest !== previous ||
       (sequence !== null && receipt.sequence !== sequence + 1)
     ) {
@@ -318,11 +325,10 @@ export function workflowActionPaths(options) {
     WORKSPACE_ID,
     'workspaceId',
   );
-  const host = requirePattern(options.host, /^(trae|cursor|codex)$/, 'host');
-  const conversationHash = requirePattern(
-    options.conversationHash,
+  const rootBindingDigest = requirePattern(
+    options.rootBindingDigest,
     SHA256,
-    'conversationHash',
+    'rootBindingDigest',
   );
   const directory = path.join(
     options.machineRoot ? path.resolve(options.machineRoot) : machineDevRoot(options.home),
@@ -331,7 +337,7 @@ export function workflowActionPaths(options) {
     'workflow',
     'actions',
   );
-  const stem = `${host}-${conversationHash}`;
+  const stem = rootBindingDigest;
   return {
     directory,
     store: path.join(directory, `${stem}.json`),
@@ -431,15 +437,70 @@ function normalizedBinding(binding) {
   };
 }
 
+function normalizedActor(actor) {
+  if (actor === null || typeof actor !== 'object' || Array.isArray(actor)) {
+    fail('WORKFLOW_ACTION_INVALID', 'action actor is required');
+  }
+  const normalized = {
+    host: requirePattern(actor.host, /^(trae|cursor|codex)$/, 'actor.host'),
+    bindingDigest: requirePattern(
+      actor.bindingDigest,
+      SHA256,
+      'actor.bindingDigest',
+    ),
+    role: requirePattern(
+      actor.role,
+      /^(OWNER|WORKER|REVIEWER)$/,
+      'actor.role',
+    ),
+    rootBindingDigest: requirePattern(
+      actor.rootBindingDigest,
+      SHA256,
+      'actor.rootBindingDigest',
+    ),
+    parentBindingDigest:
+      actor.parentBindingDigest === null
+        ? null
+        : requirePattern(
+            actor.parentBindingDigest,
+            SHA256,
+            'actor.parentBindingDigest',
+          ),
+    assignmentDigest:
+      actor.assignmentDigest === null
+        ? null
+        : requirePattern(
+            actor.assignmentDigest,
+            SHA256,
+            'actor.assignmentDigest',
+          ),
+  };
+  if (
+    (normalized.role === 'OWNER' &&
+      (normalized.bindingDigest !== normalized.rootBindingDigest ||
+        normalized.parentBindingDigest !== null ||
+        normalized.assignmentDigest !== null)) ||
+    (normalized.role !== 'OWNER' &&
+      (normalized.parentBindingDigest === null ||
+        normalized.assignmentDigest === null))
+  ) {
+    fail('WORKFLOW_ACTION_INVALID', 'action actor lineage is invalid');
+  }
+  return normalized;
+}
+
 export function recordWorkflowAction(options) {
   const now = operationDate(options.now);
   const binding = normalizedBinding(options.binding);
+  const actor = normalizedActor(options.actor);
+  if (actor.rootBindingDigest !== options.rootBindingDigest) {
+    fail('WORKFLOW_ACTION_INVALID', 'action root binding digest mismatches');
+  }
   const paths = workflowActionPaths({
     home: options.home,
     machineRoot: options.machineRoot,
     workspaceId: binding.workspaceId,
-    host: options.host,
-    conversationHash: options.conversationHash,
+    rootBindingDigest: actor.rootBindingDigest,
   });
   assertPrivateDirectory(paths.directory);
   const release = acquireLock(paths.lock, now, options.lockTimeoutMs);
@@ -447,9 +508,8 @@ export function recordWorkflowAction(options) {
     const store =
       readStoreFile(paths.store, {
         workspaceId: binding.workspaceId,
-        host: options.host,
-        conversationHash: options.conversationHash,
-      }) ?? emptyStore(binding.workspaceId, options.host, options.conversationHash);
+        rootBindingDigest: actor.rootBindingDigest,
+      }) ?? emptyStore(binding.workspaceId, actor.rootBindingDigest);
     const previous = store.receipts.at(-1) ?? null;
     const event = options.event ?? 'STARTED';
     const result = options.result ?? (event === 'FINISHED' ? 'PASS' : 'RUNNING');
@@ -469,12 +529,15 @@ export function recordWorkflowAction(options) {
         : previous?.actionId ?? `action-${randomBytes(12).toString('hex')}`);
     const oneShotDenied =
       event === 'FINISHED' && result === 'DENIED';
+    const previousForAction = [...store.receipts]
+      .reverse()
+      .find((receipt) => receipt.actionId === actionId) ?? null;
     if (
       event !== 'STARTED' &&
       !oneShotDenied &&
-      (previous === null ||
-        previous.actionId !== actionId ||
-        TERMINAL_RESULTS.has(previous.result))
+      (previousForAction === null ||
+        previousForAction.actor.bindingDigest !== actor.bindingDigest ||
+        TERMINAL_RESULTS.has(previousForAction.result))
     ) {
       fail('WORKFLOW_ACTION_LIFECYCLE_INVALID', 'action lifecycle is not active');
     }
@@ -488,14 +551,7 @@ export function recordWorkflowAction(options) {
       kind: ACTION_RECEIPT_KIND,
       sequence: (previous?.sequence ?? 0) + 1,
       actionId,
-      actor: {
-        host: options.host,
-        bindingDigest: requirePattern(
-          options.bindingDigest,
-          SHA256,
-          'bindingDigest',
-        ),
-      },
+      actor,
       binding,
       event,
       result,
@@ -529,9 +585,8 @@ export function readWorkflowActions(options) {
   return (
     readStoreFile(paths.store, {
       workspaceId: options.workspaceId,
-      host: options.host,
-      conversationHash: options.conversationHash,
-    }) ?? emptyStore(options.workspaceId, options.host, options.conversationHash)
+      rootBindingDigest: options.rootBindingDigest,
+    }) ?? emptyStore(options.workspaceId, options.rootBindingDigest)
   ).receipts;
 }
 
@@ -550,7 +605,7 @@ export function readWorkspaceActions(options) {
     fail('WORKFLOW_ACTION_STORE_INVALID', 'action root is unsafe');
   }
   const files = readdirSync(directory)
-    .filter((name) => /^(trae|cursor|codex)-[0-9a-f]{64}\.json$/.test(name))
+    .filter((name) => /^[0-9a-f]{64}\.json$/.test(name))
     .sort()
     .slice(-MAX_ACTION_STREAMS);
   return files
@@ -626,7 +681,9 @@ export async function runWorkflowActionHeartbeat(options) {
       ...options,
       workspaceId: options.workspaceId ?? options.binding?.workspaceId,
     });
-    const latest = receipts.at(-1);
+    const latest = [...receipts]
+      .reverse()
+      .find((receipt) => receipt.actionId === options.actionId);
     if (
       latest?.actionId !== options.actionId ||
       TERMINAL_RESULTS.has(latest.result)

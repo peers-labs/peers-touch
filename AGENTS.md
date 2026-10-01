@@ -617,32 +617,37 @@ Any non-trivial development task (cross-module, new feature, architecture change
     `QUARANTINED -> RELEASED | ESCALATION_REQUIRED` may update the blocked
     observation; unchanged requests cannot retry at zero progress.
 
-#### 13.5.1 Conversation And Execution Worktree Binding Contract
+#### 13.5.1 Owner-Rooted Workflow Binding Contract
 
 This contract is fail-closed and applies before stage dispatch, execution,
 edits, status claims, and completion claims.
 
-1. A stable host conversation binds exactly once to one canonical
-   `executionRoot`. The first blockable `PreToolUse` creates the binding
-   atomically from the installed project integration root. `SessionStart`,
-   prompts, tool `cwd`, target paths, Plan state, and sibling worktrees cannot
-   create or replace it.
-2. The conversation binding is not a worktree lease or cross-agent lock. It
-   constrains only that conversation: reads may use another `subjectRoot`, while
+1. One visible chat creates exactly one immutable `OWNER` binding at the first
+   blockable `PreToolUse`. TRAE uses only `chat_session_id` for owner identity;
+   its `session_id` is execution-session identity and never creates another
+   owner. Cursor uses only `conversation_id`; Codex uses only `session_id`.
+   Host-field aliases and process-global identity fallbacks are forbidden.
+2. `WORKER` and `REVIEWER` are create-once assigned children. Every child
+   preserves `rootBindingDigest`, direct `parentBindingDigest`, assignment,
+   Development Session, role, and bounded lease. Expired or terminal children
+   are history and cannot make current claims. OWNER authority has no generic
+   TTL.
+3. The canonical `BindingProjection` is not a worktree lease or cross-agent
+   lock. It constrains one lineage: reads may use another `subjectRoot`, while
    every cross-worktree write is denied.
-3. If the host exposes no stable conversation ID or no blockable pre-tool
+4. If the host exposes no required root-chat ID or no blockable pre-tool
    event, report `OBSERVE_ONLY`; never claim that hook enforcement is active.
    If a manual execution root remains ambiguous, stop and ask the user rather
    than inferring it from a Skill path, Plan path, branch name, or nearby repo.
-4. From the bound current worktree root, capture its identity:
+5. From the bound current worktree root, capture its identity:
    `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --capture`.
-5. Reconcile the captured identity with this workspace's active-work record,
+6. Reconcile the captured identity with this workspace's active-work record,
    the formal plan, and the latest Context Anchor. Any mismatch,
    or any later root, branch, HEAD, or `workspaceId` drift,
    returns `WORKTREE_IDENTITY_MISMATCH` and stops. Do not repair a mismatch by
    automatically changing directories, switching branches, or selecting a
    different worktree.
-6. From the same root, immediately verify all captured values:
+7. From the same root, immediately verify all captured values:
    `python3 tooling/scripts/verify-worktree-binding.py --root '<absolute-root>' --branch '<branch>' --workspace-id '<workspaceId>' --head '<expected-head>'`.
    Every materialized value must be one POSIX shell-safe argument.
    Bind the verified canonical root, branch, `workspaceId`, initial HEAD,
@@ -650,36 +655,39 @@ edits, status claims, and completion claims.
    A missing verifier or unresolved field is
    `WORKTREE_IDENTITY_UNAVAILABLE`; a wrong invocation directory, identity
    mismatch, or later drift is `WORKTREE_IDENTITY_MISMATCH`. Both stop work.
-7. Every mutating tool call must carry the bound canonical root as its explicit
-   `workdir`. File mutation tools must use absolute paths beneath that same
-   root. Subagents inherit the complete immutable binding and must run the
-   verifier against it before writing.
-8. Re-run the verifier after resume or context compaction and before every
-   status, readiness, handoff, or completion report.
-9. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
+8. Every mutating tool call must carry the OWNER's canonical root as its
+   explicit `workdir`. File mutation tools must use absolute paths beneath that
+   root. Subagents require an assigned child binding; an unassigned internal
+   session inherits OWNER admission and cannot claim independent worker or
+   reviewer authority.
+9. Revalidate the same `BindingProjection` after resume or compaction and
+   before status, readiness, handoff, worker result, review, or completion
+   claims. Completion Review uses only the exact current owner-command Action
+   Receipt and assigned REVIEWER; it never enumerates worktree bindings.
+10. The initial HEAD remains the audit baseline. Expected HEAD may refresh only
    after a commit, rebase, or merge that the user explicitly authorized.
    Resume and context compaction verify the persisted values; they MUST NOT
    recapture current Git state as a replacement baseline. Unrelated sibling
    worktree inventory is machine topology and never part of this binding.
-10. Do not run `git switch`, `git checkout`, `git worktree add`,
+11. Do not run `git switch`, `git checkout`, `git worktree add`,
    `git worktree remove`, or `git worktree prune`, and do not create a
    worktree, unless the user explicitly requested that exact operation.
     A Plan binding or lifecycle conflict is never implicit permission to create
     another worktree.
-11. A repository or PR may contain multiple active Plan Packages. Each
+12. A repository or PR may contain multiple active Plan Packages. Each
     workspace resolves only
     `~/.peers-touch/dev/workspaces/<workspaceId>/workflow/plan-binding.json`;
     branch scans, directory order, active status and synchronized foreign Plans
     never select execution ownership.
-12. `make plan-bind PLAN=<path>` creates the workspace's first
+13. `make plan-bind PLAN=<path>` creates the workspace's first
     `planId + planPath` generation. The same tuple is idempotent; a different
     tuple returns `WORKSPACE_PLAN_REBIND_DENIED`.
-13. `make plan-binding-advance PLAN=<path> EXPECTED_GENERATION=<n>` is the only
+14. `make plan-binding-advance PLAN=<path> EXPECTED_GENERATION=<n>` is the only
     next-Plan path for an existing workspace. It requires the current Plan to
     be completed and the workspace to have no live declaration, active-work
     projection, or runtime lease. It atomically advances one generation and
     retains immutable history.
-14. Plan manifest, tracked declaration, workspace active-work record, Session
+15. Plan manifest, tracked declaration, workspace active-work record, Session
     and Context Anchor must match the immutable binding. A bound workspace
     cannot publish untracked work. CI has no machine binding and must receive
     an explicit Plan.

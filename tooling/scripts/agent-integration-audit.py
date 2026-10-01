@@ -29,6 +29,10 @@ TRAE_HOOK_EVENTS = (
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
     "Stop",
 )
 CURSOR_HOOK_EVENTS = (
@@ -41,7 +45,9 @@ WORKFLOW_KERNEL_FILES = (
     "tooling/scripts/architecture/module-governance.mjs",
     "tooling/scripts/local-dev/workflow-action-store.mjs",
     "tooling/scripts/local-dev/workflow-anchor.mjs",
-    "tooling/scripts/local-dev/workflow-conversation-binding.mjs",
+    "tooling/scripts/local-dev/workflow-binding-projection.mjs",
+    "tooling/scripts/local-dev/workflow-binding-store.mjs",
+    "tooling/scripts/local-dev/workflow-binding.mjs",
     "tooling/scripts/local-dev/workflow-host-adapters.mjs",
     "tooling/scripts/local-dev/workflow-kernel.mjs",
     "tooling/scripts/local-dev/workflow-state-inspector.mjs",

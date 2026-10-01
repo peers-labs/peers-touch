@@ -321,9 +321,9 @@ for marker in \
   "CROSS_WORKTREE_WRITE_DENIED" \
   "OBSERVE_ONLY" \
   "CONTEXT_ANCHOR_REQUIRED" \
-  "releaseConversation"; do
+  "releaseWorkflowOwner"; do
   if ! grep -Fq "$marker" "$workflow_kernel"; then
-    fail "$workflow_kernel missing conversation-bound enforcement marker: $marker"
+    fail "$workflow_kernel missing owner-rooted enforcement marker: $marker"
   fi
 done
 

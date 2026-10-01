@@ -1,6 +1,6 @@
 # Owner-Rooted Workflow Binding Hard Cut
 
-> **Status**: prepared
+> **Status**: active
 > **Branch**: peers-dev-workflow
 > **Workspace ID**: dbd1913c8dd24d52
 > **Initial HEAD**: c8cca6796f5a6e0d632b1328319d2b794f6a5822
@@ -11,7 +11,7 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "DWF-OWNER-BINDING-HARD-CUT-20261001",
-  "status": "prepared",
+  "status": "active",
   "binding": {
     "branch": "peers-dev-workflow",
     "workspaceId": "dbd1913c8dd24d52",
@@ -146,7 +146,7 @@
       "workstreamId": "DWF-BINDING-CORE",
       "path": "tasks/DWF-BIND01-OWNER-CHILD-CUT.md",
       "dependsOn": [],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     },
     {
@@ -204,17 +204,23 @@
       "acceptance-workflow-contract"
     ],
     "binding-hard-cut-proof": [
+      "acceptance-workflow-contract",
       "development-workflow-control-plane",
-      "acceptance-workflow-contract"
+      "peers-dev-product",
+      "peers-dev-ui-browser-e2e"
     ]
   },
   "completion": [
     "acceptance-workflow-contract",
-    "development-workflow-control-plane"
+    "development-workflow-control-plane",
+    "peers-dev-product",
+    "peers-dev-ui-browser-e2e"
   ],
   "full": [
     "acceptance-workflow-contract",
-    "development-workflow-control-plane"
+    "development-workflow-control-plane",
+    "peers-dev-product",
+    "peers-dev-ui-browser-e2e"
   ]
 }
 ```

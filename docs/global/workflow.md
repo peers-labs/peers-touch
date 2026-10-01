@@ -55,6 +55,14 @@ Then select platform docs:
 When the user starts by saying which worktree to use, that worktree becomes the
 task's active worktree.
 
+The Workflow Kernel represents that authority as one canonical
+`BindingProjection`. One visible chat has one immutable `OWNER`; internal
+`WORKER` and `REVIEWER` sessions require create-once assignments with exact
+root/parent lineage and bounded leases. TRAE uses `chat_session_id` for OWNER
+and `session_id` only for execution-session identity. No host-field alias,
+legacy conversation record, process-global identity, or worktree-wide binding
+enumeration may select authority.
+
 Default rule:
 - All edits, generated files, staging, commits, and PR operations must stay
   inside the active worktree.
@@ -175,6 +183,12 @@ make completion-review-submit \
   ASSESSMENT=<owner-only-json-file>
 make dev-release WORK_ITEM=<stable-id>
 ```
+
+`completion-review-prepare` resolves the exact current OWNER Action Receipt and
+creates the REVIEWER assignment recorded by the immutable request.
+`completion-review-submit` accepts only a live child projection with that exact
+assignment. Stale, expired, terminal, unassigned, wrong-parent, and historical
+bindings never participate in selection.
 
 `make plan-advance` closes or parks a Task only after the required journal-backed
 Session and current Completion Review pass. `make plan-reopen` reopens the

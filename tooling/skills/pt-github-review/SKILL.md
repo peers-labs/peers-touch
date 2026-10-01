@@ -134,6 +134,10 @@ structure signals never decide the verdict by themselves.
 For Goal, execution-skill, or tracked-work workflow changes, additionally
 verify:
 
+- every status, handoff, worker result, and review verdict consumes the
+  current canonical `BindingProjection`; Completion Review uses the exact
+  OWNER command receipt and assigned live REVIEWER rather than enumerating
+  worktree bindings;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under
