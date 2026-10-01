@@ -52,6 +52,7 @@ tooling/scripts/local-dev/
 ├── workflow-binding-projection.test.mjs
 ├── workflow-binding-store.mjs
 ├── workflow-binding-store.test.mjs
+├── workflow-binding.mjs
 ├── workflow-doctor.mjs
 ├── workflow-host-adapters.mjs
 ├── workflow-kernel.mjs
@@ -150,6 +151,7 @@ tooling/scripts/
 | `workflow-host-adapters.mjs` | TRAE/Cursor/Codex event normalization and native response rendering; no cross-host identity aliases |
 | `workflow-binding-projection.mjs` | Pure host-specific root/execution identity projection plus role, lineage and subject/tool/target roots |
 | `workflow-binding-store.mjs` | Atomic OWNER binding, child assignment/claim/lease/terminal lifecycle, Anchor receipt and OWNER release |
+| `workflow-binding.mjs` | OWNER-authorized child assignment, terminalization, status, and hard-cut reset CLI |
 | `workflow-tool-intent.mjs` | Structured shell/tool intent parsing without regex command admission |
 | `workflow-anchor.mjs` | Deterministic Context Anchor rendering and response/transcript verification |
 | `workflow-state-inspector.mjs` | Read-only declaration, Plan binding, active-work, Session, Git and terminal-state validation |
