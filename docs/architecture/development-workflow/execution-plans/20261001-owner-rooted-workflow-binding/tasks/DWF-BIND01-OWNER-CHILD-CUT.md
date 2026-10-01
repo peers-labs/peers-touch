@@ -71,7 +71,7 @@
     },
     {
       "id": "binding-control-plane-proof",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate development-workflow-control-plane --gate acceptance-workflow-contract",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-infra-validation --gate acceptance-plan-self --gate acceptance-runtime-provisioning-self --gate development-workflow-control-plane --gate acceptance-workflow-contract",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
