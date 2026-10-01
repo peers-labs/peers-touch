@@ -1442,11 +1442,23 @@ export function readWorkflowProjectionByActor(actor, options = {}) {
   return readWorkflowBindingContextByActor(actor, options).projection;
 }
 
-function compactReceiptPath(owner, options = {}) {
-  return path.join(
-    ownerDirectory(owner.host, owner.rootChatHash, options),
-    'compact-lineage.json',
+function compactReceiptPath(owner, bindingDigest, options = {}, create = true) {
+  if (!SHA256.test(bindingDigest)) {
+    fail(
+      'WORKFLOW_COMPACT_RECEIPT_INVALID',
+      'Compact receipt binding digest is invalid',
+    );
+  }
+  const directory = path.join(
+    ownerDirectory(owner.host, owner.rootChatHash, options, create),
+    'compact-lineage',
   );
+  if (create) {
+    ensurePrivateDirectory(directory);
+  } else if (existsSync(directory)) {
+    assertPrivateDirectory(directory);
+  }
+  return path.join(directory, `${bindingDigest}.json`);
 }
 
 function compactLineage(projection) {
@@ -1500,7 +1512,14 @@ export function recordWorkflowPreCompact(projection, options = {}) {
   validateCompactReceipt(receipt, {
     rootBindingDigest: context.owner.digest,
   });
-  replaceCurrent(compactReceiptPath(context.owner, options), receipt);
+  replaceCurrent(
+    compactReceiptPath(
+      context.owner,
+      context.projection.bindingDigest,
+      options,
+    ),
+    receipt,
+  );
   return receipt;
 }
 
@@ -1515,7 +1534,12 @@ export function verifyWorkflowPostCompact(projection, options = {}) {
       { cause: error?.code ?? error?.message ?? String(error) },
     );
   }
-  const file = compactReceiptPath(context.owner, options);
+  const file = compactReceiptPath(
+    context.owner,
+    context.projection.bindingDigest,
+    options,
+    false,
+  );
   const receipt = validateCompactReceipt(
     readOwnedJson(file, 'WORKFLOW_COMPACT_RECEIPT_INVALID', true),
     { rootBindingDigest: context.owner.digest },

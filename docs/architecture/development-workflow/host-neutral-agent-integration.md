@@ -76,10 +76,11 @@ Completion Review selection.
 
 TRAE `SubagentStart` and `SubagentStop` are the lifecycle boundaries for
 assignment claim and terminalization. `PreCompact` records the current
-projection into one bounded machine receipt and `PostCompact` re-resolves and
-requires the same root, parent, assignment, Session, workspace, and execution
-root before restoring context. Task changes update only the projected
-Development Session identity; they do not create another OWNER.
+projection into a bounded receipt keyed by `bindingDigest`; concurrent lineage
+members never share that slot. `PostCompact` re-resolves the actor and requires
+the same root, parent, assignment, Session, workspace, and execution root before
+restoring context. Task changes update only the projected Development Session
+identity; they do not create another OWNER.
 
 Completion Review schema v2 uses only the `completion-reviews-v2` machine
 namespace. Pre-hard-cut review records remain untouched and are never loaded,

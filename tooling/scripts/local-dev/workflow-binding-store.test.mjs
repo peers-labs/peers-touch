@@ -563,6 +563,73 @@ test('PreCompact persists lineage and PostCompact rejects a changed binding', ()
   }
 });
 
+test('concurrent lineage compactions use independent receipts', () => {
+  const scope = fixture();
+  try {
+    seedActiveSession(scope);
+    const owner = bindWorkflowOwner('trae', 'visible-chat', scope.root, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:00.000Z'),
+    }).binding;
+    const assignment = createWorkflowBindingAssignment(
+      ownerProjection(owner),
+      {
+        assignmentId: 'reviewer-compact',
+        role: 'REVIEWER',
+        workflowSessionId: 'DEV-SESSION',
+        operationId: 'review-compact',
+        leaseUntil: '2026-10-01T00:10:00.000Z',
+      },
+      {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:01.000Z'),
+      },
+    ).assignment;
+    const child = claimWorkflowChild(
+      'trae',
+      'reviewer-compact-session',
+      owner,
+      assignment,
+      {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:02.000Z'),
+      },
+    ).binding;
+    const ownerView = ownerProjection(owner);
+    const childView = projectWorkflowBinding({
+      binding: child,
+      assignment,
+      now: new Date('2026-10-01T00:00:03.000Z'),
+    });
+
+    recordWorkflowPreCompact(ownerView, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:04.000Z'),
+    });
+    recordWorkflowPreCompact(childView, {
+      machineRoot: scope.machineRoot,
+      now: new Date('2026-10-01T00:00:05.000Z'),
+    });
+
+    assert.equal(
+      verifyWorkflowPostCompact(ownerView, {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:06.000Z'),
+      }).bindingDigest,
+      owner.digest,
+    );
+    assert.equal(
+      verifyWorkflowPostCompact(childView, {
+        machineRoot: scope.machineRoot,
+        now: new Date('2026-10-01T00:00:07.000Z'),
+      }).bindingDigest,
+      child.digest,
+    );
+  } finally {
+    scope.close();
+  }
+});
+
 test('unassigned TRAE internal session inherits OWNER instead of creating a peer', () => {
   const scope = fixture();
   try {
