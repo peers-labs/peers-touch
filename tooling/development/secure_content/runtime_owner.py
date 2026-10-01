@@ -582,6 +582,7 @@ class _W8ScenarioSpec:
     click_content: bool = False
     open_comments: bool = False
     absent_texts: tuple[str, ...] = ()
+    invalidated_fixture_ids: tuple[str, ...] = ()
 
 
 DESKTOP_CLIENTS = (
@@ -635,6 +636,7 @@ W8_SCENARIOS = (
             "secure-content-w8-delete-private-image",
             "secure-content-w8-block-private-text",
         ),
+        invalidated_fixture_ids=("local-mutual-friendship",),
     ),
     _W8ScenarioSpec(
         scenario_id="social-bounds",
@@ -1064,6 +1066,26 @@ def _prepare_accepted_friendship(
             "W7 Bob did not accept Alice's friend request",
             resource="fixture-account:mutual-friendship",
         )
+
+
+def _restore_w8_invalidated_fixtures(
+    spec: _W8ScenarioSpec,
+    clients: Mapping[str, FoundationRuntimeClient],
+) -> tuple[str, ...]:
+    restored: list[str] = []
+    for fixture_id in spec.invalidated_fixture_ids:
+        if fixture_id != "local-mutual-friendship":
+            raise RuntimeOwnerBlocked(
+                "FIXTURE_OWNER_UNAVAILABLE",
+                f"W8 scenario declared unknown invalidated fixture {fixture_id!r}",
+                resource=f"fixture:{fixture_id}",
+            )
+        _prepare_accepted_friendship(
+            clients[DESKTOP_CLIENTS[0][0]],
+            clients[DESKTOP_CLIENTS[1][0]],
+        )
+        restored.append(fixture_id)
+    return tuple(restored)
 
 
 def _authenticate_running_client(
@@ -7559,6 +7581,15 @@ class W7RuntimeOwner:
                         + str(result.get("resultDigest") or "")
                     ),
                 )
+                for fixture_id in _restore_w8_invalidated_fixtures(
+                    spec,
+                    clients,
+                ):
+                    ledger.record(
+                        SuiteRuntimeAction.FIXTURE_RESET,
+                        scenario_id=spec.scenario_id,
+                        resource_id=f"fixture:{fixture_id}",
+                    )
                 ledger.record(
                     SuiteRuntimeAction.SCENARIO_END,
                     scenario_id=spec.scenario_id,

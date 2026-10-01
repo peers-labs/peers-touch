@@ -39,6 +39,7 @@ from tooling.development.secure_content.platform_runtime import (
 from tooling.development.secure_content.run import RunnerError, ScenarioContext
 from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
+    DESKTOP_CLIENTS,
     REQUIRED_FIXTURE_CAPABILITIES,
     W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
@@ -73,6 +74,7 @@ from tooling.development.secure_content.runtime_owner import (
     _register_runtime_account,
     _require_mobile_private_runtime,
     _require_mobile_write_admission,
+    _restore_w8_invalidated_fixtures,
     _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
     _restart_lease,
@@ -207,6 +209,50 @@ class RuntimeOwnerTest(unittest.TestCase):
                 if spec.click_content
             },
         )
+        self.assertEqual(
+            {"social-delete-block": ("local-mutual-friendship",)},
+            {
+                spec.scenario_id: spec.invalidated_fixture_ids
+                for spec in W8_SCENARIOS
+                if spec.invalidated_fixture_ids
+            },
+        )
+
+    def test_w8_suite_restores_declared_shared_fixtures(self) -> None:
+        clients = {
+            DESKTOP_CLIENTS[0][0]: MagicMock(name="alice"),
+            DESKTOP_CLIENTS[1][0]: MagicMock(name="bob"),
+            DESKTOP_CLIENTS[2][0]: MagicMock(name="eve"),
+        }
+        delete_block = next(
+            spec
+            for spec in W8_SCENARIOS
+            if spec.scenario_id == "social-delete-block"
+        )
+        bounds = next(
+            spec
+            for spec in W8_SCENARIOS
+            if spec.scenario_id == "social-bounds"
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "_prepare_accepted_friendship"
+        ) as prepare:
+            self.assertEqual(
+                ("local-mutual-friendship",),
+                _restore_w8_invalidated_fixtures(delete_block, clients),
+            )
+            prepare.assert_called_once_with(
+                clients[DESKTOP_CLIENTS[0][0]],
+                clients[DESKTOP_CLIENTS[1][0]],
+            )
+            prepare.reset_mock()
+            self.assertEqual(
+                (),
+                _restore_w8_invalidated_fixtures(bounds, clients),
+            )
+            prepare.assert_not_called()
 
     def test_w8_suite_provisions_before_attach_only_scenario_loop(self) -> None:
         source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
@@ -237,6 +283,14 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertLess(
             execution_source.index("station_endpoints.refresh()"),
             execution_source.index("SuiteRuntimeAction.SCENARIO_START"),
+        )
+        self.assertLess(
+            execution_source.index("_receiver_ui_probe("),
+            execution_source.index("_restore_w8_invalidated_fixtures("),
+        )
+        self.assertLess(
+            execution_source.index("_restore_w8_invalidated_fixtures("),
+            execution_source.index("SuiteRuntimeAction.SCENARIO_END"),
         )
 
     def test_w8_suite_publishes_results_after_receiver_proof_and_cleanup(
