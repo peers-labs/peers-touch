@@ -78,6 +78,30 @@ for _ in $(seq 1 50); do
 done
 curl -fsS --max-time 1 http://127.0.0.1:8080/api/healthz >/dev/null
 
+for endpoint in \
+  api/healthz \
+  api/oauth/github/start \
+  api/oauth/github/callback \
+  api/admin \
+  api/admin/data; do
+  headers="$temporary/${endpoint//\//_}.method.headers"
+  status="$(curl -sS -o /dev/null -D "$headers" -w '%{http_code}' \
+    -X POST "http://127.0.0.1:8080/$endpoint")"
+  if [[ "$status" != "405" ]] ||
+    ! grep -Eiq '^Allow:[[:space:]]*GET\r?$' "$headers"; then
+    echo "non-GET request was not rejected by $endpoint" >&2
+    exit 1
+  fi
+done
+
+ambiguous_status="$(curl -sS -o "$temporary/ambiguous.json" -w '%{http_code}' \
+  'http://127.0.0.1:8080/api/oauth/github/callback?state=state&code=code&error=access_denied')"
+if [[ "$ambiguous_status" != "400" ]] ||
+  [[ "$(jq -r '.error' "$temporary/ambiguous.json")" != "invalid_callback_result" ]]; then
+  echo "ambiguous OAuth callback was not rejected" >&2
+  exit 1
+fi
+
 probe_start() {
   local provider="$1"
   local client_id="$2"
@@ -196,6 +220,8 @@ jq -n \
     envelope_count: $envelope_count,
     active_key: $active_key,
     pkce_method: "S256",
+    method_contract: "GET-only",
+    ambiguous_callback_rejected: true,
     plaintext_secrets: false,
     rotation_idempotent: true
   }'
