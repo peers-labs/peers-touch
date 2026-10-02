@@ -99,6 +99,65 @@ func TestNormalizeThinkingMode(t *testing.T) {
 	}
 }
 
+func TestProviderDispatchThinkingMode(t *testing.T) {
+	tests := []struct {
+		name               string
+		mode               domain.ThinkingMode
+		providerType       string
+		reasoningSupported bool
+		want               domain.ThinkingMode
+		wantError          bool
+	}{
+		{
+			name:         "auto remains provider neutral",
+			mode:         domain.ThinkingModeAuto,
+			providerType: providerTypeOpenAI,
+			want:         domain.ThinkingModeAuto,
+		},
+		{
+			name:         "disabled omits unsupported provider extension",
+			mode:         domain.ThinkingModeDisabled,
+			providerType: providerTypeOpenAI,
+			want:         domain.ThinkingModeAuto,
+		},
+		{
+			name:               "disabled uses advertised provider control",
+			mode:               domain.ThinkingModeDisabled,
+			providerType:       providerTypeOpenAI,
+			reasoningSupported: true,
+			want:               domain.ThinkingModeDisabled,
+		},
+		{
+			name:         "enabled requires reasoning capability",
+			mode:         domain.ThinkingModeEnabled,
+			providerType: providerTypeOpenAI,
+			wantError:    true,
+		},
+		{
+			name:               "enabled uses advertised provider control",
+			mode:               domain.ThinkingModeEnabled,
+			providerType:       providerTypeOpenAI,
+			reasoningSupported: true,
+			want:               domain.ThinkingModeEnabled,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := providerDispatchThinkingMode(
+				test.mode,
+				test.providerType,
+				test.reasoningSupported,
+			)
+			if (err != nil) != test.wantError {
+				t.Fatalf("error = %v, wantError = %v", err, test.wantError)
+			}
+			if got != test.want {
+				t.Fatalf("dispatch mode = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestProviderThinkingControlUsesCatalogModelCapability(t *testing.T) {
 	if got := providerThinkingControl("ark", "ep-20260623145021-n4xdm"); got != "ark" {
 		t.Fatalf("Ark endpoint thinking control = %q, want ark", got)

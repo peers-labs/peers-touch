@@ -80,6 +80,28 @@ func supportsExplicitThinkingMode(providerType string) bool {
 	return providerType == providerTypeOpenAI || providerType == providerTypeOllama
 }
 
+func providerDispatchThinkingMode(
+	mode domain.ThinkingMode,
+	providerType string,
+	reasoningSupported bool,
+) (domain.ThinkingMode, error) {
+	if mode == domain.ThinkingModeAuto {
+		return mode, nil
+	}
+	if supportsExplicitThinkingMode(providerType) && reasoningSupported {
+		return mode, nil
+	}
+	if mode == domain.ThinkingModeDisabled {
+		return domain.ThinkingModeAuto, nil
+	}
+	return "", errcode.New(
+		errcode.AgentInvalidRequest,
+		http.StatusBadRequest,
+		"explicit thinking mode is unsupported by the selected provider",
+		nil,
+	)
+}
+
 // #region debug-point A-E:ark-provider-request
 func reportArkProviderRequestDebug(
 	hypothesisID, stage, endpoint string,
@@ -511,14 +533,13 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 	if req.ExpectedCapabilitySourceVersion == "" {
 		reasoningSupported = providerThinkingControl(provider.Name, model) != ""
 	}
-	if thinkingMode != domain.ThinkingModeAuto &&
-		(!supportsExplicitThinkingMode(providerType) || !reasoningSupported) {
-		return nil, errcode.New(
-			errcode.AgentInvalidRequest,
-			http.StatusBadRequest,
-			"explicit thinking mode is unsupported by the selected provider",
-			nil,
-		)
+	dispatchThinkingMode, modeErr := providerDispatchThinkingMode(
+		thinkingMode,
+		providerType,
+		reasoningSupported,
+	)
+	if modeErr != nil {
+		return nil, modeErr
 	}
 
 	maxOutputTokens := req.MaxOutputTokens
@@ -563,7 +584,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 					model,
 					req.SystemPrompt,
 					req.Messages,
-					thinkingMode,
+					dispatchThinkingMode,
 					maxOutputTokens,
 					req.Tools,
 					req.DeltaSink,
@@ -615,7 +636,7 @@ func (s *ProviderService) Call(ctx context.Context, req *ProviderCallRequest) (*
 					req.SystemPrompt,
 					req.Messages,
 					req.Effort,
-					thinkingMode,
+					dispatchThinkingMode,
 					maxOutputTokens,
 					req.Tools,
 					req.DeltaSink,
