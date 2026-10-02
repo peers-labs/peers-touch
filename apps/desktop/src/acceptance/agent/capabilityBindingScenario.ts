@@ -43,7 +43,10 @@ export interface CapabilityBindingScenarioInput {
   primaryAccount: string;
   secondaryAccount: string;
   password: string;
+  clientCapabilitySessionId?: string;
 }
+
+export type CapabilitySessionIdResolver = () => Promise<string>;
 
 interface ScenarioResources {
   capabilityId: string;
@@ -142,6 +145,27 @@ function typedMutationError(error: unknown): AgentTypedErrorPayload {
   const typed = projectAgentTypedErrorPayload(error.details);
   if (!typed) throw error;
   return typed;
+}
+
+async function capabilityScenarioStep<T>(
+  stage: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    if (!(error instanceof RustCommandException)) throw error;
+    const detailCode = String(
+      error.details?.error_code
+      ?? error.details?.reason_code
+      ?? 'unknown',
+    );
+    throw new Error(
+      `agent.acceptance.capabilityScenarioCommandFailed:`
+      + `${stage}:${error.code}:${detailCode}:`
+      + `${error.message}:${stableJson(error.details ?? {})}`,
+    );
+  }
 }
 
 function issueTypedError(issue: CapabilityCatalogIssue): AgentTypedErrorPayload {
@@ -313,6 +337,7 @@ function crossDeviceRejected(
 
 export async function runCapabilityBindingScenario(
   input: CapabilityBindingScenarioInput,
+  resolveClientCapabilitySessionId?: CapabilitySessionIdResolver,
 ): Promise<Record<string, unknown>> {
   const startedAt = performance.now();
   const initialActor = useSessionStore.getState().currentUser?.actorPtid ?? '';
@@ -338,21 +363,29 @@ export async function runCapabilityBindingScenario(
   }
   const agentId = agent.id || agent.name;
   const priorSurface = useAgentStore.getState().getAgentSurface(agent.name);
-  const prepared = await api.prepareCapabilityAcceptanceScenario(create(
-    PrepareCapabilityAcceptanceScenarioRequestSchema,
-    {
-      runId: input.runId,
-      scenarioExecutionId: input.scenarioExecutionId,
-      cell: input.cell,
-      platform: input.platform,
-      locale: input.locale,
-      ordering: input.ordering,
-      sampleId: input.sampleId,
-      family: CapabilityAcceptanceScenarioFamily.BINDING_J02,
-      runtimeAttestationProfile:
-        CapabilityAcceptanceRuntimeProfile.STATION_CONTROL_PLANE,
-    },
-  ));
+  let clientCapabilitySessionId = input.clientCapabilitySessionId;
+  if (input.platform === 'desktop_app' && !clientCapabilitySessionId) {
+    throw new Error('agent.acceptance.capabilitySessionUnavailable');
+  }
+  let readinessInput = { clientCapabilitySessionId };
+  const prepared = await capabilityScenarioStep(
+    'prepare',
+    () => api.prepareCapabilityAcceptanceScenario(create(
+      PrepareCapabilityAcceptanceScenarioRequestSchema,
+      {
+        runId: input.runId,
+        scenarioExecutionId: input.scenarioExecutionId,
+        cell: input.cell,
+        platform: input.platform,
+        locale: input.locale,
+        ordering: input.ordering,
+        sampleId: input.sampleId,
+        family: CapabilityAcceptanceScenarioFamily.BINDING_J02,
+        runtimeAttestationProfile:
+          CapabilityAcceptanceRuntimeProfile.STATION_CONTROL_PLANE,
+      },
+    )),
+  );
   const resources = scenarioResources(prepared.opaqueResourceIds);
   const capabilityKey = `${encodeURIComponent(resources.capabilityId)}@`
     + encodeURIComponent(resources.requestedVersion);
@@ -366,15 +399,30 @@ export async function runCapabilityBindingScenario(
   > | null = null;
   let capture: Record<string, unknown> | null = null;
   let primaryError: unknown = null;
-  const tracesBefore = await api.listAgentTurnTraces(
-    agentId,
-    { page: 1, pageSize: 200 },
+  const tracesBefore = await capabilityScenarioStep(
+    'trace-before',
+    () => api.listAgentTurnTraces(
+      agentId,
+      { page: 1, pageSize: 200 },
+    ),
   );
 
   try {
-    await useAgentCapabilityStore.getState().loadCatalog();
-    await showCapabilitySurface(agent.name);
-    await useAgentCapabilityStore.getState().loadAgent(agentId);
+    await capabilityScenarioStep(
+      'catalog',
+      () => useAgentCapabilityStore.getState().loadCatalog(),
+    );
+    await capabilityScenarioStep(
+      'surface',
+      () => showCapabilitySurface(agent.name),
+    );
+    await capabilityScenarioStep(
+      'agent-readiness',
+      () => useAgentCapabilityStore.getState().loadAgent(
+        agentId,
+        readinessInput,
+      ),
+    );
 
     if (input.cell === 'ERR-CAT03') {
       const issue = useAgentCapabilityStore.getState().catalogIssues.find(
@@ -409,6 +457,7 @@ export async function runCapabilityBindingScenario(
         expectedAgentVersion: agent.version,
         expectedBindingRevision: 0n,
         idempotencyKey: crypto.randomUUID(),
+        ...readinessInput,
       };
       if (input.cell === 'TAX-02') {
         const mutation = useAgentCapabilityStore.getState().upsertBinding(intent);
@@ -461,6 +510,14 @@ export async function runCapabilityBindingScenario(
           typedError = typedMutationError(error);
         }
       }
+      if (typedError) {
+        await waitFor(
+          () => Boolean(visibleElement(
+            `[data-pt-agent-capability-error="${typedError?.error_type}"]`,
+          )),
+          'capability typed error surface',
+        );
+      }
       if (input.cell === 'TAX-05') {
         await api.releaseCapabilityAcceptanceBarrier(create(
           ReleaseCapabilityAcceptanceBarrierRequestSchema,
@@ -469,7 +526,10 @@ export async function runCapabilityBindingScenario(
             barrier: resources.barrier,
           },
         ));
-        await useAgentCapabilityStore.getState().loadAgent(agentId);
+        await useAgentCapabilityStore.getState().loadAgent(
+          agentId,
+          readinessInput,
+        );
       }
       if (input.cell === 'AS-11' && binding) {
         await useAgentCapabilityStore.getState().deleteBinding({
@@ -524,6 +584,13 @@ export async function runCapabilityBindingScenario(
           input.primaryAccount,
           input.password,
         );
+        if (input.platform === 'desktop_app') {
+          if (!resolveClientCapabilitySessionId) {
+            throw new Error('agent.acceptance.capabilitySessionResolverUnavailable');
+          }
+          clientCapabilitySessionId = await resolveClientCapabilitySessionId();
+          readinessInput = { clientCapabilitySessionId };
+        }
         actorIsolation = {
           secondaryActorHash: await sha256Hex(secondaryActor),
           primaryActorRestored: restoredActor === initialActor,
@@ -531,13 +598,20 @@ export async function runCapabilityBindingScenario(
         };
         await useAgentStore.getState().loadAgents();
         await showCapabilitySurface(agent.name);
-        await useAgentCapabilityStore.getState().loadAgent(agentId);
+        await useAgentCapabilityStore.getState().loadAgent(
+          agentId,
+          readinessInput,
+        );
       }
     }
 
-    const readiness = await api.readAgentCapabilityReadiness({
-      agent_id: agentId,
-    });
+    const readiness = await capabilityScenarioStep(
+      'readiness',
+      () => api.readAgentCapabilityReadiness({
+        agent_id: agentId,
+        client_capability_session_id: clientCapabilitySessionId,
+      }),
+    );
     const state = readinessState(
       readiness,
       resources.capabilityId,
@@ -570,14 +644,6 @@ export async function runCapabilityBindingScenario(
       )
     ) {
       throw new Error('agent.acceptance.capabilityScenarioIsolationFailed');
-    }
-    if (typedError) {
-      await waitFor(
-        () => Boolean(visibleElement(
-          `[data-pt-agent-capability-error="${typedError?.error_type}"]`,
-        )),
-        'capability typed error surface',
-      );
     }
     const tracesAfter = await api.listAgentTurnTraces(
       agentId,

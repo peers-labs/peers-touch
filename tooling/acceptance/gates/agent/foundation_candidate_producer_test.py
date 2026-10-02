@@ -220,6 +220,9 @@ def _runtime_attestation(
     ):
         del payload["toolCallBinding"]
         payload["clientSession"]["capabilities"] = []
+    elif runtime_tuple.runtime_attestation_profile == "station_turn":
+        del payload["toolCallBinding"]
+        del payload["clientSession"]
     return FoundationRuntimeAttestation(
         runtime_tuple.runtime_attestation_profile,
         payload,
@@ -381,10 +384,18 @@ class FoundationCandidateProducerTest(unittest.TestCase):
         expected = Counter(
             {
                 "desktop_native": sum(
-                    item.row == "foundation-desktop-direct" for item in tuples
+                    item.row in {
+                        "foundation-desktop-direct",
+                        "foundation-z-desktop-external-runtime",
+                    }
+                    for item in tuples
                 ),
                 "browser": sum(
-                    item.row == "foundation-browser-direct" for item in tuples
+                    item.row in {
+                        "foundation-browser-direct",
+                        "foundation-z-browser-external-runtime",
+                    }
+                    for item in tuples
                 ),
                 "mobile_contract": sum(
                     item.row == "foundation-mobile-contract" for item in tuples
@@ -401,8 +412,9 @@ class FoundationCandidateProducerTest(unittest.TestCase):
             Counter(item.runtime_attestation_profile for item in tuples),
             Counter(
                 {
-                    "direct_runtime": 197,
-                    "direct_runtime_no_local_capability": 197,
+                    "direct_runtime": 195,
+                    "direct_runtime_no_local_capability": 195,
+                    "station_turn": 4,
                     "contract_only": 15,
                     "orchestration_guard": 2,
                     "non_advertised": 8,
@@ -443,8 +455,9 @@ class FoundationCandidateProducerTest(unittest.TestCase):
                     ),
                     Counter(
                         {
-                            "direct_runtime": 197,
-                            "direct_runtime_no_local_capability": 197,
+                            "direct_runtime": 195,
+                            "direct_runtime_no_local_capability": 195,
+                            "station_turn": 4,
                             "contract_only": 15,
                             "orchestration_guard": 2,
                             "non_advertised": 8,

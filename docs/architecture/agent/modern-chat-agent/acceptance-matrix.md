@@ -1,8 +1,8 @@
 # Modern Chat Agent — Product Acceptance Matrix
 
 > **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -40,7 +40,7 @@ required by that row all pass.
 | MCA-P09 Capability transparency | B13-B16 | J01/J05/J06/J09 | MCA-C03/C06/C10; D02/D05/D13 | Runtime selector, trust/recovery notice | Unsupported tools, files, reasoning, or device work are disclosed before commitment | Capability snapshot and zero provider/tool execution on rejection |
 | MCA-P10 Usage/feedback/diagnostics | B17-B18 | J04/J09 | MCA-C09; D10 | Usage/source/diagnostic inspector | I can rate and inspect the exact turn without exposing secrets | Feedback readback, usage facts, redacted replay export |
 | MCA-P11 Client portability | B08, B16 | all required journeys; platform matrix | MCA-C10; D01/D05/D07/D13 | Desktop now; narrow/mobile contract states | Core outcomes remain coherent while unsupported local abilities are explicit | Desktop App/browser cells plus Mobile contract tests |
-| MCA-P12 External Agent runtime | B14-B16 | J10 | MCA-C03/C05/C07; D02/D03/D05/D07/D09 | Runtime/device/workspace controls, activity blocks | An advertised runtime resumes safely and explains reset/device constraints | Two-topic isolation, resume/reset, process cleanup, structured activity |
+| MCA-P12 External Agent runtime | B14-B16 | J10 and external-runtime lifecycle | MCA-C03/C05/C07; D02/D03/D05/D07/D09/D29 | Runtime/workspace context, structured activity, reset confirmation | An advertised runtime resumes the same topic-owned session across restart; unavailable resume requires confirmation before reset | Two-topic isolation, session/epoch readback, restart resume, typed resume failure, confirmed reset, idempotent replay, process/session/home cleanup |
 | MCA-P13 Artifacts | B19-B20 | separate optional journey required | Attachment/artifact architecture extension | Existing parity prototype artifact surface | Advertised artifacts are durable, previewable, iterative, and exportable | Not yet defined; cannot be advertised |
 | MCA-V2-H01 Home Command Center | B23 | V2-J01; Home FSM | MCA-C11; D14; A15 | V2 Home review surface | I can resume Chat/Task work with accurate readiness, recents, Brief/Needs You, task, and capability state | Native Chat/Task submit, Station topic/task/readback, restart, stale/error/retry |
 | MCA-V2-T01 / MCA-V2-T02 / MCA-V2-T03 Capability inventory/binding/compatibility | B24, B10, B16 | V2-J02; capability readiness FSM | MCA-C12; D15; A16 | V2 Capability review surface | I can tell what the Agent can use and bind it only after authoritative compatibility/readiness | Manifest/binding readback and compatibility rejection |
@@ -79,7 +79,7 @@ Prototype evidence cannot change them to `PROVEN`.
 | MCA-P09 | Choose a non-vision model, attach image, observe blocked/degraded notice | Provider/model metadata and runtime selection foundations | Authoritative capability snapshot and pre-admission resolver | Assert visible rejection/degradation and prove zero provider/tool execution for the unsupported request |
 | MCA-P10 | Open turn details, inspect usage/sources, submit thumbs-down, export diagnostics | TurnTrace, growth/review services, usage foundations | Unified immutable usage/feedback/export contract | Submit feedback, reload, verify readback; export and check turn reconstruction plus secret redaction |
 | MCA-P11 | Run the core flow in App/browser; evaluate Mobile contract with no shell capability | Desktop and Mobile Tauri kernels; shared proto roots | Shared client capability/session contract and Mobile adapter | Contract tests prove same core commands/events; Mobile advertises no shell/stdio MCP and rejects them before send |
-| MCA-P12 | Select advertised external runtime and workspace, send follow-up, restart, resume/reset | Station CLI foundation; conversation runtime design; Desktop activity blocks | Stateful runtime manager, topic-owned session/home, cleanup | Two topics use distinct runtime homes/session IDs; restart resumes each; explicit reset rotates epoch and cleans process |
+| MCA-P12 | Select advertised external runtime and workspace, send follow-up, restart, force resume failure, confirm reset, send again | Runtime binding proto/persistence, Station CLI process supervision, runtime activity snapshots, Desktop recovery actions | Session CLI manager, durable reset command/fence, external binding state, typed resume failure, client confirmation path, Foundation adapter | Two topics use distinct homes/session IDs; restart resumes the same session; reset leaves the old epoch unchanged before confirmation, then rotates epoch and cleans process/session/home exactly once |
 | MCA-P13 | Generate substantial output, open preview, refine, export | Existing parity prototype artifact surface only | Accepted journey, durable owner/storage, sandbox/export contract | `UNPROVEN`: no production proof may be defined until product and architecture amendments are accepted |
 | MCA-V2-H01 | Select Agent/model, submit Chat and Task, open Brief/Needs You, restart Home | Existing Home pinned/recent UI, Station topics/tasks, readiness and connector foundations | Runtime-owned Home projection, Chat/Task handoff, authoritative recents/Brief/capability recovery | Native Home scenario with Station topic/task readback before and after restart |
 | MCA-V2-T01 / MCA-V2-T02 / MCA-V2-T03 | Inspect inventory, bind capability, and reject incompatible model/runtime | Tool registry, Agent config, connector/MCP stores | One manifest/binding/policy source and compatibility snapshot | Bind/read back and reject incompatible model before execution |
@@ -102,7 +102,8 @@ Feasibility status:
 |---|---|
 | Desktop App + Direct Model | All P01-P11 and all required MCA-V2 rows |
 | Browser gateway + Direct Model | P01-P10 and required MCA-V2 Station-backed outcomes except unavailable device-local operations |
-| Desktop App + external Agent | P12 only when advertised |
+| Desktop App + external Agent | P12 create/resume/restart/reset/activity/cleanup when the Station profile advertises a healthy session adapter |
+| Browser gateway + external Agent | P12 Station-backed outcome and reset confirmation; Browser owns no external process or runtime home |
 | Future Mobile contract | P01-P11 and MCA-V2 semantic contract compatibility; no Mobile UI delivery claim |
 | Two actors | P01-P10 isolation and no credential/resource leakage |
 | Two devices | Config conflict, capability target selection, replay, and resource isolation |

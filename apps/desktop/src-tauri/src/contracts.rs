@@ -1182,6 +1182,14 @@ pub struct AgentConversationRestoreInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentConversationRuntimeResetInput {
+    pub conversation_id: String,
+    pub expected_conversation_version: u64,
+    pub client_idempotency_key: String,
+    pub destructive_confirmed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentRetryTurnInput {
     pub conversation_id: String,
     pub source_turn_id: String,

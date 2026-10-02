@@ -1060,7 +1060,7 @@ test('enforces manifest, task, snapshot, and history bounds', async (t) => {
 
 test('renderPlanDocument falls back to bounded compact JSON for a large manifest', () => {
   const manifest = manifestForStatus('prepared');
-  manifest.tasks = Array.from({ length: 20 }, (_, index) =>
+  manifest.tasks = Array.from({ length: 40 }, (_, index) =>
     taskEntry(`task-${index}`, `W${index}`, [], 'pending'),
   );
   const acceptance = acceptanceForTasks(manifest.tasks);
@@ -1070,8 +1070,21 @@ test('renderPlanDocument falls back to bounded compact JSON for a large manifest
   );
 
   const rendered = renderPlanDocument(compactSource, manifest);
-  assert.ok(rendered.split('\n').length <= 300);
-  assert.ok(rendered.includes(JSON.stringify(manifest.tasks[19])));
+  const manifestBlock = rendered.match(
+    /## Plan Package\n\n```json\n([\s\S]*?)\n```/,
+  )[1];
+  assert.ok(manifestBlock.split('\n').length <= 300);
+  assert.ok(rendered.includes(JSON.stringify(manifest.tasks[39])));
+});
+
+test('renderPlanDocument applies manifest bounds only to the manifest block', () => {
+  const manifest = manifestForStatus('prepared');
+  const acceptance = acceptanceForTasks(manifest.tasks);
+  const surroundingContent = 'x'.repeat(21 * 1024);
+  const source = `${planMarkdown(manifest, acceptance)}\n${surroundingContent}\n`;
+
+  const rendered = renderPlanDocument(source, manifest);
+  assert.ok(rendered.endsWith(`${surroundingContent}\n`));
 });
 
 test('renderPlanDocument removes obsolete sibling worktree metadata', () => {

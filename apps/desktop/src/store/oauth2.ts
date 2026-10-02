@@ -67,6 +67,7 @@ interface OAuth2Store {
     id: string,
     environment?: string,
     purpose?: 'account_login' | 'connector_link',
+    options?: OAuth2StartAuthOptions,
   ) => Promise<AccessDecision | null>;
   completeAccountLogin: () => Promise<AccessDecision | null>;
   cancelAccountLogin: () => Promise<'cancelled' | 'completed' | null>;
@@ -123,7 +124,8 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
     return loadAllPromise;
   },
 
-  startAuth: async (id, environment, purpose = 'connector_link') => {
+  startAuth: async (id, environment, purpose = 'connector_link', options) => {
+    throwIfCancelled(options?.signal);
     set({
       completedLoopbackSessionId: null,
       pendingLoopbackSessionId: null,
@@ -135,13 +137,32 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
       expires_in_ms,
     } = await api.oauth2StartLoopback(id, environment, purpose);
     const expiresAt = Date.now() + expires_in_ms;
-    await api.openExternalUrl(auth_url);
+    options?.onLoopbackStarted?.({
+      authUrl: auth_url,
+      sessionId: session_id,
+    });
+    if (options?.signal?.aborted) {
+      await cancelLoopbackSession(session_id);
+      throw oauthAuthorizationCancelled();
+    }
+    try {
+      await (options?.openAuthorizationUrl ?? api.openExternalUrl)(auth_url);
+    } catch (error) {
+      await cancelLoopbackSession(session_id);
+      throwIfCancelled(options?.signal);
+      throw error;
+    }
+    if (options?.signal?.aborted) {
+      await cancelLoopbackSession(session_id);
+      throw oauthAuthorizationCancelled();
+    }
+    options?.onBrowserOpened?.();
     return new Promise<AccessDecision | null>((resolve, reject) => {
       let settled = false;
       let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
       let poller: ReturnType<typeof setInterval> | undefined;
       const finish = async (
-        errorMessage?: string,
+        error?: Error,
         decision: AccessDecision | null = null,
         cancelNative = false,
       ) => {
@@ -158,22 +179,33 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
                 pendingLoopbackSessionId: null,
                 pendingLoopbackExpiresAt: null,
               });
-              errorMessage = undefined;
+              error = undefined;
             }
-          } catch (error) {
-            const detail = error instanceof Error ? error.message : String(error);
-            errorMessage = `${errorMessage || 'oauth authorization failed'}; ${detail}`;
+          } catch (cancellationError) {
+            const detail = cancellationError instanceof Error
+              ? cancellationError.message
+              : String(cancellationError);
+            error = new Error(`${error?.message || 'oauth authorization failed'}; ${detail}`);
           }
         }
+        options?.signal?.removeEventListener('abort', handleAbort);
         if (purpose === 'connector_link') {
           await get().loadAll();
         }
 
-        if (errorMessage) {
-          reject(new Error(errorMessage));
+        if (error) {
+          reject(error);
           return;
         }
         resolve(decision);
+      };
+      const handleAbort = () => {
+        void cancelLoopbackSession(session_id).then(
+          () => finish(oauthAuthorizationCancelled()),
+          error => finish(
+            error instanceof Error ? error : oauthAuthorizationCancelled(),
+          ),
+        );
       };
       poller = setInterval(async () => {
         try {
@@ -181,7 +213,7 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
           if (polled.completed) {
             if (polled.status === 'action_required') {
               if (!polled.access_decision) {
-                void finish('oauth access decision is unavailable');
+                void finish(new Error('oauth access decision is unavailable'));
                 return;
               }
               set({
@@ -199,7 +231,7 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
                 pendingLoopbackExpiresAt: null,
               });
             }
-            void finish(pollError);
+            void finish(pollError ? new Error(pollError) : undefined);
           }
         } catch (error) {
           set({
@@ -208,8 +240,10 @@ export const useOAuth2Store = createDesktopStore<OAuth2Store>('oauth2', (set, ge
         }
       }, LOOPBACK_POLL_INTERVAL_MS);
       timeoutTimer = setTimeout(() => {
-        void finish('oauth authorization timeout', null, true);
+        void finish(new Error('oauth authorization timeout'), null, true);
       }, expires_in_ms);
+      options?.signal?.addEventListener('abort', handleAbort, { once: true });
+      if (options?.signal?.aborted) handleAbort();
     });
   },
 

@@ -1,4 +1,5 @@
 import { identityRuntime } from '../../kernel/identityRuntime';
+import type { AccessDecision } from '../../services/accessGate';
 import { api } from '../../services/desktop_api';
 import { useOAuth2Store } from '../../store/oauth2';
 import { useSessionStore } from '../../store/session';
@@ -29,7 +30,7 @@ interface OAuthLoopbackStart {
 }
 
 let pendingOAuthLogin:
-  | { providerId: string; flow: Promise<void> }
+  | { providerId: string; flow: Promise<AccessDecision | null> }
   | null = null;
 
 function identityState(): ChatIdentityLoginState & { actorPtid: string } {
@@ -115,10 +116,15 @@ export function installAcceptanceHarness(): void {
         resolveStart = resolve;
         rejectStart = reject;
       });
-      const flow = useOAuth2Store.getState().startAuth(providerId, undefined, {
-        onLoopbackStarted: resolveStart,
-        openAuthorizationUrl: async () => {},
-      });
+      const flow = useOAuth2Store.getState().startAuth(
+        providerId,
+        undefined,
+        'account_login',
+        {
+          onLoopbackStarted: resolveStart,
+          openAuthorizationUrl: async () => {},
+        },
+      );
       flow.catch(rejectStart);
       pendingOAuthLogin = { providerId, flow };
       try {

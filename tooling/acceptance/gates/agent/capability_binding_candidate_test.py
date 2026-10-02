@@ -20,6 +20,7 @@ from tooling.acceptance.gates.agent.agent_v2_candidate_producer import (
     load_gate_tuples,
 )
 from tooling.acceptance.gates.agent.capability_binding_candidate import (
+    ACTOR_ACCOUNT,
     CapabilityBindingCandidateProducer,
     CapabilityBindingMobileAdapter,
     CapabilityBindingRetirementAdapter,
@@ -198,6 +199,60 @@ class RecordingAdapter:
 
 
 class CapabilityBindingCandidateTest(unittest.TestCase):
+    def test_typed_error_receiver_is_asserted_before_readback(self) -> None:
+        scenario = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/capabilityBindingScenario.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertLess(
+            scenario.index("if (typedError) {"),
+            scenario.index("const readiness = await capabilityScenarioStep("),
+        )
+
+    def test_native_scenario_supplies_capability_session_to_readiness(self) -> None:
+        scenario = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/capabilityBindingScenario.ts"
+        ).read_text(encoding="utf-8")
+        harness = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/harness.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "input.platform !== 'desktop_app'",
+            harness,
+        )
+        self.assertIn(
+            "clientCapabilitySessionId,",
+            harness,
+        )
+        self.assertIn(
+            "}, resolveClientCapabilitySessionId);",
+            harness,
+        )
+        self.assertIn(
+            "() => useAgentCapabilityStore.getState().loadAgent(",
+            scenario,
+        )
+        self.assertIn(
+            "client_capability_session_id: clientCapabilitySessionId",
+            scenario,
+        )
+        self.assertIn(
+            "clientCapabilitySessionId = await resolveClientCapabilitySessionId();",
+            scenario,
+        )
+        self.assertIn(
+            "readinessInput = { clientCapabilitySessionId };",
+            scenario,
+        )
+        self.assertIn(
+            "'capability binding cleanup Agent session surface'",
+            harness,
+        )
+
     def test_deploys_station_with_run_scoped_scenario_control(self) -> None:
         completed = subprocess.CompletedProcess(
             args=["make", "station"],
@@ -261,6 +316,8 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
                     }
                 if method == "getAcceptanceHarnessStatus":
                     return {"ready": True}
+                if method == "navigateToAgent":
+                    return {"navigated": True}
                 if method == "prepareCapabilityBindingCandidate":
                     return {
                         "agentId": "agent-candidate",
@@ -306,7 +363,10 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
         browser = Client("browser")
         adapter = CapabilityBindingRuntimeAdapter(
             SimpleNamespace(native=native, browser=browser),
-            {"CHAT_NATIVE_DEMO_PASSWORD": "fixture-password"},
+            {
+                "CHAT_NATIVE_DEMO_PASSWORD": "fixture-password",
+                "PT_DEV_PROFILE": "two",
+            },
             "run-1",
         )
 
@@ -322,6 +382,12 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
             if method == "runCapabilityBindingScenario"
         )
         self.assertEqual(scenario_call["agentName"], "candidate-agent")
+        login_accounts = [
+            payload["account"]
+            for method, payload in native.calls + browser.calls
+            if method == "loginWithPassword"
+        ]
+        self.assertEqual(login_accounts, [ACTOR_ACCOUNT, ACTOR_ACCOUNT])
         self.assertTrue(any(
             method == "cleanupCapabilityBindingCandidate"
             for method, _ in native.calls

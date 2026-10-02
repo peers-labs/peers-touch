@@ -17,6 +17,7 @@ const (
 	AgentUnauthorized                     Code = "AGENT_4002"
 	AgentNotFound                         Code = "AGENT_4004"
 	AgentVersionConflict                  Code = "AGENT_4009"
+	AgentNameConflict                     Code = "AGENT_NAME_CONFLICT"
 	AgentIdempotencyConflict              Code = "IDEMPOTENCY_CONFLICT"
 	AgentInvalidSourceState               Code = "INVALID_SOURCE_STATE"
 	AgentActiveDependency                 Code = "ACTIVE_DEPENDENCY"
@@ -24,6 +25,7 @@ const (
 	AgentQueueFull                        Code = "ADMISSION_QUEUE_FULL"
 	AgentAttachmentRejected               Code = "CONTEXT_ATTACHMENT_REJECTED"
 	AgentRuntimeUnavailable               Code = "RUNTIME_UNAVAILABLE"
+	AgentRuntimeResumeUnavailable         Code = "RUNTIME_RESUME_UNAVAILABLE"
 	AgentRuntimeIncompatibleCapability    Code = "RUNTIME_INCOMPATIBLE_CAPABILITY"
 	AgentCapabilityManifestNotFound       Code = "CAPABILITY_MANIFEST_NOT_FOUND"
 	AgentCapabilityManifestVersionStale   Code = "CAPABILITY_MANIFEST_VERSION_STALE"
@@ -67,12 +69,14 @@ const (
 	AgentCanvasSingleAgentNotReady  Code = "AGENT_CANVAS_SINGLE_AGENT_NOT_READY"
 
 	AgentAdmissionDuplicateConflictLocaleKey       = "agent.errors.duplicateConflict"
+	AgentNameConflictLocaleKey                     = "agent.errors.nameConflict"
 	AgentCanvasSingleAgentNotReadyLocaleKey        = "agent.errors.canvasSingleAgentNotReady"
 	AgentCanvasSingleAgentNotReadyRequiredGate     = "agent-v2-kernel-foundation-e2e"
 	AgentQueueFullLocaleKey                        = "agent.errors.queueFull"
 	AgentOwnershipForbiddenActorLocaleKey          = "agent.errors.forbiddenActor"
 	AgentAttachmentRejectedLocaleKey               = "agent.errors.attachmentRejected"
 	AgentRuntimeUnavailableLocaleKey               = "agent.errors.runtimeUnavailable"
+	AgentRuntimeResumeUnavailableLocaleKey         = "agent.errors.resumeUnavailable"
 	AgentRuntimeIncompatibleCapabilityLocaleKey    = "agent.errors.incompatibleCapability"
 	AgentCapabilityManifestNotFoundLocaleKey       = "agent.errors.capabilityManifestNotFound"
 	AgentCapabilityManifestVersionStaleLocaleKey   = "agent.errors.capabilityManifestVersionStale"
@@ -154,6 +158,21 @@ func NewCanvasSingleAgentNotReady() *BizError {
 	}
 }
 
+func NewAgentNameConflict() *BizError {
+	return &BizError{
+		Code:       AgentNameConflict,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentNameConflictLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentNameConflictLocaleKey,
+			ErrorType: string(AgentNameConflict),
+			LocaleKey: AgentNameConflictLocaleKey,
+			Retryable: false,
+			Terminal:  true,
+		},
+	}
+}
+
 func NewOwnershipForbiddenActor(resourceKind, resourceID string) *BizError {
 	return &BizError{
 		Code:       AgentOwnershipForbiddenActor,
@@ -225,6 +244,25 @@ func NewRuntimeUnavailable(runtimeKind, reasonCode string) *BizError {
 			Details: map[string]string{
 				"runtime_kind": runtimeKind,
 				"reason_code":  reasonCode,
+			},
+		},
+	}
+}
+
+func NewRuntimeResumeUnavailable(runtimeProfileID, reasonCode string) *BizError {
+	return &BizError{
+		Code:       AgentRuntimeResumeUnavailable,
+		HTTPStatus: http.StatusConflict,
+		Message:    AgentRuntimeResumeUnavailableLocaleKey,
+		Payload: &model.ErrorPayload{
+			Error:     AgentRuntimeResumeUnavailableLocaleKey,
+			ErrorType: string(AgentRuntimeResumeUnavailable),
+			LocaleKey: AgentRuntimeResumeUnavailableLocaleKey,
+			Retryable: true,
+			Terminal:  true,
+			Details: map[string]string{
+				"runtime_profile_id": runtimeProfileID,
+				"reason_code":        reasonCode,
 			},
 		},
 	}

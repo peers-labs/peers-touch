@@ -22,16 +22,21 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import math
 import os
 import re
+import secrets
+import shlex
 import sys
+import threading
 import time
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +50,8 @@ from tooling.acceptance.core import (
     source_identity,
 )
 from tooling.acceptance.core.provisioner import (
-    PROFILE_SECRET_ENV_OVERRIDES,
+    PROFILE_ENV_OVERRIDES,
+    load_env_file,
     resolve_machine_profile_environment,
 )
 from tooling.acceptance.core.redaction import (
@@ -58,6 +64,10 @@ from tooling.acceptance.gates.agent.foundation_candidate_producer import (
     FoundationCandidateProducer,
     load_foundation_tuples,
 )
+from tooling.acceptance.gates.agent.external_runtime_fixture import (
+    external_runtime_environment,
+    external_runtime_root,
+)
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeFoundationAdapter,
     DirectRuntimeProbeInput,
@@ -65,6 +75,10 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     assert_group_one_capture,
     group_one_tuples,
+)
+from tooling.acceptance.gates.agent.foundation_group_one_scenarios import (
+    evaluate_base_queue_full,
+    evaluate_base_rate_limit,
 )
 from tooling.acceptance.gates.agent.foundation_station_restart import (
     restart_foundation_station,
@@ -84,6 +98,10 @@ from tooling.acceptance.gates.agent.foundation_runtime_client import (
     FoundationRuntimeClient,
     FoundationRuntimePair,
 )
+from tooling.acceptance.transports import SshTarget, SshTransport, SshTunnel
+from tooling.acceptance.provisioners.remote_source_identity import (
+    reviewed_remote_transport,
+)
 
 
 class ScenarioRunnerError(RuntimeError):
@@ -91,13 +109,10 @@ class ScenarioRunnerError(RuntimeError):
 
 
 FOUNDATION_PROFILE_ENV_OVERRIDES = (
-    "PT_AGENT_PROVIDER_ID",
-    *PROFILE_SECRET_ENV_OVERRIDES,
-    "PT_AGENT_DEFAULT_MODEL_ID",
+    *PROFILE_ENV_OVERRIDES,
     "PT_AGENT_DEFAULT_MODEL_NAME",
     "PT_AGENT_DEFAULT_MODEL_CONTEXT_WINDOW",
     "PT_AGENT_DEFAULT_MODEL_CAPABILITIES",
-    "PT_AGENT_PROVIDER_BASE_URL",
 )
 
 
@@ -219,10 +234,513 @@ DIRECT_PROBE_TIMEOUT_SECONDS = {
     "BASE-APPROVAL_EXPIRED": 1200,
     "BASE-LOOP_BUDGET_EXHAUSTED": 660,
     "BASE-MODEL_UNAVAILABLE": 300,
+    "BASE-RATE_LIMIT": 300,
 }
 LEASE_EXPIRED_DISPATCH_WINDOW_MS = 90_000
 LEASE_EXPIRED_MINIMUM_DISPATCH_LEAD_MS = 15_000
 F12_PREPARE_TIMEOUT_SECONDS = 900
+# AS-F12 emits six provider turns; clear a full quota window before the next tuple.
+F12_PROVIDER_COOLDOWN_SECONDS = 65
+PROVIDER_RATE_LIMIT_MARKERS = (
+    "agent.errors.providerRateLimit",
+    "PROVIDER_RATE_LIMIT",
+)
+RATE_LIMIT_RETRY_AFTER_SECONDS = 2
+RATE_LIMIT_MAX_REQUEST_BYTES = 1_048_576
+
+RATE_LIMIT_REMOTE_TCP_BRIDGE = r"""
+import selectors
+import socket
+import socketserver
+import sys
+
+bind_host = sys.argv[1]
+listen_port = int(sys.argv[2])
+target_port = int(sys.argv[3])
+
+class Handler(socketserver.BaseRequestHandler):
+    def handle(self):
+        upstream = socket.create_connection(("127.0.0.1", target_port), 5)
+        try:
+            self.request.setblocking(False)
+            upstream.setblocking(False)
+            selector = selectors.DefaultSelector()
+            selector.register(self.request, selectors.EVENT_READ, upstream)
+            selector.register(upstream, selectors.EVENT_READ, self.request)
+            try:
+                while True:
+                    events = selector.select(timeout=30)
+                    if not events:
+                        continue
+                    for key, _ in events:
+                        data = key.fileobj.recv(65536)
+                        if not data:
+                            return
+                        key.data.sendall(data)
+            finally:
+                selector.close()
+        finally:
+            upstream.close()
+
+class Server(socketserver.ThreadingTCPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+Server((bind_host, listen_port), Handler).serve_forever()
+""".strip()
+
+
+class _RateLimitProviderServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def __init__(self, api_key: str) -> None:
+        super().__init__(("127.0.0.1", 0), _RateLimitProviderHandler)
+        self.api_key = api_key
+        self.request_lock = threading.Lock()
+        self.requests: list[dict[str, Any]] = []
+
+    def record_request(self, request: dict[str, Any]) -> None:
+        with self.request_lock:
+            self.requests.append(request)
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        with self.request_lock:
+            return [dict(request) for request in self.requests]
+
+
+class _RateLimitProviderHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+
+    @property
+    def fixture(self) -> _RateLimitProviderServer:
+        return self.server  # type: ignore[return-value]
+
+    def log_message(self, _format: str, *_args: object) -> None:
+        return
+
+    def do_POST(self) -> None:
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_error(400)
+            return
+        if content_length <= 0 or content_length > RATE_LIMIT_MAX_REQUEST_BYTES:
+            self.send_error(413)
+            return
+        try:
+            payload = json.loads(self.rfile.read(content_length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_error(400)
+            return
+        if not isinstance(payload, Mapping):
+            self.send_error(400)
+            return
+
+        authorization_present = (
+            self.headers.get("Authorization")
+            == f"Bearer {self.fixture.api_key}"
+        )
+        accepted = (
+            self.path == "/v1/chat/completions"
+            and payload.get("stream") is True
+            and authorization_present
+        )
+        self.fixture.record_request(
+            {
+                "path": self.path,
+                "stream": payload.get("stream") is True,
+                "model": str(payload.get("model") or ""),
+                "authorizationPresent": authorization_present,
+                "statusCode": 429 if accepted else 422,
+                "retryAfter": (
+                    str(RATE_LIMIT_RETRY_AFTER_SECONDS) if accepted else ""
+                ),
+            }
+        )
+        if not accepted:
+            self.send_error(422)
+            return
+
+        encoded = json.dumps(
+            {
+                "error": {
+                    "code": "rate_limit_exceeded",
+                    "message": "rate limit exceeded",
+                    "type": "rate_limit_error",
+                }
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.send_response(429)
+        self.send_header("Content-Type", "application/json")
+        self.send_header(
+            "Retry-After",
+            str(RATE_LIMIT_RETRY_AFTER_SECONDS),
+        )
+        self.send_header("Connection", "close")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+        self.wfile.flush()
+        self.close_connection = True
+
+
+class FoundationRateLimitProviderFixture:
+    def __init__(self) -> None:
+        self.api_key = secrets.token_urlsafe(32)
+        self.server = _RateLimitProviderServer(self.api_key)
+        self.started = False
+        self.thread = threading.Thread(
+            target=self.server.serve_forever,
+            name="mca-foundation-rate-limit-provider",
+            daemon=True,
+        )
+
+    @property
+    def port(self) -> int:
+        return int(self.server.server_address[1])
+
+    def start(self) -> None:
+        if self.started:
+            return
+        self.thread.start()
+        self.started = True
+
+    def stop(self) -> None:
+        if self.started:
+            self.server.shutdown()
+        self.server.server_close()
+        if self.started:
+            self.thread.join(timeout=5)
+            if self.thread.is_alive():
+                raise ScenarioRunnerError(
+                    "rate-limit provider fixture thread did not stop"
+                )
+            self.started = False
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        return self.server.snapshot()
+
+
+class FoundationRateLimitProviderBridge:
+    def __init__(self, deployment_environment: str) -> None:
+        environment_path = (
+            REPO_ROOT
+            / ".local"
+            / "deploy"
+            / "envs"
+            / f"{deployment_environment}.env"
+        )
+        if not environment_path.is_file():
+            raise ScenarioRunnerError(
+                f"deployment environment is missing: {environment_path}"
+            )
+        environment = load_env_file(environment_path)
+        self.host = environment.get("PT_DEPLOY_HOST", "").strip()
+        user = environment.get("PT_DEPLOY_USER", "").strip()
+        if not self.host or not user:
+            raise ScenarioRunnerError(
+                "deployment SSH identity is incomplete"
+            )
+        self.transport = SshTransport(
+            SshTarget(
+                host=self.host,
+                user=user,
+                port=int(environment.get("PT_DEPLOY_SSH_PORT", "22")),
+                known_hosts_file=environment.get(
+                    "PT_DEPLOY_KNOWN_HOSTS_FILE",
+                    "",
+                ),
+            )
+        )
+        self.tunnel: SshTunnel | None = None
+        self.reverse_port = 0
+        self.bridge_port = 0
+        self.remote_pid = 0
+        self.remote_pid_path = ""
+        self.remote_log_path = ""
+
+    def _remote_endpoint_ready(self) -> bool:
+        probe = self.transport.run_argv(
+            (
+                "python3",
+                "-c",
+                (
+                    "import socket,sys;"
+                    "connection=socket.create_connection("
+                    "(sys.argv[1],int(sys.argv[2])),0.5);"
+                    "connection.close()"
+                ),
+                self.host,
+                str(self.bridge_port),
+            ),
+            timeout=5,
+            check=False,
+        )
+        return probe.returncode == 0
+
+    def start(self, local_port: int, run_id: str) -> str:
+        self.reverse_port = self.transport.available_remote_port()
+        self.bridge_port = self.transport.available_remote_port()
+        if self.reverse_port == self.bridge_port:
+            raise ScenarioRunnerError(
+                "rate-limit provider bridge ports collided"
+            )
+        self.tunnel = self.transport.start_reverse_forward(
+            local_port=local_port,
+            remote_port=self.reverse_port,
+            timeout=15,
+        )
+        token = "".join(character for character in run_id if character.isalnum())
+        self.remote_pid_path = f"/tmp/mca-foundation-rate-limit-{token}.pid"
+        self.remote_log_path = f"/tmp/mca-foundation-rate-limit-{token}.log"
+        encoded_script = base64.b64encode(
+            RATE_LIMIT_REMOTE_TCP_BRIDGE.encode("utf-8")
+        ).decode("ascii")
+        bootstrap = (
+            "import base64;"
+            f"exec(base64.b64decode('{encoded_script}'))"
+        )
+        remote_command = (
+            "umask 077; "
+            f"nohup python3 -c {shlex.quote(bootstrap)} "
+            f"{shlex.quote(self.host)} {self.bridge_port} {self.reverse_port} "
+            f">{shlex.quote(self.remote_log_path)} 2>&1 </dev/null & "
+            f"echo $! > {shlex.quote(self.remote_pid_path)}; "
+            f"cat {shlex.quote(self.remote_pid_path)}"
+        )
+        started = self.transport.run_argv(
+            ("bash", "-lc", remote_command),
+            timeout=15,
+            check=True,
+        )
+        pid = started.stdout.strip()
+        if not pid.isdecimal():
+            raise ScenarioRunnerError(
+                "rate-limit provider bridge did not return a pid"
+            )
+        self.remote_pid = int(pid)
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if self._remote_endpoint_ready():
+                return f"http://{self.host}:{self.bridge_port}"
+            time.sleep(0.1)
+        raise ScenarioRunnerError(
+            "rate-limit provider bridge did not become reachable"
+        )
+
+    def stop(self) -> dict[str, Any]:
+        failures: list[str] = []
+        if self.remote_pid_path:
+            known_pid = str(self.remote_pid) if self.remote_pid else ""
+            pid_path = shlex.quote(self.remote_pid_path)
+            try:
+                stopped = self.transport.run_argv(
+                    (
+                        "bash",
+                        "-lc",
+                        (
+                            f"pid={shlex.quote(known_pid)}; "
+                            f"if test -f {pid_path}; then "
+                            f"candidate=$(cat {pid_path}); "
+                            'case "$candidate" in '
+                            "'') ;; *[!0-9]*) ;; *) pid=$candidate ;; esac; "
+                            "fi; "
+                            'if test -n "$pid"; then '
+                            'kill "$pid" 2>/dev/null || true; '
+                            "fi; "
+                            f"rm -f {pid_path} "
+                            f"{shlex.quote(self.remote_log_path)}"
+                        ),
+                    ),
+                    timeout=10,
+                    check=False,
+                )
+                if stopped.returncode != 0:
+                    failures.append("remote bridge process cleanup failed")
+                deadline = time.monotonic() + 5
+                while (
+                    time.monotonic() < deadline
+                    and self._remote_endpoint_ready()
+                ):
+                    time.sleep(0.05)
+                if self._remote_endpoint_ready():
+                    failures.append("remote bridge port remained open")
+            except BaseException as error:
+                failures.append(
+                    f"remote bridge cleanup: {type(error).__name__}: {error}"
+                )
+        if self.tunnel is not None:
+            try:
+                self.tunnel.stop()
+            except BaseException as error:
+                failures.append(
+                    f"SSH reverse-forward cleanup: "
+                    f"{type(error).__name__}: {error}"
+                )
+            finally:
+                self.tunnel = None
+        if self.reverse_port:
+            try:
+                if self.transport.remote_loopback_port_listening(
+                    self.reverse_port,
+                    timeout=2,
+                ):
+                    failures.append("SSH reverse-forward port remained open")
+            except BaseException as error:
+                failures.append(
+                    f"SSH reverse-forward verification: "
+                    f"{type(error).__name__}: {error}"
+                )
+        return {
+            "status": "clean" if not failures else "failed",
+            "failures": failures,
+            "reversePort": self.reverse_port,
+            "bridgePort": self.bridge_port,
+            "remotePid": self.remote_pid,
+        }
+
+
+class FoundationRateLimitCoordinator:
+    def __init__(
+        self,
+        client: FoundationRuntimeClient,
+        deployment_environment: str,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._client = client
+        self._fixture = FoundationRateLimitProviderFixture()
+        self._bridge = FoundationRateLimitProviderBridge(
+            deployment_environment
+        )
+        self._provider_base_url = ""
+        self._sleep = sleep
+
+    def _ensure_started(self, sample_id: str) -> None:
+        if self._provider_base_url:
+            return
+        self._fixture.start()
+        try:
+            self._provider_base_url = self._bridge.start(
+                self._fixture.port,
+                f"{self._client.spec.runtime}-{sample_id}",
+            )
+        except BaseException:
+            self._fixture.stop()
+            raise
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        self._ensure_started(probe_input.sample_id)
+        request_count_before = len(self._fixture.snapshot())
+        try:
+            capture = self._client.harness(
+                "runDevelopmentProviderRateLimit",
+                {
+                    "platform": probe_input.platform,
+                    "locale": probe_input.locale,
+                    "sampleId": probe_input.sample_id,
+                    "providerBaseUrl": self._provider_base_url,
+                    "providerApiKey": self._fixture.api_key,
+                },
+                timeout=DIRECT_PROBE_TIMEOUT_SECONDS["BASE-RATE_LIMIT"],
+            )
+        except BaseException as error:
+            requests = self._fixture.snapshot()[request_count_before:]
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT provider Journey failed; "
+                f"providerRequests={json.dumps(requests, sort_keys=True)}"
+            ) from error
+        if not isinstance(capture, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT provider Journey returned invalid evidence"
+            )
+        self._sleep(RATE_LIMIT_RETRY_AFTER_SECONDS + 0.5)
+        requests = self._fixture.snapshot()[request_count_before:]
+        projected = dict(capture)
+        scenario_facts = projected.get("scenarioFacts")
+        if not isinstance(scenario_facts, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT scenario facts are missing"
+            )
+        harness_assertions = projected.get("assertions")
+        if not isinstance(harness_assertions, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT Harness assertions are missing"
+            )
+        scenario_facts = dict(scenario_facts)
+        scenario_facts["harnessAssertions"] = dict(harness_assertions)
+        request = dict(requests[0]) if len(requests) == 1 else {}
+        provider_fixture = {
+            "statusCode": request.get("statusCode"),
+            "retryAfter": request.get("retryAfter"),
+            "requestCount": len(requests),
+            "noRequestsAfterRetryWindow": len(requests) == 1,
+            "request": request,
+        }
+        scenario_facts["providerFixture"] = provider_fixture
+        assertions = evaluate_base_rate_limit(scenario_facts)
+        side_effects = projected.get("side-effect-count")
+        if not isinstance(side_effects, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT side-effect-count evidence is missing"
+            )
+        side_effects = dict(side_effects)
+        station = scenario_facts.get("station")
+        if not isinstance(station, Mapping):
+            raise ScenarioRunnerError(
+                "BASE-RATE_LIMIT Station evidence is missing"
+            )
+        completed = station.get("completedAssistantCount")
+        completed_count = completed if type(completed) is int else -1
+        side_effects.update(
+            {
+                "count": max(0, len(requests) - 1) + completed_count,
+                "maximum": 0,
+                "measurements": {
+                    "providerRequestCount": len(requests),
+                    "completedAssistantCount": completed_count,
+                },
+            }
+        )
+        projected.update(
+            {
+                "assertions": assertions,
+                "facts": scenario_facts,
+                "scenarioFacts": scenario_facts,
+                "side-effect-count": side_effects,
+            }
+        )
+        return projected
+
+    def cleanup(self) -> dict[str, Any]:
+        failures: list[str] = []
+        bridge: dict[str, Any] = {}
+        try:
+            bridge = self._bridge.stop()
+            if bridge.get("status") != "clean":
+                failures.extend(
+                    str(failure) for failure in bridge.get("failures", [])
+                )
+        except BaseException as error:
+            failures.append(
+                f"provider bridge cleanup: {type(error).__name__}: {error}"
+            )
+        try:
+            self._fixture.stop()
+        except BaseException as error:
+            failures.append(
+                f"provider fixture cleanup: {type(error).__name__}: {error}"
+            )
+        return {
+            "status": "clean" if not failures else "failed",
+            "bridge": bridge,
+            "providerFixtureStopped": not self._fixture.started,
+            "failures": failures,
+        }
 
 RESTORE_IDENTITY_STATES = frozenset(
     {
@@ -247,6 +765,32 @@ RESTORE_IDENTITY_PHASES = frozenset(
         "revoked",
     }
 )
+
+
+def _with_provider_rate_limit_retry(
+    probe: Callable[[DirectRuntimeProbeInput], Mapping[str, Any]],
+    *,
+    cooldown_seconds: float,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]:
+    def retrying_probe(
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        try:
+            return probe(probe_input)
+        except Exception as error:
+            message = str(error)
+            if (
+                cooldown_seconds <= 0
+                or probe_input.cell == "BASE-RATE_LIMIT"
+                or "CLEANUP_FAILED" in message
+                or not any(marker in message for marker in PROVIDER_RATE_LIMIT_MARKERS)
+            ):
+                raise
+            sleep(cooldown_seconds)
+            return probe(probe_input)
+
+    return retrying_probe
 RESTORE_IDENTITY_REASONS = frozenset(
     {
         "cold_launch",
@@ -1502,9 +2046,11 @@ class FoundationForbiddenActorCoordinator:
         self,
         runtime_pair: "FoundationRuntimePair",
         profile_env: Mapping[str, str],
+        alice_actor_ids: Mapping[str, str],
     ) -> None:
         self._runtime_pair = runtime_pair
         self._password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
+        self._alice_actor_ids = dict(alice_actor_ids)
 
     @staticmethod
     def _scenario_key(probe_input: DirectRuntimeProbeInput) -> str:
@@ -1535,7 +2081,18 @@ class FoundationForbiddenActorCoordinator:
             f"BASE-FORBIDDEN_ACTOR has no owner client for {platform}"
         )
 
-    def _login(self, client: Any, account: str) -> None:
+    @staticmethod
+    def _navigate(client: Any, account: str) -> None:
+        navigation = client.harness("navigateToAgent", {}, timeout=60)
+        if (
+            not isinstance(navigation, Mapping)
+            or navigation.get("navigated") is not True
+        ):
+            raise ScenarioRunnerError(
+                f"BASE-FORBIDDEN_ACTOR {account} navigation is invalid"
+            )
+
+    def _login(self, client: Any, account: str) -> str:
         login = client.harness(
             "loginWithPassword",
             {"account": account, "password": self._password},
@@ -1549,13 +2106,29 @@ class FoundationForbiddenActorCoordinator:
             raise ScenarioRunnerError(
                 f"BASE-FORBIDDEN_ACTOR {account} login is invalid"
             )
-        navigation = client.harness("navigateToAgent", {}, timeout=60)
-        if (
-            not isinstance(navigation, Mapping)
-            or navigation.get("navigated") is not True
-        ):
+        self._navigate(client, account)
+        return str(login["actorId"])
+
+    def _ensure_alice(self, client: Any) -> None:
+        runtime = str(client.spec.runtime)
+        expected_actor_id = self._alice_actor_ids.get(runtime, "")
+        if not expected_actor_id:
             raise ScenarioRunnerError(
-                f"BASE-FORBIDDEN_ACTOR {account} navigation is invalid"
+                f"BASE-FORBIDDEN_ACTOR {runtime} Alice identity is missing"
+            )
+        snapshot = client.harness("getRuntimeSnapshot", {}, timeout=30)
+        if (
+            isinstance(snapshot, Mapping)
+            and snapshot.get("authenticated") is True
+            and snapshot.get("identityState") == "ready"
+            and snapshot.get("actorId") == expected_actor_id
+        ):
+            self._navigate(client, "alice@p.t")
+            return
+        actual_actor_id = self._login(client, "alice@p.t")
+        if actual_actor_id != expected_actor_id:
+            raise ScenarioRunnerError(
+                f"BASE-FORBIDDEN_ACTOR {runtime} Alice identity mismatch"
             )
 
     def capture(
@@ -1605,6 +2178,7 @@ class FoundationForbiddenActorCoordinator:
                     "BASE-FORBIDDEN_ACTOR owner fixture is invalid"
                 )
 
+            self._ensure_alice(receiver)
             receiver_is_alice = False
             rejected = receiver.harness(
                 "rejectFoundationForbiddenActor",
@@ -1648,9 +2222,9 @@ class FoundationForbiddenActorCoordinator:
                 )
             owner_cleaned = True
 
-            self._login(owner, "alice@p.t")
+            self._ensure_alice(owner)
             owner_is_bob = False
-            self._login(receiver, "alice@p.t")
+            self._ensure_alice(receiver)
             receiver_is_alice = True
 
             recovered = receiver.harness(
@@ -1703,13 +2277,13 @@ class FoundationForbiddenActorCoordinator:
                     cleanup_errors.append(f"owner resource cleanup: {error}")
             if owner_is_bob:
                 try:
-                    self._login(owner, "alice@p.t")
+                    self._ensure_alice(owner)
                     owner_is_bob = False
                 except BaseException as error:
                     cleanup_errors.append(f"owner identity restore: {error}")
             if not receiver_is_alice:
                 try:
-                    self._login(receiver, "alice@p.t")
+                    self._ensure_alice(receiver)
                     receiver_is_alice = True
                 except BaseException as error:
                     cleanup_errors.append(f"receiver identity restore: {error}")
@@ -1726,6 +2300,157 @@ class FoundationForbiddenActorCoordinator:
                     "BASE-FORBIDDEN_ACTOR cleanup failed: "
                     f"primary={primary_error}; cleanup={cleanup_errors}"
                 )
+
+
+class FoundationExternalRuntimeCoordinator:
+    def __init__(
+        self,
+        runtime_pair: FoundationRuntimePair,
+        runtime_manifest: Mapping[str, Any],
+        profile_env: Mapping[str, str],
+        run_id: str,
+    ) -> None:
+        self._runtime_pair = runtime_pair
+        self._runtime_manifest = dict(runtime_manifest)
+        self._profile_env = dict(profile_env)
+        self._run_id = run_id
+        self._enabled = False
+
+    def _deploy(self, enabled: bool) -> None:
+        environment = os.environ.copy()
+        environment.update(self._profile_env)
+        environment.update(
+            external_runtime_environment(self._run_id)
+            if enabled
+            else {
+                name: ""
+                for name in external_runtime_environment(self._run_id)
+            }
+        )
+        completed = subprocess.run(
+            ["make", "station"],
+            cwd=REPO_ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=1_800,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "no output"
+            )
+            raise ScenarioRunnerError(
+                "Foundation external runtime deployment failed: "
+                + detail[-4_000:]
+            )
+
+    def _enable(self) -> None:
+        if self._enabled:
+            return
+        self._deploy(True)
+        self._enabled = True
+        for client in (self._runtime_pair.native, self._runtime_pair.browser):
+            client.restart()
+        _authenticate_clients(self._runtime_pair, self._profile_env)
+
+    def capture(
+        self,
+        probe_input: DirectRuntimeProbeInput,
+    ) -> Mapping[str, Any]:
+        self._enable()
+        client = (
+            self._runtime_pair.native
+            if probe_input.platform == "desktop_app"
+            else self._runtime_pair.browser
+        )
+        locale = client.harness(
+            "setFoundationLocale",
+            {"locale": probe_input.locale},
+            timeout=30,
+        )
+        if (
+            not isinstance(locale, Mapping)
+            or locale.get("locale") != probe_input.locale
+        ):
+            raise ScenarioRunnerError(
+                "Foundation external runtime locale did not converge"
+            )
+        result = client.harness(
+            "externalRuntimeFoundationProbe",
+            {
+                "platform": probe_input.platform,
+                "locale": probe_input.locale,
+                "cell": probe_input.cell,
+                "sampleId": probe_input.sample_id,
+            },
+            timeout=300,
+        )
+        if not isinstance(result, Mapping):
+            raise ScenarioRunnerError(
+                "Foundation external runtime capture is invalid"
+            )
+        assert_group_one_capture(probe_input, result)
+        return result
+
+    def cleanup(self) -> dict[str, Any]:
+        if not self._enabled:
+            return {"status": "clean", "enabled": False}
+        failures: list[str] = []
+        try:
+            services = self._runtime_manifest.get("services")
+            station = (
+                services.get("station")
+                if isinstance(services, Mapping)
+                else None
+            )
+            deployment_environment = (
+                str(station.get("deploymentEnvironment") or "").strip()
+                if isinstance(station, Mapping)
+                else ""
+            )
+            transport, environment = reviewed_remote_transport(
+                deployment_environment
+            )
+            compose_project = environment.get(
+                "PT_ACCEPTANCE_COMPOSE_PROJECT",
+                "",
+            ).strip()
+            if not compose_project:
+                raise ScenarioRunnerError(
+                    "Foundation external cleanup has no Compose project"
+                )
+            root = external_runtime_root(self._run_id)
+            command = (
+                "set -eu; "
+                "container_id=\"$(docker ps --quiet "
+                f"--filter {shlex.quote(f'label=com.docker.compose.project={compose_project}')} "
+                f"--filter {shlex.quote('label=com.docker.compose.service=station')} "
+                "| sed -n '1p')\"; "
+                "test -n \"$container_id\"; "
+                f"docker exec \"$container_id\" rm -rf -- {shlex.quote(root)}"
+            )
+            result = transport.run_argv(
+                ["bash", "-lc", command],
+                timeout=60,
+                check=False,
+            )
+            if result.returncode != 0:
+                failures.append("external runtime storage cleanup failed")
+        except BaseException as error:
+            failures.append(f"external runtime storage cleanup: {error}")
+        try:
+            self._deploy(False)
+        except BaseException as error:
+            failures.append(f"external runtime Station restore: {error}")
+        self._enabled = False
+        return {
+            "status": "clean" if not failures else "failed",
+            "enabled": True,
+            "failures": failures,
+        }
 
 
 def _make_direct_probe(
@@ -1745,6 +2470,10 @@ def _make_direct_probe(
         "FoundationPermissionDeniedCoordinator | None" = None,
     forbidden_actor_coordinator:
         "FoundationForbiddenActorCoordinator | None" = None,
+    rate_limit_coordinator:
+        "FoundationRateLimitCoordinator | None" = None,
+    external_runtime_coordinator:
+        "FoundationExternalRuntimeCoordinator | None" = None,
 ) -> "Callable[[DirectRuntimeProbeInput], Mapping[str, Any]]":
     """Create a direct-runtime probe that executes via WebDriver harness.
 
@@ -1753,6 +2482,12 @@ def _make_direct_probe(
     full capture dictionary expected by DirectRuntimeFoundationAdapter.
     """
     def probe(probe_input: DirectRuntimeProbeInput) -> Mapping[str, Any]:
+        if probe_input.cell == "BASE-RESUME-UNAVAILABLE":
+            if external_runtime_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-RESUME-UNAVAILABLE requires external runtime orchestration"
+                )
+            return external_runtime_coordinator.capture(probe_input)
         if probe_input.cell == "BASE-FORBIDDEN_ACTOR":
             if forbidden_actor_coordinator is None:
                 raise ScenarioRunnerError(
@@ -1814,11 +2549,24 @@ def _make_direct_probe(
                 f"direct probe locale did not converge for "
                 f"{probe_input.cell}/{probe_input.sample_id}"
             )
+        if probe_input.cell == "BASE-RATE_LIMIT":
+            if rate_limit_coordinator is None:
+                raise ScenarioRunnerError(
+                    "BASE-RATE_LIMIT requires provider fixture orchestration"
+                )
+            result = rate_limit_coordinator.capture(probe_input)
+            assert_group_one_capture(probe_input, result)
+            return result
         method = {
             "BASE-LOOP_BUDGET_EXHAUSTED": "runDevelopmentLoopBudget",
             "BASE-MODEL_UNAVAILABLE": "runDevelopmentProviderModelUnavailable",
             "BASE-PROVIDER_TIMEOUT": "runDevelopmentProviderTimeout",
         }.get(probe_input.cell, "foundationDirectProbe")
+        harness_cell = (
+            "AS-F02"
+            if probe_input.cell == "BASE-QUEUE_FULL"
+            else probe_input.cell
+        )
         result = client.harness(
             method,
             {
@@ -1827,7 +2575,7 @@ def _make_direct_probe(
                 **(
                     {}
                     if method != "foundationDirectProbe"
-                    else {"cell": probe_input.cell}
+                    else {"cell": harness_cell}
                 ),
                 "sampleId": probe_input.sample_id,
             },
@@ -1838,10 +2586,78 @@ def _make_direct_probe(
                 f"direct probe returned invalid result for "
                 f"{probe_input.cell}/{probe_input.sample_id}"
             )
+        if probe_input.cell == "BASE-QUEUE_FULL":
+            result = _project_queue_full_capture(result)
         assert_group_one_capture(probe_input, result)
         return result
 
     return probe
+
+
+def _project_queue_full_capture(
+    capture: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    def require_mapping(
+        source: Mapping[str, Any],
+        key: str,
+    ) -> dict[str, Any]:
+        value = source.get(key)
+        if not isinstance(value, Mapping):
+            raise ScenarioRunnerError(
+                f"BASE-QUEUE_FULL {key} evidence is missing"
+            )
+        return dict(value)
+
+    projected = dict(capture)
+    scenario_facts = require_mapping(projected, "scenarioFacts")
+    cleanup = require_mapping(projected, "cleanup")
+    scenario_facts["cleanup"] = cleanup
+    assertions = evaluate_base_queue_full(scenario_facts)
+    queue = require_mapping(scenario_facts, "queueSubmission")
+    overflow = require_mapping(queue, "overflow")
+    recovery = require_mapping(overflow, "recovery")
+
+    receiver = require_mapping(projected, "receiver-dom")
+    receiver.update(
+        {
+            "scenarioId": "BASE-QUEUE_FULL",
+            "cellId": "BASE-QUEUE_FULL",
+            "selector": (
+                '[data-pt-agent-message-error-recovery="edit-queue"],'
+                "[data-pt-agent-turn-queue]"
+            ),
+            "visible": (
+                recovery.get("visible") is True
+                and recovery.get("queueFocused") is True
+            ),
+        }
+    )
+    provider_call_delta = int(overflow.get("providerCallDelta", -1))
+    station_message_delta = int(overflow.get("stationMessageDelta", -1))
+    side_effects = require_mapping(projected, "side-effect-count")
+    side_effects.update(
+        {
+            "count": provider_call_delta + station_message_delta,
+            "maximum": 0,
+            "measurements": {
+                "providerCallDelta": provider_call_delta,
+                "stationMessageDelta": station_message_delta,
+            },
+        }
+    )
+    measurement = require_mapping(projected, "measurement-report")
+    measurement["metric"] = "foundation-queue-full-recovery-duration-ms"
+
+    projected.update(
+        {
+            "assertions": assertions,
+            "scenarioFacts": scenario_facts,
+            "receiver-dom": receiver,
+            "measurement-report": measurement,
+            "side-effect-count": side_effects,
+        }
+    )
+    return projected
 
 
 class FoundationF06Coordinator:
@@ -2721,10 +3537,15 @@ class FoundationF12Coordinator:
         runtime_pair: FoundationRuntimePair,
         runtime_manifest: Mapping[str, Any],
         profile_env: Mapping[str, str],
+        *,
+        provider_cooldown_seconds: float = 0,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._runtime_pair = runtime_pair
         self._runtime_manifest = runtime_manifest
         self._profile_env = dict(profile_env)
+        self._provider_cooldown_seconds = provider_cooldown_seconds
+        self._sleep = sleep
         self._captures: dict[tuple[str, str, str, str], Mapping[str, Any]] = {}
 
     @staticmethod
@@ -2891,6 +3712,8 @@ class FoundationF12Coordinator:
                 )
             result = dict(candidate_result)
             assert_group_one_capture(probe_input, result)
+            if self._provider_cooldown_seconds > 0:
+                self._sleep(self._provider_cooldown_seconds)
             return result
         except BaseException as error:
             primary_error = error
@@ -3123,7 +3946,7 @@ def _authenticate_clients(
     require_existing_session: bool = False,
     session_deadline: float | None = None,
     recovery_boundary: str = "session-recovery",
-) -> None:
+) -> dict[str, str]:
     """Prepare authenticated clients without masking recovery failures.
 
     Initial setup logs in with the profile fixture. Recovery paths set
@@ -3135,6 +3958,7 @@ def _authenticate_clients(
     password = profile_env.get("CHAT_NATIVE_DEMO_PASSWORD", "1")
     provider_config = _agent_provider_config(profile_env)
     selected_clients = clients or (runtime_pair.native, runtime_pair.browser)
+    actor_ids: dict[str, str] = {}
 
     for client in selected_clients:
         # Step 0: Warm-up — wait for Rust backend to finish initializing
@@ -3218,10 +4042,15 @@ def _authenticate_clients(
             if (
                 not isinstance(login_result, Mapping)
                 or not login_result.get("authenticated")
+                or not isinstance(login_result.get("actorId"), str)
+                or not login_result.get("actorId")
             ):
                 raise ScenarioRunnerError(
                     f"{client.spec.runtime} login failed: {login_result}"
                 )
+            session_state = login_result
+
+        actor_ids[client.spec.runtime] = str(session_state["actorId"])
 
         # Step 2: Navigate to agent surface
         nav_result = client.harness("navigateToAgent", {}, timeout=60)
@@ -3390,6 +4219,7 @@ def _authenticate_clients(
                 "pollCount": poll_count,
             },
         )
+    return actor_ids
 
 
 def _capability_isolation_restoration_error(
@@ -3436,6 +4266,8 @@ def _capability_isolation_restoration_error(
 def _restore_capability_isolation_for_cleanup(
     runtime_pair: FoundationRuntimePair,
     profile_env: Mapping[str, str],
+    *,
+    clients: tuple[FoundationRuntimeClient, ...] | None = None,
 ) -> list[str]:
     def validate_result(runtime: str, result: Any) -> str | None:
         if not isinstance(result, Mapping):
@@ -3471,7 +4303,8 @@ def _restore_capability_isolation_for_cleanup(
         )
 
     errors: list[str] = []
-    for client in (runtime_pair.browser, runtime_pair.native):
+    selected_clients = clients or (runtime_pair.browser, runtime_pair.native)
+    for client in selected_clients:
         if getattr(client, "driver", None) is None:
             storage_root = getattr(client.spec, "storage_root", None)
             if storage_root is None or not Path(storage_root).exists():
@@ -3576,13 +4409,21 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
     )
     candidate_path: Path | None = None
     primary_error: BaseException | None = None
+    cleanup_clients: tuple[FoundationRuntimeClient, ...] | None = None
+    rate_limit_coordinators: tuple[FoundationRateLimitCoordinator, ...] = ()
+    external_runtime_coordinator: FoundationExternalRuntimeCoordinator | None = None
     try:
         runtime_pair.start()
 
         # --- Authenticate and configure both clients ---
-        _authenticate_clients(runtime_pair, profile_env)
+        alice_actor_ids = _authenticate_clients(runtime_pair, profile_env)
 
         # --- Build adapters ---
+        provider_cooldown_seconds = (
+            0
+            if os.environ.get("PT_FOUNDATION_DEBUG_TUPLE", "").strip()
+            else F12_PROVIDER_COOLDOWN_SECONDS
+        )
         f06_coordinator = FoundationF06Coordinator(
             runtime_pair,
             runtime_manifest,
@@ -3592,6 +4433,7 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
             runtime_pair,
             runtime_manifest,
             profile_env,
+            provider_cooldown_seconds=provider_cooldown_seconds,
         )
         executor_unavailable_coordinator = (
             FoundationExecutorUnavailableCoordinator(runtime_pair)
@@ -3613,48 +4455,84 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         forbidden_actor_coordinator = FoundationForbiddenActorCoordinator(
             runtime_pair,
             profile_env,
+            alice_actor_ids,
         )
+        external_runtime_coordinator = FoundationExternalRuntimeCoordinator(
+            runtime_pair,
+            runtime_manifest,
+            profile_env,
+            run.run_id,
+        )
+        deployment_environment = profile_env.get(
+            "PT_STATION_DEPLOY_ENV",
+            "",
+        ).strip()
+        native_rate_limit_coordinator = None
+        browser_rate_limit_coordinator = None
+        if deployment_environment:
+            native_rate_limit_coordinator = FoundationRateLimitCoordinator(
+                runtime_pair.native,
+                deployment_environment,
+            )
+            browser_rate_limit_coordinator = FoundationRateLimitCoordinator(
+                runtime_pair.browser,
+                deployment_environment,
+            )
+            rate_limit_coordinators = (
+                native_rate_limit_coordinator,
+                browser_rate_limit_coordinator,
+            )
 
         # 1. Desktop native adapter: real WebDriver probe through native client.
         desktop_native_adapter = DirectRuntimeFoundationAdapter(
-            _make_direct_probe(
-                runtime_pair.native,
-                f06_coordinator=f06_coordinator,
-                f12_coordinator=f12_coordinator,
-                interrupted_coordinator=interrupted_coordinator,
-                executor_unavailable_coordinator=(
-                    executor_unavailable_coordinator
+            _with_provider_rate_limit_retry(
+                _make_direct_probe(
+                    runtime_pair.native,
+                    f06_coordinator=f06_coordinator,
+                    f12_coordinator=f12_coordinator,
+                    interrupted_coordinator=interrupted_coordinator,
+                    executor_unavailable_coordinator=(
+                        executor_unavailable_coordinator
+                    ),
+                    lease_expired_coordinator=lease_expired_coordinator,
+                    invalid_resource_reference_coordinator=(
+                        invalid_resource_reference_coordinator
+                    ),
+                    permission_denied_coordinator=(
+                        permission_denied_coordinator
+                    ),
+                    forbidden_actor_coordinator=forbidden_actor_coordinator,
+                    rate_limit_coordinator=native_rate_limit_coordinator,
+                    external_runtime_coordinator=external_runtime_coordinator,
                 ),
-                lease_expired_coordinator=lease_expired_coordinator,
-                invalid_resource_reference_coordinator=(
-                    invalid_resource_reference_coordinator
-                ),
-                permission_denied_coordinator=(
-                    permission_denied_coordinator
-                ),
-                forbidden_actor_coordinator=forbidden_actor_coordinator,
-            )
+                cooldown_seconds=provider_cooldown_seconds,
+            ),
         )
 
         # 2. Browser adapter: real WebDriver probe through browser client.
         browser_adapter = DirectRuntimeFoundationAdapter(
-            _make_direct_probe(
-                runtime_pair.browser,
-                f06_coordinator=f06_coordinator,
-                f12_coordinator=f12_coordinator,
-                interrupted_coordinator=interrupted_coordinator,
-                executor_unavailable_coordinator=(
-                    executor_unavailable_coordinator
+            _with_provider_rate_limit_retry(
+                _make_direct_probe(
+                    runtime_pair.browser,
+                    f06_coordinator=f06_coordinator,
+                    f12_coordinator=f12_coordinator,
+                    interrupted_coordinator=interrupted_coordinator,
+                    executor_unavailable_coordinator=(
+                        executor_unavailable_coordinator
+                    ),
+                    lease_expired_coordinator=lease_expired_coordinator,
+                    invalid_resource_reference_coordinator=(
+                        invalid_resource_reference_coordinator
+                    ),
+                    permission_denied_coordinator=(
+                        permission_denied_coordinator
+                    ),
+                    forbidden_actor_coordinator=forbidden_actor_coordinator,
+                    rate_limit_coordinator=browser_rate_limit_coordinator,
+                    external_runtime_coordinator=external_runtime_coordinator,
                 ),
-                lease_expired_coordinator=lease_expired_coordinator,
-                invalid_resource_reference_coordinator=(
-                    invalid_resource_reference_coordinator
-                ),
-                permission_denied_coordinator=(
-                    permission_denied_coordinator
-                ),
-                forbidden_actor_coordinator=forbidden_actor_coordinator,
-            )
+                cooldown_seconds=provider_cooldown_seconds,
+            ),
         )
 
         # 3. Mobile contract adapter: runs contract test suite (no runtime).
@@ -3714,6 +4592,11 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
                 if runtime_tuple.platform == "desktop_app"
                 else browser_adapter
             )
+            cleanup_clients = (
+                (runtime_pair.native,)
+                if runtime_tuple.platform == "desktop_app"
+                else (runtime_pair.browser,)
+            )
             observation = (
                 adapter.observe_desktop_native(runtime_tuple)
                 if runtime_tuple.platform == "desktop_app"
@@ -3743,19 +4626,58 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         primary_error = error
     finally:
         # --- Cleanup: restore durable fixture mutations, then stop clients ---
+        rate_limit_cleanup_errors: list[str] = []
+        rate_limit_cleanup_results: list[dict[str, Any]] = []
+        for coordinator in rate_limit_coordinators:
+            try:
+                result = coordinator.cleanup()
+                rate_limit_cleanup_results.append(result)
+                if result.get("status") != "clean":
+                    rate_limit_cleanup_errors.extend(
+                        str(failure)
+                        for failure in result.get("failures", [])
+                    )
+            except BaseException as error:
+                rate_limit_cleanup_errors.append(
+                    f"{type(error).__name__}: {error}"
+                )
         restoration_errors = _restore_capability_isolation_for_cleanup(
             runtime_pair,
             profile_env,
+            clients=cleanup_clients,
         )
         cleanup_result = runtime_pair.stop(
             remove_storage=not restoration_errors,
         )
+        try:
+            external_runtime_cleanup = (
+                external_runtime_coordinator.cleanup()
+                if external_runtime_coordinator is not None
+                else {"status": "clean", "enabled": False}
+            )
+        except BaseException as error:
+            external_runtime_cleanup = {
+                "status": "failed",
+                "failures": [f"{type(error).__name__}: {error}"],
+            }
+        cleanup_result["externalRuntime"] = external_runtime_cleanup
+        if external_runtime_cleanup.get("status") != "clean":
+            cleanup_result["status"] = "failed"
         primary_failure = _failure_summary(primary_error, profile_env)
         if primary_failure:
             cleanup_result["primaryFailure"] = primary_failure
         if restoration_errors:
             cleanup_result["status"] = "failed"
             cleanup_result["capabilityIsolationFailures"] = restoration_errors
+        if rate_limit_cleanup_results:
+            cleanup_result["providerRateLimitFixtures"] = (
+                rate_limit_cleanup_results
+            )
+        if rate_limit_cleanup_errors:
+            cleanup_result["status"] = "failed"
+            cleanup_result["providerRateLimitFailures"] = (
+                rate_limit_cleanup_errors
+            )
         run.write_json(
             "runtime/cleanup-result.json",
             cleanup_result,
@@ -3770,7 +4692,11 @@ def run_scenario(*, dry_run: bool = False) -> Path | None:
         cleanup_kind = (
             "capability isolation restoration"
             if restoration_errors
-            else "runtime release"
+            else (
+                "provider rate-limit fixture cleanup"
+                if rate_limit_cleanup_errors
+                else "runtime release"
+            )
         )
         raise ScenarioRunnerError(
             f"CLEANUP_FAILED: {cleanup_kind} failed; "

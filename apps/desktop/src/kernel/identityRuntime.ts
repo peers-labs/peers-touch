@@ -4,6 +4,12 @@ import { useSessionStore } from '../store/session';
 import { useSocialChatStore } from '../store/socialChat';
 import { clearLocalIdentityAction, markLocalIdentityAction } from '../services/identity_event';
 import { runIdentityPipeline } from '../services/identityPipeline';
+import {
+  accessDecisionMessage,
+  currentGate,
+  isAccessActionRequired,
+  isLoginGate,
+} from '../services/accessGate';
 import { readDesktopPreferenceSync, removeDesktopPreferenceSync, writeDesktopPreferenceSync } from '../storage/desktopClientStorage';
 import type { AppLifecycle, SessionUser } from '../types/navigation';
 import { log } from '../utils/logger';
@@ -399,7 +405,26 @@ class IdentityRuntime {
   };
 
   loginWithPassword = async (account: string, password: string): Promise<void> => {
-    await useSessionStore.getState().loginWithPassword(account, password);
+    const session = useSessionStore.getState();
+    const decision = await session.accessStart();
+    const gate = currentGate(decision);
+    if (
+      !decision.attemptId
+      || !isAccessActionRequired(decision)
+      || !isLoginGate(gate)
+    ) {
+      throw new AuthCommandException({
+        code: 'FORBIDDEN',
+        message:
+          accessDecisionMessage(decision)
+          || 'Station access requires another gate before password login',
+        details: {
+          reason: 'access_gate_action_required',
+          gate_id: gate?.gateId ?? null,
+        },
+      });
+    }
+    await session.accessSubmitLogin(decision.attemptId, account, password);
     await this.acceptAuthenticatedEdgeFromCurrentSession('fresh_login');
   };
 

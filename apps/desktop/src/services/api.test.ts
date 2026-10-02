@@ -2047,6 +2047,61 @@ describe('api.archiveAgentConversation', () => {
   })
 })
 
+describe('api.resetAgentConversationRuntime', () => {
+  it('sends a confirmed, version-fenced, idempotent reset command', async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      ok: true,
+      data: {
+        command: 'agent_conversation_runtime_reset',
+        status: JSON.stringify({
+          conversation: {
+            conversation_id: 'conversation-1',
+            agent_id: 'agent-1',
+            actor_ptid: 'ptid:person:owner',
+            status: 'active',
+            version: '8',
+            runtime_binding: {
+              runtime_kind: 'RUNTIME_KIND_EXTERNAL_AGENT',
+              provider_id: 'external-agent',
+              model_id: 'default',
+              runtime_profile_id: 'modern-chat-agent-v1',
+              external_session_epoch: '2',
+              runtime_home_ref: 'runtime-home-1',
+              state: 'EXTERNAL_RUNTIME_BINDING_STATE_READY',
+            },
+          },
+          closed_external_session_epoch: '1',
+          replayed: false,
+        }),
+      },
+    })
+
+    const result = await api.resetAgentConversationRuntime({
+      conversation_id: 'conversation-1',
+      expected_conversation_version: 7,
+      client_idempotency_key: 'external-runtime-reset:conversation-1:7',
+      destructive_confirmed: true,
+    })
+
+    expect(result.closed_external_session_epoch).toBe(1)
+    expect(result.conversation.version).toBe(8)
+    expect(result.conversation.ptid).toBe('ptid:person:owner')
+    expect(result.conversation.runtime_binding).toMatchObject({
+      runtime_kind: 2,
+      external_session_epoch: 2,
+      state: 1,
+    })
+    expect(invoke).toHaveBeenCalledWith('agent_conversation_runtime_reset', {
+      input: {
+        conversation_id: 'conversation-1',
+        expected_conversation_version: 7,
+        client_idempotency_key: 'external-runtime-reset:conversation-1:7',
+        destructive_confirmed: true,
+      },
+    })
+  })
+})
+
 describe('api.updateProvider', () => {
   it('sends provider update request', async () => {
     const credential = ['test', 'credential'].join('-')

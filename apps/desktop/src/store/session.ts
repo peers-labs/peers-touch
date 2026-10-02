@@ -6,6 +6,7 @@ import {
   currentGate,
   isLoginGate,
   normalizeDecision,
+  stationAccessError,
   type AccessDecision,
 } from '../services/accessGate';
 
@@ -61,6 +62,23 @@ interface SessionStore {
 
 // ── Helpers (exported for tests; mapping mirrors `restoreSession`) ──
 
+async function completeStationBindingOrRollback(): Promise<void> {
+  try {
+    await api.stationBindingComplete();
+  } catch (error) {
+    const bindingError = stationAccessError(error);
+    try {
+      await api.authLogout();
+    } catch (rollbackError) {
+      const rollbackMessage = rollbackError instanceof Error
+        ? rollbackError.message
+        : String(rollbackError);
+      throw new Error(`${bindingError.message}; session rollback failed: ${rollbackMessage}`);
+    }
+    throw bindingError;
+  }
+}
+
 function userFromAuthResponse(resp: AuthSessionResponse, fallbackMethod: 'password' | 'oauth', provider?: string): CurrentUser | null {
   if (!resp.actor_ptid?.startsWith('ptid:')) return null;
   return {
@@ -107,6 +125,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
   accessSubmitLogin: async (attemptId, account, password) => {
     markLocalIdentityAction();
     const resp = await api.accessSubmitLogin({ attempt_id: attemptId, account, password });
+    await completeStationBindingOrRollback();
     get().activateAuthenticatedSession(resp);
     await runIdentityPipeline({
       reason: 'login',
@@ -132,6 +151,7 @@ export const useSessionStore = createDesktopStore<SessionStore>('session', (set,
     set({ restoring: true });
     try {
       const resp = await api.authRestoreSession();
+      await completeStationBindingOrRollback();
       const method = resp.login_method || 'password';
       const isOAuth = method !== 'password';
       const user = userFromAuthResponse(resp, isOAuth ? 'oauth' : 'password', isOAuth ? method : undefined);

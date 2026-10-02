@@ -22,7 +22,11 @@ if (!harness || typeof harness[method] !== 'function') {
 }
 harness[method](payload)
   .then((value) => done({ value }))
-  .catch((error) => done({ error: String(error && error.message || error) }));
+  .catch((error) => {
+    const message = String(error && error.message || error);
+    const stack = String(error && error.stack || '');
+    done({ error: stack ? `${message}\n${stack}` : message });
+  });
 """
 
 

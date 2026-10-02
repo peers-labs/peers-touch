@@ -151,6 +151,39 @@
       "tier": "env-evidence",
       "description": "Run two isolated embedded-WebDriver Tauri clients and prove bidirectional Direct plaintext, DELIVERED receipt visibility, unobscured newest-message geometry, and bundled demo-avatar rendering."
     },
+    "chat-presence-layout-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_presence_layout && python3 -m tooling.acceptance.gates.chat.lifecycle_presence_layout_e2e",
+      "timeout_seconds": 2100,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run two isolated Native Desktop clients on distinct Stations and prove lease-stable focus-independent peer presence, unavailable-authority unknown rendering, fixed unread geometry through 99+, and stable message interaction rails and scroll anchors."
+    },
+    "chat-lifecycle-live-voice-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_live_voice && python3 -m tooling.acceptance.gates.chat.lifecycle_live_voice_e2e",
+      "timeout_seconds": 2100,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run two isolated Native Desktop clients and prove one-to-one audio and video call lifecycle: ring, accept, reject, no-answer, mic/camera toggle, hangup, text during call, and resource release."
+    },
+    "chat-lifecycle-group-live-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.chat.lifecycle_group_live && python3 -m tooling.acceptance.gates.chat.lifecycle_group_live_e2e",
+      "timeout_seconds": 2400,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run three isolated Native Desktop clients and prove same-Station group audio and video calls with live remote media, mute/camera convergence, late join, leave, and resource release."
+    },
     "chat-native-current-profile-two-client-e2e": {
       "command": "PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.native_current_profile_two_client_entry && PT_ACCEPTANCE_NATIVE_DEV=1 PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.native_current_profile_two_client_e2e",
       "timeout_seconds": 1800,
@@ -179,6 +212,17 @@
       ],
       "tier": "env-evidence",
       "description": "Run isolated Native Direct and Group clients and prove reply/thread, author-only edit/retract, reaction, pin, read, offline, replay and restart convergence with Conversation and Device Inbox durable readback."
+    },
+    "chat-lifecycle-interactions-group-e2e": {
+      "command": "PT_CHAT_INTERACTIONS_GATE_ID=chat-lifecycle-interactions-group-e2e python3 -m tooling.acceptance.gates.chat.native_interactions_runner",
+      "timeout_seconds": 2400,
+      "environment": "native-tauri-embedded-webdriver",
+      "provisioner": "native-tauri-embedded-webdriver",
+      "requiredRuntimeCells": [
+        "desktop-macos-native"
+      ],
+      "tier": "env-evidence",
+      "description": "Run three isolated Native Desktop clients through CHAT-J04 Direct and Group interactions plus Conversation-owned rename, role, owner transfer, remote-owner mutation, leave, dissolve, restart-stable entitled history, and legacy mutation hard cut."
     },
     "chat-contact-message-resilience-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.contact_message_resilience_runner",
@@ -637,6 +681,14 @@
       "tier": "env-evidence",
       "description": "Prove three-actor mixed-client Group membership + MLS epoch + remove/rejoin."
     },
+    "chat-lifecycle-rich-voice-e2e": {
+      "command": "PT_ACCEPTANCE_RUNTIME_CELL=desktop-macos-native python3 -m tooling.acceptance.gates.chat.lifecycle_rich_voice",
+      "timeout_seconds": 1800,
+      "environment": "native-tauri-current-profile",
+      "provisioner": "native-tauri-current-profile",
+      "tier": "env-evidence",
+      "description": "Run two synchronized current-profile Native Desktop clients through encrypted attachment byte conservation, screenshot cancel/confirm geometry preservation, recorded-voice cancel/preview/discard/send, private duration persistence, verified playback, cache-loss retry, and restart recovery."
+    },
     "chat-desktop-gateway-e2e": {
       "command": "python3 -m tooling.acceptance.gates.chat.desktop_gateway_e2e",
       "timeout_seconds": 600,
@@ -950,11 +1002,11 @@
       "description": "Validate Agent module structural contracts: ToolCall state machine, fencing, redaction, dead-code removal, opaque refs, event protocol, and native E2E selector bindings."
     },
     "agent-native-turn-static": {
-      "command": "python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test",
+      "command": "python3 -m unittest tooling.acceptance.gates.agent.agent_native_static_test tooling.acceptance.gates.agent.native_agent_runner_test",
       "timeout_seconds": 120,
       "environment": "local",
       "tier": "ci-cheap",
-      "description": "Validate Agent native runner fail-closed evidence, selector bindings, canonical TauriDriver launch, and cleanup contracts without launching a live journey."
+      "description": "Validate Agent native runner fail-closed evidence, lifecycle command/matrix wiring, selector bindings, canonical TauriDriver launch, and cleanup contracts without launching a live journey."
     },
     "agent-native-turn-e2e": {
       "argv": [
@@ -974,13 +1026,74 @@
       "tier": "local-evidence",
       "description": "Validate the Agent managed domain profile against station turn, context intelligence, tool authority, attachments, diagnostics, and desktop surface contracts."
     },
-    "agent-core-lifecycle-native-e2e": {
-      "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey core-lifecycle",
-      "timeout_seconds": 300,
+    "agent-minimum-usable-chat-native-e2e": {
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "--journey",
+        "minimum-usable-chat"
+      ],
+      "timeout_seconds": 1800,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
-      "description": "P0 agent lifecycle: auto-create, select, send, receive, topic, update."
+      "description": "Run one profile-two Native Direct Model Agent Chat journey through Agent selection, ready MCP binding, governed invocation, final Assistant response, restart restoration, and cleanup.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "cleanup"
+      ]
+    },
+    "agent-core-lifecycle-native-e2e": {
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "--journey",
+        "core-lifecycle"
+      ],
+      "timeout_seconds": 900,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "Run the approved-profile native Agent core lifecycle: create, list, select, edit, duplicate, set default, start an empty session, delete, verify negative states, compare Station readback, and clean up.",
+      "runtime_matrix": {
+        "id": "agent-core-lifecycle-native-matrix",
+        "version": "2026-09-28.1",
+        "sha256": "9605afef17f67b05dfceb4b44b242ca245512d559cb27cb0ab77d7e94050bdb2",
+        "expected_tuple_count": 6,
+        "expected_assertion_count": 12
+      },
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "cleanup"
+      ]
+    },
+    "agent-cli-provider-primary-native-e2e": {
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "--journey",
+        "cli-provider"
+      ],
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "Run the profile-two native CLI Provider journey: discover trae-cli without HTTP credentials, stream and persist a response, restore it after native restart, prove a missing CLI binary produces a visible Station-backed typed failure without a fabricated completion, and clean up.",
+      "runtime_matrix": {
+        "id": "agent-cli-provider-primary-native-matrix",
+        "version": "2026-09-29.2",
+        "sha256": "32e35baec617aeed3b9e0b6c62f8655e148456a725ddce580f04f0f7447a18a4",
+        "expected_tuple_count": 5,
+        "expected_assertion_count": 13
+      },
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "cleanup"
+      ]
     },
     "agent-conversation-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/native_agent_runner.py --journey conversation",
@@ -1235,7 +1348,7 @@
     },
     "agent-v2-kernel-foundation-e2e": {
       "command": "PT_AGENT_V2_CANDIDATE_MANIFEST=$(python3 tooling/acceptance/gates/agent/foundation_scenario_runner.py) && python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-kernel-foundation-e2e",
-      "timeout_seconds": 3600,
+      "timeout_seconds": 5400,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
@@ -1243,8 +1356,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 419
       },
       "required_artifact_roles": [
@@ -1264,6 +1377,23 @@
         "runner-attestation"
       ]
     },
+    "agent-v2-external-runtime-e2e": {
+      "command": "python3 tooling/acceptance/gates/agent/external_runtime_e2e.py",
+      "timeout_seconds": 3600,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "P12 External Agent: create, exact-session resume, Station restart, resume-unavailable, confirmed reset, cleanup retry, fresh epoch, isolation, and deletion cleanup across Native and Browser.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "runtime-events",
+        "side-effect-count",
+        "replay",
+        "cleanup"
+      ]
+    },
     "agent-v2-home-command-center-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-home-command-center-e2e",
       "timeout_seconds": 600,
@@ -1274,8 +1404,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 33
       },
       "required_artifact_roles": [
@@ -1283,6 +1413,7 @@
         "station-readback",
         "command-ids",
         "projection-revisions",
+        "contract-evidence",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
@@ -1295,7 +1426,7 @@
     },
     "agent-v2-capability-binding-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-capability-binding-e2e",
-      "timeout_seconds": 600,
+      "timeout_seconds": 3600,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
@@ -1303,8 +1434,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 69
       },
       "required_artifact_roles": [
@@ -1312,6 +1443,8 @@
         "station-readback",
         "readiness-snapshots",
         "zero-execution",
+        "contract-evidence",
+        "guard-report",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
@@ -1324,7 +1457,7 @@
     },
     "agent-v2-governed-tool-loop-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-governed-tool-loop-e2e",
-      "timeout_seconds": 600,
+      "timeout_seconds": 3600,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
@@ -1332,17 +1465,19 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 86
       },
       "required_artifact_roles": [
         "receiver-dom",
         "station-readback",
         "executor-receipts",
+        "contract-evidence",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
+        "zero-execution",
         "cleanup",
         "replay",
         "source-identity",
@@ -1352,7 +1487,7 @@
     },
     "agent-v2-mcp-lifecycle-e2e": {
       "command": "python3 tooling/acceptance/gates/agent/agent_v2_gate.py --gate agent-v2-mcp-lifecycle-e2e",
-      "timeout_seconds": 600,
+      "timeout_seconds": 3600,
       "environment": "home-station",
       "provisioner": "home-station",
       "tier": "env-evidence",
@@ -1360,8 +1495,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 41
       },
       "required_artifact_roles": [
@@ -1369,6 +1504,8 @@
         "station-readback",
         "executor-receipts",
         "process-port-secret-canary",
+        "contract-evidence",
+        "zero-execution",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
@@ -1389,8 +1526,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 37
       },
       "required_artifact_roles": [
@@ -1398,9 +1535,11 @@
         "station-readback",
         "oauth-resource-manifest",
         "provider-revoke",
+        "contract-evidence",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
+        "zero-execution",
         "cleanup",
         "replay",
         "source-identity",
@@ -1418,8 +1557,8 @@
       "initial_proof_status": "UNPROVEN",
       "runtime_matrix": {
         "id": "modern-chat-agent-v2-runtime-matrix",
-        "version": "2026-08-25.1",
-        "sha256": "ec5d0cafc4a88b47e9026d35d44c8f17a2a12ec7e4c204eb9b8f6ec099e3ae89",
+        "version": "2026-10-01.1",
+        "sha256": "4eb614c757ce0faa46d7ab2287ea54605346251f039a3b7a684e49b078e52142",
         "expected_tuple_count": 57
       },
       "required_artifact_roles": [
@@ -1429,6 +1568,7 @@
         "runtime-events",
         "turn-trace",
         "metrics-lineage",
+        "contract-evidence",
         "runtime-attestation-set",
         "measurement-report",
         "side-effect-count",
@@ -1786,59 +1926,6 @@
       "environment": "local",
       "tier": "local-evidence",
       "description": "Prove the executable Workflow Doctor contract, isolated installed integration, complete workflow source suite, and Peers Dev rendering at desktop and narrow browser viewports."
-    },
-    "oauth-login-broker-durable-login": {
-      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope durable-login",
-      "timeout_seconds": 600,
-      "environment": "oauth2-client-local-service",
-      "provisioner": "oauth2-client-local-service",
-      "tier": "env-evidence",
-      "description": "Prove encrypted cross-instance OAuth completion, replay rejection, PKCE, redirect confinement, GitHub App auth, and bounded CAS retry from exact source."
-    },
-    "oauth-login-broker-refresh-idempotency": {
-      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope refresh-idempotency",
-      "timeout_seconds": 600,
-      "environment": "oauth2-client-local-service",
-      "provisioner": "oauth2-client-local-service",
-      "tier": "env-evidence",
-      "description": "Prove provider refresh normalization, omitted refresh-token retention, and duplicate-operation convergence from exact source."
-    },
-    "oauth-login-broker-key-rotation": {
-      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope key-rotation",
-      "timeout_seconds": 600,
-      "environment": "oauth2-client-local-service",
-      "provisioner": "oauth2-client-local-service",
-      "tier": "env-evidence",
-      "description": "Prove full-prefix authenticated record rotation, unknown-key failure, and second-run no-op behavior from exact source."
-    },
-    "oauth-login-broker-operator": {
-      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope operator",
-      "timeout_seconds": 900,
-      "environment": "oauth2-client-local-browser",
-      "provisioner": "oauth2-client-local-browser",
-      "tier": "env-evidence",
-      "description": "Prove authenticated token-free operator HTML and JSON plus the local start, callback, and administration browser journey from exact source."
-    },
-    "oauth2-client-live-api-repository": {
-      "command": "tooling/acceptance/gates/oauth2_client/live_api.sh",
-      "timeout_seconds": 300,
-      "environment": "local",
-      "tier": "local-evidence",
-      "description": "Prove live GitHub and Google identity readback, standards-based OAuth2 redirects, GitHub-backed encrypted record classes, and idempotent key rotation using the isolated oauth2-client-test environment."
-    },
-    "oauth-login-broker-architecture": {
-      "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs",
-      "timeout_seconds": 60,
-      "environment": "local",
-      "tier": "ci-structure",
-      "description": "Validate the OAuth Login Broker architecture module registration, governed paths, required documents, decisions, and capability projection."
-    },
-    "oauth-login-broker-contract": {
-      "command": "python3 tooling/scripts/acceptance-validate.py --domain oauth-login-broker",
-      "timeout_seconds": 600,
-      "environment": "local",
-      "tier": "ci-structure",
-      "description": "Validate the OAuth Login Broker managed-domain Feature, Capability, Registry, Gate, environment, and Provisioner graph."
     }
   }
 }

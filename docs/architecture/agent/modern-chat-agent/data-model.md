@@ -1,8 +1,8 @@
 # Modern Chat Agent — Data Model
 
 > **Status**: accepted
-> **Version**: v1.3
-> **Created**: 2026-07-30 | **Updated**: 2026-09-25
+> **Version**: v1.4
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 > **Proto Root**: `model/domain/agent/`
 
@@ -114,6 +114,9 @@ message ConversationRuntimeBinding {
   string capability_snapshot_hash = 8;
   string config_snapshot_hash = 9;
   google.protobuf.Timestamp bound_at = 10;
+  ExternalRuntimeBindingState state = 11;
+  string last_error_code = 12;
+  google.protobuf.Timestamp updated_at = 13;
 }
 ```
 
@@ -121,9 +124,12 @@ Rules:
 
 - `DIRECT_MODEL` does not use `external_session_id` or `runtime_home_ref`.
 - `EXTERNAL_AGENT` uses an opaque Station-private runtime-home reference.
+- A newly installed external binding starts at epoch `1`; Direct Model remains
+  epoch `0`.
 - External session epoch increments after destructive reset or confirmed
   resume-unavailable recovery.
 - Client cannot mutate opaque runtime identifiers directly.
+- `RESET_PREPARED` and `CLEANUP_FAILED` block Turn admission.
 
 ### 2.4 Message
 
@@ -712,6 +718,37 @@ Valid only for a stateful external runtime. Requires expected conversation
 version and explicit destructive confirmation. It terminates the current
 external-session epoch, cleans runtime state, increments epoch, and clears the
 resume handle.
+
+```protobuf
+enum ExternalRuntimeBindingState {
+  EXTERNAL_RUNTIME_BINDING_STATE_UNSPECIFIED = 0;
+  EXTERNAL_RUNTIME_BINDING_STATE_READY = 1;
+  EXTERNAL_RUNTIME_BINDING_STATE_RESUME_UNAVAILABLE = 2;
+  EXTERNAL_RUNTIME_BINDING_STATE_RESET_PREPARED = 3;
+  EXTERNAL_RUNTIME_BINDING_STATE_CLEANUP_FAILED = 4;
+}
+
+message ResetConversationRuntimeRequest {
+  string conversation_id = 1;
+  uint64 expected_conversation_version = 2;
+  string client_idempotency_key = 3;
+  bool destructive_confirmed = 4;
+}
+
+message ResetConversationRuntimeResponse {
+  Conversation conversation = 1;
+  uint64 closed_external_session_epoch = 2;
+  bool replayed = 3;
+}
+```
+
+Station persists one `ExternalRuntimeResetCommand` keyed by
+`(ptid, client_idempotency_key)`. It records payload hash, old binding tuple,
+reset fence, lifecycle state, safe error code, and committed response.
+`RESET_PREPARED` is durable before process/session/home cleanup starts.
+Successful cleanup advances exactly one epoch and emits one sequenced
+`runtime_reset` event. Failed cleanup preserves the old tuple and records
+`CLEANUP_FAILED`; the same command may retry it.
 
 ### CreateAndStartAgentTask
 

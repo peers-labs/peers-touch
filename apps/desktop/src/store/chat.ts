@@ -5,6 +5,7 @@ import i18n, { resolveI18nValue } from '../i18n/index';
 import {
   api,
   type AgentConversation,
+  type AgentConversationRuntimeResetResult,
   type Session,
   type StreamEvent,
   type AgentAttachmentRefInput,
@@ -860,6 +861,9 @@ interface ChatState {
   retryTurnRecovery: (conversationId?: string) => void;
   reloadTurnSnapshot: (conversationId?: string) => Promise<AgentTurnSnapshotReloadResult>;
   reloadLatestRevision: (conversationId?: string) => Promise<void>;
+  resetExternalRuntime: (
+    conversationId?: string,
+  ) => Promise<AgentConversationRuntimeResetResult>;
   reconcileClientLease: (
     conversationId: string,
     messageId: string,
@@ -1008,6 +1012,14 @@ function reconcileRevisionSession(
         session.key === conversation.conversation_id ? reloaded : session
       ))
     : [reloaded, ...sessions];
+}
+
+function clearResolvedRuntimeResumeError(message: ChatMessage): ChatMessage {
+  if (message.resolution?.type !== 'confirmReset') return message;
+  return {
+    ...message,
+    resolution: null,
+  };
 }
 
 function presentChatRuntimeError(message: string): string {
@@ -1889,6 +1901,56 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
       }));
       throw error;
     }
+  },
+
+  resetExternalRuntime: async (conversationId) => {
+    const key = conversationId || get().currentSessionKey;
+    if (isAgentDraftKey(key)) {
+      throw new Error('agent.errors.resumeUnavailable');
+    }
+    const conversation = await api.getAgentConversation(key);
+    const result = await api.resetAgentConversationRuntime({
+      conversation_id: key,
+      expected_conversation_version: conversation.version,
+      client_idempotency_key: `external-runtime-reset:${key}:${conversation.version}`,
+      destructive_confirmed: true,
+    });
+
+    let refreshedMessages: ChatMessage[] | undefined;
+    try {
+      await agentChatCache.clearConversation(key);
+      const synced = await agentChatCache.refreshConversation(key);
+      refreshedMessages = reconcileToolMessages(
+        synced.map(cachedMessageToChatMessage),
+      ).map(clearResolvedRuntimeResumeError);
+    } catch (error) {
+      log.warn('chat', 'External runtime reset cache reconciliation failed', {
+        conversationId: key,
+        error: String(error),
+      });
+    }
+
+    set((state) => {
+      const clearRecovery = (messages: ChatMessage[]) =>
+        messages.map(clearResolvedRuntimeResumeError);
+      const isCurrent = state.currentSessionKey === key;
+      return {
+        sessions: reconcileRevisionSession(
+          state.sessions,
+          result.conversation,
+        ),
+        messages: isCurrent
+          ? refreshedMessages ?? clearRecovery(state.messages)
+          : state.messages,
+        sessionBuffers: state.sessionBuffers[key]
+          ? {
+              ...state.sessionBuffers,
+              [key]: clearRecovery(state.sessionBuffers[key]),
+            }
+          : state.sessionBuffers,
+      };
+    });
+    return result;
   },
 
   reconcileClientLease: async (

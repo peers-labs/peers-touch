@@ -750,6 +750,8 @@ fn main() {
             #[cfg(feature = "acceptance-webdriver")]
             capability_authority::agent_capability_acceptance_scenario_release,
             #[cfg(feature = "acceptance-webdriver")]
+            capability_authority::agent_capability_acceptance_scenario_clock_advance,
+            #[cfg(feature = "acceptance-webdriver")]
             capability_authority::agent_capability_acceptance_scenario_interrupt,
             #[cfg(feature = "acceptance-webdriver")]
             capability_authority::agent_capability_acceptance_scenario_cleanup,
@@ -775,6 +777,7 @@ fn main() {
             agent_turn::agent_conversation_update,
             agent_turn::agent_conversation_archive,
             agent_turn::agent_conversation_restore,
+            agent_turn::agent_conversation_runtime_reset,
             agent_turn::agent_retry_turn,
             agent_turn::agent_regenerate_turn,
             agent_turn::agent_edit_and_resend,
