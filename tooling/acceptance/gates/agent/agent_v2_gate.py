@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tooling.acceptance.core import ArtifactSession
+from tooling.acceptance.core.redaction import redact_text
 
 MATRIX = {
     "id": "modern-chat-agent-v2-runtime-matrix",
@@ -337,11 +338,15 @@ def _produce_candidate(
                 {},
             )
         if completed.returncode != 0:
+            diagnostic = redact_text(
+                (completed.stderr.strip() or completed.stdout.strip())[-4_000:]
+            )
             return (
                 producer_label,
                 [
                     "candidate producer failed with exit code "
                     f"{completed.returncode}"
+                    + (f": {diagnostic}" if diagnostic else "")
                 ],
                 {},
             )

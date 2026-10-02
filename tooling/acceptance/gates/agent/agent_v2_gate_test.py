@@ -255,7 +255,7 @@ class AgentV2GateContractTest(unittest.TestCase):
 
         self.assertEqual(
             issues,
-            ["candidate producer failed with exit code 23"],
+            ["candidate producer failed with exit code 23: producer failed"],
         )
         self.assertEqual(role_payloads, {})
         self.assertIsNotNone(observed_root)

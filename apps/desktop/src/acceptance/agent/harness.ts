@@ -17284,6 +17284,7 @@ async function runFoundationIncompatibleCapabilityAttempt(input: {
 interface FoundationDisposableRuntimeFixture {
   providerId: string;
   modelId: string;
+  providerPrefix: string;
 }
 
 async function createGovernedToolRuntimeFixture(
@@ -17293,7 +17294,8 @@ async function createGovernedToolRuntimeFixture(
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
   const purposeKey = purpose.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-  const requestedProviderId = `mca-${purposeKey}-${suffix}`;
+  const providerPrefix = `mca-${purposeKey}-`;
+  const requestedProviderId = `${providerPrefix}${suffix}`;
   const modelId = `model-${suffix}`;
   const created = await api.createProvider({
     id: requestedProviderId,
@@ -17334,7 +17336,7 @@ async function createGovernedToolRuntimeFixture(
         'agent.acceptance.governedToolRuntimeModelUnavailable',
       );
     }
-    return { providerId, modelId };
+    return { providerId, modelId, providerPrefix };
   } catch (error) {
     try {
       await api.deleteProvider(providerId);
@@ -17356,7 +17358,8 @@ async function createFoundationDisposableRuntimeFixture(
   purpose: string,
 ): Promise<FoundationDisposableRuntimeFixture> {
   const suffix = crypto.randomUUID();
-  const requestedProviderId = `mca-fx-${suffix}`;
+  const providerPrefix = 'mca-fx-';
+  const requestedProviderId = `${providerPrefix}${suffix}`;
   let providerId = requestedProviderId;
   const modelId = `model-${suffix}`;
   try {
@@ -17398,7 +17401,7 @@ async function createFoundationDisposableRuntimeFixture(
         'agent.acceptance.disposableRuntimeModelUnavailable',
       );
     }
-    return { providerId, modelId };
+    return { providerId, modelId, providerPrefix };
   } catch (error) {
     try {
       if (providerId) {
@@ -17426,7 +17429,10 @@ async function deleteFoundationDisposableRuntimeFixture(
   providerRestored: boolean;
   modelDeleted: boolean;
 }> {
-  if (!fixture.providerId.startsWith('mca-fx-')) {
+  if (
+    !fixture.providerPrefix
+    || !fixture.providerId.startsWith(fixture.providerPrefix)
+  ) {
     throw new Error(
       'agent.acceptance.disposableRuntimeProviderIdentityInvalid',
     );
@@ -28950,6 +28956,7 @@ async function cleanupEvaluationScenarioState(
     const runtimeCleanup = await deleteFoundationDisposableRuntimeFixture({
       providerId: state.providerId,
       modelId: state.modelId,
+      providerPrefix: 'mca-evaluation-scenario-',
     });
     if (!runtimeCleanup.modelDeleted || !runtimeCleanup.providerRestored) {
       failures.push('runtime-fixture:incomplete');
@@ -30645,6 +30652,7 @@ async function cleanupCapabilityBindingCandidate(
     const runtimeCleanup = await deleteFoundationDisposableRuntimeFixture({
       providerId: fixture.providerId,
       modelId: fixture.modelId,
+      providerPrefix: 'mca-fx-',
     });
     if (!runtimeCleanup.providerRestored || !runtimeCleanup.modelDeleted) {
       failures.push('runtime-fixture:restore-not-observed');
