@@ -82,6 +82,72 @@
       "externalCapabilityRegistries": []
     },
     {
+      "id": "agent",
+      "root": "docs/architecture/agent",
+      "status": "active",
+      "owner": "Peers-Touch Agent Team",
+      "characteristics": {
+        "protocol": true,
+        "stateMachine": true,
+        "persistence": true,
+        "ownership": true,
+        "moduleLayout": true,
+        "crossRuntime": true,
+        "integration": true
+      },
+      "requiredDocuments": [
+        "README.md",
+        "design.md",
+        "decisions.md",
+        "data-model.md",
+        "module-layout.md",
+        "integration.md"
+      ],
+      "decisionIds": [
+        "MCA-D14",
+        "MCA-D15",
+        "MCA-D16",
+        "MCA-D17",
+        "MCA-D18",
+        "MCA-D20",
+        "MCA-D22",
+        "MCA-D23"
+      ],
+      "governedPaths": [
+        "apps/desktop/src-tauri/src/application/agent_turn",
+        "apps/desktop/src-tauri/src/application/mcp",
+        "apps/station/app/subserver/agent",
+        "docs/architecture/agent",
+        "model/domain/agent",
+        "packages/agent-catalog",
+        "tooling/acceptance/gates/agent"
+      ],
+      "capabilities": [
+        {
+          "id": "agent.chat.minimum-usable",
+          "owner": "agent.station",
+          "contractRoots": [
+            "apps/station/app/subserver/agent",
+            "model/domain/agent"
+          ],
+          "consumers": [
+            "apps/desktop/src-tauri/src/application/agent_turn",
+            "apps/desktop/src-tauri/src/application/mcp"
+          ],
+          "allowedDependencies": [
+            "desktop.application.agent_turn",
+            "desktop.application.mcp",
+            "model.domain.agent",
+            "station.agent"
+          ],
+          "evidenceGates": [
+            "agent-minimum-usable-chat-native-e2e"
+          ]
+        }
+      ],
+      "externalCapabilityRegistries": []
+    },
+    {
       "id": "station-access-lifecycle",
       "root": "docs/architecture/station-access-lifecycle",
       "status": "active",

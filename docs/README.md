@@ -235,9 +235,13 @@
 - 群生命周期历史设计：`architecture/social-runtime/group-lifecycle.md`（superseded；当前真源为 Chat Lifecycle 与 Messaging Platform）
 - 双端社交/聊天产品闭环执行计划：`architecture/social-runtime/execution-plans/20260604-social-chat-product-closure.md`
 - Applet / 小程序运行时架构：`architecture/applet-runtime/README.md`
+- Agent 架构总入口：`architecture/agent/README.md`（active；Station 单一真源、
+  Desktop 本机能力执行、统一能力绑定与 Native 最小可用 Agent Chat 证明边界）
 - A2A 协议集成：`architecture/agent/a2a/`（文档集，入口 `README.md`）
 - Agent Canvas 编排架构：`architecture/agent/agent-canvas-orchestration.md`
-- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`（draft / `PRODUCT_DESIGN_INCOMPLETE`；包含 LobeHub/Peers-Touch benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
+- Modern Chat Agent 产品与单 Agent 运行时：`architecture/agent/modern-chat-agent/README.md`
+  （product-accepted / design-accepted；包含 LobeHub/Peers-Touch benchmark disposition、
+  产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的运行时契约）
 - Actor 隔离环境平面：`architecture/runtime/actor-isolated-environment.md`
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`
