@@ -65,9 +65,11 @@ from tooling.development.secure_content.runtime_owner import (
     _generate_mobile_recovery_phrase,
     _make_client,
     _manifest_payload,
+    _maintain_current_recovery_prekeys,
     _open_station_tunnels,
     _prepare_accepted_friendship,
     _prepare_mobile_private_content_keys,
+    _prepare_portable_recovery,
     _prepare_private_content_keys,
     _parse_args,
     _publish_result_generation,
@@ -1766,6 +1768,87 @@ class RuntimeOwnerTest(unittest.TestCase):
             ),
         ):
             _prepare_private_content_keys(client)
+
+    def test_portable_recovery_maintains_prekeys_for_created_epoch(
+        self,
+    ) -> None:
+        def native_result(payload: Mapping[str, object]) -> Mapping[str, object]:
+            return {
+                "ok": True,
+                "value": {
+                    "ok": True,
+                    "data": {"status": json.dumps(payload)},
+                },
+            }
+
+        client = MagicMock()
+        client.spec = SimpleNamespace(profile="bob")
+        words = [f"word-{index}" for index in range(24)]
+        client.driver.execute_async_script.side_effect = (
+            native_result({"words": words}),
+            native_result(
+                {
+                    "backup": {"backupId": "backup-bob"},
+                    "recoveryEpoch": 7,
+                }
+            ),
+            native_result(
+                {
+                    "recoveryEpoch": 7,
+                    "recoveryPreKeyAvailable": 100,
+                }
+            ),
+        )
+
+        phrase, prepared = _prepare_portable_recovery(client)
+
+        self.assertEqual(" ".join(words), phrase)
+        self.assertEqual(
+            {
+                "backupIdSha256": hashlib.sha256(
+                    b"backup-bob"
+                ).hexdigest(),
+                "preparedEpoch": 7,
+                "recoveryPreKeyAvailable": 100,
+            },
+            prepared,
+        )
+        maintenance = client.driver.execute_async_script.call_args_list[2]
+        self.assertIn(
+            "import('/src/store/privateMoments.ts')",
+            maintenance.args[0],
+        )
+        self.assertEqual(
+            "social_private_moments_acceptance_maintain_prekeys",
+            maintenance.args[1],
+        )
+
+    def test_portable_recovery_rejects_mismatched_prekey_epoch(self) -> None:
+        client = MagicMock()
+        client.spec = SimpleNamespace(profile="bob")
+        client.driver.execute_async_script.return_value = {
+            "ok": True,
+            "value": {
+                "ok": True,
+                "data": {
+                    "status": json.dumps(
+                        {
+                            "recoveryEpoch": 8,
+                            "recoveryPreKeyAvailable": 100,
+                        }
+                    )
+                },
+            },
+        }
+
+        with self.assertRaisesRegex(
+            RuntimeOwnerBlocked,
+            "PreKey pool is unavailable",
+        ):
+            _maintain_current_recovery_prekeys(
+                client,
+                expected_recovery_epoch=7,
+            )
 
     def test_w8_remote_recipient_waits_for_mls_keypackage(self) -> None:
         client = MagicMock()
