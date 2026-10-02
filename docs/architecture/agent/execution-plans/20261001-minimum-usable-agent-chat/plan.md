@@ -118,7 +118,7 @@
 ## Acceptance Execution
 
 ```json
-{"closures":{"AMU-functional":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"]},"completion":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"],"full":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"]}
+{"closures":{"AMU-functional":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"]},"completion":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"],"full":["acceptance-infra-validation","acceptance-plan-self","acceptance-runtime-provisioning-self","acceptance-workflow-contract","agent-attachment-e2e","agent-cli-provider-primary-native-e2e","agent-core-lifecycle-native-e2e","agent-marketplace-catalog-e2e","agent-provider-credential-e2e","agent-stream-resilience-e2e","agent-v2-capability-binding-e2e","agent-v2-external-runtime-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-kernel-foundation-e2e","agent-v2-mcp-lifecycle-e2e","chat-lifecycle-tree-zero-reference-e2e","desktop-check","development-workflow-control-plane","machine-dev-registry-self","proto-build","station-agent-unit"]}
 ```
 
 ## Goal
