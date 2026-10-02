@@ -258,6 +258,21 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         self.assertIn("_run_social_acceptance_pre_restart(", source)
         self.assertIn("_social_acceptance_scenario_registry(", source)
+        replacement_start = source.index("bob_replacement = _make_client(")
+        recovery_read = source.index(
+            'before_recovery = _moments_harness(',
+            replacement_start,
+        )
+        recovery_restore = source.index(
+            "restored = _restore_portable_recovery(",
+            recovery_read,
+        )
+        replacement_enrollment = source.index(
+            "_wait_for_device_enrollment(bob_replacement)",
+            replacement_start,
+        )
+        self.assertLess(recovery_read, recovery_restore)
+        self.assertLess(recovery_restore, replacement_enrollment)
 
     def test_w8_suite_restores_declared_shared_fixtures(self) -> None:
         clients = {
