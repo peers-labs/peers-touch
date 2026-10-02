@@ -932,6 +932,96 @@ def _native_invoke_json(
     return decoded
 
 
+def _maintain_current_recovery_prekeys(
+    client: FoundationRuntimeClient,
+    *,
+    expected_recovery_epoch: int,
+) -> Mapping[str, Any]:
+    # Renderer generation is frontend-owned. Resolve it from the live store
+    # before invoking the build-gated Native fixture command.
+    result = client.driver.execute_async_script(
+        """
+        const command = arguments[0];
+        const done = arguments[arguments.length - 1];
+        Promise.resolve(import('/src/store/privateMoments.ts'))
+          .then(async ({ usePrivateMomentsStore }) => {
+            const scope = usePrivateMomentsStore.getState().scope;
+            if (
+              !scope
+              || typeof scope.actorPtid !== 'string'
+              || !scope.actorPtid
+              || !Number.isSafeInteger(scope.rendererGeneration)
+              || scope.rendererGeneration < 1
+            ) {
+              throw new Error('current private Moment scope is unavailable');
+            }
+            const value = await window.__TAURI_INTERNALS__.invoke(command, {
+              input: {
+                actor_ptid: scope.actorPtid,
+                renderer_generation: scope.rendererGeneration,
+              },
+            });
+            done({ ok: true, value });
+          })
+          .catch((error) => done({
+            ok: false,
+            error: String(error && error.message ? error.message : error),
+          }));
+        """,
+        "social_private_moments_acceptance_maintain_prekeys",
+    )
+    if not isinstance(result, Mapping) or result.get("ok") is not True:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Native portable recovery PreKey maintenance failed",
+            resource=f"fixture-recovery:{client.spec.profile}",
+        )
+    app_result = result.get("value")
+    if (
+        not isinstance(app_result, Mapping)
+        or app_result.get("ok") is not True
+        or not isinstance(app_result.get("data"), Mapping)
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            (
+                "Native portable recovery PreKey maintenance returned "
+                "a failed AppResult"
+            ),
+            resource=f"fixture-recovery:{client.spec.profile}",
+        )
+    try:
+        decoded = json.loads(app_result["data"].get("status"))
+    except (TypeError, json.JSONDecodeError) as error:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            (
+                "Native portable recovery PreKey maintenance returned "
+                "invalid status JSON"
+            ),
+            resource=f"fixture-recovery:{client.spec.profile}",
+        ) from error
+    if not isinstance(decoded, Mapping):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Native portable recovery PreKey status must be an object",
+            resource=f"fixture-recovery:{client.spec.profile}",
+        )
+    available = decoded.get("recoveryPreKeyAvailable")
+    if (
+        decoded.get("recoveryEpoch") != expected_recovery_epoch
+        or not isinstance(available, int)
+        or isinstance(available, bool)
+        or available < 1
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Native portable recovery PreKey pool is unavailable",
+            resource=f"fixture-recovery:{client.spec.profile}",
+        )
+    return decoded
+
+
 def _prepare_portable_recovery(
     client: FoundationRuntimeClient,
 ) -> tuple[str, Mapping[str, Any]]:
@@ -960,8 +1050,13 @@ def _prepare_portable_recovery(
         revision.get("recoveryEpoch"),
         "portable-recovery-epoch",
     )
+    prekeys = _maintain_current_recovery_prekeys(
+        client,
+        expected_recovery_epoch=recovery_epoch,
+    )
     return recovery_phrase, {
         "preparedEpoch": recovery_epoch,
+        "recoveryPreKeyAvailable": prekeys["recoveryPreKeyAvailable"],
         "backupIdSha256": _sha256(
             _required_text(
                 revision.get("backup", {}).get("backupId")
@@ -1032,9 +1127,14 @@ def _publish_friends_moment(
         or not isinstance(post_id, str)
         or not post_id
     ):
+        state = str(published.get("state") or "missing")
+        error_code = str(published.get("errorCode") or "missing")
         raise RuntimeOwnerBlocked(
             "FIXTURE_OWNER_UNAVAILABLE",
-            "Social Desktop private Moment did not publish",
+            (
+                "Social Desktop private Moment did not publish "
+                f"(state={state}, errorCode={error_code})"
+            ),
             resource=f"fixture-draft:{draft_id}",
         )
     return post_id
