@@ -4691,18 +4691,30 @@ def _manifest_payload(
     post_cut_epoch_id: str | None = None,
     final_cut_bindings: Mapping[str, Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
+    source = {
+        "canonical_worktree": str(identity["root"]),
+        "workspace_id": identity["workspaceId"],
+        "commit": identity["head"],
+        "worktree_set_digest": identity["worktreeSetDigest"],
+        "workspace_digest": "clean",
+    }
+    source_evidence_workspace_id = identity.get(
+        "sourceEvidenceWorkspaceId"
+    )
+    if (
+        isinstance(source_evidence_workspace_id, str)
+        and source_evidence_workspace_id
+        != identity["workspaceId"]
+    ):
+        source["source_evidence_workspace_id"] = (
+            source_evidence_workspace_id
+        )
     payload: dict[str, Any] = {
         "schema_version": runtime_manifest.SCHEMA_VERSION,
         "kind": runtime_manifest.MANIFEST_KIND,
         "run_id": run_id,
         "journey_id": journey_id,
-        "source": {
-            "canonical_worktree": str(identity["root"]),
-            "workspace_id": identity["workspaceId"],
-            "commit": identity["head"],
-            "worktree_set_digest": identity["worktreeSetDigest"],
-            "workspace_digest": "clean",
-        },
+        "source": source,
         "controller_binding": {"profile_id": PROFILE, "slot": SLOT},
         "services": {
             service_id: dict(service)
