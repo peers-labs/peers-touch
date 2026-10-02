@@ -67,6 +67,7 @@ class _Context:
                 "homeStationPeerIdSha256": "b" * 64,
                 "federationId": "federation",
                 "federationIdSha256": _digest("federation"),
+                "remoteGroupUlid": "01JREMOTE",
                 "profileId": "fiveArm",
                 "serviceId": "station-five-arm",
             },
@@ -262,9 +263,18 @@ class SocialExpansionScenarioTest(unittest.TestCase):
             if payload["audienceKind"] == "GROUP"
         ]
         self.assertEqual("42", circle["circleId"])
+        self.assertEqual(1, _FakeProductClient.group_count)
         self.assertEqual(2, len(groups))
         self.assertTrue(
             all(payload["groupConversationId"] for payload in groups)
+        )
+        self.assertEqual(
+            "01JREMOTE",
+            next(
+                payload["groupConversationId"]
+                for payload in groups
+                if payload["draftId"] == "w8-audience-remote-group"
+            ),
         )
         self.assertEqual([], _FakeProductClient.cleared_clients)
 

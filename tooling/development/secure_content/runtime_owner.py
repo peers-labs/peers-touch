@@ -162,7 +162,8 @@ W8_REMOTE_CLIENT = (
     "remote_recipient",
     "remote_recipient",
 )
-W8_REMOTE_SEEDED_ACCOUNT = "carol@p.t"
+W8_REMOTE_SEEDED_ACCOUNT = "alice@p.t"
+W8_REMOTE_IDENTITY_SCOPE = "social-desktop-remote-recipient-alice"
 W8_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
         "scope": "suite",
@@ -1461,6 +1462,104 @@ def _wait_for_mls_readiness(
             ),
             resource=f"fixture-mls:{client.spec.profile}",
         ) from error
+
+
+def _prepare_remote_group_fixture(
+    primary_client: FoundationRuntimeClient,
+    local_member_client: FoundationRuntimeClient,
+    *,
+    remote_actor_ptid: str,
+    federation_id: str,
+) -> str:
+    local_member = _moments_harness(
+        local_member_client,
+        "acceptanceActorIdentity",
+    )
+    local_member_ptid = _required_text(
+        local_member.get("actorPtid"),
+        "remote Group local member PTID",
+    )
+    created = _chat_harness(
+        primary_client,
+        "createGroup",
+        {
+            "name": "secure-content-w8-remote-group",
+            "federationId": federation_id,
+            "memberPtids": [local_member_ptid],
+        },
+    )
+    group_ulid = _required_text(
+        created.get("groupUlid"),
+        "remote Group ULID",
+    )
+    added = _chat_harness(
+        primary_client,
+        "addFederatedGroupMember",
+        {
+            "groupUlid": group_ulid,
+            "member": {"ptid": remote_actor_ptid},
+        },
+    )
+    if added.get("groupUlid") != group_ulid:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "W8 remote Group membership was not accepted",
+            resource="fixture:remote-private-recipient-group",
+        )
+
+    def authoritative_membership() -> Mapping[str, Any] | None:
+        snapshot = _chat_harness(
+            primary_client,
+            "groupLifecycleSnapshot",
+            {"groupUlid": group_ulid},
+            timeout=15,
+        )
+        members = snapshot.get("members")
+        if (
+            isinstance(members, Sequence)
+            and not isinstance(members, (str, bytes))
+            and any(
+                isinstance(member, Mapping)
+                and member.get("ptid") == remote_actor_ptid
+                for member in members
+            )
+        ):
+            return snapshot
+        return None
+
+    try:
+        wait_until(
+            authoritative_membership,
+            "W8 authoritative remote Group membership",
+            timeout=120,
+            interval=1,
+        )
+    except Exception as error:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "W8 remote Group membership did not become authoritative",
+            resource="fixture:remote-private-recipient-group",
+        ) from error
+    return group_ulid
+
+
+def _revoke_remote_fixture_device(
+    client: FoundationRuntimeClient,
+    *,
+    readiness: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    revoked = _chat_harness(client, "revokeCurrentDevice")
+    if (
+        revoked.get("revoked") is not True
+        or revoked.get("actorPtid") != readiness.get("actorPtid")
+        or revoked.get("deviceId") != readiness.get("deviceId")
+    ):
+        raise RuntimeOwnerBlocked(
+            "RUNTIME_CLEANUP_FAILED",
+            "W8 remote recipient device revocation was not confirmed",
+            resource=f"fixture-device:{client.spec.profile}",
+        )
+    return revoked
 
 
 def _prepare_private_content_keys(client: FoundationRuntimeClient) -> None:
@@ -8205,7 +8304,7 @@ class W7RuntimeOwner:
                 remote_client,
                 self.runtime_root
                 / "shared"
-                / "social-desktop-remote-recipient"
+                / W8_REMOTE_IDENTITY_SCOPE
                 / "actor-identity",
             )
             stack.callback(
@@ -8221,7 +8320,7 @@ class W7RuntimeOwner:
                 password=os.environ.get("PT_DEV_ACCOUNT_PASSWORD", "1"),
             )
             _wait_for_device_enrollment(remote_client)
-            _wait_for_mls_readiness(remote_client)
+            remote_readiness = _wait_for_mls_readiness(remote_client)
             ledger.record(
                 SuiteRuntimeAction.CLIENT_LAUNCH,
                 resource_id=f"client:{remote_client_id}",
@@ -8255,6 +8354,25 @@ class W7RuntimeOwner:
                     ),
                 ) from error
 
+            for local_client_id in (
+                DESKTOP_CLIENTS[0][0],
+                DESKTOP_CLIENTS[1][0],
+            ):
+                _wait_for_mls_readiness(clients[local_client_id])
+            fixture_owner.bind_remote_group(
+                lambda remote_actor_ptid, federation_id: (
+                    _prepare_remote_group_fixture(
+                        clients[DESKTOP_CLIENTS[0][0]],
+                        clients[DESKTOP_CLIENTS[1][0]],
+                        remote_actor_ptid=remote_actor_ptid,
+                        federation_id=federation_id,
+                    )
+                )
+            )
+            _revoke_remote_fixture_device(
+                remote_client,
+                readiness=remote_readiness,
+            )
             _stop_client_or_raise(
                 remote_client,
                 purpose="W8 remote recipient identity preparation",

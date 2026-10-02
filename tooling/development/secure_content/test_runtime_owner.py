@@ -46,6 +46,8 @@ from tooling.development.secure_content.runtime_owner import (
     W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
     W8_SCENARIOS,
+    W8_REMOTE_IDENTITY_SCOPE,
+    W8_REMOTE_SEEDED_ACCOUNT,
     W9_RUNTIME_REUSE,
     RuntimeOwnerBlocked,
     W8_REMOTE_RECIPIENT_CAPABILITY,
@@ -72,6 +74,8 @@ from tooling.development.secure_content.runtime_owner import (
     _prepare_mobile_private_content_keys,
     _prepare_portable_recovery,
     _prepare_private_content_keys,
+    _prepare_remote_group_fixture,
+    _revoke_remote_fixture_device,
     _wait_for_accepted_friendship_projection,
     _wait_for_private_moment_state,
     _parse_args,
@@ -266,11 +270,25 @@ class RuntimeOwnerTest(unittest.TestCase):
             '"runtimeManifest": acceptance_runtime_manifest',
             source[runtime_evidence:],
         )
+        remote_group = source.index("fixture_owner.bind_remote_group(")
+        remote_revoke = source.index(
+            "_revoke_remote_fixture_device(",
+            remote_group,
+        )
+        remote_stop = source.index(
+            'purpose="W8 remote recipient identity preparation"',
+            remote_revoke,
+        )
+        self.assertLess(remote_group, remote_revoke)
+        self.assertLess(remote_revoke, remote_stop)
         self.assertLess(
-            source.index(
-                'purpose="W8 remote recipient identity preparation"'
-            ),
+            remote_stop,
             source.index("eve_client = _make_client("),
+        )
+        self.assertEqual("alice@p.t", W8_REMOTE_SEEDED_ACCOUNT)
+        self.assertEqual(
+            "social-desktop-remote-recipient-alice",
+            W8_REMOTE_IDENTITY_SCOPE,
         )
         self.assertIn("_run_social_acceptance_pre_restart(", source)
         self.assertIn("_social_acceptance_scenario_registry(", source)
@@ -1582,6 +1600,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             home_station_peer_id="five-arm-peer-id",
             federation_id="federation-1",
         )
+        owner.bind_remote_group(
+            lambda bound_ptid, bound_federation: (
+                "01JREMOTEGROUP"
+                if (
+                    bound_ptid == actor_ptid
+                    and bound_federation == "federation-1"
+                )
+                else ""
+            )
+        )
         manifest = owner.manifest()
         encoded = json.dumps(manifest, sort_keys=True)
         handle = manifest["handles"][0]
@@ -1618,6 +1646,10 @@ class RuntimeOwnerTest(unittest.TestCase):
             self.assertEqual("fiveArm", outcome["profileId"])
             self.assertEqual("station-five-arm", outcome["serviceId"])
             self.assertEqual("federation-1", outcome["federationId"])
+            self.assertEqual(
+                "01JREMOTEGROUP",
+                outcome["remoteGroupUlid"],
+            )
             self.assertEqual(
                 hashlib.sha256(b"federation-1").hexdigest(),
                 outcome["federationIdSha256"],
@@ -1745,6 +1777,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             registrations[0][:2],
         )
         self.assertEqual("", provisioner.account)
+        owner.bind_remote_group(
+            lambda actor_ptid, federation_id: (
+                "01JREMOTE"
+                if (
+                    actor_ptid == "ptid:five-arm"
+                    and federation_id == "federation-1"
+                )
+                else ""
+            )
+        )
         self.assertEqual(
             "actor-identity-provisioner",
             owner.manifest()["handles"][0]["owner"],
@@ -2118,6 +2160,142 @@ class RuntimeOwnerTest(unittest.TestCase):
 
         self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
         self.assertEqual("fixture-mls:fiveArm", raised.exception.resource)
+
+    def test_w8_remote_group_is_prepared_before_remote_device_revoke(
+        self,
+    ) -> None:
+        primary = object()
+        local_member = object()
+        chat_results = iter(
+            (
+                {"groupUlid": "01JREMOTE"},
+                {"groupUlid": "01JREMOTE"},
+                {
+                    "conversationId": "01JREMOTE",
+                    "members": [
+                        {"ptid": "ptid:primary"},
+                        {"ptid": "ptid:local-member"},
+                        {"ptid": "ptid:remote"},
+                    ],
+                },
+            )
+        )
+
+        def immediate_wait(
+            predicate: Callable[[], Mapping[str, object] | None],
+            description: str,
+            *,
+            timeout: float,
+            interval: float,
+        ) -> Mapping[str, object]:
+            self.assertIn("authoritative remote Group", description)
+            self.assertEqual(120, timeout)
+            self.assertEqual(1, interval)
+            result = predicate()
+            self.assertIsNotNone(result)
+            return result or {}
+
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_moments_harness",
+                return_value={"actorPtid": "ptid:local-member"},
+            ) as moments,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_chat_harness",
+                side_effect=lambda *_args, **_kwargs: next(chat_results),
+            ) as chat,
+            patch(
+                "tooling.development.secure_content.runtime_owner.wait_until",
+                side_effect=immediate_wait,
+            ),
+        ):
+            group_ulid = _prepare_remote_group_fixture(
+                primary,
+                local_member,
+                remote_actor_ptid="ptid:remote",
+                federation_id="federation-1",
+            )
+
+        self.assertEqual("01JREMOTE", group_ulid)
+        moments.assert_called_once_with(
+            local_member,
+            "acceptanceActorIdentity",
+        )
+        self.assertEqual(
+            [
+                call(
+                    primary,
+                    "createGroup",
+                    {
+                        "name": "secure-content-w8-remote-group",
+                        "federationId": "federation-1",
+                        "memberPtids": ["ptid:local-member"],
+                    },
+                ),
+                call(
+                    primary,
+                    "addFederatedGroupMember",
+                    {
+                        "groupUlid": "01JREMOTE",
+                        "member": {"ptid": "ptid:remote"},
+                    },
+                ),
+                call(
+                    primary,
+                    "groupLifecycleSnapshot",
+                    {"groupUlid": "01JREMOTE"},
+                    timeout=15,
+                ),
+            ],
+            chat.call_args_list,
+        )
+
+    def test_w8_remote_fixture_revokes_only_the_current_device(self) -> None:
+        client = SimpleNamespace(spec=SimpleNamespace(profile="fiveArm"))
+        readiness = {
+            "actorPtid": "ptid:remote",
+            "deviceId": "device-current",
+        }
+        with patch(
+            "tooling.development.secure_content.runtime_owner._chat_harness",
+            return_value={
+                **readiness,
+                "revoked": True,
+            },
+        ) as harness:
+            revoked = _revoke_remote_fixture_device(
+                client,
+                readiness=readiness,
+            )
+
+        self.assertTrue(revoked["revoked"])
+        harness.assert_called_once_with(client, "revokeCurrentDevice")
+
+    def test_w8_remote_fixture_revoke_fails_on_identity_mismatch(self) -> None:
+        client = SimpleNamespace(spec=SimpleNamespace(profile="fiveArm"))
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._chat_harness",
+                return_value={
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "device-other",
+                    "revoked": True,
+                },
+            ),
+            self.assertRaises(RuntimeOwnerBlocked) as raised,
+        ):
+            _revoke_remote_fixture_device(
+                client,
+                readiness={
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "device-current",
+                },
+            )
+
+        self.assertEqual("RUNTIME_CLEANUP_FAILED", raised.exception.code)
+        self.assertEqual("fixture-device:fiveArm", raised.exception.resource)
 
     def test_client_launch_uses_projected_runtime_source_commit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

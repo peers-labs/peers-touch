@@ -307,7 +307,7 @@ def _stage_rejected_publish(
 
 def _remote_recipient(
     context: ScenarioContext,
-) -> tuple[str, str, str, str]:
+) -> tuple[str, str, str, str, str]:
     acknowledgement = context.invoke_fixture_action(
         REMOTE_RECIPIENT_CAPABILITY,
         REMOTE_RECIPIENT_OPERATION,
@@ -320,6 +320,7 @@ def _remote_recipient(
     home_station_digest = outcome.get("homeStationPeerIdSha256")
     federation_id = outcome.get("federationId")
     federation_digest = outcome.get("federationIdSha256")
+    remote_group_ulid = outcome.get("remoteGroupUlid")
     if (
         not isinstance(actor_ptid, str)
         or not actor_ptid
@@ -340,6 +341,8 @@ def _remote_recipient(
         or not isinstance(federation_id, str)
         or not federation_id
         or _sha256(federation_id) != federation_digest
+        or not isinstance(remote_group_ulid, str)
+        or not remote_group_ulid
     ):
         raise RunnerError(
             "social-expansion remote recipient fixture is not fiveArm-bound"
@@ -361,6 +364,7 @@ def _remote_recipient(
         federation_id,
         acknowledgement_digest,
         federation_digest,
+        remote_group_ulid,
     )
 
 
@@ -421,6 +425,7 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             federation_id,
             remote_acknowledgement_digest,
             remote_federation_digest,
+            remote_group_id,
         ) = _remote_recipient(context)
 
         bob.call("followActor", {"actorPtid": alice_ptid})
@@ -635,38 +640,6 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
             actor_ptids=(remote_ptid,),
         )
 
-        remote_group = _mapping(
-            _chat_action(
-                alice,
-                "createGroup",
-                {
-                    "name": "secure-content-w8-remote-group",
-                    "federationId": federation_id,
-                    "memberPtids": [bob_ptid],
-                },
-            ),
-            "remote Group creation",
-        )
-        remote_group_id = remote_group.get("groupUlid")
-        _require(
-            isinstance(remote_group_id, str) and bool(remote_group_id),
-            "social-expansion remote Group identity is invalid",
-        )
-        remote_member = _mapping(
-            _chat_action(
-                alice,
-                "addFederatedGroupMember",
-                {
-                    "groupUlid": remote_group_id,
-                    "member": {"ptid": remote_ptid},
-                },
-            ),
-            "remote Group membership",
-        )
-        _require(
-            remote_member.get("groupUlid") == remote_group_id,
-            "social-expansion remote Group membership was not accepted",
-        )
         _wait_for_group_member(
             alice,
             group_id=remote_group_id,
