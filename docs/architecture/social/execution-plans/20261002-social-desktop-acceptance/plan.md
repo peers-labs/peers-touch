@@ -83,6 +83,14 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/desktop/src/acceptance/moments/harness.ts",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "apps/desktop/src/acceptance/moments/harness.test.ts",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/desktop",
         "mode": "shared-read"
       },
