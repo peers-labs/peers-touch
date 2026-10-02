@@ -177,7 +177,7 @@ class SocialPrivateDesktopGate(AcceptanceGate):
                 "--profiles",
                 "four,fiveArm",
                 "--slot",
-                "5",
+                "12",
             ],
             cwd=REPO_ROOT,
             text=True,
