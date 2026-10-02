@@ -42,7 +42,10 @@ from tooling.development.secure_content.runtime_owner import (
     DESKTOP_CLIENTS,
     REQUIRED_FIXTURE_CAPABILITIES,
     SOCIAL_ACCEPTANCE_IDS,
+    SOCIAL_ACCEPTANCE_JOURNEY,
+    SOCIAL_ACCEPTANCE_PLAN_ID,
     SOCIAL_ACCEPTANCE_RUNTIME_REUSE,
+    SOCIAL_ACCEPTANCE_TASK_IDS,
     W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
     W8_SCENARIOS,
@@ -88,6 +91,7 @@ from tooling.development.secure_content.runtime_owner import (
     _restore_w8_invalidated_fixtures,
     _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
+    _social_acceptance_scenario_registry,
     _restart_lease,
     _runtime_cleanup_scope,
     _service_payload,
@@ -4140,6 +4144,57 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn(session_id, commands[1])
         self.assertEqual("update", commands[1][2])
         self.assertEqual("check", commands[2][2])
+
+    def test_social_acceptance_resolves_the_active_aggregate_owner(self) -> None:
+        session_id = "social-desktop-formal-proof-20261002"
+        declaration = {
+            "state": "ACTIVE",
+            "workItemId": "social-desktop-formal-proof",
+            "planId": SOCIAL_ACCEPTANCE_PLAN_ID,
+            "taskId": "SDA-03-formal-proof",
+            "sessionId": session_id,
+            "journeyId": SOCIAL_ACCEPTANCE_JOURNEY,
+        }
+        responses = [
+            {"declarations": [declaration]},
+            declaration,
+            declaration,
+        ]
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **_: object) -> SimpleNamespace:
+            commands.append(command)
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(responses[len(commands) - 1]),
+                stderr="",
+            )
+
+        activated = _activate_scenario_journey(
+            Path("/tmp/peers-touch"),
+            SOCIAL_ACCEPTANCE_JOURNEY,
+            work_item_id=None,
+            task_id=None,
+            plan_id=SOCIAL_ACCEPTANCE_PLAN_ID,
+            allowed_task_ids=SOCIAL_ACCEPTANCE_TASK_IDS,
+            command_runner=run,
+        )
+
+        self.assertEqual("SDA-03-formal-proof", activated["taskId"])
+        self.assertNotIn("--work-item", commands[0])
+        self.assertIn("social-desktop-formal-proof", commands[1])
+        self.assertIn(session_id, commands[1])
+
+    def test_social_acceptance_scenarios_use_resolved_owner_identity(self) -> None:
+        scenario = _social_acceptance_scenario_registry(
+            "private-comment",
+            work_item_id="social-desktop-formal-proof",
+            task_id="SDA-03-formal-proof",
+        )["private-comment"]
+
+        self.assertEqual("social-desktop-formal-proof", scenario.work_item_id)
+        self.assertEqual("SDA-03-formal-proof", scenario.result_task_id)
+        self.assertEqual("SDA-03-formal-proof", scenario.result_workstream_id)
 
     def test_scenario_journey_transition_rejects_another_plan_task(self) -> None:
         declaration = {
