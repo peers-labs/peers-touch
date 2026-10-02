@@ -27,9 +27,9 @@ Check:
    makes every Scenario attach-only.
 5. Existing development evidence is supporting input only; formal proof uses
    an independent Evidence Store run.
-6. Functional closure ends at the Native Social Gate; Social domain validation
-   runs after formal publication, while the registry-selected Chat Gate remains
-   full/release-only and outside this completion claim.
+6. Functional closure uses the Task-owned Native Suite check. The formal Native
+   Gate publishes before Social domain validation, while the registry-selected
+   Chat Gate remains full/release-only and outside this completion claim.
 7. Authorization permits only local commits and `four`/`fiveArm`; no reset,
    push, PR, release, or history rewrite is authorized.
 
