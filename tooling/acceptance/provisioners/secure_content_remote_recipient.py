@@ -279,7 +279,7 @@ class W8RemoteRecipientFixtureOwner:
 
 
 class RemotePrivateRecipientProvisioner:
-    """Create and bind one fiveArm Actor without exposing its PTID upstream."""
+    """Bind one fiveArm Actor without exposing its PTID upstream."""
 
     def __init__(
         self,
