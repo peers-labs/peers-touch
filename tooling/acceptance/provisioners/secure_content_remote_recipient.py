@@ -289,10 +289,11 @@ class RemotePrivateRecipientProvisioner:
         station_url: str,
         password: str,
         account_registrar: Callable[..., str],
+        existing_account: str | None = None,
     ) -> None:
         self._source_checkpoint = source_checkpoint
         self._run_id = run_id
-        self._account = account_registrar(
+        self._account = existing_account or account_registrar(
             station_url,
             role="remote_recipient",
             suffix=_sha256(
