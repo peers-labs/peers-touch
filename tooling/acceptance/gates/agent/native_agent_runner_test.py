@@ -46,7 +46,7 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
 
     def test_core_lifecycle_does_not_require_provider_configuration(self) -> None:
         self.assertIn(
-            'return journey not in {"cli-provider", "core-lifecycle"}',
+            '"minimum-usable-chat",',
             self.source,
         )
         self.assertIn(
@@ -180,6 +180,81 @@ class AgentCoreLifecycleRunnerTest(unittest.TestCase):
         self.assertIn('"evidence/cleanup.json"', self.source)
 
 
+class AgentMinimumUsableChatRunnerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = RUNNER.read_text(encoding="utf-8")
+        cls.harness_source = HARNESS.read_text(encoding="utf-8")
+        cls.gate = json.loads(GATES.read_text(encoding="utf-8"))["gates"][
+            "agent-minimum-usable-chat-native-e2e"
+        ]
+
+    def test_dedicated_native_journey_is_registered_without_matrix(self) -> None:
+        self.assertIn(
+            '"minimum-usable-chat": "agent-minimum-usable-chat-native-e2e"',
+            self.source,
+        )
+        self.assertIn("runner.run_minimum_usable_chat()", self.source)
+        self.assertEqual(
+            self.gate["argv"],
+            [
+                "python3",
+                "tooling/acceptance/gates/agent/native_agent_runner.py",
+                "--journey",
+                "minimum-usable-chat",
+            ],
+        )
+        self.assertEqual(self.gate["environment"], "home-station")
+        self.assertNotIn("runtime_matrix", self.gate)
+        self.assertEqual(
+            self.gate["required_artifact_roles"],
+            ["receiver-dom", "station-readback", "cleanup"],
+        )
+
+    def test_journey_uses_one_real_direct_model_mcp_turn_and_restart(self) -> None:
+        journey = self.source.split(
+            "    def run_minimum_usable_chat(self)",
+            1,
+        )[1].split("    def conversation_readback", 1)[0]
+        for step in (
+            "start_direct_model_provider_fixture",
+            "bridge_direct_model_provider_to_station",
+            "configure_select_bind_send_and_complete",
+            "restart_native_client",
+            "recover_agent_conversation_and_capability",
+            "verify_mcp_process_cleanup",
+        ):
+            with self.subTest(step=step):
+                self.assertIn(step, journey)
+        self.assertIn('"runMcpLifecycleDevelopment"', journey)
+        self.assertIn('"expectedAssistantResponse"', journey)
+        self.assertIn("OpenAIProviderFixture(", journey)
+        self.assertIn("RemoteProviderBridge(", journey)
+        self.assertNotIn("agent_v2_gate.py", journey)
+
+    def test_harness_requires_final_response_and_restart_readback(self) -> None:
+        journey = self.harness_source.split(
+            "async function prepareMcpLifecycleDevelopmentJourney(",
+            1,
+        )[1].split(
+            "async function runMcpLifecycleDevelopmentJourney(",
+            1,
+        )[0]
+        for assertion in (
+            "directModelAgentSelected",
+            "governedMcpInvocationSucceeded",
+            "finalAssistantVisibleAndPersisted",
+            "agentAndDirectModelSurvivedRestart",
+            "conversationAndFinalReplySurvivedRestart",
+        ):
+            with self.subTest(assertion=assertion):
+                self.assertIn(assertion, journey)
+        self.assertIn("state.assistantMessageId", journey)
+        self.assertIn("state.assistantContentHash", journey)
+        self.assertIn("state.expectedAssistantResponse", journey)
+        self.assertIn("'acceptance-minimum-usable-restart'", journey)
+
+
 class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -199,7 +274,7 @@ class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
             self.source,
         )
         self.assertIn('CLI_PROVIDER_PROFILE = "two"', self.source)
-        self.assertIn('return journey not in {"cli-provider", "core-lifecycle"}', self.source)
+        self.assertIn('"minimum-usable-chat",', self.source)
         self.assertIn("runner.run_cli_provider()", self.source)
 
     def test_cli_provider_journey_covers_primary_flow_and_restart(self) -> None:

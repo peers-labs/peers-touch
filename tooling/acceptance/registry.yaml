@@ -1578,6 +1578,26 @@
       ]
     },
     {
+      "id": "agent-minimum-usable-chat",
+      "features": [
+        "agent-minimum-usable-chat"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/agent/service/turn_service.go",
+          "apps/station/app/subserver/agent/service/capability_authority_service.go",
+          "apps/desktop/src/acceptance/agent/harness.ts",
+          "tooling/acceptance/features/agent-minimum-usable-chat.yaml",
+          "tooling/acceptance/gates/agent/native_agent_runner.py",
+          "tooling/acceptance/gates/agent/native_agent_runner_test.py",
+          "tooling/acceptance/provisioners/home_station.py"
+        ]
+      },
+      "require": [
+        "agent-minimum-usable-chat-native-e2e"
+      ]
+    },
+    {
       "id": "agent-core",
       "features": [
         "agent-core-chat-loop",

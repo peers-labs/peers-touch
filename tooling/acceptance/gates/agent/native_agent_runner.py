@@ -9,8 +9,10 @@ injects a real transport fault between Desktop and Station.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import secrets
 import shutil
 import socket
 import sys
@@ -46,6 +48,17 @@ from tooling.acceptance.gates.agent.foundation_direct_adapter import (
 from tooling.acceptance.gates.agent.foundation_group_one_probe import (
     assert_group_one_capture,
 )
+from tooling.acceptance.gates.agent.governed_tool_development import (
+    OpenAIProviderFixture,
+    RemoteProviderBridge,
+)
+from tooling.acceptance.gates.agent.mcp_lifecycle_development import (
+    MCP_BLOCK_ON_LAUNCH,
+    MCP_FIXTURE_SCRIPT,
+    MCP_RESULT_TEXT,
+    MCP_TOOL_NAME,
+    inspect_mcp_fixture,
+)
 from tooling.acceptance.gates.agent.tcp_fault_proxy import TcpFaultProxy
 
 
@@ -53,6 +66,7 @@ GATE_BY_JOURNEY = {
     "turn": "agent-native-turn-e2e",
     "cli-provider": "agent-cli-provider-primary-native-e2e",
     "core-lifecycle": "agent-core-lifecycle-native-e2e",
+    "minimum-usable-chat": "agent-minimum-usable-chat-native-e2e",
     "stream-resilience": "agent-stream-resilience-e2e",
     "attachment": "agent-attachment-e2e",
 }
@@ -92,6 +106,7 @@ CORE_LIFECYCLE_SELECTORS = {
 APPROVED_PROFILE = os.environ.get("PT_ACCEPTANCE_APPROVED_PROFILE", "one")
 CORE_LIFECYCLE_PROFILE = "two"
 CLI_PROVIDER_PROFILE = "two"
+MINIMUM_USABLE_CHAT_PROFILE = "two"
 WAIT_TICK = threading.Event()
 DEFAULT_TIMEOUT = float(os.environ.get("PT_AGENT_NATIVE_STEP_TIMEOUT_SECONDS", "120"))
 
@@ -149,6 +164,8 @@ def require(condition: bool, message: str) -> None:
 
 
 def approved_profile_for_journey(journey: str) -> str:
+    if journey == "minimum-usable-chat":
+        return MINIMUM_USABLE_CHAT_PROFILE
     if journey == "core-lifecycle":
         return CORE_LIFECYCLE_PROFILE
     if journey == "cli-provider":
@@ -157,7 +174,11 @@ def approved_profile_for_journey(journey: str) -> str:
 
 
 def provider_configuration_required_for_journey(journey: str) -> bool:
-    return journey not in {"cli-provider", "core-lifecycle"}
+    return journey not in {
+        "cli-provider",
+        "core-lifecycle",
+        "minimum-usable-chat",
+    }
 
 
 def now_iso() -> str:
@@ -351,6 +372,13 @@ class AgentNativeJourney:
         self.lifecycle_fixture_ids: list[str] = []
         self.cli_provider_fixture: dict[str, str] | None = None
         self.cli_provider_sample_id = ""
+        self.minimum_provider_fixture: OpenAIProviderFixture | None = None
+        self.minimum_provider_bridge: RemoteProviderBridge | None = None
+        self.minimum_fixture_root: Path | None = None
+        self.minimum_harness_state: dict[str, Any] | None = None
+        self.minimum_resource_cleanup: dict[str, Any] = {
+            "status": "not-run",
+        }
 
     def step(self, name: str, operation: Callable[[], Any]) -> Any:
         started = time.monotonic()
@@ -1827,6 +1855,189 @@ class AgentNativeJourney:
         ):
             self.assertions.append({"id": assertion_id, "status": "pass"})
 
+    def run_minimum_usable_chat(self) -> None:
+        self.step("login", self.login)
+        self.step("navigate_to_agent", self.navigate_and_configure)
+        run_id = str(self.runtime_manifest.get("runId") or "")
+        sample_id = f"amu-{run_id}"
+        server_name = f"amu-mcp-{run_id.lower()}"
+        expected_assistant_response = "Minimum usable Agent response."
+        fixture_root = Path(tempfile.mkdtemp(prefix="pt-agent-amu-mcp-"))
+        fixture_script = fixture_root / "server.py"
+        fixture_script.write_text(MCP_FIXTURE_SCRIPT + "\n", encoding="utf-8")
+        fixture_script.chmod(0o700)
+        secret_canary = f"pt-agent-amu-{secrets.token_urlsafe(32)}"
+        secret_digest = hashlib.sha256(secret_canary.encode("utf-8")).hexdigest()
+        deployment_environment = self.profile_env.get(
+            "PT_STATION_DEPLOY_ENV",
+            "",
+        ).strip()
+        require(
+            bool(deployment_environment),
+            "minimum usable Agent Chat requires a Station deployment identity",
+        )
+
+        self.minimum_fixture_root = fixture_root
+        self.minimum_provider_fixture = OpenAIProviderFixture(
+            tool_name="local_mcp",
+            tool_arguments={
+                "server_name": server_name,
+                "tool_name": MCP_TOOL_NAME,
+                "arguments": {"sample": "minimum-usable-agent-chat"},
+            },
+            expected_tool_result=MCP_RESULT_TEXT,
+            terminal_content=expected_assistant_response,
+            thread_name="agent-minimum-usable-provider-fixture",
+        )
+        self.minimum_provider_bridge = RemoteProviderBridge(
+            deployment_environment,
+            artifact_prefix="agent-minimum-usable-provider",
+        )
+        self.step(
+            "start_direct_model_provider_fixture",
+            self.minimum_provider_fixture.start,
+        )
+        provider_base_url = self.step(
+            "bridge_direct_model_provider_to_station",
+            lambda: self.minimum_provider_bridge.start(
+                self.minimum_provider_fixture.port,
+                run_id,
+            ),
+        )
+        prepared = self.step(
+            "configure_select_bind_send_and_complete",
+            lambda: self.harness(
+                "runMcpLifecycleDevelopment",
+                {
+                    "phase": "prepare",
+                    "sampleId": sample_id,
+                    "serverName": server_name,
+                    "providerBaseUrl": provider_base_url,
+                    "providerApiKey": self.minimum_provider_fixture.api_key,
+                    "command": sys.executable,
+                    "args": [str(fixture_script)],
+                    "env": {
+                        "MCA_J04_STATE_DIR": str(fixture_root),
+                        "MCA_J04_SECRET_CANARY": secret_canary,
+                        "MCA_J04_BLOCK_ON_LAUNCH": str(MCP_BLOCK_ON_LAUNCH),
+                        "MCA_J04_TOOL_NAME": MCP_TOOL_NAME,
+                        "MCA_J04_RESULT_TEXT": MCP_RESULT_TEXT,
+                    },
+                    "toolName": MCP_TOOL_NAME,
+                    "expectedResult": MCP_RESULT_TEXT,
+                    "expectedAssistantResponse": expected_assistant_response,
+                },
+                timeout=900,
+            ),
+        )
+        require(
+            isinstance(prepared, Mapping),
+            "minimum usable Agent Chat preparation returned invalid evidence",
+        )
+        prepared_assertions = prepared.get("assertions")
+        require(
+            isinstance(prepared_assertions, Mapping)
+            and bool(prepared_assertions)
+            and all(value is True for value in prepared_assertions.values()),
+            "minimum usable Agent Chat preparation assertions failed",
+        )
+        state = prepared.get("state")
+        require(
+            isinstance(state, Mapping),
+            "minimum usable Agent Chat preparation omitted recovery state",
+        )
+        self.minimum_harness_state = dict(state)
+
+        self.step("restart_native_client", self.restart_native_runtime)
+        self.step(
+            "station_transport_health_after_restart",
+            self.verify_station_transport_health,
+        )
+        self.step("configure_station_after_restart", self.configure_station)
+        self.step("login_after_restart", self.login)
+        self.step("navigate_after_restart", self.navigate_and_configure)
+        recovered = self.step(
+            "recover_agent_conversation_and_capability",
+            lambda: self.harness(
+                "runMcpLifecycleDevelopment",
+                {
+                    "phase": "recover",
+                    "sampleId": sample_id,
+                    "serverName": server_name,
+                    "state": self.minimum_harness_state,
+                },
+                timeout=600,
+            ),
+        )
+        require(
+            isinstance(recovered, Mapping),
+            "minimum usable Agent Chat recovery returned invalid evidence",
+        )
+        recovered_assertions = recovered.get("assertions")
+        recovered_cleanup = recovered.get("cleanup")
+        require(
+            isinstance(recovered_assertions, Mapping)
+            and bool(recovered_assertions)
+            and all(value is True for value in recovered_assertions.values()),
+            "minimum usable Agent Chat recovery assertions failed",
+        )
+        require(
+            isinstance(recovered_cleanup, Mapping)
+            and recovered_cleanup.get("status") == "clean",
+            "minimum usable Agent Chat product cleanup failed",
+        )
+        self.minimum_harness_state = None
+
+        process_evidence = self.step(
+            "verify_mcp_process_cleanup",
+            lambda: inspect_mcp_fixture(
+                fixture_root,
+                expected_secret_digest=secret_digest,
+                expected_launch_count=6,
+            ),
+        )
+        require(
+            process_evidence.get("sideEffectCount") == 1
+            and process_evidence.get("allProcessesReaped") is True
+            and process_evidence.get("allPortsReleased") is True,
+            "minimum usable Agent Chat MCP process cleanup is incomplete",
+        )
+        provider_requests = self.minimum_provider_fixture.snapshot()
+        require(
+            len(provider_requests) == 2
+            and provider_requests[0].get("hasToolResult") is False
+            and provider_requests[1].get("hasToolResult") is True
+            and provider_requests[1].get("hasExpectedToolResult") is True,
+            "minimum usable Agent Chat Direct Model sequence is invalid",
+        )
+
+        self.dom_evidence["minimumUsableChat"] = {
+            "prepared": prepared.get("receiver-dom"),
+            "recovered": recovered.get("receiver-dom"),
+        }
+        self.station_readback["minimumUsableChat"] = {
+            "prepared": prepared.get("station-readback"),
+            "recovered": recovered.get("station-readback"),
+        }
+        self.journey_evidence["minimumUsableChat"] = {
+            "preparedAssertions": dict(prepared_assertions),
+            "recoveredAssertions": dict(recovered_assertions),
+            "providerRequests": provider_requests,
+            "processEvidence": process_evidence,
+        }
+        for assertion_id in (
+            "agent.minimum.agent-config.selected",
+            "agent.minimum.direct-model.selected",
+            "agent.minimum.mcp.binding-ready",
+            "agent.minimum.message.sent",
+            "agent.minimum.governed-execution.completed",
+            "agent.minimum.final-response.visible",
+            "agent.minimum.restart.conversation-restored",
+            "agent.minimum.restart.final-response-restored",
+            "agent.minimum.cleanup.clean",
+        ):
+            self.assertions.append({"id": assertion_id, "status": "pass"})
+
     def conversation_readback(self, conversation_id: str) -> dict[str, Any]:
         result = self.harness(
             "getConversationReadback",
@@ -2267,8 +2478,79 @@ class AgentNativeJourney:
                     )
         return failures
 
+    def cleanup_minimum_usable_resources(self) -> list[str]:
+        failures: list[str] = []
+        harness_cleanup: Any = None
+        if self.minimum_harness_state is not None and self.driver is not None:
+            try:
+                harness_cleanup = self.harness(
+                    "runMcpLifecycleDevelopment",
+                    {
+                        "phase": "cleanup",
+                        "sampleId": "minimum-usable-cleanup",
+                        "serverName": self.minimum_harness_state["serverName"],
+                        "state": self.minimum_harness_state,
+                    },
+                    timeout=300,
+                )
+                if (
+                    not isinstance(harness_cleanup, Mapping)
+                    or harness_cleanup.get("status") != "clean"
+                ):
+                    failures.append(
+                        f"minimum usable Harness cleanup: {harness_cleanup}"
+                    )
+                else:
+                    self.minimum_harness_state = None
+            except Exception as error:  # noqa: BLE001
+                failures.append(f"minimum usable Harness cleanup: {error}")
+        if self.minimum_harness_state is not None:
+            failures.append("minimum usable Harness state remains")
+
+        bridge_cleanup: Any = None
+        if self.minimum_provider_bridge is not None:
+            try:
+                bridge_cleanup = self.minimum_provider_bridge.stop()
+                if bridge_cleanup.get("status") != "clean":
+                    failures.append(
+                        f"minimum usable provider bridge: {bridge_cleanup}"
+                    )
+            except Exception as error:  # noqa: BLE001
+                failures.append(f"minimum usable provider bridge: {error}")
+            self.minimum_provider_bridge = None
+
+        provider_stopped = self.minimum_provider_fixture is None
+        if self.minimum_provider_fixture is not None:
+            try:
+                self.minimum_provider_fixture.stop()
+                provider_stopped = True
+            except Exception as error:  # noqa: BLE001
+                failures.append(f"minimum usable provider fixture: {error}")
+            self.minimum_provider_fixture = None
+
+        fixture_storage_released = self.minimum_fixture_root is None
+        if self.minimum_fixture_root is not None:
+            shutil.rmtree(self.minimum_fixture_root, ignore_errors=True)
+            fixture_storage_released = not self.minimum_fixture_root.exists()
+            if not fixture_storage_released:
+                failures.append(
+                    "minimum usable MCP fixture storage remains"
+                )
+            self.minimum_fixture_root = None
+
+        self.minimum_resource_cleanup = {
+            "status": "clean" if not failures else "failed",
+            "harness": harness_cleanup,
+            "providerBridge": bridge_cleanup,
+            "providerFixtureStopped": provider_stopped,
+            "fixtureStorageReleased": fixture_storage_released,
+            "failures": list(failures),
+        }
+        return failures
+
     def cleanup(self) -> dict[str, Any]:
-        failures = self.cleanup_lifecycle_fixtures()
+        failures = self.cleanup_minimum_usable_resources()
+        failures.extend(self.cleanup_lifecycle_fixtures())
         self.best_effort_logout()
         if self.tauri_driver is not None:
             try:
@@ -2301,6 +2583,7 @@ class AgentNativeJourney:
             "status": "passed" if not failures else "failed",
             "portsReleased": ports,
             "storageReleased": not self.run_root.exists(),
+            "minimumUsableResources": self.minimum_resource_cleanup,
             "failures": failures,
         }
         return self.cleanup_evidence
@@ -2339,6 +2622,8 @@ def run_journey(journey_name: str) -> int:
                 runner.run_core_lifecycle()
             elif journey_name == "cli-provider":
                 runner.run_cli_provider()
+            elif journey_name == "minimum-usable-chat":
+                runner.run_minimum_usable_chat()
             else:
                 runner.run_turn()
             status = "passed"
@@ -2362,6 +2647,7 @@ def run_journey(journey_name: str) -> int:
         attachment_journey = journey_name == "attachment"
         cli_provider_journey = journey_name == "cli-provider"
         lifecycle_journey = journey_name == "core-lifecycle"
+        minimum_usable_journey = journey_name == "minimum-usable-chat"
         if attachment_journey:
             phase = "F3 Context And Resource Intelligence"
             bom = ["C08"]
@@ -2374,6 +2660,22 @@ def run_journey(journey_name: str) -> int:
                 "C08 requires opaque authorized refs, admission before provider "
                 "execution, persisted attribution, visible attachment projection, "
                 "authorized download, and cleanup."
+            )
+        elif minimum_usable_journey:
+            phase = "Minimum Usable Agent Chat"
+            bom = ["agent-minimum-usable-chat"]
+            spec = [
+                "tooling/acceptance/features/"
+                "agent-minimum-usable-chat.yaml",
+                "docs/architecture/agent/execution-plans/"
+                "20261001-minimum-usable-agent-chat/plan.md",
+            ]
+            gate_claim = (
+                "One profile-two Native client must configure and select a "
+                "Direct Model Agent, bind a ready MCP capability, complete one "
+                "Station-governed invocation and final Assistant response, "
+                "then restore that Agent, conversation, binding, and response "
+                "after native restart."
             )
         elif cli_provider_journey:
             phase = "CLI Provider Primary Journey"

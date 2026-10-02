@@ -873,6 +873,25 @@
       "tier": "local-evidence",
       "description": "Validate the Agent managed domain profile against station turn, context intelligence, tool authority, attachments, diagnostics, and desktop surface contracts."
     },
+    "agent-minimum-usable-chat-native-e2e": {
+      "argv": [
+        "python3",
+        "tooling/acceptance/gates/agent/native_agent_runner.py",
+        "--journey",
+        "minimum-usable-chat"
+      ],
+      "timeout_seconds": 1800,
+      "environment": "home-station",
+      "provisioner": "home-station",
+      "tier": "env-evidence",
+      "description": "Run one profile-two Native Direct Model Agent Chat journey through Agent selection, ready MCP binding, governed invocation, final Assistant response, restart restoration, and cleanup.",
+      "initial_proof_status": "UNPROVEN",
+      "required_artifact_roles": [
+        "receiver-dom",
+        "station-readback",
+        "cleanup"
+      ]
+    },
     "agent-core-lifecycle-native-e2e": {
       "argv": [
         "python3",

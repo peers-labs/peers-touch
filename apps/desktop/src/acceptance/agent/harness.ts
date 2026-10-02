@@ -2071,6 +2071,9 @@ interface McpLifecycleDevelopmentState {
   serverName: string;
   conversationId: string;
   turnId: string;
+  assistantMessageId: string;
+  assistantContentHash: string;
+  expectedAssistantResponse: string;
   priorSelection: string;
   priorSurface: 'chat' | 'profile';
   operationIds: Record<string, string>;
@@ -2087,6 +2090,7 @@ interface McpLifecycleDevelopmentInput {
   env?: Record<string, string>;
   toolName?: string;
   expectedResult?: string;
+  expectedAssistantResponse?: string;
   state?: McpLifecycleDevelopmentState;
 }
 
@@ -2106,6 +2110,7 @@ interface McpLifecycleScenarioInput {
   env?: Record<string, string>;
   toolName?: string;
   expectedResult?: string;
+  expectedAssistantResponse?: string;
 }
 
 interface ConnectorInvocationDevelopmentInput {
@@ -23930,6 +23935,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
     || !input.env
     || !input.toolName
     || !input.expectedResult
+    || !input.expectedAssistantResponse
   ) {
     throw new Error('agent.acceptance.mcpDevelopmentInputIncomplete');
   }
@@ -23953,6 +23959,9 @@ async function prepareMcpLifecycleDevelopmentJourney(
     serverName: input.serverName,
     conversationId: '',
     turnId: '',
+    assistantMessageId: '',
+    assistantContentHash: '',
+    expectedAssistantResponse: input.expectedAssistantResponse,
     priorSelection,
     priorSurface,
     operationIds: {},
@@ -24157,6 +24166,43 @@ async function prepareMcpLifecycleDevelopmentJourney(
     const conversationReadback = await foundationConversationReadback(
       turn.conversationId,
     );
+    const assistant = [...conversationReadback.messages].reverse().find(
+      (message) =>
+        message.role === 'assistant'
+        && message.turnId === turn.turnId
+        && String(message.status).toLowerCase() === 'completed'
+        && message.content.trim() === input.expectedAssistantResponse,
+    );
+    if (!assistant) {
+      throw new Error('agent.acceptance.mcpFinalAssistantMissing');
+    }
+    state.assistantMessageId = assistant.messageId;
+    state.assistantContentHash = await sha256Hex(assistant.content);
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-message="assistant"]',
+        ),
+      ).some((element) =>
+        element.dataset.ptAgentMessageId === state.assistantMessageId
+        && element.dataset.ptAgentTerminalStatus === 'completed'
+        && element.getClientRects().length > 0),
+      'MCP final Assistant response',
+      30_000,
+    );
+    const chatAssistant = useChatStore.getState().messages.find(
+      (message) => message.id === state.assistantMessageId,
+    );
+    if (
+      !chatAssistant
+      || chatAssistant.loading
+      || chatAssistant.terminalStatus !== 'completed'
+      || await sha256Hex(chatAssistant.content) !== state.assistantContentHash
+    ) {
+      throw new Error('agent.acceptance.mcpFinalAssistantReceiverMismatch');
+    }
+    const authoritativeAgent = await api.getAgent(state.agentId);
+    const runtimeBinding = conversationReadback.conversation.runtime_binding;
 
     await useMCPStore.getState().testServer(input.serverName);
     const blockedStarted = currentMcpOperation(
@@ -24302,6 +24348,13 @@ async function prepareMcpLifecycleDevelopmentJourney(
         && authoritativeBinding.approvalPolicy
           === CapabilityApprovalPolicy.AUTO
         && Boolean(readyCapability && isAgentCapabilityReady(readyCapability)),
+      directModelAgentSelected:
+        authoritativeAgent.id === state.agentId
+        && authoritativeAgent.provider === state.providerId
+        && authoritativeAgent.model === state.modelId
+        && runtimeBinding?.provider_id === state.providerId
+        && runtimeBinding?.model_id === state.modelId
+        && runtimeBinding?.runtime_kind === 1,
       governedMcpInvocationSucceeded:
         receiverProjection?.status === 'success'
         && stationFact.executionAttemptCount === 1
@@ -24310,6 +24363,9 @@ async function prepareMcpLifecycleDevelopmentJourney(
         && stationFact.continuationCount === 1
         && JSON.stringify(conversationReadback.messages)
           .includes(toolCallId),
+      finalAssistantVisibleAndPersisted:
+        assistant.content.trim() === input.expectedAssistantResponse
+        && chatAssistant.content.trim() === input.expectedAssistantResponse,
       cancellationVisibleAndTerminal:
         cancelled.status === CapabilityOperationStatus.CANCELLED
         && cancelledReceiver.visible === true
@@ -24356,6 +24412,12 @@ async function prepareMcpLifecycleDevelopmentJourney(
           toolCallId,
           status: receiverProjection?.status ?? '',
         },
+        assistant: {
+          visible: true,
+          messageId: state.assistantMessageId,
+          terminalStatus: chatAssistant.terminalStatus,
+          contentHash: state.assistantContentHash,
+        },
         cancelled: cancelledReceiver,
         retried: retryReceiver,
       },
@@ -24367,6 +24429,12 @@ async function prepareMcpLifecycleDevelopmentJourney(
         toolFact: stationFact,
         conversationId: turn.conversationId,
         turnId: turn.turnId,
+        agentId: authoritativeAgent.id,
+        providerId: authoritativeAgent.provider,
+        modelId: authoritativeAgent.model,
+        runtimeKind: runtimeBinding?.runtime_kind,
+        assistantMessageId: assistant.messageId,
+        assistantContentHash: state.assistantContentHash,
       },
       'executor-receipts': {
         operations: lifecycleOperations,
@@ -24433,6 +24501,68 @@ async function recoverMcpLifecycleDevelopmentJourney(
       && binding.capabilityVersion === '2'
       && !binding.tombstonedAt);
 
+    await useAgentStore.getState().loadAgents();
+    const restoredAgent = useAgentStore.getState().agents.find(
+      (agent) => agent.id === state.agentId,
+    );
+    if (
+      !restoredAgent
+      || restoredAgent.name !== state.agentName
+      || restoredAgent.provider !== state.providerId
+      || restoredAgent.model !== state.modelId
+    ) {
+      throw new Error('agent.acceptance.mcpAgentRestoreMissing');
+    }
+    await api.setSelectedAgent(restoredAgent.name);
+    useAgentStore.getState().setSelectedAgent(restoredAgent.name);
+    useAgentStore.getState().setAgentSurface(restoredAgent.name, 'chat');
+    await navigateToAgentSessionSurface(
+      'MCP restored Agent session surface',
+    );
+    await useAgentTopicStore.getState().loadTopicsForAgent(
+      state.agentId,
+      'acceptance-minimum-usable-restart',
+    );
+    await useChatStore.getState().loadSessions();
+    await useChatStore.getState().selectSession(state.conversationId);
+    await useChatStore.getState().syncMessages();
+    const conversationReadback = await foundationConversationReadback(
+      state.conversationId,
+    );
+    const restoredAssistant = conversationReadback.messages.find(
+      (message) =>
+        message.messageId === state.assistantMessageId
+        && message.turnId === state.turnId
+        && message.role === 'assistant'
+        && String(message.status).toLowerCase() === 'completed',
+    );
+    if (
+      !restoredAssistant
+      || restoredAssistant.content.trim() !== state.expectedAssistantResponse
+      || await sha256Hex(restoredAssistant.content)
+        !== state.assistantContentHash
+    ) {
+      throw new Error('agent.acceptance.mcpConversationRestoreMismatch');
+    }
+    await waitFor(
+      () => Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-pt-agent-message="assistant"]',
+        ),
+      ).some((element) =>
+        element.dataset.ptAgentMessageId === state.assistantMessageId
+        && element.dataset.ptAgentTerminalStatus === 'completed'
+        && element.getClientRects().length > 0),
+      'restored MCP final Assistant response',
+      30_000,
+    );
+    const restoredChatAssistant = useChatStore.getState().messages.find(
+      (message) => message.id === state.assistantMessageId,
+    );
+    const restoredAssistantHash = restoredChatAssistant
+      ? await sha256Hex(restoredChatAssistant.content)
+      : '';
+
     await useMCPStore.getState().reconnectServer(state.serverName);
     const reconnectStarted = currentMcpOperation(
       state.serverName,
@@ -24450,6 +24580,7 @@ async function recoverMcpLifecycleDevelopmentJourney(
       (server) => server.status === 'connected',
       'MCP reconnect projection',
     );
+    await navigateToMcpSettings(state.serverName);
     const reconnectedReceiver = mcpReceiverSnapshot(state.serverName);
     const reconnectReplay = await mcpOperationReplayEvidence(
       reconnect.operationId,
@@ -24480,6 +24611,14 @@ async function recoverMcpLifecycleDevelopmentJourney(
       bindingSurvivedRestart:
         Boolean(bindingReadback?.enabled)
         && bindingReadback?.capabilityId === 'mcp.invoke',
+      agentAndDirectModelSurvivedRestart:
+        restoredAgent.id === state.agentId
+        && restoredAgent.provider === state.providerId
+        && restoredAgent.model === state.modelId,
+      conversationAndFinalReplySurvivedRestart:
+        useChatStore.getState().currentSessionKey === state.conversationId
+        && restoredAssistantHash === state.assistantContentHash
+        && restoredChatAssistant?.terminalStatus === 'completed',
       reconnectRestoredConnection:
         reconnect.status === CapabilityOperationStatus.SUCCEEDED
         && reconnected.status === 'connected'
@@ -24499,6 +24638,14 @@ async function recoverMcpLifecycleDevelopmentJourney(
       assertions,
       'receiver-dom': {
         disconnected: disconnectedReceiver,
+        restoredConversation: {
+          visible: true,
+          agentId: restoredAgent.id,
+          conversationId: state.conversationId,
+          assistantMessageId: state.assistantMessageId,
+          terminalStatus: restoredChatAssistant?.terminalStatus ?? '',
+          contentHash: restoredAssistantHash,
+        },
         reconnected: reconnectedReceiver,
       },
       'station-readback': {
@@ -24506,6 +24653,10 @@ async function recoverMcpLifecycleDevelopmentJourney(
         terminalOperations: terminalReadback,
         reconnect: reconnectReplay,
         binding: bindingReadback,
+        conversationId: conversationReadback.conversation.conversation_id,
+        turnId: restoredAssistant.turnId,
+        assistantMessageId: restoredAssistant.messageId,
+        assistantContentHash: await sha256Hex(restoredAssistant.content),
       },
       'executor-receipts': {
         reconnect: await mcpOperationEvidence(reconnect),
@@ -24796,6 +24947,8 @@ async function runMcpDesktopCandidateScenario(
     env: input.env,
     toolName: input.toolName,
     expectedResult: input.expectedResult,
+    expectedAssistantResponse:
+      input.expectedAssistantResponse ?? 'MCP invocation completed.',
   });
   const state = prepared.state as unknown as McpLifecycleDevelopmentState;
   const baseline = evidenceRecord(

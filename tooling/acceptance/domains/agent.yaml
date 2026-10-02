@@ -3,6 +3,7 @@
   "id": "agent",
   "description": "Agent is a managed product domain for AI assistant conversation paths, the C01-C10 kernel foundation, stateful external runtimes, Home, capability binding, governed ToolCall, MCP, Connector invocation, and Evaluation Lab.",
   "capabilities": [
+    "agent-minimum-usable-chat",
     "agent-core-lifecycle",
     "agent-cli-provider-primary",
     "acceptance-framework-self-consistency",

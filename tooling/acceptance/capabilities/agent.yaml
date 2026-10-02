@@ -2,6 +2,47 @@
   "version": 1,
   "capabilities": [
     {
+      "id": "agent-minimum-usable-chat",
+      "domain": "agent",
+      "direction": "acceptance_validates_product",
+      "initial_proof_status": "UNPROVEN",
+      "features": [
+        "agent-minimum-usable-chat"
+      ],
+      "required_gates": [
+        "agent-minimum-usable-chat-native-e2e"
+      ],
+      "synthetic_paths": [
+        "apps/desktop/src/acceptance/agent/harness.ts",
+        "apps/station/app/subserver/agent/service/turn_service.go",
+        "tooling/acceptance/gates/agent/native_agent_runner.py"
+      ],
+      "evidence": {
+        "truth_sources": [
+          "Station Agent, conversation, message, Turn, capability binding, readiness, ToolCall, and receipt state",
+          "Actor-scoped Desktop MCP configuration and process lifecycle"
+        ],
+        "surfaces": [
+          "Native Tauri Agent Chat ToolCall and final Assistant response",
+          "Station Agent, capability, ToolCall, and conversation readback"
+        ],
+        "proven_by": [
+          "agent-minimum-usable-chat-native-e2e"
+        ],
+        "proven_scope": [
+          "One profile-two Native Direct Model Agent configuration and selection",
+          "One ready MCP capability binding, governed invocation, result continuation, and final Assistant response",
+          "Native restart restoration of the same Agent, conversation, binding, and final response",
+          "Provider bridge, MCP process, port, fixture storage, and product fixture cleanup"
+        ],
+        "unproven_scope": [
+          "Browser and Mobile Agent Chat delivery",
+          "The broader capability, ToolCall, MCP, and Foundation runtime matrices",
+          "Marketplace, Evaluation, Artifacts, Multi-Agent, external Agent runtime, TTS, image, and video capabilities"
+        ]
+      }
+    },
+    {
       "id": "agent-core-lifecycle",
       "domain": "agent",
       "direction": "acceptance_validates_product",

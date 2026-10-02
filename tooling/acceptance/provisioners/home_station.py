@@ -48,6 +48,7 @@ GATE_ROLES = {
     "agent-attachment-e2e": ("alice",),
     "agent-cli-provider-primary-native-e2e": ("alice",),
     "agent-core-lifecycle-native-e2e": ("alice",),
+    "agent-minimum-usable-chat-native-e2e": ("alice",),
     "agent-stream-resilience-e2e": ("alice",),
     "agent-v2-capability-binding-e2e": ("alice", "bob"),
     "agent-v2-governed-tool-loop-e2e": ("bob",),
@@ -80,11 +81,13 @@ AGENT_V2_EXTERNAL_RUNTIME_GATE = "agent-v2-external-runtime-e2e"
 AGENT_MARKETPLACE_GATE = "agent-marketplace-catalog-e2e"
 AGENT_CLI_PROVIDER_GATE = "agent-cli-provider-primary-native-e2e"
 AGENT_CORE_LIFECYCLE_GATE = "agent-core-lifecycle-native-e2e"
+AGENT_MINIMUM_USABLE_CHAT_GATE = "agent-minimum-usable-chat-native-e2e"
 AGENT_NATIVE_GATES = frozenset(
     {
         "agent-attachment-e2e",
         AGENT_CLI_PROVIDER_GATE,
         "agent-core-lifecycle-native-e2e",
+        AGENT_MINIMUM_USABLE_CHAT_GATE,
         "agent-stream-resilience-e2e",
     }
 )
@@ -94,6 +97,7 @@ AGENT_V2_BINDING_GATES = frozenset(
     {
         AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
+        AGENT_MINIMUM_USABLE_CHAT_GATE,
         AGENT_V2_HOME_GATE,
         AGENT_V2_BINDING_GATE,
         AGENT_V2_GOVERNED_TOOL_GATE,
@@ -142,6 +146,7 @@ def agent_native_requires_disposable_fixture(gate_id: str) -> bool:
     return gate_id not in {
         AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
+        AGENT_MINIMUM_USABLE_CHAT_GATE,
     }
 
 
@@ -149,6 +154,7 @@ def agent_native_requires_provider(gate_id: str) -> bool:
     return gate_id not in {
         AGENT_CLI_PROVIDER_GATE,
         AGENT_CORE_LIFECYCLE_GATE,
+        AGENT_MINIMUM_USABLE_CHAT_GATE,
     }
 
 
@@ -880,6 +886,24 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             webdriver_port_variable="PT_AGENT_CLI_PROVIDER_WEBDRIVER_PORT",
         )
 
+    def _agent_minimum_usable_chat_client(
+        self,
+        run_id: str,
+        slot: int,
+        profile_env: dict[str, str],
+    ) -> ClientRuntime:
+        return self._agent_native_client(
+            run_id,
+            slot,
+            profile_env,
+            journey="minimum-usable-chat",
+            profile=AGENT_V2_BINDING_PROFILE,
+            worktree_variable="PT_AGENT_MINIMUM_USABLE_WORKTREE",
+            gateway_port_variable="PT_AGENT_MINIMUM_USABLE_GATEWAY_PORT",
+            renderer_port_variable="PT_AGENT_MINIMUM_USABLE_RENDERER_PORT",
+            webdriver_port_variable="PT_AGENT_MINIMUM_USABLE_WEBDRIVER_PORT",
+        )
+
     def _export_profile_credential_refs(
         self,
         profile_env: dict[str, str],
@@ -1497,6 +1521,12 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     deployment_environment
                 ),
             )
+        elif gate_id == AGENT_MINIMUM_USABLE_CHAT_GATE:
+            client = self._agent_minimum_usable_chat_client(
+                manifest.run_id,
+                manifest.profile_slot,
+                profile_env,
+            )
         else:
             client = self._agent_stream_client(
                 manifest.run_id,
@@ -1683,6 +1713,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 AGENT_V2_HOME_GATE,
                 AGENT_V2_EXTERNAL_RUNTIME_GATE,
                 AGENT_MARKETPLACE_GATE,
+                AGENT_MINIMUM_USABLE_CHAT_GATE,
             }:
                 if manifest.workspace_digest != "clean":
                     raise BlockedError(
@@ -1703,6 +1734,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                     AGENT_V2_EVALUATION_GATE,
                     AGENT_V2_EXTERNAL_RUNTIME_GATE,
                     AGENT_MARKETPLACE_GATE,
+                    AGENT_MINIMUM_USABLE_CHAT_GATE,
                 }
                 and not attestation.is_clean_workspace
             ):
