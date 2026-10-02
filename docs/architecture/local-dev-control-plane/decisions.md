@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Architecture Decisions
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-02
 > **Owner**: Platform Team
 > **Module**: `tooling/scripts/local-dev/`
 
@@ -27,6 +27,7 @@
 | LDCP-D13 | Project Plan progress separately from environment health | accepted |
 | LDCP-D14 | Reserve immutable workspace Plan ownership under the machine Dev root | accepted |
 | LDCP-D15 | Derive reset protection from the canonical Profile ID | accepted |
+| LDCP-D17 | Separate durable workspace binding from current Git HEAD | accepted |
 
 ## LDCP-D01: Machine Control-Plane Root
 
@@ -67,6 +68,11 @@ The root needs one platform resolver and explicit separation from product data.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Worktree names and branches can collide or change while the physical workspace
+still needs one stable machine identity.
+
 ### Decision
 
 Bind profile and slot by `workspaceId = sha256(realpath(root))[0:16]`.
@@ -75,6 +81,11 @@ Bind profile and slot by `workspaceId = sha256(realpath(root))[0:16]`.
 
 Worktree basename and branch are mutable and non-unique. Canonical path identity
 matches existing worktree and Acceptance isolation conventions.
+
+### Alternatives Considered
+
+- Use the worktree basename: rejected because basenames are not globally unique.
+- Use the branch: rejected because branches are mutable and may be shared.
 
 ### Consequences
 
@@ -86,6 +97,11 @@ re-registration. The old record remains stale until cleaned.
 **Status**: accepted
 **Date**: 2026-09-13
 
+### Context
+
+Reviewed environment topology and mutable machine allocations have different
+owners and lifecycles.
+
 ### Decision
 
 The sibling `env` repository owns deployable topology definitions.
@@ -96,6 +112,13 @@ observed runtime state.
 
 Environment definitions are shared and reviewable; machine allocations are
 mutable and private to one developer machine.
+
+### Alternatives Considered
+
+- Store allocations in the environment repository: rejected because they are
+  host-local mutable state.
+- Store topology in the machine registry: rejected because it would bypass
+  reviewed shared configuration.
 
 ### Consequences
 
@@ -123,6 +146,11 @@ Allocate slot per workspace in the machine registry. Treat profile
 Two worktrees may connect to the same Station while requiring different local
 Desktop/Mobile ports.
 
+### Alternatives Considered
+
+- Allocate slots per Profile: rejected because several worktrees can share one
+  remote Profile while requiring isolated local ports.
+
 ### Consequences
 
 Port computation moves behind machine binding resolution. Existing profile
@@ -132,6 +160,11 @@ files must eventually stop declaring authoritative slots.
 
 **Status**: accepted
 **Date**: 2026-09-13
+
+### Context
+
+Read-only Station access, source deployment, and destructive fixture reset have
+different concurrency and authorization requirements.
 
 ### Decision
 
@@ -146,6 +179,11 @@ Represent Station use as:
 Connecting a client is not equivalent to replacing Station source or
 destructively resetting fixtures. One generic profile lock cannot express the
 risk boundary.
+
+### Alternatives Considered
+
+- Use one undifferentiated Station capability: rejected because it grants more
+  authority than read-only clients require.
 
 ### Consequences
 
@@ -171,6 +209,11 @@ Create `~/.peers-touch/dev/registry.json` with
 
 This gives one visible ledger immediately without changing active profile,
 process, deploy, or reset behavior before architecture review.
+
+### Alternatives Considered
+
+- Promote discovered state directly to authority: rejected because discovery
+  does not establish owner intent.
 
 ### Consequences
 
@@ -621,3 +664,43 @@ actual mutation.
   loop.
 - Existing stable Profiles remain usable for non-reset operations under their
   normal capability and declaration guards.
+
+## LDCP-D17: Stable Workspace Binding And Live Source Identity
+
+**Status**: accepted
+**Date**: 2026-09-28
+
+### Context
+
+Persisting Git HEAD inside a durable workspace registration makes a normal
+commit, merge, rebase, or pull invalidate an otherwise unchanged worktree
+binding.
+
+### Decision
+
+The schema-v1 machine registration excludes `head`. It persists canonical root,
+derived `workspaceId`, registered branch, Profile, slot, capabilities, and owner
+metadata. Every operation reads current branch and HEAD from the live worktree.
+Development declarations, Sessions, and deployment `build_commit` remain the
+source-version authorities.
+
+### Rationale
+
+Stable workspace identity and advancing source identity have different
+lifecycles and therefore require separate owners.
+
+### Alternatives Considered
+
+- Refresh registry HEAD before selected commands: rejected because it preserves
+  two owners for current source.
+- Add a compatibility schema: rejected because no supported mixed-version
+  deployment requires it.
+- Remove the branch guard: rejected because branch changes remain explicit
+  binding updates.
+
+### Consequences
+
+- Same-branch Git updates do not require a machine-registry write.
+- Declaration `sourceHead` must still equal live HEAD before Agent mutation or
+  runtime acquisition.
+- Root or branch drift still returns `WORKTREE_IDENTITY_MISMATCH`.

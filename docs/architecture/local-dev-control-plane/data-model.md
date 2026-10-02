@@ -1,8 +1,8 @@
 # Local Dev Control Plane - Data Model
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-13 | **Updated**: 2026-09-21
+> **Version**: v1.4
+> **Created**: 2026-09-13 | **Updated**: 2026-10-02
 > **Owner**: Platform Team
 > **Module**: `apps/dev/`, `tooling/scripts/local-dev/`
 
@@ -72,7 +72,6 @@ interface WorkspaceRecord {
   canonicalRoot: string;
   name: string;
   branch: string;
-  head: string;
   profile: string;
   slot: number;
   allowedCapabilities: StationCapability[];
@@ -86,8 +85,10 @@ interface WorkspaceRecord {
 
 An `observed-snapshot` may contain additional diagnostic projections. An
 authoritative registration persists and re-verifies canonical root, workspace
-ID, branch, and HEAD before every resolved command. Source movement or Git
-identity drift makes the registration `stale` until `env-update` refreshes it.
+ID, and branch before every resolved command. Current HEAD is read directly
+from the live worktree and is bound by Development declarations, Sessions, and
+deployment attestations rather than the durable registration. Root or branch
+identity drift makes the registration `stale`.
 
 ## 3. Profile Definition
 

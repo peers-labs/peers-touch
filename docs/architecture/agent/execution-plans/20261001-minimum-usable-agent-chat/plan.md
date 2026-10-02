@@ -25,7 +25,9 @@
       "docs/architecture/agent/modern-chat-agent/product-state-model.md",
       "docs/architecture/agent/modern-chat-agent/design.md",
       "docs/architecture/agent/modern-chat-agent/decisions.md",
-      "docs/architecture/agent/agent-lobehub-blueprint.md"
+      "docs/architecture/agent/agent-lobehub-blueprint.md",
+      "docs/architecture/local-dev-control-plane/decisions.md",
+      "docs/architecture/local-dev-control-plane/data-model.md"
     ],
     "decisions": [
       "MCA-D14",
@@ -35,7 +37,8 @@
       "MCA-D18",
       "MCA-D20",
       "MCA-D22",
-      "MCA-D23"
+      "MCA-D23",
+      "LDCP-D17"
     ]
   },
   "scope": {
@@ -54,6 +57,10 @@
       },
       {
         "pathPrefix": "docs/architecture/architecture-module-governance/architecture-modules.json",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs/architecture/local-dev-control-plane",
         "mode": "exclusive-write"
       },
       {
