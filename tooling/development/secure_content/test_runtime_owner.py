@@ -267,12 +267,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             "restored = _restore_portable_recovery(",
             recovery_read,
         )
-        replacement_enrollment = source.index(
-            "_wait_for_device_enrollment(bob_replacement)",
-            replacement_start,
+        recovered_read = source.index(
+            'recovered = _moments_harness(',
+            recovery_restore,
         )
         self.assertLess(recovery_read, recovery_restore)
-        self.assertLess(recovery_restore, replacement_enrollment)
+        self.assertLess(recovery_restore, recovered_read)
+        self.assertNotIn(
+            "_wait_for_device_enrollment(",
+            source[replacement_start:recovered_read],
+        )
 
     def test_w8_suite_restores_declared_shared_fixtures(self) -> None:
         clients = {
