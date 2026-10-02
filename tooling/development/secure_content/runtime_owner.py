@@ -8427,6 +8427,9 @@ class W7RuntimeOwner:
                         ),
                         resource="client:secure-content-desktop-bob2",
                     )
+                replacement_snapshot = _wait_for_moments_snapshot(
+                    bob_replacement
+                )
                 clients[bob_client_id] = bob_replacement
                 payloads[bob_client_id] = _client_payload(
                     bob_client_id,

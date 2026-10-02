@@ -277,9 +277,19 @@ class RuntimeOwnerTest(unittest.TestCase):
             'recovered = _moments_harness(',
             replacement_enrollment,
         )
+        refreshed_snapshot = source.index(
+            "replacement_snapshot = _wait_for_moments_snapshot(",
+            recovered_read,
+        )
+        replacement_payload = source.index(
+            "payloads[bob_client_id] = _client_payload(",
+            refreshed_snapshot,
+        )
         self.assertLess(recovery_read, recovery_restore)
         self.assertLess(recovery_restore, replacement_enrollment)
         self.assertLess(replacement_enrollment, recovered_read)
+        self.assertLess(recovered_read, refreshed_snapshot)
+        self.assertLess(refreshed_snapshot, replacement_payload)
 
     def test_w8_suite_restores_declared_shared_fixtures(self) -> None:
         clients = {
