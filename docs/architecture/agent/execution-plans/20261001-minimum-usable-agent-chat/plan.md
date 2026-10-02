@@ -1,6 +1,6 @@
 # Minimum Usable Agent Chat - Plan Package
 
-> **Status**: active
+> **Status**: completed
 > **Branch**: feat/p0-streaming-runtime-message-actions
 > **Workspace ID**: 65e7b6da4dc9be85
 > **Initial HEAD**: 41f4198fb3878e2b791a0ca1442d9a15549bb967
@@ -11,7 +11,7 @@
 {
   "kind": "peers-touch-plan-package",
   "planId": "minimum-usable-agent-chat-20261001",
-  "status": "active",
+  "status": "completed",
   "binding": {
     "branch": "feat/p0-streaming-runtime-message-actions",
     "workspaceId": "65e7b6da4dc9be85",
@@ -103,7 +103,7 @@
       "workstreamId": "AMU",
       "path": "tasks/AMU-01.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     }
   ],
