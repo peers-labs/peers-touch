@@ -115,6 +115,7 @@ from tooling.development.secure_content.scenarios.desktop_pilot import (
 OWNER_ID = runtime_manifest.RUNTIME_OWNER_ID
 PROFILE = "four"
 SLOT = 5
+SOCIAL_ACCEPTANCE_SLOT = 12
 STATION_ID = "station-four"
 SECONDARY_PROFILE = "fiveArm"
 SECONDARY_STATION_ID = "station-five-arm"
@@ -1625,7 +1626,11 @@ def _validate_fixture(
         )
 
 
-def _resolve_machine_profile(repo_root: Path) -> tuple[dict[str, Any], dict[str, str]]:
+def _resolve_machine_profile(
+    repo_root: Path,
+    *,
+    expected_slot: int = SLOT,
+) -> tuple[dict[str, Any], dict[str, str]]:
     process = subprocess.run(
         [
             "node",
@@ -1652,12 +1657,15 @@ def _resolve_machine_profile(repo_root: Path) -> tuple[dict[str, Any], dict[str,
         or not isinstance(binding, Mapping)
         or not isinstance(profile, Mapping)
         or binding.get("profile") != PROFILE
-        or binding.get("slot") != SLOT
+        or binding.get("slot") != expected_slot
         or profile.get("stationDeployEnvironment") != STATION_ID
     ):
         raise RuntimeOwnerBlocked(
             "CONTROLLER_BINDING_MISMATCH",
-            "runtime owner requires the authoritative Profile four, slot 5 binding",
+            (
+                "runtime owner requires the authoritative Profile four, "
+                f"slot {expected_slot} binding"
+            ),
             resource="profile:four",
         )
     profile_path = Path(str(profile.get("profileFile") or ""))
@@ -2083,6 +2091,8 @@ def _require_social_acceptance_source(
         )
 
     allowed_prefixes = (
+        "docs/architecture/secure-content/execution-plans/"
+        "20260913-secure-content-hard-cut/plan.md",
         "docs/architecture/social/",
         "tooling/acceptance/",
         "tooling/development/secure_content/",
@@ -5995,8 +6005,15 @@ class W7RuntimeOwner:
     def run_w8_suite(self) -> dict[str, Any]:
         return self._run_w8_suite(formal_acceptance=False)
 
-    def run_social_desktop_acceptance_suite(self) -> dict[str, Any]:
-        return self._run_w8_suite(formal_acceptance=True)
+    def run_social_desktop_acceptance_suite(
+        self,
+        *,
+        slot: int = SOCIAL_ACCEPTANCE_SLOT,
+    ) -> dict[str, Any]:
+        return self._run_w8_suite(
+            formal_acceptance=True,
+            expected_slot=slot,
+        )
 
     def run_w9_suite(self) -> dict[str, Any]:
         return self._run_platform_suite(
@@ -7646,6 +7663,7 @@ class W7RuntimeOwner:
         self,
         *,
         formal_acceptance: bool,
+        expected_slot: int = SLOT,
     ) -> dict[str, Any]:
         work_item_id = (
             SOCIAL_ACCEPTANCE_WORK_ITEM_ID
@@ -7691,7 +7709,10 @@ class W7RuntimeOwner:
             task_id=task_id,
             plan_id=plan_id,
         )
-        resolved, profile_env = _resolve_machine_profile(self.repo_root)
+        resolved, profile_env = _resolve_machine_profile(
+            self.repo_root,
+            expected_slot=expected_slot,
+        )
         _secondary_profile_path, secondary_profile_env = (
             _resolve_secondary_profile(resolved)
         )
@@ -8610,10 +8631,18 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    if args.profile != PROFILE or args.slot != SLOT:
+    required_slot = (
+        SOCIAL_ACCEPTANCE_SLOT
+        if args.action == "run-social-desktop-acceptance-suite"
+        else SLOT
+    )
+    if args.profile != PROFILE or args.slot != required_slot:
         blocked = RuntimeOwnerBlocked(
             "CONTROLLER_BINDING_MISMATCH",
-            "W7 runtime owner requires --profile four --slot 5",
+            (
+                f"{args.action} runtime owner requires --profile four "
+                f"--slot {required_slot}"
+            ),
             resource="profile:four",
         )
         print(json.dumps(blocked.payload(), sort_keys=True), file=sys.stderr)
@@ -8687,7 +8716,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         elif args.action == "run-w8-suite":
             result = owner.run_w8_suite()
         elif args.action == "run-social-desktop-acceptance-suite":
-            result = owner.run_social_desktop_acceptance_suite()
+            result = owner.run_social_desktop_acceptance_suite(slot=args.slot)
         elif args.action == "run-w9-suite":
             result = owner.run_w9_suite()
         elif args.action == "run-w2-suite":

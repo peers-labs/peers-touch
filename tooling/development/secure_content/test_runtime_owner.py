@@ -602,11 +602,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "run-social-desktop-acceptance-suite",
                     "--profiles",
                     "four,fiveArm",
+                    "--slot",
+                    "12",
                 ]
             )
 
         self.assertEqual(0, status)
-        run_suite.assert_called_once_with()
+        run_suite.assert_called_once_with(slot=12)
 
     def test_w8_suite_requires_complete_profile_closure(
         self,
@@ -785,6 +787,12 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_task_suite_entries_replace_public_leaf_commands(self) -> None:
         suite_arguments = {
             "run-w7-desktop-suite": ["--profiles", "four,fiveArm"],
+            "run-social-desktop-acceptance-suite": [
+                "--profiles",
+                "four,fiveArm",
+                "--slot",
+                "12",
+            ],
             "run-w9-suite": [],
             "run-w2-suite": ["--profiles", "four,fiveArm"],
             "run-w10-suite": ["--profiles", "four,fiveArm"],
