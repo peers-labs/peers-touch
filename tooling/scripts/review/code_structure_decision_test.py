@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import errno
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -35,6 +38,17 @@ TARGET = {
     "scopeId": f"sha256:{'c' * 64}",
 }
 RUBRIC_HASH = f"sha256:{'a' * 64}"
+
+
+def remove_tree_with_retry(root: Path) -> None:
+    for attempt in range(5):
+        try:
+            shutil.rmtree(root)
+            return
+        except OSError as error:
+            if error.errno != errno.ENOTEMPTY or attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def finding(*, blocking: bool) -> dict[str, object]:
@@ -220,8 +234,8 @@ class SourceClassificationTests(unittest.TestCase):
 
 class TargetSelectionTests(unittest.TestCase):
     def test_path_depth_one_selects_direct_files_only(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+        root = Path(tempfile.mkdtemp())
+        try:
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
             (root / "src" / "nested").mkdir(parents=True)
             (root / "src" / "root.ts").write_text("export {};\n")
@@ -230,6 +244,8 @@ class TargetSelectionTests(unittest.TestCase):
             subprocess.run(["git", "add", "."], cwd=root, check=True)
 
             normalized, paths = decision.path_scope_paths(root, "src", 1)
+        finally:
+            remove_tree_with_retry(root)
 
         self.assertEqual(normalized, "src")
         self.assertEqual(paths, ["src/notes.md", "src/root.ts"])

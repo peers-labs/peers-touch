@@ -30,6 +30,8 @@ execution_guardian_skill="tooling/skills/pt-execution-plan-guardian/SKILL.md"
 dev_workflow_skill="tooling/skills/pt-dev-workflow/SKILL.md"
 dev_work_script="tooling/scripts/local-dev/dev-work.mjs"
 dev_work_ledger="tooling/scripts/local-dev/dev-work-ledger.mjs"
+dev_resource_plan="tooling/scripts/local-dev/dev-resource-plan.mjs"
+dev_resource_plan_test="tooling/scripts/local-dev/dev-resource-plan.test.mjs"
 dev_session_script="tooling/scripts/local-dev/dev-session.mjs"
 dev_session_store="tooling/scripts/local-dev/dev-session-store.mjs"
 dev_session_test="tooling/scripts/local-dev/dev-session.test.mjs"
@@ -58,6 +60,9 @@ goal_review_rubric="tooling/skills/pt-goal-orchestrator/REVIEW_RUBRIC.md"
 runtime_handoff_skill="tooling/skills/pt-dev-runtime-handoff/SKILL.md"
 defect_closure_skill="tooling/skills/pt-defect-closure/SKILL.md"
 local_dev_env_skill="tooling/skills/pt-local-dev-env/SKILL.md"
+agent_development_skill="tooling/skills/pt-agent-development/SKILL.md"
+agent_impact_policy="tooling/skills/pt-agent-development/impact-policy.json"
+agent_impact_test="tooling/skills/pt-agent-development/scripts/test_impact.py"
 trae_host_adapter="tooling/skills/pt-trae-host-adapter/SKILL.md"
 cursor_host_adapter="tooling/skills/pt-cursor-host-adapter/SKILL.md"
 codex_host_adapter="tooling/skills/pt-codex-host-adapter/SKILL.md"
@@ -103,6 +108,8 @@ require_file "$execution_guardian_skill"
 require_file "$dev_workflow_skill"
 require_file "$dev_work_script"
 require_file "$dev_work_ledger"
+require_file "$dev_resource_plan"
+require_file "$dev_resource_plan_test"
 require_file "$dev_session_script"
 require_file "$dev_session_store"
 require_file "$dev_session_test"
@@ -136,6 +143,10 @@ require_file "$goal_template"
 require_file "$goal_review_rubric"
 require_file "$runtime_handoff_skill"
 require_file "$defect_closure_skill"
+require_file "$local_dev_env_skill"
+require_file "$agent_development_skill"
+require_file "$agent_impact_policy"
+require_file "$agent_impact_test"
 require_file "$trae_host_adapter"
 require_file "$cursor_host_adapter"
 require_file "$codex_host_adapter"
@@ -267,7 +278,7 @@ if ! grep -Fq "Blocked Task handoff requires a BLOCKED Session" "$planctl_script
 fi
 
 for marker in \
-  "ACTIVE_ACTION_IN_FLIGHT" \
+  "GLOBAL_WORKFLOW_NOT_IDLE" \
   "INSTALLING" \
   "BLOCKED" \
   "INSTALLED"; do
@@ -335,9 +346,9 @@ for marker in \
   "CROSS_WORKTREE_WRITE_DENIED" \
   "OBSERVE_ONLY" \
   "CONTEXT_ANCHOR_REQUIRED" \
-  "releaseConversation"; do
+  "releaseWorkflowOwner"; do
   if ! grep -Fq "$marker" "$workflow_kernel"; then
-    fail "$workflow_kernel missing conversation-bound enforcement marker: $marker"
+    fail "$workflow_kernel missing owner-rooted enforcement marker: $marker"
   fi
 done
 
@@ -1080,7 +1091,7 @@ else
         printf '### %s\n' "$doc"
         cat "$doc"
       elif [[ -d "$doc" ]]; then
-        find "$doc" -type f -name '*.md' | LC_ALL=C sort | while IFS= read -r nested; do
+        find "$doc" -type f -name '*.md' ! -path '*/execution-plans/*' | LC_ALL=C sort | while IFS= read -r nested; do
           printf '### %s\n' "$nested"
           cat "$nested"
         done
@@ -1190,6 +1201,20 @@ if ! python3 "$code_structure_decision_test" \
   fail "code structure decision tests failed"
 fi
 rm -f /tmp/pt-code-structure-decision.$$
+
+if ! node --test "$dev_resource_plan_test" \
+  >/tmp/pt-dev-resource-plan.$$ 2>&1; then
+  cat /tmp/pt-dev-resource-plan.$$
+  fail "Development resource-plan tests failed"
+fi
+rm -f /tmp/pt-dev-resource-plan.$$
+
+if ! python3 "$agent_impact_test" \
+  >/tmp/pt-agent-impact.$$ 2>&1; then
+  cat /tmp/pt-agent-impact.$$
+  fail "Agent ModuleImpact tests failed"
+fi
+rm -f /tmp/pt-agent-impact.$$
 
 invalid_range="__pt_missing_review_range__"
 if tooling/scripts/review/route-change.sh --range "$invalid_range" >/tmp/pt-route-invalid.$$ 2>&1; then

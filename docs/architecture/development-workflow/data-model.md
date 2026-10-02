@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Data Model
 
-> **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -516,25 +516,29 @@ Rules:
 - the registry controls interaction policy only and is not Plan, Session,
   declaration, authorization, or Acceptance state.
 
-## 6.2 Conversation Execution Binding
+## 6.2 Workflow Binding Projection
 
-The Workflow Kernel stores no raw host conversation identifier. It derives
-`conversationHash = sha256(host + NUL + stableConversationId)` and uses:
+Raw host identities are never persisted. Each host adapter extracts exactly
+the fields defined for that host and hashes them independently:
 
-```text
-~/.peers-touch/dev/conversations/<host>/<conversationHash>/
-├── execution-binding.json
-├── anchor-receipt.json
-└── releases/<anchorDigest>.json
-```
+| Host | OWNER identity key | Assigned-child identity key |
+|---|---|---|
+| TRAE | `chat_session_id` | `session_id` |
+| Cursor | `conversation_id` | `conversation_id` |
+| Codex | `session_id` | `session_id` |
 
-The create-once binding is:
+An absent required root-chat field produces `OBSERVE_ONLY`. Adapters do not
+probe aliases from another host and do not read process-global identity
+fallbacks.
+
+The create-once OWNER binding is:
 
 ```ts
-interface ConversationExecutionBinding {
-  kind: 'peers-touch-workflow-conversation-binding';
+interface WorkflowOwnerBinding {
+  kind: 'peers-touch-workflow-owner-binding';
   host: 'trae' | 'cursor' | 'codex';
-  conversationHash: string;
+  rootChatHash: string;
+  role: 'OWNER';
   executionRoot: string;
   workspaceId: string;
   boundAt: string;
@@ -543,9 +547,97 @@ interface ConversationExecutionBinding {
 }
 ```
 
-`executionRoot` is machine-local and canonicalized through Git plus
-`realpath`. It is immutable for the conversation. It is not a lease, resource
-claim, Plan binding, or declaration.
+An active OWNER or child may issue a bounded child assignment:
+
+```ts
+interface WorkflowBindingAssignment {
+  kind: 'peers-touch-workflow-binding-assignment';
+  assignmentId: string;
+  role: 'WORKER' | 'REVIEWER';
+  rootBindingDigest: string;
+  parentBindingDigest: string;
+  workflowSessionId: string;
+  operationId: string;
+  issuedAt: string;
+  leaseUntil: string;
+  digest: string;
+}
+
+interface WorkflowAssignmentClaim {
+  kind: 'peers-touch-workflow-assignment-claim';
+  assignmentDigest: string;
+  rootBindingDigest: string;
+  host: 'trae' | 'cursor' | 'codex';
+  executionSessionHash: string;
+  workflowSessionId: string;
+  digest: string;
+}
+
+interface WorkflowChildBinding {
+  kind: 'peers-touch-workflow-child-binding';
+  host: 'trae' | 'cursor' | 'codex';
+  executionSessionHash: string;
+  role: 'WORKER' | 'REVIEWER';
+  assignmentDigest: string;
+  rootBindingDigest: string;
+  parentBindingDigest: string;
+  workflowSessionId: string;
+  executionRoot: string;
+  workspaceId: string;
+  boundAt: string;
+  digest: string;
+}
+
+interface WorkflowChildTerminalReceipt {
+  kind: 'peers-touch-workflow-child-terminal';
+  childBindingDigest: string;
+  result: 'PASS' | 'FAIL' | 'BLOCKED' | 'CANCELLED';
+  terminalAt: string;
+  digest: string;
+}
+```
+
+Assignment creation requires a current lineage projection and an active
+matching Development Session. Its `rootBindingDigest` always names the OWNER;
+its `parentBindingDigest` names the direct issuer. Before publishing a child
+binding, claim writes one assignment-keyed create-once record. The first
+execution-session hash wins; an idempotent retry by that session reuses the
+claim, while every different session is rejected. A child is live only before
+`leaseUntil` and before a terminal receipt exists. OWNER liveness has no
+generic TTL.
+
+Every hook and claim consumes one read-only projection:
+
+```ts
+interface WorkflowBindingProjection {
+  kind: 'peers-touch-workflow-binding-projection';
+  host: 'trae' | 'cursor' | 'codex';
+  role: 'OWNER' | 'WORKER' | 'REVIEWER';
+  bindingDigest: string;
+  rootBindingDigest: string;
+  parentBindingDigest: string | null;
+  assignmentDigest: string | null;
+  workflowSessionId: string | null;
+  executionRoot: string;
+  workspaceId: string;
+  subjectRoots: string[];
+  toolRoot: string | null;
+  targetRoots: string[];
+  released: boolean;
+  childState: null | 'ASSIGNED' | 'LEASED' | 'TERMINAL';
+}
+```
+
+`executionRoot` is canonicalized through Git plus `realpath` and inherited by
+the entire lineage. `subjectRoots`, `toolRoot`, and `targetRoots` are per-event
+facts and never change authority. Status, readiness, handoff, Stop, worker
+result, and Completion Review use this same projection rather than searching
+for an arbitrary unreleased binding by worktree.
+
+For a new OWNER in a multi-root workspace, the bootstrap location is excluded
+from root selection. An explicit host task root must match one declared
+workspace root; otherwise all mutation targets must resolve to one root.
+Zero or multiple candidates produce `WORKTREE_SELECTION_REQUIRED`.
 
 The latest Anchor receipt is atomically replaceable because it projects current
 owner state:
@@ -553,7 +645,7 @@ owner state:
 ```ts
 interface WorkflowAnchorReceipt {
   kind: 'peers-touch-workflow-anchor-receipt';
-  bindingDigest: string;
+  rootBindingDigest: string;
   anchorDigest: string;
   renderedAt: string;
   status: string;
@@ -565,18 +657,73 @@ interface WorkflowAnchorReceipt {
 The release receipt is create-once:
 
 ```ts
-interface ConversationRelease {
-  kind: 'peers-touch-workflow-conversation-release';
-  bindingDigest: string;
+interface WorkflowOwnerRelease {
+  kind: 'peers-touch-workflow-owner-release';
+  rootBindingDigest: string;
   anchorDigest: string;
   releasedAt: string;
   digest: string;
 }
 ```
 
-Release succeeds only when the exact rendered Anchor is observable in the
-assistant response or host transcript. A conflicting second release fails
-closed.
+Context compaction persists one bounded receipt per binding lineage:
+
+```ts
+interface WorkflowCompactLineage {
+  kind: 'peers-touch-workflow-compact-lineage';
+  compactId: string;
+  role: 'OWNER' | 'WORKER' | 'REVIEWER';
+  bindingDigest: string;
+  rootBindingDigest: string;
+  parentBindingDigest: string | null;
+  assignmentDigest: string | null;
+  workflowSessionId: string | null;
+  executionRoot: string;
+  workspaceId: string;
+  preCompactAt: string;
+  postCompactAt: string | null;
+  digest: string;
+}
+```
+
+`PreCompact` atomically replaces only the receipt keyed by the current
+`bindingDigest`. `PostCompact` resolves the actor again, loads that exact
+lineage receipt, and completes it only when every lineage and workspace field
+is unchanged. Concurrent OWNER, WORKER, and REVIEWER compactions therefore do
+not share a writable slot.
+
+OWNER release succeeds only when the exact rendered Anchor is observable in
+the assistant response or host transcript. A conflicting second release fails
+closed. It does not terminate or revive a child; child terminal receipts own
+that lifecycle.
+
+This schema is a hard cut. Installation requires no live declaration, child
+assignment, or workflow action on the machine other than the current
+OWNER-bound installer command identified by its exact Action Receipt, then
+deletes exactly:
+
+```text
+~/.peers-touch/dev/conversations/
+~/.peers-touch/dev/workspaces/*/workflow/actions/
+```
+
+The Kernel creates a create-once grant for that exact OWNER `skills` action.
+The installer completes fallible catalog, host-root, workspace, and hook
+preflight before consuming the grant. It then requires exactly one such live
+action, atomically consumes its grant, publishes `INSTALLING`, and only then
+starts destructive reset. A seeded receipt, missing action, another action ID,
+or a second invocation has no installation authority; reset failure publishes
+`BLOCKED`.
+
+Canonical Completion Review requests and receipts use schema version `2` under
+`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/completion-reviews-v2/`.
+The pre-hard-cut `completion-reviews/` namespace is not read, imported,
+migrated, or deleted.
+
+It does not delete Plan bindings, Plan generations, active-work, Development
+Sessions, Completion Review records, runtime leases, or Acceptance evidence.
+After the reset it publishes the current bootstrap. No legacy parser, importer,
+alias, or dual-write exists.
 
 ## 7. Development Work Item
 
@@ -629,8 +776,14 @@ interface DevelopmentResourceIntent {
       | 'relay.connect'
       | 'relay.deploy'
       | 'database'
+      | 'service'
+      | 'account'
+      | 'client'
+      | 'device'
       | 'client.storage'
-      | 'fixture';
+      | 'fixture'
+      | 'automation.session'
+      | 'resource.plan';
     resourceId: string;
     mode: 'shared' | 'exclusive';
   }>;
@@ -671,6 +824,261 @@ Publication uses lock, closed-schema validation, atomic replace and digest
 readback. Declaration intent never substitutes for a live runtime lease.
 Relay and database claims provide machine-wide planning visibility only; they
 do not create deployment, mutation or lease authority.
+
+### 8.1 Module Impact And Plan Resource Plan
+
+Every domain classifier returns one closed module contribution:
+
+```ts
+interface ModuleImpact {
+  kind: 'peers-touch-module-impact';
+  schemaVersion: 1;
+  moduleId: string;
+  state:
+    | 'DECIDED'
+    | 'POLICY_REQUIRED'
+    | 'OWNERSHIP_SPLIT_REQUIRED'
+    | 'NOT_APPLICABLE';
+  changedPaths: string[];
+  changeKinds: string[];
+  moduleDependencies: string[];
+  requirements: {
+    focusedCheckSelectors: string[];
+    targetSelectors: string[];
+    journeySelectors: string[];
+    gateSelectors: string[];
+    resourceRequirements: ResourceRequirement[];
+  };
+  classification: object;
+  proof: object;
+}
+```
+
+`ModuleImpact` is declarative. It cannot contain commands, selected account or
+device IDs, ports, process IDs, lease files, or a concrete deployment sequence.
+
+```ts
+interface ResourceRequirement {
+  requirementId: string;
+  resourceKind: string;
+  quantity: number;
+  mode: 'shared' | 'exclusive';
+  lifecycleScope: 'task' | 'suite' | 'scenario';
+  isolationKey: string;
+  compatibilityKey: string;
+  reusePolicy:
+    | 'REUSE_IF_HEALTHY'
+    | 'RESTART_IF_COMPATIBLE'
+    | 'BUILD_IF_SOURCE_DRIFT'
+    | 'FRESH';
+  readinessProbe: {
+    kind: string;
+    ref: string | null;
+  };
+  mandatory: boolean;
+  candidateIds: string[];
+  expectedDigests: {
+    source: `sha256:${string}` | null;
+    artifact: `sha256:${string}` | null;
+    runtime: `sha256:${string}` | null;
+  };
+}
+```
+
+The Plan-level input joins all module impacts with the accepted target graph and
+the current Runtime Owner inventory:
+
+```ts
+interface ResourceTarget {
+  targetId: string;
+  dependsOn: string[];
+  focusedCheckSelectors: string[];
+  journeySelectors: string[];
+  gateSelectors: string[];
+  resourceRequirements: ResourceRequirement[];
+}
+
+interface RuntimeResourceCandidate {
+  resourceId: string;
+  resourceKind: DevelopmentResourceIntent['runtimeClaims'][number]['kind'];
+  compatibilityKey: string;
+  state: 'HEALTHY' | 'STALE' | 'ABSENT' | 'QUARANTINED' | 'UNAVAILABLE';
+  capacity: number;
+  reusable: boolean;
+  provisionable: boolean;
+  owner: string;
+  manifestRef: string | null;
+  digests: {
+    source: `sha256:${string}` | null;
+    artifact: `sha256:${string}` | null;
+    runtime: `sha256:${string}` | null;
+  };
+}
+
+interface PlanResourceRequest {
+  kind: 'peers-touch-plan-resource-request';
+  schemaVersion: 1;
+  planId: string;
+  taskId: string;
+  source: {
+    commit: string;
+    workspaceDigest: 'clean' | `sha256:${string}`;
+  };
+  satisfiedModuleIds: string[];
+  moduleImpacts: ModuleImpact[];
+  targets: ResourceTarget[];
+  inventory: RuntimeResourceCandidate[];
+}
+```
+
+The target graph comes from the accepted Plan and Gate/runtime registries.
+Inventory comes from the owning Local Dev or Acceptance Suite Runtime. A module
+policy cannot define either as a private substitute.
+
+The output is one machine-local `PlanResourcePlan`:
+
+```ts
+interface PlanResourcePlan {
+  kind: 'peers-touch-plan-resource-plan';
+  schemaVersion: 1;
+  planId: string;
+  taskId: string;
+  workItemId: string;
+  workspaceId: string;
+  sourceHead: string;
+  inputDigest: `sha256:${string}`;
+  allocationDigest: `sha256:${string}`;
+  fencingToken: number;
+  preparationState: 'RESERVING' | 'COMMITTED';
+  allocationState: 'READY' | 'PARTIALLY_READY' | 'PARKED';
+  runtimeState: 'READY' | 'PENDING' | 'PARKED' | 'QUARANTINED';
+  proofAction:
+    | 'REUSE_CANDIDATE'
+    | 'REUSE_ALLOWED'
+    | 'REPROVE_REQUIRED'
+    | 'POLICY_REQUIRED';
+  selectedTargetIds: string[];
+  executionWaves: string[][];
+  targets: Array<{
+    targetId: string;
+    wave: number;
+    state: 'ALLOCATED' | 'PARKED';
+    dependsOn: string[];
+    requirementIds: string[];
+    blockers: object[];
+  }>;
+  requirements: Array<{
+    idempotencyKey: string;
+    requirementId: string;
+    peakQuantity: number;
+    targetIds: string[];
+  }>;
+  capacity: Array<{
+    resourceKind: string;
+    compatibilityKey: string;
+    isolationKey: string;
+    mode: 'shared' | 'exclusive';
+    lifecycleScope: 'task' | 'suite' | 'scenario';
+    peakQuantity: number;
+    waveQuantities: Array<{ wave: number; quantity: number }>;
+  }>;
+  runtimeClaims: DevelopmentResourceIntent['runtimeClaims'];
+  baseRuntimeClaims: DevelopmentResourceIntent['runtimeClaims'];
+  plannedRuntimeClaims: DevelopmentResourceIntent['runtimeClaims'];
+  declarationRuntimeClaims: DevelopmentResourceIntent['runtimeClaims'];
+  resourceResults: Array<{
+    resourceKind: string;
+    resourceId: string;
+    status: 'READY' | 'PENDING' | 'QUARANTINED';
+    targetIds: string[];
+    requirementIds: string[];
+    idempotencyKeys: string[];
+  }>;
+  receiptDigest: `sha256:${string}`;
+}
+```
+
+The resource-plan path is
+`~/.peers-touch/dev/workspaces/<workspaceId>/workflow/<workItemId>/resource-plan.json`.
+It is a current execution receipt, not repository state or Acceptance evidence.
+
+Allocation rules:
+
+- target dependency closure is resolved before capacity;
+- module dependencies become target dependencies; a module with no direct
+  target still inherits the readiness of its impacted dependencies;
+- requirements with the same
+  `planId + lifecycleScope + requirementId + compatibilityKey` are idempotent;
+- peak quantity is computed per parallel execution wave;
+- mandatory bundles are allocated before optional demand in the same wave, so
+  optional reuse cannot park a mandatory target;
+- mandatory demand is solved across the complete wave with deterministic
+  rematching; constrained targets are considered first when capacity cannot
+  satisfy every target, so flexible demand cannot consume a pinned candidate;
+- resource selection prefers `REUSE`, then `RESTART`, `BUILD`, and
+  `PROVISION`;
+- selected resources, including `REUSE`, remain `PENDING` until the named
+  Runtime Owner returns a valid fenced result;
+- one physical resource cannot satisfy conflicting non-null expected digests;
+  incompatible co-allocation fails with `RESOURCE_REQUIREMENT_CONFLICT`;
+- quarantined and unavailable resources are never selected;
+- one target's declaration claims are all-or-none;
+- claims are sorted canonically and atomically merged into the existing
+  `DevelopmentResourceDeclaration`;
+- unavailable capacity parks the affected target and dependent targets, not
+  unrelated targets or the whole Plan.
+
+The resource-plan fencing token increments when request or source identity
+changes. A Runtime Owner result with a stale token, wrong allocation digest,
+wrong owner, unplanned resource, or mismatched expected digest is rejected.
+Heartbeat extends declaration liveness but does not mint a new fencing token.
+Preparation writes `RESERVING` before updating the public declaration and
+`COMMITTED` only after declaration readback. The `RESERVING` receipt retains
+the union of prior and proposed planner-owned claims, so interruption cannot
+reclassify an old planner claim as base intent. It is non-authorizing and is
+reconciled idempotently on the next prepare.
+
+`PlanResourcePlan` is not a live physical lease. Local Dev and Acceptance Suite
+Runtime own process/resource leases, readiness probes, manifests, cleanup and
+quarantine. A Gate may consume their manifest but cannot perform lifecycle
+operations.
+
+Runtime owners return:
+
+```ts
+interface ResourceOwnerResult {
+  kind: 'peers-touch-resource-owner-result';
+  schemaVersion: 1;
+  allocationDigest: `sha256:${string}`;
+  fencingToken: number;
+  resourceKind: string;
+  resourceId: string;
+  owner: string;
+  status: 'READY' | 'QUARANTINED';
+  manifestRef: string;
+  digests: {
+    source: `sha256:${string}` | null;
+    artifact: `sha256:${string}` | null;
+    runtime: `sha256:${string}` | null;
+  };
+}
+```
+
+The recorder serializes with prepare under the workspace lifecycle lock and
+accepts an idempotent identical result. A second result with different content
+for the same fenced resource is `RESOURCE_RESULT_CONFLICT`.
+Expected-digest validation joins through the exact `idempotencyKeys`; a bare
+`requirementId` never links results across compatibility or lifecycle scopes.
+Planner-owned lease admission requires a valid `allocationDigest`, a positive
+`fencingToken`, and exactly one matching resource result in `READY`; `PENDING`,
+`QUARANTINED`, missing, or duplicate results fail closed.
+`baseRuntimeClaims` preserves declaration claims that predate the planner.
+Replanning removes only prior `plannedRuntimeClaims`; it never adopts or
+releases a pre-existing claim with the same resource identity. Physical lease
+admission requires a matching `COMMITTED` receipt for planner-owned claims. A
+shared `resource.plan:<workItemId>` marker makes missing-receipt provenance
+fail closed without acting as a physical lease. The marker is reserved for the
+planner and is invalid as a module requirement or Runtime Owner inventory item.
 
 ## 9. Execution Authorization
 
@@ -1234,10 +1642,22 @@ Rules:
     ├── migration.lock
     └── migration.lock.recovery
 
-~/.peers-touch/dev/conversations/<host>/<conversationHash>/
-├── execution-binding.json
-├── anchor-receipt.json
-└── releases/<anchorDigest>.json
+~/.peers-touch/dev/bindings/
+├── owners/<host>/<rootChatHash>/
+│   ├── owner-binding.json
+│   ├── anchor-receipt.json
+│   ├── compact-lineage/<bindingDigest>.json
+│   ├── assignments/<assignmentId>.json
+│   ├── assignment-claims/<assignmentDigest>.json
+│   └── releases/<anchorDigest>.json
+└── children/<rootBindingDigest>/<host>/<executionSessionHash>/
+    ├── child-binding.json
+    └── terminal.json
+
+~/.peers-touch/dev/workspaces/<workspaceId>/workflow/actions/
+├── <rootBindingDigest>.json
+├── <actionGrantHash>.grant.json
+└── <actionGrantHash>.grant-consumed.json
 ```
 
 Constraints:
@@ -1248,5 +1668,6 @@ Constraints:
 - injected clock for deterministic tests;
 - no credential or private key;
 - no raw host conversation identifier;
+- no legacy conversation/action store compatibility;
 - no repository writer;
 - no fallback to Acceptance Evidence Store.

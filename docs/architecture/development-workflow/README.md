@@ -1,7 +1,7 @@
 # Development Workflow Control Plane
 
-> **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -14,9 +14,12 @@
 - 从资源声明、实现、聚焦检查、checkpoint、部署到功能验证的状态机。
 - Development、Local Dev、Acceptance 和 Quality 的所有权边界。
 - 所有 worktree 可见的机器级资源声明。
+- 跨模块 `ModuleImpact` 聚合、target 依赖、峰值容量和资源复用计划。
 - compact Plan Package、独立 Task Slice 和跨会话恢复协议。
 - checkpoint、部署、reset、push 和 branch rewrite 的授权模型。
 - 低噪声状态汇报和仓库外瞬态诊断记录。
+- 顶层开发会话与内部 worker/reviewer 会话的 binding lineage、liveness 和
+  completion claim 边界。
 
 本文档集不定义：
 
@@ -36,15 +39,18 @@
 PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 ```
 
-但当前恢复链路仍存在两个已验证问题：
+当前 binding 路径有三个已验证问题：
 
-1. `EXECUTE` 缺少强制的产品优先状态机，source/static 结果可能被误读为
-   用户功能已经可用。
-2. 单文件执行计划同时承载稳定范围、完整 DAG、当前状态和逐次运行叙事。
-   Mobile Shell 计划已增长到 4,000 行以上；恢复需要重新读取与过滤大量历史内容。
+1. 宿主字段被跨 host 等价归一，TRAE 内部 reviewer、retry 或 subtask 的
+   `session_id` 会创建新的顶层 owner binding。
+2. Binding schema 没有 role、root/parent lineage 或 child lifecycle；没有
+   release receipt 的历史记录会永久被视为 active。
+3. Completion Review 在近期 Action Receipt 解析失败后枚举整个 worktree 并
+   强制全局唯一，使过期 child 历史阻断当前 reviewer。
 
-这两个问题互相放大：状态没有机器 Owner 时，人会把运行日志写回计划；计划越长，
-状态恢复越依赖聊天和人工解释。
+这三个问题共同把执行历史误当成实时授权状态。目标设计必须把一个可见开发会话
+固定为唯一 OWNER，并让 child identity、liveness 和 completion claim 全部显式、
+可校验。
 
 ## 3. Design Goals
 
@@ -82,6 +88,13 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 20. Task 和 Plan 完成必须有独立、当前源码绑定的 Completion Review。
 21. completed 且已释放的 workspace 通过显式 generation advance 承接下一
     Plan；Agent 不得把新建 worktree 当作绕过绑定的手段。
+22. 模块 Skill 只输出影响与逻辑需求；Dev Workflow 在 runtime acquisition
+    前形成唯一 `PlanResourcePlan`，具体资源生命周期仍由既有 Runtime/Suite
+    Owner 管理。
+23. 一个可见开发会话只有一个 OWNER binding；WORKER/REVIEWER 必须由
+    assignment 创建 child binding，并以 lease/terminal receipt 管理生命周期。
+    状态和完成声明只能消费当前事件的 `BindingProjection`，不能枚举同
+    worktree 的历史 binding 猜 owner。
 
 ## 4. Document Navigation
 
@@ -89,10 +102,10 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 |---|---|
 | [design.md](./design.md) | 控制面边界、Plan Package、Task Slice 和恢复数据流 |
 | [data-model.md](./data-model.md) | Plan、Task、Session、Checkpoint、Run 与状态机 schema |
-| [decisions.md](./decisions.md) | DWF-D01..DWF-D31 关键决策 |
+| [decisions.md](./decisions.md) | DWF-D01..DWF-D33 关键决策 |
 | [module-layout.md](./module-layout.md) | 文档、CLI、machine store 和 Skill 的文件职责 |
 | [integration.md](./integration.md) | 与 Skill、Make、Local Dev、Acceptance、Quality 的映射 |
-| [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D26 的 Kernel、宿主投影和 rollout 流程 |
+| [host-neutral-agent-integration.md](./host-neutral-agent-integration.md) | DWF-D21/DWF-D22/DWF-D33 的 Kernel、宿主投影和 rollout 流程 |
 | [product-definition.md](./product-definition.md) | Peers Dev 产品能力、用户和 Journey |
 | [experience-contract.md](./experience-contract.md) | Peers Dev 可见状态与交互合同 |
 | [product-state-model.md](./product-state-model.md) | Stage、Plan、Task、Review 与 Agent activity 状态 |
@@ -105,7 +118,7 @@ PRODUCT -> DESIGN -> PLAN -> EXECUTE -> DELIVER
 
 ## 5. Current Status
 
-DWF-D01..DWF-D31 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
+DWF-D01..DWF-D33 已接受。仓库与 PR 可包含多个 active Plan Package，但每个
 workspace 只解析机器级当前 generation 指向的一个 Plan；同步进入分支的外来
 Plan 不参与本 workspace 的发现。completed 且 quiescent 的 generation 可由
 显式 owner command 原子推进，不能由 repository discovery 或 Agent 新建

@@ -1,3 +1,7 @@
+import {
+  validateWorkflowBindingProjection,
+} from './workflow-binding-projection.mjs';
+
 export function projectStages(planStatus) {
   const terminal = ['completed', 'superseded'].includes(planStatus);
   const executeState =
@@ -26,6 +30,7 @@ export function projectStages(planStatus) {
 }
 
 export function projectWorkflowContext(binding, inspection) {
+  validateWorkflowBindingProjection(binding);
   const tasks = inspection.planPackage?.manifest?.tasks ?? [];
   const completed = tasks.filter((task) => task.status === 'done').length;
   const total = tasks.length;
@@ -67,6 +72,14 @@ export function projectWorkflowContext(binding, inspection) {
       null,
     sessionState,
     workItemId: inspection.declaration?.workItemId ?? null,
-    bindingDigest: binding.digest,
+    binding: {
+      role: binding.role,
+      bindingDigest: binding.bindingDigest,
+      rootBindingDigest: binding.rootBindingDigest,
+      parentBindingDigest: binding.parentBindingDigest,
+      assignmentDigest: binding.assignmentDigest,
+      released: binding.released,
+      childState: binding.childState,
+    },
   };
 }

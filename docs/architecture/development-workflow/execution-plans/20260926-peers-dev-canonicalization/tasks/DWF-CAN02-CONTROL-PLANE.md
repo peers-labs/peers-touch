@@ -16,6 +16,8 @@
   "journeyId": "DEV-J01",
   "runtimeClass": "source-only",
   "writeSet": [
+    "apps/dev/server/index.test.mjs",
+    "tooling/acceptance/gates/desktop/dev_runtime_multi_instance_static_test.py",
     "tooling/make/setup.mk",
     "tooling/plugins",
     "tooling/scripts/agent-integration-audit-test.py",
@@ -25,6 +27,7 @@
     "tooling/scripts/local-dev",
     "tooling/scripts/plan",
     "tooling/scripts/README.md",
+    "tooling/scripts/review/code_structure_decision_test.py",
     "tooling/scripts/review/skill-check.sh",
     "tooling/make/local-dev.mk",
     "tooling/skills"
@@ -51,7 +54,7 @@
     },
     {
       "id": "workflow-control-plane-proof",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-workflow-contract",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-workflow-contract --gate desktop-dev-runtime-isolation-static",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
