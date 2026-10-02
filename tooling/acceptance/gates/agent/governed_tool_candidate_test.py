@@ -200,6 +200,10 @@ class GovernedToolCandidateTest(unittest.TestCase):
             ROOT
             / "apps/desktop/src/acceptance/agent/harness.ts"
         ).read_text(encoding="utf-8")
+        governed_journey = harness[
+            harness.index("async function runGovernedToolDevelopmentJourney("):
+            harness.index("interface CapabilityBindingCandidateFixture")
+        ]
 
         self.assertIn("OPERATION_SCENARIO_ACTOR_ACCOUNT", source)
         self.assertIn("OPERATION_SCENARIO_IDENTITY_FIXTURE", source)
@@ -218,6 +222,12 @@ class GovernedToolCandidateTest(unittest.TestCase):
         self.assertIn(
             "'governed ToolCall cleanup Agent session surface'",
             harness,
+        )
+        self.assertEqual(
+            governed_journey.count(
+                "await reconcileFoundationToolReceiver();",
+            ),
+            2,
         )
 
 
