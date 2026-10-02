@@ -8439,6 +8439,7 @@ class W7RuntimeOwner:
                         ),
                         resource="client:secure-content-desktop-bob2",
                     )
+                _prepare_private_content_keys(bob_replacement)
                 replacement_snapshot = _wait_for_moments_snapshot(
                     bob_replacement
                 )
