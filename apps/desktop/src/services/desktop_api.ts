@@ -14,6 +14,7 @@ import { throttleInvoke } from '../kernel/invokeThrottler';
 import { eventBus } from '../kernel/events/bus';
 import { EVENT } from '../kernel/events/catalog';
 import { readDesktopPreferenceSync } from '../storage/desktopClientStorage';
+import type { AccessDecision } from './accessGate';
 import type {
   DesktopFrontendTelemetryEvent,
   FrontendTelemetryUploadResult,
@@ -70,16 +71,19 @@ import {
   ListMemberStationsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
+  Conversation as ProtoAgentConversation,
   ExportTurnDiagnosticsResponse,
   GetTurnTraceResponse,
   ListTurnFeedbackResponse,
   ListTurnTracesResponse,
   RecordFeedbackResponse,
+  ResetConversationRuntimeResponse,
 } from '../gen/proto/domain/agent/agent_pb';
 import {
   ExportTurnDiagnosticsResponseSchema,
   ListTurnFeedbackResponseSchema,
   RecordFeedbackResponseSchema,
+  ResetConversationRuntimeResponseSchema,
 } from '../gen/proto/domain/agent/agent_pb';
 import type {
   AdvanceCapabilityAcceptanceScenarioClockRequest,
@@ -2604,6 +2608,7 @@ export interface AgentErrorResolutionAction {
     | 'openOriginal'
     | 'editQueue'
     | 'selectRuntime'
+    | 'confirmReset'
     | 'retryLater'
     | 'retry'
     | 'switchAccount'
@@ -2624,6 +2629,7 @@ export interface AgentErrorResolutionAction {
   conversationId?: string;
   capacity?: number;
   runtimeKind?: string;
+  runtimeProfileId?: string;
   retryAfterMs?: number;
   deadline?: string;
   resourceKind?: string;
@@ -2655,6 +2661,10 @@ export const AGENT_QUEUE_FULL_LOCALE_KEY = 'agent.errors.queueFull';
 export const AGENT_RUNTIME_UNAVAILABLE_ERROR_TYPE = 'RUNTIME_UNAVAILABLE';
 export const AGENT_RUNTIME_UNAVAILABLE_LOCALE_KEY =
   'agent.errors.runtimeUnavailable';
+export const AGENT_RUNTIME_RESUME_UNAVAILABLE_ERROR_TYPE =
+  'RUNTIME_RESUME_UNAVAILABLE';
+export const AGENT_RUNTIME_RESUME_UNAVAILABLE_LOCALE_KEY =
+  'agent.errors.resumeUnavailable';
 export const AGENT_PROVIDER_RATE_LIMIT_ERROR_TYPE = 'PROVIDER_RATE_LIMIT';
 export const AGENT_PROVIDER_RATE_LIMIT_LOCALE_KEY =
   'agent.errors.providerRateLimit';
@@ -2722,6 +2732,13 @@ export type AgentQueueFullError = AgentTypedErrorPayload & {
 export type AgentRuntimeUnavailableError = AgentTypedErrorPayload & {
   details: {
     runtime_kind: string;
+    reason_code: string;
+  };
+};
+
+export type AgentRuntimeResumeUnavailableError = AgentTypedErrorPayload & {
+  details: {
+    runtime_profile_id: string;
     reason_code: string;
   };
 };
@@ -2848,6 +2865,7 @@ const AGENT_TYPED_ERROR_FLAT_DETAIL_FIELDS = [
   'conversation_id',
   'capacity',
   'runtime_kind',
+  'runtime_profile_id',
   'provider_id',
   'model_id',
   'deadline',
@@ -3073,6 +3091,27 @@ export function isAgentRuntimeUnavailableError(
     && detailKeys[0] === 'reason_code'
     && detailKeys[1] === 'runtime_kind'
     && error.details.runtime_kind.trim().length > 0
+    && error.details.reason_code.trim().length > 0
+  );
+}
+
+export function isAgentRuntimeResumeUnavailableError(
+  error: AgentTypedErrorPayload | null | undefined,
+): error is AgentRuntimeResumeUnavailableError {
+  if (
+    error?.error_type !== AGENT_RUNTIME_RESUME_UNAVAILABLE_ERROR_TYPE
+    || error.locale_key !== AGENT_RUNTIME_RESUME_UNAVAILABLE_LOCALE_KEY
+    || !error.retryable
+    || !error.terminal
+  ) {
+    return false;
+  }
+  const detailKeys = Object.keys(error.details).sort();
+  return (
+    detailKeys.length === 2
+    && detailKeys[0] === 'reason_code'
+    && detailKeys[1] === 'runtime_profile_id'
+    && error.details.runtime_profile_id.trim().length > 0
     && error.details.reason_code.trim().length > 0
   );
 }
@@ -3433,6 +3472,14 @@ export function resolveAgentTypedErrorAction(
       runtimeKind: error.details.runtime_kind,
       reasonCode: error.details.reason_code,
       label: 'agent.recovery.selectRuntime',
+    };
+  }
+  if (isAgentRuntimeResumeUnavailableError(error)) {
+    return {
+      type: 'confirmReset',
+      runtimeProfileId: error.details.runtime_profile_id,
+      reasonCode: error.details.reason_code,
+      label: 'agent.recovery.confirmReset',
     };
   }
   if (isAgentQueueFullError(error)) {
@@ -3935,6 +3982,9 @@ export interface AgentConversation {
     capability_snapshot_hash: string;
     config_snapshot_hash: string;
     bound_at: { seconds: number; nanos: number } | null;
+    state: number;
+    last_error_code: string;
+    updated_at: { seconds: number; nanos: number } | null;
   };
   meta?: Record<string, string>;
   created_at: string;
@@ -4008,6 +4058,99 @@ export interface AgentConversationUpdateInput {
 export interface AgentConversationRestoreInput {
   conversation_id: string;
   expected_version: number;
+}
+
+export interface AgentConversationRuntimeResetInput {
+  conversation_id: string;
+  expected_conversation_version: number;
+  client_idempotency_key: string;
+  destructive_confirmed: boolean;
+}
+
+export interface AgentConversationRuntimeResetResult {
+  conversation: AgentConversation;
+  closed_external_session_epoch: number;
+  replayed: boolean;
+}
+
+function agentProtoTimestamp(
+  value: ProtoAgentConversation['createdAt'],
+): { seconds: number; nanos: number } | null {
+  if (!value) return null;
+  return {
+    seconds: toRustUint64(value.seconds, 'timestamp.seconds'),
+    nanos: value.nanos,
+  };
+}
+
+function agentProtoTimestampISO(
+  value: ProtoAgentConversation['createdAt'],
+): string {
+  if (!value) return '';
+  const milliseconds = (
+    toRustUint64(value.seconds, 'timestamp.seconds') * 1_000
+    + Math.floor(value.nanos / 1_000_000)
+  );
+  return new Date(milliseconds).toISOString();
+}
+
+function agentConversationFromProto(
+  conversation: ProtoAgentConversation,
+): AgentConversation {
+  const binding = conversation.runtimeBinding;
+  return {
+    conversation_id: conversation.conversationId,
+    agent_id: conversation.agentId,
+    ptid: conversation.ptid || conversation.actorPtid,
+    title: conversation.title,
+    description: conversation.description,
+    provider_id: conversation.providerId,
+    model_name: conversation.modelName,
+    status: conversation.status,
+    parent_id: conversation.parentId,
+    active_branch_message_id: conversation.activeBranchMessageId,
+    queued_turn_count: conversation.queuedTurnCount,
+    version: toRustUint64(conversation.version, 'conversation.version'),
+    runtime_binding: binding
+      ? {
+          runtime_kind: binding.runtimeKind,
+          provider_id: binding.providerId,
+          model_id: binding.modelId,
+          runtime_profile_id: binding.runtimeProfileId,
+          external_session_id: binding.externalSessionId,
+          external_session_epoch: toRustUint64(
+            binding.externalSessionEpoch,
+            'runtime_binding.external_session_epoch',
+          ),
+          runtime_home_ref: binding.runtimeHomeRef,
+          capability_snapshot_hash: binding.capabilitySnapshotHash,
+          config_snapshot_hash: binding.configSnapshotHash,
+          bound_at: agentProtoTimestamp(binding.boundAt),
+          state: binding.state,
+          last_error_code: binding.lastErrorCode,
+          updated_at: agentProtoTimestamp(binding.updatedAt),
+        }
+      : undefined,
+    meta: conversation.meta,
+    created_at: agentProtoTimestampISO(conversation.createdAt),
+    updated_at: agentProtoTimestampISO(conversation.updatedAt),
+  };
+}
+
+function agentRuntimeResetResultFromProto(
+  response: ResetConversationRuntimeResponse,
+): AgentConversationRuntimeResetResult {
+  if (!response.conversation) {
+    throw new Error('agent.runtimeResetConversationMissing');
+  }
+  return {
+    conversation: agentConversationFromProto(response.conversation),
+    closed_external_session_epoch: toRustUint64(
+      response.closedExternalSessionEpoch,
+      'closed_external_session_epoch',
+    ),
+    replayed: response.replayed,
+  };
 }
 
 export interface AgentRuntimeBudgetInput {
@@ -6760,6 +6903,16 @@ export const api = {
       },
     ).then((result) => result.conversation),
 
+  resetAgentConversationRuntime: (input: AgentConversationRuntimeResetInput) =>
+    invokeRustProto<
+      AgentConversationRuntimeResetInput,
+      ResetConversationRuntimeResponse
+    >(
+      'agent_conversation_runtime_reset',
+      ResetConversationRuntimeResponseSchema,
+      input,
+    ).then(agentRuntimeResetResultFromProto),
+
   retryAgentTurn: (input: AgentRetryTurnInput) =>
     invokeRustDataFromStatus<AgentRetryTurnInput, Record<string, unknown>>('agent_retry_turn', input),
 
@@ -8865,7 +9018,35 @@ export function streamAgentTurn(
           );
         }
         if (!controller.signal.aborted && !settled) {
-          onError(err instanceof Error ? err : new Error(String(err)));
+          const normalized = normalizeAgentTurnStreamError(err);
+          if (normalized.typedError) {
+            const sourceData: Record<string, unknown> = {
+              ...normalized.typedError,
+              conversationId: input.conversation_id,
+              agentId: input.agent_id,
+            };
+            const event: StreamEvent = {
+              event: 'error',
+              data: { ...sourceData, streamGeneration },
+              ptid: sourcePtid,
+              sourceDelivery: createAgentTurnSourceDelivery(
+                'error',
+                sourceData,
+                sourcePtid,
+                input.conversation_id,
+              ),
+            };
+            publishAgentTurnRuntimeEvent(
+              streamId,
+              streamGeneration,
+              sourcePtid,
+              input.conversation_id,
+              input.agent_id,
+              event,
+            );
+            onEvent(event);
+          }
+          onError(normalized);
         }
       }
     })();

@@ -52,7 +52,7 @@ class AgentV2RuntimeMatrixTest(unittest.TestCase):
             self.reviewed,
             "agent-v2-kernel-foundation-e2e",
         )
-        self.assertEqual(len(policies), 8)
+        self.assertEqual(len(policies), 10)
         self.assertIn(
             "receiver-dom",
             policies["foundation-desktop-direct"]["required"],
@@ -77,6 +77,14 @@ class AgentV2RuntimeMatrixTest(unittest.TestCase):
         self.assertEqual(
             profiles["foundation-browser-direct"],
             "direct_runtime_no_local_capability",
+        )
+        self.assertEqual(
+            profiles["foundation-z-desktop-external-runtime"],
+            "station_turn",
+        )
+        self.assertEqual(
+            profiles["foundation-z-browser-external-runtime"],
+            "station_turn",
         )
         self.assertEqual(profiles["foundation-mobile-contract"], "contract_only")
         self.assertEqual(

@@ -1,0 +1,49 @@
+{
+  "id": "agent-cli-provider-primary-native-matrix",
+  "version": "2026-09-29.2",
+  "status": "reviewed",
+  "gate": "agent-cli-provider-primary-native-e2e",
+  "command_argv": [
+    "python3",
+    "tooling/acceptance/gates/agent/native_agent_runner.py",
+    "--journey",
+    "cli-provider"
+  ],
+  "environment": "home-station",
+  "runtime": {
+    "client": "native-tauri",
+    "profile": "two",
+    "service_binding": "services.station"
+  },
+  "rows": [
+    {
+      "id": "catalog-and-agent",
+      "actions": ["discover-cli-provider", "create-agent", "select-agent"],
+      "required_evidence": ["receiver-dom", "station-readback"]
+    },
+    {
+      "id": "empty-topic-and-send",
+      "actions": ["open-empty-topic", "send-message"],
+      "required_evidence": ["receiver-dom", "station-readback"]
+    },
+    {
+      "id": "stream-and-terminal",
+      "actions": ["observe-provider-delta", "persist-terminal-response"],
+      "required_evidence": ["receiver-dom", "station-readback"]
+    },
+    {
+      "id": "native-restart",
+      "actions": ["restart-native-client", "restore-topic"],
+      "required_evidence": ["receiver-dom", "station-readback", "cleanup"]
+    },
+    {
+      "id": "typed-cli-failure",
+      "actions": ["select-missing-cli-provider", "send-message", "observe-typed-failure", "cleanup"],
+      "required_evidence": ["receiver-dom", "station-readback", "cleanup"]
+    }
+  ],
+  "expected_tuple_count": 5,
+  "expected_assertion_count": 13,
+  "unexpected_action": "reject",
+  "missing_evidence": "reject"
+}

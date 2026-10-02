@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-10-01
-covered_docs_hash: 5ba532bbf07ff903ddf898a6eca7b203ebbc594a1bcd7c0e6f434c189068f2cd
+last_verified_at: 2026-10-02
+covered_docs_hash: ad8287b0a677a413a39a1d17c1903a36423b435b6b39bd44b08612d096c6ba5d
 
 covered_docs:
   - AGENTS.md
@@ -30,6 +30,14 @@ covered_docs:
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
 Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-02 Review
+
+The Agent architecture is now registered as an active module with an explicit
+minimum-usable chat capability and current root documentation. Existing review
+rules already cover architecture ownership, source containment, exact-source
+evidence, and generated contracts, so no `SKILL.md` or fixture change is
+required.
 
 ## 2026-10-01 Review
 

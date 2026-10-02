@@ -30,10 +30,31 @@ import {
   statusAll,
   statusCurrent,
 } from './dev-work.mjs';
-import { parseRuntimeClaims } from './dev-work-schema.mjs';
+import {
+  parseRuntimeClaims,
+  RUNTIME_KINDS,
+} from './dev-work-schema.mjs';
 import { workspacePlanBindingPath } from '../plan/workspace-plan-binding.mjs';
 
 const FIXED_NOW = new Date('2026-09-16T12:00:00.000Z');
+const CANONICAL_RUNTIME_KINDS = [
+  'account',
+  'automation.session',
+  'client',
+  'client.storage',
+  'database',
+  'device',
+  'fixture',
+  'local.slot',
+  'profile',
+  'relay.connect',
+  'relay.deploy',
+  'resource.plan',
+  'service',
+  'station.connect',
+  'station.deploy',
+  'station.reset',
+];
 
 function fixture() {
   const root = mkdtempSync(path.join(tmpdir(), 'pt-dev-work-'));
@@ -306,6 +327,29 @@ test('accepts project runtime intent without granting physical leases', () => {
         mode: 'exclusive',
       },
     ],
+  );
+});
+
+test('accepts every canonical runtime kind without granting leases', () => {
+  const parsed = parseRuntimeClaims(
+    CANONICAL_RUNTIME_KINDS
+      .map((kind) => `exclusive:${kind}:resource-${kind.replaceAll('.', '-')}`)
+      .join(';'),
+  );
+
+  assert.deepEqual(
+    [...RUNTIME_KINDS].sort(),
+    CANONICAL_RUNTIME_KINDS,
+  );
+  assert.deepEqual(
+    parsed.map((claim) => claim.kind),
+    CANONICAL_RUNTIME_KINDS,
+  );
+});
+
+test('rejects unknown runtime kinds', () => {
+  expectCode('INVALID_RUNTIME_CLAIM', () =>
+    parseRuntimeClaims('exclusive:unknown.resource:runtime'),
   );
 });
 

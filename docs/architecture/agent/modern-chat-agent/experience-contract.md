@@ -1,8 +1,8 @@
 # Modern Chat Agent — Experience Contract
 
 > **Status**: accepted
-> **Version**: v1.0
-> **Created**: 2026-07-30 | **Updated**: 2026-08-17
+> **Version**: v1.1
+> **Created**: 2026-07-30 | **Updated**: 2026-10-01
 > **Owner**: Peers-Touch Agent Team
 
 ---
@@ -171,10 +171,20 @@ intent.
 
 1. User selects an available external Agent runtime before the first turn.
 2. Product shows execution device/workspace and resume constraints.
-3. Structured file, command, todo, skill, subagent, and ask-user activity
-   appears in the timeline where supported.
-4. Follow-up resumes the same topic-owned runtime session.
-5. Runtime reset or workspace change requires explicit confirmation.
+3. The first accepted Turn creates one topic-owned runtime home and external
+   session; another topic receives a different home and session.
+4. Structured file, command, todo, skill, subagent, and ask-user activity
+   appears in the timeline when emitted by the selected adapter.
+5. Follow-up and post-Station-restart work resume the same external session
+   and epoch.
+6. Resume failure is terminal for that Turn and shows `Confirm reset`; it does
+   not silently start a new session.
+7. Reset or workspace change requires explicit destructive confirmation.
+8. Confirmed reset cleans the old session/home, increments the epoch, and lets
+   the next Turn create a fresh session. Failed cleanup remains visible and
+   blocks new execution until retry succeeds.
+9. Cancellation terminates the active process without resetting the durable
+   external session.
 
 If these semantics are not implemented, the runtime must not be advertised.
 

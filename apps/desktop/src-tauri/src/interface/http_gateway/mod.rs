@@ -76,7 +76,8 @@ use reqwest::Method;
 use ulid::Ulid;
 
 const DEFAULT_PORT: u16 = 3030;
-const POOL_SIZE: usize = 8;
+const COMMAND_POOL_SIZE: usize = 8;
+const AGENT_STREAM_POOL_SIZE: usize = 8;
 const MAX_FRONTEND_TELEMETRY_BATCH_EVENTS: usize = 500;
 static IDENTITY_TRANSITION_WAITERS: AtomicUsize = AtomicUsize::new(0);
 static IDENTITY_TRANSITION_MAX_WAITERS: AtomicUsize = AtomicUsize::new(0);
@@ -114,7 +115,40 @@ struct GatewayRequestDiagnostics {
     queued_at_enqueue: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GatewayWorkerLane {
+    Command,
+    AgentStream,
+}
+
+fn gateway_worker_lane(method: &tiny_http::Method, url: &str) -> GatewayWorkerLane {
+    if method == &tiny_http::Method::Post
+        && matches!(url, "/agent/turn/stream" | "/agent/turn/events")
+    {
+        GatewayWorkerLane::AgentStream
+    } else {
+        GatewayWorkerLane::Command
+    }
+}
+
 const AGENT_STREAM_PREAMBLE: &[u8] = b": gateway-connected\n\n";
+const AGENT_STREAM_ERROR_HEADERS: [(&str, &str); 6] = [
+    ("x-peers-error-code", "X-Peers-Error-Code"),
+    ("x-peers-error-locale-key", "X-Peers-Error-Locale-Key"),
+    ("x-peers-error-retryable", "X-Peers-Error-Retryable"),
+    ("x-peers-error-terminal", "X-Peers-Error-Terminal"),
+    ("x-peers-error-details", "X-Peers-Error-Details"),
+    ("x-peers-required-gate", "X-Peers-Required-Gate"),
+];
+const AGENT_STREAM_EXPOSED_HEADERS: &str = concat!(
+    "X-Agent-Turn-ID, ",
+    "X-Peers-Error-Code, ",
+    "X-Peers-Error-Locale-Key, ",
+    "X-Peers-Error-Retryable, ",
+    "X-Peers-Error-Terminal, ",
+    "X-Peers-Error-Details, ",
+    "X-Peers-Required-Gate",
+);
 
 struct AgentStreamBody<R> {
     inner: R,
@@ -124,14 +158,32 @@ struct AgentStreamBody<R> {
 }
 
 impl<R> AgentStreamBody<R> {
-    fn new(inner: R, station_path: &'static str) -> Self {
+    fn new(inner: R, station_path: &'static str, include_preamble: bool) -> Self {
         Self {
             inner,
             station_path,
             closed: false,
-            preamble_offset: 0,
+            preamble_offset: if include_preamble {
+                0
+            } else {
+                AGENT_STREAM_PREAMBLE.len()
+            },
         }
     }
+}
+
+fn forwarded_agent_stream_error_headers(
+    headers: &reqwest::header::HeaderMap,
+) -> Vec<(&'static str, String)> {
+    AGENT_STREAM_ERROR_HEADERS
+        .iter()
+        .filter_map(|(source, response)| {
+            headers
+                .get(*source)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| (*response, value.to_string()))
+        })
+        .collect()
 }
 
 impl<R: Read> Read for AgentStreamBody<R> {
@@ -198,23 +250,35 @@ fn respond_agent_stream<R: Read>(
     request: tiny_http::Request,
     status: u16,
     turn_id: Option<&str>,
+    forwarded_headers: &[(&str, String)],
     mut body: R,
 ) -> io::Result<()> {
     let version = request.http_version().clone();
     let chunked = version > tiny_http::HTTPVersion(1, 0);
     let status_code = tiny_http::StatusCode(status);
+    let successful = (200..300).contains(&status);
     let mut writer = request.into_writer();
     write!(
         writer,
         "HTTP/{version} {status} {}\r\n",
         status_code.default_reason_phrase()
     )?;
-    writer.write_all(b"Content-Type: text/event-stream; charset=utf-8\r\n")?;
-    writer.write_all(b"Cache-Control: no-cache\r\n")?;
+    if successful {
+        writer.write_all(b"Content-Type: text/event-stream; charset=utf-8\r\n")?;
+        writer.write_all(b"Cache-Control: no-cache\r\n")?;
+    } else {
+        writer.write_all(b"Content-Type: application/json; charset=utf-8\r\n")?;
+    }
     writer.write_all(b"Access-Control-Allow-Origin: *\r\n")?;
-    writer.write_all(b"Access-Control-Expose-Headers: X-Agent-Turn-ID\r\n")?;
+    write!(
+        writer,
+        "Access-Control-Expose-Headers: {AGENT_STREAM_EXPOSED_HEADERS}\r\n"
+    )?;
     if let Some(turn_id) = turn_id {
         write!(writer, "X-Agent-Turn-ID: {turn_id}\r\n")?;
+    }
+    for (name, value) in forwarded_headers {
+        write!(writer, "{name}: {value}\r\n")?;
     }
     if chunked {
         writer.write_all(b"Transfer-Encoding: chunked\r\n")?;
@@ -448,7 +512,8 @@ fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
                 }
             };
 
-            let pool = threadpool::ThreadPool::new(POOL_SIZE);
+            let command_pool = threadpool::ThreadPool::new(COMMAND_POOL_SIZE);
+            let agent_stream_pool = threadpool::ThreadPool::new(AGENT_STREAM_POOL_SIZE);
             let server = Arc::new(server);
 
             loop {
@@ -463,6 +528,13 @@ fn start_with_runtime(state: Arc<AppState>, runtime: GatewayRuntime) {
                 let state = Arc::clone(&state);
                 let runtime = runtime.clone();
                 let enqueued_at = std::time::Instant::now();
+                // A cancelled downstream fetch is only observed when the proxy
+                // writes the next upstream frame. Keep those long-lived SSE
+                // workers from blocking ordinary command and CORS requests.
+                let pool = match gateway_worker_lane(request.method(), request.url()) {
+                    GatewayWorkerLane::Command => &command_pool,
+                    GatewayWorkerLane::AgentStream => &agent_stream_pool,
+                };
                 let active_workers_at_enqueue = pool.active_count();
                 let queued_at_enqueue = pool.queued_count();
                 pool.execute(move || {
@@ -763,6 +835,8 @@ fn handle_agent_stream_proxy(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned);
+    let forwarded_headers = forwarded_agent_stream_error_headers(upstream.headers());
+    let include_preamble = upstream.status().is_success();
     if fault_request {
         report_foundation_fault_stream_debug(
             "gateway-upstream-admitted",
@@ -789,7 +863,8 @@ fn handle_agent_stream_proxy(
         request,
         status,
         turn_id.as_deref(),
-        AgentStreamBody::new(upstream, station_path),
+        &forwarded_headers,
+        AgentStreamBody::new(upstream, station_path, include_preamble),
     );
     if lease_replay_request {
         report_lease_replay_gateway_debug(
@@ -3264,14 +3339,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let scope = match resolve_scope(state) {
-                Ok(s) => s,
+            let token = match token_from_state(state) {
+                Ok(t) => t,
                 Err(e) => return e,
             };
-            to_json(AppResult::<StubPayload>::fail(
-                ErrorCode::NotFound,
-                "models module removed",
-                None,
+            to_json(app_provider::model_delete(
+                &token,
+                &input.provider_id,
+                &input.model_id,
             ))
         }
         "model_fetch_remote" => {
@@ -3512,6 +3587,85 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 None => return to_json(unauthorized_error()),
             };
             to_json(app_agent_turn::agent_conversation_restore(input, &token))
+        }
+        "agent_conversation_runtime_reset" => {
+            let input = match parse_args::<AgentConversationRuntimeResetInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_conversation_runtime_reset(
+                input, &token,
+            ))
+        }
+        "agent_task_create" => {
+            let input = match parse_args::<AgentTaskCreateInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_create(input, &token))
+        }
+        "agent_task_list" => {
+            let input = match parse_args::<AgentTaskListInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_list(input, &token))
+        }
+        "agent_task_status" => {
+            let input = match parse_args::<AgentTaskStatusInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_status(input, &token))
+        }
+        "agent_task_delete" => {
+            let input = match parse_args::<AgentTaskDeleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_delete(input, &token))
+        }
+        "agent_task_subtask_add" => {
+            let input = match parse_args::<AgentTaskSubtaskAddInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_subtask_add(input, &token))
+        }
+        "agent_task_subtask_complete" => {
+            let input = match parse_args::<AgentTaskSubtaskCompleteInput>(args) {
+                Ok(v) => v,
+                Err(e) => return e,
+            };
+            let token = match http_gateway_bearer_token(state) {
+                Some(t) => t,
+                None => return to_json(unauthorized_error()),
+            };
+            to_json(app_agent_turn::agent_task_subtask_complete(input, &token))
         }
         "agent_retry_turn" => {
             let input = match parse_args::<AgentRetryTurnInput>(args) {
@@ -6671,6 +6825,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 }))
             }
         }
+        "station_binding_complete" => to_json(
+            crate::interface::tauri_commands::station::station_binding_complete_authenticated(
+                http_gateway_bearer_token(state).is_some(),
+            ),
+        ),
         "station_add" => {
             let url = args.get("url").and_then(|v| v.as_str()).unwrap_or("");
             if url.is_empty() {
@@ -7754,12 +7913,32 @@ mod tests {
     }
 
     #[test]
+    fn agent_stream_requests_use_a_dedicated_worker_lane() {
+        assert_eq!(
+            gateway_worker_lane(&tiny_http::Method::Post, "/agent/turn/stream"),
+            GatewayWorkerLane::AgentStream,
+        );
+        assert_eq!(
+            gateway_worker_lane(&tiny_http::Method::Post, "/agent/turn/events"),
+            GatewayWorkerLane::AgentStream,
+        );
+        assert_eq!(
+            gateway_worker_lane(&tiny_http::Method::Options, "/agent/turn/stream"),
+            GatewayWorkerLane::Command,
+        );
+        assert_eq!(
+            gateway_worker_lane(&tiny_http::Method::Post, "/"),
+            GatewayWorkerLane::Command,
+        );
+    }
+
+    #[test]
     fn agent_stream_body_converts_upstream_failure_to_eof() {
         let upstream = ErrorAfterBody {
             body: Cursor::new(b"data: partial\n\n".to_vec()),
             failed: false,
         };
-        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream");
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream", true);
         let mut received = Vec::new();
 
         body.read_to_end(&mut received)
@@ -7770,6 +7949,60 @@ mod tests {
             body.read(&mut [0_u8; 1])
                 .expect("terminated body should stay at EOF"),
             0
+        );
+    }
+
+    #[test]
+    fn agent_stream_error_body_preserves_upstream_json_without_preamble() {
+        let upstream = Cursor::new(br#"{"error":"agent.errors.forbiddenActor"}"#.to_vec());
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream", false);
+        let mut received = Vec::new();
+
+        body.read_to_end(&mut received)
+            .expect("error response body should remain readable");
+
+        assert_eq!(received, br#"{"error":"agent.errors.forbiddenActor"}"#);
+    }
+
+    #[test]
+    fn agent_stream_error_headers_forward_only_typed_public_metadata() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "x-peers-error-code",
+            reqwest::header::HeaderValue::from_static("OWNERSHIP_FORBIDDEN_ACTOR"),
+        );
+        headers.insert(
+            "x-peers-error-locale-key",
+            reqwest::header::HeaderValue::from_static("agent.errors.forbiddenActor"),
+        );
+        headers.insert(
+            "x-peers-error-details",
+            reqwest::header::HeaderValue::from_static(
+                r#"{"resource_kind":"conversation","resource_id":"conversation-1"}"#,
+            ),
+        );
+        headers.insert(
+            "authorization",
+            reqwest::header::HeaderValue::from_static("Bearer private"),
+        );
+
+        assert_eq!(
+            forwarded_agent_stream_error_headers(&headers),
+            vec![
+                (
+                    "X-Peers-Error-Code",
+                    "OWNERSHIP_FORBIDDEN_ACTOR".to_string(),
+                ),
+                (
+                    "X-Peers-Error-Locale-Key",
+                    "agent.errors.forbiddenActor".to_string(),
+                ),
+                (
+                    "X-Peers-Error-Details",
+                    r#"{"resource_kind":"conversation","resource_id":"conversation-1"}"#
+                        .to_string(),
+                ),
+            ]
         );
     }
 
@@ -7797,7 +8030,7 @@ mod tests {
             body: Cursor::new(b"data: partial\n\n".to_vec()),
             failed: false,
         };
-        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream");
+        let mut body = AgentStreamBody::new(upstream, "/sub-agent/agent/turn/stream", true);
         let mut writer = FlushRecordingWriter::default();
 
         copy_agent_stream_body(&mut body, &mut writer, true)

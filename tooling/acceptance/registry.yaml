@@ -1646,6 +1646,33 @@
       ]
     },
     {
+      "id": "agent-v2-external-runtime",
+      "features": [
+        "agent-v2-external-runtime"
+      ],
+      "when": {
+        "paths": [
+          "model/domain/agent/agent.proto",
+          "apps/station/app/subserver/agent/service/external_runtime*",
+          "apps/station/app/subserver/agent/service/externalruntime/**",
+          "apps/station/app/subserver/agent/infrastructure/persistence/external_runtime_reset.go",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src/store/chat.ts",
+          "apps/desktop/src/components/messages/AssistantMessage.tsx",
+          "apps/desktop/src/acceptance/agent/harness.ts",
+          "packages/locales/en/agent.json",
+          "packages/locales/zh-CN/agent.json",
+          "tooling/acceptance/gates/agent/external_runtime_*.py",
+          "tooling/docker/compose.yml"
+        ]
+      },
+      "require": [
+        "station-agent-unit",
+        "desktop-check",
+        "agent-v2-external-runtime-e2e"
+      ]
+    },
+    {
       "id": "agent-v2-kernel-foundation",
       "features": [
         "agent-v2-kernel-foundation"
@@ -1799,6 +1826,26 @@
       ]
     },
     {
+      "id": "agent-minimum-usable-chat",
+      "features": [
+        "agent-minimum-usable-chat"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/agent/service/turn_service.go",
+          "apps/station/app/subserver/agent/service/capability_authority_service.go",
+          "apps/desktop/src/acceptance/agent/harness.ts",
+          "tooling/acceptance/features/agent-minimum-usable-chat.yaml",
+          "tooling/acceptance/gates/agent/native_agent_runner.py",
+          "tooling/acceptance/gates/agent/native_agent_runner_test.py",
+          "tooling/acceptance/provisioners/home_station.py"
+        ]
+      },
+      "require": [
+        "agent-minimum-usable-chat-native-e2e"
+      ]
+    },
+    {
       "id": "agent-core",
       "features": [
         "agent-core-chat-loop",
@@ -1807,15 +1854,50 @@
       "when": {
         "paths": [
           "apps/station/app/subserver/agent/**",
+          "apps/desktop/src/components/agent/workbench/AgentRail.tsx",
+          "apps/desktop/src/components/agent/workbench/TopicRail.tsx",
+          "apps/desktop/src/pages/AgentProfilePage.tsx",
           "apps/desktop/src/store/agent.ts",
           "apps/desktop/src/store/provider.ts",
-          "apps/desktop/src/services/eventStream.ts"
+          "apps/desktop/src/services/eventStream.ts",
+          "tooling/acceptance/features/agent-core-lifecycle.yaml",
+          "tooling/acceptance/gates/agent/native_agent_runner.py",
+          "tooling/acceptance/gates/agent/native_agent_runner_test.py",
+          "tooling/acceptance/matrices/agent-core-lifecycle-native.yaml"
         ]
       },
       "require": [
         "desktop-check",
         "station-agent-unit",
         "agent-core-lifecycle-native-e2e"
+      ]
+    },
+    {
+      "id": "agent-cli-provider-primary",
+      "features": [
+        "agent-cli-provider-primary"
+      ],
+      "when": {
+        "paths": [
+          "apps/station/app/subserver/agent/catalog/providers.default.yaml",
+          "apps/station/app/subserver/agent/service/cli/**",
+          "apps/station/app/subserver/agent/service/provider_config_service.go",
+          "apps/station/app/subserver/agent/service/provider_service.go",
+          "apps/station/app/subserver/agent/service/runtime_admission_service.go",
+          "apps/station/app/subserver/agent/service/turn_service.go",
+          "apps/desktop/src/acceptance/agent/harness.ts",
+          "tooling/acceptance/features/agent-cli-provider-primary.yaml",
+          "tooling/acceptance/gates/agent/native_agent_runner.py",
+          "tooling/acceptance/gates/agent/native_agent_runner_test.py",
+          "tooling/acceptance/matrices/agent-cli-provider-primary-native.yaml",
+          "tooling/acceptance/provisioners/home_station.py",
+          "tooling/scripts/deploy/deploy.sh"
+        ]
+      },
+      "require": [
+        "desktop-check",
+        "station-agent-unit",
+        "agent-cli-provider-primary-native-e2e"
       ]
     },
     {

@@ -324,27 +324,37 @@ active-work-close:
 		--expected-revision "$(EXPECTED_REVISION)"
 
 completion-review-prepare:
-	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-prepare WORK_ITEM=<id> [SCOPE=<task|plan>] [NEXT=<ready-id>]"; exit 1; fi
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-prepare WORK_ITEM=<id> [SCOPE=<task|plan>] [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
 	@node $(COMPLETION_REVIEW_SCRIPT) prepare \
 		--repo-root "$(CURDIR)" \
 		--work-item "$(DEV_WORK_ITEM_ARG)" \
 		$(if $(SCOPE),--scope "$(SCOPE)",) \
-		$(if $(NEXT),--next "$(NEXT)",)
+		$(if $(NEXT),--next "$(NEXT)",) \
+		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
+		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
+		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 completion-review-submit:
-	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> [NEXT=<ready-id>]"; exit 1; fi
+	@if [ -z "$(REVIEW)" ] || [ -z "$(VERDICT)" ] || [ -z "$(ASSESSMENT)" ]; then echo "Usage: make completion-review-submit REVIEW=<id> VERDICT=<PASS|FAIL> ASSESSMENT=<json-file> [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
 	@node $(COMPLETION_REVIEW_SCRIPT) submit \
 		--repo-root "$(CURDIR)" \
 		--review "$(REVIEW)" \
 		--verdict "$(VERDICT)" \
 		--assessment "$(ASSESSMENT)" \
-		$(if $(NEXT),--next "$(NEXT)",)
+		$(if $(NEXT),--next "$(NEXT)",) \
+		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
+		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
+		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 completion-review-status:
-	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-status WORK_ITEM=<id>"; exit 1; fi
+	@if [ -z "$(DEV_WORK_ITEM_ARG)" ]; then echo "Usage: make completion-review-status WORK_ITEM=<id> [NEXT=<ready-id>] [RECORDED_AT=<iso>] [EXHAUSTION_DECISION_REFS='<ref> ...'] [EXHAUSTION_EVIDENCE_REFS='<ref> ...']"; exit 1; fi
 	@node $(COMPLETION_REVIEW_SCRIPT) status \
 		--repo-root "$(CURDIR)" \
-		--work-item "$(DEV_WORK_ITEM_ARG)"
+		--work-item "$(DEV_WORK_ITEM_ARG)" \
+		$(if $(NEXT),--next "$(NEXT)",) \
+		$(if $(RECORDED_AT),--recorded-at "$(RECORDED_AT)",) \
+		$(foreach ref,$(EXHAUSTION_DECISION_REFS),--exhaustion-decision-ref "$(ref)") \
+		$(foreach ref,$(EXHAUSTION_EVIDENCE_REFS),--exhaustion-evidence-ref "$(ref)")
 
 station:
 	@$(DEVCTL) station start

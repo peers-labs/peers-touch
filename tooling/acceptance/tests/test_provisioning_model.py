@@ -42,6 +42,9 @@ from tooling.acceptance.core.redaction import (
     is_sensitive_key,
     redact_value,
 )
+from tooling.acceptance.core.provisioner import (
+    resolve_machine_profile_environment,
+)
 
 
 TEST_ARTIFACT_REF = {
@@ -1947,6 +1950,61 @@ class MultiStationBindingTests(unittest.TestCase):
         self.assertEqual(
             bob["service_bindings"]["station"]["service_id"], "station-home"
         )
+
+
+class MachineProfileEnvironmentTests(unittest.TestCase):
+    def test_agent_provider_fields_accept_explicit_environment_overrides(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            root.mkdir()
+            profile_file = Path(directory) / "two.env"
+            profile_file.write_text(
+                "PT_DEV_PROFILE=two\n"
+                "PT_STATION_MODE=remote\n",
+                encoding="utf-8",
+            )
+            machine_state = {
+                "authority": "machine-control-plane",
+                "binding": {"profile": "two", "slot": 1},
+                "profile": {
+                    "profileFile": str(profile_file),
+                    "sourceState": "tracked-clean",
+                },
+                "ports": {
+                    "desktopAppGateway": 3130,
+                    "desktopAppWeb": 3310,
+                    "desktopWebGateway": 3131,
+                    "desktopWebWeb": 3311,
+                    "mobileWeb": 5273,
+                },
+            }
+            overrides = {
+                "PT_AGENT_PROVIDER_ID": "ark",
+                "PT_AGENT_PROVIDER_API_KEY": "secret",
+                "PT_AGENT_DEFAULT_MODEL_ID": "model",
+                "PT_AGENT_PROVIDER_BASE_URL": "https://provider.example/v1",
+            }
+
+            with (
+                mock.patch(
+                    "tooling.acceptance.core.provisioner.subprocess.run",
+                    return_value=mock.Mock(
+                        returncode=0,
+                        stdout=json.dumps(machine_state),
+                        stderr="",
+                    ),
+                ),
+                mock.patch.dict(os.environ, overrides, clear=False),
+            ):
+                profile_name, resolved_file, slot, values = (
+                    resolve_machine_profile_environment(root)
+                )
+
+            self.assertEqual(profile_name, "two")
+            self.assertEqual(resolved_file, profile_file.resolve())
+            self.assertEqual(slot, 1)
+            for field, value in overrides.items():
+                self.assertEqual(values[field], value)
 
 
 if __name__ == "__main__":

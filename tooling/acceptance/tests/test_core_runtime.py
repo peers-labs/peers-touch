@@ -30,6 +30,7 @@ from tooling.acceptance.core import (
     call_async_harness,
     REPO_ROOT as CORE_REPO_ROOT,
 )
+from tooling.acceptance.core.harness import ASYNC_HARNESS_SCRIPT
 from tooling.acceptance.core.redaction import REDACTED
 from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriDriver
 
@@ -479,6 +480,10 @@ class FixtureInterfaceTests(unittest.TestCase):
 
 
 class HarnessBridgeTests(unittest.TestCase):
+    def test_async_harness_preserves_javascript_stack(self):
+        self.assertIn("error && error.stack", ASYNC_HARNESS_SCRIPT)
+        self.assertIn("done({ error: stack || message })", ASYNC_HARNESS_SCRIPT)
+
     def test_call_async_harness_returns_value(self):
         mock_driver = MockDriver()
         mock_driver.set_script_timeout = MagicMock()

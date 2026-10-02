@@ -141,7 +141,7 @@ class ProfileLeaseTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("--owner-action make.station", station_source)
 
-    def test_deploy_script_forwards_only_valid_capability_scenario_environment(
+    def test_deploy_script_forwards_only_valid_acceptance_runtime_environment(
         self,
     ) -> None:
         deploy_source = (
@@ -159,14 +159,30 @@ class ProfileLeaseTests(unittest.TestCase):
             '[[ ! "$run_id" =~ ^[0-9]{8}T[0-9]{12}Z-[0-9a-f]{32}$ ]]',
             deploy_source,
         )
+        self.assertIn("external_runtime_env_prefix()", deploy_source)
+        self.assertIn('[[ "$runtime_root" != /* ]]', deploy_source)
         self.assertIn(
-            "${ACCEPTANCE_RUNTIME_ENV_PREFIX}${PT_DEPLOY_RESTART_CMD}",
+            "PT_AGENT_EXTERNAL_RUNTIME_ROOT=%q "
+            "PT_AGENT_EXTERNAL_START_ARGV_JSON=%q "
+            "PT_AGENT_EXTERNAL_RESUME_ARGV_JSON=%q "
+            "PT_AGENT_EXTERNAL_RESET_ARGV_JSON=%q",
+            deploy_source,
+        )
+        self.assertIn(
+            "${ACCEPTANCE_RUNTIME_ENV_PREFIX}"
+            "${EXTERNAL_RUNTIME_ENV_PREFIX}"
+            "${CLI_RUNTIME_ENV_PREFIX}"
+            "${PT_DEPLOY_RESTART_CMD}",
             deploy_source,
         )
         for variable in (
             "PT_ACCEPTANCE_ENVIRONMENT",
             "PT_AGENT_CAPABILITY_SCENARIO_CONTROL",
             "PT_ACCEPTANCE_RUN_ID",
+            "PT_AGENT_EXTERNAL_RUNTIME_ROOT",
+            "PT_AGENT_EXTERNAL_START_ARGV_JSON",
+            "PT_AGENT_EXTERNAL_RESUME_ARGV_JSON",
+            "PT_AGENT_EXTERNAL_RESET_ARGV_JSON",
         ):
             self.assertIn(f"{variable}: ${{{variable}:-}}", compose_source)
 

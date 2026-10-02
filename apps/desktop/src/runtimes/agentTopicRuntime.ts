@@ -19,14 +19,29 @@ async function reconcileTopics(reason: string): Promise<void> {
 
   const topics = await useAgentTopicStore
     .getState()
-    .loadTopicsForAgent(agent.id, reason);
+    .loadTopicsForAgent(agent.id, reason)
+    .catch(() => null);
+  // The store preserves the last accepted projection and exposes retry state.
+  if (topics === null) return;
+
+  const selectedAgent = useAgentStore.getState();
+  if (
+    selectedAgent.selectedAgent !== agent.name
+    || !selectedAgent.agents.some((item) => item.id === agent.id)
+  ) {
+    return;
+  }
+
   const chatState = useChatStore.getState();
   chatState.mergeSessions(topics);
 
   const currentSession = useChatStore
     .getState()
     .sessions.find((session) => session.key === useChatStore.getState().currentSessionKey);
-  if (currentSession?.agent_name === agent.id) {
+  if (
+    currentSession
+    && (currentSession.agent_name === agent.id || currentSession.agent_name === agent.name)
+  ) {
     await useChatStore.getState().bootstrapSession();
     await useChatStore.getState().syncMessages();
     await useChatStore.getState().syncTurnQueue(currentSession.key);
@@ -39,13 +54,11 @@ async function reconcileTopics(reason: string): Promise<void> {
     return;
   }
 
-  useChatStore.getState().newSession();
-  const draft = useChatStore
+  const draft = useAgentTopicStore
     .getState()
-    .sessions.find((session) => session.key === useChatStore.getState().currentSessionKey);
-  if (draft) {
-    useAgentTopicStore.getState().upsertTopics(agent.id, [draft]);
-  }
+    .ensureDraftTopic(agent.id, agent.name, '');
+  useChatStore.getState().mergeSessions([draft]);
+  await useChatStore.getState().selectSession(draft.key, draft);
 }
 
 function installTimer(): void {

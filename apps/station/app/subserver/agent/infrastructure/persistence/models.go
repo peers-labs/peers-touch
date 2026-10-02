@@ -49,6 +49,7 @@ func AllModels() []interface{} {
 		&CapabilityOperationLease{},
 		&CapabilityCleanupLease{},
 		&Conversation{},
+		&ExternalRuntimeResetCommand{},
 		&AgentMessage{},
 		&TurnAttempt{},
 		&ToolCall{},
