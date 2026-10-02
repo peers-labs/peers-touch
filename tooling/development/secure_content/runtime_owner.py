@@ -3793,6 +3793,32 @@ def _make_client(
     )
 
 
+def _bind_reusable_actor_identity(
+    client: FoundationRuntimeClient,
+    shared_root: Path,
+) -> None:
+    target = shared_root.resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    target.chmod(0o700)
+    link = client.actor_identity_root
+    link.parent.mkdir(parents=True, exist_ok=True)
+    if link.is_symlink():
+        if link.resolve() == target:
+            return
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "remote recipient Actor Identity targets another fixture",
+            resource=f"fixture-identity:{client.spec.profile}",
+        )
+    if link.exists():
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "remote recipient Actor Identity is not reusable",
+            resource=f"fixture-identity:{client.spec.profile}",
+        )
+    link.symlink_to(target, target_is_directory=True)
+
+
 def _wait_for_moments_snapshot(
     client: FoundationRuntimeClient,
 ) -> Mapping[str, Any]:
@@ -8046,6 +8072,13 @@ class W7RuntimeOwner:
                 runtime_kind="native-tauri",
                 port_bases=(3650, 3830, 4615),
                 reserved_ports=reserved_ports,
+            )
+            _bind_reusable_actor_identity(
+                remote_client,
+                self.runtime_root
+                / "shared"
+                / "social-desktop-remote-recipient"
+                / "actor-identity",
             )
             stack.callback(
                 _stop_client_or_raise,
