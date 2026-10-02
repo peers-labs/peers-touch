@@ -41,8 +41,8 @@
       "verificationClass": "ACCEPTANCE_PROOF"
     },
     {
-      "id": "social-desktop-coverage",
-      "command": "make acceptance-coverage-report",
+      "id": "social-desktop-structure",
+      "command": "make plan-validate PLAN=docs/architecture/social/execution-plans/20261002-social-desktop-acceptance/plan.md && make acceptance-validate DOMAIN=social",
       "verificationClass": "STRUCTURAL_CHECK"
     }
   ],
