@@ -91,6 +91,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "tooling/skills/pt-github-review/FRESHNESS.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/desktop/src/acceptance/moments/harness.ts",
         "mode": "exclusive-write"
       },
