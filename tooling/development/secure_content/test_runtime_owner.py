@@ -252,6 +252,20 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         self.assertEqual(14, len(SOCIAL_ACCEPTANCE_IDS))
         source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
+        cleanup_complete = source.index(
+            "ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)"
+        )
+        runtime_evidence = source.index(
+            "acceptance_runtime_manifest = {",
+            cleanup_complete,
+        )
+        self.assertLess(cleanup_complete, runtime_evidence)
+        self.assertIn('"state": "FIXTURE_READY"', source[runtime_evidence:])
+        self.assertIn('"cleanupState": "CLEANED"', source[runtime_evidence:])
+        self.assertIn(
+            '"runtimeManifest": acceptance_runtime_manifest',
+            source[runtime_evidence:],
+        )
         self.assertLess(
             source.index(
                 'purpose="W8 remote recipient identity preparation"'
