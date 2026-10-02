@@ -3027,6 +3027,7 @@ async function startFoundationToolTurn(input: {
   repeatUntilStopped?: boolean;
   requestedBudget?: AgentRuntimeBudgetInput;
   streamId?: string;
+  thinkingMode?: 'auto' | 'enabled' | 'disabled';
   onConversationCreated?: (
     conversationId: string,
     streamId: string,
@@ -3050,7 +3051,7 @@ async function startFoundationToolTurn(input: {
     idempotencyKey: crypto.randomUUID(),
     provider: input.agent.provider || undefined,
     model: input.agent.model || undefined,
-    thinkingMode: 'disabled',
+    thinkingMode: input.thinkingMode ?? 'disabled',
     clientCapabilitySessionId: input.capabilitySessionId,
     requestedBudget: input.requestedBudget,
     streamId: input.streamId,
@@ -24114,6 +24115,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
       fixture: toolFixture,
       sampleId: input.sampleId,
       label: 'mcp-lifecycle-development',
+      thinkingMode: 'auto',
       onConversationCreated: (conversationId) => {
         state.conversationId = conversationId;
       },

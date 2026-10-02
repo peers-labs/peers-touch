@@ -115,10 +115,10 @@ func TestProviderDispatchThinkingMode(t *testing.T) {
 			want:         domain.ThinkingModeAuto,
 		},
 		{
-			name:         "disabled omits unsupported provider extension",
+			name:         "disabled requires reasoning capability",
 			mode:         domain.ThinkingModeDisabled,
 			providerType: providerTypeOpenAI,
-			want:         domain.ThinkingModeAuto,
+			wantError:    true,
 		},
 		{
 			name:               "disabled uses advertised provider control",

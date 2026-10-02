@@ -299,6 +299,7 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
   try {
     const registered = registerWorkspace(registrationOptions(scope));
     assert.equal(registered.slot, 5);
+    assert.equal(registered.head, git(scope.workspaceA, 'rev-parse', 'HEAD'));
     assert.deepEqual(registered.allowedCapabilities, [
       'station.connect',
       'station.deploy',
@@ -332,6 +333,7 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     );
     assert.equal(updated.profile, 'fiveArm');
     assert.equal(updated.slot, 5);
+    assert.equal(updated.head, git(scope.workspaceA, 'rev-parse', 'HEAD'));
     assert.deepEqual(updated.allowedCapabilities, ['station.connect']);
 
     const status = statusAll({
