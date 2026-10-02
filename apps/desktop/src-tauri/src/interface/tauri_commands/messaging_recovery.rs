@@ -440,6 +440,7 @@ pub fn messaging_recovery_restore_latest(
         "messaging_recovery_restore_latest",
         json!({
             "backup": revision_json(&revision),
+            "recoveryEpoch": decoded.recovery_epoch,
             "deviceId": restored_device_id,
             "fingerprint": crypto::fingerprint_hex(restored_identity.verifying_key()),
             "messageCount": archive.messages.len(),

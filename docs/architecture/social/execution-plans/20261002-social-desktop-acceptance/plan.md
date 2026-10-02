@@ -99,6 +99,10 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/desktop",
         "mode": "shared-read"
       },

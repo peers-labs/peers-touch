@@ -2061,6 +2061,8 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertTrue(
             runtime_owner_module._social_acceptance_source_delta_allowed(
                 (
+                    "apps/desktop/src-tauri/src/interface/tauri_commands/"
+                    "messaging_recovery.rs",
                     "apps/desktop/src-tauri/src/social/mod.rs",
                     "apps/desktop/src-tauri/src/social/private_moment.rs",
                     "apps/desktop/src/acceptance/moments/harness.ts",
