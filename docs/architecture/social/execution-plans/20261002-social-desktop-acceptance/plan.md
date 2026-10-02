@@ -201,15 +201,30 @@
   "closures": {
     "social-desktop-contracts": [],
     "social-desktop-proof": [
+      "acceptance-plan-self",
+      "acceptance-infra-validation",
+      "acceptance-runtime-provisioning-self",
+      "acceptance-workflow-contract",
+      "chat-lifecycle-tree-zero-reference-e2e",
       "social-private-desktop-e2e",
       "social-domain-validation"
     ]
   },
   "completion": [
+    "acceptance-plan-self",
+    "acceptance-infra-validation",
+    "acceptance-runtime-provisioning-self",
+    "acceptance-workflow-contract",
+    "chat-lifecycle-tree-zero-reference-e2e",
     "social-private-desktop-e2e",
     "social-domain-validation"
   ],
   "full": [
+    "acceptance-plan-self",
+    "acceptance-infra-validation",
+    "acceptance-runtime-provisioning-self",
+    "acceptance-workflow-contract",
+    "chat-lifecycle-tree-zero-reference-e2e",
     "social-private-desktop-e2e",
     "social-domain-validation"
   ]

@@ -69,6 +69,31 @@
       "verificationClass": "SOURCE_CHECK"
     },
     {
+      "id": "acceptance-plan-self",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-plan-self",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
+      "id": "acceptance-infra-validation",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-infra-validation",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
+      "id": "acceptance-runtime-provisioning-self",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-runtime-provisioning-self",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
+      "id": "acceptance-workflow-contract",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate acceptance-workflow-contract",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
+      "id": "chat-lifecycle-tree-zero-reference-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate chat-lifecycle-tree-zero-reference-e2e",
+      "verificationClass": "STRUCTURAL_CHECK"
+    },
+    {
       "id": "social-private-desktop-e2e",
       "command": "python3 tooling/scripts/acceptance-run.py --gate social-private-desktop-e2e",
       "verificationClass": "FUNCTIONAL_CHECK"
