@@ -150,6 +150,10 @@ class McpLifecycleCandidateTest(unittest.TestCase):
             "CapabilityAcceptanceRuntimeProfile.CLIENT_CAPABILITY_TURN",
             harness,
         )
+        self.assertIn(
+            "'MCP cleanup Agent session surface'",
+            harness,
+        )
 
 
 if __name__ == "__main__":
