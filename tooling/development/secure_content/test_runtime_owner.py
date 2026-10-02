@@ -55,6 +55,7 @@ from tooling.development.secure_content.runtime_owner import (
     _StationEndpoint,
     _activate_scenario_journey,
     _authenticate_running_client,
+    _bind_reusable_actor_identity,
     _build_fixture_owner,
     _client_payload,
     _close_fixture_action_channel,
@@ -1768,6 +1769,41 @@ class RuntimeOwnerTest(unittest.TestCase):
             ),
         ):
             _prepare_private_content_keys(client)
+
+    def test_remote_recipient_reuses_one_actor_identity_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = SimpleNamespace(
+                actor_identity_root=root / "run" / "actor-identity",
+                spec=SimpleNamespace(profile="remote-recipient"),
+            )
+            shared = root / "shared" / "actor-identity"
+
+            _bind_reusable_actor_identity(client, shared)
+            _bind_reusable_actor_identity(client, shared)
+
+            self.assertTrue(client.actor_identity_root.is_symlink())
+            self.assertEqual(shared.resolve(), client.actor_identity_root.resolve())
+            self.assertEqual(0o700, shared.stat().st_mode & 0o777)
+
+    def test_remote_recipient_rejects_non_reusable_identity_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            actor_identity_root = root / "run" / "actor-identity"
+            actor_identity_root.mkdir(parents=True)
+            client = SimpleNamespace(
+                actor_identity_root=actor_identity_root,
+                spec=SimpleNamespace(profile="remote-recipient"),
+            )
+
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "Actor Identity is not reusable",
+            ):
+                _bind_reusable_actor_identity(
+                    client,
+                    root / "shared" / "actor-identity",
+                )
 
     def test_portable_recovery_maintains_prekeys_for_created_epoch(
         self,
