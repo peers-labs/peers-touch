@@ -2172,6 +2172,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "tooling/development/secure_content/runtime_owner.py",
                     "tooling/scripts/acceptance-run.py",
                     "tooling/scripts/acceptance-run-test.py",
+                    "tooling/skills/pt-github-review/FRESHNESS.md",
                 )
             )
         )
