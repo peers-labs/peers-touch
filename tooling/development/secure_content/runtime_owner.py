@@ -1510,6 +1510,40 @@ def _wait_for_accepted_friendship_projection(
     )
 
 
+def _wait_for_private_moment_state(
+    client: FoundationRuntimeClient,
+    *,
+    post_id: str,
+    expected_state: str,
+    actor_label: str,
+    timeout_seconds: float = 30.0,
+    poll_seconds: float = 0.25,
+) -> Mapping[str, Any]:
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    last_projection: Mapping[str, Any] = {}
+    while True:
+        last_projection = _moments_harness(
+            client,
+            "readPrivateMoment",
+            {"postId": post_id},
+        )
+        if last_projection.get("state") == expected_state:
+            return last_projection
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "CLIENT_RUNTIME_UNAVAILABLE",
+        (
+            f"{actor_label} private Moment did not reach {expected_state} "
+            f"(state={last_projection.get('state')!r}, "
+            f"errorCode={last_projection.get('errorCode')!r})"
+        ),
+        resource=f"client:{client.spec.profile}",
+    )
+
+
 def _prepare_accepted_friendship(
     alice: FoundationRuntimeClient,
     bob: FoundationRuntimeClient,
@@ -8359,17 +8393,12 @@ class W7RuntimeOwner:
                     scenario_id="desktop-continuity",
                     resource_id="client:secure-content-desktop-bob2",
                 )
-                before_recovery = _moments_harness(
+                before_recovery = _wait_for_private_moment_state(
                     bob_replacement,
-                    "readPrivateMoment",
-                    {"postId": recovery_post_id},
+                    post_id=recovery_post_id,
+                    expected_state="RECOVERY_REQUIRED",
+                    actor_label="Bob replacement device",
                 )
-                if before_recovery.get("state") != "RECOVERY_REQUIRED":
-                    raise RuntimeOwnerBlocked(
-                        "CLIENT_RUNTIME_UNAVAILABLE",
-                        "Bob replacement device did not enter RECOVERY_REQUIRED",
-                        resource="client:secure-content-desktop-bob2",
-                    )
                 restored = _restore_portable_recovery(
                     bob_replacement,
                     recovery_phrase,

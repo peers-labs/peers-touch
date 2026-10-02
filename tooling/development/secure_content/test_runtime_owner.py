@@ -73,6 +73,7 @@ from tooling.development.secure_content.runtime_owner import (
     _prepare_portable_recovery,
     _prepare_private_content_keys,
     _wait_for_accepted_friendship_projection,
+    _wait_for_private_moment_state,
     _parse_args,
     _publish_result_generation,
     _publish_canonical_private_schema_attestation,
@@ -261,7 +262,7 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn("_social_acceptance_scenario_registry(", source)
         replacement_start = source.index("bob_replacement = _make_client(")
         recovery_read = source.index(
-            'before_recovery = _moments_harness(',
+            'before_recovery = _wait_for_private_moment_state(',
             replacement_start,
         )
         recovery_restore = source.index(
@@ -2319,6 +2320,70 @@ class RuntimeOwnerTest(unittest.TestCase):
             "friendshipProjection",
             {"actorPtid": "ptid:bob"},
             timeout=120,
+        )
+
+    def test_private_moment_state_waits_for_recovery_projection(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec.profile = "secure-content-desktop-bob2"
+        client.harness.side_effect = (
+            {"state": "LOADING_AUTHORIZED_RESOURCE"},
+            {"state": "RECOVERY_REQUIRED", "errorCode": "RECOVERY_REQUIRED"},
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.time.sleep"
+        ):
+            projection = _wait_for_private_moment_state(
+                client,
+                post_id="post-1",
+                expected_state="RECOVERY_REQUIRED",
+                actor_label="Bob replacement device",
+            )
+
+        self.assertEqual("RECOVERY_REQUIRED", projection["state"])
+        self.assertEqual(
+            [
+                call(
+                    "readPrivateMoment",
+                    {"postId": "post-1"},
+                    timeout=120,
+                ),
+                call(
+                    "readPrivateMoment",
+                    {"postId": "post-1"},
+                    timeout=120,
+                ),
+            ],
+            client.harness.call_args_list,
+        )
+
+    def test_private_moment_state_timeout_reports_last_projection(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec.profile = "secure-content-desktop-bob2"
+        client.harness.return_value = {
+            "state": "NOT_FOUND_OR_NOT_AUTHORIZED",
+            "errorCode": "PRIVATE_CONTENT_NOT_AUTHORIZED",
+        }
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _wait_for_private_moment_state(
+                client,
+                post_id="post-1",
+                expected_state="RECOVERY_REQUIRED",
+                actor_label="Bob replacement device",
+                timeout_seconds=0,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn(
+            "state='NOT_FOUND_OR_NOT_AUTHORIZED'",
+            str(raised.exception),
+        )
+        self.assertIn(
+            "errorCode='PRIVATE_CONTENT_NOT_AUTHORIZED'",
+            str(raised.exception),
         )
 
     def test_fixture_owner_prepares_recovery_prekeys_for_author_and_recipient(
