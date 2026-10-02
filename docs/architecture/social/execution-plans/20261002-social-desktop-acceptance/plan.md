@@ -91,6 +91,14 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "apps/desktop/src-tauri/src/social/mod.rs",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "apps/desktop/src-tauri/src/social/private_moment.rs",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/desktop",
         "mode": "shared-read"
       },
