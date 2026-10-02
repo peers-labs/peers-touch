@@ -1494,10 +1494,7 @@ def _wait_for_accepted_friendship_projection(
             "friendshipProjection",
             {"actorPtid": target_ptid},
         )
-        if (
-            last_projection.get("following") is True
-            and last_projection.get("followedBy") is True
-        ):
+        if last_projection.get("accepted") is True:
             return
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -1507,8 +1504,7 @@ def _wait_for_accepted_friendship_projection(
         "FIXTURE_OWNER_UNAVAILABLE",
         (
             f"W7 {actor_label} friendship projection did not converge "
-            f"(following={last_projection.get('following')!r}, "
-            f"followedBy={last_projection.get('followedBy')!r})"
+            f"(accepted={last_projection.get('accepted')!r})"
         ),
         resource="fixture-account:mutual-friendship",
     )

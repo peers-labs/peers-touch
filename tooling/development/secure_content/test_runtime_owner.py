@@ -2229,8 +2229,8 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "homeStationPeerId": "station-four",
             },
             {"requestId": "friend-request-1"},
-            {"following": True, "followedBy": False},
-            {"following": True, "followedBy": True},
+            {"accepted": False},
+            {"accepted": True},
         )
         bob = MagicMock()
         bob.harness_namespace = "agent"
@@ -2241,7 +2241,7 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "homeStationPeerId": "station-four",
             },
             {"accepted": True, "requestId": "friend-request-1"},
-            {"following": True, "followedBy": True},
+            {"accepted": True},
         )
 
         with patch(
@@ -2299,8 +2299,7 @@ class RuntimeOwnerTest(unittest.TestCase):
         client = MagicMock()
         client.harness_namespace = "agent"
         client.harness.return_value = {
-            "following": True,
-            "followedBy": False,
+            "accepted": False,
         }
 
         with self.assertRaises(RuntimeOwnerBlocked) as raised:
