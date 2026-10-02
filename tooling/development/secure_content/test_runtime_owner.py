@@ -505,6 +505,77 @@ class RuntimeOwnerTest(unittest.TestCase):
             self.assertTrue(final_result_path.is_file())
             self.assertFalse((publish_root / "W8" / COMMIT).exists())
 
+    def test_social_result_publication_isolated_by_source_projection(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            final_root = root / "final"
+            published_roots: list[Path] = []
+            for index, digest in enumerate(("7" * 64, "8" * 64)):
+                publish_root = root / f"publish-{index}"
+                staged = (
+                    publish_root
+                    / "SDA-02-desktop-proof"
+                    / COMMIT
+                    / "subtype"
+                    / f"run-{index}"
+                )
+                staged.mkdir(parents=True)
+                (staged / "result.json").write_text("{}\n", encoding="utf-8")
+                projection_root = runtime_owner_module._result_publication_root(
+                    final_root,
+                    identity={"worktreeSetDigest": digest},
+                    formal_acceptance=True,
+                )
+                published_roots.append(
+                    _publish_result_generation(
+                        workstream_id="SDA-02-desktop-proof",
+                        publish_root=publish_root,
+                        final_result_root=projection_root,
+                        generation_id=COMMIT,
+                    )
+                )
+
+            self.assertNotEqual(*published_roots)
+            self.assertTrue(all(path.is_dir() for path in published_roots))
+            self.assertEqual(
+                final_root.resolve(),
+                runtime_owner_module._result_publication_root(
+                    final_root,
+                    identity={"worktreeSetDigest": "9" * 64},
+                    formal_acceptance=False,
+                ),
+            )
+
+            duplicate_publish_root = root / "publish-duplicate"
+            duplicate_staged = (
+                duplicate_publish_root
+                / "SDA-02-desktop-proof"
+                / COMMIT
+                / "subtype"
+                / "run-duplicate"
+            )
+            duplicate_staged.mkdir(parents=True)
+            (duplicate_staged / "result.json").write_text(
+                "{}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "result generation already exists",
+            ):
+                _publish_result_generation(
+                    workstream_id="SDA-02-desktop-proof",
+                    publish_root=duplicate_publish_root,
+                    final_result_root=runtime_owner_module._result_publication_root(
+                        final_root,
+                        identity={"worktreeSetDigest": "7" * 64},
+                        formal_acceptance=True,
+                    ),
+                    generation_id=COMMIT,
+                )
+
     def test_w7_continuation_results_publish_as_one_generation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
