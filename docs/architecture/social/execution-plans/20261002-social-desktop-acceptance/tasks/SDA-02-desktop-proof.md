@@ -19,6 +19,8 @@
     "docs/architecture/social/execution-plans/20261002-social-desktop-acceptance",
     "apps/desktop/src/acceptance/moments/harness.ts",
     "apps/desktop/src/acceptance/moments/harness.test.ts",
+    "apps/desktop/src-tauri/src/social/mod.rs",
+    "apps/desktop/src-tauri/src/social/private_moment.rs",
     "tooling/acceptance/gates/social",
     "tooling/acceptance/provisioners/secure_content_remote_recipient.py",
     "tooling/development/secure_content/runtime_owner.py",

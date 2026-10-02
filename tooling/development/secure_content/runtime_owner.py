@@ -2199,6 +2199,8 @@ def _require_clean_source(
 
 
 _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES = (
+    "apps/desktop/src-tauri/src/social/mod.rs",
+    "apps/desktop/src-tauri/src/social/private_moment.rs",
     "apps/desktop/src/acceptance/moments/harness.ts",
     "apps/desktop/src/acceptance/moments/harness.test.ts",
     "docs/architecture/secure-content/execution-plans/"

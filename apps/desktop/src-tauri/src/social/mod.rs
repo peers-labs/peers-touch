@@ -31,7 +31,8 @@ use self::private_comment::{
     PrivateCommentOrchestrator, PrivateCommentSubmitInput,
 };
 use self::private_moment::{
-    PrivateMomentOrchestrator, PrivateMomentPublishIntent, PrivateRecoveryFailureKind,
+    pending_device_recovery_projection, PrivateMomentOrchestrator, PrivateMomentPublishIntent,
+    PrivateRecoveryFailureKind,
 };
 
 #[cfg(feature = "acceptance-webdriver")]
@@ -350,6 +351,22 @@ pub fn social_private_moment_read(
         Ok(lease) => lease,
         Err(error) => return native_failure(error, "AUTHENTICATION_REQUIRED"),
     };
+    let recovery_pending = match state.messaging_engines.get(&lease.session.account_id) {
+        Ok(Some(engine)) => match engine.store().pending_device_enrollment() {
+            Ok(pending) => pending.is_some(),
+            Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+        },
+        Ok(None) => {
+            return native_failure(
+                "secure content requires an active messaging engine".to_string(),
+                "AUTHENTICATION_REQUIRED",
+            )
+        }
+        Err(error) => return native_failure(error, "INTEGRITY_FAILURE"),
+    };
+    if recovery_pending {
+        return AppResult::success(json!(pending_device_recovery_projection(&input.post_id)));
+    }
     let authority_key = lease.session.key.clone();
     let revoke_media = |path: &Path| {
         state
