@@ -36,10 +36,6 @@ export interface AgentCapabilityReadinessInput {
   clientCapabilitySessionId?: string;
 }
 
-export interface LoadCapabilityCatalogOptions {
-  preserveMutationError?: boolean;
-}
-
 export interface UpsertAgentCapabilityBindingIntent
   extends AgentCapabilityReadinessInput {
   bindingId?: string;
@@ -75,7 +71,6 @@ export interface AgentCapabilityState extends RevalidationState {
   loadingAgentIds: Record<string, true>;
   loadCatalog: (
     sourceKinds?: readonly CapabilitySourceKind[],
-    options?: LoadCapabilityCatalogOptions,
   ) => Promise<CapabilityManifest[]>;
   loadKnowledgeDescriptors: () => Promise<void>;
   loadAgent: (
@@ -160,14 +155,14 @@ export const useAgentCapabilityStore = createDesktopStore<AgentCapabilityState>(
     lastLoadedAt: null,
     pendingMutations: {},
 
-    loadCatalog: async (sourceKinds = [], options = {}) => {
+    loadCatalog: async (sourceKinds = []) => {
       const epoch = projectionEpoch;
       const sequence = ++catalogLoadSequence;
       set({
         loadingCatalog: true,
         loading: true,
         error: null,
-        ...(options.preserveMutationError ? {} : { lastMutationError: null }),
+        lastMutationError: null,
       });
       try {
         const inventory = await api.listCapabilityManifestInventory(sourceKinds);

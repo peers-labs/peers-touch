@@ -510,6 +510,14 @@ export async function runCapabilityBindingScenario(
           typedError = typedMutationError(error);
         }
       }
+      if (typedError) {
+        await waitFor(
+          () => Boolean(visibleElement(
+            `[data-pt-agent-capability-error="${typedError?.error_type}"]`,
+          )),
+          'capability typed error surface',
+        );
+      }
       if (input.cell === 'TAX-05') {
         await api.releaseCapabilityAcceptanceBarrier(create(
           ReleaseCapabilityAcceptanceBarrierRequestSchema,
@@ -636,14 +644,6 @@ export async function runCapabilityBindingScenario(
       )
     ) {
       throw new Error('agent.acceptance.capabilityScenarioIsolationFailed');
-    }
-    if (typedError) {
-      await waitFor(
-        () => Boolean(visibleElement(
-          `[data-pt-agent-capability-error="${typedError?.error_type}"]`,
-        )),
-        'capability typed error surface',
-      );
     }
     const tracesAfter = await api.listAgentTurnTraces(
       agentId,

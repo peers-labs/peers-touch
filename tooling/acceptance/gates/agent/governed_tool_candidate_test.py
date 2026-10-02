@@ -223,6 +223,7 @@ class GovernedToolCandidateTest(unittest.TestCase):
             "'governed ToolCall cleanup Agent session surface'",
             harness,
         )
+        self.assertIn("toolRuntime.consume(streamEvent);", harness)
         self.assertIn(".applyRecoveredTurnEvent(", harness)
         self.assertEqual(
             governed_journey.count(

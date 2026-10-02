@@ -142,31 +142,6 @@ describe('agent capability authority store', () => {
     });
   });
 
-  it('preserves mutation errors only for background catalog reconciliation', async () => {
-    const mutationError = {
-      error: 'agent.errors.capabilityManifestVersionStale',
-      error_type: 'CAPABILITY_MANIFEST_VERSION_STALE',
-      locale_key: 'agent.errors.capabilityManifestVersionStale',
-      retryable: true,
-      terminal: false,
-      details: {},
-    };
-    useAgentCapabilityStore.setState({ lastMutationError: mutationError });
-
-    await useAgentCapabilityStore.getState().loadCatalog(
-      [],
-      { preserveMutationError: true },
-    );
-
-    expect(useAgentCapabilityStore.getState().lastMutationError).toBe(
-      mutationError,
-    );
-
-    await useAgentCapabilityStore.getState().loadCatalog();
-
-    expect(useAgentCapabilityStore.getState().lastMutationError).toBeNull();
-  });
-
   it('submits plain CAS fields and refreshes bindings plus readiness', async () => {
     await useAgentCapabilityStore.getState().loadAgent('agent-1', {
       clientCapabilitySessionId: 'session-desktop',
