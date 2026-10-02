@@ -121,7 +121,7 @@
     "the Suite registers exactly the three isolated relationship actors once; the fiveArm negative reuses an existing owner-issued Actor identity",
     "all 14 Desktop-applicable Acceptance scenarios publish current receiver-visible and security readback evidence",
     "AS11 Browser and AS14 Mobile are recorded as UNPROVEN without launching those runtimes",
-    "the Suite report ends in cleanup-complete and Social require-proven validation passes"
+    "the Suite report ends in cleanup-complete and the Task-owned functional result is sealed"
   ],
   "failureBehavior": [
     "a source or runtime attestation mismatch blocks before build or deploy; remediation must be explicitly minimal and source-consistent",
@@ -129,12 +129,12 @@
     "Harness and HTTP observations support but never replace required Native UI action and receiver-visible evidence",
     "partial child results remain unpublished when any Scenario or cleanup fails"
   ],
-  "updatedAt": "2026-10-02T02:20:00.000Z",
+  "updatedAt": "2026-10-02T17:31:00.000Z",
   "durableEvidence": [
     {
-      "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Prepared plan; formal Desktop Suite has not run"
+      "verificationClass": "FUNCTIONAL_CHECK",
+      "result": "PASS",
+      "ref": "~/.peers-touch/dev/workspaces/43155c43ec0308de/workflow/social-desktop-acceptance/checks/functional-result-58a5b653f854c59ec630712610c988fa2ab7f76442dd0001f8e311384d5a1aa3.json"
     }
   ]
 }
@@ -148,16 +148,18 @@
 - Friend-request acceptance is asynchronous with respect to the authoritative
   bilateral relationship projection; the Suite fixture waits for both actors
   to observe mutual friendship before publishing private content.
-- Functional proof uses the Task-owned Native Suite command. The formal Native
-  Gate and Social domain validation run during completion Acceptance.
+- Functional proof uses the Task-owned Native Suite command. The successor
+  `SDA-03-formal-proof` owns the formal Native Gate and Social Domain
+  validation.
 - The registry-selected Chat zero-reference Gate remains a full/release concern
   and does not expand this Task's Desktop Social claim.
 - The formal Gate must publish a new immutable Evidence Store run.
 
 ## Closure
 
-The current source has formal Native Desktop proof for the bounded Social
-Private Moments claim, with explicit Browser and Mobile non-claims.
+The bounded Social Private Moments Journey has current Task-owned Native
+Desktop functional proof. Formal proof and the explicit Browser/Mobile
+non-claims are owned by the dependency-successor aggregate Task.
 
 ## Concurrency Decision
 

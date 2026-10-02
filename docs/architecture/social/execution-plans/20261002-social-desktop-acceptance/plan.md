@@ -46,6 +46,7 @@
         "pathPrefix": "docs/architecture/social",
         "mode": "exclusive-write"
       },
+      {"pathPrefix": "tooling/acceptance", "mode": "shared-read"},
       {
         "pathPrefix": "tooling/acceptance/capabilities",
         "mode": "exclusive-write"
@@ -82,6 +83,7 @@
         "pathPrefix": "tooling/development/secure_content",
         "mode": "exclusive-write"
       },
+      {"pathPrefix": "tooling/scripts", "mode": "shared-read"},
       {
         "pathPrefix": "tooling/scripts/acceptance-run.py",
         "mode": "exclusive-write"
@@ -168,6 +170,14 @@
       ],
       "status": "in_progress",
       "blocker": null
+    },
+    {
+      "id": "SDA-03-formal-proof",
+      "workstreamId": "SDA-W02",
+      "path": "tasks/SDA-03-formal-proof.md",
+      "dependsOn": ["SDA-02-desktop-proof"],
+      "status": "pending",
+      "blocker": null
     }
   ],
   "exhaustion": null,
@@ -200,7 +210,15 @@
 {
   "closures": {
     "social-desktop-contracts": [],
-    "social-desktop-proof": []
+    "social-desktop-proof": [],
+    "social-desktop-final-proof": [
+      "acceptance-plan-self",
+      "acceptance-infra-validation",
+      "acceptance-runtime-provisioning-self",
+      "acceptance-workflow-contract",
+      "social-private-desktop-e2e",
+      "social-domain-validation"
+    ]
   },
   "completion": [
     "acceptance-plan-self",
@@ -222,11 +240,9 @@
 }
 ```
 
-The functional closure uses the Task-owned Native Suite `FUNCTIONAL_CHECK`;
-formal Gates are reserved for completion Acceptance. Completion publishes the
-formal Native result before `social-domain-validation` evaluates the Social
-proof graph. The registry-selected Chat zero-reference Gate remains declared
-only in `full`; it is outside this Desktop Social completion claim.
+The functional closure uses the Task-owned Native Suite `FUNCTIONAL_CHECK`. The
+successor aggregate owns formal completion and publishes the Native result
+before Social validation. The Chat Gate remains full-only and out of scope.
 
 ## Goal
 
@@ -253,6 +269,7 @@ friend and non-friend relationship coverage.
 ```text
 SDA-01-contracts
   -> SDA-02-desktop-proof
+  -> SDA-03-formal-proof
   -> SOCIAL_DESKTOP_PROVEN
 ```
 
@@ -273,12 +290,11 @@ SDA-01-contracts
 | Task | Closure | Result |
 |---|---|---|
 | `SDA-01-contracts` | Register Social Domain, capabilities, features, formal Gate, environment, and proof mapping | Structurally valid Social Acceptance graph |
-| `SDA-02-desktop-proof` | Execute one three-account Native Desktop Suite and publish independent Evidence Store proof | 14 Desktop scenarios proven; Browser and Mobile explicitly unproven |
+| `SDA-02-desktop-proof` | Execute one three-account Native Desktop Suite under the development policy | 14 Desktop scenarios functionally pass; formal proof remains unproven |
+| `SDA-03-formal-proof` | Run the six completion Gates and validate the Social proof graph | 14 Desktop scenarios proven; Browser and Mobile explicitly unproven |
 
 ## Completion
 
-Completion requires both Tasks `done`, Social structural validation and
-`--require-proven` validation passing, one valid Suite Runtime report ending in
-`cleanup-complete`, all runtime leases and clients released, and a clean
-worktree. No broader Peers-Touch, Mobile, Browser, Chat, release, or
-cross-Station-delivery claim is implied.
+Completion requires all three Tasks `done`, Social `--require-proven`
+validation, formal Suite cleanup, released resources, and a clean worktree.
+Mobile, Browser, Chat, release, and positive cross-Station delivery stay out.
