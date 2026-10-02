@@ -19,6 +19,7 @@ import {
   type ChatOperation,
   useChatStore,
 } from './chat';
+import { toolRuntime } from '../runtimes/toolRuntime';
 import { useAgentStore } from './agent';
 import { useAgentCapabilityStore } from './agentCapabilities';
 import { isTerminalEvent, reduceStreamEvent } from './streaming';
@@ -693,6 +694,49 @@ describe('Agent turn event identity projection', () => {
         },
       }));
     } finally {
+      useChatStore.getState().reset();
+    }
+  });
+
+  it('projects recovered ToolCall events into chat and runtime state', () => {
+    useChatStore.getState().reset();
+    toolRuntime.reset();
+    useChatStore.setState({ currentSessionKey: 'conversation-tool' });
+
+    try {
+      useChatStore.getState().applyRecoveredTurnEvent(
+        'conversation-tool',
+        'agent-1',
+        'turn-tool',
+        {
+          event: 'tool_call',
+          data: {
+            conversationId: 'conversation-tool',
+            turnId: 'turn-tool',
+            toolCallId: 'tool-call-recovered',
+            toolName: 'local_mcp',
+            arguments: '{}',
+            seq: 1,
+          },
+        },
+      );
+
+      const message = useChatStore.getState().messages.find(
+        (candidate) => candidate.turnId === 'turn-tool',
+      );
+      expect(message?.toolCalls).toEqual([
+        expect.objectContaining({
+          id: 'tool-call-recovered',
+          name: 'local_mcp',
+          pending: true,
+        }),
+      ]);
+      expect(toolRuntime.getProjection('tool-call-recovered')).toMatchObject({
+        status: 'pending',
+        pending: true,
+      });
+    } finally {
+      toolRuntime.reset();
       useChatStore.getState().reset();
     }
   });
