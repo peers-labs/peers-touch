@@ -1724,7 +1724,6 @@ export const useChatStore = createDesktopStore<ChatState>('chat', (set, get) => 
         },
       );
       if (!operationEvent.accepted) return state;
-      toolRuntime.consume(event);
 
       const applyTo = (messages: ChatMessage[]): ChatMessage[] => {
         const existingIndex = messages.findIndex(

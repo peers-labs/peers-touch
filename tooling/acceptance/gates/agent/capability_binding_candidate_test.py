@@ -199,6 +199,17 @@ class RecordingAdapter:
 
 
 class CapabilityBindingCandidateTest(unittest.TestCase):
+    def test_typed_error_receiver_is_asserted_before_readback(self) -> None:
+        scenario = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/capabilityBindingScenario.ts"
+        ).read_text(encoding="utf-8")
+
+        self.assertLess(
+            scenario.index("if (typedError) {"),
+            scenario.index("const readiness = await capabilityScenarioStep("),
+        )
+
     def test_native_scenario_supplies_capability_session_to_readiness(self) -> None:
         scenario = (
             ROOT

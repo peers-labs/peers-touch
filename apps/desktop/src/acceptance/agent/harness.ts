@@ -3055,11 +3055,16 @@ async function startFoundationToolTurn(input: {
     onEvent: (event) => {
       const turnId = observedTurnId([event]);
       if (!turnId) return;
+      const streamEvent: StreamEvent = {
+        event: event.event,
+        data: event.data,
+      };
+      toolRuntime.consume(streamEvent);
       useChatStore.getState().applyRecoveredTurnEvent(
         conversation.conversation_id,
         agentId,
         turnId,
-        { event: event.event, data: event.data },
+        streamEvent,
       );
     },
   });
