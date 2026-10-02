@@ -16,7 +16,11 @@
   "journeyId": "SOC-SEC-J01-J09",
   "runtimeClass": "source-only",
   "writeSet": [
-    "docs/architecture/social/execution-plans/20261002-social-desktop-acceptance/tasks/SDA-03-formal-proof.md"
+    "docs/architecture/social/execution-plans/20261002-social-desktop-acceptance/tasks/SDA-03-formal-proof.md",
+    "tooling/acceptance/gates/social/desktop_private_e2e.py",
+    "tooling/acceptance/gates/social/test_desktop_private_e2e.py",
+    "tooling/development/secure_content/runtime_owner.py",
+    "tooling/development/secure_content/test_runtime_owner.py"
   ],
   "readSet": [
     "apps/desktop",
