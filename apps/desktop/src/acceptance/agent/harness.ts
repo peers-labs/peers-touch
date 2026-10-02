@@ -24162,6 +24162,11 @@ async function prepareMcpLifecycleDevelopmentJourney(
       'MCP ToolCall native receiver',
       30_000,
     );
+    const toolCallReceiver = {
+      visible: toolCallVisible(),
+      toolCallId,
+      status: toolRuntime.getProjection(toolCallId)?.status ?? '',
+    };
     const sideEffectCount = await foundationToolSideEffectCount(
       'desktop_app',
       toolFact,
@@ -24408,14 +24413,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
       assertions,
       'receiver-dom': {
         connected: connectedReceiver,
-        toolCall: {
-          visible: Boolean(
-            document.querySelector<HTMLElement>(toolCallSelector)
-              ?.getClientRects().length,
-          ),
-          toolCallId,
-          status: receiverProjection?.status ?? '',
-        },
+        toolCall: toolCallReceiver,
         assistant: {
           visible: true,
           messageId: state.assistantMessageId,
