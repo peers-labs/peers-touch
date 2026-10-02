@@ -127,9 +127,10 @@ TASK_ID = "W7"
 W8_WORK_ITEM_ID = "secure-content-w8"
 W8_TASK_ID = "W8"
 W8_JOURNEY = "sc-dj-social-expansion"
-SOCIAL_ACCEPTANCE_WORK_ITEM_ID = "social-desktop-acceptance"
 SOCIAL_ACCEPTANCE_PLAN_ID = "SOCIAL-DESKTOP-ACCEPTANCE-20261002"
-SOCIAL_ACCEPTANCE_TASK_ID = "SDA-02-desktop-proof"
+SOCIAL_ACCEPTANCE_TASK_IDS = frozenset(
+    {"SDA-02-desktop-proof", "SDA-03-formal-proof"}
+)
 SOCIAL_ACCEPTANCE_JOURNEY = "SOC-SEC-J01-J09"
 SOCIAL_ACCEPTANCE_IDS = (
     "SOC-SEC-AS01",
@@ -710,16 +711,19 @@ SOCIAL_ACCEPTANCE_SCENARIO_MAP = {
 
 def _social_acceptance_scenario_registry(
     scenario_id: str,
+    *,
+    work_item_id: str,
+    task_id: str,
 ) -> Mapping[str, ScenarioDefinition]:
     scenario = discover_scenarios()[scenario_id]
     return {
         scenario_id: replace(
             scenario,
             journey_id=SOCIAL_ACCEPTANCE_JOURNEY,
-            work_item_id=SOCIAL_ACCEPTANCE_WORK_ITEM_ID,
-            result_prefix=Path(SOCIAL_ACCEPTANCE_TASK_ID),
-            result_task_id=SOCIAL_ACCEPTANCE_TASK_ID,
-            result_workstream_id=SOCIAL_ACCEPTANCE_TASK_ID,
+            work_item_id=work_item_id,
+            result_prefix=Path(task_id),
+            result_task_id=task_id,
+            result_workstream_id=task_id,
         )
     }
 REQUIRED_FIXTURE_CAPABILITIES = frozenset(
@@ -2120,21 +2124,23 @@ def _activate_scenario_journey(
     repo_root: Path,
     journey_id: str,
     *,
-    work_item_id: str = WORK_ITEM_ID,
-    task_id: str = TASK_ID,
+    work_item_id: str | None = WORK_ITEM_ID,
+    task_id: str | None = TASK_ID,
     plan_id: str = PLAN_ID,
+    allowed_task_ids: frozenset[str] | None = None,
     command_runner: Any = subprocess.run,
 ) -> Mapping[str, Any]:
+    status_command = [
+        "node",
+        "tooling/scripts/local-dev/dev-work.mjs",
+        "status",
+        "--workspace-root",
+        str(repo_root),
+    ]
+    if work_item_id is not None:
+        status_command.extend(["--work-item", work_item_id])
     status_process = command_runner(
-        [
-            "node",
-            "tooling/scripts/local-dev/dev-work.mjs",
-            "status",
-            "--workspace-root",
-            str(repo_root),
-            "--work-item",
-            work_item_id,
-        ],
+        status_command,
         cwd=repo_root,
         check=False,
         capture_output=True,
@@ -2154,16 +2160,34 @@ def _activate_scenario_journey(
         for item in declarations
         if isinstance(item, Mapping) and item.get("state") == "ACTIVE"
     ] if isinstance(declarations, list) else []
+    expected_task_ids = (
+        allowed_task_ids
+        if allowed_task_ids is not None
+        else frozenset({task_id}) if task_id is not None else frozenset()
+    )
     if (
         status_process.returncode != 0
         or len(active) != 1
-        or active[0].get("workItemId") != work_item_id
+        or (
+            work_item_id is not None
+            and active[0].get("workItemId") != work_item_id
+        )
         or active[0].get("planId") != plan_id
-        or active[0].get("taskId") != task_id
+        or (
+            expected_task_ids
+            and active[0].get("taskId") not in expected_task_ids
+        )
     ):
         raise RuntimeOwnerBlocked(
             "DECLARATION_TRANSITION_FAILED",
             "W7 functional declaration is not the active Plan task",
+            resource=f"journey:{journey_id}",
+        )
+    active_work_item_id = active[0].get("workItemId")
+    if not isinstance(active_work_item_id, str) or not active_work_item_id:
+        raise RuntimeOwnerBlocked(
+            "DECLARATION_TRANSITION_FAILED",
+            "W7 functional declaration has no work item",
             resource=f"journey:{journey_id}",
         )
     session_id = active[0].get("sessionId")
@@ -2181,7 +2205,7 @@ def _activate_scenario_journey(
             "--workspace-root",
             str(repo_root),
             "--work-item",
-            work_item_id,
+            active_work_item_id,
             "--session",
             session_id,
         ]
@@ -8013,16 +8037,6 @@ class W7RuntimeOwner:
         formal_acceptance: bool,
         expected_slot: int = SLOT,
     ) -> dict[str, Any]:
-        work_item_id = (
-            SOCIAL_ACCEPTANCE_WORK_ITEM_ID
-            if formal_acceptance
-            else W8_WORK_ITEM_ID
-        )
-        task_id = (
-            SOCIAL_ACCEPTANCE_TASK_ID
-            if formal_acceptance
-            else W8_TASK_ID
-        )
         journey_id = (
             SOCIAL_ACCEPTANCE_JOURNEY
             if formal_acceptance
@@ -8050,13 +8064,20 @@ class W7RuntimeOwner:
             identity.get("sourceEvidenceWorkspaceId")
             or identity["workspaceId"]
         )
-        _activate_scenario_journey(
+        declaration = _activate_scenario_journey(
             self.repo_root,
             journey_id,
-            work_item_id=work_item_id,
-            task_id=task_id,
+            work_item_id=None if formal_acceptance else W8_WORK_ITEM_ID,
+            task_id=None if formal_acceptance else W8_TASK_ID,
             plan_id=plan_id,
+            allowed_task_ids=(
+                SOCIAL_ACCEPTANCE_TASK_IDS
+                if formal_acceptance
+                else None
+            ),
         )
+        work_item_id = str(declaration["workItemId"])
+        task_id = str(declaration["taskId"])
         resolved, profile_env = _resolve_machine_profile(
             self.repo_root,
             expected_slot=expected_slot,
@@ -8826,7 +8847,9 @@ class W7RuntimeOwner:
                     fixture_action_client=fixture_action_client,
                     registry=(
                         _social_acceptance_scenario_registry(
-                            spec.scenario_id
+                            spec.scenario_id,
+                            work_item_id=work_item_id,
+                            task_id=task_id,
                         )
                         if formal_acceptance
                         else None
