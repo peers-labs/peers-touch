@@ -1,0 +1,58 @@
+{
+  "id": "social-private-moments-desktop",
+  "status": "active",
+  "product_area": "social",
+  "owners": [
+    "apps/desktop/src/acceptance/moments/harness.ts",
+    "apps/desktop/src/pages/MomentsPage.tsx",
+    "apps/desktop/src/store/moments.ts",
+    "apps/station/app/subserver/social/**",
+    "model/domain/social/**",
+    "packages/secure-content-core/**",
+    "tooling/development/secure_content/**"
+  ],
+  "truth_sources": [
+    "Station Social audience, Post, Comment, delivery, recovery and object-grant authorities",
+    "Native Desktop secure-content device storage and receiver-visible projections",
+    "real four and fiveArm Station deployment and canonical private-schema attestations"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "desktop",
+      "route": "#/moments"
+    },
+    {
+      "type": "desktop",
+      "route": "#/moments/:postId"
+    },
+    {
+      "type": "http",
+      "route": "/social/*"
+    }
+  ],
+  "required_gates": [
+    "social-private-desktop-e2e"
+  ],
+  "acceptance": {
+    "runtime": [
+      "one source-bound Suite Runtime provisions and logs in once, then runs every Scenario attach-only",
+      "Alice, Bob and Eve exercise friend, follower-only non-friend, unrelated and blocked authorization states",
+      "Bob restart and replacement-device recovery preserve authorized history without creating another account",
+      "anonymous and malformed or expired authentication requests reveal no private body, object bytes, recipient PTIDs, device IDs or encrypted keys",
+      "unsupported cross-Station recipients and oversized audiences fail before durable admission or Content PreKey consumption"
+    ],
+    "visible": [
+      "Alice publishes private text and media from the Native Desktop Moment composer",
+      "Bob reads authorized plaintext and media in Native Desktop HOME and detail surfaces before and after restart",
+      "Eve cannot render private parent, comment or media while unauthorized",
+      "public Moment continuity is proven by Native publish plus anonymous HTTP read without launching Browser"
+    ]
+  },
+  "negative": [
+    "Browser private publish/read and Mobile parity are not claimed",
+    "development FUNCTIONAL_PASS artifacts are not treated as formal Acceptance proof",
+    "no Scenario may rebuild, redeploy, register a new account, or create a fresh Suite Runtime",
+    "the Suite may keep at most three Native Desktop clients active concurrently",
+    "cross-Station private delivery remains unsupported and unclaimed"
+  ]
+}

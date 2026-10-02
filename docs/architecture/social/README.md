@@ -16,6 +16,7 @@ domain.
 | [`../secure-content/README.md`](../secure-content/README.md) | Accepted cross-domain encryption, key-envelope, opaque-object, recovery, and hard-cut architecture used by private Moments and Chat. |
 | `prototype/README.md` | Desktop Social Chat private/group chat prototype entry, run instructions, confirmation status, and review scope. |
 | `execution-plans/2026-05-09-wechat-grade-moments-runtime.md` | Phased implementation plan for the runtime-first Moments upgrade. |
+| `execution-plans/20261002-social-desktop-acceptance/plan.md` | Desktop-only formal Acceptance plan for Private Moments using one reusable Alice/Bob/Eve Native Suite. |
 
 ## Source Hierarchy
 
