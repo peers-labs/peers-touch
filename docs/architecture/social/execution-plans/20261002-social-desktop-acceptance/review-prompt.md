@@ -5,6 +5,7 @@ Review:
 - `plan.md`
 - `tasks/SDA-01-contracts.md`
 - `tasks/SDA-02-desktop-proof.md`
+- `tasks/SDA-03-formal-proof.md`
 
 Accepted sources:
 
@@ -17,7 +18,8 @@ Accepted sources:
 
 Check:
 
-1. The two Tasks are vertical, dependency-correct, and independently closable.
+1. The three Tasks are vertical, dependency-correct, and independently
+   closable: contracts, functional proof, then formal proof aggregation.
 2. The claim includes only Desktop-applicable `AS01..AS10`, `AS12..AS13`,
    `AS15..AS16`; Browser `AS11` and Mobile `AS14` stay unproven.
 3. Alice/Bob/Eve cover friend, follower-only/non-friend, unrelated, and blocked
@@ -27,9 +29,10 @@ Check:
    makes every Scenario attach-only.
 5. Existing development evidence is supporting input only; formal proof uses
    an independent Evidence Store run.
-6. Functional closure uses the Task-owned Native Suite check. The formal Native
-   Gate publishes before Social domain validation, while the registry-selected
-   Chat Gate remains full/release-only and outside this completion claim.
+6. Functional closure uses the Task-owned Native Suite check. A separate
+   `acceptance-aggregate` Task owns the formal Native Gate and publishes it
+   before Social domain validation, while the registry-selected Chat Gate
+   remains full/release-only and outside this completion claim.
 7. Authorization permits only local commits and `four`/`fiveArm`; no reset,
    push, PR, release, or history rewrite is authorized.
 
