@@ -1813,6 +1813,7 @@ export function summarizePlanPackage(planPackage) {
     progress: summarizePlanProgress(planPackage),
     currentTaskId: currentManifestTask?.id ?? null,
     currentTaskPath: currentManifestTask?.path ?? null,
+    currentTaskWriteSet: planPackage.currentTask?.writeSet ?? [],
     currentClosure: planPackage.currentTask?.closureId ?? null,
     taskStatuses,
     acceptance: planPackage.acceptance,

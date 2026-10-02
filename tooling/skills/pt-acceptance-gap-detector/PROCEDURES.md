@@ -93,10 +93,12 @@ python3 tooling/scripts/acceptance-gap-detect.py \
 
 python3 tooling/scripts/acceptance-gap-detect-test.py
 ```
-
 The detector is read-only with respect to product and repository state. A
 successful admitted run writes an immutable `acceptance-gap-report` to the
 external Evidence Store.
+
+`--run` only to select an Acceptance run artifact; it never substitutes for
+the required `--session` admission input.
 
 ## Artifacts
 

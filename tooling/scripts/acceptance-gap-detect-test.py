@@ -69,6 +69,34 @@ class AcceptanceGapDetectorTests(unittest.TestCase):
             "gap",
         )
 
+    def test_main_passes_session_separately_from_acceptance_run(self) -> None:
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "acceptance-gap-detect.py",
+                "--session",
+                "session.json",
+                "--run",
+                "run.json",
+            ],
+        ), patch.object(
+            MODULE,
+            "require_acceptance_admission",
+            side_effect=MODULE.AcceptanceAdmissionError("STOP_AFTER_ADMISSION"),
+        ) as admission, patch.object(
+            sys,
+            "stderr",
+        ):
+            exit_code = MODULE.main()
+
+        self.assertEqual(exit_code, 2)
+        admission.assert_called_once_with(
+            MODULE.REPO_ROOT,
+            "session.json",
+            "gap",
+        )
+
     def test_explicit_changed_paths_define_exact_scope(self) -> None:
         with patch.object(
             MODULE,

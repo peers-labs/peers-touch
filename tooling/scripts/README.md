@@ -49,6 +49,7 @@ export VITE_PORT=3000
 | `verify-worktree-binding.py` | 推荐 | capture/verify 当前执行 worktree 的 fail-closed identity | 校验 canonical root、branch、`workspaceId` 与 expected HEAD；必须从被绑定 root 运行，且不受无关 sibling worktree 变更影响 |
 | `verify-worktree-binding-test.py` | 可用 | 回归验证 worktree identity guard 与 Goal 队列契约 | 覆盖 wrong cwd、detached HEAD、identity drift、sibling worktree churn、持久 schema，以及 Ready/Parked queue 与 exhaustion-proof 阻塞语义 |
 | `local-dev/machine-dev.mjs` | 推荐 | 管理 machine-authoritative workspace registration 与 runtime lease | `make env-{register,update,check,status-all}`；显式删除 worktree 前用 `make env-unregister`，禁止手改 registry |
+| `local-dev/dev-resource-plan.mjs` | 内部 owner | 聚合标准 `ModuleImpact`、解析 target 依赖、计算峰值容量并把 ready target 的具体资源 claims 原子写入现有 Development declaration | 由 `make dev-resources-prepare/status` 与 `make dev-resource-record` 调用；不启动或清理物理资源，业务 Gate 只 attach 到 Runtime Owner manifest |
 | `local-dev/environment-creation-authorization.py` | 内部依赖 | 管理 human-only environment creation grant | `make profile-authorize` 交互创建 30 分钟 exact-tuple grant；`profile-init` 单次消费并保留 profile digest receipt；Agent 不得创建 grant |
 | `../../apps/dev/server/index.mjs` | 推荐 | 提供 Peers Dev 只读开发控制面 | `make dev-ui` 在固定 `127.0.0.1:4177` 上启动或复用机器唯一实例；应用源码与界面统一归属 `apps/dev/`，不暴露 canonical root、原始 profile/credential 或写接口 |
 | `check-social-runtime-boundaries.sh` | 可用 | 校验双端社交 Runtime 边界 | 禁止页面/组件直接拥有社交实时流、reconcile、长期 freshness |

@@ -134,6 +134,26 @@ structure signals never decide the verdict by themselves.
 For Goal, execution-skill, or tracked-work workflow changes, additionally
 verify:
 
+- every status, handoff, worker result, and review verdict consumes the
+  current canonical `BindingProjection`; child assignment validates the exact
+  current active-work and Development Session records; one assignment has one
+  atomically published execution-session claim; Completion Review reduces each
+  action to its latest receipt and uses the exact live OWNER command or assigned
+  REVIEWER rather than enumerating worktree bindings, and reads only the current
+  versioned review namespace;
+- OWNER publication uses atomic create-once semantics, and `PreCompact` /
+  `PostCompact` persist and verify one receipt per complete binding lineage so
+  concurrent OWNER/WORKER/REVIEWER compactions cannot overwrite each other;
+- TRAE multi-root integration installs one descriptor-selected bootstrap,
+  never treats bootstrap location or folder order as execution authority, and
+  rejects active-editor/task/target disagreement with
+  `WORKTREE_SELECTION_REQUIRED`;
+- binding rollout proves global workflow quiescence, deletes only the old
+  conversation and workflow-action stores, consumes a create-once grant for
+  the exact current OWNER `skills` action only after fallible preflight,
+  publishes `INSTALLING` immediately after consumption and before destructive
+  reset, records reset failure as `BLOCKED`, and contains no compatibility
+  reader, importer, alias, fallback, or dual writer;
 - execution mode is justified by dependencies, write sets, generated outputs,
   shared runtime resources, verification isolation, and integration order;
 - parallel lanes reserve non-overlapping write sets and keep shared files under

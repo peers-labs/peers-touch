@@ -2,8 +2,8 @@
 
 status: active
 owner: architecture
-last_verified_at: 2026-09-29
-covered_docs_hash: 79accfa2189922ae8eebfacb3785d71e5eb3b691e13f374af76c1688305727cd
+last_verified_at: 2026-10-01
+covered_docs_hash: f202e45e4e880ba00de41f7bd6eec9d4163660afc28bbeab1cf537961309ddb2
 
 covered_docs:
   - AGENTS.md
@@ -29,7 +29,78 @@ covered_docs:
 
 `tooling/scripts/review/skill-check.sh` recomputes `covered_docs_hash` from the paths above. If any upstream rule changes, the hash changes and the check fails until this skill is reviewed.
 
-Updating this file is a review act, not bookkeeping. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+Updating this file is a review act, not bookkeeping. Execution Plan files are excluded because mutable Task lifecycle is not an upstream review rule. The PR must explain whether the upstream change required a `SKILL.md` update, new fixture, or knowledge entry.
+
+## 2026-10-01 Review
+
+Owner-rooted workflow binding review now additionally requires atomic OWNER
+publication, exact current Development Session validation before child
+assignment, one atomic execution-session claim per assignment,
+latest-per-action Completion Review selection, persisted PreCompact/PostCompact
+lineage continuity in one receipt per binding, and a one-time installer grant
+tied to the exact live OWNER `skills` action. Installer lifecycle state must be
+published before destructive reset, fallible preflight must precede grant
+consumption, and reset failure must remain observable as `BLOCKED`. `SKILL.md`
+and the owner-rooted invariant now carry these checks; dedicated workflow and
+installer regressions cover each failure mode. Completion Review schema v2 also
+uses a new canonical namespace, so pre-hard-cut requests are preserved but
+never loaded or migrated.
+
+Owner-rooted workflow binding replaced peer conversation bindings. Review now
+requires canonical OWNER/WORKER/REVIEWER lineage, exact current Action Receipt
+selection, live assigned reviewers, and no worktree-wide identity fallback.
+TRAE multi-root review also requires one descriptor-selected bootstrap,
+target-derived owner selection, active-editor mismatch rejection, global-idle
+hard-cut admission, and deletion limited to the old conversation and Action
+Receipt stores. `SKILL.md`, workflow regression fixtures, and the owner-rooted
+invariant cover the new omission, stale-child, and bootstrap-authority risks.
+
+Resource-plan selection no longer treats healthy reusable inventory as
+Runtime Owner readiness, and incompatible non-null digest expectations cannot
+be merged onto one physical resource. Planner-owned lease admission now also
+requires complete allocation fences and one matching `READY` result, rejecting
+pending or quarantined resources. Existing runtime ownership, exact-source
+identity, and fail-closed resource conflict rules already cover this behavior.
+Dedicated resource-plan and lease-admission regressions prove these boundaries;
+no `SKILL.md`, generic review fixture, or additional knowledge entry is
+required.
+
+## 2026-09-30 Review
+
+Development Workflow and Local Dev Control Plane are now registered in the
+central architecture module registry. Their existing accepted decisions were
+normalized to the ADR-lite document contract without changing behavior; this
+adds fail-closed ownership discovery and requires no GitHub Review rule change.
+
+Completion Review now derives a deterministic fixed-point blocked candidate
+when a successful Task has no ready successor but other Plan branches remain
+blocked. The Plan lifecycle owner still performs the atomic transition and
+verifies the exact candidate digest.
+
+Independent completion review found that per-target greedy allocation could
+park a constrained target despite a feasible wave-level assignment. Mandatory
+demand now uses deterministic global matching with constrained-target priority;
+the pinned-versus-flexible regression is part of the resource-plan suite.
+
+The superseded skill-rollout implementation was removed after all live setup,
+audit, and host projection ownership moved to agent-integration. Historical
+Plan references remain documentation only and are excluded from live routing.
+
+`DWF-D32` adds one Dev Workflow-owned cross-module resource-plan contract.
+Module Skills emit declarative impact, the existing machine declaration ledger
+holds concrete intent, and Local Dev or Acceptance Suite Runtime retains
+physical lifecycle ownership. Review must reject module-owned provisioning,
+partial target reservations, optional-demand starvation, stale fencing results,
+missing-receipt provenance adoption, bare-ID result joins, and business Gate
+lifecycle actions. The new resource-plan and Agent-impact tests cover those boundaries;
+no GitHub Review severity or fixture schema change is required.
+
+`pt-agent-development` adds an Agent-domain policy for deterministic impact
+classification, proof reuse, minimal deployment, ownership splitting, and
+failure attribution inside the existing Development Workflow. It does not
+change GitHub Review severity or ownership. The co-located policy tests and
+18-commit MCA-P04 replay fixture provide the required regression coverage; no
+generic review fixture or `pt-github-review/SKILL.md` change is required.
 
 ## 2026-09-29 Review
 

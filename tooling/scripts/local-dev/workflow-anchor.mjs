@@ -64,7 +64,7 @@ function anchorBody(binding, inspection) {
     '- **Execution mode / lanes**: host-neutral serial kernel admission',
     '- **Conflict controls**: immutable conversation root plus declaration claims',
     '- **Critical path / ETA**: unknown',
-    `- **Evidence**: binding=${binding.digest}; workflow=${inspection.status}`,
+    `- **Evidence**: role=${binding.role}; binding=${binding.bindingDigest}; root=${binding.rootBindingDigest}; workflow=${inspection.status}`,
     `- **Stop conditions / decisions**: ${blocked ? `${inspection.code}: ${inspection.message}` : status}`,
     `- **Tracking document**: ${field(inspection.binding?.planPath)}`,
   ].join('\n');

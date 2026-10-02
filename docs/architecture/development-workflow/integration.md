@@ -1,7 +1,7 @@
 # Development Workflow Control Plane - Integration
 
-> **Status**: accepted
-> **Created**: 2026-09-13 | **Updated**: 2026-09-23
+> **Status**: active
+> **Created**: 2026-09-13 | **Updated**: 2026-10-01
 > **Owner**: Platform Team
 
 ---
@@ -23,6 +23,8 @@
 | `execution-plan.py` | Resolves local or explicit Plan input | Loads the current workspace Plan generation locally; CI validates every Plan path declared by the PR |
 | `acceptance-plan.py` | Selects current closure Gates | Uses current Task `closureId` from package |
 | `tooling/scripts/local-dev/` | Make-backed runtime commands | Adds public declaration and Session commands |
+| Domain development Skills | Module-local impact policy | Emit standard `ModuleImpact`; never allocate or provision concrete resources |
+| Local Dev / Acceptance Suite Runtime | Physical runtime lifecycle | Consume selected resources, return manifest-bound results, and own cleanup/quarantine |
 | `skill-overlay-control.py` | Machine-local user Overlay lifecycle | Installs immutable copies and resolves interaction-only policy for `pt-ew` |
 | `pt-ew` | Shared personal-workflow entry | Loads enabled user Overlays, then delegates project routing to `pt-god-view` |
 | `tooling/acceptance/` | Formal product proof | Runs only after functional promotion |
@@ -69,6 +71,9 @@ make dev-status-all
 make dev-check WORK_ITEM=<id>
 make dev-heartbeat WORK_ITEM=<id>
 make dev-release WORK_ITEM=<id>
+make dev-resources-prepare WORK_ITEM=<id> RESOURCE_INPUT=<json-file>
+make dev-resources-status WORK_ITEM=<id>
+make dev-resource-record WORK_ITEM=<id> RESOURCE_RESULT=<json-file>
 ```
 
 Tracked runs add `PLAN=<repository-relative-package-plan.md>` and
@@ -90,6 +95,32 @@ publishes non-null Plan locator fields into the shared machine ledger. Until
 that synchronization completes, existing declarations retain their legacy
 shape and Peers Dev may use the validated Development Session only as a
 read-only locator bridge. The bridge never writes inferred fields back.
+
+`dev-resources-prepare` runs after all affected module Skills emit
+`ModuleImpact` and before the first runtime acquisition. It resolves the
+current Plan target dependency closure, computes execution waves and peak
+capacity, selects concrete resources from Runtime Owner inventory, and
+atomically replaces the declaration's planner-owned runtime claims. Repeating
+the same request is idempotent. A changed request advances the resource-plan
+fencing token.
+
+Resource shortage parks only the affected target and its dependents. A target's
+claims are all-or-none, so parallel work never holds one account, service,
+client, device, Fixture, or automation session while waiting for another. The
+mandatory allocation owner solves the complete wave and rematches flexible
+requirements before declaring a constrained target unavailable. The
+Runtime Owner performs the selected `REUSE | RESTART | BUILD | PROVISION`
+action and reports its manifest with `dev-resource-record`; stale fences, wrong
+owners, unplanned resources, and digest mismatches fail closed.
+
+The generated `PlanResourcePlan` is machine-local workflow evidence. It does
+not replace Local Dev leases or Acceptance runtime manifests. Business Gates
+remain attach-only and cannot invoke resource preparation or lifecycle
+operations.
+When a Local Dev lease request matches a planner-owned declaration claim,
+`machine-dev-registry.mjs` requires the same resource plan to be `COMMITTED`
+and current before lease acquisition. Claims present before planning remain
+base declaration claims and do not acquire or lose planner ownership.
 
 Plan Package:
 
@@ -180,15 +211,28 @@ Agent integration:
 
 ```bash
 make skills IDE=<trae|cursor|codex>
+make skills IDE=trae WORKSPACE=<absolute-.code-workspace-path>
 make agent-integration-audit IDE=<trae|cursor|codex> ROOT=<worktree-root>
 ```
 
 This is the only canonical project Skill projector. Codex also receives the
-worktree-local `pt-ew-plugin`; TRAE receives merged workspace hooks. The
-installer preserves unrelated host files, never edits global hooks, and cannot
-run while this workspace has a live Development declaration. There is no
-separate acknowledgement command; restart the IDE only when the host cannot
-reload changed hooks, then rerun the audit.
+worktree-local `pt-ew-plugin`; TRAE receives one descriptor-selected multi-root
+workspace bootstrap. The installer removes managed per-worktree TRAE hooks,
+preserves unrelated host files, never edits global hooks, and cannot run while
+the machine has a live declaration, live child assignment, active canonical
+Action Receipt, or active Action Store lock. The sole exception is one
+current, live OWNER `skills` Action Receipt bound to the selected source
+worktree. There is no separate acknowledgement command;
+restart the IDE only when the host cannot reload changed hooks, then rerun the
+audit.
+
+The TRAE rollout is a machine-store hard cut: while holding the installation
+lock it completes fallible path/workspace/catalog planning, consumes the exact
+installer grant, publishes `INSTALLING`, deletes the old conversation and
+workflow-action stores inside the guarded lifecycle, installs the new
+OWNER/child binding store contract, and then publishes the one bootstrap. Reset
+or installation failure publishes `BLOCKED`. No legacy binding/action reader or
+dual writer remains.
 
 ## 4. Skill Integration
 
@@ -234,16 +278,21 @@ reload changed hooks, then rerun the audit.
 - normalizes Codex, Cursor and TRAE lifecycle payloads into one Kernel event;
 - prewarms on Session/prompt hooks but creates authority only on the first
   blockable `PreToolUse`;
-- atomically binds one host conversation to one immutable `executionRoot`;
+- atomically binds one host root chat to one immutable OWNER
+  `executionRoot`;
+- accepts only preassigned WORKER/REVIEWER child sessions and projects their
+  root/parent lineage, lease and terminal state;
 - resolves each tool action's `subjectRoot` independently, allowing
   cross-worktree reads and denying cross-worktree writes;
 - parses shell structure before classifying owner/read/mutation intent;
 - denies inconsistent owner state and direct runtime-owner execution without
   mutating Plan, Task, Session, declaration, active-work or evidence;
-- renders a machine-owned Context Anchor and commits a create-once release
-  receipt at terminal or blocked Stop;
-- reports `OBSERVE_ONLY` when the host does not expose the identity or blocking
-  capability required for enforcement;
+- injects one canonical `BindingProjection` into prompts and revalidates it for
+  status, readiness, handoff and final claims;
+- renders a machine-owned Context Anchor and commits a create-once OWNER
+  release receipt at terminal or blocked Stop;
+- reports `OBSERVE_ONLY` when the host does not expose its required root-chat
+  identity or blocking capability;
 - no-ops outside a Peers-Touch worktree.
 
 ### `pt-architecture-execution-methodology`
