@@ -8406,6 +8406,7 @@ class W7RuntimeOwner:
                     bob_replacement,
                     recovery_phrase,
                 )
+                _wait_for_device_enrollment(bob_replacement)
                 recovery_phrase = ""
                 recovered = _moments_harness(
                     bob_replacement,
@@ -8419,7 +8420,11 @@ class W7RuntimeOwner:
                 ):
                     raise RuntimeOwnerBlocked(
                         "CLIENT_RUNTIME_UNAVAILABLE",
-                        "Bob replacement device did not recover private history",
+                        (
+                            "Bob replacement device did not recover private "
+                            f"history (state={recovered.get('state')!r}, "
+                            f"errorCode={recovered.get('errorCode')!r})"
+                        ),
                         resource="client:secure-content-desktop-bob2",
                     )
                 clients[bob_client_id] = bob_replacement
