@@ -24143,7 +24143,11 @@ async function prepareMcpLifecycleDevelopmentJourney(
       'MCP ToolCall native receiver group',
       30_000,
     );
-    if (!document.querySelector(toolCallSelector)) {
+    const toolCallVisible = () => Boolean(
+      document.querySelector<HTMLElement>(toolCallSelector)
+        ?.getClientRects().length,
+    );
+    if (!toolCallVisible()) {
       const groupToggle = document.querySelector<HTMLElement>(
         `${toolCallGroupSelector} `
         + '[data-pt-agent-tool-call-group-toggle]',
@@ -24154,7 +24158,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
       groupToggle.click();
     }
     await waitFor(
-      () => Boolean(document.querySelector(toolCallSelector)),
+      toolCallVisible,
       'MCP ToolCall native receiver',
       30_000,
     );

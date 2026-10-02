@@ -1986,11 +1986,43 @@ class AgentNativeJourney:
             "minimum usable Agent Chat preparation returned invalid evidence",
         )
         prepared_assertions = prepared.get("assertions")
+        expected_prepared_assertions = {
+            "manifestAndConfigurationVisible",
+            "installTestConnectSucceeded",
+            "authoritativeBindingReady",
+            "directModelAgentSelected",
+            "governedMcpInvocationSucceeded",
+            "finalAssistantVisibleAndPersisted",
+            "cancellationVisibleAndTerminal",
+            "retryRestoredConnection",
+            "stationReplayEqual",
+            "toolLineageComplete",
+        }
         require(
             isinstance(prepared_assertions, Mapping)
-            and bool(prepared_assertions)
+            and set(prepared_assertions) == expected_prepared_assertions
             and all(value is True for value in prepared_assertions.values()),
             "minimum usable Agent Chat preparation assertions failed",
+        )
+        prepared_receiver = prepared.get("receiver-dom")
+        prepared_tool_call = (
+            prepared_receiver.get("toolCall")
+            if isinstance(prepared_receiver, Mapping)
+            else None
+        )
+        prepared_assistant = (
+            prepared_receiver.get("assistant")
+            if isinstance(prepared_receiver, Mapping)
+            else None
+        )
+        require(
+            isinstance(prepared_tool_call, Mapping)
+            and prepared_tool_call.get("visible") is True
+            and prepared_tool_call.get("status") == "success"
+            and isinstance(prepared_assistant, Mapping)
+            and prepared_assistant.get("visible") is True
+            and prepared_assistant.get("terminalStatus") == "completed",
+            "minimum usable Agent Chat receiver evidence is incomplete",
         )
         state = prepared.get("state")
         require(
@@ -2026,11 +2058,32 @@ class AgentNativeJourney:
         )
         recovered_assertions = recovered.get("assertions")
         recovered_cleanup = recovered.get("cleanup")
+        expected_recovered_assertions = {
+            "restartInvalidatedConnection",
+            "priorOperationsRemainTerminal",
+            "bindingSurvivedRestart",
+            "agentAndDirectModelSurvivedRestart",
+            "conversationAndFinalReplySurvivedRestart",
+            "reconnectRestoredConnection",
+            "cleanupComplete",
+        }
         require(
             isinstance(recovered_assertions, Mapping)
-            and bool(recovered_assertions)
+            and set(recovered_assertions) == expected_recovered_assertions
             and all(value is True for value in recovered_assertions.values()),
             "minimum usable Agent Chat recovery assertions failed",
+        )
+        recovered_receiver = recovered.get("receiver-dom")
+        restored_conversation = (
+            recovered_receiver.get("restoredConversation")
+            if isinstance(recovered_receiver, Mapping)
+            else None
+        )
+        require(
+            isinstance(restored_conversation, Mapping)
+            and restored_conversation.get("visible") is True
+            and restored_conversation.get("terminalStatus") == "completed",
+            "minimum usable Agent Chat restart receiver evidence is incomplete",
         )
         require(
             isinstance(recovered_cleanup, Mapping)
