@@ -17,6 +17,8 @@
   "runtimeClass": "native-desktop",
   "writeSet": [
     "docs/architecture/social/execution-plans/20261002-social-desktop-acceptance",
+    "apps/desktop/src/acceptance/moments/harness.ts",
+    "apps/desktop/src/acceptance/moments/harness.test.ts",
     "tooling/acceptance/gates/social",
     "tooling/acceptance/provisioners/secure_content_remote_recipient.py",
     "tooling/development/secure_content/runtime_owner.py",
@@ -48,6 +50,11 @@
     {
       "id": "social-private-desktop-source",
       "command": "python3 -m unittest tooling.acceptance.gates.social.test_desktop_private_e2e tooling.development.secure_content.test_runtime_owner",
+      "verificationClass": "SOURCE_CHECK"
+    },
+    {
+      "id": "social-private-desktop-harness",
+      "command": "pnpm --dir apps/desktop exec vitest run src/acceptance/moments/harness.test.ts && pnpm --dir apps/desktop run check",
       "verificationClass": "SOURCE_CHECK"
     },
     {
@@ -112,6 +119,9 @@
 - Three relationship actors are sufficient: Alice, Bob, and Eve.
 - Anonymous is a request mode; Bob2 is Bob's replacement device/session.
 - Existing W7/W8 outputs remain supporting development evidence only.
+- Friend-request acceptance is asynchronous with respect to the authoritative
+  bilateral relationship projection; the Suite fixture waits for both actors
+  to observe mutual friendship before publishing private content.
 - The formal Gate must publish a new immutable Evidence Store run.
 
 ## Closure

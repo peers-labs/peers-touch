@@ -19,6 +19,7 @@ import { api } from '../../services/desktop_api';
 import {
   socialBlockActor,
   socialFollow,
+  socialGetRelationship,
   socialUnblockActor,
   type MomentDraft,
 } from '../../services/social_api';
@@ -1488,6 +1489,23 @@ export function installAcceptanceHarness(): void {
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
       throw new Error('moments.acceptance.friendRequestMissing');
+    },
+
+    async friendshipProjection(input: { actorPtid: string }) {
+      const actorPtid = input?.actorPtid?.trim();
+      if (!actorPtid) {
+        throw new Error('moments.acceptance.actorIdentityMissing');
+      }
+      const response = await socialGetRelationship(actorPtid);
+      const relationship = response.relationship;
+      if (!relationship || relationship.targetActorPtid !== actorPtid) {
+        throw new Error('moments.acceptance.friendshipProjectionMissing');
+      }
+      return {
+        actorPtidSha256: await sha256(actorPtid),
+        following: relationship.following,
+        followedBy: relationship.followedBy,
+      };
     },
 
     async followActor(input: { actorPtid: string }) {

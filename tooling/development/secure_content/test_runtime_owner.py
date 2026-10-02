@@ -72,6 +72,7 @@ from tooling.development.secure_content.runtime_owner import (
     _prepare_mobile_private_content_keys,
     _prepare_portable_recovery,
     _prepare_private_content_keys,
+    _wait_for_accepted_friendship_projection,
     _parse_args,
     _publish_result_generation,
     _publish_canonical_private_schema_attestation,
@@ -2210,6 +2211,8 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "homeStationPeerId": "station-four",
             },
             {"requestId": "friend-request-1"},
+            {"following": True, "followedBy": False},
+            {"following": True, "followedBy": True},
         )
         bob = MagicMock()
         bob.harness_namespace = "agent"
@@ -2220,9 +2223,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "homeStationPeerId": "station-four",
             },
             {"accepted": True, "requestId": "friend-request-1"},
+            {"following": True, "followedBy": True},
         )
 
-        _prepare_accepted_friendship(alice, bob)
+        with patch(
+            "tooling.development.secure_content.runtime_owner.time.sleep"
+        ):
+            _prepare_accepted_friendship(alice, bob)
 
         self.assertEqual(
             [
@@ -2237,6 +2244,16 @@ class RuntimeOwnerTest(unittest.TestCase):
                     },
                     timeout=120,
                 ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:bob"},
+                    timeout=120,
+                ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:bob"},
+                    timeout=120,
+                ),
             ],
             alice.harness.call_args_list,
         )
@@ -2249,11 +2266,43 @@ class RuntimeOwnerTest(unittest.TestCase):
                     {"actorPtid": "ptid:alice"},
                     timeout=120,
                 ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:alice"},
+                    timeout=120,
+                ),
             ],
             bob.harness.call_args_list,
         )
         self.assertEqual("agent", alice.harness_namespace)
         self.assertEqual("agent", bob.harness_namespace)
+
+    def test_friendship_projection_timeout_fails_closed(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.harness.return_value = {
+            "following": True,
+            "followedBy": False,
+        }
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _wait_for_accepted_friendship_projection(
+                client,
+                target_ptid="ptid:bob",
+                actor_label="Alice",
+                timeout_seconds=0,
+            )
+
+        self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
+        self.assertEqual(
+            "fixture-account:mutual-friendship",
+            raised.exception.resource,
+        )
+        client.harness.assert_called_once_with(
+            "friendshipProjection",
+            {"actorPtid": "ptid:bob"},
+            timeout=120,
+        )
 
     def test_fixture_owner_prepares_recovery_prekeys_for_author_and_recipient(
         self,

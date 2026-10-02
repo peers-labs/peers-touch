@@ -1478,6 +1478,42 @@ def _prepare_private_content_keys(client: FoundationRuntimeClient) -> None:
     )
 
 
+def _wait_for_accepted_friendship_projection(
+    client: FoundationRuntimeClient,
+    *,
+    target_ptid: str,
+    actor_label: str,
+    timeout_seconds: float = 10.0,
+    poll_seconds: float = 0.25,
+) -> None:
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    last_projection: Mapping[str, Any] = {}
+    while True:
+        last_projection = _moments_harness(
+            client,
+            "friendshipProjection",
+            {"actorPtid": target_ptid},
+        )
+        if (
+            last_projection.get("following") is True
+            and last_projection.get("followedBy") is True
+        ):
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_seconds, remaining))
+    raise RuntimeOwnerBlocked(
+        "FIXTURE_OWNER_UNAVAILABLE",
+        (
+            f"W7 {actor_label} friendship projection did not converge "
+            f"(following={last_projection.get('following')!r}, "
+            f"followedBy={last_projection.get('followedBy')!r})"
+        ),
+        resource="fixture-account:mutual-friendship",
+    )
+
+
 def _prepare_accepted_friendship(
     alice: FoundationRuntimeClient,
     bob: FoundationRuntimeClient,
@@ -1532,6 +1568,16 @@ def _prepare_accepted_friendship(
             "W7 Bob did not accept Alice's friend request",
             resource="fixture-account:mutual-friendship",
         )
+    _wait_for_accepted_friendship_projection(
+        alice,
+        target_ptid=bob_ptid,
+        actor_label="Alice",
+    )
+    _wait_for_accepted_friendship_projection(
+        bob,
+        target_ptid=alice_ptid,
+        actor_label="Bob",
+    )
 
 
 def _restore_w8_invalidated_fixtures(

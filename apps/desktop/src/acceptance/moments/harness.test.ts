@@ -4,6 +4,7 @@ import { api } from '../../services/desktop_api';
 import {
   socialBlockActor,
   socialFollow,
+  socialGetRelationship,
   socialUnblockActor,
 } from '../../services/social_api';
 import {
@@ -140,6 +141,7 @@ vi.mock('../../services/desktop_api', () => ({
 vi.mock('../../services/social_api', () => ({
   socialBlockActor: vi.fn(),
   socialFollow: vi.fn(),
+  socialGetRelationship: vi.fn(),
   socialUnblockActor: vi.fn(),
 }));
 
@@ -247,6 +249,7 @@ describe('Moments acceptance harness', () => {
     vi.mocked(api.ossUploadEncryptedAttachmentSocial).mockReset();
     vi.mocked(socialBlockActor).mockReset();
     vi.mocked(socialFollow).mockReset();
+    vi.mocked(socialGetRelationship).mockReset();
     vi.mocked(socialUnblockActor).mockReset();
     vi.mocked(api.federationCreate).mockReset();
     vi.mocked(api.federationGetSelf).mockReset();
@@ -509,6 +512,30 @@ describe('Moments acceptance harness', () => {
       (result as { actorPtidSha256: string }).actorPtidSha256,
     ).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.stringify(result)).not.toContain('ptid:test:alice');
+  });
+
+  it('reads the authoritative mutual-friendship projection', async () => {
+    vi.mocked(socialGetRelationship).mockResolvedValue({
+      relationship: {
+        targetActorPtid: 'ptid:test:bob',
+        following: true,
+        followedBy: true,
+      },
+    } as never);
+
+    const result = await harness().friendshipProjection({
+      actorPtid: 'ptid:test:bob',
+    });
+
+    expect(socialGetRelationship).toHaveBeenCalledWith('ptid:test:bob');
+    expect(result).toMatchObject({
+      followedBy: true,
+      following: true,
+    });
+    expect(
+      (result as { actorPtidSha256: string }).actorPtidSha256,
+    ).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(result)).not.toContain('ptid:test:bob');
   });
 
   it('keeps private draft plaintext and paths out of returned evidence', async () => {
