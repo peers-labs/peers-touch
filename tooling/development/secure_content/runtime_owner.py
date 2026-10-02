@@ -2211,6 +2211,7 @@ _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES = (
     "tooling/development/secure_content/",
     "tooling/scripts/acceptance-run.py",
     "tooling/scripts/acceptance-run-test.py",
+    "tooling/skills/pt-github-review/FRESHNESS.md",
 )
 
 
