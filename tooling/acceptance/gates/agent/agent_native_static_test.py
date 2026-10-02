@@ -312,7 +312,7 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
                 self.assertIn(f'"{gate_id}": ("alice",)', source)
                 self.assertIn(f'"{gate_id}",', source)
         self.assertIn(
-            '"agent-minimum-usable-chat-native-e2e": ("alice",)',
+            '"agent-minimum-usable-chat-native-e2e": ("charlie",)',
             source,
         )
         self.assertIn("AGENT_MINIMUM_USABLE_CHAT_GATE,", source)
