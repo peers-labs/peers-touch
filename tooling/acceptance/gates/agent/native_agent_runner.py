@@ -16,6 +16,7 @@ import secrets
 import shutil
 import socket
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Mapping
