@@ -91,9 +91,6 @@ func providerDispatchThinkingMode(
 	if supportsExplicitThinkingMode(providerType) && reasoningSupported {
 		return mode, nil
 	}
-	if mode == domain.ThinkingModeDisabled {
-		return domain.ThinkingModeAuto, nil
-	}
 	return "", errcode.New(
 		errcode.AgentInvalidRequest,
 		http.StatusBadRequest,
