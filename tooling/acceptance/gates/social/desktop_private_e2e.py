@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,39 @@ EXPLICITLY_UNPROVEN_SCENARIOS = (
     "SOC-SEC-AS11",
     "SOC-SEC-AS14",
 )
+RUNTIME_SCENARIOS = (
+    "private-comment",
+    "social-expansion",
+    "social-subtype",
+    "social-object",
+    "social-delete-block",
+    "social-bounds",
+)
+RUNTIME_CLIENT_IDS = (
+    "secure-content-desktop-alice",
+    "secure-content-desktop-bob",
+    "secure-content-desktop-eve",
+)
+RUNTIME_SERVICE_IDS = ("station-five-arm", "station-four")
+RUNTIME_MANIFEST_FIELDS = frozenset(
+    {
+        "artifactKind",
+        "schemaVersion",
+        "state",
+        "cleanupState",
+        "runId",
+        "workspaceId",
+        "sourceCommit",
+        "worktreeSetDigest",
+        "scenarioManifestDigests",
+        "serviceIds",
+        "clientIds",
+        "suiteRuntimeReportDigest",
+    }
+)
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
+WORKSPACE_ID = re.compile(r"^[0-9a-f]{16}$")
 
 
 def _parse_owner_output(stdout: str) -> dict[str, Any]:
@@ -53,7 +87,47 @@ def _parse_owner_output(stdout: str) -> dict[str, Any]:
     return payload
 
 
-def _validate_owner_result(payload: Mapping[str, Any]) -> tuple[Path, list[Path]]:
+def _validate_runtime_manifest(
+    payload: Mapping[str, Any],
+    suite_report_digest: str,
+) -> dict[str, Any]:
+    manifest = payload.get("runtimeManifest")
+    if (
+        not isinstance(manifest, Mapping)
+        or set(manifest) != RUNTIME_MANIFEST_FIELDS
+        or manifest.get("artifactKind")
+        != "social-private-desktop-suite-runtime-manifest"
+        or manifest.get("schemaVersion") != 1
+        or manifest.get("state") != "FIXTURE_READY"
+        or manifest.get("cleanupState") != "CLEANED"
+        or not isinstance(manifest.get("runId"), str)
+        or not manifest["runId"]
+        or WORKSPACE_ID.fullmatch(str(manifest.get("workspaceId"))) is None
+        or COMMIT.fullmatch(str(manifest.get("sourceCommit"))) is None
+        or SHA256.fullmatch(str(manifest.get("worktreeSetDigest"))) is None
+        or manifest.get("suiteRuntimeReportDigest") != suite_report_digest
+        or tuple(manifest.get("serviceIds") or ()) != RUNTIME_SERVICE_IDS
+        or tuple(manifest.get("clientIds") or ()) != RUNTIME_CLIENT_IDS
+    ):
+        raise GateError("Social Desktop runtime evidence manifest is invalid")
+    scenario_digests = manifest.get("scenarioManifestDigests")
+    if (
+        not isinstance(scenario_digests, Mapping)
+        or tuple(scenario_digests) != RUNTIME_SCENARIOS
+        or any(
+            SHA256.fullmatch(str(digest)) is None
+            for digest in scenario_digests.values()
+        )
+    ):
+        raise GateError(
+            "Social Desktop scenario runtime manifest closure is invalid"
+        )
+    return dict(manifest)
+
+
+def _validate_owner_result(
+    payload: Mapping[str, Any],
+) -> tuple[Path, list[Path], dict[str, Any]]:
     if (
         payload.get("status") != "FUNCTIONAL_PASS"
         or payload.get("proofState") != "UNPROVEN"
@@ -96,6 +170,25 @@ def _validate_owner_result(payload: Mapping[str, Any]) -> tuple[Path, list[Path]
     suite_report = Path(str(payload.get("suiteRuntimeReport") or ""))
     if not suite_report.is_file():
         raise GateError("Social Desktop Suite Runtime report is missing")
+    try:
+        suite_payload = json.loads(suite_report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise GateError(
+            "Social Desktop Suite Runtime report is invalid"
+        ) from error
+    suite_report_digest = str(payload.get("suiteRuntimeReportDigest") or "")
+    if (
+        not isinstance(suite_payload, Mapping)
+        or SHA256.fullmatch(suite_report_digest) is None
+        or suite_payload.get("reportDigest") != suite_report_digest
+    ):
+        raise GateError(
+            "Social Desktop Suite Runtime report digest is invalid"
+        )
+    runtime_manifest = _validate_runtime_manifest(
+        payload,
+        suite_report_digest,
+    )
     supporting = payload.get("supportingArtifacts") or []
     if (
         not isinstance(supporting, Sequence)
@@ -105,7 +198,7 @@ def _validate_owner_result(payload: Mapping[str, Any]) -> tuple[Path, list[Path]
     artifact_paths = [Path(str(path)) for path in supporting]
     if any(not path.is_file() for path in artifact_paths):
         raise GateError("Social Desktop supporting artifact is missing")
-    return suite_report, artifact_paths
+    return suite_report, artifact_paths, runtime_manifest
 
 
 class SocialPrivateDesktopGate(AcceptanceGate):
@@ -190,7 +283,10 @@ class SocialPrivateDesktopGate(AcceptanceGate):
             raise GateError(f"Social Desktop runtime owner failed: {detail}")
 
         payload = _parse_owner_output(completed.stdout)
-        suite_report, supporting = _validate_owner_result(payload)
+        suite_report, supporting, runtime_manifest = _validate_owner_result(
+            payload
+        )
+        self.report.manifest = runtime_manifest
         self.report.add_evidence_file("suite-runtime", suite_report)
         for index, path in enumerate(supporting):
             self.report.add_evidence_file(

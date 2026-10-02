@@ -8516,6 +8516,9 @@ class W7RuntimeOwner:
 
             manifests: dict[str, Path] = {}
             manifest_digests: list[str] = []
+            scenario_manifest_digests: dict[str, str] = {}
+            service_ids: set[str] = set()
+            client_ids: set[str] = set()
             local_client_ids = tuple(item[0] for item in DESKTOP_CLIENTS)
             for spec in W8_SCENARIOS:
                 runtime_dir = owner_root / spec.variant_id
@@ -8610,6 +8613,13 @@ class W7RuntimeOwner:
                 )
                 manifests[spec.scenario_id] = manifest_path
                 manifest_digests.append(str(manifest["manifest_digest"]))
+                scenario_manifest_digests[spec.scenario_id] = str(
+                    manifest["manifest_digest"]
+                )
+                service_ids.update(manifest["services"])
+                client_ids.update(
+                    str(client["id"]) for client in manifest["clients"]
+                )
 
             fixture_context, fixture_action_client = (
                 fixture_owner.open_action_channel(
@@ -8766,6 +8776,24 @@ class W7RuntimeOwner:
             owner_root / "suite-runtime.json",
             suite_report,
         )
+        acceptance_runtime_manifest: dict[str, Any] | None = None
+        if formal_acceptance:
+            acceptance_runtime_manifest = {
+                "artifactKind": (
+                    "social-private-desktop-suite-runtime-manifest"
+                ),
+                "schemaVersion": 1,
+                "state": "FIXTURE_READY",
+                "cleanupState": "CLEANED",
+                "runId": run_id,
+                "workspaceId": str(identity["workspaceId"]),
+                "sourceCommit": str(identity["head"]),
+                "worktreeSetDigest": str(identity["worktreeSetDigest"]),
+                "scenarioManifestDigests": scenario_manifest_digests,
+                "serviceIds": sorted(service_ids),
+                "clientIds": sorted(client_ids),
+                "suiteRuntimeReportDigest": suite_report["reportDigest"],
+            }
         published_generation = _publish_result_generation(
             workstream_id=task_id,
             publish_root=publish_root,
@@ -8809,6 +8837,7 @@ class W7RuntimeOwner:
                         "desktopBuilds": 0,
                         "clientReplacements": ["bob"],
                     },
+                    "runtimeManifest": acceptance_runtime_manifest,
                     "supportingArtifacts": supporting_artifacts,
                 }
             )
