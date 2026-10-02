@@ -232,6 +232,13 @@ class AgentMinimumUsableChatRunnerTest(unittest.TestCase):
         self.assertIn('"expectedAssistantResponse"', journey)
         self.assertIn("OpenAIProviderFixture(", journey)
         self.assertIn("RemoteProviderBridge(", journey)
+        self.assertIn("expected_prepared_assertions", journey)
+        self.assertIn("expected_recovered_assertions", journey)
+        self.assertIn('prepared_tool_call.get("visible") is True', journey)
+        self.assertIn(
+            'restored_conversation.get("visible") is True',
+            journey,
+        )
         self.assertNotIn("agent_v2_gate.py", journey)
 
     def test_harness_requires_final_response_and_restart_readback(self) -> None:
@@ -255,6 +262,7 @@ class AgentMinimumUsableChatRunnerTest(unittest.TestCase):
         self.assertIn("state.assistantContentHash", journey)
         self.assertIn("state.expectedAssistantResponse", journey)
         self.assertIn("'acceptance-minimum-usable-restart'", journey)
+        self.assertIn("const toolCallVisible = () => Boolean(", journey)
 
 
 class AgentCliProviderPrimaryRunnerTest(unittest.TestCase):
