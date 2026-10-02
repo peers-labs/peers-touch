@@ -2170,6 +2170,8 @@ class RuntimeOwnerTest(unittest.TestCase):
                     "apps/desktop/src/acceptance/moments/harness.ts",
                     "apps/desktop/src/acceptance/moments/harness.test.ts",
                     "tooling/development/secure_content/runtime_owner.py",
+                    "tooling/scripts/acceptance-run.py",
+                    "tooling/scripts/acceptance-run-test.py",
                 )
             )
         )

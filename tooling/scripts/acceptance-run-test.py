@@ -2502,6 +2502,56 @@ class AcceptanceRunTest(unittest.TestCase):
         self.assertEqual(result["proofStatus"], "PROVEN")
         self.assertTrue(result["sampleEmissionAllowed"])
 
+    def test_environment_report_propagates_typed_runtime_manifest(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("environment-gate", source={})
+            report = new_report(
+                "environment-gate",
+                phase="environment-proof",
+                bom=("ENV-01",),
+                spec=("environment-runtime",),
+            )
+            report.manifest = {
+                "state": "FIXTURE_READY",
+                "runId": "runtime-run",
+            }
+            report.status = "PASS"
+            report.write(
+                run.run_dir / "reports" / "environment-gate.json"
+            )
+
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "environment-gate",
+                    "status": "passed",
+                    "tier": "env-evidence",
+                },
+                run,
+            )
+            result = module.standardize_result(
+                result,
+                "/tmp/acceptance-plan.json",
+            )
+            run.close()
+
+        self.assertEqual(
+            {
+                "state": "FIXTURE_READY",
+                "runId": "runtime-run",
+            },
+            result["manifest"],
+        )
+        self.assertEqual("DONE", result["completionStatus"])
+        self.assertEqual("PROVEN", result["proofStatus"])
+        self.assertTrue(result["sampleEmissionAllowed"])
+
     def test_environment_cleanup_report_is_not_primary_gate_evidence(
         self,
     ) -> None:
