@@ -1970,6 +1970,11 @@ async function navigateToAgentSessionSurface(
   );
 }
 
+async function reconcileFoundationToolReceiver(): Promise<void> {
+  await useChatStore.getState().syncMessages();
+  await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+}
+
 const FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS = 180_000;
 const FOUNDATION_TOOL_RECONCILE_TIMEOUT_MS = 90_000;
 const FOUNDATION_TRANSIENT_FETCH_RETRY_TIMEOUT_MS = 15_000;
@@ -24100,7 +24105,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
     const toolCallId = String(
       evidenceField(toolFact, 'toolCallId', 'tool_call_id') ?? '',
     );
-    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await reconcileFoundationToolReceiver();
     await waitFor(
       () => toolRuntime.getProjection(toolCallId)?.status === 'success',
       'MCP ToolCall native receiver projection',
@@ -29558,6 +29563,7 @@ async function runGovernedToolDevelopmentJourney(
     if (!toolCallId) {
       throw new Error('agent.acceptance.governedToolApprovalInvalid');
     }
+    await reconcileFoundationToolReceiver();
     const toolCallSelector = `[data-pt-agent-tool-call="${toolCallId}"]`;
     await waitFor(
       () => Boolean(document.querySelector(toolCallSelector)),
@@ -30061,7 +30067,7 @@ async function runGovernedToolDevelopmentJourney(
       );
     }
     await barrierControl;
-    await toolRuntime.reconcileMessages(useChatStore.getState().messages);
+    await reconcileFoundationToolReceiver();
     const expectedProjectionStatus =
       expectedOutcome.status === ToolCallStatus.SUCCEEDED
       ? 'success'
