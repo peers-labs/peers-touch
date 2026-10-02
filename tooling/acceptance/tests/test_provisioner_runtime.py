@@ -512,6 +512,55 @@ class ProvisionerBlockingTests(unittest.TestCase):
             },
         )
 
+    def test_agent_v2_scenario_control_uses_parent_run_and_restores_station(
+        self,
+    ):
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract.from_yaml(
+                ENVIRONMENTS_DIR / "home-station.yaml"
+            )
+        )
+        completed = subprocess.CompletedProcess(
+            args=["make", "station"],
+            returncode=0,
+            stdout="[OK] station start",
+            stderr="",
+        )
+        with patch.dict(
+            os.environ,
+            {"PT_ACCEPTANCE_RUN_ID": "parent-run-id"},
+            clear=True,
+        ), patch(
+            "tooling.acceptance.provisioners.home_station.subprocess.run",
+            side_effect=(completed, completed),
+        ) as run:
+            provisioner._deploy_agent_v2_scenario_control(
+                gate_id="agent-v2-governed-tool-loop-e2e",
+                profile_env={"PT_DEV_PROFILE": "two"},
+            )
+            cleanup = provisioner.cleanup()
+
+        self.assertEqual(len(run.call_args_list), 2)
+        deployed_env = run.call_args_list[0].kwargs["env"]
+        self.assertEqual(
+            deployed_env["PT_ACCEPTANCE_RUN_ID"],
+            "parent-run-id",
+        )
+        self.assertEqual(
+            deployed_env["PT_AGENT_CAPABILITY_SCENARIO_CONTROL"],
+            "1",
+        )
+        restored_env = run.call_args_list[1].kwargs["env"]
+        self.assertEqual(restored_env["PT_ACCEPTANCE_RUN_ID"], "")
+        self.assertEqual(
+            restored_env["PT_AGENT_CAPABILITY_SCENARIO_CONTROL"],
+            "",
+        )
+        self.assertEqual(
+            cleanup,
+            ("agent-v2-scenario-control:parent-run-id",),
+        )
+
     def test_native_clients_receive_distinct_webdriver_ports(self):
         provisioner = HomeStationProvisioner(
             EnvironmentContract(id="home-station")
@@ -1495,7 +1544,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
         ) as profile_lease, patch.object(
             provisioner,
             "acquire_remote_git_source_lease",
-        ) as source_lease, patch.dict(
+        ) as source_lease, patch.object(
+            provisioner,
+            "_deploy_agent_v2_scenario_control",
+        ) as scenario_deploy, patch.dict(
             "os.environ",
             {
                 "PT_AGENT_V2_BINDING_NATIVE_WEBDRIVER_PORT": "25445",
@@ -1549,6 +1601,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "station-2",
             f"acceptance:agent-v2-capability-binding-e2e:{manifest.run_id}",
         )
+        scenario_deploy.assert_called_once_with(
+            gate_id="agent-v2-capability-binding-e2e",
+            profile_env=profile[3],
+        )
         cleanup = provisioner.cleanup()
         self.assertEqual(len(cleanup), 1)
         self.assertIn("pt-agent-v2-binding-", cleanup[0])
@@ -1590,7 +1646,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
         ) as profile_lease, patch.object(
             provisioner,
             "acquire_remote_git_source_lease",
-        ) as source_lease, patch.dict(
+        ) as source_lease, patch.object(
+            provisioner,
+            "_deploy_agent_v2_scenario_control",
+        ) as scenario_deploy, patch.dict(
             "os.environ",
             {
                 "PT_AGENT_V2_GOVERNED_TOOL_NATIVE_WEBDRIVER_PORT": "26445",
@@ -1625,6 +1684,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
         source_lease.assert_called_once_with(
             "station-2",
             f"acceptance:agent-v2-governed-tool-loop-e2e:{manifest.run_id}",
+        )
+        scenario_deploy.assert_called_once_with(
+            gate_id="agent-v2-governed-tool-loop-e2e",
+            profile_env=self._two_profile()[3],
         )
         cleanup = provisioner.cleanup()
         self.assertEqual(len(cleanup), 1)
@@ -1667,7 +1730,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
         ) as profile_lease, patch.object(
             provisioner,
             "acquire_remote_git_source_lease",
-        ) as source_lease, patch.dict(
+        ) as source_lease, patch.object(
+            provisioner,
+            "_deploy_agent_v2_scenario_control",
+        ) as scenario_deploy, patch.dict(
             "os.environ",
             {
                 "PT_AGENT_V2_MCP_NATIVE_WEBDRIVER_PORT": "27445",
@@ -1705,6 +1771,10 @@ class ProvisionerBlockingTests(unittest.TestCase):
         source_lease.assert_called_once_with(
             "station-2",
             f"acceptance:agent-v2-mcp-lifecycle-e2e:{manifest.run_id}",
+        )
+        scenario_deploy.assert_called_once_with(
+            gate_id="agent-v2-mcp-lifecycle-e2e",
+            profile_env=self._two_profile()[3],
         )
         cleanup = provisioner.cleanup()
         self.assertEqual(len(cleanup), 1)
