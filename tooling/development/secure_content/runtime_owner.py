@@ -8315,7 +8315,6 @@ class W7RuntimeOwner:
                     bob_replacement,
                     recovery_phrase,
                 )
-                _wait_for_device_enrollment(bob_replacement)
                 recovery_phrase = ""
                 recovered = _moments_harness(
                     bob_replacement,
