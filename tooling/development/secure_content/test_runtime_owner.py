@@ -2054,6 +2054,24 @@ class RuntimeOwnerTest(unittest.TestCase):
             ],
         )
 
+    def test_social_acceptance_source_projection_allows_only_harness_delta(
+        self,
+    ) -> None:
+        self.assertTrue(
+            runtime_owner_module._social_acceptance_source_delta_allowed(
+                (
+                    "apps/desktop/src/acceptance/moments/harness.ts",
+                    "apps/desktop/src/acceptance/moments/harness.test.ts",
+                    "tooling/development/secure_content/runtime_owner.py",
+                )
+            )
+        )
+        self.assertFalse(
+            runtime_owner_module._social_acceptance_source_delta_allowed(
+                ("apps/desktop/src/services/social_api.ts",)
+            )
+        )
+
     def test_running_client_authentication_uses_fixture_replacement_and_retries(
         self,
     ) -> None:
