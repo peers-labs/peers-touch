@@ -2545,6 +2545,50 @@ class AcceptanceRunTest(unittest.TestCase):
             "acceptance-provisioner-cleanup-result",
         )
 
+    def test_passed_static_gate_keeps_auxiliary_artifact_non_authoritative(
+        self,
+    ) -> None:
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            worktree.mkdir()
+            store = EvidenceStore(root / "artifacts", worktree=worktree)
+            run = store.begin_run("acceptance-plan-self", source={})
+            run.write_json(
+                "reports/acceptance-plan-self.json",
+                {
+                    "changed_paths": [],
+                    "impacted_features": [],
+                    "selected_gates": [],
+                    "range": "HEAD",
+                },
+                role="plan",
+            )
+            result = module.enrich_result_with_run_artifacts(
+                {
+                    "id": "acceptance-plan-self",
+                    "status": "passed",
+                    "tier": "ci-structure",
+                },
+                run,
+            )
+            result = module.standardize_result(
+                result,
+                "/tmp/acceptance-plan.json",
+                execution_policy="development",
+            )
+            run.close()
+
+        self.assertNotIn("sourceArtifact", result)
+        self.assertNotIn("sourceArtifactKind", result)
+        self.assertNotIn("evidenceGateId", result)
+        self.assertNotIn("evidenceStatus", result)
+        self.assertEqual(len(result["evidenceArtifacts"]), 1)
+        self.assertEqual(result["traceability"]["status"], "not-required")
+        self.assertEqual(result["completionStatus"], "DONE")
+        self.assertEqual(result["proofStatus"], "NOT_APPLICABLE")
+
     def test_failed_gate_cannot_retain_proven_status(self) -> None:
         module = load_module()
 

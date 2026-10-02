@@ -1154,6 +1154,8 @@ def enrich_result_with_run_artifacts(
             ),
         )
         return enriched
+    if primary is None and not result_is_incomplete(result):
+        return enriched
     if primary is None:
         primary = next(
             (

@@ -620,28 +620,6 @@ async function invokeAppResultStub<TOut>(command: string, payload?: Record<strin
   }
 }
 
-function parseOAuthCallbackFromUrl(urlText: string): OAuthCallbackInput | null {
-  const url = new URL(urlText);
-  const provider = url.searchParams.get('provider') || '';
-  const providerUserId = url.searchParams.get('provider_user_id') || '';
-  if (!provider || !providerUserId) return null;
-  const createdAt = url.searchParams.get('created_at')
-    || url.searchParams.get('createdAt')
-    || url.searchParams.get('register_time')
-    || undefined;
-  return {
-    provider,
-    provider_user_id: providerUserId,
-    username: url.searchParams.get('username') || undefined,
-    display_name: url.searchParams.get('display_name') || undefined,
-    created_at: createdAt,
-    email: url.searchParams.get('email') || undefined,
-    avatar_url: url.searchParams.get('avatar_url') || undefined,
-    profile_url: url.searchParams.get('profile_url') || undefined,
-    expires_at: url.searchParams.get('expires_at') || undefined,
-  };
-}
-
 /**
  * Wire form for presence triggers (mirrors `domain::presence::PresenceTrigger`
  * in the Rust crate). Frontend modules emit one of these strings; the Rust
@@ -4324,23 +4302,11 @@ export interface OAuthAuthorizeInput {
 export interface OAuthLoopbackStartInput {
   id: string;
   environment?: string;
+  purpose: 'account_login' | 'connector_link';
 }
 
 export interface OAuthLoopbackPollInput {
   session_id: string;
-}
-
-export interface OAuthCallbackInput {
-  provider: string;
-  provider_user_id: string;
-  username?: string;
-  display_name?: string;
-  created_at?: string;
-  email?: string;
-  avatar_url?: string;
-  profile_url?: string;
-  expires_at?: string;
-  scopes?: string[];
 }
 
 export interface AccountUpsertOAuthInput {
@@ -7046,56 +7012,46 @@ export const api = {
   oauth2Authorize: (id: string, environment?: string, returnTo?: string) =>
     invokeRustDataFromStatus<OAuthAuthorizeInput, { auth_url: string }>('oauth2_authorize', { id, environment, return_to: returnTo }),
 
-  oauth2StartLoopback: (id: string, environment?: string) =>
-    invokeRustDataFromStatus<OAuthLoopbackStartInput, { auth_url: string; session_id: string }>(
+  oauth2StartLoopback: (
+    id: string,
+    environment?: string,
+    purpose: OAuthLoopbackStartInput['purpose'] = 'connector_link',
+  ) =>
+    invokeRustDataFromStatus<OAuthLoopbackStartInput, {
+      auth_url: string;
+      session_id: string;
+      expires_in_ms: number;
+    }>(
       'oauth2_start_loopback',
-      { id, environment },
+      { id, environment, purpose },
     ),
 
   oauth2PollLoopback: (sessionId: string) =>
     invokeRustDataFromStatus<OAuthLoopbackPollInput, {
       completed: boolean;
-      status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
+      status: 'pending' | 'action_required' | 'acknowledgement_pending' | 'cancelling' | 'completed' | 'failed' | 'expired';
       callback_url?: string;
       error?: string;
+      access_decision?: AccessDecision;
     }>(
       'oauth2_poll_loopback',
       { session_id: sessionId },
     ),
 
-  oauth2CancelLoopback: (sessionId: string) =>
+  oauth2ResumeLoopback: (sessionId: string) =>
     invokeRustDataFromStatus<OAuthLoopbackPollInput, {
-      cancelled: boolean;
-      status: 'pending' | 'completed' | 'failed' | 'expired' | 'cancelled';
+      status: 'action_required' | 'acknowledgement_pending' | 'completed';
+      access_decision?: AccessDecision;
     }>(
-      'oauth2_cancel_loopback',
+      'oauth2_resume_loopback',
       { session_id: sessionId },
     ),
 
-  oauth2HandleCallback: (input: OAuthCallbackInput) =>
-    (async () => {
-      const result = await invokeRustDataFromStatus<OAuthCallbackInput, { status: string }>('oauth2_handle_callback', input);
-      await api.accountUpsertOAuth({
-        provider: input.provider,
-        provider_user_id: input.provider_user_id,
-        name: input.username || input.display_name || input.provider_user_id,
-        created_at: input.created_at,
-        email: input.email || undefined,
-        avatar_url: input.avatar_url || undefined,
-        profile_url: input.profile_url || undefined,
-      });
-      return result;
-    })(),
-
-  oauth2ConsumeCallbackFromUrl: async (urlText: string) => {
-    const payload = parseOAuthCallbackFromUrl(urlText);
-    if (!payload) return false;
-    await api.oauth2HandleCallback(payload);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new Event('account-identity-changed'));
-    }
-    return true;
-  },
+  oauth2CancelLoopback: (sessionId: string) =>
+    invokeRustDataFromStatus<OAuthLoopbackPollInput, { status: 'cancelled' | 'completed' }>(
+      'oauth2_cancel_loopback',
+      { session_id: sessionId },
+    ),
 
   oauth2ListConnections: () =>
     invokeRustDataFromStatus<void, OAuth2Connection[]>('oauth2_list_connections'),

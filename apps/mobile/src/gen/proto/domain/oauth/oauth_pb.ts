@@ -6,15 +6,13 @@ import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
-import type { ActorRef } from "../actor/actor_pb";
-import { file_domain_actor_actor } from "../actor/actor_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file domain/oauth/oauth.proto.
  */
 export const file_domain_oauth_oauth: GenFile = /*@__PURE__*/
-  fileDesc("Chhkb21haW4vb2F1dGgvb2F1dGgucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLm9hdXRoLnYxIqwBCgtPQXV0aENsaWVudBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWNsaWVudF9pZBgDIAEoCRIaChJjbGllbnRfc2VjcmV0X2hhc2gYBCABKAkSFAoMcmVkaXJlY3RfdXJpGAUgASgJEg4KBnNjb3BlcxgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKXAQoNT0F1dGhBdXRoQ29kZRIRCgljb2RlX2hhc2gYASABKAkSEQoJY2xpZW50X2lkGAIgASgJEhIKCmFjdG9yX3B0aWQYAyABKAkSDgoGc2NvcGVzGAQgASgJEi4KCmV4cGlyZXNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBHVzZWQYBiABKAgi7QEKCk9BdXRoVG9rZW4SGQoRYWNjZXNzX3Rva2VuX2hhc2gYASABKAkSGgoScmVmcmVzaF90b2tlbl9oYXNoGAIgASgJEhIKCnRva2VuX3R5cGUYAyABKAkSDQoFc2NvcGUYBCABKAkSEgoKYWN0b3JfcHRpZBgFIAEoCRIRCgljbGllbnRfaWQYBiABKAkSLgoKY3JlYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAipAEKEk9BdXRoQnJpZGdlUmVxdWVzdBIQCghwcm92aWRlchgBIAEoCRIYChBwcm92aWRlcl91c2VyX2lkGAIgASgJEg0KBWVtYWlsGAMgASgJEhAKCHVzZXJuYW1lGAQgASgJEhQKDGRpc3BsYXlfbmFtZRgFIAEoCRISCgphdmF0YXJfdXJsGAYgASgJEgoKAnRzGAcgASgJEgsKA3NpZxgIIAEoCSKXAgoTT0F1dGhCcmlkZ2VSZXNwb25zZRISCgpzZXNzaW9uX2lkGAEgASgJEhQKDGFjY2Vzc190b2tlbhgCIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAMgASgJEhIKCnRva2VuX3R5cGUYBCABKAkSEgoKZXhwaXJlc19hdBgFIAEoCRJCCglhY3Rvcl9yZWYYCyABKAsyJC5wZWVyc190b3VjaC5tb2RlbC5hY3Rvci52MS5BY3RvclJlZlIJYWN0b3JfcmVmSgQIBhAHSgQIBxAISgQICBAJSgQICRAKSgQIChALUghhY3Rvcl9pZFIMYWN0b3JfaWRfbnVtUgh1c2VybmFtZVIMZGlzcGxheV9uYW1lUgVlbWFpbEJDWkFnaXRodWIuY29tL3BlZXJzLWxhYnMvcGVlcnMtdG91Y2gvc3RhdGlvbi9mcmFtZS90b3VjaC9tb2RlbDttb2RlbGIGcHJvdG8z", [file_google_protobuf_timestamp, file_domain_actor_actor]);
+  fileDesc("Chhkb21haW4vb2F1dGgvb2F1dGgucHJvdG8SGnBlZXJzX3RvdWNoLm1vZGVsLm9hdXRoLnYxIqwBCgtPQXV0aENsaWVudBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhEKCWNsaWVudF9pZBgDIAEoCRIaChJjbGllbnRfc2VjcmV0X2hhc2gYBCABKAkSFAoMcmVkaXJlY3RfdXJpGAUgASgJEg4KBnNjb3BlcxgGIAEoCRIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKXAQoNT0F1dGhBdXRoQ29kZRIRCgljb2RlX2hhc2gYASABKAkSEQoJY2xpZW50X2lkGAIgASgJEhIKCmFjdG9yX3B0aWQYAyABKAkSDgoGc2NvcGVzGAQgASgJEi4KCmV4cGlyZXNfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEgwKBHVzZWQYBiABKAgi7QEKCk9BdXRoVG9rZW4SGQoRYWNjZXNzX3Rva2VuX2hhc2gYASABKAkSGgoScmVmcmVzaF90b2tlbl9oYXNoGAIgASgJEhIKCnRva2VuX3R5cGUYAyABKAkSDQoFc2NvcGUYBCABKAkSEgoKYWN0b3JfcHRpZBgFIAEoCRIRCgljbGllbnRfaWQYBiABKAkSLgoKY3JlYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKZXhwaXJlc19hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCQ1pBZ2l0aHViLmNvbS9wZWVycy1sYWJzL3BlZXJzLXRvdWNoL3N0YXRpb24vZnJhbWUvdG91Y2gvbW9kZWw7bW9kZWxiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message peers_touch.model.oauth.v1.OAuthClient
@@ -160,104 +158,3 @@ export type OAuthToken = Message<"peers_touch.model.oauth.v1.OAuthToken"> & {
  */
 export const OAuthTokenSchema: GenMessage<OAuthToken> = /*@__PURE__*/
   messageDesc(file_domain_oauth_oauth, 2);
-
-/**
- * OAuthBridgeRequest is the payload from the external OAuth gateway
- * to Station for silent registration / login.
- *
- * @generated from message peers_touch.model.oauth.v1.OAuthBridgeRequest
- */
-export type OAuthBridgeRequest = Message<"peers_touch.model.oauth.v1.OAuthBridgeRequest"> & {
-  /**
-   * @generated from field: string provider = 1;
-   */
-  provider: string;
-
-  /**
-   * @generated from field: string provider_user_id = 2;
-   */
-  providerUserId: string;
-
-  /**
-   * @generated from field: string email = 3;
-   */
-  email: string;
-
-  /**
-   * @generated from field: string username = 4;
-   */
-  username: string;
-
-  /**
-   * @generated from field: string display_name = 5;
-   */
-  displayName: string;
-
-  /**
-   * @generated from field: string avatar_url = 6;
-   */
-  avatarUrl: string;
-
-  /**
-   * RFC3339 timestamp for HMAC
-   *
-   * @generated from field: string ts = 7;
-   */
-  ts: string;
-
-  /**
-   * HMAC-SHA256 hex signature
-   *
-   * @generated from field: string sig = 8;
-   */
-  sig: string;
-};
-
-/**
- * Describes the message peers_touch.model.oauth.v1.OAuthBridgeRequest.
- * Use `create(OAuthBridgeRequestSchema)` to create a new message.
- */
-export const OAuthBridgeRequestSchema: GenMessage<OAuthBridgeRequest> = /*@__PURE__*/
-  messageDesc(file_domain_oauth_oauth, 3);
-
-/**
- * @generated from message peers_touch.model.oauth.v1.OAuthBridgeResponse
- */
-export type OAuthBridgeResponse = Message<"peers_touch.model.oauth.v1.OAuthBridgeResponse"> & {
-  /**
-   * @generated from field: string session_id = 1;
-   */
-  sessionId: string;
-
-  /**
-   * @generated from field: string access_token = 2;
-   */
-  accessToken: string;
-
-  /**
-   * @generated from field: string refresh_token = 3;
-   */
-  refreshToken: string;
-
-  /**
-   * @generated from field: string token_type = 4;
-   */
-  tokenType: string;
-
-  /**
-   * @generated from field: string expires_at = 5;
-   */
-  expiresAt: string;
-
-  /**
-   * @generated from field: peers_touch.model.actor.v1.ActorRef actor_ref = 11 [json_name = "actor_ref"];
-   */
-  actorRef?: ActorRef | undefined;
-};
-
-/**
- * Describes the message peers_touch.model.oauth.v1.OAuthBridgeResponse.
- * Use `create(OAuthBridgeResponseSchema)` to create a new message.
- */
-export const OAuthBridgeResponseSchema: GenMessage<OAuthBridgeResponse> = /*@__PURE__*/
-  messageDesc(file_domain_oauth_oauth, 4);

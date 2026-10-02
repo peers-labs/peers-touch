@@ -75,6 +75,9 @@ const (
 	// RouterURLOAuthLogin OAuth login: external gateway callback for OAuth-based login/registration
 	RouterURLOAuthLogin RouterPath = "/oauth-bridge"
 
+	// RouterURLOAuthConnectorLink verifies and binds a connector to the authenticated actor.
+	RouterURLOAuthConnectorLink RouterPath = "/oauth-connector-link"
+
 	// RouterURLFederationProfile is the home-station endpoint that returns
 	// a signed ActorProfileEnvelope for one of its local actors. Public
 	// (no JWT). The federated user-discovery resolver on a peer station

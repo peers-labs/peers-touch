@@ -3,7 +3,7 @@
 status: active
 owner: architecture
 last_verified_at: 2026-10-01
-covered_docs_hash: f202e45e4e880ba00de41f7bd6eec9d4163660afc28bbeab1cf537961309ddb2
+covered_docs_hash: 5ba532bbf07ff903ddf898a6eca7b203ebbc594a1bcd7c0e6f434c189068f2cd
 
 covered_docs:
   - AGENTS.md
@@ -139,6 +139,22 @@ only a complete source-matched pair is reusable, partial pairs are reconciled
 before port checks, and required generated bindings are prepared through the
 canonical model generator. The machine control-plane Gate owns the regression;
 no GitHub Review `SKILL.md` rule change is required.
+
+Desktop navigation ownership now removes the standalone Notes host page and
+makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
+Palette access. The dedicated browser Gate has an exact-source Runtime Manifest
+and cleanup contract, while the official Note applet remains unchanged.
+Existing Desktop, locale, source-of-truth, and Acceptance evidence rules already
+cover this change, so no `SKILL.md` or review fixture update is required.
+
+## 2026-10-01 Review
+
+The documentation index now registers the OAuth Login Broker architecture.
+Existing review rules already cover architecture ownership, encrypted
+credential storage, exact-source Acceptance, and evidence freshness, so no
+`SKILL.md`, review fixture, or knowledge entry is required.
+
+## 2026-09-28 Review
 
 Desktop navigation ownership now removes the standalone Notes host page and
 makes Settings the sole owner of My Files, Cron Jobs, Channels, and Command
