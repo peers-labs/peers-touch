@@ -235,6 +235,10 @@ def write_manifest(
     lease_window_from_manifest: bool = False,
 ) -> Path:
     fixture = fixture_payload()
+    schema_workspace_id = payload["source"].get(
+        "source_evidence_workspace_id",
+        payload["source"]["workspace_id"],
+    )
     fixture_path = root / payload["fixture_manifest_ref"]["path"]
     fixture_path.parent.mkdir(parents=True, exist_ok=True)
     fixture_bytes = json.dumps(
@@ -302,7 +306,7 @@ def write_manifest(
             "reset_id": f"reset-{service['profile_id']}",
             "reset_intent": "SCHEMA_ACTIVATION",
             "source_commit": payload["source"]["commit"],
-            "workspace_id": payload["source"]["workspace_id"],
+            "workspace_id": schema_workspace_id,
             "profile_id": service["profile_id"],
             "deployment_environment": service["deployment_environment"],
             "destructive_scope": (
@@ -371,7 +375,7 @@ def write_manifest(
         schema_attestation = {
             "schema_version": 1,
             "source_commit": payload["source"]["commit"],
-            "workspace_id": payload["source"]["workspace_id"],
+            "workspace_id": schema_workspace_id,
             "profile_id": service["profile_id"],
             "deployment_environment": service["deployment_environment"],
             "destructive_scope": reset_manifest["destructive_scope"],
@@ -553,6 +557,21 @@ def load(
 
 
 class RuntimeManifestV3Test(unittest.TestCase):
+    def test_accepts_schema_provenance_from_explicit_source_workspace(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            payload = manifest_payload()
+            payload["source"]["source_evidence_workspace_id"] = (
+                "source-evidence-workspace"
+            )
+            binding = load(write_manifest(Path(temp), payload))
+
+            self.assertEqual(
+                "source-evidence-workspace",
+                binding.payload["source"]["source_evidence_workspace_id"],
+            )
+
     def test_post_cut_binding_is_closed_and_optional(self) -> None:
         bindings = {
             profile: {

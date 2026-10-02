@@ -113,11 +113,13 @@ SOURCE_FIELDS = frozenset(
     {
         "canonical_worktree",
         "workspace_id",
+        "source_evidence_workspace_id",
         "commit",
         "worktree_set_digest",
         "workspace_digest",
     }
 )
+REQUIRED_SOURCE_FIELDS = SOURCE_FIELDS - {"source_evidence_workspace_id"}
 CONTROLLER_FIELDS = frozenset({"profile_id", "slot"})
 BASE_SERVICE_FIELDS = frozenset(
     {
@@ -793,7 +795,7 @@ def validate_runtime_manifest(
 
     source = _closed_mapping(
         payload["source"],
-        required=SOURCE_FIELDS,
+        required=REQUIRED_SOURCE_FIELDS,
         allowed=SOURCE_FIELDS,
         label="runtime manifest source",
         code="SOURCE_IDENTITY_MISMATCH",
@@ -1324,11 +1326,20 @@ def _validate_services(
             f"service {service_id} canonical private schema attestation",
             code="CANONICAL_PRIVATE_SCHEMA_UNAVAILABLE",
         )
+        schema_workspace_id = source.get(
+            "source_evidence_workspace_id",
+            source["workspace_id"],
+        )
+        _nonempty(
+            schema_workspace_id,
+            "runtime manifest source source_evidence_workspace_id",
+            "SOURCE_IDENTITY_MISMATCH",
+        )
         schema_provenance = _validate_canonical_private_schema_attestation(
             schema_attestation,
             attestation_path=schema_path,
             source_commit=str(source["commit"]),
-            workspace_id=str(source["workspace_id"]),
+            workspace_id=str(schema_workspace_id),
             service_id=service_id,
             profile_id=profile_id,
             deployment_environment=str(service["deployment_environment"]),
