@@ -207,14 +207,42 @@ class W8RemoteRecipientFixtureOwner:
         self.expected_identity_digest = canonical_digest(
             self._identity_projection
         )
-        self.opaque_id = (
+        self.opaque_id = self._opaque_id()
+
+    def _opaque_id(self) -> str:
+        return (
             f"w8-{REMOTE_RECIPIENT_CAPABILITY}-"
-            f"{_sha256(f'{run_id}:{self.expected_identity_digest}')[:20]}"
+            f"{_sha256(f'{self.run_id}:{self.expected_identity_digest}')[:20]}"
         )
+
+    def bind_remote_group(
+        self,
+        prepare: Callable[[str, str], str],
+    ) -> str:
+        projection = self._identity_projection
+        if projection is None:
+            raise ValueError("W8 remote recipient fixture is already consumed")
+        if "remoteGroupUlid" in projection:
+            raise ValueError("W8 remote recipient Group is already bound")
+        actor_ptid = _required_text(projection.get("actorPtid"), "Actor PTID")
+        federation_id = _required_text(
+            projection.get("federationId"),
+            "Federation ID",
+        )
+        remote_group_ulid = _required_text(
+            prepare(actor_ptid, federation_id),
+            "remote Group ULID",
+        )
+        projection["remoteGroupUlid"] = remote_group_ulid
+        self.expected_identity_digest = canonical_digest(projection)
+        self.opaque_id = self._opaque_id()
+        return remote_group_ulid
 
     def manifest(self) -> dict[str, object]:
         if self._identity_projection is None:
             raise ValueError("W8 remote recipient fixture is already consumed")
+        if "remoteGroupUlid" not in self._identity_projection:
+            raise ValueError("W8 remote recipient Group is not bound")
         payload: dict[str, object] = {
             "schema_version": 1,
             "kind": FIXTURE_MANIFEST_KIND,
@@ -243,6 +271,8 @@ class W8RemoteRecipientFixtureOwner:
         projection = self._identity_projection
         if projection is None:
             raise ValueError("W8 remote recipient action channel is consumed")
+        if "remoteGroupUlid" not in projection:
+            raise ValueError("W8 remote recipient Group is not bound")
         context = EphemeralGateLaunchContext(
             required_capabilities=(REMOTE_RECIPIENT_CAPABILITY,),
             request_timeout_seconds=120.0,
