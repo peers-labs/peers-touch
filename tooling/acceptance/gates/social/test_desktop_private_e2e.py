@@ -83,6 +83,20 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
             self.assertEqual("FIXTURE_READY", manifest["state"])
             self.assertEqual("CLEANED", manifest["cleanupState"])
 
+    def test_sorted_owner_json_preserves_scenario_manifest_closure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            payload = self._result(Path(temp_dir))
+            parsed = _parse_owner_output(
+                json.dumps(payload, sort_keys=True)
+            )
+            _suite, _supporting, manifest = _validate_owner_result(parsed)
+            self.assertEqual(
+                set(RUNTIME_SCENARIOS),
+                set(manifest["scenarioManifestDigests"]),
+            )
+
     def test_runtime_evidence_manifest_is_required(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             payload = self._result(Path(temp_dir))

@@ -113,7 +113,7 @@ def _validate_runtime_manifest(
     scenario_digests = manifest.get("scenarioManifestDigests")
     if (
         not isinstance(scenario_digests, Mapping)
-        or tuple(scenario_digests) != RUNTIME_SCENARIOS
+        or set(scenario_digests) != set(RUNTIME_SCENARIOS)
         or any(
             SHA256.fullmatch(str(digest)) is None
             for digest in scenario_digests.values()
