@@ -83,6 +83,14 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "tooling/scripts/acceptance-run.py",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/acceptance-run-test.py",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "apps/desktop/src/acceptance/moments/harness.ts",
         "mode": "exclusive-write"
       },
