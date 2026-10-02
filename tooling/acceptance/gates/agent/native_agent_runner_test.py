@@ -195,6 +195,7 @@ class AgentMinimumUsableChatRunnerTest(unittest.TestCase):
             self.source,
         )
         self.assertIn("runner.run_minimum_usable_chat()", self.source)
+        self.assertIn("runner.seed_minimum_usable_actor_identity", self.source)
         self.assertEqual(
             self.gate["argv"],
             [
@@ -219,6 +220,7 @@ class AgentMinimumUsableChatRunnerTest(unittest.TestCase):
         for step in (
             "start_direct_model_provider_fixture",
             "bridge_direct_model_provider_to_station",
+            "native_capability_session_ready",
             "configure_select_bind_send_and_complete",
             "restart_native_client",
             "recover_agent_conversation_and_capability",

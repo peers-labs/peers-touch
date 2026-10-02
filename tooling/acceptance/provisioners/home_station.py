@@ -48,7 +48,7 @@ GATE_ROLES = {
     "agent-attachment-e2e": ("alice",),
     "agent-cli-provider-primary-native-e2e": ("alice",),
     "agent-core-lifecycle-native-e2e": ("alice",),
-    "agent-minimum-usable-chat-native-e2e": ("alice",),
+    "agent-minimum-usable-chat-native-e2e": ("charlie",),
     "agent-stream-resilience-e2e": ("alice",),
     "agent-v2-capability-binding-e2e": ("alice", "bob"),
     "agent-v2-governed-tool-loop-e2e": ("bob",),
@@ -792,12 +792,13 @@ class HomeStationProvisioner(EnvironmentProvisioner):
         gateway_port_variable: str,
         renderer_port_variable: str,
         webdriver_port_variable: str,
+        actor: str = "alice",
     ) -> ClientRuntime:
         worktree = Path(
             os.environ.get(worktree_variable, str(REPO_ROOT))
         ).expanduser().resolve()
         client = ClientRuntime(
-            actor="alice",
+            actor=actor,
             runtime="native-tauri",
             worktree=str(worktree),
             gateway_port=int(
@@ -902,6 +903,7 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             gateway_port_variable="PT_AGENT_MINIMUM_USABLE_GATEWAY_PORT",
             renderer_port_variable="PT_AGENT_MINIMUM_USABLE_RENDERER_PORT",
             webdriver_port_variable="PT_AGENT_MINIMUM_USABLE_WEBDRIVER_PORT",
+            actor="charlie",
         )
 
     def _export_profile_credential_refs(

@@ -43,6 +43,10 @@ from tooling.acceptance.core.provisioner import (
     resolve_machine_profile_environment,
 )
 from tooling.acceptance.drivers.tauri import LocalTauriLauncher, TauriSession
+from tooling.acceptance.gates.agent.capability_binding_development import (
+    OPERATION_SCENARIO_IDENTITY_FIXTURE,
+    seed_native_actor_identity,
+)
 from tooling.acceptance.gates.agent.foundation_direct_adapter import (
     DirectRuntimeProbeInput,
 )
@@ -270,6 +274,11 @@ class AgentNativeJourney:
             "actor accountRef must be Station-owned",
         )
         self.email = account_ref.removeprefix("station-account:")
+        self.actor_ptid = str(actor.get("ptid") or "")
+        require(
+            self.actor_ptid.startswith("ptid:"),
+            "actor manifest requires the canonical Station actor identity",
+        )
         credential_refs = actor_manifest.get("credentialRefs")
         require(
             isinstance(credential_refs, list)
@@ -337,6 +346,7 @@ class AgentNativeJourney:
         )
         require(str(self.storage_root), "runtime client storage root is missing")
         self.run_root = self.storage_root.parent
+        self.actor_identity_root = self.run_root / "actor-identity"
         self.runtime_profile = self.run_root / f"{self.approved_profile}.env"
         self.desktop_log = self.run_root / "desktop.log"
         self.proxy = (
@@ -456,6 +466,7 @@ class AgentNativeJourney:
             ),
             "PT_DESKTOP_APP_GATEWAY_PORT": str(self.gateway_port),
             "PT_DESKTOP_APP_WEB_PORT": str(self.renderer_port),
+            "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
         }
         self.runtime_profile.write_text(
             "\n".join(f"{key}={value}" for key, value in sorted(values.items()))
@@ -479,6 +490,7 @@ class AgentNativeJourney:
             "PT_STATION_MODE": "remote",
             "PT_STATION_URL": self.station_transport_url,
             "PEERS_STATION_URL": self.station_transport_url,
+            "PEERS_ACTOR_IDENTITY_ROOT": str(self.actor_identity_root),
             "PT_STATION_HEALTH_URL": (
                 f"{self.station_transport_url}/app-meta/version"
             ),
@@ -509,6 +521,26 @@ class AgentNativeJourney:
             ),
             "Agent acceptance Harness namespace is unavailable",
         )
+
+    def seed_minimum_usable_actor_identity(self) -> dict[str, Any]:
+        seeded = seed_native_actor_identity(
+            fixture_root=OPERATION_SCENARIO_IDENTITY_FIXTURE,
+            target_root=self.actor_identity_root,
+            station_url=self.station_url,
+            profile=self.approved_profile,
+            account=self.email,
+            expected_actor_id=self.actor_ptid,
+        )
+        require(
+            isinstance(seeded, Mapping),
+            "minimum usable Agent Chat requires the retained trusted actor identity",
+        )
+        return {
+            "actorId": seeded.get("actorId"),
+            "profile": seeded.get("profile"),
+            "account": seeded.get("account"),
+            "reused": True,
+        }
 
     def restart_native_runtime(self) -> dict[str, Any]:
         require(
@@ -1859,6 +1891,24 @@ class AgentNativeJourney:
     def run_minimum_usable_chat(self) -> None:
         self.step("login", self.login)
         self.step("navigate_to_agent", self.navigate_and_configure)
+        capability_sessions = self.step(
+            "native_capability_session_ready",
+            lambda: self.harness(
+                "getFoundationCapabilitySessions",
+                timeout=240,
+            ),
+        )
+        selected_session = (
+            capability_sessions.get("selectedStationSession")
+            if isinstance(capability_sessions, Mapping)
+            else None
+        )
+        require(
+            isinstance(selected_session, Mapping)
+            and selected_session.get("ptid") == self.actor_ptid
+            and bool(selected_session.get("session_id")),
+            "minimum usable Agent Chat capability session is unavailable",
+        )
         run_id = str(self.runtime_manifest.get("runId") or "")
         sample_id = f"amu-{run_id}"
         server_name = f"amu-mcp-{run_id.lower()}"
@@ -2021,6 +2071,10 @@ class AgentNativeJourney:
             "recovered": recovered.get("station-readback"),
         }
         self.journey_evidence["minimumUsableChat"] = {
+            "capabilitySession": {
+                "actorId": selected_session.get("ptid"),
+                "sessionId": selected_session.get("session_id"),
+            },
             "preparedAssertions": dict(prepared_assertions),
             "recoveredAssertions": dict(recovered_assertions),
             "providerRequests": provider_requests,
@@ -2609,6 +2663,11 @@ def run_journey(journey_name: str) -> int:
         started_at = now_iso()
         try:
             runner = AgentNativeJourney(journey_name)
+            if journey_name == "minimum-usable-chat":
+                runner.step(
+                    "seed_native_actor_identity",
+                    runner.seed_minimum_usable_actor_identity,
+                )
             runner.step("start_native_runtime", runner.start)
             runner.step(
                 "station_transport_health",

@@ -859,7 +859,7 @@ class ProvisionerBlockingTests(unittest.TestCase):
 
         self.assertEqual(agent_profile_for_gate(gate_id), "two")
         self.assertEqual(client.profile, "two")
-        self.assertEqual(client.actor, "alice")
+        self.assertEqual(client.actor, "charlie")
         self.assertIn(
             "pt-agent-minimum-usable-chat-run-minimum-usable",
             client.storage_root,
