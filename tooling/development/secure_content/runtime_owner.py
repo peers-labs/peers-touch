@@ -2338,7 +2338,9 @@ def _require_social_acceptance_source(
             "transitionDigest": _sha256(
                 json.dumps(
                     {
-                        "allowedPrefixes": allowed_prefixes,
+                        "allowedPrefixes": (
+                            _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES
+                        ),
                         "controlHead": control_identity["head"],
                         "runtimeSourceCommit": runtime_source,
                     },
