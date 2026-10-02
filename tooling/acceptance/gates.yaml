@@ -450,6 +450,27 @@
       "tier": "local-evidence",
       "description": "Validate Desktop applet runtime page lease smoothness for A-to-B switching, explicit close back to launcher, LRU eviction, and launcher wakeup refresh."
     },
+    "social-private-desktop-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.social.desktop_private_e2e",
+      "timeout_seconds": 9000,
+      "environment": "local",
+      "tier": "env-evidence",
+      "description": "Prove Desktop Private Moments with one reusable Alice/Bob/Eve Native Suite while leaving Browser and Mobile unproven."
+    },
+    "social-domain-validation": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain social --require-proven",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Validate the Social managed domain against its current exact-source Native Desktop proof."
+    },
+    "chat-lifecycle-tree-zero-reference-e2e": {
+      "command": "python3 tooling/acceptance/gates/chat/lifecycle_tree_zero_reference.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "CCU nine-dimensional zero-reference gate: enforce deleted paths and reject legacy Chat imports, routes, commands, schemas, generated artifacts, tests, scripts, runtime traces, and current-source docs."
+    },
     "federation-three-node-e2e": {
       "command": "make testnet-p5-federation-e2e",
       "timeout_seconds": 1200,

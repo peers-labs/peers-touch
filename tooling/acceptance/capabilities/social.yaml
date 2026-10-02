@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "social-private-explicit-audience",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["docs/architecture/social/acceptance-matrix.md"],
+      "evidence": {
+        "truth_sources": ["Station relationship, audience, Circle and Conversation membership authorities"],
+        "surfaces": ["Native Desktop Moment composer and receiver timeline/detail"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["SOC-SEC-AS01, AS05, AS12 and AS15 on Native Desktop"],
+        "unproven_scope": ["Mobile parity and positive cross-Station private delivery"]
+      }
+    },
+    {
+      "id": "social-private-confidentiality",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["apps/station/app/subserver/social/application/private_content_service.go"],
+      "evidence": {
+        "truth_sources": ["Station private Post, Comment, envelope and object persistence readback"],
+        "surfaces": ["Native Desktop private Moment, comment and attachment rendering"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["SOC-SEC-AS01, AS02, AS06 and AS07 on Native Desktop"],
+        "unproven_scope": ["Mobile Native confidentiality"]
+      }
+    },
+    {
+      "id": "social-private-object-authorization",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["apps/station/app/subserver/social/application/private_object_service.go"],
+      "evidence": {
+        "truth_sources": ["Station Social authorization and object-grant authorities"],
+        "surfaces": ["Native Desktop Moment detail and media viewer plus direct HTTP negatives"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["SOC-SEC-AS03, AS04, AS06, AS07 and AS09"],
+        "unproven_scope": ["Mobile Native object authorization"]
+      }
+    },
+    {
+      "id": "social-private-device-recovery",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["apps/desktop/src/acceptance/moments/harness.ts"],
+      "evidence": {
+        "truth_sources": ["Desktop secure-content storage, device identity and actor recovery envelopes"],
+        "surfaces": ["Bob restart and Bob replacement-device recovery states"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["SOC-SEC-AS02 and AS08 on Native Desktop"],
+        "unproven_scope": ["Mobile Native recovery"]
+      }
+    },
+    {
+      "id": "social-private-metadata-minimization",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["model/domain/social/private_content.proto"],
+      "evidence": {
+        "truth_sources": ["viewer-scoped Social responses and one-time Content PreKey plans"],
+        "surfaces": ["Bob response projection and direct HTTP response corpus"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["SOC-SEC-AS03, AS13 and AS16"],
+        "unproven_scope": ["Cross-platform metadata parity"]
+      }
+    },
+    {
+      "id": "social-private-revocation",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["apps/station/app/subserver/social/application/secure_content_reset.go"],
+      "evidence": {
+        "truth_sources": ["Station Post deletion, relationship and delivery/grant revocation state"],
+        "surfaces": ["Native Desktop timeline/detail after delete or block"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["SOC-SEC-AS08 and AS09"],
+        "unproven_scope": ["Deletion of maliciously retained recipient copies"]
+      }
+    },
+    {
+      "id": "social-public-continuity",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["apps/station/app/subserver/social/application/moment_service.go"],
+      "evidence": {
+        "truth_sources": ["Station public Post and object paths"],
+        "surfaces": ["Native Desktop publish plus anonymous HTTP read"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["SOC-SEC-AS10 without launching a Browser client"],
+        "unproven_scope": ["Browser UI continuity"]
+      }
+    },
+    {
+      "id": "social-private-platform-boundary",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["docs/architecture/social/product-definition.md"],
+      "evidence": {
+        "truth_sources": ["Social platform matrix and current Native Desktop runtime report"],
+        "surfaces": ["Native Desktop Private Moments"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["Desktop-applicable Social scenarios only"],
+        "unproven_scope": ["SOC-SEC-AS11 Browser private boundary and SOC-SEC-AS14 Mobile parity"]
+      }
+    },
+    {
+      "id": "social-private-cross-station-boundary",
+      "domain": "social",
+      "direction": "acceptance_validates_product",
+      "features": ["social-private-moments-desktop"],
+      "required_gates": ["social-private-desktop-e2e"],
+      "synthetic_paths": ["apps/station/app/subserver/social/application/private_content_remote_recipient_test.go"],
+      "evidence": {
+        "truth_sources": ["Station audience resolution, Content PreKey inventory and durable Social rows"],
+        "surfaces": ["Native Desktop composer rejection for unsupported remote recipients"],
+        "proven_by": ["social-private-desktop-e2e"],
+        "proven_scope": ["SOC-SEC-AS12 fail-closed remote-recipient boundary"],
+        "unproven_scope": ["Positive cross-Station private delivery"]
+      }
+    }
+  ]
+}
