@@ -4449,6 +4449,34 @@ def _publish_result_generation(
     return destination
 
 
+def _result_publication_root(
+    final_result_root: Path,
+    *,
+    identity: Mapping[str, Any],
+    formal_acceptance: bool,
+) -> Path:
+    if not formal_acceptance:
+        return final_result_root.resolve()
+    source_projection = str(identity.get("worktreeSetDigest") or "")
+    if (
+        len(source_projection) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in source_projection
+        )
+    ):
+        raise RuntimeOwnerBlocked(
+            "RESULT_PUBLICATION_INVALID",
+            "Social Acceptance source projection digest is invalid",
+            resource="result:secure-content-social-acceptance",
+        )
+    return (
+        final_result_root.resolve()
+        / "source-projections"
+        / source_projection
+    )
+
+
 def _start_client(
     client: FoundationRuntimeClient,
     *,
@@ -8081,6 +8109,11 @@ class W7RuntimeOwner:
         ui_evidence_refs: dict[str, dict[str, str]] = {}
         raw_result_root = owner_root / "unpublished-results"
         publish_root = owner_root / "publish-ready"
+        publication_result_root = _result_publication_root(
+            self.result_root,
+            identity=identity,
+            formal_acceptance=formal_acceptance,
+        )
         with _runtime_cleanup_scope(transport_stack) as stack:
             accounts, password = _provision_runtime_accounts(
                 primary_station_url=station_url,
@@ -8706,7 +8739,7 @@ class W7RuntimeOwner:
                     workstream_id=task_id,
                     raw_result_root=raw_result_root,
                     publish_root=publish_root,
-                    final_result_root=self.result_root,
+                    final_result_root=publication_result_root,
                     ui_evidence_paths=(ui_artifact_path,),
                 )
                 ui_artifact_ref = {
@@ -8797,7 +8830,7 @@ class W7RuntimeOwner:
         published_generation = _publish_result_generation(
             workstream_id=task_id,
             publish_root=publish_root,
-            final_result_root=self.result_root,
+            final_result_root=publication_result_root,
             generation_id=str(identity["head"]),
         )
         result = {
