@@ -89,11 +89,6 @@
       "verificationClass": "STRUCTURAL_CHECK"
     },
     {
-      "id": "chat-lifecycle-tree-zero-reference-e2e",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate chat-lifecycle-tree-zero-reference-e2e",
-      "verificationClass": "STRUCTURAL_CHECK"
-    },
-    {
       "id": "social-private-desktop-e2e",
       "command": "python3 tooling/scripts/acceptance-run.py --gate social-private-desktop-e2e",
       "verificationClass": "FUNCTIONAL_CHECK"
@@ -158,6 +153,10 @@
 - Friend-request acceptance is asynchronous with respect to the authoritative
   bilateral relationship projection; the Suite fixture waits for both actors
   to observe mutual friendship before publishing private content.
+- Functional closure ends at the Native Desktop Gate. Social domain validation
+  runs only after formal Gate publication during completion Acceptance.
+- The registry-selected Chat zero-reference Gate remains a full/release concern
+  and does not expand this Task's Desktop Social claim.
 - The formal Gate must publish a new immutable Evidence Store run.
 
 ## Closure

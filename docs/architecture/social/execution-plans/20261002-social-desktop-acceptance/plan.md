@@ -205,9 +205,7 @@
       "acceptance-infra-validation",
       "acceptance-runtime-provisioning-self",
       "acceptance-workflow-contract",
-      "chat-lifecycle-tree-zero-reference-e2e",
-      "social-private-desktop-e2e",
-      "social-domain-validation"
+      "social-private-desktop-e2e"
     ]
   },
   "completion": [
@@ -215,7 +213,6 @@
     "acceptance-infra-validation",
     "acceptance-runtime-provisioning-self",
     "acceptance-workflow-contract",
-    "chat-lifecycle-tree-zero-reference-e2e",
     "social-private-desktop-e2e",
     "social-domain-validation"
   ],
@@ -230,6 +227,11 @@
   ]
 }
 ```
+
+The functional closure ends with the Native Desktop Gate. Completion then
+publishes that formal Gate result before `social-domain-validation` evaluates
+the Social proof graph. The registry-selected Chat zero-reference Gate remains
+declared only in `full`; it is outside this Desktop Social completion claim.
 
 ## Goal
 
