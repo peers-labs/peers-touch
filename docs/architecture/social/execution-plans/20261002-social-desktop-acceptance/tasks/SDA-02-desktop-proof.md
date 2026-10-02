@@ -26,6 +26,7 @@
     "tooling/acceptance/provisioners/secure_content_remote_recipient.py",
     "tooling/scripts/acceptance-run.py",
     "tooling/scripts/acceptance-run-test.py",
+    "tooling/skills/pt-github-review/FRESHNESS.md",
     "tooling/development/secure_content/runtime_owner.py",
     "tooling/development/secure_content/scenarios/social_expansion.py",
     "tooling/development/secure_content/test_runtime_owner.py"
