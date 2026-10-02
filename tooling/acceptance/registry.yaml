@@ -29,6 +29,50 @@
       ]
     },
     {
+      "id": "oauth-login-broker-native-login",
+      "features": [
+        "oauth-live-login"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src-tauri/src/application/oauth2/**",
+          "apps/desktop/src-tauri/src/contracts.rs",
+          "apps/desktop/src-tauri/src/interface/contracts/mod.rs",
+          "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
+          "apps/desktop/src-tauri/src/interface/tauri_commands/oauth2.rs",
+          "apps/desktop/src-tauri/src/main.rs",
+          "apps/desktop/src/gen/proto/domain/oauth/**",
+          "apps/mobile/src/gen/proto/domain/oauth/**",
+          "apps/desktop/src/pages/login/**",
+          "apps/desktop/src/services/desktop_api.ts",
+          "apps/desktop/src/store/oauth2.ts",
+          "apps/oauth2-client/internal/application/oauth/**",
+          "apps/oauth2-client/internal/infrastructure/provider/**",
+          "apps/oauth2-client/internal/interfaces/http/handler/**",
+          "apps/station/app/subserver/oauth/**",
+          "apps/station/frame/core/auth/oauth2.go",
+          "apps/station/frame/touch/actor_handler.go",
+          "apps/station/frame/touch/actor_router.go",
+          "apps/station/frame/touch/auth/**",
+          "apps/station/frame/touch/model/db/automigrate.go",
+          "apps/station/frame/touch/model/db/oauth2_state.go",
+          "apps/station/frame/touch/oauth_handler.go",
+          "apps/station/frame/touch/model/oauth.pb.go",
+          "model/domain/oauth/**",
+          "tooling/acceptance/capabilities/oauth-login-broker.yaml",
+          "tooling/acceptance/domains/oauth-login-broker.yaml",
+          "tooling/acceptance/features/oauth-live-login.yaml",
+          "tooling/acceptance/gates.yaml"
+        ]
+      },
+      "require": [
+        "oauth-login-broker-handoff-contract",
+        "oauth-login-broker-provider-identity",
+        "oauth-login-broker-architecture",
+        "oauth-login-broker-contract"
+      ]
+    },
+    {
       "id": "development-workflow-host-neutral",
       "features": [
         "development-workflow-control-plane"

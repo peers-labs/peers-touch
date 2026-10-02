@@ -1,6 +1,73 @@
 {
   "version": 1,
   "gates": {
+    "oauth-login-broker-handoff-contract": {
+      "command": "sh -c 'cd apps/oauth2-client && go test ./internal/application/oauth/usecase && cd ../station && go test ./app/subserver/oauth ./frame/touch ./frame/touch/auth ./frame/touch/model/db && cd ../desktop && pnpm exec vitest run src/store/oauth2.test.ts && pnpm run check && cargo test --manifest-path src-tauri/Cargo.toml oauth'",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate the Desktop loopback contract, durable acknowledgement recovery, timeout cancellation, versioned purpose-bound broker assertion, Station candidate lifecycle, periodic expiry cleanup, and account-login versus connector-link split without claiming a native user journey."
+    },
+    "oauth-login-broker-provider-identity": {
+      "command": "sh -c 'cd apps/oauth2-client && go test ./internal/application/oauth/usecase ./internal/infrastructure/provider/github ./internal/interfaces/http/handler && cd ../station && go test ./frame/touch/auth'",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate transaction-owned provider denial routing, GitHub verified-primary email normalization, provider-scoped no-email identity, and Station actor-binding conflict behavior."
+    },
+    "oauth-login-broker-durable-login": {
+      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope durable-login",
+      "timeout_seconds": 600,
+      "environment": "oauth2-client-local-service",
+      "provisioner": "oauth2-client-local-service",
+      "tier": "env-evidence",
+      "description": "Prove encrypted cross-instance OAuth completion, replay rejection, PKCE, redirect confinement, GitHub App auth, and bounded CAS retry from exact source."
+    },
+    "oauth-login-broker-refresh-idempotency": {
+      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope refresh-idempotency",
+      "timeout_seconds": 600,
+      "environment": "oauth2-client-local-service",
+      "provisioner": "oauth2-client-local-service",
+      "tier": "env-evidence",
+      "description": "Prove provider refresh normalization, omitted refresh-token retention, and duplicate-operation convergence from exact source."
+    },
+    "oauth-login-broker-key-rotation": {
+      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope key-rotation",
+      "timeout_seconds": 600,
+      "environment": "oauth2-client-local-service",
+      "provisioner": "oauth2-client-local-service",
+      "tier": "env-evidence",
+      "description": "Prove full-prefix authenticated record rotation, unknown-key failure, and second-run no-op behavior from exact source."
+    },
+    "oauth-login-broker-operator": {
+      "command": "python3 -m unittest tooling.acceptance.gates.oauth2_client.contract_test && python3 -m tooling.acceptance.gates.oauth2_client.contract --scope operator",
+      "timeout_seconds": 900,
+      "environment": "oauth2-client-local-browser",
+      "provisioner": "oauth2-client-local-browser",
+      "tier": "env-evidence",
+      "description": "Prove authenticated token-free operator HTML and JSON plus the local start, callback, and administration browser journey from exact source."
+    },
+    "oauth2-client-live-api-repository": {
+      "command": "tooling/acceptance/gates/oauth2_client/live_api.sh",
+      "timeout_seconds": 300,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Prove live GitHub and Google identity readback, standards-based OAuth2 redirects, GitHub-backed encrypted record classes, and idempotent key rotation using the isolated oauth2-client-test environment."
+    },
+    "oauth-login-broker-architecture": {
+      "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs",
+      "timeout_seconds": 60,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate the OAuth Login Broker architecture module registration, governed paths, required documents, decisions, and capability projection."
+    },
+    "oauth-login-broker-contract": {
+      "command": "python3 tooling/scripts/acceptance-validate.py --domain oauth-login-broker",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-structure",
+      "description": "Validate the OAuth Login Broker managed-domain Feature, Capability, Registry, Gate, environment, and Provisioner graph."
+    },
     "architecture-module-governance": {
       "command": "node tooling/scripts/architecture/module-governance.mjs validate && node --test tooling/scripts/architecture/module-governance.test.mjs tooling/scripts/plan/planctl.test.mjs tooling/scripts/local-dev/workflow-kernel.test.mjs tooling/scripts/local-dev/workflow-host-adapters.test.mjs tooling/plugins/pt-ew-plugin/scripts/hook-entry.test.mjs && tooling/scripts/review/knowledge-match.sh --changed-file tooling/scripts/plan/plan-package.mjs --strict && python3 -m unittest tooling/scripts/agent-integration-audit-test.py",
       "timeout_seconds": 240,

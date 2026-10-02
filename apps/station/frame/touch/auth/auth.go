@@ -168,6 +168,7 @@ type OAuthSessionBinding struct {
 	AccessAttemptID        string
 	StationPeerID          string
 	AccessDecisionRevision uint64
+	DeviceType             session.DeviceType
 	DeviceID               string
 	LifecycleGeneration    uint64
 }
@@ -201,6 +202,9 @@ func PrepareOAuthSession(
 	if strings.TrimSpace(binding.CandidateID) == "" ||
 		strings.TrimSpace(binding.AccessAttemptID) == "" ||
 		strings.TrimSpace(binding.StationPeerID) == "" ||
+		(binding.DeviceType != session.DeviceTypeDesktop &&
+			binding.DeviceType != session.DeviceTypeMobile &&
+			binding.DeviceType != session.DeviceTypeWeb) ||
 		strings.TrimSpace(binding.DeviceID) == "" ||
 		binding.LifecycleGeneration == 0 ||
 		binding.AccessDecisionRevision == 0 {
@@ -226,7 +230,7 @@ func PrepareOAuthSession(
 		SessionID:              sessionID,
 		UserID:                 actor.ID,
 		Email:                  actor.Email,
-		DeviceType:             session.DeviceTypeMobile,
+		DeviceType:             binding.DeviceType,
 		OAuthCandidateID:       binding.CandidateID,
 		AccessAttemptID:        binding.AccessAttemptID,
 		StationPeerID:          binding.StationPeerID,

@@ -2,8 +2,8 @@ use std::sync::Arc;
 use tauri::{State, Window};
 
 use crate::contracts::{
-    OAuthAuthorizeInput, OAuthCallbackInput, OAuthIdInput, OAuthLoopbackPollInput,
-    OAuthLoopbackStartInput, OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
+    OAuthAuthorizeInput, OAuthIdInput, OAuthLoopbackPollInput, OAuthLoopbackStartInput,
+    OAuthResourceInput, OAuthSetCredentialsInput, StubPayload,
 };
 use crate::error::{AppResult, ErrorCode};
 use crate::state::AppState;
@@ -34,11 +34,6 @@ pub fn oauth2_set_credentials(input: OAuthSetCredentialsInput) -> AppResult<Stub
 #[tauri::command]
 pub fn oauth2_authorize(input: OAuthAuthorizeInput) -> AppResult<StubPayload> {
     application_oauth2::oauth2_authorize(input)
-}
-
-#[tauri::command]
-pub fn oauth2_handle_callback(input: OAuthCallbackInput) -> AppResult<StubPayload> {
-    application_oauth2::oauth2_handle_callback(input)
 }
 
 #[tauri::command]
@@ -133,13 +128,36 @@ pub fn oauth2_start_loopback(
     window: Window,
     input: OAuthLoopbackStartInput,
 ) -> AppResult<StubPayload> {
-    let actor_ptid = session_resolver::ptid_for_window(state.inner(), &window);
-    application_oauth2::oauth2_start_loopback(input, state.i18n.clone(), actor_ptid.as_deref())
+    let connector_authorization = match input.purpose.as_str() {
+        "account_login" => None,
+        "connector_link" => {
+            let Some(actor_ptid) = session_resolver::ptid_for_window(state.inner(), &window) else {
+                return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+            };
+            let Some(token) = session_resolver::token_for_window(state.inner(), &window) else {
+                return AppResult::fail(ErrorCode::Unauthorized, "authentication required", None);
+            };
+            Some(application_oauth2::OAuthConnectorAuthorization { actor_ptid, token })
+        }
+        _ => {
+            return AppResult::fail(
+                ErrorCode::InvalidArgument,
+                "purpose must be account_login or connector_link",
+                None,
+            )
+        }
+    };
+    application_oauth2::oauth2_start_loopback(input, state.i18n.clone(), connector_authorization)
 }
 
 #[tauri::command]
 pub fn oauth2_poll_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
     application_oauth2::oauth2_poll_loopback(input)
+}
+
+#[tauri::command]
+pub fn oauth2_resume_loopback(input: OAuthLoopbackPollInput) -> AppResult<StubPayload> {
+    application_oauth2::oauth2_resume_loopback(input)
 }
 
 #[tauri::command]

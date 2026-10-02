@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+
+import yaml
 
 from tooling.acceptance.core import GateError
 from tooling.acceptance.gates.oauth2_client.contract import (
@@ -240,6 +243,18 @@ class OAuth2ClientContractTests(unittest.TestCase):
 
     def test_browser_probe_is_valid_python(self) -> None:
         compile(BROWSER_SCRIPT, "<oauth2-client-browser-probe>", "exec")
+
+    def test_station_compose_injects_oauth_bridge_secret(self) -> None:
+        repo_root = Path(__file__).resolve().parents[4]
+        compose = yaml.safe_load(
+            (repo_root / "tooling/docker/compose.yml").read_text(encoding="utf-8")
+        )
+        station_environment = compose["services"]["station"]["environment"]
+        self.assertEqual(
+            station_environment["PEERS_OAUTH_BRIDGE_SECRET"],
+            "${PEERS_OAUTH_BRIDGE_SECRET:-}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

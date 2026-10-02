@@ -83,6 +83,7 @@ type oauthRepository interface {
 	Acknowledge(context.Context, attemptBinding, time.Time) (oauthpb.OAuthAttemptResult, error)
 	CancelAttempt(context.Context, attemptBinding, time.Time) (oauthpb.OAuthAttemptResult, error)
 	MarkDenied(context.Context, attemptBinding, string) error
+	SweepExpired(context.Context, time.Time) (int, error)
 }
 
 type gormOAuthRepository struct {
@@ -154,26 +155,87 @@ func releaseExpiredAttempts(tx *gorm.DB, liveBindingKey string, now time.Time) e
 	}
 	for i := range expiredAttempts {
 		expired := &expiredAttempts[i]
-		if expired.CandidateID != "" {
-			if err := tx.Model(&dbmodel.OAuthSessionCandidate{}).
-				Where("id = ?", expired.CandidateID).
+		if err := expireAttemptRows(tx, expired, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *gormOAuthRepository) SweepExpired(
+	ctx context.Context,
+	now time.Time,
+) (int, error) {
+	database, err := r.db(ctx)
+	if err != nil {
+		return 0, err
+	}
+	expiredCount := 0
+	err = database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var expiredAttempts []dbmodel.OAuthAttempt
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("live_binding_key IS NOT NULL AND expires_at <= ?", now.UTC()).
+			Order("expires_at ASC, id ASC").
+			Find(&expiredAttempts).Error; err != nil {
+			return err
+		}
+		for index := range expiredAttempts {
+			if err := expireAttemptRows(tx, &expiredAttempts[index], now.UTC()); err != nil {
+				return err
+			}
+			expiredCount++
+		}
+		return nil
+	})
+	return expiredCount, err
+}
+
+func expireAttemptRows(tx *gorm.DB, attempt *dbmodel.OAuthAttempt, now time.Time) error {
+	if attempt.CandidateID != "" {
+		var candidate dbmodel.OAuthSessionCandidate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", attempt.CandidateID).
+			First(&candidate).Error; err != nil {
+			return translateNotFound(err, errOAuthCandidateUnavailable)
+		}
+		if candidate.State == candidateStateActive {
+			return errOAuthCandidateUnavailable
+		}
+		if candidate.SessionID != "" {
+			if err := tx.Model(&session.SessionRecord{}).
+				Where("session_id = ? AND oauth_candidate_id = ?", candidate.SessionID, candidate.ID).
 				Updates(map[string]any{
-					"state":            candidateStateCancelled,
-					"live_binding_key": nil,
+					"revoked":        true,
+					"revoked_at":     now,
+					"revoked_reason": "oauth_expired",
 				}).Error; err != nil {
 				return err
 			}
 		}
-		if err := terminalizeAttempt(
-			tx,
-			expired,
-			oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_EXPIRED,
-			oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_EXPIRED,
-			"OAUTH_ATTEMPT_EXPIRED",
-		); err != nil {
+		if err := tx.Where("candidate_id = ?", candidate.ID).
+			Delete(&dbmodel.OAuthCredentialEnvelope{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&candidate).Updates(map[string]any{
+			"state":            candidateStateCancelled,
+			"live_binding_key": nil,
+		}).Error; err != nil {
 			return err
 		}
 	}
+	if err := terminalizeAttempt(
+		tx,
+		attempt,
+		oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_EXPIRED,
+		oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_EXPIRED,
+		"OAUTH_ATTEMPT_EXPIRED",
+	); err != nil {
+		return err
+	}
+	attempt.State = int32(oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_EXPIRED)
+	attempt.Result = int32(oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_EXPIRED)
+	attempt.ErrorCode = "OAUTH_ATTEMPT_EXPIRED"
+	attempt.LiveBindingKey = nil
 	return nil
 }
 
@@ -338,19 +400,26 @@ func (r *gormOAuthRepository) FindBoundSnapshot(
 	}
 	if !attempt.ExpiresAt.After(time.Now().UTC()) &&
 		attempt.State != int32(oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_ACTIVATED) {
-		if err := r.SetAttemptOutcome(
-			ctx,
-			attempt.ID,
-			oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_EXPIRED,
-			oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_EXPIRED,
-			"OAUTH_ATTEMPT_EXPIRED",
-		); err != nil {
+		now := time.Now().UTC()
+		if err := database.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var locked dbmodel.OAuthAttempt
+			if err := lockOAuthAttempt(tx, binding.AttemptID, &locked); err != nil {
+				return err
+			}
+			if err := verifyAttemptBinding(&locked, binding); err != nil {
+				return err
+			}
+			if !locked.ExpiresAt.After(now) &&
+				locked.State != int32(oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_ACTIVATED) {
+				if err := expireAttemptRows(tx, &locked, now); err != nil {
+					return err
+				}
+			}
+			attempt = locked
+			return nil
+		}); err != nil {
 			return nil, err
 		}
-		attempt.State = int32(oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_EXPIRED)
-		attempt.Result = int32(oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_EXPIRED)
-		attempt.ErrorCode = "OAUTH_ATTEMPT_EXPIRED"
-		attempt.LiveBindingKey = nil
 	}
 
 	snapshot := &oauthSnapshot{Attempt: &attempt}
@@ -603,6 +672,13 @@ func (r *gormOAuthRepository) Acknowledge(
 			result = oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED
 			return nil
 		}
+		if !attempt.ExpiresAt.After(now) || !candidate.ExpiresAt.After(now) {
+			if err := expireAttemptRows(tx, attempt, now); err != nil {
+				return err
+			}
+			result = oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_EXPIRED
+			return nil
+		}
 		if candidate.State != candidateStateCredentialDelivery ||
 			accessAttempt.Status != "granted" ||
 			candidate.SessionID == "" {
@@ -616,7 +692,11 @@ func (r *gormOAuthRepository) Acknowledge(
 			return translateNotFound(err, errOAuthEnvelopeUnavailable)
 		}
 		if !envelope.ExpiresAt.After(now) {
-			return errOAuthAttemptExpired
+			if err := expireAttemptRows(tx, attempt, now); err != nil {
+				return err
+			}
+			result = oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_EXPIRED
+			return nil
 		}
 
 		if err := tx.Model(&session.SessionRecord{}).
@@ -687,15 +767,22 @@ func (r *gormOAuthRepository) CancelAttempt(
 		if err != nil {
 			return err
 		}
-		if candidate != nil && candidate.SessionID != "" {
-			if err := tx.Model(&session.SessionRecord{}).
-				Where("session_id = ? AND oauth_candidate_id = ?", candidate.SessionID, candidate.ID).
-				Updates(map[string]any{
-					"revoked":        true,
-					"revoked_at":     now,
-					"revoked_reason": "oauth_cancelled",
-				}).Error; err != nil {
-				return err
+		if attempt.State == int32(oauthpb.OAuthAttemptState_OAUTH_ATTEMPT_STATE_ACTIVATED) ||
+			(candidate != nil && candidate.State == candidateStateActive) {
+			outcome = oauthpb.OAuthAttemptResult_OAUTH_ATTEMPT_RESULT_ACCESS_GRANTED
+			return nil
+		}
+		if candidate != nil {
+			if candidate.SessionID != "" {
+				if err := tx.Model(&session.SessionRecord{}).
+					Where("session_id = ? AND oauth_candidate_id = ?", candidate.SessionID, candidate.ID).
+					Updates(map[string]any{
+						"revoked":        true,
+						"revoked_at":     now,
+						"revoked_reason": "oauth_cancelled",
+					}).Error; err != nil {
+					return err
+				}
 			}
 			if err := tx.Where("candidate_id = ?", candidate.ID).
 				Delete(&dbmodel.OAuthCredentialEnvelope{}).Error; err != nil {

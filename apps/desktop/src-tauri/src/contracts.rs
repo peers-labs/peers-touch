@@ -568,6 +568,7 @@ pub struct OAuthAuthorizeInput {
 pub struct OAuthLoopbackStartInput {
     pub id: String,
     pub environment: Option<String>,
+    pub purpose: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -584,17 +585,23 @@ pub struct EnsureStationSessionInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthCallbackInput {
+    pub bridge_version: String,
+    pub site_id: String,
+    pub purpose: String,
+    pub assertion_id: String,
+    pub receiver_id: String,
+    pub receiver_challenge: String,
+    pub receiver_verifier: String,
     pub provider: String,
     pub provider_user_id: String,
+    pub union_id: Option<String>,
     pub username: Option<String>,
     pub display_name: Option<String>,
-    pub created_at: Option<String>,
     pub email: Option<String>,
+    pub email_verified: bool,
     pub avatar_url: Option<String>,
-    pub profile_url: Option<String>,
-    pub expires_at: Option<String>,
-    #[serde(default)]
-    pub scopes: Vec<String>,
+    pub ts: String,
+    pub sig: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
