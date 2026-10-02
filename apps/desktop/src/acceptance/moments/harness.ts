@@ -19,11 +19,11 @@ import { api } from '../../services/desktop_api';
 import {
   socialBlockActor,
   socialFollow,
-  socialGetRelationship,
   socialUnblockActor,
   type MomentDraft,
 } from '../../services/social_api';
 import {
+  FriendRequestState,
   SocialRelationshipCommandResultKind,
 } from '../../gen/proto/domain/social/relationship_pb';
 import { useMomentsStore, type MomentComposerDraft } from '../../store/moments';
@@ -1496,15 +1496,31 @@ export function installAcceptanceHarness(): void {
       if (!actorPtid) {
         throw new Error('moments.acceptance.actorIdentityMissing');
       }
-      const response = await socialGetRelationship(actorPtid);
-      const relationship = response.relationship;
-      if (!relationship || relationship.targetActorPtid !== actorPtid) {
-        throw new Error('moments.acceptance.friendshipProjectionMissing');
+      const session = await activeSessionIdentity();
+      const currentActorPtid = session.actorPtid;
+      if (!currentActorPtid) {
+        throw new Error('moments.acceptance.sessionIdentityMissing');
       }
+      const response = await api.socialFriendRequestList(
+        FriendRequestState.ACCEPTED,
+        100,
+        0,
+      );
+      const accepted = response.requests.some((request) => {
+        if (request.state !== FriendRequestState.ACCEPTED) return false;
+        const senderPtid = request.sender?.ptid.trim();
+        const receiverPtid = request.receiver?.ptid.trim();
+        return (
+          senderPtid === currentActorPtid
+          && receiverPtid === actorPtid
+        ) || (
+          receiverPtid === currentActorPtid
+          && senderPtid === actorPtid
+        );
+      });
       return {
         actorPtidSha256: await sha256(actorPtid),
-        following: relationship.following,
-        followedBy: relationship.followedBy,
+        accepted,
       };
     },
 

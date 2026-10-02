@@ -4,7 +4,6 @@ import { api } from '../../services/desktop_api';
 import {
   socialBlockActor,
   socialFollow,
-  socialGetRelationship,
   socialUnblockActor,
 } from '../../services/social_api';
 import {
@@ -12,6 +11,7 @@ import {
   ReactionKind,
 } from '../../gen/proto/domain/social/post_pb';
 import {
+  FriendRequestState,
   SocialRelationshipCommandResultKind,
 } from '../../gen/proto/domain/social/relationship_pb';
 import { privateMomentsNative } from '../../services/privateMomentsNative';
@@ -141,7 +141,6 @@ vi.mock('../../services/desktop_api', () => ({
 vi.mock('../../services/social_api', () => ({
   socialBlockActor: vi.fn(),
   socialFollow: vi.fn(),
-  socialGetRelationship: vi.fn(),
   socialUnblockActor: vi.fn(),
 }));
 
@@ -249,7 +248,6 @@ describe('Moments acceptance harness', () => {
     vi.mocked(api.ossUploadEncryptedAttachmentSocial).mockReset();
     vi.mocked(socialBlockActor).mockReset();
     vi.mocked(socialFollow).mockReset();
-    vi.mocked(socialGetRelationship).mockReset();
     vi.mocked(socialUnblockActor).mockReset();
     vi.mocked(api.federationCreate).mockReset();
     vi.mocked(api.federationGetSelf).mockReset();
@@ -515,22 +513,27 @@ describe('Moments acceptance harness', () => {
   });
 
   it('reads the authoritative mutual-friendship projection', async () => {
-    vi.mocked(socialGetRelationship).mockResolvedValue({
-      relationship: {
-        targetActorPtid: 'ptid:test:bob',
-        following: true,
-        followedBy: true,
-      },
+    vi.mocked(api.socialFriendRequestList).mockResolvedValue({
+      requests: [{
+        requestId: 'friend-request-1',
+        sender: { ptid: 'ptid:test:alice' },
+        receiver: { ptid: 'ptid:test:bob' },
+        state: FriendRequestState.ACCEPTED,
+      }],
+      total: 1,
     } as never);
 
     const result = await harness().friendshipProjection({
       actorPtid: 'ptid:test:bob',
     });
 
-    expect(socialGetRelationship).toHaveBeenCalledWith('ptid:test:bob');
+    expect(api.socialFriendRequestList).toHaveBeenCalledWith(
+      FriendRequestState.ACCEPTED,
+      100,
+      0,
+    );
     expect(result).toMatchObject({
-      followedBy: true,
-      following: true,
+      accepted: true,
     });
     expect(
       (result as { actorPtidSha256: string }).actorPtidSha256,
