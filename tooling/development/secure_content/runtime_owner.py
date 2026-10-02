@@ -1068,10 +1068,9 @@ def _run_social_acceptance_pre_restart(
     eve: FoundationRuntimeClient,
     station_url: str,
     owner_root: Path,
-) -> tuple[dict[str, Any], str, str]:
+) -> tuple[dict[str, Any], str]:
     fixture_path = owner_root / "social-desktop-private.png"
     fixture_path.write_bytes(W7_PNG_BYTES)
-    recovery_phrase, recovery = _prepare_portable_recovery(bob)
 
     first_post_id = _publish_friends_moment(
         alice,
@@ -1175,9 +1174,7 @@ def _run_social_acceptance_pre_restart(
             "anonymousPrivateStatus": anonymous_private_status,
             "invalidCredentialStatus": invalid_status,
             "publicAnonymousStatus": public_status,
-            "recovery": recovery,
         },
-        recovery_phrase,
         recovery_post_id,
     )
 
@@ -2031,6 +2028,188 @@ def _require_clean_source(
         )
     )
     return identity
+
+
+def _require_social_acceptance_source(
+    repo_root: Path,
+    result_root: Path,
+) -> Mapping[str, str | int]:
+    try:
+        return _require_clean_source(repo_root, result_root)
+    except RuntimeOwnerBlocked as error:
+        if error.code != "SOURCE_IDENTITY_MISMATCH":
+            raise
+
+    process = subprocess.run(
+        [
+            sys.executable,
+            "tooling/scripts/verify-worktree-binding.py",
+            "--root",
+            str(repo_root),
+            "--capture",
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    try:
+        control_identity = json.loads(process.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeOwnerBlocked(
+            "SOURCE_IDENTITY_MISMATCH",
+            "Social Acceptance control source identity is unavailable",
+            resource="source:workspace",
+        ) from error
+    if process.returncode != 0 or not isinstance(control_identity, Mapping):
+        raise RuntimeOwnerBlocked(
+            "SOURCE_IDENTITY_MISMATCH",
+            "Social Acceptance control source identity is invalid",
+            resource="source:workspace",
+        )
+    for field in ("root", "workspaceId", "branch", "head"):
+        _required_text(control_identity.get(field), f"source-{field}")
+    if subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip():
+        raise RuntimeOwnerBlocked(
+            "SOURCE_IDENTITY_MISMATCH",
+            "Social Acceptance requires a clean control checkpoint",
+            resource="source:workspace",
+        )
+
+    allowed_prefixes = (
+        "docs/architecture/social/",
+        "tooling/acceptance/",
+        "tooling/development/secure_content/",
+    )
+    candidates: list[tuple[int, Path, Mapping[str, Any]]] = []
+    for aggregate_path in (
+        Path.home() / ".peers-touch" / "dev" / "workspaces"
+    ).glob(
+        "*/development/secure-content/W12A/activation/*/aggregate/result.json"
+    ):
+        try:
+            aggregate = json.loads(aggregate_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        unsigned = dict(aggregate) if isinstance(aggregate, Mapping) else {}
+        observed_digest = unsigned.pop("result_digest", None)
+        generation = unsigned.get("generation_id")
+        if (
+            unsigned.get("schema_version") != schema_activation.SCHEMA_VERSION
+            or unsigned.get("kind")
+            != schema_activation.AGGREGATE_RESULT_KIND
+            or unsigned.get("source_commit") != generation
+            or unsigned.get("reset_intent") != "SCHEMA_ACTIVATION"
+            or unsigned.get("profiles") != [PROFILE, SECONDARY_PROFILE]
+            or unsigned.get("status") != "PASS"
+            or unsigned.get("claim") != "CANONICAL_SCHEMA_ACTIVE_ONLY"
+            or not isinstance(generation, str)
+            or len(generation) != 40
+            or observed_digest != schema_activation.canonical_digest(unsigned)
+        ):
+            continue
+        if subprocess.run(
+            [
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                generation,
+                str(control_identity["head"]),
+            ],
+            cwd=repo_root,
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode != 0:
+            continue
+        changed = subprocess.run(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                f"{generation}..{control_identity['head']}",
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        if any(
+            path
+            and not any(path.startswith(prefix) for prefix in allowed_prefixes)
+            for path in changed
+        ):
+            continue
+        distance = int(
+            subprocess.run(
+                [
+                    "git",
+                    "rev-list",
+                    "--count",
+                    f"{generation}..{control_identity['head']}",
+                ],
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        )
+        candidates.append((distance, aggregate_path, aggregate))
+
+    if not candidates:
+        raise RuntimeOwnerBlocked(
+            "SOURCE_IDENTITY_MISMATCH",
+            "no reusable exact-product-source schema activation is available",
+            resource="source:plan-lifecycle",
+        )
+    _distance, aggregate_path, aggregate = min(
+        candidates,
+        key=lambda item: (item[0], str(item[1])),
+    )
+    runtime_source = str(aggregate["generation_id"])
+    projected = dict(control_identity)
+    projected.update(
+        {
+            "head": runtime_source,
+            "runtimeSourceCommit": runtime_source,
+            "controlHead": str(control_identity["head"]),
+            "transitionCount": _distance,
+            "transitionDigest": _sha256(
+                json.dumps(
+                    {
+                        "allowedPrefixes": allowed_prefixes,
+                        "controlHead": control_identity["head"],
+                        "runtimeSourceCommit": runtime_source,
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            ),
+            "sourceEvidenceRoot": str(aggregate_path.parents[4]),
+            "sourceEvidenceWorkspaceId": str(aggregate["workspace_id"]),
+        }
+    )
+    projected["worktreeSetDigest"] = _sha256(
+        json.dumps(
+            {
+                "branch": projected["branch"],
+                "controlHead": projected["controlHead"],
+                "head": projected["head"],
+                "root": str(repo_root.resolve()),
+                "transitionDigest": projected["transitionDigest"],
+                "workspaceId": projected["workspaceId"],
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    )
+    return projected
 
 
 def _free_port(start: int, reserved: set[int]) -> int:
@@ -7489,7 +7668,22 @@ class W7RuntimeOwner:
             if formal_acceptance
             else W8_RUNTIME_REUSE
         )
-        identity = _require_clean_source(self.repo_root, self.result_root)
+        identity = (
+            _require_social_acceptance_source(
+                self.repo_root,
+                self.result_root,
+            )
+            if formal_acceptance
+            else _require_clean_source(self.repo_root, self.result_root)
+        )
+        source_evidence_root = Path(
+            str(identity.get("sourceEvidenceRoot") or self.result_root)
+        )
+        schema_identity = dict(identity)
+        schema_identity["workspaceId"] = str(
+            identity.get("sourceEvidenceWorkspaceId")
+            or identity["workspaceId"]
+        )
         _activate_scenario_journey(
             self.repo_root,
             journey_id,
@@ -7601,9 +7795,9 @@ class W7RuntimeOwner:
         try:
             schema_attestation = (
                 _resolve_canonical_private_schema_attestation(
-                    self.result_root,
+                    source_evidence_root,
                     self.repo_root,
-                    identity,
+                    schema_identity,
                     attestation,
                     service_id=STATION_ID,
                     profile_id=PROFILE,
@@ -7612,9 +7806,9 @@ class W7RuntimeOwner:
             )
             secondary_schema_attestation = (
                 _resolve_canonical_private_schema_attestation(
-                    self.result_root,
+                    source_evidence_root,
                     self.repo_root,
-                    identity,
+                    schema_identity,
                     secondary_attestation,
                     service_id=SECONDARY_STATION_ID,
                     profile_id=SECONDARY_PROFILE,
@@ -7835,6 +8029,15 @@ class W7RuntimeOwner:
                 ):
                     continue
                 _prepare_private_content_keys(clients[client_id])
+            recovery_phrase = ""
+            recovery_preparation: Mapping[str, Any] = {}
+            if formal_acceptance:
+                (
+                    recovery_phrase,
+                    recovery_preparation,
+                ) = _prepare_portable_recovery(
+                    clients[DESKTOP_CLIENTS[1][0]]
+                )
             _prepare_accepted_friendship(
                 clients[DESKTOP_CLIENTS[0][0]],
                 clients[DESKTOP_CLIENTS[1][0]],
@@ -7855,7 +8058,6 @@ class W7RuntimeOwner:
                 )
                 (
                     baseline,
-                    recovery_phrase,
                     recovery_post_id,
                 ) = _run_social_acceptance_pre_restart(
                     alice=clients[DESKTOP_CLIENTS[0][0]],
@@ -8003,7 +8205,7 @@ class W7RuntimeOwner:
                     "beforeRecovery": "RECOVERY_REQUIRED",
                     "afterRecovery": "CONTENT_READY",
                     "recoveryPostIdSha256": _sha256(recovery_post_id),
-                    "preparedRecoveryEpoch": baseline["recovery"][
+                    "preparedRecoveryEpoch": recovery_preparation[
                         "preparedEpoch"
                     ],
                     "restoredRecoveryEpoch": restored["recoveryEpoch"],
