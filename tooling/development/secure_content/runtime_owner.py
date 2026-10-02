@@ -990,23 +990,7 @@ def _maintain_current_recovery_prekeys(
             ),
             resource=f"fixture-recovery:{client.spec.profile}",
         )
-    try:
-        decoded = json.loads(app_result["data"].get("status"))
-    except (TypeError, json.JSONDecodeError) as error:
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            (
-                "Native portable recovery PreKey maintenance returned "
-                "invalid status JSON"
-            ),
-            resource=f"fixture-recovery:{client.spec.profile}",
-        ) from error
-    if not isinstance(decoded, Mapping):
-        raise RuntimeOwnerBlocked(
-            "FIXTURE_OWNER_UNAVAILABLE",
-            "Native portable recovery PreKey status must be an object",
-            resource=f"fixture-recovery:{client.spec.profile}",
-        )
+    decoded = app_result["data"]
     available = decoded.get("recoveryPreKeyAvailable")
     if (
         decoded.get("recoveryEpoch") != expected_recovery_epoch

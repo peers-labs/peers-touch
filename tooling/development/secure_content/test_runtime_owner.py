@@ -1808,12 +1808,20 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_portable_recovery_maintains_prekeys_for_created_epoch(
         self,
     ) -> None:
-        def native_result(payload: Mapping[str, object]) -> Mapping[str, object]:
+        def native_result(
+            payload: Mapping[str, object],
+            *,
+            stub_payload: bool = True,
+        ) -> Mapping[str, object]:
             return {
                 "ok": True,
                 "value": {
                     "ok": True,
-                    "data": {"status": json.dumps(payload)},
+                    "data": (
+                        {"status": json.dumps(payload)}
+                        if stub_payload
+                        else dict(payload)
+                    ),
                 },
             }
 
@@ -1832,7 +1840,8 @@ class RuntimeOwnerTest(unittest.TestCase):
                 {
                     "recoveryEpoch": 7,
                     "recoveryPreKeyAvailable": 100,
-                }
+                },
+                stub_payload=False,
             ),
         )
 
@@ -1867,12 +1876,8 @@ class RuntimeOwnerTest(unittest.TestCase):
             "value": {
                 "ok": True,
                 "data": {
-                    "status": json.dumps(
-                        {
-                            "recoveryEpoch": 8,
-                            "recoveryPreKeyAvailable": 100,
-                        }
-                    )
+                    "recoveryEpoch": 8,
+                    "recoveryPreKeyAvailable": 100,
                 },
             },
         }
