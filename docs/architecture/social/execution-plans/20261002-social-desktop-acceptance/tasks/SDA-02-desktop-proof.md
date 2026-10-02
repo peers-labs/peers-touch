@@ -21,6 +21,7 @@
     "apps/desktop/src/acceptance/moments/harness.test.ts",
     "apps/desktop/src-tauri/src/social/mod.rs",
     "apps/desktop/src-tauri/src/social/private_moment.rs",
+    "apps/desktop/src-tauri/src/interface/tauri_commands/messaging_recovery.rs",
     "tooling/acceptance/gates/social",
     "tooling/acceptance/provisioners/secure_content_remote_recipient.py",
     "tooling/development/secure_content/runtime_owner.py",
