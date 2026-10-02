@@ -61,12 +61,12 @@
     "the full-only Chat Gate remains outside this completion closure",
     "unrun Browser, Mobile and positive cross-Station delivery remain UNPROVEN"
   ],
-  "updatedAt": "2026-10-02T17:31:00.000Z",
+  "updatedAt": "2026-10-02T18:47:00.000Z",
   "durableEvidence": [
     {
       "verificationClass": "ACCEPTANCE_PROOF",
-      "result": "NOT_RUN",
-      "ref": "Awaiting exact-source completion Acceptance after SDA-02"
+      "result": "PASS",
+      "ref": "acceptance://acceptance-run/20261002T183136103411Z-c6a081819625e7247071e93b777c5f7b/reports/run.json"
     }
   ]
 }
