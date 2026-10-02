@@ -134,7 +134,7 @@ export async function reconcileAgentCapabilityProjection(
   clientCapabilitySessionId?: string,
 ): Promise<void> {
   await Promise.all([
-    authorityStore.loadCatalog(),
+    authorityStore.loadCatalog([], { preserveMutationError: true }),
     authorityStore.loadKnowledgeDescriptors(),
     ...agentIds.map((agentId) => authorityStore.loadAgent(agentId, {
       clientCapabilitySessionId,

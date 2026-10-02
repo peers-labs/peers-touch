@@ -3052,6 +3052,16 @@ async function startFoundationToolTurn(input: {
     timeoutMs: input.repeatUntilStopped
       ? 300_000
       : FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS,
+    onEvent: (event) => {
+      const turnId = observedTurnId([event]);
+      if (!turnId) return;
+      useChatStore.getState().applyRecoveredTurnEvent(
+        conversation.conversation_id,
+        agentId,
+        turnId,
+        { event: event.event, data: event.data },
+      );
+    },
   });
   const streamId = observed.controller.streamId;
   input.onConversationCreated?.(conversation.conversation_id, streamId);
