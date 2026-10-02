@@ -41,6 +41,8 @@ from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
     DESKTOP_CLIENTS,
     REQUIRED_FIXTURE_CAPABILITIES,
+    SOCIAL_ACCEPTANCE_IDS,
+    SOCIAL_ACCEPTANCE_RUNTIME_REUSE,
     W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
     W8_SCENARIOS,
@@ -217,6 +219,42 @@ class RuntimeOwnerTest(unittest.TestCase):
                 if spec.invalidated_fixture_ids
             },
         )
+
+    def test_social_desktop_acceptance_suite_contract_is_bounded(self) -> None:
+        self.assertEqual(
+            (
+                "desktop-pre-restart",
+                "desktop-continuity",
+                "private-comment",
+                "social-expansion",
+                "social-subtype",
+                "social-object",
+                "social-delete-block",
+                "social-bounds",
+            ),
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(
+            1,
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.max_provisioning_runs,
+        )
+        self.assertEqual(
+            5,
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.max_client_launches,
+        )
+        self.assertTrue(
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.allow_client_replacement
+        )
+        self.assertEqual(14, len(SOCIAL_ACCEPTANCE_IDS))
+        source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
+        self.assertLess(
+            source.index(
+                'purpose="W8 remote recipient identity preparation"'
+            ),
+            source.index("eve_client = _make_client("),
+        )
+        self.assertIn("_run_social_acceptance_pre_restart(", source)
+        self.assertIn("_social_acceptance_scenario_registry(", source)
 
     def test_w8_suite_restores_declared_shared_fixtures(self) -> None:
         clients = {
@@ -549,6 +587,26 @@ class RuntimeOwnerTest(unittest.TestCase):
                 _parse_args(["run-private-comment"])
             with self.assertRaises(SystemExit):
                 _parse_args(["run-social-expansion"])
+
+    def test_social_desktop_acceptance_cli_dispatches_once(self) -> None:
+        with patch.object(
+            W7RuntimeOwner,
+            "run_social_desktop_acceptance_suite",
+            return_value={
+                "status": "FUNCTIONAL_PASS",
+                "proofState": "UNPROVEN",
+            },
+        ) as run_suite:
+            status = main(
+                [
+                    "run-social-desktop-acceptance-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                ]
+            )
+
+        self.assertEqual(0, status)
+        run_suite.assert_called_once_with()
 
     def test_w8_suite_requires_complete_profile_closure(
         self,
@@ -1557,6 +1615,20 @@ class RuntimeOwnerTest(unittest.TestCase):
             "actor-identity-provisioner",
             owner.manifest()["handles"][0]["owner"],
         )
+
+    def test_w8_remote_recipient_can_reuse_an_existing_account(self) -> None:
+        registrar = MagicMock()
+        provisioner = RemotePrivateRecipientProvisioner(
+            source_checkpoint=COMMIT,
+            run_id="w8-existing-account",
+            station_url="https://five-arm.invalid",
+            password="fixture-password",
+            account_registrar=registrar,
+            existing_account="carol@p.t",
+        )
+
+        self.assertEqual("carol@p.t", provisioner.account)
+        registrar.assert_not_called()
 
     def test_w8_remote_recipient_reuses_an_existing_shared_federation(
         self,

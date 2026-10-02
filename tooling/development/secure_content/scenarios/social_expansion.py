@@ -25,7 +25,7 @@ LOCAL_CLIENTS = (
     "secure-content-desktop-eve",
 )
 REMOTE_CLIENT = "secure-content-desktop-remote-recipient"
-EXPECTED_CLIENTS = (*LOCAL_CLIENTS, REMOTE_CLIENT)
+EXPECTED_CLIENTS = LOCAL_CLIENTS
 REMOTE_RECIPIENT_CAPABILITY = "remote-private-recipient"
 REMOTE_RECIPIENT_OPERATION = "resolve"
 EXPECTED_BUDGET_SECONDS = 1200
@@ -75,7 +75,6 @@ def _require_runtime_binding(context: ScenarioContext) -> None:
         (LOCAL_CLIENTS[0], "alice", "station-four"),
         (LOCAL_CLIENTS[1], "bob", "station-four"),
         (LOCAL_CLIENTS[2], "eve", "station-four"),
-        (REMOTE_CLIENT, "remote_recipient", "station-five-arm"),
     ):
         client = manifest.client(client_id)
         station_binding = _mapping(
@@ -403,14 +402,10 @@ def _execute(context: ScenarioContext) -> Mapping[str, Any]:
         eve = stack.enter_context(
             AttachedProductClient(context, LOCAL_CLIENTS[2])
         )
-        remote = stack.enter_context(
-            AttachedProductClient(context, REMOTE_CLIENT)
-        )
         for client, label in (
             (alice, "Alice"),
             (bob, "Bob"),
             (eve, "Eve"),
-            (remote, "remote recipient"),
         ):
             snapshot = _mapping(client.snapshot(), f"{label} snapshot")
             _require(

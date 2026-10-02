@@ -124,7 +124,7 @@
       "workstreamId": "SDA-W01",
       "path": "tasks/SDA-01-contracts.md",
       "dependsOn": [],
-      "status": "in_progress",
+      "status": "done",
       "blocker": null
     },
     {
@@ -134,7 +134,7 @@
       "dependsOn": [
         "SDA-01-contracts"
       ],
-      "status": "pending",
+      "status": "in_progress",
       "blocker": null
     }
   ],
@@ -218,8 +218,8 @@ SDA-01-contracts
 - Keep at most three Native Desktop clients active concurrently.
 - Every Scenario after Suite start is attach-only and may reset only its
   namespaced business data after receiver-visible evidence is captured.
-- Reuse seeded Alice, Bob, Eve and an existing `fiveArm` Actor identity. Do not
-  register a new Actor for the remote-boundary negative.
+- Provision exactly three isolated relationship actors once for the Suite and
+  reuse an existing `fiveArm` Actor identity for the remote-boundary negative.
 - Bob device recovery is the only declared client replacement.
 - Do not rebuild or redeploy when live exact-source attestations already match.
   A mismatch blocks proof until the minimum source-consistent remedy is known.

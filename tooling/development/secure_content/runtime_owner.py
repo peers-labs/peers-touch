@@ -22,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
@@ -84,7 +84,9 @@ from tooling.development.secure_content.attached_client import (
 )
 from tooling.development.secure_content.run import (
     RunnerError,
+    ScenarioDefinition,
     ScenarioBlocked,
+    discover_scenarios,
     execute_scenario,
 )
 from tooling.development.secure_content.source_projection import (
@@ -104,7 +106,9 @@ from tooling.development.secure_content.runtime_fixture import (
     RuntimeFixtureOwner,
 )
 from tooling.development.secure_content.scenarios.desktop_pilot import (
+    PNG_BYTES as W7_PNG_BYTES,
     PRIVATE_TEXT as W7_PRIVATE_TEXT,
+    PUBLIC_TEXT as W7_PUBLIC_TEXT,
 )
 
 
@@ -122,11 +126,42 @@ TASK_ID = "W7"
 W8_WORK_ITEM_ID = "secure-content-w8"
 W8_TASK_ID = "W8"
 W8_JOURNEY = "sc-dj-social-expansion"
+SOCIAL_ACCEPTANCE_WORK_ITEM_ID = "social-desktop-acceptance"
+SOCIAL_ACCEPTANCE_PLAN_ID = "SOCIAL-DESKTOP-ACCEPTANCE-20261002"
+SOCIAL_ACCEPTANCE_TASK_ID = "SDA-02-desktop-proof"
+SOCIAL_ACCEPTANCE_JOURNEY = "SOC-SEC-J01-J09"
+SOCIAL_ACCEPTANCE_IDS = (
+    "SOC-SEC-AS01",
+    "SOC-SEC-AS02",
+    "SOC-SEC-AS03",
+    "SOC-SEC-AS04",
+    "SOC-SEC-AS05",
+    "SOC-SEC-AS06",
+    "SOC-SEC-AS07",
+    "SOC-SEC-AS08",
+    "SOC-SEC-AS09",
+    "SOC-SEC-AS10",
+    "SOC-SEC-AS12",
+    "SOC-SEC-AS13",
+    "SOC-SEC-AS15",
+    "SOC-SEC-AS16",
+)
+SOCIAL_ACCEPTANCE_RUNTIME_SCENARIOS = (
+    "desktop-pre-restart",
+    "desktop-continuity",
+    "private-comment",
+    "social-expansion",
+    "social-subtype",
+    "social-object",
+    "social-delete-block",
+    "social-bounds",
+)
 W8_REMOTE_CLIENT = (
     "secure-content-desktop-remote-recipient",
     "remote_recipient",
     "remote_recipient",
 )
+W8_REMOTE_SEEDED_ACCOUNT = "carol@p.t"
 W8_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
         "scope": "suite",
@@ -145,6 +180,19 @@ W8_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
         "requireAttachOnlyScenarios": True,
         "requireReceiverVisibleProof": True,
         "allowClientReplacement": False,
+    }
+)
+SOCIAL_ACCEPTANCE_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "social-private-desktop-e2e",
+        "scenarioIds": list(SOCIAL_ACCEPTANCE_RUNTIME_SCENARIOS),
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 5,
+        "minWarmReuseRate": 0.85,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
     }
 )
 W9_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
@@ -647,6 +695,31 @@ W8_SCENARIOS = (
         visible_text="secure-content-w8-bounds-poll",
     ),
 )
+
+SOCIAL_ACCEPTANCE_SCENARIO_MAP = {
+    "private-comment": ("SOC-SEC-AS06", "SOC-SEC-AS16"),
+    "social-expansion": ("SOC-SEC-AS05", "SOC-SEC-AS12", "SOC-SEC-AS13"),
+    "social-subtype": ("SOC-SEC-AS01",),
+    "social-object": ("SOC-SEC-AS07",),
+    "social-delete-block": ("SOC-SEC-AS09",),
+    "social-bounds": ("SOC-SEC-AS15",),
+}
+
+
+def _social_acceptance_scenario_registry(
+    scenario_id: str,
+) -> Mapping[str, ScenarioDefinition]:
+    scenario = discover_scenarios()[scenario_id]
+    return {
+        scenario_id: replace(
+            scenario,
+            journey_id=SOCIAL_ACCEPTANCE_JOURNEY,
+            work_item_id=SOCIAL_ACCEPTANCE_WORK_ITEM_ID,
+            result_prefix=Path(SOCIAL_ACCEPTANCE_TASK_ID),
+            result_task_id=SOCIAL_ACCEPTANCE_TASK_ID,
+            result_workstream_id=SOCIAL_ACCEPTANCE_TASK_ID,
+        )
+    }
 REQUIRED_FIXTURE_CAPABILITIES = frozenset(
     {
         "account-switch",
@@ -796,6 +869,317 @@ def _moments_harness(
             resource=f"fixture-action:{method}",
         )
     return result
+
+
+def _native_invoke_json(
+    client: FoundationRuntimeClient,
+    command: str,
+    payload: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any]:
+    result = client.driver.execute_async_script(
+        """
+        const command = arguments[0];
+        const payload = arguments[1];
+        const done = arguments[arguments.length - 1];
+        const internals = window.__TAURI_INTERNALS__;
+        if (!internals || typeof internals.invoke !== 'function') {
+          done({ ok: false, error: 'native invoke unavailable' });
+          return;
+        }
+        Promise.resolve(internals.invoke(command, payload))
+          .then((value) => done({ ok: true, value }))
+          .catch((error) => done({
+            ok: false,
+            error: String(error && error.message ? error.message : error),
+          }));
+        """,
+        command,
+        dict(payload or {}),
+    )
+    if not isinstance(result, Mapping) or result.get("ok") is not True:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            f"Native command {command!r} failed",
+            resource=f"fixture-action:{command}",
+        )
+    app_result = result.get("value")
+    if (
+        not isinstance(app_result, Mapping)
+        or app_result.get("ok") is not True
+        or not isinstance(app_result.get("data"), Mapping)
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            f"Native command {command!r} returned a failed AppResult",
+            resource=f"fixture-action:{command}",
+        )
+    status = app_result["data"].get("status")
+    try:
+        decoded = json.loads(status)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            f"Native command {command!r} returned invalid status JSON",
+            resource=f"fixture-action:{command}",
+        ) from error
+    if not isinstance(decoded, Mapping):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            f"Native command {command!r} status must be an object",
+            resource=f"fixture-action:{command}",
+        )
+    return decoded
+
+
+def _prepare_portable_recovery(
+    client: FoundationRuntimeClient,
+) -> tuple[str, Mapping[str, Any]]:
+    generated = _native_invoke_json(
+        client,
+        "messaging_recovery_generate_phrase",
+    )
+    words = generated.get("words")
+    if (
+        not isinstance(words, list)
+        or len(words) != 24
+        or any(not isinstance(word, str) or not word for word in words)
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Native recovery phrase generation did not return 24 words",
+            resource=f"fixture-recovery:{client.spec.profile}",
+        )
+    recovery_phrase = " ".join(words)
+    revision = _native_invoke_json(
+        client,
+        "messaging_recovery_create_revision",
+        {"input": {"recoveryPhrase": recovery_phrase}},
+    )
+    recovery_epoch = _required_integer(
+        revision.get("recoveryEpoch"),
+        "portable-recovery-epoch",
+    )
+    return recovery_phrase, {
+        "preparedEpoch": recovery_epoch,
+        "backupIdSha256": _sha256(
+            _required_text(
+                revision.get("backup", {}).get("backupId")
+                if isinstance(revision.get("backup"), Mapping)
+                else None,
+                "portable-recovery-backup",
+            )
+        ),
+    }
+
+
+def _restore_portable_recovery(
+    client: FoundationRuntimeClient,
+    recovery_phrase: str,
+) -> Mapping[str, Any]:
+    restored = _native_invoke_json(
+        client,
+        "messaging_recovery_restore_latest",
+        {"recoveryPhrase": recovery_phrase},
+    )
+    return {
+        "recoveryEpoch": _required_integer(
+            restored.get("recoveryEpoch"),
+            "restored-recovery-epoch",
+        ),
+        "deviceIdSha256": _sha256(
+            _required_text(
+                restored.get("deviceId"),
+                "restored-recovery-device",
+            )
+        ),
+    }
+
+
+def _publish_friends_moment(
+    client: FoundationRuntimeClient,
+    *,
+    draft_id: str,
+    text: str,
+    file_path: Path | None = None,
+) -> str:
+    payload: dict[str, Any] = {
+        "draftId": draft_id,
+        "revision": 1,
+        "text": text,
+    }
+    if file_path is not None:
+        payload["files"] = [{
+            "intentId": f"{draft_id}-image",
+            "filePath": str(file_path),
+        }]
+    staged = _moments_harness(client, "stageFriendsDraft", payload)
+    if staged.get("present") is not True:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Social Desktop private draft was not retained",
+            resource=f"fixture-draft:{draft_id}",
+        )
+    for attempt in range(3):
+        published = _moments_harness(client, "publishFriendsDraft")
+        if published.get("state") != "UNKNOWN_COMMIT":
+            break
+        if attempt < 2:
+            time.sleep(0.25)
+    post_id = published.get("transientPostId")
+    if (
+        published.get("state") != "PUBLISHED"
+        or not isinstance(post_id, str)
+        or not post_id
+    ):
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Social Desktop private Moment did not publish",
+            resource=f"fixture-draft:{draft_id}",
+        )
+    return post_id
+
+
+def _http_get(
+    url: str,
+    *,
+    authorization: str | None = None,
+) -> tuple[int, bytes]:
+    headers = {"Accept": "application/x-protobuf"}
+    if authorization is not None:
+        headers["Authorization"] = authorization
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, error.read()
+    except (OSError, TimeoutError) as error:
+        raise RuntimeOwnerBlocked(
+            "FIXTURE_OWNER_UNAVAILABLE",
+            "Social Desktop direct HTTP probe failed",
+            resource="station:station-four",
+        ) from error
+
+
+def _run_social_acceptance_pre_restart(
+    *,
+    alice: FoundationRuntimeClient,
+    bob: FoundationRuntimeClient,
+    eve: FoundationRuntimeClient,
+    station_url: str,
+    owner_root: Path,
+) -> tuple[dict[str, Any], str, str]:
+    fixture_path = owner_root / "social-desktop-private.png"
+    fixture_path.write_bytes(W7_PNG_BYTES)
+    recovery_phrase, recovery = _prepare_portable_recovery(bob)
+
+    first_post_id = _publish_friends_moment(
+        alice,
+        draft_id="social-acceptance-private-opened",
+        text=W7_PRIVATE_TEXT,
+        file_path=fixture_path,
+    )
+    bob_read = _moments_harness(
+        bob,
+        "readPrivateMoment",
+        {"postId": first_post_id, "openMedia": True},
+    )
+    media = bob_read.get("media")
+    if (
+        bob_read.get("state") != "CONTENT_READY"
+        or bob_read.get("textSha256") != _sha256(W7_PRIVATE_TEXT)
+        or not isinstance(media, list)
+        or len(media) != 1
+        or not isinstance(media[0], Mapping)
+        or media[0].get("state") != "MEDIA_READY"
+        or media[0].get("plaintextSha256") != _sha256(W7_PNG_BYTES)
+    ):
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            "Bob did not render the exact private Moment before replacement",
+            resource=f"client:{DESKTOP_CLIENTS[1][0]}",
+        )
+    eve_read = _moments_harness(
+        eve,
+        "readPrivateMoment",
+        {"postId": first_post_id, "openMedia": True},
+    )
+    if (
+        eve_read.get("state") != "NOT_FOUND_OR_NOT_AUTHORIZED"
+        or eve_read.get("media") != []
+    ):
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            "Eve private Moment read did not fail closed",
+            resource=f"client:{DESKTOP_CLIENTS[2][0]}",
+        )
+
+    recovery_post_id = _publish_friends_moment(
+        alice,
+        draft_id="social-acceptance-never-opened",
+        text="social-acceptance-never-opened",
+    )
+    public = _moments_harness(
+        alice,
+        "publishPublicMoment",
+        {"text": W7_PUBLIC_TEXT, "filePath": str(fixture_path)},
+    )
+    public_post_id = _required_text(
+        public.get("transientPostId"),
+        "public-post-id",
+    )
+    private_url = (
+        f"{station_url.rstrip('/')}/api/v1/social/moments/{first_post_id}"
+    )
+    anonymous_private_status, anonymous_private_body = _http_get(private_url)
+    invalid_status, invalid_body = _http_get(
+        private_url,
+        authorization="Bearer invalid-secure-content-token",
+    )
+    public_status, public_body = _http_get(
+        f"{station_url.rstrip('/')}/api/v1/social/moments/{public_post_id}"
+    )
+    bob_identity = _moments_harness(bob, "acceptanceActorIdentity")
+    eve_identity = _moments_harness(eve, "acceptanceActorIdentity")
+    private_markers = (
+        W7_PRIVATE_TEXT.encode("utf-8"),
+        _required_text(
+            bob_identity.get("actorPtid"),
+            "baseline-bob-actor",
+        ).encode("utf-8"),
+        _required_text(
+            eve_identity.get("actorPtid"),
+            "baseline-eve-actor",
+        ).encode("utf-8"),
+    )
+    if (
+        anonymous_private_status not in {403, 404}
+        or invalid_status != 401
+        or any(marker in anonymous_private_body for marker in private_markers)
+        or any(marker in invalid_body for marker in private_markers)
+        or public_status != 200
+        or W7_PUBLIC_TEXT.encode("utf-8") not in public_body
+    ):
+        raise RuntimeOwnerBlocked(
+            "CLIENT_RUNTIME_UNAVAILABLE",
+            "Social Desktop direct HTTP authorization corpus failed",
+            resource="station:station-four",
+        )
+    return (
+        {
+            "privatePostIdSha256": _sha256(first_post_id),
+            "recoveryPostIdSha256": _sha256(recovery_post_id),
+            "publicPostIdSha256": _sha256(public_post_id),
+            "privateTextSha256": _sha256(W7_PRIVATE_TEXT),
+            "privateMediaSha256": _sha256(W7_PNG_BYTES),
+            "anonymousPrivateStatus": anonymous_private_status,
+            "invalidCredentialStatus": invalid_status,
+            "publicAnonymousStatus": public_status,
+            "recovery": recovery,
+        },
+        recovery_phrase,
+        recovery_post_id,
+    )
 
 
 def _chat_harness(
@@ -1474,6 +1858,7 @@ def _activate_scenario_journey(
     *,
     work_item_id: str = WORK_ITEM_ID,
     task_id: str = TASK_ID,
+    plan_id: str = PLAN_ID,
     command_runner: Any = subprocess.run,
 ) -> Mapping[str, Any]:
     status_process = command_runner(
@@ -1509,7 +1894,7 @@ def _activate_scenario_journey(
         status_process.returncode != 0
         or len(active) != 1
         or active[0].get("workItemId") != work_item_id
-        or active[0].get("planId") != PLAN_ID
+        or active[0].get("planId") != plan_id
         or active[0].get("taskId") != task_id
     ):
         raise RuntimeOwnerBlocked(
@@ -5429,7 +5814,10 @@ class W7RuntimeOwner:
         }
 
     def run_w8_suite(self) -> dict[str, Any]:
-        return self._run_w8_suite()
+        return self._run_w8_suite(formal_acceptance=False)
+
+    def run_social_desktop_acceptance_suite(self) -> dict[str, Any]:
+        return self._run_w8_suite(formal_acceptance=True)
 
     def run_w9_suite(self) -> dict[str, Any]:
         return self._run_platform_suite(
@@ -7075,20 +7463,47 @@ class W7RuntimeOwner:
             "runtimeRoot": str(owner_root),
         }
 
-    def _run_w8_suite(self) -> dict[str, Any]:
+    def _run_w8_suite(
+        self,
+        *,
+        formal_acceptance: bool,
+    ) -> dict[str, Any]:
+        work_item_id = (
+            SOCIAL_ACCEPTANCE_WORK_ITEM_ID
+            if formal_acceptance
+            else W8_WORK_ITEM_ID
+        )
+        task_id = (
+            SOCIAL_ACCEPTANCE_TASK_ID
+            if formal_acceptance
+            else W8_TASK_ID
+        )
+        journey_id = (
+            SOCIAL_ACCEPTANCE_JOURNEY
+            if formal_acceptance
+            else W8_JOURNEY
+        )
+        plan_id = SOCIAL_ACCEPTANCE_PLAN_ID if formal_acceptance else PLAN_ID
+        runtime_reuse = (
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE
+            if formal_acceptance
+            else W8_RUNTIME_REUSE
+        )
         identity = _require_clean_source(self.repo_root, self.result_root)
         _activate_scenario_journey(
             self.repo_root,
-            W8_JOURNEY,
-            work_item_id=W8_WORK_ITEM_ID,
-            task_id=W8_TASK_ID,
+            journey_id,
+            work_item_id=work_item_id,
+            task_id=task_id,
+            plan_id=plan_id,
         )
         resolved, profile_env = _resolve_machine_profile(self.repo_root)
         _secondary_profile_path, secondary_profile_env = (
             _resolve_secondary_profile(resolved)
         )
         run_id = (
-            f"w8-suite-{identity['head'][:12]}-{os.getpid()}-"
+            f"{'social-desktop-acceptance' if formal_acceptance else 'w8-suite'}-"
+            f"{identity['head'][:12]}-{os.getpid()}-"
             f"{time.time_ns()}"
         )
         owner_root = self.runtime_root / run_id
@@ -7101,7 +7516,7 @@ class W7RuntimeOwner:
         (
             attestation_store
             / identity["workspaceId"]
-            / W8_JOURNEY
+            / journey_id
             / acceptance_run_id
         ).mkdir(parents=True, mode=0o700)
         profile_bindings: tuple[tuple[str, Mapping[str, str]], ...] = (
@@ -7120,12 +7535,16 @@ class W7RuntimeOwner:
                 {
                     "PT_ACCEPTANCE_ARTIFACT_ROOT": str(attestation_store),
                     "PT_ACCEPTANCE_WORKSPACE_ID": identity["workspaceId"],
-                    "PT_ACCEPTANCE_GATE_ID": W8_JOURNEY,
+                    "PT_ACCEPTANCE_GATE_ID": journey_id,
                     "PT_ACCEPTANCE_RUN_ID": acceptance_run_id,
                 }
             ):
                 attestation = produce_station_attestation(
-                    environment_id="secure-content-w8-runtime",
+                    environment_id=(
+                        "social-private-desktop-runtime"
+                        if formal_acceptance
+                        else "secure-content-w8-runtime"
+                    ),
                     run_id=run_id,
                     service_id=STATION_ID,
                     station_url=station_url,
@@ -7134,7 +7553,11 @@ class W7RuntimeOwner:
                     remote_source_identity_provider=resolve_remote_source_identity,
                 )
                 secondary_attestation = produce_station_attestation(
-                    environment_id="secure-content-w8-runtime",
+                    environment_id=(
+                        "social-private-desktop-runtime"
+                        if formal_acceptance
+                        else "secure-content-w8-runtime"
+                    ),
                     run_id=run_id,
                     service_id=SECONDARY_STATION_ID,
                     station_url=secondary_station_url,
@@ -7169,8 +7592,8 @@ class W7RuntimeOwner:
         ):
             error = RuntimeOwnerBlocked(
                 "SOURCE_ATTESTATION_MISMATCH",
-                "W8 Stations are not deployed from the exact source",
-                resource="station:secure-content-w8",
+                f"{task_id} Stations are not deployed from the exact source",
+                resource=f"station:{task_id}",
             )
             _close_runtime_stack(transport_stack, primary_error=error)
             raise error
@@ -7204,16 +7627,22 @@ class W7RuntimeOwner:
             _close_runtime_stack(transport_stack, primary_error=error)
             raise
 
-        fixture_epoch = "w8-" + _sha256(run_id)[:32]
+        fixture_epoch = (
+            "social-desktop-" if formal_acceptance else "w8-"
+        ) + _sha256(run_id)[:32]
         ledger = SuiteRuntimeLedger(
-            W8_RUNTIME_REUSE,
+            runtime_reuse,
             suite_runtime_id=run_id,
             source_digest=str(identity["head"]),
             fixture_epoch=fixture_epoch,
         )
         ledger.record(
             SuiteRuntimeAction.PROVISION,
-            resource_id="secure-content-w8-suite",
+            resource_id=(
+                "social-private-desktop-suite"
+                if formal_acceptance
+                else "secure-content-w8-suite"
+            ),
         )
         variant_results: dict[str, str] = {}
         ui_evidence_refs: dict[str, dict[str, str]] = {}
@@ -7234,18 +7663,17 @@ class W7RuntimeOwner:
                 source_checkpoint=str(identity["head"]),
                 run_id=run_id,
                 station_url=secondary_station_url,
-                password=password,
+                password=os.environ.get("PT_DEV_ACCOUNT_PASSWORD", "1"),
                 account_registrar=_register_runtime_account,
-            )
-            ledger.record(
-                SuiteRuntimeAction.ACCOUNT_PROVISION,
-                resource_id="account:remote_recipient",
+                existing_account=W8_REMOTE_SEEDED_ACCOUNT,
             )
             reserved_ports: set[int] = set()
             active_client_ids: set[int] = set()
             clients: dict[str, FoundationRuntimeClient] = {}
             payloads: dict[str, dict[str, Any]] = {}
-            for index, (client_id, actor, account_role) in enumerate(DESKTOP_CLIENTS):
+            for index, (client_id, actor, account_role) in enumerate(
+                DESKTOP_CLIENTS[:2]
+            ):
                 client = _make_client(
                     repo_root=self.repo_root,
                     runtime_root=owner_root,
@@ -7314,7 +7742,7 @@ class W7RuntimeOwner:
             remote_snapshot = _start_client(
                 remote_client,
                 account=remote_provisioner.account,
-                password=password,
+                password=os.environ.get("PT_DEV_ACCOUNT_PASSWORD", "1"),
             )
             _wait_for_device_enrollment(remote_client)
             _wait_for_mls_readiness(remote_client)
@@ -7351,7 +7779,61 @@ class W7RuntimeOwner:
                     ),
                 ) from error
 
+            _stop_client_or_raise(
+                remote_client,
+                purpose="W8 remote recipient identity preparation",
+                active_client_ids=active_client_ids,
+            )
+            clients.pop(remote_client_id)
+            payloads.pop(remote_client_id)
+
+            eve_client_id, eve_actor, eve_account_role = DESKTOP_CLIENTS[2]
+            eve_client = _make_client(
+                repo_root=self.repo_root,
+                runtime_root=owner_root,
+                station_url=station_url,
+                profile_env=profile_env,
+                source_commit=str(identity["head"]),
+                client_id=eve_client_id,
+                runtime_kind="native-tauri",
+                port_bases=(3570, 3750, 4535),
+                reserved_ports=reserved_ports,
+            )
+            stack.callback(
+                _stop_client_or_raise,
+                eve_client,
+                purpose="W8 Suite",
+                active_client_ids=active_client_ids,
+            )
+            active_client_ids.add(id(eve_client))
+            eve_snapshot = _start_client(
+                eve_client,
+                account=accounts[eve_account_role],
+                password=password,
+            )
+            _wait_for_device_enrollment(eve_client)
+            ledger.record(
+                SuiteRuntimeAction.CLIENT_LAUNCH,
+                resource_id=f"client:{eve_client_id}",
+            )
+            ledger.record(
+                SuiteRuntimeAction.LOGIN,
+                resource_id=f"session:{eve_client_id}",
+            )
+            clients[eve_client_id] = eve_client
+            payloads[eve_client_id] = _client_payload(
+                eve_client_id,
+                eve_actor,
+                eve_client,
+                eve_snapshot,
+            )
+
             for client_id, _actor, _account_role in DESKTOP_CLIENTS:
+                if (
+                    formal_acceptance
+                    and client_id == DESKTOP_CLIENTS[1][0]
+                ):
+                    continue
                 _prepare_private_content_keys(clients[client_id])
             _prepare_accepted_friendship(
                 clients[DESKTOP_CLIENTS[0][0]],
@@ -7363,6 +7845,223 @@ class W7RuntimeOwner:
                 fixture,
             )
             fixture_digest = str(fixture["manifest_digest"])
+            scenario_results: dict[str, str] = {}
+            supporting_artifacts: list[str] = []
+
+            if formal_acceptance:
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_START,
+                    scenario_id="desktop-pre-restart",
+                )
+                (
+                    baseline,
+                    recovery_phrase,
+                    recovery_post_id,
+                ) = _run_social_acceptance_pre_restart(
+                    alice=clients[DESKTOP_CLIENTS[0][0]],
+                    bob=clients[DESKTOP_CLIENTS[1][0]],
+                    eve=clients[DESKTOP_CLIENTS[2][0]],
+                    station_url=station_url,
+                    owner_root=owner_root,
+                )
+                pre_restart_ui = _receiver_ui_probe(
+                    clients[DESKTOP_CLIENTS[1][0]],
+                    workstream_id=task_id,
+                    scenario_id="desktop-pre-restart",
+                    action_text=None,
+                    visible_text=W7_PRIVATE_TEXT,
+                    open_comments=False,
+                )
+                pre_restart_ui_path = _write_receiver_ui_evidence(
+                    owner_root,
+                    workstream_id=task_id,
+                    suite_runtime_id=run_id,
+                    source_digest=str(identity["head"]),
+                    fixture_epoch=fixture_epoch,
+                    fixture_manifest_digest=fixture_digest,
+                    scenario_id="desktop-pre-restart",
+                    variant_id="desktop-pre-restart",
+                    receiver_client_id=DESKTOP_CLIENTS[1][0],
+                    evidence=pre_restart_ui,
+                )
+                baseline_path = _write_immutable_json(
+                    owner_root / "desktop-pre-restart.json",
+                    baseline,
+                )
+                for action, suffix in (
+                    (SuiteRuntimeAction.UI_ACTION, "ui-action"),
+                    (
+                        SuiteRuntimeAction.RECEIVER_ASSERTION,
+                        "receiver",
+                    ),
+                    (
+                        SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                        "supporting",
+                    ),
+                ):
+                    ledger.record(
+                        action,
+                        scenario_id="desktop-pre-restart",
+                        resource_id=(
+                            f"artifact:{baseline_path.name}:{suffix}"
+                        ),
+                    )
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_END,
+                    scenario_id="desktop-pre-restart",
+                )
+                supporting_artifacts.extend(
+                    (str(baseline_path), str(pre_restart_ui_path))
+                )
+                for scenario_id in (
+                    "SOC-SEC-AS01",
+                    "SOC-SEC-AS03",
+                    "SOC-SEC-AS04",
+                    "SOC-SEC-AS10",
+                ):
+                    scenario_results[scenario_id] = "PASS"
+
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_START,
+                    scenario_id="desktop-continuity",
+                )
+                bob_client_id, bob_actor, bob_account_role = DESKTOP_CLIENTS[1]
+                previous_bob = clients[bob_client_id]
+                _stop_client_or_raise(
+                    previous_bob,
+                    purpose="Social Desktop Bob replacement",
+                    active_client_ids=active_client_ids,
+                )
+                bob_replacement = _make_client(
+                    repo_root=self.repo_root,
+                    runtime_root=owner_root,
+                    station_url=station_url,
+                    profile_env=profile_env,
+                    source_commit=str(identity["head"]),
+                    client_id="secure-content-desktop-bob2",
+                    runtime_kind="native-tauri",
+                    port_bases=(3590, 3770, 4555),
+                    reserved_ports=reserved_ports,
+                )
+                stack.callback(
+                    _stop_client_or_raise,
+                    bob_replacement,
+                    purpose="Social Desktop Suite",
+                    active_client_ids=active_client_ids,
+                )
+                active_client_ids.add(id(bob_replacement))
+                replacement_snapshot = _start_client(
+                    bob_replacement,
+                    account=accounts[bob_account_role],
+                    password=password,
+                )
+                _wait_for_device_enrollment(bob_replacement)
+                ledger.record(
+                    SuiteRuntimeAction.CLIENT_REPLACEMENT,
+                    scenario_id="desktop-continuity",
+                    resource_id="client:secure-content-desktop-bob2",
+                )
+                before_recovery = _moments_harness(
+                    bob_replacement,
+                    "readPrivateMoment",
+                    {"postId": recovery_post_id},
+                )
+                if before_recovery.get("state") != "RECOVERY_REQUIRED":
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE",
+                        "Bob replacement device did not enter RECOVERY_REQUIRED",
+                        resource="client:secure-content-desktop-bob2",
+                    )
+                restored = _restore_portable_recovery(
+                    bob_replacement,
+                    recovery_phrase,
+                )
+                recovery_phrase = ""
+                recovered = _moments_harness(
+                    bob_replacement,
+                    "recoverPrivateMoment",
+                    {"postId": recovery_post_id},
+                )
+                if (
+                    recovered.get("state") != "CONTENT_READY"
+                    or recovered.get("textSha256")
+                    != _sha256("social-acceptance-never-opened")
+                ):
+                    raise RuntimeOwnerBlocked(
+                        "CLIENT_RUNTIME_UNAVAILABLE",
+                        "Bob replacement device did not recover private history",
+                        resource="client:secure-content-desktop-bob2",
+                    )
+                clients[bob_client_id] = bob_replacement
+                payloads[bob_client_id] = _client_payload(
+                    bob_client_id,
+                    bob_actor,
+                    bob_replacement,
+                    replacement_snapshot,
+                )
+                continuity = {
+                    "beforeRecovery": "RECOVERY_REQUIRED",
+                    "afterRecovery": "CONTENT_READY",
+                    "recoveryPostIdSha256": _sha256(recovery_post_id),
+                    "preparedRecoveryEpoch": baseline["recovery"][
+                        "preparedEpoch"
+                    ],
+                    "restoredRecoveryEpoch": restored["recoveryEpoch"],
+                    "replacementDeviceIdSha256": restored[
+                        "deviceIdSha256"
+                    ],
+                }
+                continuity_path = _write_immutable_json(
+                    owner_root / "desktop-continuity.json",
+                    continuity,
+                )
+                continuity_ui = _receiver_ui_probe(
+                    bob_replacement,
+                    workstream_id=task_id,
+                    scenario_id="desktop-continuity",
+                    action_text=None,
+                    visible_text="social-acceptance-never-opened",
+                    open_comments=False,
+                )
+                continuity_ui_path = _write_receiver_ui_evidence(
+                    owner_root,
+                    workstream_id=task_id,
+                    suite_runtime_id=run_id,
+                    source_digest=str(identity["head"]),
+                    fixture_epoch=fixture_epoch,
+                    fixture_manifest_digest=fixture_digest,
+                    scenario_id="desktop-continuity",
+                    variant_id="desktop-continuity",
+                    receiver_client_id=bob_client_id,
+                    evidence=continuity_ui,
+                )
+                for action, suffix in (
+                    (SuiteRuntimeAction.UI_ACTION, "ui-action"),
+                    (
+                        SuiteRuntimeAction.RECEIVER_ASSERTION,
+                        "receiver",
+                    ),
+                    (
+                        SuiteRuntimeAction.SUPPORTING_OBSERVATION,
+                        "supporting",
+                    ),
+                ):
+                    ledger.record(
+                        action,
+                        scenario_id="desktop-continuity",
+                        resource_id=(
+                            f"artifact:{continuity_path.name}:{suffix}"
+                        ),
+                    )
+                ledger.record(
+                    SuiteRuntimeAction.SCENARIO_END,
+                    scenario_id="desktop-continuity",
+                )
+                supporting_artifacts.extend(
+                    (str(continuity_path), str(continuity_ui_path))
+                )
+                scenario_results["SOC-SEC-AS02"] = "PASS"
+                scenario_results["SOC-SEC-AS08"] = "PASS"
 
             manifests: dict[str, Path] = {}
             manifest_digests: list[str] = []
@@ -7377,7 +8076,7 @@ class W7RuntimeOwner:
                     runtime_dir,
                     attestation,
                     run_id=run_id,
-                    journey_id=W8_JOURNEY,
+                    journey_id=journey_id,
                     service_id=STATION_ID,
                 )
                 schema_attestation_ref = (
@@ -7404,7 +8103,7 @@ class W7RuntimeOwner:
                         runtime_dir,
                         secondary_attestation,
                         run_id=run_id,
-                        journey_id=W8_JOURNEY,
+                        journey_id=journey_id,
                         service_id=SECONDARY_STATION_ID,
                     )
                     secondary_schema_attestation_ref = (
@@ -7423,10 +8122,6 @@ class W7RuntimeOwner:
                             "PT_STATION_URL"
                         ],
                     )
-                    selected_client_ids = (
-                        *local_client_ids,
-                        remote_client_id,
-                    )
                 selected_clients = {
                     client_id: clients[client_id]
                     for client_id in selected_client_ids
@@ -7434,7 +8129,7 @@ class W7RuntimeOwner:
                 manifest_path = write_attached_runtime_manifest(
                     manifest_payload=_manifest_payload(
                         identity=identity,
-                        journey_id=W8_JOURNEY,
+                        journey_id=journey_id,
                         run_id=run_id,
                         services=services,
                         fixture_ref=fixture_ref,
@@ -7445,7 +8140,7 @@ class W7RuntimeOwner:
                         ],
                     ),
                     output_path=runtime_dir / "runtime.json",
-                    journey_id=W8_JOURNEY,
+                    journey_id=journey_id,
                     sessions_by_client=selected_clients,
                     automation_refs_by_client={
                         client_id: {
@@ -7468,7 +8163,7 @@ class W7RuntimeOwner:
             fixture_context, fixture_action_client = (
                 fixture_owner.open_action_channel(
                     workspace_id=str(identity["workspaceId"]),
-                    gate_id=W8_JOURNEY,
+                    gate_id=journey_id,
                     runtime_manifest_digests=tuple(manifest_digests),
                 )
             )
@@ -7483,11 +8178,7 @@ class W7RuntimeOwner:
                     SuiteRuntimeAction.SCENARIO_START,
                     scenario_id=spec.scenario_id,
                 )
-                selected_client_ids = local_client_ids + (
-                    (remote_client_id,)
-                    if spec.requires_remote_recipient
-                    else ()
-                )
+                selected_client_ids = local_client_ids
                 for client_id in selected_client_ids:
                     _moments_harness(
                         clients[client_id],
@@ -7518,10 +8209,17 @@ class W7RuntimeOwner:
                     result_root=raw_result_root,
                     workspace_identity=identity,
                     fixture_action_client=fixture_action_client,
+                    registry=(
+                        _social_acceptance_scenario_registry(
+                            spec.scenario_id
+                        )
+                        if formal_acceptance
+                        else None
+                    ),
                 )
                 ui_evidence = _receiver_ui_probe(
                     clients[spec.receiver_client_id],
-                    workstream_id=W8_TASK_ID,
+                    workstream_id=task_id,
                     scenario_id=spec.scenario_id,
                     action_text=(
                         spec.action_text if spec.click_content else None
@@ -7532,7 +8230,7 @@ class W7RuntimeOwner:
                 )
                 ui_artifact_path = _write_receiver_ui_evidence(
                     owner_root,
-                    workstream_id=W8_TASK_ID,
+                    workstream_id=task_id,
                     suite_runtime_id=run_id,
                     source_digest=str(identity["head"]),
                     fixture_epoch=fixture_epoch,
@@ -7544,7 +8242,7 @@ class W7RuntimeOwner:
                 )
                 result = _stage_child_result(
                     result,
-                    workstream_id=W8_TASK_ID,
+                    workstream_id=task_id,
                     raw_result_root=raw_result_root,
                     publish_root=publish_root,
                     final_result_root=self.result_root,
@@ -7595,6 +8293,21 @@ class W7RuntimeOwner:
                     scenario_id=spec.scenario_id,
                 )
                 variant_results[spec.variant_id] = str(result["result"])
+                if formal_acceptance and result["result"] == "PASS":
+                    for scenario_id in SOCIAL_ACCEPTANCE_SCENARIO_MAP[
+                        spec.scenario_id
+                    ]:
+                        scenario_results[scenario_id] = "PASS"
+
+            if (
+                formal_acceptance
+                and set(scenario_results) != set(SOCIAL_ACCEPTANCE_IDS)
+            ):
+                raise RuntimeOwnerBlocked(
+                    "SOCIAL_ACCEPTANCE_COVERAGE_INCOMPLETE",
+                    "Social Desktop Acceptance scenario coverage is incomplete",
+                    resource="runtime:social-private-desktop",
+                )
 
         ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)
         suite_report = ledger.require_valid()
@@ -7602,13 +8315,13 @@ class W7RuntimeOwner:
             owner_root / "suite-runtime.json",
             suite_report,
         )
-        _publish_result_generation(
-            workstream_id=W8_TASK_ID,
+        published_generation = _publish_result_generation(
+            workstream_id=task_id,
             publish_root=publish_root,
             final_result_root=self.result_root,
             generation_id=str(identity["head"]),
         )
-        return {
+        result = {
             "status": "FUNCTIONAL_PASS",
             "proofState": "UNPROVEN",
             "variantResults": variant_results,
@@ -7617,6 +8330,38 @@ class W7RuntimeOwner:
             "suiteRuntimeReportDigest": suite_report["reportDigest"],
             "receiverVisibleEvidence": ui_evidence_refs,
         }
+        if formal_acceptance:
+            supporting_artifacts.extend(
+                str(owner_root / reference["path"])
+                for reference in ui_evidence_refs.values()
+            )
+            supporting_artifacts.extend(
+                str(path)
+                for path in sorted(
+                    published_generation.glob("*/*/result.json")
+                )
+            )
+            result.update(
+                {
+                    "scenarioResults": scenario_results,
+                    "unprovenScenarios": [
+                        "SOC-SEC-AS11",
+                        "SOC-SEC-AS14",
+                    ],
+                    "resourceReuse": {
+                        "provisioningRuns": 1,
+                        "clientLaunches": 5,
+                        "maxConcurrentNativeClients": 3,
+                        "newAccountRegistrations": 3,
+                        "stationBuilds": 0,
+                        "stationDeployments": 0,
+                        "desktopBuilds": 0,
+                        "clientReplacements": ["bob"],
+                    },
+                    "supportingArtifacts": supporting_artifacts,
+                }
+            )
+        return result
 
     @staticmethod
     def _copy_fixture_into(source: Path, target_root: Path) -> dict[str, str]:
@@ -7646,6 +8391,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "preflight",
             "run-w7-desktop-suite",
             "run-w8-suite",
+            "run-social-desktop-acceptance-suite",
             "run-w9-suite",
             "run-w2-suite",
             "run-w10-suite",
@@ -7678,6 +8424,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     dual_profile_actions = {
         "run-w7-desktop-suite",
         "run-w8-suite",
+        "run-social-desktop-acceptance-suite",
         "run-w2-suite",
         "run-w10-suite",
         "run-w11-suite",
@@ -7690,6 +8437,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         resource = {
             "run-w7-desktop-suite": "runtime:secure-content-w7",
             "run-w8-suite": "runtime:secure-content-w8",
+            "run-social-desktop-acceptance-suite": (
+                "runtime:social-private-desktop"
+            ),
             "run-w2-suite": "runtime:secure-content-w2",
             "run-w10-suite": "runtime:secure-content-w10",
             "run-w11-suite": "runtime:secure-content-w11",
@@ -7734,6 +8484,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = owner.run_w7_desktop_suite()
         elif args.action == "run-w8-suite":
             result = owner.run_w8_suite()
+        elif args.action == "run-social-desktop-acceptance-suite":
+            result = owner.run_social_desktop_acceptance_suite()
         elif args.action == "run-w9-suite":
             result = owner.run_w9_suite()
         elif args.action == "run-w2-suite":

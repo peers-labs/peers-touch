@@ -30,8 +30,9 @@ class SocialPrivateDesktopGateTest(unittest.TestCase):
             "unprovenScenarios": list(EXPLICITLY_UNPROVEN_SCENARIOS),
             "resourceReuse": {
                 "provisioningRuns": 1,
+                "clientLaunches": 5,
                 "maxConcurrentNativeClients": 3,
-                "newAccountRegistrations": 0,
+                "newAccountRegistrations": 3,
                 "stationBuilds": 0,
                 "stationDeployments": 0,
                 "desktopBuilds": 0,

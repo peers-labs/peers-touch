@@ -51,7 +51,7 @@
   "negative": [
     "Browser private publish/read and Mobile parity are not claimed",
     "development FUNCTIONAL_PASS artifacts are not treated as formal Acceptance proof",
-    "no Scenario may rebuild, redeploy, register a new account, or create a fresh Suite Runtime",
+    "no Scenario may rebuild, redeploy, register an account, or create a fresh Suite Runtime after the one Suite provisioning pass",
     "the Suite may keep at most three Native Desktop clients active concurrently",
     "cross-Station private delivery remains unsupported and unclaimed"
   ]

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -82,8 +83,9 @@ def _validate_owner_result(payload: Mapping[str, Any]) -> tuple[Path, list[Path]
         raise GateError("Social Desktop resource reuse evidence is missing")
     if (
         reuse.get("provisioningRuns") != 1
+        or reuse.get("clientLaunches", 99) > 5
         or reuse.get("maxConcurrentNativeClients", 99) > 3
-        or reuse.get("newAccountRegistrations") != 0
+        or reuse.get("newAccountRegistrations") != 3
         or reuse.get("stationBuilds") != 0
         or reuse.get("stationDeployments") != 0
         or reuse.get("desktopBuilds") != 0
@@ -124,6 +126,48 @@ class SocialPrivateDesktopGate(AcceptanceGate):
     )
 
     def run(self) -> dict[str, Any]:
+        source_check = subprocess.run(
+            [
+                "go",
+                "test",
+                "-count=1",
+                "-run",
+                (
+                    "^(TestPrivateContentServicePrepareSubmitReplay|"
+                    "TestPrivateContentServicePrepareSubmitComment|"
+                    "TestContentPreKeyDifferentPlansConsumeDistinctKeys)$"
+                ),
+                "./app/subserver/social/application",
+                "./app/subserver/key_exchange",
+            ],
+            cwd=REPO_ROOT / "apps" / "station",
+            text=True,
+            capture_output=True,
+            timeout=900,
+            check=False,
+        )
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix="social-private-desktop-source-",
+            suffix=".log",
+            delete=False,
+        ) as output:
+            output.write(source_check.stdout)
+            output.write(source_check.stderr)
+            source_log = Path(output.name)
+        try:
+            self.report.add_evidence_file(
+                "viewer-envelope-and-prekey-source-check",
+                source_log,
+            )
+        finally:
+            source_log.unlink(missing_ok=True)
+        if source_check.returncode != 0:
+            raise GateError(
+                "Social viewer-envelope or one-time PreKey source check failed"
+            )
+
         completed = subprocess.run(
             [
                 sys.executable,

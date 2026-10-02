@@ -16,7 +16,12 @@
   "journeyId": "SOC-SEC-J01-J09",
   "runtimeClass": "native-desktop",
   "writeSet": [
-    "docs/architecture/social/execution-plans/20261002-social-desktop-acceptance"
+    "docs/architecture/social/execution-plans/20261002-social-desktop-acceptance",
+    "tooling/acceptance/gates/social",
+    "tooling/acceptance/provisioners/secure_content_remote_recipient.py",
+    "tooling/development/secure_content/runtime_owner.py",
+    "tooling/development/secure_content/scenarios/social_expansion.py",
+    "tooling/development/secure_content/test_runtime_owner.py"
   ],
   "readSet": [
     "apps/desktop",
@@ -30,10 +35,9 @@
     "tooling/acceptance/environments",
     "tooling/acceptance/features",
     "tooling/acceptance/gates.yaml",
-    "tooling/acceptance/gates/social",
     "tooling/acceptance/provisioners",
     "tooling/acceptance/registry.yaml",
-    "tooling/development/secure_content"
+    "tooling/development/secure_content/scenarios"
   ],
   "budgets": {
     "focusedCheckSeconds": 900,
@@ -61,24 +65,18 @@
     "scope": "suite",
     "entryCheckId": "social-private-desktop-e2e",
     "scenarioIds": [
-      "SOC-SEC-AS01",
-      "SOC-SEC-AS02",
-      "SOC-SEC-AS03",
-      "SOC-SEC-AS04",
-      "SOC-SEC-AS05",
-      "SOC-SEC-AS06",
-      "SOC-SEC-AS07",
-      "SOC-SEC-AS08",
-      "SOC-SEC-AS09",
-      "SOC-SEC-AS10",
-      "SOC-SEC-AS12",
-      "SOC-SEC-AS13",
-      "SOC-SEC-AS15",
-      "SOC-SEC-AS16"
+      "desktop-pre-restart",
+      "desktop-continuity",
+      "private-comment",
+      "social-expansion",
+      "social-subtype",
+      "social-object",
+      "social-delete-block",
+      "social-bounds"
     ],
     "maxProvisioningRuns": 1,
-    "maxClientLaunches": 4,
-    "minWarmReuseRate": 0.9,
+    "maxClientLaunches": 5,
+    "minWarmReuseRate": 0.85,
     "requireAttachOnlyScenarios": true,
     "requireReceiverVisibleProof": true,
     "allowClientReplacement": true
@@ -87,7 +85,7 @@
     "one exact-source Suite Runtime reuses existing four and fiveArm services and compiled Desktop artifacts",
     "Alice, Bob and Eve cover mutual-friend, follower-only non-friend, unrelated and blocked states without registering another local actor",
     "no more than three Native Desktop clients are active concurrently and Bob recovery is the only device replacement",
-    "the fiveArm negative uses an existing owner-issued Actor identity and creates no new test account",
+    "the Suite registers exactly the three isolated relationship actors once; the fiveArm negative reuses an existing owner-issued Actor identity",
     "all 14 Desktop-applicable Acceptance scenarios publish current receiver-visible and security readback evidence",
     "AS11 Browser and AS14 Mobile are recorded as UNPROVEN without launching those runtimes",
     "the Suite report ends in cleanup-complete and Social require-proven validation passes"
