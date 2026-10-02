@@ -53,6 +53,14 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "docs/architecture/architecture-module-governance/architecture-modules.json",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "docs/README.md",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "model/domain/agent",
         "mode": "exclusive-write"
       },

@@ -1,8 +1,8 @@
 # Agent 架构
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-04-11 | **Updated**: 2026-08-17
+> **Version**: v1.4
+> **Created**: 2026-04-11 | **Updated**: 2026-10-02
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `apps/station/app/subserver/agent/`, `apps/desktop/src-tauri/src/application/agent_turn/`, `apps/desktop/src-tauri/src/application/mcp/`
 
@@ -32,7 +32,12 @@
 
 | 文档 | 定位 |
 |---|---|
-| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub/AgentBox benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前处于正式 execution-plan review |
+| [design.md](./design.md) | Agent 根模块的当前所有权、运行时拓扑与能力边界 |
+| [decisions.md](./decisions.md) | 当前 Agent 根模块采用的已接受决策索引 |
+| [data-model.md](./data-model.md) | Agent、Conversation、Turn、Capability Binding 与 ToolCall 的权威模型 |
+| [module-layout.md](./module-layout.md) | Model、Station、Desktop 与 Acceptance 的模块职责 |
+| [integration.md](./integration.md) | 跨运行时集成、证据和迁移边界 |
+| [modern-chat-agent/](./modern-chat-agent/) | **Modern Chat Agent accepted product + architecture** — LobeHub/AgentBox benchmark disposition、产品旅程/状态/验收，以及 Station 单一真源下跨 Desktop/未来 Mobile 的单 Agent 内核；当前最小交付由 Minimum Usable Agent Chat Plan 管理 |
 | [agent-canvas-orchestration.md](./agent-canvas-orchestration.md) | **当前 Agent 编排正式设计** — 以 Agent Canvas 为入口、GoalKeeper 为目标锚点、EngineMatcher/RunPlan/AutonomyController 为运行内核的多 Agent 编排架构 |
 | [provider-station-ownership/](./provider-station-ownership/) | **Provider Station Ownership** — Station 是所有 AI Provider 的唯一执行者和配置所有者；Desktop/Mobile 是编辑入口 + SSE 消费端；per-actor 凭证隔离；版本号防脑裂 |
 | [agent-lobehub-blueprint.md](./agent-lobehub-blueprint.md) | **当前 Agent 重构正式设计** — 以 LobeHub 为蓝本的 UI/UX、Tool、MCP、Skill、后端能力映射与目标架构 |

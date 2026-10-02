@@ -19,6 +19,8 @@
     "apps/desktop",
     "apps/station/app/subserver/agent",
     "docs/architecture/agent",
+    "docs/architecture/architecture-module-governance/architecture-modules.json",
+    "docs/README.md",
     "model/domain/agent",
     "packages/agent-catalog",
     "packages/locales",
@@ -28,7 +30,9 @@
   "readSet": [
     "apps/desktop",
     "apps/station/app/subserver/agent",
+    "docs/architecture/architecture-module-governance/architecture-modules.json",
     "docs/architecture/agent/modern-chat-agent",
+    "docs/README.md",
     "model/domain/agent",
     "packages/agent-catalog",
     "tooling/acceptance",
@@ -42,7 +46,7 @@
   "checks": [
     {
       "id": "minimum-agent-chat-source",
-      "command": "python3 -m unittest tooling.acceptance.gates.agent.native_agent_runner_test tooling.acceptance.gates.agent.mcp_lifecycle_development_test tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.gates.agent.agent_native_static_test && cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler/... ./app/subserver/agent/infrastructure/persistence/... -count=1 && cd ../.. && pnpm --dir apps/desktop check",
+      "command": "python3 -m unittest tooling.acceptance.gates.agent.native_agent_runner_test tooling.acceptance.gates.agent.mcp_lifecycle_development_test tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.gates.agent.agent_native_static_test && cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler/... ./app/subserver/agent/infrastructure/persistence/... -count=1 && cd ../.. && pnpm --dir apps/desktop check && node tooling/scripts/architecture/module-governance.mjs validate",
       "verificationClass": "SOURCE_CHECK"
     },
     {
