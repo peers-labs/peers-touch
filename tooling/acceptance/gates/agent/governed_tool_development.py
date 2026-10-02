@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import os
 import secrets
@@ -433,6 +434,16 @@ class RemoteProviderBridge:
         self.host = self.environment.get("PT_DEPLOY_HOST", "").strip()
         user = self.environment.get("PT_DEPLOY_USER", "").strip()
         require(bool(self.host and user), "deployment SSH identity is incomplete")
+        self.compose_project = self._compose_project_name(
+            self.environment.get("PT_DEPLOY_RESTART_CMD", "")
+        )
+        self.compose_service = (
+            self.environment.get("PT_DEPLOY_ROLE", "").strip()
+        )
+        require(
+            bool(self.compose_project and self.compose_service),
+            "deployment Docker identity is incomplete",
+        )
         self.transport = SshTransport(
             SshTarget(
                 host=self.host,
@@ -450,7 +461,58 @@ class RemoteProviderBridge:
         self.remote_pid = 0
         self.remote_pid_path = ""
         self.remote_log_path = ""
+        self.station_gateway = ""
         self.artifact_prefix = artifact_prefix
+
+    @staticmethod
+    def _compose_project_name(restart_command: str) -> str:
+        tokens = shlex.split(restart_command)
+        for index, token in enumerate(tokens):
+            if token in {"-p", "--project-name"} and index + 1 < len(tokens):
+                return tokens[index + 1]
+            if token.startswith("--project-name="):
+                return token.split("=", 1)[1]
+        return ""
+
+    def _resolve_station_gateway(self) -> str:
+        containers = self.transport.run_argv(
+            (
+                "docker",
+                "ps",
+                "-q",
+                "--filter",
+                f"label=com.docker.compose.project={self.compose_project}",
+                "--filter",
+                f"label=com.docker.compose.service={self.compose_service}",
+            ),
+            timeout=30,
+            check=True,
+        )
+        container_ids = containers.stdout.split()
+        require(
+            len(container_ids) == 1,
+            "Station provider bridge requires exactly one running container",
+        )
+        inspected = self.transport.run_argv(
+            (
+                "docker",
+                "inspect",
+                "-f",
+                "{{range .NetworkSettings.Networks}}{{println .Gateway}}{{end}}",
+                container_ids[0],
+            ),
+            timeout=30,
+            check=True,
+        )
+        for value in inspected.stdout.split():
+            try:
+                ipaddress.ip_address(value)
+            except ValueError:
+                continue
+            return value
+        raise GovernedToolDevelopmentError(
+            "Station container gateway is unavailable"
+        )
 
     def _remote_endpoint_ready(self) -> bool:
         probe = self.transport.run_argv(
@@ -463,7 +525,7 @@ class RemoteProviderBridge:
                     "(sys.argv[1],int(sys.argv[2])),0.5);"
                     "connection.close()"
                 ),
-                self.host,
+                self.station_gateway,
                 str(self.bridge_port),
             ),
             timeout=5,
@@ -472,6 +534,7 @@ class RemoteProviderBridge:
         return probe.returncode == 0
 
     def start(self, local_port: int, run_id: str) -> str:
+        self.station_gateway = self._resolve_station_gateway()
         self.reverse_port = self.transport.available_remote_port()
         self.bridge_port = self.transport.available_remote_port()
         require(
@@ -496,7 +559,8 @@ class RemoteProviderBridge:
         remote_command = (
             "umask 077; "
             f"nohup python3 -c {shlex.quote(bootstrap)} "
-            f"{shlex.quote(self.host)} {self.bridge_port} {self.reverse_port} "
+            f"{shlex.quote(self.station_gateway)} "
+            f"{self.bridge_port} {self.reverse_port} "
             f">{shlex.quote(self.remote_log_path)} 2>&1 </dev/null & "
             f"echo $! > {shlex.quote(self.remote_pid_path)}; "
             f"cat {shlex.quote(self.remote_pid_path)}"
@@ -512,7 +576,7 @@ class RemoteProviderBridge:
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if self._remote_endpoint_ready():
-                return f"http://{self.host}:{self.bridge_port}"
+                return f"http://{self.station_gateway}:{self.bridge_port}"
             time.sleep(0.1)
         raise GovernedToolDevelopmentError(
             "remote provider bridge did not become reachable"
@@ -560,6 +624,7 @@ class RemoteProviderBridge:
             "failures": failures,
             "reversePort": self.reverse_port,
             "bridgePort": self.bridge_port,
+            "stationGateway": self.station_gateway,
             "remotePid": self.remote_pid,
         }
 
