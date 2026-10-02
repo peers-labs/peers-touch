@@ -35248,11 +35248,11 @@ export function installAcceptanceHarness(): void {
         if (!capabilitySessionId) {
           throw new Error('agent.acceptance.capabilitySessionUnavailable');
         }
-        const fixtureReadiness = await api.getAgentCapabilityReadiness({
+        const scenarioReadiness = await api.getAgentCapabilityReadiness({
           agent_id: agentId,
           client_capability_session_id: capabilitySessionId,
         });
-        if (fixtureReadiness.capabilities.some((capability) => (
+        if (scenarioReadiness.capabilities.some((capability) => (
           capability.capability_id.startsWith('tool:')
           && isAgentCapabilityReady(capability)
         ))) {
