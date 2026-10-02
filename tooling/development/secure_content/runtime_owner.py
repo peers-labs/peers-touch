@@ -2155,29 +2155,29 @@ def _activate_scenario_journey(
             resource=f"journey:{journey_id}",
         ) from error
     declarations = status.get("declarations") if isinstance(status, Mapping) else None
-    active = [
-        item
-        for item in declarations
-        if isinstance(item, Mapping) and item.get("state") == "ACTIVE"
-    ] if isinstance(declarations, list) else []
     expected_task_ids = (
         allowed_task_ids
         if allowed_task_ids is not None
         else frozenset({task_id}) if task_id is not None else frozenset()
     )
-    if (
-        status_process.returncode != 0
-        or len(active) != 1
-        or (
-            work_item_id is not None
-            and active[0].get("workItemId") != work_item_id
+    active = [
+        item
+        for item in declarations
+        if (
+            isinstance(item, Mapping)
+            and item.get("state") == "ACTIVE"
+            and (
+                work_item_id is None
+                or item.get("workItemId") == work_item_id
+            )
+            and item.get("planId") == plan_id
+            and (
+                not expected_task_ids
+                or item.get("taskId") in expected_task_ids
+            )
         )
-        or active[0].get("planId") != plan_id
-        or (
-            expected_task_ids
-            and active[0].get("taskId") not in expected_task_ids
-        )
-    ):
+    ] if isinstance(declarations, list) else []
+    if status_process.returncode != 0 or len(active) != 1:
         raise RuntimeOwnerBlocked(
             "DECLARATION_TRANSITION_FAILED",
             "W7 functional declaration is not the active Plan task",

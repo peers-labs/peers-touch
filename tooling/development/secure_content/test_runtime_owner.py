@@ -4159,8 +4159,15 @@ class RuntimeOwnerTest(unittest.TestCase):
             "sessionId": session_id,
             "journeyId": SOCIAL_ACCEPTANCE_JOURNEY,
         }
+        unrelated = {
+            **declaration,
+            "workItemId": "unrelated-work",
+            "planId": "UNRELATED-PLAN",
+            "taskId": "unrelated-task",
+            "sessionId": "unrelated-session",
+        }
         responses = [
-            {"declarations": [declaration]},
+            {"declarations": [unrelated, declaration]},
             declaration,
             declaration,
         ]
