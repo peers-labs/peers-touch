@@ -281,6 +281,10 @@ class RuntimeOwnerTest(unittest.TestCase):
             "replacement_snapshot = _wait_for_moments_snapshot(",
             recovered_read,
         )
+        replenished_keys = source.index(
+            "_prepare_private_content_keys(bob_replacement)",
+            recovered_read,
+        )
         replacement_payload = source.index(
             "payloads[bob_client_id] = _client_payload(",
             refreshed_snapshot,
@@ -288,6 +292,8 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertLess(recovery_read, recovery_restore)
         self.assertLess(recovery_restore, replacement_enrollment)
         self.assertLess(replacement_enrollment, recovered_read)
+        self.assertLess(recovered_read, replenished_keys)
+        self.assertLess(replenished_keys, refreshed_snapshot)
         self.assertLess(recovered_read, refreshed_snapshot)
         self.assertLess(refreshed_snapshot, replacement_payload)
 
