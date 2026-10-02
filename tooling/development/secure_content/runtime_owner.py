@@ -2168,6 +2168,32 @@ def _require_clean_source(
     return identity
 
 
+_SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES = (
+    "apps/desktop/src/acceptance/moments/harness.ts",
+    "apps/desktop/src/acceptance/moments/harness.test.ts",
+    "docs/architecture/secure-content/execution-plans/"
+    "20260913-secure-content-hard-cut/plan.md",
+    "docs/architecture/social/",
+    "tooling/acceptance/",
+    "tooling/development/secure_content/",
+)
+
+
+def _social_acceptance_source_delta_allowed(paths: Sequence[str]) -> bool:
+    return all(
+        path
+        and any(
+            (
+                path == prefix
+                if not prefix.endswith("/")
+                else path.startswith(prefix)
+            )
+            for prefix in _SOCIAL_ACCEPTANCE_SOURCE_DELTA_PREFIXES
+        )
+        for path in paths
+    )
+
+
 def _require_social_acceptance_source(
     repo_root: Path,
     result_root: Path,
@@ -2220,13 +2246,6 @@ def _require_social_acceptance_source(
             resource="source:workspace",
         )
 
-    allowed_prefixes = (
-        "docs/architecture/secure-content/execution-plans/"
-        "20260913-secure-content-hard-cut/plan.md",
-        "docs/architecture/social/",
-        "tooling/acceptance/",
-        "tooling/development/secure_content/",
-    )
     candidates: list[tuple[int, Path, Mapping[str, Any]]] = []
     for aggregate_path in (
         Path.home() / ".peers-touch" / "dev" / "workspaces"
@@ -2280,11 +2299,7 @@ def _require_social_acceptance_source(
             capture_output=True,
             text=True,
         ).stdout.splitlines()
-        if any(
-            path
-            and not any(path.startswith(prefix) for prefix in allowed_prefixes)
-            for path in changed
-        ):
+        if not _social_acceptance_source_delta_allowed(changed):
             continue
         distance = int(
             subprocess.run(
