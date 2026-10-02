@@ -104,6 +104,13 @@ AGENT_V2_BINDING_GATES = frozenset(
         AGENT_MARKETPLACE_GATE,
     }
 )
+AGENT_V2_SCENARIO_CONTROL_GATES = frozenset(
+    {
+        AGENT_V2_BINDING_GATE,
+        AGENT_V2_GOVERNED_TOOL_GATE,
+        AGENT_V2_MCP_GATE,
+    }
+)
 AGENT_V2_CREDENTIAL_REFS = (
     "profile:CHAT_NATIVE_DEMO_PASSWORD",
     "profile:PT_AGENT_PROVIDER_API_KEY",
@@ -1239,6 +1246,83 @@ class HomeStationProvisioner(EnvironmentProvisioner):
             cleanup_external_runtime,
         )
 
+    def _deploy_agent_v2_scenario_control(
+        self,
+        *,
+        gate_id: str,
+        profile_env: dict[str, str],
+    ) -> None:
+        run_id = os.environ.get("PT_ACCEPTANCE_RUN_ID", "").strip()
+        if not run_id:
+            raise BlockedError(
+                reason=f"{gate_id} requires the parent Acceptance run identity",
+                resource="acceptance-run:PT_ACCEPTANCE_RUN_ID",
+            )
+        deploy_env = os.environ.copy()
+        deploy_env.update(profile_env)
+        deploy_env.update(
+            {
+                "PT_ACCEPTANCE_ENVIRONMENT": "home-station",
+                "PT_AGENT_CAPABILITY_SCENARIO_CONTROL": "1",
+                "PT_ACCEPTANCE_RUN_ID": run_id,
+            }
+        )
+        completed = subprocess.run(
+            ["make", "station"],
+            cwd=REPO_ROOT,
+            env=deploy_env,
+            capture_output=True,
+            text=True,
+            timeout=1_800,
+            check=False,
+        )
+        if completed.returncode != 0:
+            detail = (
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "Station deployment failed"
+            )
+            raise BlockedError(
+                reason=f"{gate_id} scenario-control deployment failed: "
+                + detail[-4_000:],
+                resource="station:scenario-control-deploy",
+            )
+
+        def cleanup_scenario_control() -> None:
+            restore_env = os.environ.copy()
+            restore_env.update(profile_env)
+            restore_env.update(
+                {
+                    "PT_ACCEPTANCE_ENVIRONMENT": "",
+                    "PT_AGENT_CAPABILITY_SCENARIO_CONTROL": "",
+                    "PT_ACCEPTANCE_RUN_ID": "",
+                }
+            )
+            restored = subprocess.run(
+                ["make", "station"],
+                cwd=REPO_ROOT,
+                env=restore_env,
+                capture_output=True,
+                text=True,
+                timeout=1_800,
+                check=False,
+            )
+            if restored.returncode != 0:
+                detail = (
+                    restored.stderr.strip()
+                    or restored.stdout.strip()
+                    or "Station restore failed"
+                )
+                raise RuntimeError(
+                    f"{gate_id} scenario-control restore failed: "
+                    + detail[-4_000:]
+                )
+
+        self.register_cleanup(
+            f"agent-v2-scenario-control:{run_id}",
+            cleanup_scenario_control,
+        )
+
     def _agent_v2_external_runtime_manifest(
         self,
         manifest: RuntimeManifest,
@@ -1497,6 +1581,11 @@ class HomeStationProvisioner(EnvironmentProvisioner):
                 raise BlockedError(
                     reason="Active profile is missing PT_STATION_URL",
                     resource="profile:PT_STATION_URL",
+                )
+            if gate_id in AGENT_V2_SCENARIO_CONTROL_GATES:
+                self._deploy_agent_v2_scenario_control(
+                    gate_id=gate_id,
+                    profile_env=profile_env,
                 )
             if gate_id == AGENT_V2_EXTERNAL_RUNTIME_GATE:
                 if manifest.workspace_digest != "clean":

@@ -186,11 +186,14 @@ class AgentV2GateContractTest(unittest.TestCase):
             for key in (
                 "PT_ACCEPTANCE_WORKSPACE_ID",
                 "PT_ACCEPTANCE_GATE_ID",
-                "PT_ACCEPTANCE_RUN_ID",
                 "PT_ACCEPTANCE_REDACTION_VALUES",
                 "PT_AGENT_V2_CANDIDATE_MANIFEST",
             ):
                 self.assertNotIn(key, environment)
+            self.assertEqual(
+                environment["PT_ACCEPTANCE_RUN_ID"],
+                "parent-run",
+            )
             candidate = self.write_candidate(
                 observed_root,
                 gate_id=gate_id,
