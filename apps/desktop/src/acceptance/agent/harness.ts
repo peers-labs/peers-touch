@@ -23854,6 +23854,15 @@ async function cleanupMcpLifecycleDevelopmentState(
       await api.setSelectedAgent(state.priorSelection);
     }
     eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await waitFor(
+      () => Boolean(
+        document.querySelector<HTMLElement>(
+          '[data-pt-agent-composer]',
+        )?.getClientRects().length,
+      ),
+      'MCP cleanup Agent session surface',
+      30_000,
+    );
   } catch (error) {
     failures.push(`selection:${observedErrorCode(error)}`);
   }
