@@ -617,6 +617,7 @@ def main() -> int:
                 },
                 "toolName": MCP_TOOL_NAME,
                 "expectedResult": MCP_RESULT_TEXT,
+                "expectedAssistantResponse": "MCP invocation completed.",
             },
             timeout=900,
         )

@@ -311,6 +311,11 @@ class AgentNativeRunnerStaticTest(unittest.TestCase):
             with self.subTest(gate_id=gate_id):
                 self.assertIn(f'"{gate_id}": ("alice",)', source)
                 self.assertIn(f'"{gate_id}",', source)
+        self.assertIn(
+            '"agent-minimum-usable-chat-native-e2e": ("alice",)',
+            source,
+        )
+        self.assertIn("AGENT_MINIMUM_USABLE_CHAT_GATE,", source)
         self.assertIn("def _agent_native_manifest(", source)
         self.assertIn(
             'credential_ref="profile:CHAT_NATIVE_DEMO_PASSWORD"',
@@ -2247,12 +2252,16 @@ class AgentHarnessStaticTest(unittest.TestCase):
         )
         fixture = self.source[fixture_start:fixture_end]
         self.assertIn(
-            "const requestedProviderId = `mca-fx-${suffix}`;",
+            "const providerPrefix = 'mca-fx-';",
+            fixture,
+        )
+        self.assertIn(
+            "const requestedProviderId = `${providerPrefix}${suffix}`;",
             fixture,
         )
         self.assertIn("await api.createProvider({", fixture)
         self.assertIn(
-            "fixture.providerId.startsWith('mca-fx-')",
+            "fixture.providerId.startsWith(fixture.providerPrefix)",
             fixture,
         )
         self.assertNotIn("const providerId = 'ollama'", fixture)

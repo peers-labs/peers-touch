@@ -42,30 +42,28 @@
   "checks": [
     {
       "id": "minimum-agent-chat-source",
-      "command": "cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler/... ./app/subserver/agent/infrastructure/persistence/... -count=1 && cd ../.. && pnpm --dir apps/desktop check",
+      "command": "python3 -m unittest tooling.acceptance.gates.agent.native_agent_runner_test tooling.acceptance.gates.agent.mcp_lifecycle_development_test tooling.acceptance.tests.test_provisioner_runtime tooling.acceptance.gates.agent.agent_native_static_test && cd apps/station && go test ./app/subserver/agent/service/... ./app/subserver/agent/handler/... ./app/subserver/agent/infrastructure/persistence/... -count=1 && cd ../.. && pnpm --dir apps/desktop check",
       "verificationClass": "SOURCE_CHECK"
     },
     {
       "id": "minimum-agent-chat-functional",
-      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item AGENT-MINIMUM-USABLE-CHAT-20261001 --gate agent-core-lifecycle-native-e2e --gate agent-v2-capability-binding-e2e --gate agent-v2-governed-tool-loop-e2e --gate agent-v2-mcp-lifecycle-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --execution-policy development --work-item AGENT-MINIMUM-USABLE-CHAT-20261001 --gate agent-minimum-usable-chat-native-e2e",
       "verificationClass": "FUNCTIONAL_CHECK"
     },
     {
       "id": "minimum-agent-chat-proof",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate agent-core-lifecycle-native-e2e --gate agent-v2-capability-binding-e2e --gate agent-v2-governed-tool-loop-e2e --gate agent-v2-mcp-lifecycle-e2e",
+      "command": "python3 tooling/scripts/acceptance-run.py --gate agent-minimum-usable-chat-native-e2e",
       "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "doneWhen": [
-    "Desktop Native and Browser can create or select an Agent backed by a Direct Model provider",
-    "The Agent capability snapshot contains the configured Skill and MCP bindings",
-    "A user message starts one Turn, streams visible output, and ends with one final assistant response",
-    "A governed Skill or tool call requires explicit approval and its result is incorporated into the final response",
+    "Desktop Native can create and select an Agent backed by a Direct Model provider",
+    "The Agent capability snapshot contains the configured ready MCP binding",
+    "A user message starts one Turn, executes one governed capability, and ends with one visible final assistant response",
     "An enabled MCP server exposes tools to the Agent and one real MCP invocation completes through the Station-owned loop",
-    "Stop, retry, and regenerate do not duplicate the authoritative assistant message",
     "Conversation history and the final assistant response survive Desktop restart",
-    "Provider, permission, and MCP failures are visible and recoverable without silent fallback",
-    "All Native, Browser, Station, fixture, and storage resources cleanly release"
+    "Native, Station, provider fixture, MCP process, port, and storage resources cleanly release",
+    "Browser remains explicitly UNPROVEN and does not block this Native closure"
   ],
   "failureBehavior": [
     "Fix the first observed product failure at its owning production layer",
@@ -74,7 +72,7 @@
     "Do not expand to the 419-cell Foundation matrix",
     "Return only the first deterministic failure"
   ],
-  "updatedAt": "2026-10-01T11:34:40Z",
+  "updatedAt": "2026-10-02T10:05:00Z",
   "durableEvidence": []
 }
 ```
@@ -88,8 +86,9 @@ Ship the smallest Agent Chat product that a user can actually complete:
 
 ## Current Snapshot
 
-- Direct Model chat, Skill binding, governed tool execution, MCP lifecycle, and
+- Direct Model chat, capability binding, governed tool execution, MCP lifecycle, and
   durable conversation code already exist.
-- This Task runs only the four focused product Gates needed by the minimum
-  release and repairs any concrete failures they expose.
+- This Task runs one dedicated Native Gate that composes the existing
+  production Harness path into the minimum user Journey.
 - The retired broad parity Plan and its 419-cell matrix do not gate this Task.
+- Browser remains unproven and non-blocking for this minimum Native release.

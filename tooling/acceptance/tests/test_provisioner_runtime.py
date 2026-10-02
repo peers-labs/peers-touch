@@ -835,6 +835,38 @@ class ProvisionerBlockingTests(unittest.TestCase):
             agent_native_requires_provider("agent-stream-resilience-e2e")
         )
 
+    def test_agent_minimum_usable_chat_uses_two_without_reset_or_profile_provider(
+        self,
+    ):
+        gate_id = "agent-minimum-usable-chat-native-e2e"
+        provisioner = HomeStationProvisioner(
+            EnvironmentContract(id="home-station")
+        )
+        profile_env = {
+            "PT_DESKTOP_APP_GATEWAY_PORT": "13331",
+            "PT_DESKTOP_APP_WEB_PORT": "13511",
+        }
+        with patch.dict(
+            "os.environ",
+            {"PT_AGENT_MINIMUM_USABLE_WEBDRIVER_PORT": "14449"},
+            clear=True,
+        ), patch.object(provisioner, "_assert_client_ports_available"):
+            client = provisioner._agent_minimum_usable_chat_client(
+                "run-minimum-usable",
+                1,
+                profile_env,
+            )
+
+        self.assertEqual(agent_profile_for_gate(gate_id), "two")
+        self.assertEqual(client.profile, "two")
+        self.assertEqual(client.actor, "alice")
+        self.assertIn(
+            "pt-agent-minimum-usable-chat-run-minimum-usable",
+            client.storage_root,
+        )
+        self.assertFalse(agent_native_requires_disposable_fixture(gate_id))
+        self.assertFalse(agent_native_requires_provider(gate_id))
+
     def test_agent_cli_provider_uses_two_without_reset_or_http_credentials(self):
         gate_id = "agent-cli-provider-primary-native-e2e"
         provisioner = HomeStationProvisioner(
@@ -2114,11 +2146,16 @@ class ProvisionerBlockingTests(unittest.TestCase):
             "acquire_remote_git_source_lease",
         ), patch.object(
             provisioner,
+            "_deploy_agent_v2_scenario_control",
+        ), patch.object(
+            provisioner,
             "_agent_v2_binding_clients",
-        ) as allocate_clients:
-            manifest = provisioner.provision(
-                "agent-v2-capability-binding-e2e"
-            )
+        ) as allocate_clients, patch.dict(
+            os.environ,
+            {"PT_ACCEPTANCE_RUN_ID": "test-dirty-station"},
+            clear=False,
+        ):
+            manifest = provisioner.provision("agent-v2-capability-binding-e2e")
 
         self.assertEqual(manifest.state, ProvisioningState.BLOCKED)
         self.assertEqual(

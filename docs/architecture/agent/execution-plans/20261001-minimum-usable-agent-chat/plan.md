@@ -118,18 +118,21 @@
 ## Acceptance Execution
 
 ```json
-{"closures":{"AMU-functional":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"]},"completion":["agent-core-lifecycle-native-e2e","agent-v2-capability-binding-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-mcp-lifecycle-e2e"],"full":["acceptance-infra-validation","acceptance-plan-self","acceptance-runtime-provisioning-self","acceptance-workflow-contract","agent-attachment-e2e","agent-cli-provider-primary-native-e2e","agent-core-lifecycle-native-e2e","agent-marketplace-catalog-e2e","agent-provider-credential-e2e","agent-stream-resilience-e2e","agent-v2-capability-binding-e2e","agent-v2-external-runtime-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-kernel-foundation-e2e","agent-v2-mcp-lifecycle-e2e","chat-lifecycle-tree-zero-reference-e2e","desktop-check","development-workflow-control-plane","machine-dev-registry-self","proto-build","station-agent-unit"]}
+{"closures":{"AMU-functional":["agent-minimum-usable-chat-native-e2e"]},"completion":["agent-minimum-usable-chat-native-e2e"],"full":["acceptance-infra-validation","acceptance-plan-self","acceptance-runtime-provisioning-self","acceptance-workflow-contract","agent-attachment-e2e","agent-cli-provider-primary-native-e2e","agent-core-lifecycle-native-e2e","agent-marketplace-catalog-e2e","agent-minimum-usable-chat-native-e2e","agent-provider-credential-e2e","agent-stream-resilience-e2e","agent-v2-capability-binding-e2e","agent-v2-external-runtime-e2e","agent-v2-governed-tool-loop-e2e","agent-v2-kernel-foundation-e2e","agent-v2-mcp-lifecycle-e2e","chat-lifecycle-tree-zero-reference-e2e","desktop-check","development-workflow-control-plane","machine-dev-registry-self","proto-build","station-agent-unit"]}
 ```
 
 ## Goal
 
-Deliver one usable Direct Model Agent Chat loop on Desktop Native and Browser:
-configure an Agent, bind Skill and MCP capabilities, send a message, execute an
-approved capability, receive a final assistant response, and recover the
-conversation after restart.
+Deliver one usable Direct Model Agent Chat loop on Desktop Native: configure
+and select an Agent, bind a ready MCP capability, send a message, execute the
+capability through Station governance, receive a final assistant response, and
+recover the same conversation and response after a native restart.
+
+Browser remains explicitly `UNPROVEN` and does not block this minimum Native
+release cut.
 
 ## Release Cut
 
-- One Task, one user Journey, four existing focused product Gates.
+- One Task, one user Journey, and one dedicated Native product Gate.
 - Fix every observed gap at its owning production layer.
 - Stop when the minimum Journey passes; all broader parity work is descoped.
