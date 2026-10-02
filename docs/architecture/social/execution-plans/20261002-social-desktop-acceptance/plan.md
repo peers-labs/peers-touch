@@ -91,6 +91,14 @@
         "mode": "exclusive-write"
       },
       {
+        "pathPrefix": "tooling/scripts/local-dev/dev-session.mjs",
+        "mode": "exclusive-write"
+      },
+      {
+        "pathPrefix": "tooling/scripts/local-dev/dev-session.test.mjs",
+        "mode": "exclusive-write"
+      },
+      {
         "pathPrefix": "tooling/skills/pt-github-review/FRESHNESS.md",
         "mode": "exclusive-write"
       },

@@ -29,7 +29,9 @@
     "tooling/skills/pt-github-review/FRESHNESS.md",
     "tooling/development/secure_content/runtime_owner.py",
     "tooling/development/secure_content/scenarios/social_expansion.py",
-    "tooling/development/secure_content/test_runtime_owner.py"
+    "tooling/development/secure_content/test_runtime_owner.py",
+    "tooling/scripts/local-dev/dev-session.mjs",
+    "tooling/scripts/local-dev/dev-session.test.mjs"
   ],
   "readSet": [
     "apps/desktop",
