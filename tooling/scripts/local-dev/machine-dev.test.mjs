@@ -299,7 +299,6 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
   try {
     const registered = registerWorkspace(registrationOptions(scope));
     assert.equal(registered.slot, 5);
-    assert.equal(registered.head, git(scope.workspaceA, 'rev-parse', 'HEAD'));
     assert.deepEqual(registered.allowedCapabilities, [
       'station.connect',
       'station.deploy',
@@ -333,7 +332,6 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     );
     assert.equal(updated.profile, 'fiveArm');
     assert.equal(updated.slot, 5);
-    assert.equal(updated.head, git(scope.workspaceA, 'rev-parse', 'HEAD'));
     assert.deepEqual(updated.allowedCapabilities, ['station.connect']);
 
     const status = statusAll({
@@ -344,6 +342,34 @@ test('registers, updates, checks, and reports the authoritative slot-5 binding',
     assert.equal(status.registrations[0].activity, 'idle');
     assert.equal(status.registrations[0].profileState, 'available');
     assert.equal(status.registrations[0].resetPolicy, 'agent-resettable');
+  } finally {
+    scope.close();
+  }
+});
+
+test('keeps the workspace binding stable while source HEAD advances', () => {
+  const scope = fixture();
+  try {
+    const registered = registerWorkspace(registrationOptions(scope));
+    const previousHead = git(scope.workspaceA, 'rev-parse', 'HEAD');
+    writeFileSync(path.join(scope.workspaceA, 'source.txt'), 'advanced\n');
+    git(scope.workspaceA, 'add', 'source.txt');
+    git(scope.workspaceA, 'commit', '-m', 'test: advance source');
+    const currentHead = git(scope.workspaceA, 'rev-parse', 'HEAD');
+
+    assert.notEqual(currentHead, previousHead);
+    const checked = checkWorkspace({
+      home: scope.home,
+      workspaceRoot: scope.workspaceA,
+      envRepo: scope.envRepo,
+      workspaceId: registered.workspaceId,
+      profile: 'four',
+      slot: 5,
+      capabilities: 'station.connect',
+      budgetSeconds: 1200,
+    });
+    assert.equal(Object.hasOwn(checked.binding, 'head'), false);
+    assert.equal(checked.source.head, currentHead);
   } finally {
     scope.close();
   }

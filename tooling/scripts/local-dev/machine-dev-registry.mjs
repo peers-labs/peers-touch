@@ -57,7 +57,6 @@ const REGISTRATION_KEYS = new Set([
   'canonicalRoot',
   'name',
   'branch',
-  'head',
   'profile',
   'slot',
   'allowedCapabilities',
@@ -253,7 +252,6 @@ function registrationIdentity(workspace) {
     canonicalRoot: workspace.canonicalRoot,
     name: workspace.name,
     branch: workspace.branch,
-    head: workspace.head,
   };
 }
 
@@ -569,7 +567,6 @@ function normalizeRegistration(value) {
     canonicalRoot: value.canonicalRoot,
     name: value.name,
     branch: value.branch,
-    head: value.head,
     profile: value.profile,
     slot: value.slot,
     allowedCapabilities: value.allowedCapabilities,
@@ -584,8 +581,7 @@ function normalizeRegistration(value) {
     !path.isAbsolute(normalized.canonicalRoot) ||
     workspaceIdForCanonicalPath(normalized.canonicalRoot) !==
       normalized.workspaceId ||
-    path.basename(normalized.canonicalRoot) !== normalized.name ||
-    !HEAD_PATTERN.test(normalized.head)
+    path.basename(normalized.canonicalRoot) !== normalized.name
   ) {
     fail('MACHINE_REGISTRY_INVALID', 'registration identity is invalid', {
       workspaceId: normalized.workspaceId,
@@ -1142,12 +1138,11 @@ export function checkWorkspace(options = {}) {
   );
   if (
     registration.canonicalRoot !== workspace.canonicalRoot ||
-    registration.branch !== workspace.branch ||
-    registration.head !== workspace.head
+    registration.branch !== workspace.branch
   ) {
     fail(
       'WORKTREE_IDENTITY_MISMATCH',
-      'registered workspace identity does not match current Git state',
+      'registered workspace identity does not match current worktree state',
       { registered: registration, actual: workspace },
     );
   }
@@ -1339,12 +1334,11 @@ function registrationState(registration) {
     const workspace = captureWorkspace(registration.canonicalRoot);
     if (
       workspace.workspaceId !== registration.workspaceId ||
-      workspace.branch !== registration.branch ||
-      workspace.head !== registration.head
+      workspace.branch !== registration.branch
     ) {
       return {
         activity: 'stale',
-        reason: 'registered source identity does not match current Git state',
+        reason: 'registered workspace identity does not match current worktree state',
       };
     }
     return { activity: 'idle', reason: null };
