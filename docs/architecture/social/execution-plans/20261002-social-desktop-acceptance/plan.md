@@ -91,14 +91,6 @@
         "mode": "exclusive-write"
       },
       {
-        "pathPrefix": "tooling/scripts/local-dev/dev-session.mjs",
-        "mode": "exclusive-write"
-      },
-      {
-        "pathPrefix": "tooling/scripts/local-dev/dev-session.test.mjs",
-        "mode": "exclusive-write"
-      },
-      {
         "pathPrefix": "tooling/skills/pt-github-review/FRESHNESS.md",
         "mode": "exclusive-write"
       },
@@ -208,9 +200,7 @@
 {
   "closures": {
     "social-desktop-contracts": [],
-    "social-desktop-proof": [
-      "social-private-desktop-e2e"
-    ]
+    "social-desktop-proof": []
   },
   "completion": [
     "acceptance-plan-self",
@@ -232,11 +222,11 @@
 }
 ```
 
-The functional closure contains only the Native Desktop Gate. Framework
-self-checks remain focused checks and formal completion Gates. Completion
-publishes the formal Native result before `social-domain-validation` evaluates
-the Social proof graph. The registry-selected Chat zero-reference Gate remains
-declared only in `full`; it is outside this Desktop Social completion claim.
+The functional closure uses the Task-owned Native Suite `FUNCTIONAL_CHECK`;
+formal Gates are reserved for completion Acceptance. Completion publishes the
+formal Native result before `social-domain-validation` evaluates the Social
+proof graph. The registry-selected Chat zero-reference Gate remains declared
+only in `full`; it is outside this Desktop Social completion claim.
 
 ## Goal
 

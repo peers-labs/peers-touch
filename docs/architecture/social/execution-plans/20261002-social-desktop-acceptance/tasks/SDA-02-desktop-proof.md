@@ -29,9 +29,7 @@
     "tooling/skills/pt-github-review/FRESHNESS.md",
     "tooling/development/secure_content/runtime_owner.py",
     "tooling/development/secure_content/scenarios/social_expansion.py",
-    "tooling/development/secure_content/test_runtime_owner.py",
-    "tooling/scripts/local-dev/dev-session.mjs",
-    "tooling/scripts/local-dev/dev-session.test.mjs"
+    "tooling/development/secure_content/test_runtime_owner.py"
   ],
   "readSet": [
     "apps/desktop",
@@ -91,19 +89,14 @@
       "verificationClass": "STRUCTURAL_CHECK"
     },
     {
-      "id": "social-private-desktop-e2e",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate social-private-desktop-e2e",
+      "id": "social-private-desktop-functional",
+      "command": "python3 -m tooling.development.secure_content.runtime_owner run-social-desktop-acceptance-suite --profiles four,fiveArm --slot 12",
       "verificationClass": "FUNCTIONAL_CHECK"
-    },
-    {
-      "id": "social-private-desktop-proven",
-      "command": "python3 tooling/scripts/acceptance-run.py --gate social-domain-validation",
-      "verificationClass": "ACCEPTANCE_PROOF"
     }
   ],
   "runtimeReuse": {
     "scope": "suite",
-    "entryCheckId": "social-private-desktop-e2e",
+    "entryCheckId": "social-private-desktop-functional",
     "scenarioIds": [
       "desktop-pre-restart",
       "desktop-continuity",
@@ -155,8 +148,8 @@
 - Friend-request acceptance is asynchronous with respect to the authoritative
   bilateral relationship projection; the Suite fixture waits for both actors
   to observe mutual friendship before publishing private content.
-- Functional closure ends at the Native Desktop Gate. Social domain validation
-  runs only after formal Gate publication during completion Acceptance.
+- Functional proof uses the Task-owned Native Suite command. The formal Native
+  Gate and Social domain validation run during completion Acceptance.
 - The registry-selected Chat zero-reference Gate remains a full/release concern
   and does not expand this Task's Desktop Social claim.
 - The formal Gate must publish a new immutable Evidence Store run.
