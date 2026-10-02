@@ -237,6 +237,10 @@ class CapabilityBindingCandidateTest(unittest.TestCase):
             "readinessInput = { clientCapabilitySessionId };",
             scenario,
         )
+        self.assertIn(
+            "'capability binding cleanup Agent session surface'",
+            harness,
+        )
 
     def test_deploys_station_with_run_scoped_scenario_control(self) -> None:
         completed = subprocess.CompletedProcess(

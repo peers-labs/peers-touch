@@ -196,6 +196,10 @@ class GovernedToolCandidateTest(unittest.TestCase):
             ROOT
             / "tooling/acceptance/gates/agent/governed_tool_candidate.py"
         ).read_text(encoding="utf-8")
+        harness = (
+            ROOT
+            / "apps/desktop/src/acceptance/agent/harness.ts"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("OPERATION_SCENARIO_ACTOR_ACCOUNT", source)
         self.assertIn("OPERATION_SCENARIO_IDENTITY_FIXTURE", source)
@@ -207,6 +211,14 @@ class GovernedToolCandidateTest(unittest.TestCase):
         self.assertIn('"PT_AGENT_CAPABILITY_SCENARIO_CONTROL": "1"', source)
         self.assertNotIn("J02_ACTOR_ACCOUNT", source)
         self.assertNotIn("J02_IDENTITY_FIXTURE", source)
+        self.assertIn(
+            "'governed ToolCall Agent session surface'",
+            harness,
+        )
+        self.assertIn(
+            "'governed ToolCall cleanup Agent session surface'",
+            harness,
+        )
 
 
 if __name__ == "__main__":

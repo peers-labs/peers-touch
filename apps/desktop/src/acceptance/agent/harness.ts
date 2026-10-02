@@ -1955,6 +1955,21 @@ async function waitFor(
   throw new Error(`timed out waiting for: ${description}`);
 }
 
+async function navigateToAgentSessionSurface(
+  description: string,
+): Promise<void> {
+  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await waitFor(
+    () => Boolean(
+      document.querySelector<HTMLElement>(
+        '[data-pt-agent-composer]',
+      )?.getClientRects().length,
+    ),
+    description,
+    30_000,
+  );
+}
+
 const FOUNDATION_TOOL_SETTLEMENT_TIMEOUT_MS = 180_000;
 const FOUNDATION_TOOL_RECONCILE_TIMEOUT_MS = 90_000;
 const FOUNDATION_TRANSIENT_FETCH_RETRY_TIMEOUT_MS = 15_000;
@@ -23853,15 +23868,8 @@ async function cleanupMcpLifecycleDevelopmentState(
       );
       await api.setSelectedAgent(state.priorSelection);
     }
-    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
-    await waitFor(
-      () => Boolean(
-        document.querySelector<HTMLElement>(
-          '[data-pt-agent-composer]',
-        )?.getClientRects().length,
-      ),
+    await navigateToAgentSessionSurface(
       'MCP cleanup Agent session surface',
-      30_000,
     );
   } catch (error) {
     failures.push(`selection:${observedErrorCode(error)}`);
@@ -24041,7 +24049,7 @@ async function prepareMcpLifecycleDevelopmentJourney(
     await api.setSelectedAgent(disposableAgent.name);
     useAgentStore.getState().setSelectedAgent(disposableAgent.name);
     useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
-    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await navigateToAgentSessionSurface('MCP Agent session surface');
 
     const capabilitySession = await resolveFoundationToolTurnSession();
     const toolFixture = await mcpToolFixture(
@@ -24675,7 +24683,9 @@ async function runMcpUnavailableScenario(
     .filter(([, passed]) => !passed)
     .map(([name]) => name);
   useMCPStore.getState().reset();
-  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await navigateToAgentSessionSurface(
+    'MCP unavailable cleanup Agent session surface',
+  );
   if (failed.length > 0) {
     throw new Error(
       `agent.acceptance.mcpUnavailableAssertionsFailed:${failed.join(',')}`,
@@ -29463,7 +29473,9 @@ async function runGovernedToolDevelopmentJourney(
     await api.setSelectedAgent(disposableAgent.name);
     useAgentStore.getState().setSelectedAgent(disposableAgent.name);
     useAgentStore.getState().setAgentSurface(disposableAgent.name, 'chat');
-    eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+    await navigateToAgentSessionSurface(
+      'governed ToolCall Agent session surface',
+    );
 
     if (candidateMode) {
       if (input.locale === 'en' || input.locale === 'zh-CN') {
@@ -30530,7 +30542,6 @@ async function runGovernedToolDevelopmentJourney(
         cleanup.fixtureModelDeleted = fixtureCleanup.modelDeleted;
         cleanup.fixtureProviderDeleted = fixtureCleanup.providerRestored;
       }
-      eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
       if (priorSelection) {
         await api.setSelectedAgent(priorSelection);
         useAgentStore.getState().setSelectedAgent(priorSelection);
@@ -30539,6 +30550,9 @@ async function runGovernedToolDevelopmentJourney(
           priorSurface,
         );
       }
+      await navigateToAgentSessionSurface(
+        'governed ToolCall cleanup Agent session surface',
+      );
       cleanup.selectionRestored =
         !priorSelection
         || useAgentStore.getState().selectedAgent === priorSelection;
@@ -30687,7 +30701,11 @@ async function cleanupCapabilityBindingCandidate(
       failures.push(`selection:${observedErrorCode(error)}`);
     });
   }
-  eventBus.publish(EVENT.NAVIGATION_REQUESTED, { resource: 'sessions' });
+  await navigateToAgentSessionSurface(
+    'capability binding cleanup Agent session surface',
+  ).catch((error) => {
+    failures.push(`navigation:${observedErrorCode(error)}`);
+  });
   return evidenceValue({
     resourceKind: 'capability-binding-candidate-fixture',
     status: failures.length === 0 ? 'clean' : 'failed',

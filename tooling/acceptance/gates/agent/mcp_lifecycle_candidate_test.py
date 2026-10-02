@@ -154,6 +154,14 @@ class McpLifecycleCandidateTest(unittest.TestCase):
             "'MCP cleanup Agent session surface'",
             harness,
         )
+        self.assertIn(
+            "'MCP Agent session surface'",
+            harness,
+        )
+        self.assertIn(
+            "'MCP unavailable cleanup Agent session surface'",
+            harness,
+        )
 
 
 if __name__ == "__main__":
