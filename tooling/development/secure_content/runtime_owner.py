@@ -188,7 +188,7 @@ W8_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
 SOCIAL_ACCEPTANCE_RUNTIME_REUSE = RuntimeReuseContract.from_dict(
     {
         "scope": "suite",
-        "entryCheckId": "social-private-desktop-e2e",
+        "entryCheckId": "social-private-desktop-functional",
         "scenarioIds": list(SOCIAL_ACCEPTANCE_RUNTIME_SCENARIOS),
         "maxProvisioningRuns": 1,
         "maxClientLaunches": 5,

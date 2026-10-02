@@ -235,6 +235,10 @@ class RuntimeOwnerTest(unittest.TestCase):
 
     def test_social_desktop_acceptance_suite_contract_is_bounded(self) -> None:
         self.assertEqual(
+            "social-private-desktop-functional",
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.entry_check_id,
+        )
+        self.assertEqual(
             (
                 "desktop-pre-restart",
                 "desktop-continuity",
