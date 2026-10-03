@@ -284,6 +284,7 @@
         "apps/desktop/src-tauri/src/interface/tauri_commands/agent*.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/agents.rs",
         "apps/desktop/src-tauri/src/interface/tauri_commands/home.rs",
+        "apps/desktop/src-tauri/src/interface/http_gateway/mod.rs",
         "apps/desktop/src-tauri/src/main.rs"
       ],
       "impactClass": "DESKTOP_HOST"
