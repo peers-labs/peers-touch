@@ -11,6 +11,7 @@ import {
   type HomeTaskProjection,
   type HomeWorkProjection,
 } from '../gen/proto/domain/agent/home_pb';
+import type { AgentGoal } from '../gen/proto/domain/agent/goal_pb';
 import { createDesktopStore } from './createDesktopStore';
 
 export interface HomePinnedAgentView {
@@ -51,9 +52,25 @@ interface HomeState {
   projection: HomeProjectionView | null;
   loading: boolean;
   error: string | null;
+  goalDraftTitle: string;
+  goalDraftOutcome: string;
+  goalDraftIdempotencyKey: string;
+  savedGoal: AgentGoal | null;
+  goalCreating: boolean;
+  goalReadbackLoading: boolean;
+  goalReadbackRevision: bigint | null;
+  goalCreateError: string | null;
+  goalReadbackError: string | null;
   beginLoad: () => void;
   applyProjection: (projection: HomeWorkProjection) => void;
   failLoad: (error: string) => void;
+  setGoalDraftTitle: (title: string) => void;
+  setGoalDraftOutcome: (outcome: string) => void;
+  beginGoalCreate: (idempotencyKey: string) => void;
+  applyGoalDraft: (goal: AgentGoal, source: 'create' | 'readback') => void;
+  failGoalCreate: (error: string) => void;
+  beginGoalReadback: () => void;
+  failGoalReadback: (error: string) => void;
   reset: () => void;
 }
 
@@ -104,6 +121,15 @@ export const useHomeStore = createDesktopStore<HomeState>('home', (set) => ({
   projection: null,
   loading: false,
   error: null,
+  goalDraftTitle: '',
+  goalDraftOutcome: '',
+  goalDraftIdempotencyKey: '',
+  savedGoal: null,
+  goalCreating: false,
+  goalReadbackLoading: false,
+  goalReadbackRevision: null,
+  goalCreateError: null,
+  goalReadbackError: null,
 
   beginLoad: () => set({ loading: true, error: null }),
 
@@ -132,5 +158,75 @@ export const useHomeStore = createDesktopStore<HomeState>('home', (set) => ({
 
   failLoad: (error) => set({ loading: false, error }),
 
-  reset: () => set({ projection: null, loading: false, error: null }),
+  setGoalDraftTitle: (title) => set({
+    goalDraftTitle: title,
+    goalDraftIdempotencyKey: '',
+    goalCreateError: null,
+  }),
+
+  setGoalDraftOutcome: (outcome) => set({
+    goalDraftOutcome: outcome,
+    goalDraftIdempotencyKey: '',
+    goalCreateError: null,
+  }),
+
+  beginGoalCreate: (idempotencyKey) => set({
+    goalDraftIdempotencyKey: idempotencyKey,
+    goalCreating: true,
+    goalCreateError: null,
+  }),
+
+  applyGoalDraft: (goal, source) => set((state) => {
+    if (
+      state.savedGoal?.goalId === goal.goalId
+      && goal.revision < state.savedGoal.revision
+    ) {
+      return {
+        goalCreating: false,
+        goalReadbackLoading: false,
+        goalReadbackError: 'agent.home.goalReadbackStale',
+      };
+    }
+    return {
+      goalDraftTitle: goal.title,
+      goalDraftOutcome: goal.outcome,
+      savedGoal: goal,
+      goalCreating: false,
+      goalReadbackLoading: false,
+      goalReadbackRevision:
+        source === 'readback' ? goal.revision : state.goalReadbackRevision,
+      goalCreateError: null,
+      goalReadbackError: null,
+    };
+  }),
+
+  failGoalCreate: (error) => set({
+    goalCreating: false,
+    goalCreateError: error,
+  }),
+
+  beginGoalReadback: () => set({
+    goalReadbackLoading: true,
+    goalReadbackError: null,
+  }),
+
+  failGoalReadback: (error) => set({
+    goalReadbackLoading: false,
+    goalReadbackError: error,
+  }),
+
+  reset: () => set({
+    projection: null,
+    loading: false,
+    error: null,
+    goalDraftTitle: '',
+    goalDraftOutcome: '',
+    goalDraftIdempotencyKey: '',
+    savedGoal: null,
+    goalCreating: false,
+    goalReadbackLoading: false,
+    goalReadbackRevision: null,
+    goalCreateError: null,
+    goalReadbackError: null,
+  }),
 }));

@@ -6,6 +6,7 @@ const AGENT_V2_PROTO_FILES: &[&str] = &[
     "domain/agent/agent_config.proto",
     "domain/agent/turn_stream.proto",
     "domain/agent/home.proto",
+    "domain/agent/goal.proto",
     "domain/agent/capability.proto",
     "domain/agent/evaluation.proto",
     "domain/agent/package_catalog.proto",

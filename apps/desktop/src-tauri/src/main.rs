@@ -704,6 +704,8 @@ fn main() {
             home::agent_home_projection_get,
             home::agent_home_chat_submit,
             home::agent_home_task_submit,
+            home::agent_home_goal_draft_create,
+            home::agent_home_goal_get,
             evaluation::agent_evaluation_benchmark_create,
             evaluation::agent_evaluation_benchmark_update,
             evaluation::agent_evaluation_benchmark_delete,

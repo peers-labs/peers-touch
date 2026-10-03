@@ -30,6 +30,7 @@ import {
   HomeWorkKind,
 } from '../gen/proto/domain/agent/home_pb';
 import { usePageContext } from '../kernel/usePageContext';
+import { GoalDraftCard } from '../components/home/GoalDraftCard';
 import {
   openHomeConversation,
   openHomeTask,
@@ -219,6 +220,8 @@ export function HomePage() {
           type="error"
         />
       ) : null}
+
+      <GoalDraftCard />
 
       {!projection && loading ? (
         <HomeLoading />
