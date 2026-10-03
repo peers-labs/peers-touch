@@ -1,8 +1,8 @@
 # Modern Chat Agent — Data Model
 
 > **Status**: accepted
-> **Version**: v1.4
-> **Created**: 2026-07-30 | **Updated**: 2026-10-01
+> **Version**: v1.5
+> **Created**: 2026-07-30 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 > **Proto Root**: `model/domain/agent/`
 
@@ -73,6 +73,47 @@ Rules:
   forbidden.
 - Tombstoning a descriptor retires every published manifest revision so no
   historical revision can receive new admission.
+
+### 2.1B McpServer And McpToolDescriptor
+
+Station-owned actor-scoped MCP configuration and discovery identity.
+
+```text
+McpServer:
+  server_id, ptid, name
+  execution_owner = STATION | CLIENT_CAPABILITY
+  transport = STDIO | HTTP | SSE
+  command, args[] | url
+  env_secret_refs{}, header_secret_refs{}
+  enabled, revision
+  runtime_status, runtime_epoch, last_error_code
+  created_at, updated_at, tombstoned_at?
+
+McpToolDescriptor:
+  server_id, server_revision
+  tool_name, provider_tool_name
+  description
+  input_schema, input_schema_hash
+  manifest_id, manifest_version
+```
+
+Rules:
+
+- `server_id` is stable and opaque; display name changes do not change
+  identity.
+- `execution_owner` and `transport` are independent dimensions.
+- `command`, args, URL, and non-secret metadata are Station configuration
+  truth. Secret values are stored only by the declared executor; Station
+  persists refs and redacted key names.
+- Discovery publishes one immutable manifest per Tool. The manifest owner
+  equals the Server owner and its version binds Server revision plus tool
+  schema hash.
+- A Server owner change creates a new revision and new Tool manifests. Existing
+  ToolCalls retain the owner pinned in their readiness snapshot.
+- Client-owned readiness additionally pins a client capability session;
+  Station-owned readiness never fabricates one.
+- Tombstone retires all current Tool manifests, rejects new admission, and
+  starts owner-local cleanup.
 
 ### 2.2 Conversation
 
@@ -1844,10 +1885,11 @@ revoked_at?
 ```
 
 It may report `installed=true` only after target-authority readback succeeds.
-Agent and Skill targets are Station-owned; MCP targets are owned by the
-actor-scoped Desktop Rust MCP store. Catalog revocation blocks new mutation but
-does not delete the target. Explicit uninstall deletes through the same target
-authority and removes the ledger record only after absence readback.
+Agent, Skill, and MCP catalog targets are Station-owned. MCP secret material
+and process state remain in the Server's declared execution owner. Catalog
+revocation blocks new mutation but does not delete the target. Explicit
+uninstall deletes through the Station MCP service, triggers owner-local cleanup,
+and removes the ledger record only after Station absence readback.
 
 ### 8.12 Formal Scenario Evidence
 

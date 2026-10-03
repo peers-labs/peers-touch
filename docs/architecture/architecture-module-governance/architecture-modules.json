@@ -226,7 +226,7 @@
       "decisionIds": [
         "MCA-D14",
         "MCA-D15",
-        "MCA-D16",
+      "MCA-D16A",
         "MCA-D17",
         "MCA-D18",
         "MCA-D20",
@@ -235,6 +235,7 @@
       ],
       "governedPaths": [
         "apps/desktop/src-tauri/src/application/agent_turn",
+      "apps/desktop/src-tauri/src/application/desktop_executor_worker",
         "apps/desktop/src-tauri/src/application/mcp",
         "apps/station/app/subserver/agent",
         "docs/architecture/agent",
@@ -263,6 +264,26 @@
           "evidenceGates": [
             "agent-minimum-usable-chat-native-e2e"
           ]
+    },
+    {
+      "id": "agent.mcp.dual-runtime",
+      "owner": "agent.station",
+      "contractRoots": [
+        "apps/station/app/subserver/agent",
+        "model/domain/agent"
+      ],
+      "consumers": [
+        "apps/desktop/src-tauri/src/application/desktop_executor_worker",
+        "apps/desktop/src-tauri/src/application/mcp"
+      ],
+      "allowedDependencies": [
+        "desktop.application.mcp",
+        "model.domain.agent",
+        "station.agent"
+      ],
+      "evidenceGates": [
+        "agent-v2-mcp-lifecycle-e2e"
+      ]
         }
       ],
       "externalCapabilityRegistries": []
