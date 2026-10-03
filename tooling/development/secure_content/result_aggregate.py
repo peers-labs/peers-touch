@@ -14,6 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from tooling.acceptance.core.errors import SuiteRuntimeError
+from tooling.acceptance.core.suite_runtime import (
+    RuntimeReuseContract,
+    validate_suite_runtime_report,
+)
 from tooling.development.secure_content import schema_activation
 from tooling.development.secure_content.source_projection import (
     SourceProjectionError,
@@ -25,6 +30,54 @@ PLAN_ID = "SECURE-CONTENT-HARD-CUT-20260913"
 RESULT_KIND = "peers-touch-development-result"
 AGGREGATE_KIND = "secure-content-development-result-aggregate"
 SHA256_LENGTH = 64
+FINAL_CUT_VARIANTS = {
+    "final-cut-four": ("four", "W12F-FOUR", "station-four"),
+    "final-cut-five-arm": (
+        "fiveArm",
+        "W12F-FIVEARM",
+        "station-five-arm",
+    ),
+}
+FINAL_CUT_PROFILES = frozenset(
+    profile for profile, _, _ in FINAL_CUT_VARIANTS.values()
+)
+PRODUCT_FINAL_CUT_BINDING_FIELDS = frozenset(
+    {
+        "resultDigest",
+        "resetId",
+        "schemaAttestationDigest",
+        "stationRuntimeIdentity",
+    }
+)
+MANIFEST_FINAL_CUT_BINDING_FIELDS = frozenset(
+    {
+        "result_digest",
+        "reset_id",
+        "schema_attestation_digest",
+        "station_runtime_identity",
+    }
+)
+W12_SUITE_RUNTIME_CONTRACT = RuntimeReuseContract.from_dict(
+    {
+        "scope": "suite",
+        "entryCheckId": "w12-functional",
+        "scenarioIds": [
+            "desktop",
+            "browser",
+            "ios",
+            "android",
+            "chat-desktop",
+            "chat-ios",
+            "chat-android",
+        ],
+        "maxProvisioningRuns": 1,
+        "maxClientLaunches": 15,
+        "minWarmReuseRate": 0.85,
+        "requireAttachOnlyScenarios": True,
+        "requireReceiverVisibleProof": True,
+        "allowClientReplacement": True,
+    }
+)
 
 
 class AggregateError(RuntimeError):
@@ -51,6 +104,31 @@ class AggregateSpec:
     variants: Mapping[str, ChildSpec | None]
 
 
+@dataclass(frozen=True)
+class FinalCutBinding:
+    result_digest: str
+    reset_id: str
+    schema_attestation_digest: str
+    station_runtime_identity: str
+    completed_at: datetime
+
+    def product_payload(self) -> dict[str, str]:
+        return {
+            "resultDigest": self.result_digest,
+            "resetId": self.reset_id,
+            "schemaAttestationDigest": self.schema_attestation_digest,
+            "stationRuntimeIdentity": self.station_runtime_identity,
+        }
+
+    def manifest_payload(self) -> dict[str, str]:
+        return {
+            "result_digest": self.result_digest,
+            "reset_id": self.reset_id,
+            "schema_attestation_digest": self.schema_attestation_digest,
+            "station_runtime_identity": self.station_runtime_identity,
+        }
+
+
 SPECS: Mapping[str, AggregateSpec] = {
     "W7": AggregateSpec(
         task_id="W7",
@@ -68,18 +146,6 @@ SPECS: Mapping[str, AggregateSpec] = {
                     }
                 ),
                 allows_owner_continuation=True,
-            ),
-            "browser": ChildSpec(
-                "browser",
-                "secure-content-w7",
-                "sc-dj-browser-private-boundary",
-                frozenset({"four", "fiveArm"}),
-                frozenset(
-                    {
-                        "secure-content-browser-authenticated",
-                        "secure-content-browser-anonymous",
-                    }
-                ),
             ),
         },
     ),
@@ -216,7 +282,7 @@ SPECS: Mapping[str, AggregateSpec] = {
         variants={
             "desktop": ChildSpec(
                 "desktop",
-                "secure-content-w2b-desktop",
+                "secure-content-w2",
                 "sc-dj-chat-attachment-atomic",
                 frozenset({"four", "fiveArm"}),
                 frozenset(
@@ -230,14 +296,14 @@ SPECS: Mapping[str, AggregateSpec] = {
             ),
             "ios": ChildSpec(
                 "mobile",
-                "secure-content-w2b-mobile",
+                "secure-content-w2",
                 "sc-dj-chat-attachment-mobile",
                 frozenset({"four", "fiveArm"}),
                 frozenset({"ios_alice", "ios_bob"}),
             ),
             "android": ChildSpec(
                 "mobile",
-                "secure-content-w2b-mobile",
+                "secure-content-w2",
                 "sc-dj-chat-attachment-mobile",
                 frozenset({"four", "fiveArm"}),
                 frozenset({"android_alice", "android_bob"}),
@@ -353,7 +419,7 @@ SPECS: Mapping[str, AggregateSpec] = {
                 frozenset(
                     {
                         "secure-content-hardcut-ios-alice",
-                        "secure-content-hardcut-ios-bob",
+                        "secure-content-hardcut-ios-remote_bob",
                     }
                 ),
             ),
@@ -365,7 +431,7 @@ SPECS: Mapping[str, AggregateSpec] = {
                 frozenset(
                     {
                         "secure-content-hardcut-android-alice",
-                        "secure-content-hardcut-android-bob",
+                        "secure-content-hardcut-android-remote_bob",
                     }
                 ),
             ),
@@ -406,14 +472,26 @@ SPECS: Mapping[str, AggregateSpec] = {
                 "secure-content-w12",
                 "sc-dj-final-mobile",
                 frozenset({"four"}),
-                frozenset({"ios_alice", "ios_bob", "ios_eve"}),
+                frozenset(
+                    {
+                        "secure-content-ios-alice",
+                        "secure-content-ios-bob",
+                        "secure-content-ios-eve",
+                    }
+                ),
             ),
             "android": ChildSpec(
                 "mobile",
                 "secure-content-w12",
                 "sc-dj-final-mobile",
                 frozenset({"four"}),
-                frozenset({"android_alice", "android_bob", "android_eve"}),
+                frozenset(
+                    {
+                        "secure-content-android-alice",
+                        "secure-content-android-bob",
+                        "secure-content-android-eve",
+                    }
+                ),
             ),
             "chat-desktop": ChildSpec(
                 "desktop",
@@ -434,14 +512,24 @@ SPECS: Mapping[str, AggregateSpec] = {
                 "secure-content-w12",
                 "sc-dj-chat-attachment-mobile",
                 frozenset({"four", "fiveArm"}),
-                frozenset({"ios_alice", "ios_bob"}),
+                frozenset(
+                    {
+                        "secure-content-ios-alice",
+                        "secure-content-ios-remote_bob",
+                    }
+                ),
             ),
             "chat-android": ChildSpec(
                 "mobile",
                 "secure-content-w12",
                 "sc-dj-chat-attachment-mobile",
                 frozenset({"four", "fiveArm"}),
-                frozenset({"android_alice", "android_bob"}),
+                frozenset(
+                    {
+                        "secure-content-android-alice",
+                        "secure-content-android-remote_bob",
+                    }
+                ),
             ),
         },
     ),
@@ -490,6 +578,22 @@ def _validate_digest(
     ):
         raise AggregateError("CHILD_RESULT_INVALID", f"{label} digest is invalid")
     return str(digest)
+
+
+def _parse_timestamp(value: Any, *, label: str) -> datetime:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise AggregateError("CHILD_RESULT_INVALID", f"{label} is invalid")
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as error:
+        raise AggregateError(
+            "CHILD_RESULT_INVALID",
+            f"{label} is invalid",
+        ) from error
+    if parsed.tzinfo is None:
+        raise AggregateError("CHILD_RESULT_INVALID", f"{label} is invalid")
+    return parsed.astimezone(timezone.utc)
 
 
 def _load_identity(repo_root: Path) -> Mapping[str, str]:
@@ -613,13 +717,40 @@ class ResultAggregateOwner:
                 "aggregate generation differs from the exact worktree HEAD",
             )
 
+        final_cut_children: dict[
+            str,
+            tuple[Path, Mapping[str, Any], str],
+        ] = {}
+        final_cut_bindings: dict[str, FinalCutBinding] = {}
+        if workstream == "W12":
+            for variant, child_spec in spec.variants.items():
+                if child_spec is not None:
+                    continue
+                child = self._load_final_cut_child(
+                    generation=generation,
+                    variant=variant,
+                )
+                final_cut_children[variant] = child
+                profile, _, _ = FINAL_CUT_VARIANTS[variant]
+                final_cut_bindings[profile] = self._final_cut_binding(
+                    generation=generation,
+                    variant=variant,
+                    result=child[1],
+                    result_digest=child[2],
+                )
+
         children: list[dict[str, Any]] = []
+        post_cut_epoch_id: str | None = None
+        suite_runtime_id: str | None = None
+        suite_result_digests: dict[str, str] = {}
         for variant in expected_variants:
             child_spec = spec.variants[variant]
             if child_spec is None:
-                path, result, digest = self._load_final_cut_child(
-                    generation=generation,
-                    variant=variant,
+                path, result, digest = final_cut_children.get(variant) or (
+                    self._load_final_cut_child(
+                        generation=generation,
+                        variant=variant,
+                    )
                 )
                 child_kind = str(result["kind"])
             else:
@@ -628,8 +759,27 @@ class ResultAggregateOwner:
                     generation=generation,
                     variant=variant,
                     spec=child_spec,
+                    final_cut_bindings=final_cut_bindings,
                 )
                 child_kind = RESULT_KIND
+                if workstream == "W12":
+                    child_epoch = str(result["postCutEpochId"])
+                    if post_cut_epoch_id is None:
+                        post_cut_epoch_id = child_epoch
+                    elif child_epoch != post_cut_epoch_id:
+                        raise AggregateError(
+                            "CHILD_RESULT_INVALID",
+                            "W12 product children do not share postCutEpochId",
+                        )
+                    child_suite_runtime_id = str(result["runId"])
+                    if suite_runtime_id is None:
+                        suite_runtime_id = child_suite_runtime_id
+                    elif child_suite_runtime_id != suite_runtime_id:
+                        raise AggregateError(
+                            "CHILD_RESULT_INVALID",
+                            "W12 product children do not share suiteRuntimeId",
+                        )
+                    suite_result_digests[variant] = digest
             children.append(
                 {
                     "variantId": variant,
@@ -675,6 +825,34 @@ class ResultAggregateOwner:
             "claim": "FUNCTIONAL_PASS",
             "completedAt": _timestamp(),
         }
+        if workstream == "W12":
+            if post_cut_epoch_id is None or suite_runtime_id is None:
+                raise AggregateError(
+                    "RESULT_SET_INCOMPLETE",
+                    "W12 product children have no Suite Runtime binding",
+                )
+            suite_report_path, suite_report = (
+                self._load_w12_suite_runtime_report(
+                    generation=generation,
+                    suite_runtime_id=suite_runtime_id,
+                    post_cut_epoch_id=post_cut_epoch_id,
+                    result_digests=suite_result_digests,
+                )
+            )
+            result["postCutEpochId"] = post_cut_epoch_id
+            result["finalCutBindings"] = {
+                profile: binding.product_payload()
+                for profile, binding in final_cut_bindings.items()
+            }
+            result["suiteRuntime"] = {
+                "suiteRuntimeId": suite_runtime_id,
+                "fixtureEpoch": post_cut_epoch_id,
+                "reportDigest": suite_report["reportDigest"],
+                "reportRef": _artifact_ref(
+                    self.result_root,
+                    suite_report_path,
+                ),
+            }
         result["resultDigest"] = schema_activation.canonical_digest(result)
         schema_activation.write_immutable_json(output, result)
         return result
@@ -686,6 +864,7 @@ class ResultAggregateOwner:
         generation: str,
         variant: str,
         spec: ChildSpec,
+        final_cut_bindings: Mapping[str, FinalCutBinding],
     ) -> tuple[Path, Mapping[str, Any], str]:
         base = (
             self.result_root
@@ -717,7 +896,7 @@ class ResultAggregateOwner:
                     f"result, found {len(paths)}"
                 ),
             )
-        self._validate_product_child_identity(
+        manifest = self._validate_product_child_identity(
             result=result,
             path=path,
             workstream=workstream,
@@ -726,6 +905,13 @@ class ResultAggregateOwner:
             spec=spec,
             expected_result="PASS",
         )
+        if workstream == "W12":
+            self._validate_w12_product_causality(
+                result=result,
+                manifest=manifest,
+                variant=variant,
+                final_cut_bindings=final_cut_bindings,
+            )
         if "firstFailure" in result:
             raise AggregateError(
                 "CHILD_RESULT_INVALID",
@@ -748,7 +934,7 @@ class ResultAggregateOwner:
         variant: str,
         spec: ChildSpec,
         expected_result: str,
-    ) -> None:
+    ) -> Mapping[str, Any]:
         expected = {
             "kind": RESULT_KIND,
             "taskId": workstream,
@@ -795,6 +981,157 @@ class ResultAggregateOwner:
             label=f"{workstream}/{variant}",
             spec=spec,
         )
+        return manifest
+
+    def _validate_w12_product_causality(
+        self,
+        *,
+        result: Mapping[str, Any],
+        manifest: Mapping[str, Any],
+        variant: str,
+        final_cut_bindings: Mapping[str, FinalCutBinding],
+    ) -> None:
+        expected_profiles = set(FINAL_CUT_PROFILES)
+        product_bindings = result.get("finalCutBindings")
+        manifest_bindings = manifest.get("final_cut_bindings")
+        if (
+            not isinstance(product_bindings, Mapping)
+            or set(product_bindings) != expected_profiles
+            or not isinstance(manifest_bindings, Mapping)
+            or set(manifest_bindings) != expected_profiles
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"W12/{variant} final-cut binding is invalid",
+            )
+        for profile in sorted(expected_profiles):
+            expected = final_cut_bindings.get(profile)
+            product_binding = product_bindings.get(profile)
+            manifest_binding = manifest_bindings.get(profile)
+            if (
+                expected is None
+                or not isinstance(product_binding, Mapping)
+                or set(product_binding) != PRODUCT_FINAL_CUT_BINDING_FIELDS
+                or dict(product_binding) != expected.product_payload()
+                or not isinstance(manifest_binding, Mapping)
+                or set(manifest_binding) != MANIFEST_FINAL_CUT_BINDING_FIELDS
+                or dict(manifest_binding) != expected.manifest_payload()
+            ):
+                raise AggregateError(
+                    "CHILD_RESULT_INVALID",
+                    f"W12/{variant} final-cut binding is invalid",
+                )
+
+        post_cut_epoch_id = result.get("postCutEpochId")
+        if (
+            not isinstance(post_cut_epoch_id, str)
+            or not post_cut_epoch_id
+            or post_cut_epoch_id != post_cut_epoch_id.strip()
+            or manifest.get("post_cut_epoch_id") != post_cut_epoch_id
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"W12/{variant} postCutEpochId is invalid",
+            )
+        product_started_at = _parse_timestamp(
+            result.get("startedAt"),
+            label=f"W12/{variant} startedAt",
+        )
+        if any(
+            binding.completed_at >= product_started_at
+            for binding in final_cut_bindings.values()
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                (
+                    f"W12/{variant} final-cut completion must precede "
+                    "product child start"
+                ),
+            )
+
+    def _load_w12_suite_runtime_report(
+        self,
+        *,
+        generation: str,
+        suite_runtime_id: str,
+        post_cut_epoch_id: str,
+        result_digests: Mapping[str, str],
+    ) -> tuple[Path, Mapping[str, Any]]:
+        if (
+            not suite_runtime_id
+            or suite_runtime_id != suite_runtime_id.strip()
+            or Path(suite_runtime_id).name != suite_runtime_id
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                "W12 suiteRuntimeId is invalid",
+            )
+        path = (
+            self.result_root
+            / "runtime-owner"
+            / suite_runtime_id
+            / "suite-runtime.json"
+        )
+        if path.is_symlink():
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                "W12 Suite Runtime report path is invalid",
+            )
+        try:
+            resolved = path.resolve(strict=True)
+            if self.result_root not in resolved.parents:
+                raise AggregateError(
+                    "CHILD_RESULT_INVALID",
+                    "W12 Suite Runtime report escapes the result root",
+                )
+            report = schema_activation.read_json_artifact(
+                resolved,
+                "W12 Suite Runtime report",
+            )
+            validated = validate_suite_runtime_report(
+                dict(report),
+                expected_contract=W12_SUITE_RUNTIME_CONTRACT,
+            )
+        except (
+            OSError,
+            SuiteRuntimeError,
+            schema_activation.SchemaActivationError,
+        ) as error:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                "W12 Suite Runtime report is invalid",
+            ) from error
+        if (
+            validated.get("suiteRuntimeId") != suite_runtime_id
+            or validated.get("sourceDigest") != generation
+            or validated.get("fixtureEpoch") != post_cut_epoch_id
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                "W12 Suite Runtime report binding is invalid",
+            )
+        expected_observations = sorted(
+            (
+                scenario_id,
+                f"scenario-result:{result_digest}",
+            )
+            for scenario_id, result_digest in result_digests.items()
+        )
+        observed_observations = sorted(
+            (
+                str(event.get("scenarioId")),
+                str(event.get("resourceId")),
+            )
+            for event in validated["events"]
+            if event.get("action") == "supporting-observation"
+            and str(event.get("resourceId")).startswith("scenario-result:")
+        )
+        if observed_observations != expected_observations:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                "W12 Suite Runtime report child bindings are invalid",
+            )
+        return resolved, validated
 
     def _validate_runtime_manifest_binding(
         self,
@@ -1068,8 +1405,13 @@ class ResultAggregateOwner:
         generation: str,
         variant: str,
     ) -> tuple[Path, Mapping[str, Any], str]:
-        profile = "four" if variant == "final-cut-four" else "fiveArm"
-        workstream = "W12F-FOUR" if profile == "four" else "W12F-FIVEARM"
+        try:
+            profile, workstream, _ = FINAL_CUT_VARIANTS[variant]
+        except KeyError as error:
+            raise AggregateError(
+                "AGGREGATE_SCOPE_INVALID",
+                f"unsupported W12 final-cut variant {variant!r}",
+            ) from error
         paths = sorted(
             (
                 self.result_root
@@ -1111,12 +1453,105 @@ class ResultAggregateOwner:
                     "CHILD_RESULT_INVALID",
                     f"W12/{variant} has invalid {field}",
                 )
+        if result.get("reset_id") != path.parent.name:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"W12/{variant} has invalid reset_id",
+            )
         digest = _validate_digest(
             result,
             "result_digest",
             label=f"W12/{variant} final-cut result",
         )
         return path, result, digest
+
+    def _final_cut_binding(
+        self,
+        *,
+        generation: str,
+        variant: str,
+        result: Mapping[str, Any],
+        result_digest: str,
+    ) -> FinalCutBinding:
+        profile, _, station_service_id = FINAL_CUT_VARIANTS[variant]
+        reset_id = result.get("reset_id")
+        schema_digest = result.get("schema_attestation_digest")
+        if (
+            not isinstance(reset_id, str)
+            or not reset_id
+            or reset_id != reset_id.strip()
+            or not _is_sha256(schema_digest)
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"W12/{variant} final-cut binding is invalid",
+            )
+        try:
+            attestation_path, attestation = (
+                schema_activation.read_referenced_artifact(
+                    self.result_root,
+                    result.get("schema_attestation_ref"),
+                    f"W12/{variant} final-cut schema attestation",
+                )
+            )
+        except (schema_activation.SchemaActivationError, OSError) as error:
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"W12/{variant} final-cut schema attestation is invalid",
+            ) from error
+        attestation_content = dict(attestation)
+        attestation_digest = attestation_content.pop(
+            "attestation_digest",
+            None,
+        )
+        station_runtime_identity = attestation.get(
+            "station_runtime_identity"
+        )
+        expected_attestation = {
+            "source_commit": generation,
+            "workspace_id": self.identity["workspaceId"],
+            "profile_id": profile,
+            "station_service_id": station_service_id,
+            "reset_intent": "FINAL_CUT",
+        }
+        expected_attestation_path = (
+            self.result_root
+            / "W12"
+            / "final-cut"
+            / generation
+            / profile
+            / reset_id
+            / schema_activation.CANONICAL_PRIVATE_SCHEMA_ATTESTATION_FILENAME
+        )
+        if (
+            attestation_path != expected_attestation_path
+            or any(
+                attestation.get(field) != expected_value
+                for field, expected_value in expected_attestation.items()
+            )
+            or attestation_digest != schema_digest
+            or not hmac.compare_digest(
+                str(attestation_digest),
+                schema_activation.canonical_digest(attestation_content),
+            )
+            or not isinstance(station_runtime_identity, str)
+            or not station_runtime_identity
+            or station_runtime_identity != station_runtime_identity.strip()
+        ):
+            raise AggregateError(
+                "CHILD_RESULT_INVALID",
+                f"W12/{variant} final-cut schema attestation is invalid",
+            )
+        return FinalCutBinding(
+            result_digest=result_digest,
+            reset_id=reset_id,
+            schema_attestation_digest=str(schema_digest),
+            station_runtime_identity=station_runtime_identity,
+            completed_at=_parse_timestamp(
+                result.get("completed_at"),
+                label=f"W12/{variant} completed_at",
+            ),
+        )
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:

@@ -41,7 +41,7 @@
       "budget_seconds": 7200
     },
     "run-w2-desktop": {
-      "work_item_id": "secure-content-w2b-desktop",
+      "work_item_id": "secure-content-w2",
       "task_id": "W2",
       "journey_id": "sc-dj-chat-attachment-atomic",
       "scenario_id": "chat-attachment-atomic",
@@ -52,7 +52,7 @@
       "budget_seconds": 3600
     },
     "run-w2-ios": {
-      "work_item_id": "secure-content-w2b-mobile",
+      "work_item_id": "secure-content-w2",
       "task_id": "W2",
       "journey_id": "sc-dj-chat-attachment-mobile",
       "scenario_id": "chat-attachment-mobile",
@@ -63,7 +63,7 @@
       "budget_seconds": 3600
     },
     "run-w2-android": {
-      "work_item_id": "secure-content-w2b-mobile",
+      "work_item_id": "secure-content-w2",
       "task_id": "W2",
       "journey_id": "sc-dj-chat-attachment-mobile",
       "scenario_id": "chat-attachment-mobile",
@@ -168,7 +168,7 @@
       "scenario_id": "hardcut-chat-mobile-regression",
       "runtime": "mobile",
       "profiles": ["four", "fiveArm"],
-      "clients": ["secure-content-hardcut-ios-alice", "secure-content-hardcut-ios-bob"],
+      "clients": ["secure-content-hardcut-ios-alice", "secure-content-hardcut-ios-remote_bob"],
       "fixture_capability": "secure-content-hardcut",
       "budget_seconds": 3600
     },
@@ -179,7 +179,7 @@
       "scenario_id": "hardcut-chat-mobile-regression",
       "runtime": "mobile",
       "profiles": ["four", "fiveArm"],
-      "clients": ["secure-content-hardcut-android-alice", "secure-content-hardcut-android-bob"],
+      "clients": ["secure-content-hardcut-android-alice", "secure-content-hardcut-android-remote_bob"],
       "fixture_capability": "secure-content-hardcut",
       "budget_seconds": 3600
     },
@@ -245,7 +245,7 @@
       "scenario_id": "final-chat-mobile",
       "runtime": "mobile",
       "profiles": ["four", "fiveArm"],
-      "clients": ["secure-content-ios-alice", "secure-content-ios-bob"],
+      "clients": ["secure-content-ios-alice", "secure-content-ios-remote_bob"],
       "fixture_capability": "secure-content-final",
       "budget_seconds": 3600
     },
@@ -256,7 +256,7 @@
       "scenario_id": "final-chat-mobile",
       "runtime": "mobile",
       "profiles": ["four", "fiveArm"],
-      "clients": ["secure-content-android-alice", "secure-content-android-bob"],
+      "clients": ["secure-content-android-alice", "secure-content-android-remote_bob"],
       "fixture_capability": "secure-content-final",
       "budget_seconds": 3600
     }

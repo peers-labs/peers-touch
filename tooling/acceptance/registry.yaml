@@ -2626,6 +2626,31 @@
       "require": [
         "peers-dev-product"
       ]
+    },
+    {
+      "id": "social-private-moments-desktop",
+      "features": [
+        "social-private-moments-desktop"
+      ],
+      "when": {
+        "paths": [
+          "apps/desktop/src/acceptance/moments/**",
+          "apps/desktop/src/pages/MomentsPage.tsx",
+          "apps/desktop/src/store/moments.ts",
+          "apps/station/app/subserver/social/**",
+          "docs/architecture/social/**",
+          "model/domain/social/**",
+          "packages/secure-content-core/**",
+          "tooling/acceptance/capabilities/social.yaml",
+          "tooling/acceptance/domains/social.yaml",
+          "tooling/acceptance/features/social-private-moments-desktop.yaml",
+          "tooling/acceptance/gates/social/**",
+          "tooling/development/secure_content/**"
+        ]
+      },
+      "require": [
+        "social-private-desktop-e2e"
+      ]
     }
   ]
 }

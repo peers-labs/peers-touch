@@ -1088,6 +1088,8 @@ def evidence_summary_from_artifact(path: Any, artifact: Any) -> dict[str, Any]:
     ):
         if key in artifact:
             summary[key] = artifact[key]
+    if isinstance(artifact.get("manifest"), dict):
+        summary["manifest"] = artifact["manifest"]
     details = artifact.get("details", artifact.get("evidenceDetails"))
     if isinstance(details, list):
         summary["details"] = details
@@ -1195,6 +1197,7 @@ def enrich_result_with_run_artifacts(
         ("reason", "reason"),
         ("failedStep", "failedStep"),
         ("sampleEmissionAllowed", "sampleEmissionAllowed"),
+        ("manifest", "manifest"),
     ):
         if source_key in primary:
             enriched[target_key] = primary[source_key]

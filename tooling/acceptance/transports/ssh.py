@@ -310,26 +310,40 @@ class SshTransport:
         self,
         *,
         remote_port: int,
+        remote_host: str = "127.0.0.1",
         local_port: int | None = None,
         timeout: float = 10,
     ) -> SshTunnel:
         if remote_port < 1 or remote_port > 65535:
             raise ProvisioningError("remote forward port is invalid")
+        selected_remote_host = _validate_atom(
+            remote_host,
+            "forward host",
+            _HOST_PATTERN,
+        )
         selected_local_port = local_port or available_local_port()
         if selected_local_port < 1 or selected_local_port > 65535:
             raise ProvisioningError("local forward port is invalid")
-        if not self.remote_loopback_port_listening(
+        if not self.remote_endpoint_listening(
+            selected_remote_host,
             remote_port,
             timeout=timeout,
         ):
             raise ProvisioningError(
-                "remote endpoint is not listening before SSH local forward"
+                "remote endpoint "
+                f"{selected_remote_host}:{remote_port} is not listening "
+                "before SSH local forward"
             )
+        forward_host = (
+            f"[{selected_remote_host}]"
+            if ":" in selected_remote_host
+            else selected_remote_host
+        )
         return self._start_forward(
             direction="-L",
             specification=(
                 f"127.0.0.1:{selected_local_port}:"
-                f"127.0.0.1:{remote_port}"
+                f"{forward_host}:{remote_port}"
             ),
             local_probe_port=selected_local_port,
             remote_probe_port=None,
@@ -362,8 +376,26 @@ class SshTransport:
         *,
         timeout: float | None = None,
     ) -> bool:
+        return self.remote_endpoint_listening(
+            "127.0.0.1",
+            port,
+            timeout=timeout,
+        )
+
+    def remote_endpoint_listening(
+        self,
+        host: str,
+        port: int,
+        *,
+        timeout: float | None = None,
+    ) -> bool:
+        selected_host = _validate_atom(
+            host,
+            "endpoint host",
+            _HOST_PATTERN,
+        )
         if port < 1 or port > 65535:
-            raise ProvisioningError("remote loopback probe port is invalid")
+            raise ProvisioningError("remote endpoint probe port is invalid")
         probe_timeout = (
             timeout
             if timeout is not None
@@ -385,9 +417,10 @@ class SshTransport:
                     (
                         "import socket,sys;"
                         "connection=socket.create_connection("
-                        "('127.0.0.1',int(sys.argv[1])),0.5);"
+                        "(sys.argv[1],int(sys.argv[2])),0.5);"
                         "connection.close()"
                     ),
+                    selected_host,
                     str(port),
                 ),
                 timeout=probe_timeout,

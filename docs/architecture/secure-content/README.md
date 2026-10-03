@@ -86,6 +86,7 @@ wire, storage, and recovery behavior.
 | [execution-plans/20260924-audience-contract-amendment-review-prompt.md](./execution-plans/20260924-audience-contract-amendment-review-prompt.md) | Independent review contract for accepted `SC-D29` typed audience targets and locally enumerable v1 recipients |
 | [execution-plans/20260925-dashboard-peer-trust-route-amendment-review-prompt.md](./execution-plans/20260925-dashboard-peer-trust-route-amendment-review-prompt.md) | Review contract for the W12A Dashboard federation peer route scope correction |
 | [execution-plans/20260925-mobile-runtime-source-plan-amendment-review-prompt.md](./execution-plans/20260925-mobile-runtime-source-plan-amendment-review-prompt.md) | Review contract for splitting Mobile product source, platform runtime ownership, and schema activation into bounded Tasks |
+| [execution-plans/20261001-desktop-social-usability-amendment-review-prompt.md](./execution-plans/20261001-desktop-social-usability-amendment-review-prompt.md) | Review contract for narrowing the active milestone to Desktop Native Social development usability |
 | [execution-plans/20260913-secure-content-work-items.yaml](./execution-plans/20260913-secure-content-work-items.yaml) | Machine-shaped DevelopmentWorkItem contracts |
 | [execution-plans/20260913-secure-content-journeys.yaml](./execution-plans/20260913-secure-content-journeys.yaml) | Machine-shaped DevelopmentJourney contracts and budgets |
 
@@ -125,3 +126,8 @@ client-facing Content PreKey boundary required by W7, passed independent
 security and architecture/ownership review and was accepted by the Owner on
 2026-09-15. Implementation and runtime readiness remain governed by the formal
 execution plan and evidence gates.
+
+On 2026-10-01, the Owner narrowed the active hard-cut milestone to
+`DESKTOP_DEVELOPMENT_USABLE`: Desktop Native private Social plus the required
+two-Station schema activation. Browser, Mobile, Chat product runtime,
+`FINAL_CUT`, and formal release Acceptance remain explicit future scope.

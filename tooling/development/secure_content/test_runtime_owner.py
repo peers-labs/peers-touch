@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from typing import Callable, Mapping
 from unittest.mock import MagicMock, call, patch
 
-from tooling.acceptance.core.errors import BlockedError, ProvisioningError
+from tooling.acceptance.core.errors import BlockedError
 from tooling.acceptance.fixtures.secure_content_w7 import (
     W7FixtureBinding,
     W7FixtureCapabilityHandler,
@@ -31,12 +31,26 @@ from tooling.acceptance.provisioners.secure_content_remote_recipient import (
     RemotePrivateRecipientProvisioner,
 )
 from tooling.development.secure_content import runtime_manifest
+from tooling.development.secure_content import runtime_owner as runtime_owner_module
+from tooling.development.secure_content.scenarios import desktop_pilot
+from tooling.development.secure_content.platform_runtime import (
+    load_platform_runtime_contract,
+)
 from tooling.development.secure_content.run import RunnerError, ScenarioContext
 from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
+    DESKTOP_CLIENTS,
     REQUIRED_FIXTURE_CAPABILITIES,
+    SOCIAL_ACCEPTANCE_IDS,
+    SOCIAL_ACCEPTANCE_JOURNEY,
+    SOCIAL_ACCEPTANCE_PLAN_ID,
+    SOCIAL_ACCEPTANCE_RUNTIME_REUSE,
+    SOCIAL_ACCEPTANCE_TASK_IDS,
+    W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
     W8_SCENARIOS,
+    W8_REMOTE_IDENTITY_SCOPE,
+    W8_REMOTE_SEEDED_ACCOUNT,
     W9_RUNTIME_REUSE,
     RuntimeOwnerBlocked,
     W8_REMOTE_RECIPIENT_CAPABILITY,
@@ -46,6 +60,7 @@ from tooling.development.secure_content.runtime_owner import (
     _StationEndpoint,
     _activate_scenario_journey,
     _authenticate_running_client,
+    _bind_reusable_actor_identity,
     _build_fixture_owner,
     _client_payload,
     _close_fixture_action_channel,
@@ -56,21 +71,31 @@ from tooling.development.secure_content.runtime_owner import (
     _generate_mobile_recovery_phrase,
     _make_client,
     _manifest_payload,
+    _maintain_current_recovery_prekeys,
     _open_station_tunnels,
     _prepare_accepted_friendship,
     _prepare_mobile_private_content_keys,
+    _prepare_portable_recovery,
     _prepare_private_content_keys,
+    _prepare_remote_group_fixture,
+    _revoke_remote_fixture_device,
+    _wait_for_accepted_friendship_projection,
+    _wait_for_private_moment_state,
     _parse_args,
+    _publish_result_generation,
     _publish_canonical_private_schema_attestation,
     _provision_runtime_accounts,
     _register_runtime_account,
     _require_mobile_private_runtime,
     _require_mobile_write_admission,
+    _restore_w8_invalidated_fixtures,
     _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
+    _social_acceptance_scenario_registry,
     _restart_lease,
     _runtime_cleanup_scope,
     _service_payload,
+    _stage_child_result,
     _stage_continuation_evidence,
     _start_client,
     _start_mobile_client,
@@ -81,7 +106,7 @@ from tooling.development.secure_content.runtime_owner import (
     _verify_live_canonical_private_schema_attestation,
     _wait_for_moments_snapshot,
     _write_browser_runtime_manifest_with_recovery,
-    _w8_receiver_ui_probe,
+    _receiver_ui_probe,
     main,
 )
 
@@ -125,6 +150,51 @@ def fixture_payload() -> dict[str, object]:
 
 
 class RuntimeOwnerTest(unittest.TestCase):
+    def test_w7_desktop_suite_contract_excludes_other_runtimes(self) -> None:
+        self.assertEqual(
+            ("desktop-pre-restart", "desktop-continuity"),
+            W7_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(1, W7_RUNTIME_REUSE.max_provisioning_runs)
+        self.assertEqual(4, W7_RUNTIME_REUSE.max_client_launches)
+        self.assertEqual(0.5, W7_RUNTIME_REUSE.min_warm_reuse_rate)
+        self.assertTrue(W7_RUNTIME_REUSE.allow_client_replacement)
+
+        source = inspect.getsource(
+            W7RuntimeOwner.run_w7_desktop_suite
+        )
+        self.assertNotIn("BROWSER_", source)
+        self.assertNotIn('runtime_kind="browser"', source)
+        self.assertNotIn('runtime="browser"', source)
+        self.assertNotIn('runtime="mobile"', source)
+
+    def test_w7_desktop_suite_publishes_after_ui_proof_and_cleanup(
+        self,
+    ) -> None:
+        source = inspect.getsource(
+            W7RuntimeOwner.run_w7_desktop_suite
+        )
+
+        self.assertEqual(4, source.count("result_root=raw_result_root"))
+        self.assertNotRegex(
+            source,
+            r"(?<!final_)result_root=self\.result_root",
+        )
+        self.assertEqual(2, source.count("_receiver_ui_probe("))
+        self.assertEqual(2, source.count("_stage_child_result("))
+        self.assertLess(
+            source.index("_receiver_ui_probe("),
+            source.index("_stage_child_result("),
+        )
+        self.assertLess(
+            source.index("SuiteRuntimeAction.CLEANUP_COMPLETE"),
+            source.index("_publish_result_generation("),
+        )
+        self.assertNotIn(
+            'call("clearLocalState")',
+            inspect.getsource(desktop_pilot._execute),
+        )
+
     def test_w8_suite_contract_closes_all_scenarios(self) -> None:
         self.assertEqual(
             tuple(spec.scenario_id for spec in W8_SCENARIOS),
@@ -146,6 +216,162 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertTrue(W8_RUNTIME_REUSE.require_attach_only_scenarios)
         self.assertTrue(W8_RUNTIME_REUSE.require_receiver_visible_proof)
         self.assertFalse(W8_RUNTIME_REUSE.allow_client_replacement)
+        self.assertEqual(
+            {"private-comment"},
+            {
+                spec.scenario_id
+                for spec in W8_SCENARIOS
+                if spec.click_content
+            },
+        )
+        self.assertEqual(
+            {"social-delete-block": ("local-mutual-friendship",)},
+            {
+                spec.scenario_id: spec.invalidated_fixture_ids
+                for spec in W8_SCENARIOS
+                if spec.invalidated_fixture_ids
+            },
+        )
+
+    def test_social_desktop_acceptance_suite_contract_is_bounded(self) -> None:
+        self.assertEqual(
+            "social-private-desktop-functional",
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.entry_check_id,
+        )
+        self.assertEqual(
+            (
+                "desktop-pre-restart",
+                "desktop-continuity",
+                "private-comment",
+                "social-expansion",
+                "social-subtype",
+                "social-object",
+                "social-delete-block",
+                "social-bounds",
+            ),
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(
+            1,
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.max_provisioning_runs,
+        )
+        self.assertEqual(
+            5,
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.max_client_launches,
+        )
+        self.assertTrue(
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.allow_client_replacement
+        )
+        self.assertEqual(14, len(SOCIAL_ACCEPTANCE_IDS))
+        source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
+        cleanup_complete = source.index(
+            "ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)"
+        )
+        runtime_evidence = source.index(
+            "acceptance_runtime_manifest = {",
+            cleanup_complete,
+        )
+        self.assertLess(cleanup_complete, runtime_evidence)
+        self.assertIn('"state": "FIXTURE_READY"', source[runtime_evidence:])
+        self.assertIn('"cleanupState": "CLEANED"', source[runtime_evidence:])
+        self.assertIn(
+            '"runtimeManifest": acceptance_runtime_manifest',
+            source[runtime_evidence:],
+        )
+        remote_group = source.index("fixture_owner.bind_remote_group(")
+        remote_revoke = source.index(
+            "_revoke_remote_fixture_device(",
+            remote_group,
+        )
+        remote_stop = source.index(
+            'purpose="W8 remote recipient identity preparation"',
+            remote_revoke,
+        )
+        self.assertLess(remote_group, remote_revoke)
+        self.assertLess(remote_revoke, remote_stop)
+        self.assertLess(
+            remote_stop,
+            source.index("eve_client = _make_client("),
+        )
+        self.assertEqual("alice@p.t", W8_REMOTE_SEEDED_ACCOUNT)
+        self.assertEqual(
+            "social-desktop-remote-recipient-alice",
+            W8_REMOTE_IDENTITY_SCOPE,
+        )
+        self.assertIn("_run_social_acceptance_pre_restart(", source)
+        self.assertIn("_social_acceptance_scenario_registry(", source)
+        replacement_start = source.index("bob_replacement = _make_client(")
+        recovery_read = source.index(
+            'before_recovery = _wait_for_private_moment_state(',
+            replacement_start,
+        )
+        recovery_restore = source.index(
+            "restored = _restore_portable_recovery(",
+            recovery_read,
+        )
+        replacement_enrollment = source.index(
+            "_wait_for_device_enrollment(bob_replacement)",
+            recovery_restore,
+        )
+        recovered_read = source.index(
+            'recovered = _moments_harness(',
+            replacement_enrollment,
+        )
+        refreshed_snapshot = source.index(
+            "replacement_snapshot = _wait_for_moments_snapshot(",
+            recovered_read,
+        )
+        replenished_keys = source.index(
+            "_prepare_private_content_keys(bob_replacement)",
+            recovered_read,
+        )
+        replacement_payload = source.index(
+            "payloads[bob_client_id] = _client_payload(",
+            refreshed_snapshot,
+        )
+        self.assertLess(recovery_read, recovery_restore)
+        self.assertLess(recovery_restore, replacement_enrollment)
+        self.assertLess(replacement_enrollment, recovered_read)
+        self.assertLess(recovered_read, replenished_keys)
+        self.assertLess(replenished_keys, refreshed_snapshot)
+        self.assertLess(recovered_read, refreshed_snapshot)
+        self.assertLess(refreshed_snapshot, replacement_payload)
+
+    def test_w8_suite_restores_declared_shared_fixtures(self) -> None:
+        clients = {
+            DESKTOP_CLIENTS[0][0]: MagicMock(name="alice"),
+            DESKTOP_CLIENTS[1][0]: MagicMock(name="bob"),
+            DESKTOP_CLIENTS[2][0]: MagicMock(name="eve"),
+        }
+        delete_block = next(
+            spec
+            for spec in W8_SCENARIOS
+            if spec.scenario_id == "social-delete-block"
+        )
+        bounds = next(
+            spec
+            for spec in W8_SCENARIOS
+            if spec.scenario_id == "social-bounds"
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "_prepare_accepted_friendship"
+        ) as prepare:
+            self.assertEqual(
+                ("local-mutual-friendship",),
+                _restore_w8_invalidated_fixtures(delete_block, clients),
+            )
+            prepare.assert_called_once_with(
+                clients[DESKTOP_CLIENTS[0][0]],
+                clients[DESKTOP_CLIENTS[1][0]],
+            )
+            prepare.reset_mock()
+            self.assertEqual(
+                (),
+                _restore_w8_invalidated_fixtures(bounds, clients),
+            )
+            prepare.assert_not_called()
 
     def test_w8_suite_provisions_before_attach_only_scenario_loop(self) -> None:
         source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
@@ -168,10 +394,324 @@ class RuntimeOwnerTest(unittest.TestCase):
             "SuiteRuntimeAction.CLEANUP_COMPLETE",
             source,
         )
+        self.assertEqual(1, source.count("_open_station_tunnels("))
+        self.assertEqual(
+            1,
+            execution_source.count("station_endpoints.refresh()"),
+        )
         self.assertLess(
             execution_source.index("station_endpoints.refresh()"),
             execution_source.index("SuiteRuntimeAction.SCENARIO_START"),
         )
+        self.assertLess(
+            execution_source.index("_receiver_ui_probe("),
+            execution_source.index("_restore_w8_invalidated_fixtures("),
+        )
+        self.assertLess(
+            execution_source.index("_restore_w8_invalidated_fixtures("),
+            execution_source.index("SuiteRuntimeAction.SCENARIO_END"),
+        )
+
+    def test_w8_suite_publishes_results_after_receiver_proof_and_cleanup(
+        self,
+    ) -> None:
+        source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
+        execution_loop = source.rindex("for spec in W8_SCENARIOS:")
+        execution_source = source[execution_loop:]
+
+        self.assertIn("result_root=raw_result_root", execution_source)
+        self.assertNotRegex(
+            execution_source,
+            r"(?<!final_)result_root=self\.result_root",
+        )
+        self.assertLess(
+            execution_source.index("_receiver_ui_probe("),
+            execution_source.index("_stage_child_result("),
+        )
+        self.assertLess(
+            source.index("SuiteRuntimeAction.CLEANUP_COMPLETE"),
+            source.index("_publish_result_generation("),
+        )
+
+    def test_w8_result_generation_is_hidden_until_atomic_publication(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_root = root / "raw"
+            publish_root = root / "publish"
+            final_root = root / "final"
+            run_id = "w8-suite-test"
+            relative = (
+                Path("W8")
+                / COMMIT
+                / "subtype"
+                / run_id
+                / "result.json"
+            )
+            raw_result_path = raw_root / relative
+            raw_result_path.parent.mkdir(parents=True)
+            raw_result_path.write_text("{}\n", encoding="utf-8")
+            runtime_manifest_path = root / "runtime.json"
+            runtime_manifest_path.write_text("{}\n", encoding="utf-8")
+            supporting_path = raw_result_path.parent / "supporting.json"
+            supporting_path.write_text("{}\n", encoding="utf-8")
+            ui_evidence_path = root / "receiver-visible-evidence.json"
+            ui_evidence_path.write_text("{}\n", encoding="utf-8")
+            result = {
+                "workstreamId": "W8",
+                "generationId": COMMIT,
+                "variantId": "subtype",
+                "runId": run_id,
+                "artifactRefs": [
+                    str(raw_result_path),
+                    str(supporting_path),
+                    str(runtime_manifest_path),
+                ],
+                "result": "PASS",
+                "resultDigest": "0" * 64,
+                "startedAt": "2026-10-01T08:00:00.000Z",
+                "completedAt": "2026-10-01T08:00:01.000Z",
+                "durationMs": 1000,
+            }
+
+            staged = _stage_child_result(
+                result,
+                workstream_id="W8",
+                raw_result_root=raw_root,
+                publish_root=publish_root,
+                final_result_root=final_root,
+                ui_evidence_paths=(ui_evidence_path,),
+            )
+
+            final_result_path = final_root / relative
+            staged_result_path = publish_root / relative
+            self.assertFalse(final_result_path.exists())
+            self.assertTrue(staged_result_path.is_file())
+            self.assertEqual(
+                str(final_result_path.resolve()),
+                staged["artifactRefs"][0],
+            )
+            self.assertIn(
+                str(ui_evidence_path.resolve()),
+                staged["artifactRefs"],
+            )
+            final_supporting_path = (
+                final_root / relative.parent / supporting_path.name
+            )
+            self.assertIn(
+                str(final_supporting_path.resolve()),
+                staged["artifactRefs"],
+            )
+            self.assertTrue(
+                (
+                    publish_root / relative.parent / supporting_path.name
+                ).is_file()
+            )
+            self.assertGreaterEqual(staged["durationMs"], 1000)
+            self.assertNotEqual(
+                "2026-10-01T08:00:01.000Z",
+                staged["completedAt"],
+            )
+            digest_payload = dict(staged)
+            digest = digest_payload.pop("resultDigest")
+            self.assertEqual(
+                runtime_manifest.canonical_digest(digest_payload),
+                digest,
+            )
+
+            published = _publish_result_generation(
+                workstream_id="W8",
+                publish_root=publish_root,
+                final_result_root=final_root,
+                generation_id=COMMIT,
+            )
+
+            self.assertEqual((final_root / "W8" / COMMIT).resolve(), published)
+            self.assertTrue(final_result_path.is_file())
+            self.assertFalse((publish_root / "W8" / COMMIT).exists())
+
+    def test_social_result_publication_isolated_by_source_projection(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            final_root = root / "final"
+            published_roots: list[Path] = []
+            for index, digest in enumerate(("7" * 64, "8" * 64)):
+                publish_root = root / f"publish-{index}"
+                staged = (
+                    publish_root
+                    / "SDA-02-desktop-proof"
+                    / COMMIT
+                    / "subtype"
+                    / f"run-{index}"
+                )
+                staged.mkdir(parents=True)
+                (staged / "result.json").write_text("{}\n", encoding="utf-8")
+                projection_root = runtime_owner_module._result_publication_root(
+                    final_root,
+                    identity={"worktreeSetDigest": digest},
+                    formal_acceptance=True,
+                )
+                published_roots.append(
+                    _publish_result_generation(
+                        workstream_id="SDA-02-desktop-proof",
+                        publish_root=publish_root,
+                        final_result_root=projection_root,
+                        generation_id=COMMIT,
+                    )
+                )
+
+            self.assertNotEqual(*published_roots)
+            self.assertTrue(all(path.is_dir() for path in published_roots))
+            self.assertEqual(
+                final_root.resolve(),
+                runtime_owner_module._result_publication_root(
+                    final_root,
+                    identity={"worktreeSetDigest": "9" * 64},
+                    formal_acceptance=False,
+                ),
+            )
+
+            duplicate_publish_root = root / "publish-duplicate"
+            duplicate_staged = (
+                duplicate_publish_root
+                / "SDA-02-desktop-proof"
+                / COMMIT
+                / "subtype"
+                / "run-duplicate"
+            )
+            duplicate_staged.mkdir(parents=True)
+            (duplicate_staged / "result.json").write_text(
+                "{}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "result generation already exists",
+            ):
+                _publish_result_generation(
+                    workstream_id="SDA-02-desktop-proof",
+                    publish_root=duplicate_publish_root,
+                    final_result_root=runtime_owner_module._result_publication_root(
+                        final_root,
+                        identity={"worktreeSetDigest": "7" * 64},
+                        formal_acceptance=True,
+                    ),
+                    generation_id=COMMIT,
+                )
+
+    def test_w7_continuation_results_publish_as_one_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_root = root / "raw"
+            publish_root = root / "publish"
+            final_root = root / "final"
+            ui_evidence_paths: list[Path] = []
+            for scenario_id in (
+                "desktop-pre-restart",
+                "desktop-continuity",
+            ):
+                path = root / scenario_id / "receiver-visible-evidence.json"
+                path.parent.mkdir(parents=True)
+                path.write_text("{}\n", encoding="utf-8")
+                ui_evidence_paths.append(path)
+
+            for run_id, result in (
+                ("parent", "BLOCKED"),
+                ("parent-c-child", "PASS"),
+            ):
+                relative = (
+                    Path("W7")
+                    / COMMIT
+                    / "desktop"
+                    / run_id
+                    / "result.json"
+                )
+                raw_result_path = raw_root / relative
+                raw_result_path.parent.mkdir(parents=True)
+                raw_result_path.write_text("{}\n", encoding="utf-8")
+                staged = {
+                    "workstreamId": "W7",
+                    "generationId": COMMIT,
+                    "variantId": "desktop",
+                    "runId": run_id,
+                    "artifactRefs": [str(raw_result_path)],
+                    "result": result,
+                    "resultDigest": "0" * 64,
+                    "startedAt": "2026-10-01T08:00:00.000Z",
+                    "completedAt": "2026-10-01T08:00:01.000Z",
+                    "durationMs": 1000,
+                }
+                _stage_child_result(
+                    staged,
+                    workstream_id="W7",
+                    raw_result_root=raw_root,
+                    publish_root=publish_root,
+                    final_result_root=final_root,
+                    ui_evidence_paths=tuple(ui_evidence_paths),
+                )
+
+            generation_root = final_root / "W7" / COMMIT
+            self.assertFalse(generation_root.exists())
+
+            published = _publish_result_generation(
+                workstream_id="W7",
+                publish_root=publish_root,
+                final_result_root=final_root,
+                generation_id=COMMIT,
+            )
+
+            self.assertEqual(generation_root.resolve(), published)
+            self.assertEqual(
+                2,
+                len(tuple(generation_root.glob("desktop/*/result.json"))),
+            )
+
+    def test_w8_result_is_not_staged_without_receiver_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_root = root / "raw"
+            publish_root = root / "publish"
+            final_root = root / "final"
+            relative = (
+                Path("W8")
+                / COMMIT
+                / "subtype"
+                / "w8-suite-test"
+                / "result.json"
+            )
+            raw_result_path = raw_root / relative
+            raw_result_path.parent.mkdir(parents=True)
+            raw_result_path.write_text("{}\n", encoding="utf-8")
+            result = {
+                "workstreamId": "W8",
+                "generationId": COMMIT,
+                "variantId": "subtype",
+                "runId": "w8-suite-test",
+                "artifactRefs": [str(raw_result_path)],
+                "result": "PASS",
+                "resultDigest": "0" * 64,
+            }
+
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "receiver-visible evidence is unavailable",
+            ):
+                _stage_child_result(
+                    result,
+                    workstream_id="W8",
+                    raw_result_root=raw_root,
+                    publish_root=publish_root,
+                    final_result_root=final_root,
+                    ui_evidence_paths=(
+                        root / "missing-ui-evidence.json",
+                    ),
+                )
+
+            self.assertFalse((publish_root / relative).exists())
+            self.assertFalse((final_root / relative).exists())
 
     def test_w8_suite_cli_is_the_only_w8_entry(self) -> None:
         self.assertEqual(
@@ -200,6 +740,28 @@ class RuntimeOwnerTest(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 _parse_args(["run-social-expansion"])
 
+    def test_social_desktop_acceptance_cli_dispatches_once(self) -> None:
+        with patch.object(
+            W7RuntimeOwner,
+            "run_social_desktop_acceptance_suite",
+            return_value={
+                "status": "FUNCTIONAL_PASS",
+                "proofState": "UNPROVEN",
+            },
+        ) as run_suite:
+            status = main(
+                [
+                    "run-social-desktop-acceptance-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                    "--slot",
+                    "12",
+                ]
+            )
+
+        self.assertEqual(0, status)
+        run_suite.assert_called_once_with(slot=12)
+
     def test_w8_suite_requires_complete_profile_closure(
         self,
     ) -> None:
@@ -211,6 +773,18 @@ class RuntimeOwnerTest(unittest.TestCase):
         payload = json.loads(stderr.getvalue())
         self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
         self.assertEqual("runtime:secure-content-w8", payload["resource"])
+
+    def test_w7_desktop_suite_requires_complete_profile_closure(
+        self,
+    ) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            status = main(["run-w7-desktop-suite"])
+
+        self.assertEqual(2, status)
+        payload = json.loads(stderr.getvalue())
+        self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
+        self.assertEqual("runtime:secure-content-w7", payload["resource"])
 
     def test_w8_suite_cli_dispatches_once(self) -> None:
         with patch.object(
@@ -293,8 +867,9 @@ class RuntimeOwnerTest(unittest.TestCase):
             spec=SimpleNamespace(profile="w8-alice"),
         )
 
-        evidence = _w8_receiver_ui_probe(
+        evidence = _receiver_ui_probe(
             client,
+            workstream_id="W8",
             scenario_id="private-comment",
             action_text="parent",
             visible_text="comment",
@@ -331,6 +906,27 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         self.assertNotIn("[not(*)]", action_selector)
 
+        navigation_driver = Driver()
+        navigation_client = SimpleNamespace(
+            driver=navigation_driver,
+            spec=SimpleNamespace(profile="w7-bob"),
+        )
+        navigation_evidence = _receiver_ui_probe(
+            navigation_client,
+            workstream_id="W7",
+            scenario_id="desktop-continuity",
+            action_text=None,
+            visible_text="comment",
+            open_comments=False,
+        )
+
+        self.assertTrue(navigation_driver.nav.clicked)
+        self.assertFalse(navigation_driver.action.clicked)
+        self.assertEqual(
+            hashlib.sha256(b"moments-navigation").hexdigest(),
+            navigation_evidence["actionTextSha256"],
+        )
+
     def test_w9_suite_contract_is_single_entry(self) -> None:
         self.assertEqual(
             ("ios", "android", "cross-platform"),
@@ -339,6 +935,613 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(1, W9_RUNTIME_REUSE.max_provisioning_runs)
         self.assertEqual(6, W9_RUNTIME_REUSE.max_client_launches)
         self.assertEqual("run-w9-suite", _parse_args(["run-w9-suite"]).action)
+
+    def test_task_suite_entries_replace_public_leaf_commands(self) -> None:
+        suite_arguments = {
+            "run-w7-desktop-suite": ["--profiles", "four,fiveArm"],
+            "run-social-desktop-acceptance-suite": [
+                "--profiles",
+                "four,fiveArm",
+                "--slot",
+                "12",
+            ],
+            "run-w9-suite": [],
+            "run-w2-suite": ["--profiles", "four,fiveArm"],
+            "run-w10-suite": ["--profiles", "four,fiveArm"],
+            "run-w11-suite": ["--profiles", "four,fiveArm"],
+            "run-final-suite": ["--profiles", "four,fiveArm"],
+        }
+        for action, arguments in suite_arguments.items():
+            with self.subTest(action=action):
+                self.assertEqual(
+                    action,
+                    _parse_args([action, *arguments]).action,
+                )
+
+        for action in load_platform_runtime_contract().commands:
+            with self.subTest(leaf_action=action):
+                with redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit):
+                        _parse_args([action])
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                _parse_args(["run-w7-suite"])
+
+    def test_task_suite_contracts_match_plan_tasks(self) -> None:
+        plan_root = (
+            Path(__file__).resolve().parents[3]
+            / "docs"
+            / "architecture"
+            / "secure-content"
+            / "execution-plans"
+            / "20260913-secure-content-hard-cut"
+            / "tasks"
+        )
+        contracts = runtime_owner_module.TASK_SUITE_CONTRACTS
+        self.assertEqual({"W7"}, set(contracts))
+        for task_id, contract in contracts.items():
+            with self.subTest(task_id=task_id):
+                text = (plan_root / f"{task_id}.md").read_text(
+                    encoding="utf-8"
+                )
+                match = re.search(
+                    r"^```json\s*$\s*(\{.*\})\s*^```$",
+                    text,
+                    re.MULTILINE,
+                )
+                self.assertIsNotNone(match)
+                task = json.loads(match.group(1))
+                self.assertEqual(
+                    contract.to_dict(),
+                    task["runtimeReuse"],
+                )
+
+    def test_platform_suites_share_physical_clients_within_budget(self) -> None:
+        command_contract = load_platform_runtime_contract()
+        expected = {
+            "run-w9-suite": (0, 6, 6),
+            "run-w2-suite": (4, 4, 8),
+            "run-w10-suite": (4, 4, 8),
+            "run-w11-suite": (7, 8, 15),
+            "run-final-suite": (7, 8, 15),
+        }
+        for action, counts in expected.items():
+            with self.subTest(action=action):
+                suite = runtime_owner_module.TASK_SUITE_DEFINITIONS[action]
+                desktop, mobile = (
+                    runtime_owner_module._suite_physical_clients(
+                        suite,
+                        command_contract,
+                    )
+                )
+                self.assertEqual(counts[0], len(desktop))
+                self.assertEqual(counts[1], len(mobile))
+                self.assertEqual(counts[2], len(desktop) + len(mobile))
+                self.assertLessEqual(
+                    len(desktop) + len(mobile),
+                    suite.runtime_reuse.max_client_launches,
+                )
+
+        for action in ("run-w11-suite", "run-final-suite"):
+            suite = runtime_owner_module.TASK_SUITE_DEFINITIONS[action]
+            self.assertNotEqual(
+                "four-alice",
+                suite.desktop_client_aliases["four-alice"],
+            )
+            self.assertNotEqual(
+                "four-bob",
+                suite.desktop_client_aliases["four-bob"],
+            )
+            bindings = runtime_owner_module._suite_mobile_service_bindings(
+                suite,
+                command_contract,
+            )
+            self.assertEqual(
+                {
+                    runtime_owner_module.STATION_ID,
+                    runtime_owner_module.SECONDARY_STATION_ID,
+                },
+                {
+                    service_id
+                    for client_id, service_id in bindings.items()
+                    if runtime_owner_module._mobile_actor_role(client_id)
+                    == "bob"
+                },
+            )
+
+    def test_mobile_service_binding_supports_hyphenated_client_ids(self) -> None:
+        self.assertEqual(
+            "alice",
+            runtime_owner_module._mobile_actor_role(
+                "secure-content-hardcut-ios-alice"
+            ),
+        )
+        self.assertEqual(
+            runtime_owner_module.SECONDARY_STATION_ID,
+            runtime_owner_module._mobile_service_for_client(
+                "secure-content-ios-remote_bob",
+                ("four", "fiveArm"),
+            ),
+        )
+        self.assertEqual(
+            runtime_owner_module.SECONDARY_STATION_ID,
+            runtime_owner_module._mobile_service_for_client(
+                "secure-content-hardcut-ios-bob",
+                ("four", "fiveArm"),
+            ),
+        )
+        self.assertEqual(
+            runtime_owner_module.STATION_ID,
+            runtime_owner_module._mobile_service_for_client(
+                "secure-content-hardcut-ios-bob",
+                ("four",),
+            ),
+        )
+
+    def test_mobile_friendship_uses_explicit_local_and_remote_bob_bindings(
+        self,
+    ) -> None:
+        alice = MagicMock()
+        local_bob = MagicMock()
+        remote_bob = MagicMock()
+        accepted_requests = [
+            {
+                "requestId": "request-local",
+                "senderPtid": "ptid-alice",
+                "receiverPtid": "ptid-local-bob",
+                "federationId": "federation-shared",
+                "status": 2,
+            },
+            {
+                "requestId": "request-remote",
+                "senderPtid": "ptid-alice",
+                "receiverPtid": "ptid-remote-bob",
+                "federationId": "federation-shared",
+                "status": 2,
+            },
+        ]
+        alice.call_action.side_effect = lambda action, _payload: (
+            [
+                {
+                    "ptid": "ptid-local-bob",
+                    "federationId": "federation-shared",
+                    "homeStationPeerId": "runtime-four",
+                },
+                {
+                    "ptid": "ptid-remote-bob",
+                    "federationId": "federation-shared",
+                    "homeStationPeerId": "runtime-five-arm",
+                },
+            ]
+            if action == "social.people.search"
+            else {"friendRequests": accepted_requests}
+            if action == "social.projection.read"
+            else {}
+        )
+
+        def bob_action(
+            receiver_ptid: str,
+            request_id: str,
+        ) -> Callable[[str, Mapping[str, object]], object]:
+            return lambda action, _payload: (
+                {
+                    "friendRequests": [
+                        {
+                            "requestId": request_id,
+                            "senderPtid": "ptid-alice",
+                            "receiverPtid": receiver_ptid,
+                            "federationId": "federation-shared",
+                            "status": 2,
+                        }
+                    ]
+                }
+                if action == "social.projection.read"
+                else {}
+            )
+
+        local_bob.call_action.side_effect = bob_action(
+            "ptid-local-bob",
+            "request-local",
+        )
+        remote_bob.call_action.side_effect = bob_action(
+            "ptid-remote-bob",
+            "request-remote",
+        )
+        sessions = {
+            "secure-content-ios-alice": alice,
+            "secure-content-ios-bob": local_bob,
+            "secure-content-ios-remote_bob": remote_bob,
+        }
+
+        federation_id = runtime_owner_module._prepare_mobile_friendship(
+            sessions,
+            {
+                "secure-content-ios-alice": "ptid-alice",
+                "secure-content-ios-bob": "ptid-local-bob",
+                "secure-content-ios-remote_bob": "ptid-remote-bob",
+            },
+            {"bob": "sc-bob-abcdefghij@testnet.local"},
+            {
+                runtime_owner_module.STATION_ID: {
+                    "profile_id": "four",
+                    "runtime_identity": "runtime-four",
+                },
+                runtime_owner_module.SECONDARY_STATION_ID: {
+                    "profile_id": "fiveArm",
+                    "runtime_identity": "runtime-five-arm",
+                },
+            },
+            {
+                "secure-content-ios-alice": runtime_owner_module.STATION_ID,
+                "secure-content-ios-bob": runtime_owner_module.STATION_ID,
+                "secure-content-ios-remote_bob": (
+                    runtime_owner_module.SECONDARY_STATION_ID
+                ),
+            },
+            frozenset(
+                {
+                    runtime_owner_module.STATION_ID,
+                    runtime_owner_module.SECONDARY_STATION_ID,
+                }
+            ),
+        )
+
+        self.assertEqual("federation-shared", federation_id)
+        send_payloads = [
+            invocation.args[1]
+            for invocation in alice.call_action.call_args_list
+            if invocation.args[0] == "social.request.send"
+        ]
+        self.assertEqual(
+            ["runtime-four", "runtime-five-arm"],
+            [
+                payload["receiverHomeStationPeerId"]
+                for payload in send_payloads
+            ],
+        )
+        local_bob.call_action.assert_any_call(
+            "social.request.accept",
+            {"requestId": "request-local"},
+        )
+        remote_bob.call_action.assert_any_call(
+            "social.request.accept",
+            {"requestId": "request-remote"},
+        )
+
+    def test_mobile_friendship_rejects_missing_required_bob_station(
+        self,
+    ) -> None:
+        with self.assertRaisesRegex(
+            RuntimeOwnerBlocked,
+            "requires Bob clients for Station bindings",
+        ):
+            runtime_owner_module._prepare_mobile_friendship(
+                {
+                    "secure-content-ios-alice": MagicMock(),
+                    "secure-content-ios-bob": MagicMock(),
+                },
+                {
+                    "secure-content-ios-alice": "ptid-alice",
+                    "secure-content-ios-bob": "ptid-local-bob",
+                },
+                {"bob": "sc-bob-abcdefghij@testnet.local"},
+                {
+                    runtime_owner_module.STATION_ID: {
+                        "profile_id": "four",
+                        "runtime_identity": "runtime-four",
+                    },
+                    runtime_owner_module.SECONDARY_STATION_ID: {
+                        "profile_id": "fiveArm",
+                        "runtime_identity": "runtime-five-arm",
+                    },
+                },
+                {
+                    "secure-content-ios-alice": (
+                        runtime_owner_module.STATION_ID
+                    ),
+                    "secure-content-ios-bob": runtime_owner_module.STATION_ID,
+                },
+                frozenset(
+                    {
+                        runtime_owner_module.STATION_ID,
+                        runtime_owner_module.SECONDARY_STATION_ID,
+                    }
+                ),
+            )
+
+    def test_mobile_friendship_rejects_unconfirmed_acceptance(self) -> None:
+        alice = MagicMock()
+        bob = MagicMock()
+        alice.call_action.side_effect = lambda action, _payload: (
+            [
+                {
+                    "ptid": "ptid-bob",
+                    "federationId": "federation-shared",
+                    "homeStationPeerId": "runtime-four",
+                }
+            ]
+            if action == "social.people.search"
+            else {
+                "friendRequests": [
+                    {
+                        "requestId": "request-bob",
+                        "senderPtid": "ptid-alice",
+                        "receiverPtid": "ptid-bob",
+                        "federationId": "federation-shared",
+                        "status": 1,
+                    }
+                ]
+            }
+            if action == "social.projection.read"
+            else {}
+        )
+        bob.call_action.side_effect = lambda action, _payload: (
+            {
+                "friendRequests": [
+                    {
+                        "requestId": "request-bob",
+                        "senderPtid": "ptid-alice",
+                        "receiverPtid": "ptid-bob",
+                        "federationId": "federation-shared",
+                        "status": 1,
+                    }
+                ]
+            }
+            if action == "social.projection.read"
+            else {}
+        )
+
+        with (
+            patch.object(
+                runtime_owner_module.time,
+                "monotonic",
+                side_effect=(0, 0, 0, 0, 0, 61),
+            ),
+            patch.object(runtime_owner_module.time, "sleep"),
+            self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "was not accepted",
+            ),
+        ):
+            runtime_owner_module._prepare_mobile_friendship(
+                {
+                    "secure-content-ios-alice": alice,
+                    "secure-content-ios-bob": bob,
+                },
+                {
+                    "secure-content-ios-alice": "ptid-alice",
+                    "secure-content-ios-bob": "ptid-bob",
+                },
+                {"bob": "sc-bob-abcdefghij@testnet.local"},
+                {
+                    runtime_owner_module.STATION_ID: {
+                        "profile_id": "four",
+                        "runtime_identity": "runtime-four",
+                    }
+                },
+                {
+                    "secure-content-ios-alice": (
+                        runtime_owner_module.STATION_ID
+                    ),
+                    "secure-content-ios-bob": runtime_owner_module.STATION_ID,
+                },
+                frozenset({runtime_owner_module.STATION_ID}),
+            )
+
+    def test_final_suite_loads_only_complete_final_cut_bindings(self) -> None:
+        generation = "a" * 40
+        workspace_id = "0123456789abcdef"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for profile, workstream, service_id in (
+                ("four", "W12F-FOUR", "station-four"),
+                ("fiveArm", "W12F-FIVEARM", "station-five-arm"),
+            ):
+                reset_id = f"reset-{profile}"
+                result_dir = (
+                    root
+                    / "W12"
+                    / "final-cut"
+                    / generation
+                    / profile
+                    / reset_id
+                )
+                result_dir.mkdir(parents=True)
+                attestation = {
+                    "source_commit": generation,
+                    "workspace_id": workspace_id,
+                    "profile_id": profile,
+                    "station_service_id": service_id,
+                    "station_runtime_identity": f"runtime-{profile}",
+                    "reset_intent": "FINAL_CUT",
+                }
+                attestation["attestation_digest"] = (
+                    runtime_manifest.canonical_digest(attestation)
+                )
+                attestation_path = (
+                    result_dir
+                    / runtime_manifest.CANONICAL_PRIVATE_SCHEMA_ATTESTATION_FILENAME
+                )
+                attestation_path.write_text(
+                    json.dumps(attestation),
+                    encoding="utf-8",
+                )
+                attestation_path.chmod(0o600)
+                result = {
+                    "kind": (
+                        runtime_owner_module.schema_activation
+                        .PROFILE_RESULT_KIND
+                    ),
+                    "workstream_id": workstream,
+                    "task_id": "W12",
+                    "generation_id": generation,
+                    "source_commit": generation,
+                    "workspace_id": workspace_id,
+                    "profile_id": profile,
+                    "reset_id": reset_id,
+                    "reset_intent": "FINAL_CUT",
+                    "schema_attestation_ref": {
+                        "path": attestation_path.relative_to(root).as_posix(),
+                        "sha256": hashlib.sha256(
+                            attestation_path.read_bytes()
+                        ).hexdigest(),
+                    },
+                    "schema_attestation_digest": attestation[
+                        "attestation_digest"
+                    ],
+                    "journal_state": "COMPLETE",
+                    "status": "PASS",
+                    "claim": "FINAL_RESET_COMPLETE_ONLY",
+                }
+                result["result_digest"] = (
+                    runtime_manifest.canonical_digest(result)
+                )
+                result_path = result_dir / "result.json"
+                result_path.write_text(
+                    json.dumps(result),
+                    encoding="utf-8",
+                )
+                result_path.chmod(0o600)
+
+            bindings = runtime_owner_module._load_final_cut_bindings(
+                root,
+                generation_id=generation,
+                workspace_id=workspace_id,
+            )
+
+            self.assertEqual({"four", "fiveArm"}, set(bindings))
+            self.assertEqual(
+                "runtime-four",
+                bindings["four"]["station_runtime_identity"],
+            )
+
+            result_path = (
+                root
+                / "W12"
+                / "final-cut"
+                / generation
+                / "four"
+                / "reset-four"
+                / "result.json"
+            )
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            result["reset_intent"] = "SCHEMA_ACTIVATION"
+            result.pop("result_digest")
+            result["result_digest"] = runtime_manifest.canonical_digest(
+                result
+            )
+            result_path.write_text(json.dumps(result), encoding="utf-8")
+            result_path.chmod(0o600)
+
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "FINAL_CUT result is invalid",
+            ):
+                runtime_owner_module._load_final_cut_bindings(
+                    root,
+                    generation_id=generation,
+                    workspace_id=workspace_id,
+                )
+
+    def test_platform_suite_prepares_once_before_attach_only_loop(self) -> None:
+        source = inspect.getsource(W7RuntimeOwner._run_platform_suite)
+        scenario_loop = source.index("for scenario in suite.scenarios:")
+
+        self.assertEqual(1, source.count("SuiteRuntimeLedger("))
+        self.assertEqual(1, source.count("SuiteRuntimeAction.PROVISION"))
+        self.assertLess(
+            source.index("_prepare_desktop_suite_resources("),
+            scenario_loop,
+        )
+        self.assertLess(
+            source.index("_prepare_mobile_suite_resources("),
+            scenario_loop,
+        )
+        self.assertNotIn(
+            "_prepare_desktop_suite_resources(",
+            source[scenario_loop:],
+        )
+        self.assertNotIn(
+            "_prepare_mobile_suite_resources(",
+            source[scenario_loop:],
+        )
+        self.assertNotIn("run_platform_action(", source)
+        self.assertNotIn("_run_mobile_platform_action(", source)
+        self.assertNotIn("_run_desktop_platform_action(", source)
+        for action in (
+            "SuiteRuntimeAction.UI_ACTION",
+            "SuiteRuntimeAction.RECEIVER_ASSERTION",
+            "SuiteRuntimeAction.SUPPORTING_OBSERVATION",
+            "SuiteRuntimeAction.SCENARIO_END",
+            "SuiteRuntimeAction.CLEANUP_COMPLETE",
+        ):
+            self.assertIn(action, source)
+        self.assertIn("suite.primary_journey_id", source)
+        self.assertIn("stack.callback(", source)
+
+    def test_w9_suite_uses_shared_owner_instead_of_pending_fence(self) -> None:
+        source = inspect.getsource(W7RuntimeOwner.run_w9_suite)
+
+        self.assertNotIn("SUITE_RUNTIME_OWNER_PENDING", source)
+        self.assertIn("_run_platform_suite", source)
+
+    def test_task_suite_cli_dispatches_once(self) -> None:
+        cases = {
+            "run-w7-desktop-suite": (
+                "run_w7_desktop_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+            "run-w9-suite": ("run_w9_suite", []),
+            "run-w2-suite": (
+                "run_w2_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+            "run-w10-suite": (
+                "run_w10_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+            "run-w11-suite": (
+                "run_w11_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+            "run-final-suite": (
+                "run_final_suite",
+                ["--profiles", "four,fiveArm"],
+            ),
+        }
+        for action, (method_name, arguments) in cases.items():
+            with self.subTest(action=action):
+                with patch.object(
+                    W7RuntimeOwner,
+                    method_name,
+                    return_value={
+                        "status": "FUNCTIONAL_PASS",
+                        "proofState": "UNPROVEN",
+                    },
+                ) as run_suite:
+                    status = main([action, *arguments])
+
+                self.assertEqual(0, status)
+                run_suite.assert_called_once_with()
+
+    def test_task_suite_invocations_do_not_share_mutable_runtime(self) -> None:
+        owner = W7RuntimeOwner(
+            repo_root=Path(__file__).resolve().parents[3],
+            result_root=Path("/tmp/secure-content-suite-test"),
+        )
+        roots = iter((Path("/tmp/suite-one"), Path("/tmp/suite-two")))
+        with patch.object(
+            owner,
+            "_run_platform_suite",
+            side_effect=lambda _suite: {
+                "status": "FUNCTIONAL_PASS",
+                "runtimeRoot": str(next(roots)),
+            },
+        ):
+            first = owner.run_w2_suite()
+            second = owner.run_w2_suite()
+
+        self.assertNotEqual(first["runtimeRoot"], second["runtimeRoot"])
 
     def test_suite_runtime_contracts_match_plan_tasks(self) -> None:
         plan_root = (
@@ -350,10 +1553,7 @@ class RuntimeOwnerTest(unittest.TestCase):
             / "20260913-secure-content-hard-cut"
             / "tasks"
         )
-        for task_id, contract in (
-            ("W8", W8_RUNTIME_REUSE),
-            ("W9", W9_RUNTIME_REUSE),
-        ):
+        for task_id, contract in (("W8", W8_RUNTIME_REUSE),):
             text = (plan_root / f"{task_id}.md").read_text(encoding="utf-8")
             match = re.search(
                 r"^```json\s*$\s*(\{.*\})\s*^```$",
@@ -367,40 +1567,37 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_platform_owner_cli_dispatches_without_manifest_argument(
         self,
     ) -> None:
-        parsed = _parse_args(["run-w2-ios", "--profiles", "four,fiveArm"])
-        self.assertEqual("run-w2-ios", parsed.action)
-        self.assertFalse(hasattr(parsed, "runtime_manifest"))
-
+        command = load_platform_runtime_contract().command("run-w2-ios")
+        owner = W7RuntimeOwner(
+            repo_root=Path(__file__).resolve().parents[3],
+            result_root=Path("/tmp/secure-content-leaf-test"),
+        )
         with patch.object(
             W7RuntimeOwner,
-            "run_platform_action",
+            "_run_mobile_platform_action",
             return_value={
                 "status": "FUNCTIONAL_PASS",
                 "proofState": "UNPROVEN",
             },
-        ) as run_platform:
-            status = main(["run-w2-ios", "--profiles", "four,fiveArm"])
+        ) as run_mobile:
+            result = owner.run_platform_action(command)
 
-        self.assertEqual(0, status)
+        self.assertEqual("FUNCTIONAL_PASS", result["status"])
         self.assertEqual(
             "run-w2-ios",
-            run_platform.call_args.args[0].action,
+            run_mobile.call_args.args[0].action,
         )
 
     def test_platform_owner_cli_rejects_profile_selector_drift(self) -> None:
-        stderr = io.StringIO()
-        with redirect_stderr(stderr):
-            status = main(
-                [
-                    "run-w2-ios",
-                    "--profiles",
-                    "four",
-                ]
-            )
-
-        self.assertEqual(2, status)
-        payload = json.loads(stderr.getvalue())
-        self.assertEqual("CONTROLLER_BINDING_MISMATCH", payload["code"])
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                _parse_args(
+                    [
+                        "run-w2-ios",
+                        "--profiles",
+                        "four",
+                    ]
+                )
 
     def test_w8_remote_recipient_handle_is_opaque_and_action_bound(self) -> None:
         actor_ptid = "did:peers:five-arm-actor"
@@ -410,6 +1607,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             actor_ptid=actor_ptid,
             home_station_peer_id="five-arm-peer-id",
             federation_id="federation-1",
+        )
+        owner.bind_remote_group(
+            lambda bound_ptid, bound_federation: (
+                "01JREMOTEGROUP"
+                if (
+                    bound_ptid == actor_ptid
+                    and bound_federation == "federation-1"
+                )
+                else ""
+            )
         )
         manifest = owner.manifest()
         encoded = json.dumps(manifest, sort_keys=True)
@@ -447,6 +1654,10 @@ class RuntimeOwnerTest(unittest.TestCase):
             self.assertEqual("fiveArm", outcome["profileId"])
             self.assertEqual("station-five-arm", outcome["serviceId"])
             self.assertEqual("federation-1", outcome["federationId"])
+            self.assertEqual(
+                "01JREMOTEGROUP",
+                outcome["remoteGroupUlid"],
+            )
             self.assertEqual(
                 hashlib.sha256(b"federation-1").hexdigest(),
                 outcome["federationIdSha256"],
@@ -574,10 +1785,34 @@ class RuntimeOwnerTest(unittest.TestCase):
             registrations[0][:2],
         )
         self.assertEqual("", provisioner.account)
+        owner.bind_remote_group(
+            lambda actor_ptid, federation_id: (
+                "01JREMOTE"
+                if (
+                    actor_ptid == "ptid:five-arm"
+                    and federation_id == "federation-1"
+                )
+                else ""
+            )
+        )
         self.assertEqual(
             "actor-identity-provisioner",
             owner.manifest()["handles"][0]["owner"],
         )
+
+    def test_w8_remote_recipient_can_reuse_an_existing_account(self) -> None:
+        registrar = MagicMock()
+        provisioner = RemotePrivateRecipientProvisioner(
+            source_checkpoint=COMMIT,
+            run_id="w8-existing-account",
+            station_url="https://five-arm.invalid",
+            password="fixture-password",
+            account_registrar=registrar,
+            existing_account="carol@p.t",
+        )
+
+        self.assertEqual("carol@p.t", provisioner.account)
+        registrar.assert_not_called()
 
     def test_w8_remote_recipient_reuses_an_existing_shared_federation(
         self,
@@ -708,6 +1943,127 @@ class RuntimeOwnerTest(unittest.TestCase):
         ):
             _prepare_private_content_keys(client)
 
+    def test_remote_recipient_reuses_one_actor_identity_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = SimpleNamespace(
+                actor_identity_root=root / "run" / "actor-identity",
+                spec=SimpleNamespace(profile="remote-recipient"),
+            )
+            shared = root / "shared" / "actor-identity"
+
+            _bind_reusable_actor_identity(client, shared)
+            _bind_reusable_actor_identity(client, shared)
+
+            self.assertTrue(client.actor_identity_root.is_symlink())
+            self.assertEqual(shared.resolve(), client.actor_identity_root.resolve())
+            self.assertEqual(0o700, shared.stat().st_mode & 0o777)
+
+    def test_remote_recipient_rejects_non_reusable_identity_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            actor_identity_root = root / "run" / "actor-identity"
+            actor_identity_root.mkdir(parents=True)
+            client = SimpleNamespace(
+                actor_identity_root=actor_identity_root,
+                spec=SimpleNamespace(profile="remote-recipient"),
+            )
+
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "Actor Identity is not reusable",
+            ):
+                _bind_reusable_actor_identity(
+                    client,
+                    root / "shared" / "actor-identity",
+                )
+
+    def test_portable_recovery_maintains_prekeys_for_created_epoch(
+        self,
+    ) -> None:
+        def native_result(
+            payload: Mapping[str, object],
+            *,
+            stub_payload: bool = True,
+        ) -> Mapping[str, object]:
+            return {
+                "ok": True,
+                "value": {
+                    "ok": True,
+                    "data": (
+                        {"status": json.dumps(payload)}
+                        if stub_payload
+                        else dict(payload)
+                    ),
+                },
+            }
+
+        client = MagicMock()
+        client.spec = SimpleNamespace(profile="bob")
+        words = [f"word-{index}" for index in range(24)]
+        client.driver.execute_async_script.side_effect = (
+            native_result({"words": words}),
+            native_result(
+                {
+                    "backup": {"backupId": "backup-bob"},
+                    "recoveryEpoch": 7,
+                }
+            ),
+            native_result(
+                {
+                    "recoveryEpoch": 7,
+                    "recoveryPreKeyAvailable": 100,
+                },
+                stub_payload=False,
+            ),
+        )
+
+        phrase, prepared = _prepare_portable_recovery(client)
+
+        self.assertEqual(" ".join(words), phrase)
+        self.assertEqual(
+            {
+                "backupIdSha256": hashlib.sha256(
+                    b"backup-bob"
+                ).hexdigest(),
+                "preparedEpoch": 7,
+                "recoveryPreKeyAvailable": 100,
+            },
+            prepared,
+        )
+        maintenance = client.driver.execute_async_script.call_args_list[2]
+        self.assertIn(
+            "import('/src/store/privateMoments.ts')",
+            maintenance.args[0],
+        )
+        self.assertEqual(
+            "social_private_moments_acceptance_maintain_prekeys",
+            maintenance.args[1],
+        )
+
+    def test_portable_recovery_rejects_mismatched_prekey_epoch(self) -> None:
+        client = MagicMock()
+        client.spec = SimpleNamespace(profile="bob")
+        client.driver.execute_async_script.return_value = {
+            "ok": True,
+            "value": {
+                "ok": True,
+                "data": {
+                    "recoveryEpoch": 8,
+                    "recoveryPreKeyAvailable": 100,
+                },
+            },
+        }
+
+        with self.assertRaisesRegex(
+            RuntimeOwnerBlocked,
+            "PreKey pool is unavailable",
+        ):
+            _maintain_current_recovery_prekeys(
+                client,
+                expected_recovery_epoch=7,
+            )
+
     def test_w8_remote_recipient_waits_for_mls_keypackage(self) -> None:
         client = MagicMock()
         client.spec = SimpleNamespace(profile="fiveArm")
@@ -813,6 +2169,142 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
         self.assertEqual("fixture-mls:fiveArm", raised.exception.resource)
 
+    def test_w8_remote_group_is_prepared_before_remote_device_revoke(
+        self,
+    ) -> None:
+        primary = object()
+        local_member = object()
+        chat_results = iter(
+            (
+                {"groupUlid": "01JREMOTE"},
+                {"groupUlid": "01JREMOTE"},
+                {
+                    "conversationId": "01JREMOTE",
+                    "members": [
+                        {"ptid": "ptid:primary"},
+                        {"ptid": "ptid:local-member"},
+                        {"ptid": "ptid:remote"},
+                    ],
+                },
+            )
+        )
+
+        def immediate_wait(
+            predicate: Callable[[], Mapping[str, object] | None],
+            description: str,
+            *,
+            timeout: float,
+            interval: float,
+        ) -> Mapping[str, object]:
+            self.assertIn("authoritative remote Group", description)
+            self.assertEqual(120, timeout)
+            self.assertEqual(1, interval)
+            result = predicate()
+            self.assertIsNotNone(result)
+            return result or {}
+
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_moments_harness",
+                return_value={"actorPtid": "ptid:local-member"},
+            ) as moments,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_chat_harness",
+                side_effect=lambda *_args, **_kwargs: next(chat_results),
+            ) as chat,
+            patch(
+                "tooling.development.secure_content.runtime_owner.wait_until",
+                side_effect=immediate_wait,
+            ),
+        ):
+            group_ulid = _prepare_remote_group_fixture(
+                primary,
+                local_member,
+                remote_actor_ptid="ptid:remote",
+                federation_id="federation-1",
+            )
+
+        self.assertEqual("01JREMOTE", group_ulid)
+        moments.assert_called_once_with(
+            local_member,
+            "acceptanceActorIdentity",
+        )
+        self.assertEqual(
+            [
+                call(
+                    primary,
+                    "createGroup",
+                    {
+                        "name": "secure-content-w8-remote-group",
+                        "federationId": "federation-1",
+                        "memberPtids": ["ptid:local-member"],
+                    },
+                ),
+                call(
+                    primary,
+                    "addFederatedGroupMember",
+                    {
+                        "groupUlid": "01JREMOTE",
+                        "member": {"ptid": "ptid:remote"},
+                    },
+                ),
+                call(
+                    primary,
+                    "groupLifecycleSnapshot",
+                    {"groupUlid": "01JREMOTE"},
+                    timeout=15,
+                ),
+            ],
+            chat.call_args_list,
+        )
+
+    def test_w8_remote_fixture_revokes_only_the_current_device(self) -> None:
+        client = SimpleNamespace(spec=SimpleNamespace(profile="fiveArm"))
+        readiness = {
+            "actorPtid": "ptid:remote",
+            "deviceId": "device-current",
+        }
+        with patch(
+            "tooling.development.secure_content.runtime_owner._chat_harness",
+            return_value={
+                **readiness,
+                "revoked": True,
+            },
+        ) as harness:
+            revoked = _revoke_remote_fixture_device(
+                client,
+                readiness=readiness,
+            )
+
+        self.assertTrue(revoked["revoked"])
+        harness.assert_called_once_with(client, "revokeCurrentDevice")
+
+    def test_w8_remote_fixture_revoke_fails_on_identity_mismatch(self) -> None:
+        client = SimpleNamespace(spec=SimpleNamespace(profile="fiveArm"))
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._chat_harness",
+                return_value={
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "device-other",
+                    "revoked": True,
+                },
+            ),
+            self.assertRaises(RuntimeOwnerBlocked) as raised,
+        ):
+            _revoke_remote_fixture_device(
+                client,
+                readiness={
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "device-current",
+                },
+            )
+
+        self.assertEqual("RUNTIME_CLEANUP_FAILED", raised.exception.code)
+        self.assertEqual("fixture-device:fiveArm", raised.exception.resource)
+
     def test_client_launch_uses_projected_runtime_source_commit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with (
@@ -849,6 +2341,31 @@ class RuntimeOwnerTest(unittest.TestCase):
             client_type.call_args.kwargs["profile_env"][
                 "PT_BUILD_SOURCE_COMMIT"
             ],
+        )
+
+    def test_social_acceptance_source_projection_allows_only_harness_delta(
+        self,
+    ) -> None:
+        self.assertTrue(
+            runtime_owner_module._social_acceptance_source_delta_allowed(
+                (
+                    "apps/desktop/src-tauri/src/interface/tauri_commands/"
+                    "messaging_recovery.rs",
+                    "apps/desktop/src-tauri/src/social/mod.rs",
+                    "apps/desktop/src-tauri/src/social/private_moment.rs",
+                    "apps/desktop/src/acceptance/moments/harness.ts",
+                    "apps/desktop/src/acceptance/moments/harness.test.ts",
+                    "tooling/development/secure_content/runtime_owner.py",
+                    "tooling/scripts/acceptance-run.py",
+                    "tooling/scripts/acceptance-run-test.py",
+                    "tooling/skills/pt-github-review/FRESHNESS.md",
+                )
+            )
+        )
+        self.assertFalse(
+            runtime_owner_module._social_acceptance_source_delta_allowed(
+                ("apps/desktop/src/services/social_api.ts",)
+            )
         )
 
     def test_running_client_authentication_uses_fixture_replacement_and_retries(
@@ -1008,6 +2525,8 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "homeStationPeerId": "station-four",
             },
             {"requestId": "friend-request-1"},
+            {"accepted": False},
+            {"accepted": True},
         )
         bob = MagicMock()
         bob.harness_namespace = "agent"
@@ -1018,9 +2537,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "homeStationPeerId": "station-four",
             },
             {"accepted": True, "requestId": "friend-request-1"},
+            {"accepted": True},
         )
 
-        _prepare_accepted_friendship(alice, bob)
+        with patch(
+            "tooling.development.secure_content.runtime_owner.time.sleep"
+        ):
+            _prepare_accepted_friendship(alice, bob)
 
         self.assertEqual(
             [
@@ -1035,6 +2558,16 @@ class RuntimeOwnerTest(unittest.TestCase):
                     },
                     timeout=120,
                 ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:bob"},
+                    timeout=120,
+                ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:bob"},
+                    timeout=120,
+                ),
             ],
             alice.harness.call_args_list,
         )
@@ -1047,11 +2580,106 @@ class RuntimeOwnerTest(unittest.TestCase):
                     {"actorPtid": "ptid:alice"},
                     timeout=120,
                 ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:alice"},
+                    timeout=120,
+                ),
             ],
             bob.harness.call_args_list,
         )
         self.assertEqual("agent", alice.harness_namespace)
         self.assertEqual("agent", bob.harness_namespace)
+
+    def test_friendship_projection_timeout_fails_closed(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.harness.return_value = {
+            "accepted": False,
+        }
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _wait_for_accepted_friendship_projection(
+                client,
+                target_ptid="ptid:bob",
+                actor_label="Alice",
+                timeout_seconds=0,
+            )
+
+        self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
+        self.assertEqual(
+            "fixture-account:mutual-friendship",
+            raised.exception.resource,
+        )
+        client.harness.assert_called_once_with(
+            "friendshipProjection",
+            {"actorPtid": "ptid:bob"},
+            timeout=120,
+        )
+
+    def test_private_moment_state_waits_for_recovery_projection(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec.profile = "secure-content-desktop-bob2"
+        client.harness.side_effect = (
+            {"state": "LOADING_AUTHORIZED_RESOURCE"},
+            {"state": "RECOVERY_REQUIRED", "errorCode": "RECOVERY_REQUIRED"},
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.time.sleep"
+        ):
+            projection = _wait_for_private_moment_state(
+                client,
+                post_id="post-1",
+                expected_state="RECOVERY_REQUIRED",
+                actor_label="Bob replacement device",
+            )
+
+        self.assertEqual("RECOVERY_REQUIRED", projection["state"])
+        self.assertEqual(
+            [
+                call(
+                    "readPrivateMoment",
+                    {"postId": "post-1"},
+                    timeout=120,
+                ),
+                call(
+                    "readPrivateMoment",
+                    {"postId": "post-1"},
+                    timeout=120,
+                ),
+            ],
+            client.harness.call_args_list,
+        )
+
+    def test_private_moment_state_timeout_reports_last_projection(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec.profile = "secure-content-desktop-bob2"
+        client.harness.return_value = {
+            "state": "NOT_FOUND_OR_NOT_AUTHORIZED",
+            "errorCode": "PRIVATE_CONTENT_NOT_AUTHORIZED",
+        }
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _wait_for_private_moment_state(
+                client,
+                post_id="post-1",
+                expected_state="RECOVERY_REQUIRED",
+                actor_label="Bob replacement device",
+                timeout_seconds=0,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn(
+            "state='NOT_FOUND_OR_NOT_AUTHORIZED'",
+            str(raised.exception),
+        )
+        self.assertIn(
+            "errorCode='PRIVATE_CONTENT_NOT_AUTHORIZED'",
+            str(raised.exception),
+        )
 
     def test_fixture_owner_prepares_recovery_prekeys_for_author_and_recipient(
         self,
@@ -1697,7 +3325,9 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
         self.assertIn("one bounded", str(raised.exception))
 
-    def test_station_tunnels_use_reviewed_profile_bindings_and_close(self) -> None:
+    def test_station_tunnels_target_reviewed_profile_hosts_and_close(
+        self,
+    ) -> None:
         primary = MagicMock(local_port=4101)
         primary.is_alive.return_value = False
         secondary = MagicMock(local_port=4102)
@@ -1706,38 +3336,34 @@ class RuntimeOwnerTest(unittest.TestCase):
         renewed_primary.is_alive.return_value = False
         renewed_secondary = MagicMock(local_port=4102)
         renewed_secondary.is_alive.return_value = False
-        primary_transport = MagicMock()
-        primary_transport.start_local_forward.return_value = renewed_primary
-        secondary_transport = MagicMock()
-        secondary_transport.start_local_forward.return_value = renewed_secondary
         with patch(
             "tooling.development.secure_content.runtime_owner."
             "open_reviewed_remote_tunnel",
-            side_effect=(primary, secondary),
-        ) as open_tunnel, patch(
-            "tooling.development.secure_content.runtime_owner."
-            "reviewed_remote_transport",
             side_effect=(
-                (primary_transport, {}),
-                (secondary_transport, {}),
+                primary,
+                secondary,
+                renewed_primary,
+                renewed_secondary,
             ),
-        ) as reviewed_transport:
+        ) as open_tunnel:
             stack, endpoints = _open_station_tunnels(
                 (
                     (
                         "station-four",
                         {
+                            "PT_STATION_MODE": "remote",
                             "PT_STATION_DEPLOY_ENV": "station-four",
                             "PT_STATION_PORT": "18080",
-                            "PT_STATION_URL": "https://four.example",
+                            "PT_STATION_URL": "http://10.0.0.4:18080",
                         },
                     ),
                     (
                         "station-five-arm",
                         {
+                            "PT_STATION_MODE": "remote",
                             "PT_STATION_DEPLOY_ENV": "station-five-arm",
                             "PT_STATION_PORT": "18080",
-                            "PT_STATION_URL": "https://five-arm.example",
+                            "PT_STATION_URL": "http://10.0.0.5:18080",
                         },
                     ),
                 )
@@ -1748,73 +3374,140 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(
             _StationEndpoint(
                 transport_url="http://127.0.0.1:4101",
-                canonical_origin="https://four.example",
+                canonical_origin="http://10.0.0.4:18080",
             ),
             endpoints["station-four"],
         )
         self.assertEqual(
             _StationEndpoint(
                 transport_url="http://127.0.0.1:4102",
-                canonical_origin="https://five-arm.example",
+                canonical_origin="http://10.0.0.5:18080",
             ),
             endpoints["station-five-arm"],
         )
         self.assertEqual(
             [
-                ("station-four", 18080),
-                ("station-five-arm", 18080),
+                call(
+                    "station-four",
+                    remote_host="10.0.0.4",
+                    remote_port=18080,
+                ),
+                call(
+                    "station-five-arm",
+                    remote_host="10.0.0.5",
+                    remote_port=18080,
+                ),
+                call(
+                    "station-four",
+                    remote_host="10.0.0.4",
+                    remote_port=18080,
+                    local_port=4101,
+                ),
+                call(
+                    "station-five-arm",
+                    remote_host="10.0.0.5",
+                    remote_port=18080,
+                    local_port=4102,
+                ),
             ],
-            [
-                (
-                    call.args[0],
-                    call.kwargs["remote_port"],
-                )
-                for call in open_tunnel.call_args_list
-            ],
+            open_tunnel.call_args_list,
         )
         primary.stop.assert_called_once_with()
         secondary.stop.assert_called_once_with()
-        self.assertEqual(
-            [call("station-four"), call("station-five-arm")],
-            reviewed_transport.call_args_list,
-        )
-        primary_transport.start_local_forward.assert_called_once_with(
-            remote_port=18080,
-            local_port=4101,
-        )
-        secondary_transport.start_local_forward.assert_called_once_with(
-            remote_port=18080,
-            local_port=4102,
-        )
         renewed_primary.stop.assert_called_once_with()
         renewed_secondary.stop.assert_called_once_with()
+
+    def test_https_station_endpoints_use_canonical_route_without_tunnel(
+        self,
+    ) -> None:
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "open_reviewed_remote_tunnel",
+        ) as open_tunnel:
+            stack, endpoints = _open_station_tunnels(
+                (
+                    (
+                        "station-four",
+                        {
+                            "PT_STATION_MODE": "remote",
+                            "PT_STATION_DEPLOY_ENV": "station-four",
+                            "PT_STATION_PORT": "443",
+                            "PT_STATION_URL": "https://four.example:443",
+                        },
+                    ),
+                )
+            )
+            stack.close()
+
+        open_tunnel.assert_not_called()
+        self.assertEqual(
+            _StationEndpoint(
+                transport_url="https://four.example:443",
+                canonical_origin="https://four.example:443",
+            ),
+            endpoints["station-four"],
+        )
+
+    def test_station_tunnels_reject_non_remote_or_noncanonical_routes(
+        self,
+    ) -> None:
+        invalid_profiles = (
+            {
+                "PT_STATION_MODE": "local",
+                "PT_STATION_DEPLOY_ENV": "station-four",
+                "PT_STATION_PORT": "18080",
+                "PT_STATION_URL": "http://10.0.0.4:18080",
+            },
+            {
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_DEPLOY_ENV": "station-four",
+                "PT_STATION_PORT": "18080",
+                "PT_STATION_URL": "http://127.0.0.1:18080",
+            },
+            {
+                "PT_STATION_MODE": "remote",
+                "PT_STATION_DEPLOY_ENV": "station-four",
+                "PT_STATION_PORT": "18080",
+                "PT_STATION_URL": "http://10.0.0.4:18081",
+            },
+        )
+        for profile in invalid_profiles:
+            with self.assertRaises(RuntimeOwnerBlocked) as raised:
+                _open_station_tunnels((("station-four", profile),))
+            self.assertEqual(
+                "SERVICE_TRANSPORT_UNAVAILABLE",
+                raised.exception.code,
+            )
+            self.assertEqual(
+                "station-tunnel:station-four",
+                raised.exception.resource,
+            )
 
     def test_station_tunnel_refresh_failure_is_typed_and_cleanup_safe(
         self,
     ) -> None:
         primary = MagicMock(local_port=4101)
         primary.is_alive.return_value = False
-        transport = MagicMock()
-        transport.start_local_forward.side_effect = ProvisioningError(
-            "forward unavailable"
-        )
         with patch(
             "tooling.development.secure_content.runtime_owner."
             "open_reviewed_remote_tunnel",
-            return_value=primary,
-        ), patch(
-            "tooling.development.secure_content.runtime_owner."
-            "reviewed_remote_transport",
-            return_value=(transport, {}),
+            side_effect=(
+                primary,
+                BlockedError(
+                    "forward unavailable",
+                    resource="deployment-tunnel:station-four",
+                ),
+            ),
         ):
             stack, endpoints = _open_station_tunnels(
                 (
                     (
                         "station-four",
                         {
+                            "PT_STATION_MODE": "remote",
                             "PT_STATION_DEPLOY_ENV": "station-four",
                             "PT_STATION_PORT": "18080",
-                            "PT_STATION_URL": "https://four.example",
+                            "PT_STATION_URL": "http://10.0.0.4:18080",
                         },
                     ),
                 )
@@ -1829,15 +3522,68 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         self.assertIn("forward unavailable", str(raised.exception))
         self.assertEqual(
-            "station-tunnel:station-four",
+            "deployment-tunnel:station-four",
             raised.exception.resource,
         )
         self.assertEqual(2, primary.stop.call_count)
 
-    def test_w7_refreshes_station_tunnels_at_long_running_boundaries(
+    def test_station_tunnel_open_failure_preserves_primary_error(self) -> None:
+        primary = MagicMock(local_port=4101)
+        primary.stop.side_effect = RuntimeError("tunnel cleanup failed")
+        with patch(
+            "tooling.development.secure_content.runtime_owner."
+            "open_reviewed_remote_tunnel",
+            side_effect=(
+                primary,
+                BlockedError(
+                    "second tunnel failed",
+                    resource="deployment-tunnel:station-five-arm",
+                ),
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "second tunnel failed",
+            ) as raised:
+                _open_station_tunnels(
+                    (
+                        (
+                            "station-four",
+                            {
+                                "PT_STATION_MODE": "remote",
+                                "PT_STATION_DEPLOY_ENV": "station-four",
+                                "PT_STATION_PORT": "18080",
+                                "PT_STATION_URL": "http://10.0.0.4:18080",
+                            },
+                        ),
+                        (
+                            "station-five-arm",
+                            {
+                                "PT_STATION_MODE": "remote",
+                                "PT_STATION_DEPLOY_ENV": "station-five-arm",
+                                "PT_STATION_PORT": "18080",
+                                "PT_STATION_URL": "http://10.0.0.5:18080",
+                            },
+                        ),
+                    )
+                )
+
+        self.assertEqual(1, len(raised.exception.secondary_cleanup_failures))
+        self.assertIn(
+            "RUNTIME_CLEANUP_FAILED",
+            raised.exception.secondary_cleanup_failures[0],
+        )
+        self.assertIn(
+            "tunnel cleanup failed",
+            raised.exception.secondary_cleanup_failures[0],
+        )
+
+    def test_w7_refreshes_profile_owned_station_tunnels(
         self,
     ) -> None:
-        source = inspect.getsource(W7RuntimeOwner.run)
+        source = inspect.getsource(
+            W7RuntimeOwner.run_w7_desktop_suite
+        )
         refreshes = [
             match.start()
             for match in re.finditer(
@@ -1846,7 +3592,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             )
         ]
 
-        self.assertEqual(3, len(refreshes))
+        self.assertEqual(1, source.count("_open_station_tunnels("))
+        self.assertEqual(2, len(refreshes))
+        self.assertEqual(1, source.count("SuiteRuntimeLedger("))
+        self.assertEqual(1, source.count("SuiteRuntimeAction.PROVISION"))
+        self.assertLess(
+            source.rindex("_start_client("),
+            source.index(
+                'scenario_id="desktop-pilot"',
+            ),
+        )
         self.assertLess(
             source.index("parent_path = write_attached_runtime_manifest("),
             source.index("blocked_result_path: Path | None = None"),
@@ -1863,13 +3618,14 @@ class RuntimeOwnerTest(unittest.TestCase):
             refreshes[1],
             source.index("desktop_result = execute_scenario("),
         )
-        self.assertLess(source.index("desktop.clear()"), refreshes[2])
         self.assertLess(
-            refreshes[2],
-            source.index(
-                "_activate_scenario_journey(self.repo_root, BROWSER_JOURNEY)"
-            ),
+            source.index('scenario_id="desktop-pre-restart"'),
+            source.index('scenario_id="desktop-continuity"'),
         )
+        self.assertNotIn("desktop.clear()", source)
+        self.assertIn("work_item_id=WORK_ITEM_ID", source)
+        self.assertIn("task_id=TASK_ID", source)
+        self.assertNotIn("BROWSER_JOURNEY", source)
 
     def test_mobile_station_binding_uses_canonical_origin_not_tunnel(self) -> None:
         session = MagicMock()
@@ -2330,59 +4086,6 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn("reported an activation failure", str(raised.exception))
         self.assertNotIn("build.identity", calls)
 
-    def test_station_tunnel_open_failure_preserves_primary_error(self) -> None:
-        primary = MagicMock(local_port=4101)
-        primary.stop.side_effect = RuntimeError("tunnel cleanup failed")
-        with patch(
-            "tooling.development.secure_content.runtime_owner."
-            "open_reviewed_remote_tunnel",
-            side_effect=(
-                primary,
-                BlockedError(
-                    "second tunnel failed",
-                    resource="station-tunnel:station-five-arm",
-                ),
-            ),
-        ):
-            with self.assertRaisesRegex(
-                RuntimeOwnerBlocked,
-                "second tunnel failed",
-            ) as raised:
-                _open_station_tunnels(
-                    (
-                        (
-                            "station-four",
-                            {
-                                "PT_STATION_DEPLOY_ENV": "station-four",
-                                "PT_STATION_PORT": "18080",
-                                "PT_STATION_URL": "https://four.example",
-                            },
-                        ),
-                        (
-                            "station-five-arm",
-                            {
-                                "PT_STATION_DEPLOY_ENV": "station-five-arm",
-                                "PT_STATION_PORT": "18080",
-                                "PT_STATION_URL": "https://five-arm.example",
-                            },
-                        ),
-                    )
-                )
-
-        self.assertEqual(1, len(raised.exception.secondary_cleanup_failures))
-        self.assertIn(
-            "RUNTIME_CLEANUP_FAILED",
-            raised.exception.secondary_cleanup_failures[0],
-        )
-        self.assertIn(
-            "tunnel cleanup failed",
-            raised.exception.secondary_cleanup_failures[0],
-        )
-        self.assertIn(
-            "secondary runtime cleanup failure: RUNTIME_CLEANUP_FAILED",
-            raised.exception.payload()["message"],
-        )
-
     def test_fixture_handler_rejects_an_unbound_runtime_manifest(self) -> None:
         handler = W7FixtureCapabilityHandler(
             W7FixtureBinding(
@@ -2445,6 +4148,64 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn(session_id, commands[1])
         self.assertEqual("update", commands[1][2])
         self.assertEqual("check", commands[2][2])
+
+    def test_social_acceptance_resolves_the_active_aggregate_owner(self) -> None:
+        session_id = "social-desktop-formal-proof-20261002"
+        declaration = {
+            "state": "ACTIVE",
+            "workItemId": "social-desktop-formal-proof",
+            "planId": SOCIAL_ACCEPTANCE_PLAN_ID,
+            "taskId": "SDA-03-formal-proof",
+            "sessionId": session_id,
+            "journeyId": SOCIAL_ACCEPTANCE_JOURNEY,
+        }
+        unrelated = {
+            **declaration,
+            "workItemId": "unrelated-work",
+            "planId": "UNRELATED-PLAN",
+            "taskId": "unrelated-task",
+            "sessionId": "unrelated-session",
+        }
+        responses = [
+            {"declarations": [unrelated, declaration]},
+            declaration,
+            declaration,
+        ]
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **_: object) -> SimpleNamespace:
+            commands.append(command)
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(responses[len(commands) - 1]),
+                stderr="",
+            )
+
+        activated = _activate_scenario_journey(
+            Path("/tmp/peers-touch"),
+            SOCIAL_ACCEPTANCE_JOURNEY,
+            work_item_id=None,
+            task_id=None,
+            plan_id=SOCIAL_ACCEPTANCE_PLAN_ID,
+            allowed_task_ids=SOCIAL_ACCEPTANCE_TASK_IDS,
+            command_runner=run,
+        )
+
+        self.assertEqual("SDA-03-formal-proof", activated["taskId"])
+        self.assertNotIn("--work-item", commands[0])
+        self.assertIn("social-desktop-formal-proof", commands[1])
+        self.assertIn(session_id, commands[1])
+
+    def test_social_acceptance_scenarios_use_resolved_owner_identity(self) -> None:
+        scenario = _social_acceptance_scenario_registry(
+            "private-comment",
+            work_item_id="social-desktop-formal-proof",
+            task_id="SDA-03-formal-proof",
+        )["private-comment"]
+
+        self.assertEqual("social-desktop-formal-proof", scenario.work_item_id)
+        self.assertEqual("SDA-03-formal-proof", scenario.result_task_id)
+        self.assertEqual("SDA-03-formal-proof", scenario.result_workstream_id)
 
     def test_scenario_journey_transition_rejects_another_plan_task(self) -> None:
         declaration = {
