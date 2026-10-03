@@ -116,7 +116,7 @@ describe('session authentication convergence', () => {
 
   it.each([
     ['password login', () => useSessionStore.getState().loginWithPassword('alice@p.t', 'password')],
-    ['access-gate login', () => useSessionStore.getState().accessSubmitLogin('attempt-1', 'alice@p.t', 'password')],
+    ['access-gate login', () => useSessionStore.getState().accessSubmitLogin('attempt-1', loginGate, 'alice@p.t', 'password')],
     ['OAuth login', () => useSessionStore.getState().loginWithOAuth('github')],
   ])('activates the authenticated session before the identity pipeline for %s', async (_name, login) => {
     useSessionStore.getState().reset();
@@ -138,11 +138,17 @@ describe('session authentication convergence', () => {
 
     expect(mocks.accessStart).toHaveBeenCalledOnce();
     expect(mocks.accessSubmitLogin).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         attempt_id: 'attempt-1',
+        gate_id: loginGate.gateId,
+        gate_type: 2,
+        action_id: loginGate.actionId,
+        schema_revision: loginGate.schemaRevision,
+        schema_digest: loginGate.schemaDigest,
+        submission_id: expect.any(String),
         account: 'alice@p.t',
         password: 'password',
-      },
+      }),
     );
   });
 
@@ -187,7 +193,7 @@ describe('session authentication convergence', () => {
 
     await expect(
       useSessionStore.getState().accessSubmitLogin(
-        'attempt-1', 'alice@p.t', 'password',
+        'attempt-1', loginGate, 'alice@p.t', 'password',
       ),
     ).rejects.toThrow('station binding failed');
 

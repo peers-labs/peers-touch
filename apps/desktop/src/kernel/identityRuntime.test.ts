@@ -309,6 +309,12 @@ describe('identityRuntime account switch ordering', () => {
     expect(mocks.accessStart).toHaveBeenCalledOnce();
     expect(mocks.accessSubmitLogin).toHaveBeenCalledWith(
       'attempt-1',
+      expect.objectContaining({
+        gateId: 'auth.login',
+        actionId: 'auth.login.password',
+        schemaRevision: 1,
+        schemaDigest: 'login-schema',
+      }),
       'alice@p.t',
       'password',
     );

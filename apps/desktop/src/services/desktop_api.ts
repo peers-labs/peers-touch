@@ -2279,25 +2279,33 @@ export interface ChatStorageAcceptanceConversationClearFixture {
 
 export const DESKTOP_TAURI_CONTRACT_VERSION = '2026-03-24.desktop-tauri-rust.v1';
 
-export interface AuthLoginInput {
-  account: string;
-  password: string;
-  base_url?: string;
+export interface AccessDecisionResponse extends TauriStubPayload {
+  decision: AccessDecision;
 }
 
-/// Raw Station `AccessDecision`, passed through verbatim by the Rust layer.
-/// The frontend normalizes the wire shape (snake_case keys, string enums).
-export interface AccessDecisionResponse extends TauriStubPayload {
-  decision: unknown;
+export interface AccessDecisionInput {
+  attempt_id: string;
 }
 
 export interface AccessSubmitInviteInput {
   attempt_id: string;
+  gate_id: string;
+  gate_type: number;
+  action_id: string;
+  schema_revision: number;
+  schema_digest: string;
+  submission_id: string;
   invite_code: string;
 }
 
 export interface AccessSubmitLoginInput {
   attempt_id: string;
+  gate_id: string;
+  gate_type: number;
+  action_id: string;
+  schema_revision: number;
+  schema_digest: string;
+  submission_id: string;
   account: string;
   password: string;
 }
@@ -4840,9 +4848,6 @@ function requireEvaluationValue<T>(
 }
 
 export const api = {
-  authLogin: (input: AuthLoginInput) =>
-    invokeAuthCommand<AuthLoginInput>('auth_login', input),
-
   accessStart: () =>
     invokeAccessCommand<void>('access_start'),
 
@@ -4851,6 +4856,12 @@ export const api = {
 
   accessSubmitLogin: (input: AccessSubmitLoginInput) =>
     invokeAuthCommand<AccessSubmitLoginInput>('access_submit_login', input),
+
+  accessDecision: (attemptId: string) =>
+    invokeAccessCommand<AccessDecisionInput>('access_decision', { attempt_id: attemptId }),
+
+  accessCancel: (attemptId: string) =>
+    invokeAccessCommand<AccessDecisionInput>('access_cancel', { attempt_id: attemptId }),
 
   authLogout: () =>
     invokeAuthCommand<void>('auth_logout'),
