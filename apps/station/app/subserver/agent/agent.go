@@ -379,6 +379,15 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		capabilityAuthoritySvc,
 		capabilityReadinessSvc,
 	)
+	mcpServerSvc := service.NewMcpServerService(
+		s.agentDB,
+		capabilityAuthoritySvc,
+		toolRegistrySvc,
+	)
+	if err := mcpServerSvc.RestoreRegistry(context.Background()); err != nil {
+		logger.Errorf(context.Background(), "restore MCP tool registry: %v", err)
+	}
+	mcpServerHandlers := handler.NewMcpServerHandlers(mcpServerSvc)
 	capabilityAcceptanceScenarios :=
 		service.NewCapabilityAcceptanceScenarioServiceFromEnvironment(
 			capabilityAuthoritySvc,
@@ -488,6 +497,11 @@ func (s *agentSubServer) Handlers() []server.Handler {
 		server.NewTypedHandler("agent-capability-binding-list", "/agent/capability/binding/list", server.POST, capabilityAuthorityHandlers.HandleListBindings, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-binding-upsert", "/agent/capability/binding/upsert", server.POST, capabilityAuthorityHandlers.HandleUpsertBinding, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-capability-binding-delete", "/agent/capability/binding/delete", server.POST, capabilityAuthorityHandlers.HandleDeleteBinding, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-mcp-server-upsert", "/agent/mcp/server/upsert", server.POST, mcpServerHandlers.HandleUpsert, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-mcp-server-get", "/agent/mcp/server/get", server.POST, mcpServerHandlers.HandleGet, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-mcp-server-list", "/agent/mcp/server/list", server.POST, mcpServerHandlers.HandleList, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-mcp-server-refresh", "/agent/mcp/server/refresh", server.POST, mcpServerHandlers.HandleRefresh, logIDWrapper, jwtWrapper),
+		server.NewTypedHandler("agent-mcp-server-delete", "/agent/mcp/server/delete", server.POST, mcpServerHandlers.HandleDelete, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-connector-manifest-sync", "/agent/connector/manifest/sync", server.POST, connectorManifestHandlers.HandleSync, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-connector-manifest-list", "/agent/connector/manifest/list", server.POST, connectorManifestHandlers.HandleList, logIDWrapper, jwtWrapper),
 		server.NewTypedHandler("agent-knowledge-descriptor-create", "/agent/knowledge/descriptor/create", server.POST, knowledgeDescriptorHandlers.HandleCreate, logIDWrapper, jwtWrapper),

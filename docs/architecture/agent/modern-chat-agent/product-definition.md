@@ -157,7 +157,7 @@ ledger. The brain-map node remains the status source for each mapped capability.
 | MCA-V2-T02 | C3, C6, C7, X1, X5 | required | Agent capability binding and policy save through Station and read back authoritatively |
 | MCA-V2-T03 | C1, C2, C4 | required | Model/runtime compatibility is resolved before admission |
 | MCA-V2-T04 | R5, R6 | required | Tool proposal, policy, decision, execution, result, and replay form one governed lineage |
-| MCA-V2-M01 | X1, R5, R6 | required | MCP install/config/test/connect/invoke/cancel/recover is one visible lifecycle |
+| MCA-V2-M01 | X1, R5, R6 | required | MCP configuration and per-Tool manifests are Station-governed while execution can be pinned independently to Station or Desktop for stdio/http/sse |
 | MCA-V2-C01 | C7, R5, R6 | required | OAuth Connector resources become governed Agent tools with expiry and recovery |
 | MCA-V2-O01 | R4, R5, R6 | required | Tool failures, timeout, denial, disconnect, replay, and redacted diagnostics are actionable |
 | MCA-V2-E01 | E1 | required | Evaluation Lab runs durable benchmark cases against a real Agent runtime and supports cancel, retry, result, metrics, and restart readback |

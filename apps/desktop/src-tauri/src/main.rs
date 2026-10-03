@@ -905,7 +905,7 @@ fn main() {
             mcp::mcp_update_server,
             mcp::mcp_delete_server,
             mcp::mcp_toggle_server,
-            mcp::mcp_start_lifecycle_operation,
+            mcp::mcp_refresh_server,
             mcp::agent_capability_operation_get,
             mcp::agent_capability_operation_cancel,
             mcp::agent_capability_operation_reconcile,

@@ -103,7 +103,6 @@ import type {
   ListKnowledgeResourceDescriptorsRequest,
   PrepareCapabilityAcceptanceScenarioRequest,
   ReleaseCapabilityAcceptanceBarrierRequest,
-  StartCapabilityOperationResponse,
   TakeOverCapabilityCleanupRequest,
   TakeOverCapabilityOperationRequest,
   TombstoneKnowledgeResourceDescriptorRequest,
@@ -145,7 +144,6 @@ import {
   ReconcileCapabilityOperationResponseSchema,
   ReleaseCapabilityAcceptanceBarrierRequestSchema,
   ReleaseCapabilityAcceptanceBarrierResponseSchema,
-  StartCapabilityOperationResponseSchema,
   SyncConnectorResourceManifestsResponseSchema,
   TakeOverCapabilityCleanupRequestSchema,
   TakeOverCapabilityCleanupResponseSchema,
@@ -1734,12 +1732,15 @@ export interface MarketSkillPage {
 // ── MCP Server types ──
 
 export interface MCPServerItem {
+  serverId: string;
   name: string;
   title: string;
   description: string;
   type: 'stdio' | 'http' | 'sse';
+  executionOwner: 'station' | 'client';
   source: string;
   enabled: boolean;
+  revision: number;
   metaAvatar: string;
   metaTags: string[];
   toolCount: number;
@@ -1759,11 +1760,13 @@ export type McpLifecycleOperationKind =
   | 'uninstall';
 
 export interface MCPServerRecord {
+  serverId: string;
   name: string;
   title: string;
   description: string;
   version: string;
   type: 'stdio' | 'http' | 'sse';
+  executionOwner: 'station' | 'client';
   command: string;
   args: string[];
   env: Record<string, string>;
@@ -1787,7 +1790,15 @@ export interface MCPServerRecord {
   status?: MCPServerItem['status'];
   lastTestedAt?: string;
   lastError?: string;
-  tools?: string[];
+  tools?: Array<string | {
+    name: string;
+    providerToolName: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+    capabilityId: string;
+    capabilityVersion: string;
+  }>;
+  revision: number;
   operationId?: string;
   operationKind?: McpLifecycleOperationKind;
   createdAt: string;
@@ -2576,12 +2587,6 @@ export interface McpUpdateInput {
 export interface McpToggleInput {
   name: string;
   enabled: boolean;
-}
-
-export interface McpLifecycleOperationInput {
-  name: string;
-  operation_kind: McpLifecycleOperationKind;
-  idempotency_key?: string;
 }
 
 export interface AgentToolDecisionIntentInput {
@@ -6332,72 +6337,34 @@ export const api = {
     invokeRustDataFromStatus<McpNameInput, MCPServerRecord>('mcp_get_server', { name }),
 
   createMCPServer: (data: Partial<MCPServerRecord>) =>
-    invokeRustProto<McpCreateInput, StartCapabilityOperationResponse>(
+    invokeRustDataFromStatus<McpCreateInput, MCPServerRecord>(
       'mcp_create_server',
-      StartCapabilityOperationResponseSchema,
       { data },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+    ),
 
   updateMCPServer: (name: string, data: Partial<MCPServerRecord>) =>
-    invokeRustProto<McpUpdateInput, StartCapabilityOperationResponse>(
+    invokeRustDataFromStatus<McpUpdateInput, MCPServerRecord>(
       'mcp_update_server',
-      StartCapabilityOperationResponseSchema,
       { name, data },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+    ),
 
   deleteMCPServer: (name: string) =>
-    invokeRustProto<McpNameInput, StartCapabilityOperationResponse>(
+    invokeRustDataFromStatus<McpNameInput, { ok: boolean; server?: MCPServerRecord }>(
       'mcp_delete_server',
-      StartCapabilityOperationResponseSchema,
       { name },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+    ),
 
   toggleMCPServer: (name: string, enabled: boolean) =>
-    invokeRustProto<McpToggleInput, StartCapabilityOperationResponse>(
+    invokeRustDataFromStatus<McpToggleInput, MCPServerRecord>(
       'mcp_toggle_server',
-      StartCapabilityOperationResponseSchema,
       { name, enabled },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+    ),
 
-  startMCPLifecycleOperation: (
-    name: string,
-    operationKind: McpLifecycleOperationKind,
-    idempotencyKey?: string,
-  ) =>
-    invokeRustProto<McpLifecycleOperationInput, StartCapabilityOperationResponse>(
-      'mcp_start_lifecycle_operation',
-      StartCapabilityOperationResponseSchema,
-      {
-        name,
-        operation_kind: operationKind,
-        idempotency_key: idempotencyKey,
-      },
-    ).then((response) => {
-      if (!response.operation) {
-        throw new Error('agent.capabilityOperationResponseMissing');
-      }
-      return response.operation;
-    }),
+  refreshMCPServer: (name: string) =>
+    invokeRustDataFromStatus<McpNameInput, MCPServerRecord>(
+      'mcp_refresh_server',
+      { name },
+    ),
 
   getCapabilityOperation: (operationId: string) =>
     invokeRustProtoRequest(

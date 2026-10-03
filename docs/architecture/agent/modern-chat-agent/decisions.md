@@ -884,9 +884,9 @@ Station-owned MCP Server catalog that resolves one owner before admission.
 ### Decision
 
 Station owns actor-scoped MCP Server identity, sanitized configuration,
-revision, enabled state, discovered Tool manifests, Agent bindings, readiness,
-operations, ToolCalls, results, and audit. Every Server declares exactly one
-execution owner:
+immutable revisions, enabled state, discovered Tool manifests, Agent bindings,
+readiness, idempotent mutation commands, ToolCalls, results, and audit. Every
+Server declares exactly one execution owner:
 
 - `STATION`: stdio executes inside the Station runtime; HTTP/SSE originates
   from Station.
@@ -903,9 +903,10 @@ stores secret references and redacted projections. Desktop persists only the
 secret material and runtime state required by `CLIENT_CAPABILITY` Servers; it
 does not maintain a second MCP catalog.
 
-Station-owned lifecycle operations and invocations use the existing Station
-execution claim/receipt/continuation path. Client-owned work uses the existing
-device-authenticated capability operation/request/receipt path.
+Station-owned configuration mutations use idempotent `McpServerCommand`
+revisions. Station-owned invocations use the existing Station
+ToolCall claim/receipt/continuation path. Client-owned invocations use the
+existing device-authenticated capability request/receipt path.
 
 ### Rationale
 
@@ -932,7 +933,7 @@ ToolCall machinery avoids a third MCP-specific dispatch protocol.
 - MCP Server mutations publish/retire per-Tool manifests transactionally.
 - Desktop startup no longer injects a private MCP tool inventory into Turn
   requests.
-- Station-local MCP lifecycle and invocation do not create a client lease,
+- Station-local MCP discovery and invocation do not create a client lease,
   target device, or client receipt.
 - Owner changes create a new Server revision and invalidate old readiness;
   in-flight ToolCalls retain their pinned owner.

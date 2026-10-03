@@ -95,7 +95,8 @@ A Modern Chat Agent is:
 | [MCA-D29 stateful external runtime amendment](./proposals/20261001-mca-d29-stateful-external-runtime.md) | **ACCEPTED** — activate P12 through a Station-owned session CLI lifecycle with explicit resume/reset semantics |
 | [MCA-D29 review record](./proposals/20261001-mca-d29-stateful-external-runtime-review.md) | Findings-first review of P12 ownership, fencing, isolation, failure semantics, and proof |
 | [prototype/README.md](./prototype/README.md) | Peers-owned executable product prototype, review states, and confirmation blockers |
-| [Current V2 Alignment Plan Package](../execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | **CURRENT EXECUTION SOURCE** — V2-J01..V2-J06, X3 trusted catalog, and aggregate Acceptance as bounded vertical Task Slices |
+| [MCP Dual Runtime Plan Package](../execution-plans/20261003-mcp-dual-runtime/plan.md) | **CURRENT EXECUTION SOURCE** — Station-owned MCP config with Station-local and Desktop-local execution |
+| [V2 Alignment Plan Package](../execution-plans/20260917-modern-chat-agent-v2-alignment/plan.md) | Closed broad alignment source; remaining scope moved to later plans |
 | [Product plan](../execution-plans/20260817-modern-chat-agent-v2.md) | Active product and scope source; execution tracking moved to the current Plan Package |
 | [Legacy formal V2 execution plan](../execution-plans/20260817-modern-chat-agent-v2-execution.md) | Superseded execution source retained for the detailed historical DAG, cutovers, Gates, and scenarios |
 | [Reviewed V2 runtime matrix](../execution-plans/20260817-modern-chat-agent-v2-runtime-matrix.yaml) | Immutable Gate/platform/runtime/cell/locale/order/sample expansion, Mobile semantic-contract cells, and frozen P12/CLI non-advertisement |

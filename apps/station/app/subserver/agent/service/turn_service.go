@@ -4395,6 +4395,7 @@ func (s *TurnService) executeReadyStationTools(ctx context.Context) error {
 				result := s.toolRegistry.Dispatch(
 					toolCtx,
 					&domain.ToolCallMeta{
+						ActorID:        claim.ActorID,
 						AgentID:        batch.AgentID,
 						ConversationID: batch.ConversationID,
 						TurnID:         claim.TurnID,
@@ -5783,8 +5784,6 @@ func capabilityIDForTool(toolName string) string {
 		return "clipboard.write"
 	case "local_shell_safe":
 		return "shell.execute"
-	case "local_mcp":
-		return "mcp.invoke"
 	default:
 		return ""
 	}

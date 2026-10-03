@@ -46,7 +46,7 @@ Downstream consumers:
 | `service/credential_pool_service.go` | Actor-scoped credential lease and rotation |
 | `service/tool_registry_service.go` | Tool schema/owner resolution |
 | `service/mcp_server_service.go` | MCP config revision and per-Tool manifest authority |
-| `service/mcp_runtime/` | Station-local stdio/http/sse execution |
+| `service/mcp_runtime.go` | Station-local stdio/http/sse execution |
 | `service/local_tool_broker.go` | Transitional client-local capability request/result bridge |
 | `service/error_classifier_service.go` | Typed recovery classification foundation |
 | `service/growth_*` and `review_service.go` | Feedback, evaluation, and correction foundation |
@@ -533,7 +533,7 @@ product and architecture amendments.
 | MCA-A14 | Future Mobile contract | Mobile can use all Station capabilities and cleanly reject unsupported Desktop-only local capabilities |
 | MCA-A15 | Home Chat/Task/restart | Home submits canonical Chat/Task commands and restores the same accepted work after restart |
 | MCA-A16 | Capability bind/reject | Binding reads back one manifest version; incompatible runtime rejects before execution |
-| MCA-A17 | MCP lifecycle | Install/test/invoke/cancel/reconnect cleans process, port, and secret state |
+| MCA-A17 | MCP dual runtime | Station and Desktop owners independently discover/invoke the same Station-governed Server revisions, with fenced results and process/port/secret cleanup |
 | MCA-A18 | Connector invocation | OAuth resource becomes a manifest, binding, ToolCall, result, and expiry recovery |
 | MCA-A19 | Governed Tool loop | Decision/execution/result are exactly once under duplicate delivery and replay |
 | MCA-A20 | Evaluation lifecycle | Dataset/run/cancel/retry/result/metrics survive restart and remain actor-isolated |
@@ -560,7 +560,7 @@ This is the authoritative starting point for the next planning job.
 | MCA-C10 Client portability | D01, D05, D07, D13 | client capability session | Shared client contract plus platform kernels | Desktop and Mobile Tauri kernels exist | Portable bridge, platform capability registry, Mobile contract test | `desktop-rust` shared semantics | A11, A13-A14 |
 | MCA-C11 Home work projection | D14 | `HomeWorkProjection` | Station Home Projection + Desktop `homeRuntime` | Home pinned/recent UI and Station topic/task services exist | Revisioned partial/stale projection and canonical Chat/Task handoff | Page-derived recents/Brief truth | A15 |
 | MCA-C12 Capability manifest/binding | D15, D16A | `CapabilityManifest`, `AgentCapabilityBinding`, readiness snapshot | Station capability catalog/binding/admission | Tool registry and source-specific bindings exist | MCP Server/Tool manifest publication and atomic consumer cutover | Generic `local_mcp`, Desktop catalog truth, config JSON truth | A16, A17, A19 |
-| MCA-C13 Capability operation/MCP | D13, D16A | `McpServer`, `McpToolDescriptor`, `CapabilityOperation`, client capability request/result | Station MCP/operation services plus Station/Desktop executors | Desktop MCP CRUD/test/execute and two-owner ToolDispatch exist | Station-local runtime, Desktop projection/secret cutover, owner-specific lifecycle and cleanup | Desktop-only config/execution and client-only operation terminal state | A17, A19 |
+| MCA-C13 MCP control/execution | D13, D16A | `McpServer`, `McpToolDescriptor`, `McpServerCommand`, client capability request/result | Station MCP service plus Station/Desktop executors | Two-owner ToolDispatch exists | Station-local runtime, Desktop projection/secret cutover, revision-pinned execution and cleanup | Desktop-only config/execution and generic MCP dispatch | A17, A19 |
 | MCA-C14 Connector resource tools | D15, D17 | `ConnectorResourceManifest`, Tool manifest/binding | OAuth owner + Station Connector Manifest/Tool services | OAuth mount/sync lifecycle exists | Scoped resource/version manifests, invocation and expiry recovery | enabled tool names as readiness | A18-A19 |
 | MCA-C15 Evaluation aggregate | D10, D18 | benchmark/dataset/case/run/attempt/result | Station Evaluation + canonical TurnService | Station dataset CRUD and Desktop Evaluation UI exist | Durable run/result/cancel/retry/metrics/restart | localStorage and `quickCompletion` Evaluation | A20 |
 | MCA-X3 Trusted package catalog | D20, D20A, D16A, P4-3 | `peers.package-catalog.v1` signed snapshot + proto Station distribution response | Publisher signature + Desktop Rust verifier; Station transports official bytes and owns Agent/Skill/MCP installed targets | Signed verifier/cache and authority-specific install dispatch exist; private GitHub built-in transport is unreachable | Station-distributed official source, neutral canonical asset, derived policy, cursor pagination, authority readback, revocation and native Journey | Private-GitHub built-in source, arbitrary unsigned JSON source, duplicate envelope copies and ledger-only installed truth | X3-P4-3 |
@@ -571,7 +571,7 @@ This is the authoritative starting point for the next planning job.
 |---|---|---|
 | C11 | `HomePage`-owned durable recents/Brief/readiness aggregation | `homeRuntime` projection backed by Station revision |
 | C12 | Embedded Tool/Skill/Knowledge/MCP/Connector binding arrays as authoritative config; parallel readiness selectors | Versioned manifests, Agent bindings, readiness snapshots |
-| C13 | Client-only MCP catalog/config truth, generic `local_mcp`, and unleased executor dispatch | Station `McpServer`/per-Tool manifests and `CapabilityOperation`; only owner-local secret/process state remains local |
+| C13 | Client-only MCP catalog/config truth, generic `local_mcp`, and unleased executor dispatch | Station `McpServer`/per-Tool manifests and idempotent revision commands; only owner-local secret/process state remains local |
 | C14 | Connector `enabledTools`/labels as readiness or binding identity | OAuth connection owner + Connector resource manifests + Agent bindings |
 | C15 | Evaluation localStorage datasets/runs/results and Evaluation `quickCompletion` execution | Station Evaluation aggregate using canonical Turn/Trace |
 

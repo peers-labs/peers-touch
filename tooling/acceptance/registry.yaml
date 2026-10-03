@@ -2050,20 +2050,24 @@
       ]
     },
     {
-      "id": "agent-v2-mcp-lifecycle",
+      "id": "agent-mcp-dual-runtime",
       "features": [
-        "agent-v2-mcp-lifecycle"
+        "agent-mcp-dual-runtime"
       ],
       "when": {
         "paths": [
+          "model/domain/agent/capability.proto",
           "apps/desktop/src/store/mcp.ts",
           "apps/desktop/src/services/mcp-service.ts",
           "apps/desktop/src-tauri/src/application/mcp/**",
-          "apps/station/app/subserver/agent/**/capability_operation*"
+          "apps/desktop/src-tauri/src/application/desktop_executor_worker/**",
+          "apps/station/app/subserver/agent/**/mcp*"
         ]
       },
       "require": [
-        "agent-v2-mcp-lifecycle-e2e"
+        "station-agent-unit",
+        "desktop-check",
+        "agent-mcp-dual-runtime-source"
       ]
     },
     {

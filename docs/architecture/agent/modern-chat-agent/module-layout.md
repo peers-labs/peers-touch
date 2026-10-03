@@ -49,7 +49,7 @@ apps/station/app/subserver/agent/
 │   ├── runtime_resolver_service.go
 │   ├── provider_service.go
 │   ├── mcp_server_service.go       # Canonical config and Tool manifests
-│   ├── mcp_runtime/                # Station-local stdio/http/sse executor
+│   ├── mcp_runtime.go              # Station-local stdio/http/sse executor
 │   ├── external_runtime_service.go # Binding/reset transaction owner
 │   ├── externalruntime/
 │   │   ├── manager.go              # Session/process/home lifecycle
@@ -197,7 +197,7 @@ Station turn event -> client bridge/gateway -> client runtime -> page
 | `client_capability_proof_service` | Verify actor-device command proof and nonce/digest replay | Treat JWT/header/session IDs as device authority |
 | `receipt_recovery_service` | Issue scoped credentials, verify device signatures, consume nonce with terminal CAS | Authorize PREPARED, execution, lease renewal, pull, or continuation |
 | `capability_binding_service` | Versioned Agent capability bindings/policy | Store credentials or infer readiness |
-| `capability_operation_service` | Durable install/test/connect/cancel/reconnect lifecycle | Spawn local processes |
+| `capability_operation_service` | Durable non-MCP client capability operations | Own MCP Server config, manifests, readiness, or process execution |
 | `mcp_server_service` | MCP Server config revisions and per-Tool manifest publication | Store raw executor secrets |
 | Station `mcp_runtime` | Execute Station-owned stdio/http/sse and report fenced result | Read Desktop-local secrets or paths |
 | `connector_manifest_service` | Scope-bound Connector resource→tool manifests | Own OAuth tokens |
