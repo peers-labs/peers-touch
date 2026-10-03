@@ -1,8 +1,8 @@
 # OAuth Login Broker
 
 > **Status**: active
-> **Version**: v1.3
-> **Created**: 2026-09-30 | **Updated**: 2026-10-01
+> **Version**: v1.4
+> **Created**: 2026-09-30 | **Updated**: 2026-10-02
 > **Owner**: Identity and Access
 > **Module**: `apps/oauth2-client/`
 
@@ -68,6 +68,9 @@ so a dedicated service or database can take over without changing OAuth use case
 | [hardening plan](./execution-plans/20260930-oauth-review-hardening/plan.md) | Completed source-backed review closure |
 | [final review remediation](./execution-plans/20260930-oauth-final-review-remediation/plan.md) | Completed broker-local review closure |
 | [live login integration](./execution-plans/20261001-live-login-integration/plan.md) | Native Desktop, Station bridge, provider identity, refresh uncertainty, and live-test preparation |
+| [Vercel publishing Skill](./execution-plans/20261002-oauth2-client-vercel-skill/plan.md) | Source-only delivery of the governed OAuth2 Client publishing workflow |
+| [`pt-oauth2-client-2-vercel`](../../../tooling/skills/pt-oauth2-client-2-vercel/SKILL.md) | Operational entry for Vercel preflight, Preview proof, and Production publication |
+| [`apps/oauth2-client`](../../../apps/oauth2-client/README.md) | Application routes, local operation, and deployment prerequisites |
 | [review 01](./reviews/review-01-product-architecture-plan.md) | Independent product, architecture, and plan review |
 
 ## 5. Upstream Sources
@@ -88,3 +91,6 @@ so a dedicated service or database can take over without changing OAuth use case
 - Proof: the standalone OAuth2 API/repository scope is proven. Native
   Desktop-to-Station and production/Vercel evidence remain unproven and require
   separately authorized follow-up work.
+- Operations: invoke `pt-oauth2-client-2-vercel` for governed deployment. Its
+  first run must discover the live Vercel project, stable domain, Preview
+  protection, provider callback registrations, and current external evidence.
