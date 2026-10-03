@@ -32,6 +32,7 @@ tooling/docker/docker-compose.override.yml
 .agents/retired-project-skills/
 .vscode/
 .idea/
+.vercel/
 *.swp
 *.swo
 *~

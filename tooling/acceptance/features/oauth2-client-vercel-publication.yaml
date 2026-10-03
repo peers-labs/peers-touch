@@ -1,0 +1,36 @@
+{
+  "id": "oauth2-client-vercel-publication",
+  "status": "active",
+  "product_area": "oauth-login-broker",
+  "owners": [
+    "apps/oauth2-client/cmd/verify-record-envelopes/**",
+    "apps/oauth2-client/vercel.json",
+    "tooling/skills/pt-oauth2-client-2-vercel/**"
+  ],
+  "truth_sources": [
+    "OAuth2 Client provider source and tests",
+    "pt-oauth2-client-2-vercel provider catalog and deterministic scripts",
+    "apps/oauth2-client/vercel.json"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "operator",
+      "surface": "redacted OAuth2 Client Vercel preflight and verification output"
+    }
+  ],
+  "required_gates": [
+    "oauth2-client-vercel-publication"
+  ],
+  "acceptance": {
+    "operator": [
+      "all runtime-enabled providers, production overrides, and Vercel configuration are validated before mutation",
+      "Secret and Config values are classified deterministically and secret values reach the Vercel CLI only through stdin",
+      "deployment verification checks health, HTTP methods, provider redirects, run-bound signed callbacks, admin login deltas, private GitHub repository status, and exact-shape cryptographically authenticated envelopes"
+    ]
+  },
+  "negative": [
+    "fixture proof must not claim a live Vercel project, provider consent, GitHub persistence, or Production deployment",
+    "unknown or omitted enabled providers, missing environment keys, memory storage, public persistence repositories, and malformed deployment evidence must fail closed",
+    "environment values must not appear in argv, logs, source files, or evidence"
+  ]
+}

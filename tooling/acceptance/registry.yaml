@@ -2,6 +2,28 @@
   "version": 1,
   "rules": [
     {
+      "id": "oauth2-client-vercel-publication",
+      "features": [
+        "oauth2-client-vercel-publication"
+      ],
+      "when": {
+        "paths": [
+          "apps/oauth2-client/api/oauth/**",
+          "apps/oauth2-client/cmd/verify-record-envelopes/**",
+          "apps/oauth2-client/config/sites*.json",
+          "apps/oauth2-client/internal/bootstrap/config.go",
+          "apps/oauth2-client/internal/domain/oauth/valueobject/provider.go",
+          "apps/oauth2-client/internal/infrastructure/provider/**",
+          "apps/oauth2-client/vercel.json",
+          "tooling/acceptance/features/oauth2-client-vercel-publication.yaml",
+          "tooling/skills/pt-oauth2-client-2-vercel/**"
+        ]
+      },
+      "require": [
+        "oauth2-client-vercel-publication"
+      ]
+    },
+    {
       "id": "oauth-login-broker-durability",
       "features": [
         "oauth2-client-durability"

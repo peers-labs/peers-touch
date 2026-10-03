@@ -1,4 +1,11 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/**/*.go": {
+      "includeFiles": "config/sites.json",
+      "maxDuration": 60
+    }
+  },
   "routes": [
     { "src": "/api/admin", "dest": "/api/admin" },
     { "src": "/api/admin/data", "dest": "/api/admin/data" },
