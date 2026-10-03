@@ -1001,6 +1001,13 @@
       "tier": "ci-cheap",
       "description": "Run Station Agent subserver unit tests: turn service, tool dispatch, attachment service, prompt assembly, persistence."
     },
+    "agent-mcp-dual-runtime-source": {
+      "command": "python3 tooling/acceptance/gates/agent/mcp_dual_runtime_source.py",
+      "timeout_seconds": 120,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Verify Station-owned MCP configuration, per-tool manifests, and owner-local Station/Desktop execution."
+    },
     "desktop-rust-check": {
       "command": "cd apps/desktop/src-tauri && cargo check",
       "timeout_seconds": 600,

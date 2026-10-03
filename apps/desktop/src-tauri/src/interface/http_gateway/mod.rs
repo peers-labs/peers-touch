@@ -1091,45 +1091,6 @@ fn gateway_mcp_identity(state: &AppState) -> Result<(String, String), Value> {
     Ok((session.actor.ptid, session.jwt))
 }
 
-fn gateway_start_mcp_lifecycle(
-    runtime: &GatewayRuntime,
-    actor_ptid: &str,
-    token: &str,
-    input: McpLifecycleOperationInput,
-) -> Value {
-    let target = match gateway_mcp_operation_target(runtime, actor_ptid) {
-        Ok(target) => target,
-        Err(error) => return error,
-    };
-    to_json(app_mcp::mcp_start_lifecycle_operation(
-        actor_ptid,
-        token,
-        &target.device_id,
-        &target.capability_session_id,
-        input,
-    ))
-}
-
-fn gateway_mcp_operation_target(
-    runtime: &GatewayRuntime,
-    actor_ptid: &str,
-) -> Result<crate::application::desktop_executor_worker::supervisor::CapabilityOperationTarget, Value>
-{
-    let app = match runtime.app_handle("mcp_start_lifecycle_operation") {
-        Ok(app) => app,
-        Err(error) => return Err(error),
-    };
-    let supervisor =
-        app.state::<Arc<crate::application::desktop_executor_worker::CapabilityWorkerSupervisor>>();
-    supervisor.operation_target(actor_ptid).map_err(|error| {
-        to_json(AppResult::<Vec<u8>>::fail(
-            ErrorCode::InvalidArgument,
-            error,
-            None,
-        ))
-    })
-}
-
 fn bind_gateway_session(
     state: &AppState,
     account_id: String,
@@ -5135,7 +5096,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
         // MCP
         // =================================================================
         "mcp_list_servers" => match gateway_mcp_identity(state) {
-            Ok((actor_ptid, _)) => to_json(app_mcp::mcp_list_servers(&actor_ptid)),
+            Ok((actor_ptid, token)) => {
+                to_json(app_mcp::mcp_station_list_servers(&actor_ptid, &token))
+            }
             Err(error) => error,
         },
         "mcp_get_server" => {
@@ -5144,7 +5107,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Err(e) => return e,
             };
             match gateway_mcp_identity(state) {
-                Ok((actor_ptid, _)) => to_json(app_mcp::mcp_get_server(&actor_ptid, input)),
+                Ok((actor_ptid, token)) => {
+                    to_json(app_mcp::mcp_station_get_server(&actor_ptid, &token, input))
+                }
                 Err(error) => error,
             }
         }
@@ -5157,15 +5122,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(identity) => identity,
                 Err(error) => return error,
             };
-            let target = match gateway_mcp_operation_target(runtime, &actor_ptid) {
-                Ok(target) => target,
-                Err(error) => return error,
-            };
-            to_json(app_mcp::mcp_create_server_with_lifecycle(
+            to_json(app_mcp::mcp_station_create_server(
                 &actor_ptid,
                 &token,
-                &target.device_id,
-                &target.capability_session_id,
                 input,
             ))
         }
@@ -5178,15 +5137,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(identity) => identity,
                 Err(error) => return error,
             };
-            let target = match gateway_mcp_operation_target(runtime, &actor_ptid) {
-                Ok(target) => target,
-                Err(error) => return error,
-            };
-            to_json(app_mcp::mcp_update_server_with_lifecycle(
+            to_json(app_mcp::mcp_station_update_server(
                 &actor_ptid,
                 &token,
-                &target.device_id,
-                &target.capability_session_id,
                 input,
             ))
         }
@@ -5199,16 +5152,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(identity) => identity,
                 Err(error) => return error,
             };
-            gateway_start_mcp_lifecycle(
-                runtime,
+            to_json(app_mcp::mcp_station_delete_server(
                 &actor_ptid,
                 &token,
-                McpLifecycleOperationInput {
-                    name: input.name,
-                    operation_kind: "uninstall".to_string(),
-                    idempotency_key: None,
-                },
-            )
+                input,
+            ))
         }
         "mcp_toggle_server" => {
             let input = match parse_args::<McpToggleInput>(args) {
@@ -5219,20 +5167,14 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(identity) => identity,
                 Err(error) => return error,
             };
-            let target = match gateway_mcp_operation_target(runtime, &actor_ptid) {
-                Ok(target) => target,
-                Err(error) => return error,
-            };
-            to_json(app_mcp::mcp_toggle_server_with_lifecycle(
+            to_json(app_mcp::mcp_station_toggle_server(
                 &actor_ptid,
                 &token,
-                &target.device_id,
-                &target.capability_session_id,
                 input,
             ))
         }
-        "mcp_start_lifecycle_operation" => {
-            let input = match parse_args::<McpLifecycleOperationInput>(args) {
+        "mcp_refresh_server" => {
+            let input = match parse_args::<McpNameInput>(args) {
                 Ok(v) => v,
                 Err(e) => return e,
             };
@@ -5240,7 +5182,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(identity) => identity,
                 Err(error) => return error,
             };
-            gateway_start_mcp_lifecycle(runtime, &actor_ptid, &token, input)
+            to_json(app_mcp::mcp_station_refresh_server(
+                &actor_ptid,
+                &token,
+                input,
+            ))
         }
         "agent_capability_operation_get" => {
             let input = match parse_args::<app_capability_authority::EncodedRequestInput>(args) {
@@ -5257,33 +5203,9 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let request = match model::agent::CancelCapabilityOperationRequest::decode(
-                input.request_bytes.as_slice(),
-            ) {
-                Ok(request) => request,
-                Err(_) => {
-                    return to_json(AppResult::<Vec<u8>>::fail(
-                        ErrorCode::InvalidArgument,
-                        "agent.capabilityOperationRequestInvalid",
-                        None,
-                    ));
-                }
-            };
             match gateway_mcp_identity(state) {
                 Ok((_, token)) => {
-                    let result = app_capability_authority::cancel_operation(input, &token);
-                    if result.ok {
-                        if let Err(error) =
-                            app_mcp::cancel_lifecycle_operation(&request.operation_id)
-                        {
-                            tracing::warn!(
-                                operation_id = %request.operation_id,
-                                error = %error,
-                                "Failed to interrupt cancelled MCP lifecycle process"
-                            );
-                        }
-                    }
-                    to_json(result)
+                    to_json(app_capability_authority::cancel_operation(input, &token))
                 }
                 Err(error) => error,
             }
@@ -5305,36 +5227,11 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let (actor_ptid, _) = match gateway_mcp_identity(state) {
-                Ok(identity) => identity,
-                Err(error) => return error,
-            };
-            let request = match model::agent::TakeOverCapabilityOperationRequest::decode(
-                input.request_bytes.as_slice(),
-            ) {
-                Ok(request) => request,
-                Err(_) => {
-                    return to_json(AppResult::<Vec<u8>>::fail(
-                        ErrorCode::InvalidArgument,
-                        "agent.capabilityOperationRequestInvalid",
-                        None,
-                    ));
+            match gateway_mcp_identity(state) {
+                Ok((_, token)) => {
+                    to_json(app_capability_authority::take_over_operation(input, &token))
                 }
-            };
-            let app = match runtime.app_handle("agent_capability_operation_takeover") {
-                Ok(app) => app,
-                Err(error) => return error,
-            };
-            let supervisor = app.state::<Arc<
-                crate::application::desktop_executor_worker::CapabilityWorkerSupervisor,
-            >>();
-            match supervisor.take_over_operation(&actor_ptid, request) {
-                Ok(response) => to_json(AppResult::success(response.encode_to_vec())),
-                Err(error) => to_json(AppResult::<Vec<u8>>::fail(
-                    ErrorCode::InternalError,
-                    error,
-                    None,
-                )),
+                Err(error) => error,
             }
         }
         "agent_capability_operation_cleanup_takeover" => {
@@ -5342,40 +5239,15 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            let (actor_ptid, _) = match gateway_mcp_identity(state) {
-                Ok(identity) => identity,
-                Err(error) => return error,
-            };
-            let request = match model::agent::TakeOverCapabilityCleanupRequest::decode(
-                input.request_bytes.as_slice(),
-            ) {
-                Ok(request) => request,
-                Err(_) => {
-                    return to_json(AppResult::<Vec<u8>>::fail(
-                        ErrorCode::InvalidArgument,
-                        "agent.capabilityOperationRequestInvalid",
-                        None,
-                    ));
-                }
-            };
-            let app = match runtime.app_handle("agent_capability_operation_cleanup_takeover") {
-                Ok(app) => app,
-                Err(error) => return error,
-            };
-            let supervisor = app.state::<Arc<
-                crate::application::desktop_executor_worker::CapabilityWorkerSupervisor,
-            >>();
-            match supervisor.take_over_cleanup(&actor_ptid, request) {
-                Ok(response) => to_json(AppResult::success(response.encode_to_vec())),
-                Err(error) => to_json(AppResult::<Vec<u8>>::fail(
-                    ErrorCode::InternalError,
-                    error,
-                    None,
+            match gateway_mcp_identity(state) {
+                Ok((_, token)) => to_json(app_capability_authority::take_over_operation_cleanup(
+                    input, &token,
                 )),
+                Err(error) => error,
             }
         }
-
         // =================================================================
+        // Cron (no state)
         // Cron (no state)
         // =================================================================
         "cron_status" => to_json(app_cron::cron_status()),

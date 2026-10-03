@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 pub(crate) mod fenced_executor;
 pub(crate) mod local_executor;
-pub(crate) mod mcp_operation_executor;
 pub(crate) mod operation_executor;
 pub(crate) mod operation_ledger;
 pub(crate) mod operation_worker;

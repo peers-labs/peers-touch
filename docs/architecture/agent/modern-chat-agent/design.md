@@ -400,7 +400,7 @@ accepted planning inputs. Production implementation and Gates remain
 | Capability catalog | Station Capability Manifest Registry | Desktop capability projection | Separate Tool/MCP/Connector inventories claiming readiness |
 | Agent binding/policy | Station Agent Capability Binding Service | Desktop configuration UI | `config_json` or local store as portable binding truth |
 | Runtime compatibility | Station admission snapshot plus active client capability lease | Client reports signed/typed local capability facts | Provider-name or UI-label inference |
-| MCP operation | Station operation/turn lineage | Station MCP runtime or owning client capability manager | Client-only catalog or terminal operation state |
+| MCP configuration mutation | Station `McpServerCommand` and immutable Server revision | Station MCP service with owner-local secret staging | Client-only catalog or duplicate config writes |
 | Connector resource tools | Station Connector Manifest Projection | OAuth owner/resource adapter | Connector display label as tool readiness |
 | Evaluation | Station Evaluation Service | Desktop Evaluation projection | localStorage dataset/run/result and `quickCompletion` terminal truth |
 
@@ -501,32 +501,32 @@ ToolCall side-effect protocol:
 
 ## 21. MCP And Connector Operation Semantics
 
-Install, configure, test, connect, reconnect, and cancel are represented by a
-Station-owned `CapabilityOperation`. Station executes operations for
-Station-owned Servers. Desktop Rust executes operations for client-owned
-Servers and reports typed progress/results with operation ID and attempt
-sequence.
+MCP Server create, update, refresh, enable/disable, and delete are represented
+by idempotent Station-owned `McpServerCommand` revisions. The declared
+execution owner performs discovery, and Station publishes the resulting
+per-Tool manifests. MCP does not use `CapabilityOperation`.
 
-Turn-time invocation is not a capability operation. It is a canonical
-`ToolCall` pinned to manifest/binding/readiness snapshots. This keeps install/
-connection lifecycle idempotency separate from exactly-once model tool
-execution.
+Connector connect, reconnect, cancel, and cleanup remain Station-owned
+`CapabilityOperation` records executed by their declared owner.
+
+Turn-time invocation for both MCP and Connector tools is a canonical
+`ToolCall` pinned to manifest/binding/readiness snapshots. This keeps config or
+connection idempotency separate from exactly-once model tool execution.
 
 Rules:
 
-- idempotency key prevents duplicate lifecycle mutations;
-- operation idempotency covers install/configure/test/connect/reconnect/
-  uninstall; ToolCall ID covers turn-time invoke;
-- cancellation is requested at Station and acknowledged by the executor;
+- MCP command idempotency prevents duplicate Server revisions;
+- Connector operation idempotency covers connect/reconnect/cancel/cleanup;
+  ToolCall ID covers turn-time invoke;
+- owner changes create a new MCP Server revision while admitted ToolCalls keep
+  their pinned revision and owner;
 - process/port/secret cleanup is owned by the declared execution owner;
 - terminal result is not inferred from process exit or Web state;
-- disconnect leaves a client-owned operation reconcilable, never silently
-  successful; Station-owned operations are independent of client connectivity;
-- actor/owner/payload mismatch always rejects; device/session/lease mismatch is
-  additionally required for client-owned executor events;
-- first committed cancellation/result/timeout fence wins;
-- success commits only after required cleanup; cleanup failure commits failure;
-- late old-fence terminal/progress events are audit-only.
+- Desktop-owned MCP execution requires the pinned device/session/lease fence;
+  Station-owned MCP remains independent of client connectivity;
+- actor/owner/revision/payload mismatch always rejects;
+- first committed ToolCall result/timeout fence wins;
+- late old-fence receipts are audit-only.
 
 MCP configuration flow:
 
@@ -903,7 +903,7 @@ Run semantics:
 |---|---|
 | `agent-v2-home-command-center-e2e` | Home projection revision, duplicate Chat/Task submission idempotency, stale/partial/restart recovery, actor/account isolation |
 | `agent-v2-capability-binding-e2e` | One manifest/binding/readiness source; expected-version conflict; incompatible/stale requests reject before execution; manifest/Agent deletion behavior |
-| `agent-v2-mcp-lifecycle-e2e` | Desktop-local and Station-local stdio, owner-pinned dispatch, Station-local execution with Desktop offline, all-state settlement, lease/session takeover fencing where client-owned, duplicate event replay, timeout/cancel race, late result rejection, secret/process/port cleanup and cleanup-failure visibility |
+| `agent-mcp-dual-runtime-source` | Station-owned MCP config, per-Tool manifests, explicit owner routing, standard stdio framing, and removal of the generic Desktop-only dispatch path |
 | `agent-v2-connector-invocation-e2e` | OAuth resource→manifest→binding→turn result, scope/version expiry, disconnect/resource removal, actor isolation |
 | `agent-v2-governed-tool-loop-e2e` | Unique decision/claim/result, PREPARED/APPLIED crash points, signed one-time recovery, idempotent replay or UNKNOWN_SIDE_EFFECT, lease renew/revoke, timeout/cancel/revoke and replay equality |
 | `agent-v2-evaluation-lab-e2e` | Durable run/case attempt/result/metrics, duplicate scheduler/mutation idempotency, cancel propagation/ack, retry uniqueness, restart, deletion/retention and actor isolation |

@@ -54,12 +54,13 @@ evidence；secret material 只进入 Server 声明的 execution owner。
 
 - Direct Model provider 由 Station 调用并持有执行状态。
 - Provider credential 由其正式 owner 管理，页面不保存替代凭证。
-- MCP Server CRUD、脱敏配置、tool discovery 版本、binding、readiness、
-  ToolCall 和 operation lifecycle 由 Station 管理。
-- `CLIENT_CAPABILITY` MCP 的 install/test/connect/invoke/cancel/retry/
-  reconnect/uninstall 由 Desktop capability manager 执行并返回 fenced receipt。
-- `STATION` MCP 的同类动作由 Station MCP runtime 执行，直接复用 Station
-  claim/receipt/continuation，不创建伪造 client lease。
+- MCP Server CRUD、不可变配置 revision、脱敏投影、tool discovery 版本、
+  binding、readiness、ToolCall 和 audit 由 Station 管理。
+- `CLIENT_CAPABILITY` MCP 由 Desktop capability manager 探测和调用，并通过
+  device-authenticated capability lease 返回 fenced receipt；Desktop 只保留
+  本机 secret 与进程投影。
+- `STATION` MCP 由 Station MCP runtime 探测和调用，直接复用 Station
+  claim/receipt/continuation，不创建 client lease。
 - transport 与 owner 正交：stdio/http/sse 均可由对应 owner 执行；路径、
   loopback 与网络可达性相对该 owner 解释。
 

@@ -1711,6 +1711,7 @@ pub fn skills_market_install(
                 catalog_revision,
                 skill,
                 source,
+                token,
             );
         }
         _ => {}
@@ -1885,6 +1886,7 @@ fn install_mcp_market_package(
     catalog_revision: String,
     skill: MarketSkill,
     source: String,
+    token: &str,
 ) -> AppResult<StubPayload> {
     let content = match skill.artifact_text() {
         Ok(content) => content,
@@ -1904,7 +1906,7 @@ fn install_mcp_market_package(
             )
         }
     };
-    let result = mcp::mcp_create_server(actor_ptid, McpCreateInput { data: server });
+    let result = mcp::mcp_station_create_server(actor_ptid, token, McpCreateInput { data: server });
     let Some(payload) = result.data else {
         return result;
     };
@@ -1921,7 +1923,8 @@ fn install_mcp_market_package(
             None,
         );
     }
-    let readback = mcp::mcp_get_server(actor_ptid, McpNameInput { name: name.clone() });
+    let readback =
+        mcp::mcp_station_get_server(actor_ptid, token, McpNameInput { name: name.clone() });
     if !readback.ok {
         return AppResult::fail(
             ErrorCode::InternalError,
@@ -2029,8 +2032,12 @@ fn verify_skill_absent(
     }
 }
 
-fn verify_mcp_absent(actor_ptid: &str, server_name: &str) -> Result<(), AppResult<StubPayload>> {
-    let result = mcp::mcp_list_servers(actor_ptid);
+fn verify_mcp_absent(
+    actor_ptid: &str,
+    server_name: &str,
+    token: &str,
+) -> Result<(), AppResult<StubPayload>> {
+    let result = mcp::mcp_station_list_servers(actor_ptid, token);
     let Some(payload) = result.data else {
         return Err(result);
     };
@@ -2122,8 +2129,9 @@ pub fn skills_market_uninstall(
     }
 
     if package_type == "mcp" {
-        let result = mcp::mcp_delete_server(
+        let result = mcp::mcp_station_delete_server(
             actor_ptid,
+            token,
             McpNameInput {
                 name: record.skill_id.clone(),
             },
@@ -2131,7 +2139,7 @@ pub fn skills_market_uninstall(
         if !result.ok {
             return result;
         }
-        if let Err(result) = verify_mcp_absent(actor_ptid, &record.skill_id) {
+        if let Err(result) = verify_mcp_absent(actor_ptid, &record.skill_id, token) {
             return result;
         }
         if let Err(result) = remove_market_install_record(&record) {

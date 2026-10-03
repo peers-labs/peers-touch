@@ -109,10 +109,10 @@ Station-local stdio MCP 时必须绕行 Desktop，也无法在 Desktop 离线时
 
 ### Decision
 
-Station 持有 actor-scoped MCP Server 配置目录、版本、tool manifest、
-Agent binding、readiness、ToolCall、operation 和 audit 真源。每个 Server
-显式声明 `STATION` 或 `CLIENT_CAPABILITY` execution owner；`stdio`、
-`http`、`sse` 只描述 transport，不决定 owner。
+Station 持有 actor-scoped MCP Server 配置目录、不可变 revision、tool
+manifest、Agent binding、readiness、ToolCall、幂等 mutation command 和
+audit 真源。每个 Server 显式声明 `STATION` 或 `CLIENT_CAPABILITY`
+execution owner；`stdio`、`http`、`sse` 只描述 transport，不决定 owner。
 
 - `STATION` Server 在 Station 运行时启动本地 stdio 进程或访问 Station
   可达的 HTTP/SSE endpoint，复用 Station ToolCall claim、receipt 和
