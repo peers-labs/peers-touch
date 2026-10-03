@@ -151,6 +151,7 @@ fail-closed gate definitions and runner tests before later tasks invoke them.
 Required gates:
 
 - `social-cross-station-contract`;
+- `social-cross-station-eventbus-contract`;
 - `social-cross-station-prekey`;
 - `social-cross-station-delivery`;
 - `social-cross-station-interaction`;

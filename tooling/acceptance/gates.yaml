@@ -457,6 +457,70 @@
       "tier": "env-evidence",
       "description": "Prove Desktop Private Moments with one reusable Alice/Bob/Eve Native Suite while leaving Browser and Mobile unproven."
     },
+    "social-cross-station-contract": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-contract",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate canonical cross-Station Social, Federation, Key Exchange, and generated-client contracts."
+    },
+    "social-cross-station-eventbus-contract": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-eventbus-contract",
+      "timeout_seconds": 900,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate typed Social wake events, one momentsRuntime projection owner, reconciliation, and teardown."
+    },
+    "social-cross-station-prekey": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-prekey",
+      "timeout_seconds": 1200,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate authenticated remote Content PreKey admission and exact replay."
+    },
+    "social-cross-station-delivery": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-delivery",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate source-atomic viewer-scoped delivery and receiver-atomic projection."
+    },
+    "social-cross-station-interaction": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-interaction",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate source-authoritative remote Comment and Reaction command/result lifecycles."
+    },
+    "social-cross-station-revocation-recovery": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-revocation-recovery",
+      "timeout_seconds": 1800,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Validate monotonic revocation, replay resilience, and trusted replacement-device recovery."
+    },
+    "social-cross-station-desktop-functional": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-desktop-functional",
+      "timeout_seconds": 10800,
+      "environment": "local",
+      "tier": "local-evidence",
+      "description": "Run the source-only development two-Station Native Social Suite and retain its non-formal evidence."
+    },
+    "social-cross-station-native-e2e": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate social-cross-station-native-e2e",
+      "timeout_seconds": 10800,
+      "environment": "cross-station-social-native",
+      "provisioner": "cross-station-social-native",
+      "tier": "env-evidence",
+      "description": "Prove AS17 through AS24 and same-Station regression through one exact-source Native Suite."
+    },
+    "browser-social-zero-registration": {
+      "command": "python3 -m tooling.acceptance.gates.social.cross_station_gate --gate browser-social-zero-registration",
+      "timeout_seconds": 600,
+      "environment": "local",
+      "tier": "ci-cheap",
+      "description": "Prove browser-gateway registers no Social page, runtime, module, navigation item, or action."
+    },
     "social-domain-validation": {
       "command": "python3 tooling/scripts/acceptance-validate.py --domain social --require-proven",
       "timeout_seconds": 600,
