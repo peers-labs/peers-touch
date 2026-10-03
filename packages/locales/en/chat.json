@@ -784,7 +784,7 @@
   "chat.social.findPeople.scopeStationNamed": "Station: {{name}}",
   "chat.social.findPeople.scopeStationTooltip": "Search only people whose Home Station is {{name}}.",
   "chat.social.findPeople.catalogSearching": "Searching federation catalog…",
-  "chat.social.findPeople.catalogNoFederation": "Join a federation to enable catalog search",
+  "chat.social.findPeople.catalogNoFederation": "No Federation context is available",
   "chat.social.findPeople.requestIdentityUnavailable": "This person's Federation or Home Station identity is incomplete. Refresh the search result and try again.",
   "chat.social.findPeople.stationListFailed": "Could not load Federation stations. Try again.",
   "chat.social.contacts.newFriends": "New Friends",

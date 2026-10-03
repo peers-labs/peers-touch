@@ -18,7 +18,6 @@ const RECENT_MAIN_THREAD_CONTEXT_WINDOW_MS = 5_000;
 const STARTUP_INVOKE_COMMANDS = new Set([
   'auth_restore_session',
   'ensure_station_session',
-  'federation_health',
   'station_list',
   'runtime_bootstrap',
 ]);

@@ -171,6 +171,54 @@ interface RuntimeIdentityResult {
   };
 }
 
+interface AcceptanceCommandResult<T> {
+  ok: boolean;
+  data?: T;
+  error?: { message?: string };
+}
+
+interface FederationFixtureStation {
+  stationPeerId: string;
+  stationName: string;
+  stationUrl: string;
+  status: string;
+}
+
+interface FederationFixtureContext {
+  federationId: string;
+  name: string;
+  status: string;
+  sequencerStationPeerId: string;
+  members: FederationFixtureStation[];
+}
+
+interface FederationFixtureSnapshot {
+  actorPtid: string;
+  federatedHandle: string;
+  homeStationPeerId: string;
+  homeStationDomain: string;
+  federations: FederationFixtureContext[];
+}
+
+async function invokeFederationFixture<T>(
+  command: string,
+  input?: Record<string, unknown>,
+): Promise<T> {
+  const result = await invoke<AcceptanceCommandResult<T>>(
+    command,
+    input === undefined ? undefined : { input },
+  );
+  if (!result.ok || result.data === undefined) {
+    throw new Error(result.error?.message || `${command} failed`);
+  }
+  return result.data;
+}
+
+const readFederationFixtureSnapshot = () =>
+  invokeFederationFixture<FederationFixtureSnapshot>(
+    'acceptance_federation_fixture_snapshot',
+  );
+
 interface StreamTerminalMarker {
   schemaVersion: 1;
   captureId: string;
@@ -1286,9 +1334,9 @@ export function installAcceptanceHarness(): void {
 
     async federatedActorIdentity() {
       const actorPtid = useSessionStore.getState().currentUser?.actorPtid?.trim();
-      const self = await api.federationGetSelf();
-      const federatedHandle = self.federatedHandle.trim();
-      const homeStationPeerId = self.homeStationPeerId.trim();
+      const self = await api.profileGet();
+      const federatedHandle = self.federated_handle.trim();
+      const homeStationPeerId = self.home_station_peer_id.trim();
       if (!actorPtid || !federatedHandle || !homeStationPeerId) {
         throw new Error('moments.acceptance.federatedActorIdentityMissing');
       }
@@ -1302,7 +1350,15 @@ export function installAcceptanceHarness(): void {
       if (!federatedHandle) {
         throw new Error('moments.acceptance.federatedHandleMissing');
       }
-      const resolved = await api.federationResolve(federatedHandle);
+      const contexts = await api.federationListContexts();
+      const federationId = contexts.contexts
+        .filter((context) => context.status.trim().toLowerCase() === 'active')
+        .map((context) => context.federationId.trim())
+        .find(Boolean);
+      if (!federationId) {
+        throw new Error('moments.acceptance.federationIdMissing');
+      }
+      const resolved = await api.federationResolve(federationId, federatedHandle);
       const actorPtid = resolved.profile?.ref?.ptid.trim();
       const homeStationPeerId = resolved.homeStationPeerId.trim();
       const resolvedHandle = resolved.federatedHandle.trim();
@@ -1318,11 +1374,11 @@ export function installAcceptanceHarness(): void {
 
     async friendshipAuthority() {
       const [self, federationProjection] = await Promise.all([
-        api.federationGetSelf(),
-        api.federationListFederations(),
+        api.profileGet(),
+        api.federationListContexts(),
       ]);
-      const homeStationPeerId = self.homeStationPeerId.trim();
-      const federationId = federationProjection.federations
+      const homeStationPeerId = self.home_station_peer_id.trim();
+      const federationId = federationProjection.contexts
         .filter(
           (federation) => federation.status.trim().toLowerCase() === 'active',
         )
@@ -1335,11 +1391,8 @@ export function installAcceptanceHarness(): void {
     },
 
     async federationJoinAuthority() {
-      const [self, federationProjection] = await Promise.all([
-        api.federationGetSelf(),
-        api.federationListFederations(),
-      ]);
-      const homeStationPeerId = self.homeStationPeerId.trim();
+      let federationProjection = await readFederationFixtureSnapshot();
+      const homeStationPeerId = federationProjection.homeStationPeerId.trim();
       if (!homeStationPeerId) {
         throw new Error('moments.acceptance.friendshipAuthorityMissing');
       }
@@ -1354,8 +1407,7 @@ export function installAcceptanceHarness(): void {
         ) {
           continue;
         }
-        const members = await api.federationListMemberStations(federationId);
-        const sequencer = members.stations.find(
+        const sequencer = federation.members.find(
           (station) =>
             station.stationPeerId.trim() === sequencerStationPeerId
             && station.status.trim().toLowerCase() === 'active'
@@ -1369,17 +1421,22 @@ export function installAcceptanceHarness(): void {
           };
         }
       }
-      const created = await api.federationCreate({
+      const created = await invokeFederationFixture<{ federationId: string }>(
+        'acceptance_federation_fixture_create',
+        {
         name: 'Secure Content W8 Fixture',
         description: 'Acceptance-owned cross-Station Social fixture',
-        policy_type: 'single_admin',
-      });
+        },
+      );
       const federationId = created.federationId.trim();
       if (!federationId) {
         throw new Error('moments.acceptance.federationJoinAuthorityMissing');
       }
-      const members = await api.federationListMemberStations(federationId);
-      const sequencer = members.stations.find(
+      federationProjection = await readFederationFixtureSnapshot();
+      const createdFederation = federationProjection.federations.find(
+        (federation) => federation.federationId.trim() === federationId,
+      );
+      const sequencer = createdFederation?.members.find(
         (station) =>
           station.stationPeerId.trim() === homeStationPeerId
           && station.status.trim().toLowerCase() === 'active'
@@ -1400,9 +1457,12 @@ export function installAcceptanceHarness(): void {
       if (!federationId) {
         throw new Error('moments.acceptance.federationIdMissing');
       }
-      const response = await api.federationListMemberStations(federationId);
+      const response = await readFederationFixtureSnapshot();
+      const federation = response.federations.find(
+        (candidate) => candidate.federationId.trim() === federationId,
+      );
       const stationPeerIds = Array.from(new Set(
-        response.stations
+        (federation?.members ?? [])
           .filter((station) => station.status.trim().toLowerCase() === 'active')
           .map((station) => station.stationPeerId.trim())
           .filter(Boolean),
@@ -1419,7 +1479,10 @@ export function installAcceptanceHarness(): void {
       if (!federationId || !federationEndpoint) {
         throw new Error('moments.acceptance.federationJoinMissing');
       }
-      const response = await api.federationJoin({
+      const response = await invokeFederationFixture<{
+        status: string;
+        proposalId: string;
+      }>('acceptance_federation_fixture_join', {
         federation_endpoint: federationEndpoint,
         federation_id: federationId,
         message: 'secure-content-w8 remote recipient fixture',

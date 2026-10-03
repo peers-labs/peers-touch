@@ -18,6 +18,8 @@ import (
 var (
 	ErrProfileRevisionRequired = errors.New("profile observed revision is required")
 	ErrEmptyProfileMutation    = errors.New("profile mutation is empty")
+	ErrInvalidDiscoverability  = errors.New("profile discoverability is invalid")
+	ErrRemoteProfileMutation   = errors.New("remote actor profile cannot be mutated")
 )
 
 type PeersTouchInfo struct {
@@ -54,24 +56,29 @@ type ProfileResponse struct {
 	MessagePermission         string     `json:"message_permission"`
 	AutoExpireDays            int        `json:"auto_expire_days"`
 	ProfileRevision           uint64     `json:"profile_revision"`
+	FederatedHandle           string     `json:"federated_handle"`
+	HomeStationPeerID         string     `json:"home_station_peer_id"`
+	HomeStationDomain         string     `json:"home_station_domain"`
+	Discoverability           int16      `json:"discoverability"`
 
 	PeersTouch PeersTouchInfo `json:"peers_touch"`
 }
 
 type UpdateProfileRequest struct {
-	DisplayName               *string     `json:"display_name"`
-	Note                      *string     `json:"note"`
-	Avatar                    *string     `json:"avatar"`
-	Header                    *string     `json:"header"`
-	Region                    *string     `json:"region"`
-	Timezone                  *string     `json:"timezone"`
-	Tags                      *[]string   `json:"tags"`
-	Links                     *[]UserLink `json:"links"`
-	DefaultVisibility         *string     `json:"default_visibility"`
-	ManuallyApprovesFollowers *bool       `json:"manually_approves_followers"`
-	MessagePermission         *string     `json:"message_permission"`
-	AutoExpireDays            *int        `json:"auto_expire_days"`
-	ObservedRevision          uint64      `json:"observed_revision"`
+	DisplayName               *string                  `json:"display_name"`
+	Note                      *string                  `json:"note"`
+	Avatar                    *string                  `json:"avatar"`
+	Header                    *string                  `json:"header"`
+	Region                    *string                  `json:"region"`
+	Timezone                  *string                  `json:"timezone"`
+	Tags                      *[]string                `json:"tags"`
+	Links                     *[]UserLink              `json:"links"`
+	DefaultVisibility         *string                  `json:"default_visibility"`
+	ManuallyApprovesFollowers *bool                    `json:"manually_approves_followers"`
+	MessagePermission         *string                  `json:"message_permission"`
+	AutoExpireDays            *int                     `json:"auto_expire_days"`
+	Discoverability           *modelpb.ActorVisibility `json:"discoverability"`
+	ObservedRevision          uint64                   `json:"observed_revision"`
 }
 
 type ProfileUpdateResult struct {
@@ -188,6 +195,10 @@ func getWebProfileFromActor(c context.Context, rds *gorm.DB, actor *db.Actor, ba
 		MessagePermission:         meta.MessagePermission,
 		AutoExpireDays:            meta.AutoExpireDays,
 		ProfileRevision:           canonicalProfileRevision(meta.ProfileRevision),
+		FederatedHandle:           actor.FederatedHandle,
+		HomeStationPeerID:         actor.HomeStationPeerID,
+		HomeStationDomain:         actor.HomeStationDomain,
+		Discoverability:           canonicalDiscoverability(actor.Visibility),
 		PeersTouch: PeersTouchInfo{
 			NetworkID: actor.PTID,
 		},
@@ -229,7 +240,8 @@ func (req UpdateProfileRequest) hasMutation() bool {
 		req.DefaultVisibility != nil ||
 		req.ManuallyApprovesFollowers != nil ||
 		req.MessagePermission != nil ||
-		req.AutoExpireDays != nil
+		req.AutoExpireDays != nil ||
+		req.Discoverability != nil
 }
 
 func ValidateProfileUpdateRequest(req UpdateProfileRequest) error {
@@ -239,6 +251,12 @@ func ValidateProfileUpdateRequest(req UpdateProfileRequest) error {
 	if !req.hasMutation() {
 		return ErrEmptyProfileMutation
 	}
+	if req.Discoverability != nil &&
+		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_HIDDEN &&
+		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_BY_HANDLE &&
+		*req.Discoverability != modelpb.ActorVisibility_ACTOR_VISIBILITY_INDEXED {
+		return fmt.Errorf("%w: %d", ErrInvalidDiscoverability, *req.Discoverability)
+	}
 	return nil
 }
 
@@ -247,6 +265,13 @@ func canonicalProfileRevision(revision uint64) uint64 {
 		return 1
 	}
 	return revision
+}
+
+func canonicalDiscoverability(value int16) int16 {
+	if value == VisibilityByHandle || value == VisibilityIndexed {
+		return value
+	}
+	return VisibilityHidden
 }
 
 func updateProfileInternal(
@@ -266,6 +291,9 @@ func updateProfileInternal(
 		var actor db.Actor
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&actor, actorID).Error; err != nil {
 			return err
+		}
+		if req.Discoverability != nil && actor.Origin != OriginLocal {
+			return ErrRemoteProfileMutation
 		}
 
 		var meta db.ActorTouchMeta
@@ -309,6 +337,9 @@ func updateProfileInternal(
 		}
 		if req.Header != nil && *req.Header != actor.Image {
 			actorUpdates["image"] = *req.Header
+		}
+		if req.Discoverability != nil && int16(*req.Discoverability) != actor.Visibility {
+			actorUpdates["visibility"] = int16(*req.Discoverability)
 		}
 
 		metaUpdates := map[string]interface{}{}
@@ -437,6 +468,12 @@ func WebProfileToActorProfileProto(p *ProfileResponse) *modelpb.ActorProfile {
 		MessagePermission:         p.MessagePermission,
 		AutoExpireDays:            int32(p.AutoExpireDays),
 		ProfileRevision:           p.ProfileRevision,
+		FederatedHandle:           p.FederatedHandle,
+		HomeStationPeerId:         p.HomeStationPeerID,
+		HomeStationDomain:         p.HomeStationDomain,
+		Discoverability: modelpb.ActorVisibility(
+			canonicalDiscoverability(p.Discoverability),
+		),
 	}
 }
 
@@ -502,6 +539,10 @@ func UpdateProfileRequestFromProto(req *modelpb.UpdateProfileRequest) UpdateProf
 	if req.AutoExpireDays != nil {
 		n := int(*req.AutoExpireDays)
 		out.AutoExpireDays = &n
+	}
+	if req.Discoverability != nil {
+		value := *req.Discoverability
+		out.Discoverability = &value
 	}
 	out.ObservedRevision = req.ObservedRevision
 	return out

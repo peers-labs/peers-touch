@@ -82,34 +82,10 @@ const (
 	// snapshots without granting itself a session on this station.
 	RouterURLFederationProfile RouterPath = "/federation/profile"
 
-	// RouterURLFederationMe returns the federation snapshot of the
-	// currently logged-in actor (handle, visibility, locator_seq).
-	// JWT-protected — never anonymous, since the response identifies a
-	// specific account on this station. Used by Desktop's "settings ›
-	// federation" panel and as the source-of-truth for a fresh login's
-	// "who am I in the federation" hydration.
-	RouterURLFederationMe RouterPath = "/federation/me"
-
-	// RouterURLFederationVisibility flips the logged-in actor's
-	// visibility. JWT-protected; PUT-only (POST is reserved for future
-	// "publish-now-with-extras" workflows). The handler triggers an
-	// async republish so the DHT picks up the change without making
-	// the user wait for libp2p I/O.
-	RouterURLFederationVisibility RouterPath = "/federation/visibility"
-
-	// RouterURLFederationResolve resolves a remote handle to a verified
-	// profile envelope. JWT-protected — federation resolution is a
-	// signed-in-user action (the response carries a profile a UI will
-	// render). Internally wraps frame/touch/federation/resolver, with
-	// federation cache and relay-forward both engaged transparently.
-	RouterURLFederationResolve RouterPath = "/federation/resolve"
-
 	// RouterURLFederationHealth is the public readiness probe.
-	// No JWT — operators (Prometheus / external uptime checks) and
-	// the Desktop pre-login splash both consume it. The handler
-	// always returns 200 with the body's `ready` field carrying the
-	// truth; the transport layer is never an error path so health
-	// scrapers never alert on a mere "not joined yet".
+	// No JWT — operators (Prometheus / external uptime checks) consume it.
+	// The handler always returns 200 with the body's `ready` field carrying
+	// the truth so health scrapers do not alert on a mere "not joined yet".
 	RouterURLFederationHealth RouterPath = "/federation/health"
 )
 
