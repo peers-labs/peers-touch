@@ -41,9 +41,16 @@ from tooling.development.secure_content.runtime_owner import (
     BROWSER_JOURNEY,
     DESKTOP_CLIENTS,
     REQUIRED_FIXTURE_CAPABILITIES,
+    SOCIAL_ACCEPTANCE_IDS,
+    SOCIAL_ACCEPTANCE_JOURNEY,
+    SOCIAL_ACCEPTANCE_PLAN_ID,
+    SOCIAL_ACCEPTANCE_RUNTIME_REUSE,
+    SOCIAL_ACCEPTANCE_TASK_IDS,
     W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
     W8_SCENARIOS,
+    W8_REMOTE_IDENTITY_SCOPE,
+    W8_REMOTE_SEEDED_ACCOUNT,
     W9_RUNTIME_REUSE,
     RuntimeOwnerBlocked,
     W8_REMOTE_RECIPIENT_CAPABILITY,
@@ -53,6 +60,7 @@ from tooling.development.secure_content.runtime_owner import (
     _StationEndpoint,
     _activate_scenario_journey,
     _authenticate_running_client,
+    _bind_reusable_actor_identity,
     _build_fixture_owner,
     _client_payload,
     _close_fixture_action_channel,
@@ -63,10 +71,16 @@ from tooling.development.secure_content.runtime_owner import (
     _generate_mobile_recovery_phrase,
     _make_client,
     _manifest_payload,
+    _maintain_current_recovery_prekeys,
     _open_station_tunnels,
     _prepare_accepted_friendship,
     _prepare_mobile_private_content_keys,
+    _prepare_portable_recovery,
     _prepare_private_content_keys,
+    _prepare_remote_group_fixture,
+    _revoke_remote_fixture_device,
+    _wait_for_accepted_friendship_projection,
+    _wait_for_private_moment_state,
     _parse_args,
     _publish_result_generation,
     _publish_canonical_private_schema_attestation,
@@ -77,6 +91,7 @@ from tooling.development.secure_content.runtime_owner import (
     _restore_w8_invalidated_fixtures,
     _runtime_account_search_query,
     _resolve_canonical_private_schema_attestation,
+    _social_acceptance_scenario_registry,
     _restart_lease,
     _runtime_cleanup_scope,
     _service_payload,
@@ -217,6 +232,110 @@ class RuntimeOwnerTest(unittest.TestCase):
                 if spec.invalidated_fixture_ids
             },
         )
+
+    def test_social_desktop_acceptance_suite_contract_is_bounded(self) -> None:
+        self.assertEqual(
+            "social-private-desktop-functional",
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.entry_check_id,
+        )
+        self.assertEqual(
+            (
+                "desktop-pre-restart",
+                "desktop-continuity",
+                "private-comment",
+                "social-expansion",
+                "social-subtype",
+                "social-object",
+                "social-delete-block",
+                "social-bounds",
+            ),
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(
+            1,
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.max_provisioning_runs,
+        )
+        self.assertEqual(
+            5,
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.max_client_launches,
+        )
+        self.assertTrue(
+            SOCIAL_ACCEPTANCE_RUNTIME_REUSE.allow_client_replacement
+        )
+        self.assertEqual(14, len(SOCIAL_ACCEPTANCE_IDS))
+        source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
+        cleanup_complete = source.index(
+            "ledger.record(SuiteRuntimeAction.CLEANUP_COMPLETE)"
+        )
+        runtime_evidence = source.index(
+            "acceptance_runtime_manifest = {",
+            cleanup_complete,
+        )
+        self.assertLess(cleanup_complete, runtime_evidence)
+        self.assertIn('"state": "FIXTURE_READY"', source[runtime_evidence:])
+        self.assertIn('"cleanupState": "CLEANED"', source[runtime_evidence:])
+        self.assertIn(
+            '"runtimeManifest": acceptance_runtime_manifest',
+            source[runtime_evidence:],
+        )
+        remote_group = source.index("fixture_owner.bind_remote_group(")
+        remote_revoke = source.index(
+            "_revoke_remote_fixture_device(",
+            remote_group,
+        )
+        remote_stop = source.index(
+            'purpose="W8 remote recipient identity preparation"',
+            remote_revoke,
+        )
+        self.assertLess(remote_group, remote_revoke)
+        self.assertLess(remote_revoke, remote_stop)
+        self.assertLess(
+            remote_stop,
+            source.index("eve_client = _make_client("),
+        )
+        self.assertEqual("alice@p.t", W8_REMOTE_SEEDED_ACCOUNT)
+        self.assertEqual(
+            "social-desktop-remote-recipient-alice",
+            W8_REMOTE_IDENTITY_SCOPE,
+        )
+        self.assertIn("_run_social_acceptance_pre_restart(", source)
+        self.assertIn("_social_acceptance_scenario_registry(", source)
+        replacement_start = source.index("bob_replacement = _make_client(")
+        recovery_read = source.index(
+            'before_recovery = _wait_for_private_moment_state(',
+            replacement_start,
+        )
+        recovery_restore = source.index(
+            "restored = _restore_portable_recovery(",
+            recovery_read,
+        )
+        replacement_enrollment = source.index(
+            "_wait_for_device_enrollment(bob_replacement)",
+            recovery_restore,
+        )
+        recovered_read = source.index(
+            'recovered = _moments_harness(',
+            replacement_enrollment,
+        )
+        refreshed_snapshot = source.index(
+            "replacement_snapshot = _wait_for_moments_snapshot(",
+            recovered_read,
+        )
+        replenished_keys = source.index(
+            "_prepare_private_content_keys(bob_replacement)",
+            recovered_read,
+        )
+        replacement_payload = source.index(
+            "payloads[bob_client_id] = _client_payload(",
+            refreshed_snapshot,
+        )
+        self.assertLess(recovery_read, recovery_restore)
+        self.assertLess(recovery_restore, replacement_enrollment)
+        self.assertLess(replacement_enrollment, recovered_read)
+        self.assertLess(recovered_read, replenished_keys)
+        self.assertLess(replenished_keys, refreshed_snapshot)
+        self.assertLess(recovered_read, refreshed_snapshot)
+        self.assertLess(refreshed_snapshot, replacement_payload)
 
     def test_w8_suite_restores_declared_shared_fixtures(self) -> None:
         clients = {
@@ -412,6 +531,77 @@ class RuntimeOwnerTest(unittest.TestCase):
             self.assertTrue(final_result_path.is_file())
             self.assertFalse((publish_root / "W8" / COMMIT).exists())
 
+    def test_social_result_publication_isolated_by_source_projection(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            final_root = root / "final"
+            published_roots: list[Path] = []
+            for index, digest in enumerate(("7" * 64, "8" * 64)):
+                publish_root = root / f"publish-{index}"
+                staged = (
+                    publish_root
+                    / "SDA-02-desktop-proof"
+                    / COMMIT
+                    / "subtype"
+                    / f"run-{index}"
+                )
+                staged.mkdir(parents=True)
+                (staged / "result.json").write_text("{}\n", encoding="utf-8")
+                projection_root = runtime_owner_module._result_publication_root(
+                    final_root,
+                    identity={"worktreeSetDigest": digest},
+                    formal_acceptance=True,
+                )
+                published_roots.append(
+                    _publish_result_generation(
+                        workstream_id="SDA-02-desktop-proof",
+                        publish_root=publish_root,
+                        final_result_root=projection_root,
+                        generation_id=COMMIT,
+                    )
+                )
+
+            self.assertNotEqual(*published_roots)
+            self.assertTrue(all(path.is_dir() for path in published_roots))
+            self.assertEqual(
+                final_root.resolve(),
+                runtime_owner_module._result_publication_root(
+                    final_root,
+                    identity={"worktreeSetDigest": "9" * 64},
+                    formal_acceptance=False,
+                ),
+            )
+
+            duplicate_publish_root = root / "publish-duplicate"
+            duplicate_staged = (
+                duplicate_publish_root
+                / "SDA-02-desktop-proof"
+                / COMMIT
+                / "subtype"
+                / "run-duplicate"
+            )
+            duplicate_staged.mkdir(parents=True)
+            (duplicate_staged / "result.json").write_text(
+                "{}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "result generation already exists",
+            ):
+                _publish_result_generation(
+                    workstream_id="SDA-02-desktop-proof",
+                    publish_root=duplicate_publish_root,
+                    final_result_root=runtime_owner_module._result_publication_root(
+                        final_root,
+                        identity={"worktreeSetDigest": "7" * 64},
+                        formal_acceptance=True,
+                    ),
+                    generation_id=COMMIT,
+                )
+
     def test_w7_continuation_results_publish_as_one_generation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -549,6 +739,28 @@ class RuntimeOwnerTest(unittest.TestCase):
                 _parse_args(["run-private-comment"])
             with self.assertRaises(SystemExit):
                 _parse_args(["run-social-expansion"])
+
+    def test_social_desktop_acceptance_cli_dispatches_once(self) -> None:
+        with patch.object(
+            W7RuntimeOwner,
+            "run_social_desktop_acceptance_suite",
+            return_value={
+                "status": "FUNCTIONAL_PASS",
+                "proofState": "UNPROVEN",
+            },
+        ) as run_suite:
+            status = main(
+                [
+                    "run-social-desktop-acceptance-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                    "--slot",
+                    "12",
+                ]
+            )
+
+        self.assertEqual(0, status)
+        run_suite.assert_called_once_with(slot=12)
 
     def test_w8_suite_requires_complete_profile_closure(
         self,
@@ -727,6 +939,12 @@ class RuntimeOwnerTest(unittest.TestCase):
     def test_task_suite_entries_replace_public_leaf_commands(self) -> None:
         suite_arguments = {
             "run-w7-desktop-suite": ["--profiles", "four,fiveArm"],
+            "run-social-desktop-acceptance-suite": [
+                "--profiles",
+                "four,fiveArm",
+                "--slot",
+                "12",
+            ],
             "run-w9-suite": [],
             "run-w2-suite": ["--profiles", "four,fiveArm"],
             "run-w10-suite": ["--profiles", "four,fiveArm"],
@@ -1390,6 +1608,16 @@ class RuntimeOwnerTest(unittest.TestCase):
             home_station_peer_id="five-arm-peer-id",
             federation_id="federation-1",
         )
+        owner.bind_remote_group(
+            lambda bound_ptid, bound_federation: (
+                "01JREMOTEGROUP"
+                if (
+                    bound_ptid == actor_ptid
+                    and bound_federation == "federation-1"
+                )
+                else ""
+            )
+        )
         manifest = owner.manifest()
         encoded = json.dumps(manifest, sort_keys=True)
         handle = manifest["handles"][0]
@@ -1426,6 +1654,10 @@ class RuntimeOwnerTest(unittest.TestCase):
             self.assertEqual("fiveArm", outcome["profileId"])
             self.assertEqual("station-five-arm", outcome["serviceId"])
             self.assertEqual("federation-1", outcome["federationId"])
+            self.assertEqual(
+                "01JREMOTEGROUP",
+                outcome["remoteGroupUlid"],
+            )
             self.assertEqual(
                 hashlib.sha256(b"federation-1").hexdigest(),
                 outcome["federationIdSha256"],
@@ -1553,10 +1785,34 @@ class RuntimeOwnerTest(unittest.TestCase):
             registrations[0][:2],
         )
         self.assertEqual("", provisioner.account)
+        owner.bind_remote_group(
+            lambda actor_ptid, federation_id: (
+                "01JREMOTE"
+                if (
+                    actor_ptid == "ptid:five-arm"
+                    and federation_id == "federation-1"
+                )
+                else ""
+            )
+        )
         self.assertEqual(
             "actor-identity-provisioner",
             owner.manifest()["handles"][0]["owner"],
         )
+
+    def test_w8_remote_recipient_can_reuse_an_existing_account(self) -> None:
+        registrar = MagicMock()
+        provisioner = RemotePrivateRecipientProvisioner(
+            source_checkpoint=COMMIT,
+            run_id="w8-existing-account",
+            station_url="https://five-arm.invalid",
+            password="fixture-password",
+            account_registrar=registrar,
+            existing_account="carol@p.t",
+        )
+
+        self.assertEqual("carol@p.t", provisioner.account)
+        registrar.assert_not_called()
 
     def test_w8_remote_recipient_reuses_an_existing_shared_federation(
         self,
@@ -1687,6 +1943,127 @@ class RuntimeOwnerTest(unittest.TestCase):
         ):
             _prepare_private_content_keys(client)
 
+    def test_remote_recipient_reuses_one_actor_identity_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = SimpleNamespace(
+                actor_identity_root=root / "run" / "actor-identity",
+                spec=SimpleNamespace(profile="remote-recipient"),
+            )
+            shared = root / "shared" / "actor-identity"
+
+            _bind_reusable_actor_identity(client, shared)
+            _bind_reusable_actor_identity(client, shared)
+
+            self.assertTrue(client.actor_identity_root.is_symlink())
+            self.assertEqual(shared.resolve(), client.actor_identity_root.resolve())
+            self.assertEqual(0o700, shared.stat().st_mode & 0o777)
+
+    def test_remote_recipient_rejects_non_reusable_identity_root(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            actor_identity_root = root / "run" / "actor-identity"
+            actor_identity_root.mkdir(parents=True)
+            client = SimpleNamespace(
+                actor_identity_root=actor_identity_root,
+                spec=SimpleNamespace(profile="remote-recipient"),
+            )
+
+            with self.assertRaisesRegex(
+                RuntimeOwnerBlocked,
+                "Actor Identity is not reusable",
+            ):
+                _bind_reusable_actor_identity(
+                    client,
+                    root / "shared" / "actor-identity",
+                )
+
+    def test_portable_recovery_maintains_prekeys_for_created_epoch(
+        self,
+    ) -> None:
+        def native_result(
+            payload: Mapping[str, object],
+            *,
+            stub_payload: bool = True,
+        ) -> Mapping[str, object]:
+            return {
+                "ok": True,
+                "value": {
+                    "ok": True,
+                    "data": (
+                        {"status": json.dumps(payload)}
+                        if stub_payload
+                        else dict(payload)
+                    ),
+                },
+            }
+
+        client = MagicMock()
+        client.spec = SimpleNamespace(profile="bob")
+        words = [f"word-{index}" for index in range(24)]
+        client.driver.execute_async_script.side_effect = (
+            native_result({"words": words}),
+            native_result(
+                {
+                    "backup": {"backupId": "backup-bob"},
+                    "recoveryEpoch": 7,
+                }
+            ),
+            native_result(
+                {
+                    "recoveryEpoch": 7,
+                    "recoveryPreKeyAvailable": 100,
+                },
+                stub_payload=False,
+            ),
+        )
+
+        phrase, prepared = _prepare_portable_recovery(client)
+
+        self.assertEqual(" ".join(words), phrase)
+        self.assertEqual(
+            {
+                "backupIdSha256": hashlib.sha256(
+                    b"backup-bob"
+                ).hexdigest(),
+                "preparedEpoch": 7,
+                "recoveryPreKeyAvailable": 100,
+            },
+            prepared,
+        )
+        maintenance = client.driver.execute_async_script.call_args_list[2]
+        self.assertIn(
+            "import('/src/store/privateMoments.ts')",
+            maintenance.args[0],
+        )
+        self.assertEqual(
+            "social_private_moments_acceptance_maintain_prekeys",
+            maintenance.args[1],
+        )
+
+    def test_portable_recovery_rejects_mismatched_prekey_epoch(self) -> None:
+        client = MagicMock()
+        client.spec = SimpleNamespace(profile="bob")
+        client.driver.execute_async_script.return_value = {
+            "ok": True,
+            "value": {
+                "ok": True,
+                "data": {
+                    "recoveryEpoch": 8,
+                    "recoveryPreKeyAvailable": 100,
+                },
+            },
+        }
+
+        with self.assertRaisesRegex(
+            RuntimeOwnerBlocked,
+            "PreKey pool is unavailable",
+        ):
+            _maintain_current_recovery_prekeys(
+                client,
+                expected_recovery_epoch=7,
+            )
+
     def test_w8_remote_recipient_waits_for_mls_keypackage(self) -> None:
         client = MagicMock()
         client.spec = SimpleNamespace(profile="fiveArm")
@@ -1792,6 +2169,142 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
         self.assertEqual("fixture-mls:fiveArm", raised.exception.resource)
 
+    def test_w8_remote_group_is_prepared_before_remote_device_revoke(
+        self,
+    ) -> None:
+        primary = object()
+        local_member = object()
+        chat_results = iter(
+            (
+                {"groupUlid": "01JREMOTE"},
+                {"groupUlid": "01JREMOTE"},
+                {
+                    "conversationId": "01JREMOTE",
+                    "members": [
+                        {"ptid": "ptid:primary"},
+                        {"ptid": "ptid:local-member"},
+                        {"ptid": "ptid:remote"},
+                    ],
+                },
+            )
+        )
+
+        def immediate_wait(
+            predicate: Callable[[], Mapping[str, object] | None],
+            description: str,
+            *,
+            timeout: float,
+            interval: float,
+        ) -> Mapping[str, object]:
+            self.assertIn("authoritative remote Group", description)
+            self.assertEqual(120, timeout)
+            self.assertEqual(1, interval)
+            result = predicate()
+            self.assertIsNotNone(result)
+            return result or {}
+
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_moments_harness",
+                return_value={"actorPtid": "ptid:local-member"},
+            ) as moments,
+            patch(
+                "tooling.development.secure_content.runtime_owner."
+                "_chat_harness",
+                side_effect=lambda *_args, **_kwargs: next(chat_results),
+            ) as chat,
+            patch(
+                "tooling.development.secure_content.runtime_owner.wait_until",
+                side_effect=immediate_wait,
+            ),
+        ):
+            group_ulid = _prepare_remote_group_fixture(
+                primary,
+                local_member,
+                remote_actor_ptid="ptid:remote",
+                federation_id="federation-1",
+            )
+
+        self.assertEqual("01JREMOTE", group_ulid)
+        moments.assert_called_once_with(
+            local_member,
+            "acceptanceActorIdentity",
+        )
+        self.assertEqual(
+            [
+                call(
+                    primary,
+                    "createGroup",
+                    {
+                        "name": "secure-content-w8-remote-group",
+                        "federationId": "federation-1",
+                        "memberPtids": ["ptid:local-member"],
+                    },
+                ),
+                call(
+                    primary,
+                    "addFederatedGroupMember",
+                    {
+                        "groupUlid": "01JREMOTE",
+                        "member": {"ptid": "ptid:remote"},
+                    },
+                ),
+                call(
+                    primary,
+                    "groupLifecycleSnapshot",
+                    {"groupUlid": "01JREMOTE"},
+                    timeout=15,
+                ),
+            ],
+            chat.call_args_list,
+        )
+
+    def test_w8_remote_fixture_revokes_only_the_current_device(self) -> None:
+        client = SimpleNamespace(spec=SimpleNamespace(profile="fiveArm"))
+        readiness = {
+            "actorPtid": "ptid:remote",
+            "deviceId": "device-current",
+        }
+        with patch(
+            "tooling.development.secure_content.runtime_owner._chat_harness",
+            return_value={
+                **readiness,
+                "revoked": True,
+            },
+        ) as harness:
+            revoked = _revoke_remote_fixture_device(
+                client,
+                readiness=readiness,
+            )
+
+        self.assertTrue(revoked["revoked"])
+        harness.assert_called_once_with(client, "revokeCurrentDevice")
+
+    def test_w8_remote_fixture_revoke_fails_on_identity_mismatch(self) -> None:
+        client = SimpleNamespace(spec=SimpleNamespace(profile="fiveArm"))
+        with (
+            patch(
+                "tooling.development.secure_content.runtime_owner._chat_harness",
+                return_value={
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "device-other",
+                    "revoked": True,
+                },
+            ),
+            self.assertRaises(RuntimeOwnerBlocked) as raised,
+        ):
+            _revoke_remote_fixture_device(
+                client,
+                readiness={
+                    "actorPtid": "ptid:remote",
+                    "deviceId": "device-current",
+                },
+            )
+
+        self.assertEqual("RUNTIME_CLEANUP_FAILED", raised.exception.code)
+        self.assertEqual("fixture-device:fiveArm", raised.exception.resource)
+
     def test_client_launch_uses_projected_runtime_source_commit(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             with (
@@ -1828,6 +2341,31 @@ class RuntimeOwnerTest(unittest.TestCase):
             client_type.call_args.kwargs["profile_env"][
                 "PT_BUILD_SOURCE_COMMIT"
             ],
+        )
+
+    def test_social_acceptance_source_projection_allows_only_harness_delta(
+        self,
+    ) -> None:
+        self.assertTrue(
+            runtime_owner_module._social_acceptance_source_delta_allowed(
+                (
+                    "apps/desktop/src-tauri/src/interface/tauri_commands/"
+                    "messaging_recovery.rs",
+                    "apps/desktop/src-tauri/src/social/mod.rs",
+                    "apps/desktop/src-tauri/src/social/private_moment.rs",
+                    "apps/desktop/src/acceptance/moments/harness.ts",
+                    "apps/desktop/src/acceptance/moments/harness.test.ts",
+                    "tooling/development/secure_content/runtime_owner.py",
+                    "tooling/scripts/acceptance-run.py",
+                    "tooling/scripts/acceptance-run-test.py",
+                    "tooling/skills/pt-github-review/FRESHNESS.md",
+                )
+            )
+        )
+        self.assertFalse(
+            runtime_owner_module._social_acceptance_source_delta_allowed(
+                ("apps/desktop/src/services/social_api.ts",)
+            )
         )
 
     def test_running_client_authentication_uses_fixture_replacement_and_retries(
@@ -1987,6 +2525,8 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "homeStationPeerId": "station-four",
             },
             {"requestId": "friend-request-1"},
+            {"accepted": False},
+            {"accepted": True},
         )
         bob = MagicMock()
         bob.harness_namespace = "agent"
@@ -1997,9 +2537,13 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "homeStationPeerId": "station-four",
             },
             {"accepted": True, "requestId": "friend-request-1"},
+            {"accepted": True},
         )
 
-        _prepare_accepted_friendship(alice, bob)
+        with patch(
+            "tooling.development.secure_content.runtime_owner.time.sleep"
+        ):
+            _prepare_accepted_friendship(alice, bob)
 
         self.assertEqual(
             [
@@ -2014,6 +2558,16 @@ class RuntimeOwnerTest(unittest.TestCase):
                     },
                     timeout=120,
                 ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:bob"},
+                    timeout=120,
+                ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:bob"},
+                    timeout=120,
+                ),
             ],
             alice.harness.call_args_list,
         )
@@ -2026,11 +2580,106 @@ class RuntimeOwnerTest(unittest.TestCase):
                     {"actorPtid": "ptid:alice"},
                     timeout=120,
                 ),
+                call(
+                    "friendshipProjection",
+                    {"actorPtid": "ptid:alice"},
+                    timeout=120,
+                ),
             ],
             bob.harness.call_args_list,
         )
         self.assertEqual("agent", alice.harness_namespace)
         self.assertEqual("agent", bob.harness_namespace)
+
+    def test_friendship_projection_timeout_fails_closed(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.harness.return_value = {
+            "accepted": False,
+        }
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _wait_for_accepted_friendship_projection(
+                client,
+                target_ptid="ptid:bob",
+                actor_label="Alice",
+                timeout_seconds=0,
+            )
+
+        self.assertEqual("FIXTURE_OWNER_UNAVAILABLE", raised.exception.code)
+        self.assertEqual(
+            "fixture-account:mutual-friendship",
+            raised.exception.resource,
+        )
+        client.harness.assert_called_once_with(
+            "friendshipProjection",
+            {"actorPtid": "ptid:bob"},
+            timeout=120,
+        )
+
+    def test_private_moment_state_waits_for_recovery_projection(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec.profile = "secure-content-desktop-bob2"
+        client.harness.side_effect = (
+            {"state": "LOADING_AUTHORIZED_RESOURCE"},
+            {"state": "RECOVERY_REQUIRED", "errorCode": "RECOVERY_REQUIRED"},
+        )
+
+        with patch(
+            "tooling.development.secure_content.runtime_owner.time.sleep"
+        ):
+            projection = _wait_for_private_moment_state(
+                client,
+                post_id="post-1",
+                expected_state="RECOVERY_REQUIRED",
+                actor_label="Bob replacement device",
+            )
+
+        self.assertEqual("RECOVERY_REQUIRED", projection["state"])
+        self.assertEqual(
+            [
+                call(
+                    "readPrivateMoment",
+                    {"postId": "post-1"},
+                    timeout=120,
+                ),
+                call(
+                    "readPrivateMoment",
+                    {"postId": "post-1"},
+                    timeout=120,
+                ),
+            ],
+            client.harness.call_args_list,
+        )
+
+    def test_private_moment_state_timeout_reports_last_projection(self) -> None:
+        client = MagicMock()
+        client.harness_namespace = "agent"
+        client.spec.profile = "secure-content-desktop-bob2"
+        client.harness.return_value = {
+            "state": "NOT_FOUND_OR_NOT_AUTHORIZED",
+            "errorCode": "PRIVATE_CONTENT_NOT_AUTHORIZED",
+        }
+
+        with self.assertRaises(RuntimeOwnerBlocked) as raised:
+            _wait_for_private_moment_state(
+                client,
+                post_id="post-1",
+                expected_state="RECOVERY_REQUIRED",
+                actor_label="Bob replacement device",
+                timeout_seconds=0,
+            )
+
+        self.assertEqual("CLIENT_RUNTIME_UNAVAILABLE", raised.exception.code)
+        self.assertIn(
+            "state='NOT_FOUND_OR_NOT_AUTHORIZED'",
+            str(raised.exception),
+        )
+        self.assertIn(
+            "errorCode='PRIVATE_CONTENT_NOT_AUTHORIZED'",
+            str(raised.exception),
+        )
 
     def test_fixture_owner_prepares_recovery_prekeys_for_author_and_recipient(
         self,
@@ -3499,6 +4148,64 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertIn(session_id, commands[1])
         self.assertEqual("update", commands[1][2])
         self.assertEqual("check", commands[2][2])
+
+    def test_social_acceptance_resolves_the_active_aggregate_owner(self) -> None:
+        session_id = "social-desktop-formal-proof-20261002"
+        declaration = {
+            "state": "ACTIVE",
+            "workItemId": "social-desktop-formal-proof",
+            "planId": SOCIAL_ACCEPTANCE_PLAN_ID,
+            "taskId": "SDA-03-formal-proof",
+            "sessionId": session_id,
+            "journeyId": SOCIAL_ACCEPTANCE_JOURNEY,
+        }
+        unrelated = {
+            **declaration,
+            "workItemId": "unrelated-work",
+            "planId": "UNRELATED-PLAN",
+            "taskId": "unrelated-task",
+            "sessionId": "unrelated-session",
+        }
+        responses = [
+            {"declarations": [unrelated, declaration]},
+            declaration,
+            declaration,
+        ]
+        commands: list[list[str]] = []
+
+        def run(command: list[str], **_: object) -> SimpleNamespace:
+            commands.append(command)
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(responses[len(commands) - 1]),
+                stderr="",
+            )
+
+        activated = _activate_scenario_journey(
+            Path("/tmp/peers-touch"),
+            SOCIAL_ACCEPTANCE_JOURNEY,
+            work_item_id=None,
+            task_id=None,
+            plan_id=SOCIAL_ACCEPTANCE_PLAN_ID,
+            allowed_task_ids=SOCIAL_ACCEPTANCE_TASK_IDS,
+            command_runner=run,
+        )
+
+        self.assertEqual("SDA-03-formal-proof", activated["taskId"])
+        self.assertNotIn("--work-item", commands[0])
+        self.assertIn("social-desktop-formal-proof", commands[1])
+        self.assertIn(session_id, commands[1])
+
+    def test_social_acceptance_scenarios_use_resolved_owner_identity(self) -> None:
+        scenario = _social_acceptance_scenario_registry(
+            "private-comment",
+            work_item_id="social-desktop-formal-proof",
+            task_id="SDA-03-formal-proof",
+        )["private-comment"]
+
+        self.assertEqual("social-desktop-formal-proof", scenario.work_item_id)
+        self.assertEqual("SDA-03-formal-proof", scenario.result_task_id)
+        self.assertEqual("SDA-03-formal-proof", scenario.result_workstream_id)
 
     def test_scenario_journey_transition_rejects_another_plan_task(self) -> None:
         declaration = {

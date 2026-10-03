@@ -1989,6 +1989,15 @@ fn private_read_projection(
     }
 }
 
+pub(super) fn pending_device_recovery_projection(post_id: &str) -> PrivateMomentProjection {
+    private_read_projection(
+        post_id,
+        PrivateProjectionFailureKind::RecoveryRequired,
+        "RECOVERY_REQUIRED",
+        None,
+    )
+}
+
 fn private_revoked_projection(post_id: &str, error_code: &str) -> PrivateMomentProjection {
     let mut projection = private_read_projection(
         post_id,
@@ -2803,6 +2812,21 @@ mod tests {
             super::super::projection::PrivateReadState::NotFoundOrNotAuthorized
         );
         assert!(projection.content.is_none());
+        assert!(projection.encode_local().is_ok());
+    }
+
+    #[test]
+    fn pending_device_projects_recovery_required_without_plaintext() {
+        let projection = pending_device_recovery_projection("post-1");
+
+        assert_eq!(
+            projection.state,
+            super::super::projection::PrivateReadState::RecoveryRequired
+        );
+        assert_eq!(projection.error_code.as_deref(), Some("RECOVERY_REQUIRED"));
+        assert!(projection.content.is_none());
+        assert!(projection.author_ptid.is_empty());
+        assert_eq!(projection.audience_kind, "UNKNOWN");
         assert!(projection.encode_local().is_ok());
     }
 
