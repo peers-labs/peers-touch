@@ -12,7 +12,7 @@
 Review proposed `SC-D28` and its corresponding design/data-model changes:
 
 - `docs/architecture/secure-content/decisions.md`
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/secure-content/data-model.md`
 
 Verified failure:

@@ -30,7 +30,6 @@ as independent authority, transaction, route, table, grant, and object owners.
 ## Accepted Architecture Sources
 
 - `docs/architecture/secure-content/README.md`
-- `docs/architecture/secure-content/design.md`
 - `docs/architecture/secure-content/security.md`
 - `docs/architecture/secure-content/operations.md`
 - `docs/architecture/secure-content/data-model.md`

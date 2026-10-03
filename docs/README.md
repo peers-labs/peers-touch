@@ -239,11 +239,11 @@
 - Federation 虚拟网络与治理账本：`architecture/federation/README.md`
 - 质量保证闭环：`architecture/quality-framework/README.md`
 - 产品验收框架：`architecture/acceptance-framework/README.md`
-- Human 联邦社交活动层：`architecture/federated-social-activity/README.md`
-  （draft v0.3；当前后继计划
-  `architecture/federated-social-activity/execution-plans/20261003-cross-station-social-native/plan.md`
-  聚焦 Native Desktop 跨 Station 私密投递/互动/恢复；Mobile deferred，
-  Browser Social prohibited）
+- 跨 Station 私密 Social：`architecture/cross-station-social/README.md`
+  （active；当前执行计划
+  `architecture/cross-station-social/execution-plans/20261003-native-private-social/plan.md`
+  仅覆盖 Native Desktop 的私密 Post/Media/Comment/Reaction/Recovery/Revocation；
+  Mobile deferred，Browser Social prohibited）
 - Agent LobeHub 蓝本重构：`architecture/agent/agent-lobehub-blueprint.md`
 - Atelier 个人 Agent 工作台 × Peers Agent Collaboration：`architecture/atelier/README.md`（文档集，入口 `README.md`；Station projection endpoints 已登记为 `/sub-agent/agent/atelier/workspace/load`、`/sub-agent/agent/atelier/project/create-from-goal`、`/sub-agent/agent/atelier/message/send`、`/sub-agent/agent/atelier/escalation/resolve`、`/sub-agent/agent/atelier/task/set-status`、`/sub-agent/agent/atelier/task/purge`，Desktop applet capabilities / contract permissions 已登记为 `atelier.workspace.load`、`atelier.project.createFromGoal`、`atelier.message.send`、`atelier.escalation.resolve`、`atelier.task.setStatus`、`atelier.task.purge`、`atelier.events.subscribe`，projection event topic 为 `atelier.projection.event`；Artifact/Gate projection mapper 已支持 `artifact.upsert` / `gate.upsert`，真实生产与端到端验证后置；prototype 入口已通过 `runtimeBootstrap` 在 Lynx / Web Host 中走 applet-sdk bridge，在 standalone / unavailable 中回退 mock；runtime manifest 草案位于 `apps/applets/atelier/applet.manifest.json`，真实 bundle integrity 待正式 applet 化补齐）
 - 原型统一入口（Prototype Portal + 统一登记 + 确认门）：`architecture/prototypes/README.md`

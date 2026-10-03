@@ -558,11 +558,11 @@ checks pass.
 
 Public Moment federation is unchanged. The current implementation keeps private
 Social federation disabled until the Native Desktop cross-Station cutover in
-[`../federated-social-activity/`](../federated-social-activity/README.md)
+[`../cross-station-social/`](../cross-station-social/README.md)
 passes. The target reuses Secure Content ciphertext, envelope, proof and
 recovery contracts through authenticated Federation delivery and peer routes.
 No private ciphertext, envelope or recovery material enters Federation Ledger
-or ActivityPub.
+or any public-content transport.
 
 ## 11. Verification Matrix
 
