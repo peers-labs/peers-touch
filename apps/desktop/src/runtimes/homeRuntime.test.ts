@@ -101,10 +101,12 @@ vi.mock('../utils/logger', () => ({
 
 import {
   createHomeGoalDraft,
+  homeGoalDraftByteLength,
   homeRuntime,
   openHomeConversation,
   submitHomeChat,
   submitHomeTask,
+  validateHomeGoalDraftBytes,
 } from './homeRuntime';
 
 describe('homeRuntime', () => {
@@ -222,6 +224,27 @@ describe('homeRuntime', () => {
     });
     expect(applyGoalDraft).toHaveBeenCalledWith(goal, 'create');
     expect(created).toBe(goal);
+  });
+
+  it('uses the Station UTF-8 byte limits for Goal input', () => {
+    const acceptedTitle = '界'.repeat(85);
+    const rejectedTitle = '界'.repeat(86);
+
+    expect(homeGoalDraftByteLength(acceptedTitle)).toBe(255);
+    expect(validateHomeGoalDraftBytes(
+      acceptedTitle,
+      'Durable outcome',
+    )).toEqual({
+      titleTooLong: false,
+      outcomeTooLong: false,
+    });
+    expect(validateHomeGoalDraftBytes(
+      rejectedTitle,
+      'Durable outcome',
+    )).toEqual({
+      titleTooLong: true,
+      outcomeTooLong: false,
+    });
   });
 
   it('reads the exact saved Goal when Home is reopened', async () => {

@@ -16,6 +16,8 @@ import { log } from '../utils/logger';
 
 const HOME_RECONCILE_INTERVAL_MS = 60_000;
 const HOME_RUNTIME_PROFILE_ID = 'modern-chat-agent-v1';
+export const HOME_GOAL_TITLE_MAX_BYTES = 256;
+export const HOME_GOAL_OUTCOME_MAX_BYTES = 16_384;
 
 let installed = false;
 let runtimeGeneration = 0;
@@ -28,6 +30,22 @@ let goalReadbackInFlight: {
   promise: Promise<AgentGoal | null>;
 } | null = null;
 let unsubscribers: Array<() => void> = [];
+
+export function homeGoalDraftByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+export function validateHomeGoalDraftBytes(
+  title: string,
+  outcome: string,
+): { titleTooLong: boolean; outcomeTooLong: boolean } {
+  return {
+    titleTooLong:
+      homeGoalDraftByteLength(title.trim()) > HOME_GOAL_TITLE_MAX_BYTES,
+    outcomeTooLong:
+      homeGoalDraftByteLength(outcome.trim()) > HOME_GOAL_OUTCOME_MAX_BYTES,
+  };
+}
 
 function homeCommandKey(kind: 'chat' | 'task' | 'goal'): string {
   const id = globalThis.crypto?.randomUUID?.()

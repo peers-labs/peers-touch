@@ -7,6 +7,7 @@ import { AgentGoalStatus } from '../../gen/proto/domain/agent/goal_pb';
 import {
   createHomeGoalDraft,
   reopenHomeGoalDraft,
+  validateHomeGoalDraftBytes,
 } from '../../runtimes/homeRuntime';
 import { useHomeStore } from '../../store/home';
 
@@ -31,6 +32,7 @@ export function GoalDraftCard() {
       <Card
         data-pt-home-goal=""
         data-pt-home-goal-id={savedGoal.goalId}
+        data-pt-home-goal-owner={savedGoal.ownerPtid}
         data-pt-home-goal-readback={
           readbackLoading
             ? 'loading'
@@ -66,9 +68,12 @@ export function GoalDraftCard() {
           ) : null}
           <Flexbox horizontal align="center" gap={token.marginSM} wrap="wrap">
             <Tag>{t('agent.home.goalStatusDraft')}</Tag>
-            <Typography.Text strong>{savedGoal.title}</Typography.Text>
+            <Typography.Text data-pt-home-goal-title-readback="" strong>
+              {savedGoal.title}
+            </Typography.Text>
           </Flexbox>
           <Typography.Paragraph
+            data-pt-home-goal-outcome-readback=""
             style={{ margin: 0 }}
             type="secondary"
           >
@@ -85,7 +90,16 @@ export function GoalDraftCard() {
     );
   }
 
-  const submitDisabled = !title.trim() || !outcome.trim() || creating;
+  const { titleTooLong, outcomeTooLong } = validateHomeGoalDraftBytes(
+    title,
+    outcome,
+  );
+  const submitDisabled =
+    !title.trim()
+    || !outcome.trim()
+    || titleTooLong
+    || outcomeTooLong
+    || creating;
 
   return (
     <Card
@@ -111,29 +125,43 @@ export function GoalDraftCard() {
         </label>
         <Input
           aria-label={t('agent.home.goalTitle')}
+          aria-invalid={titleTooLong}
           data-pt-home-goal-title=""
           disabled={creating}
           id="home-goal-title"
           maxLength={256}
           placeholder={t('agent.home.goalTitlePlaceholder')}
+          status={titleTooLong ? 'error' : undefined}
           value={title}
           onChange={(event) => setTitle(event.target.value)}
         />
+        {titleTooLong ? (
+          <Typography.Text data-pt-home-goal-title-limit="" type="danger">
+            {t('agent.home.goalTitleTooLong')}
+          </Typography.Text>
+        ) : null}
         <label htmlFor="home-goal-outcome">
           <Typography.Text strong>{t('agent.home.goalOutcome')}</Typography.Text>
         </label>
         <Input.TextArea
           aria-label={t('agent.home.goalOutcome')}
+          aria-invalid={outcomeTooLong}
           autoSize={{ minRows: 3, maxRows: 7 }}
           data-pt-home-goal-outcome=""
           disabled={creating}
           id="home-goal-outcome"
           maxLength={16_384}
           placeholder={t('agent.home.goalOutcomePlaceholder')}
+          status={outcomeTooLong ? 'error' : undefined}
           style={{ resize: 'none' }}
           value={outcome}
           onChange={(event) => setOutcome(event.target.value)}
         />
+        {outcomeTooLong ? (
+          <Typography.Text data-pt-home-goal-outcome-limit="" type="danger">
+            {t('agent.home.goalOutcomeTooLong')}
+          </Typography.Text>
+        ) : null}
         <Flexbox horizontal align="center" justify="space-between" gap={12}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {t('agent.home.goalDraftHint')}
