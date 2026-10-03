@@ -12,6 +12,13 @@ import './channels';
 import './cron';
 import './memory';
 import './oss';
-import './moments';
 import './applets';
 import './logs';
+import { getDesktopHostPolicy } from '../kernel/hostPolicy';
+import { registerMomentsModule } from './moments';
+
+export function registerModulesForHost(): void {
+  if (getDesktopHostPolicy().nativeSocialEnabled) {
+    registerMomentsModule();
+  }
+}

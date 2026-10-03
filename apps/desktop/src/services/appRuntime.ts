@@ -20,6 +20,12 @@ import { toolRuntime } from '../runtimes/toolRuntime';
 import { chatRuntime } from '../runtimes/chatRuntime';
 import { evaluationRuntime } from '../runtimes/evaluationRuntime';
 import { callRuntime } from '../runtimes/callRuntime';
+import { getDesktopHostPolicy } from '../kernel/hostPolicy';
+import {
+  EVENT,
+  eventBus,
+  onWindowStationActiveChanged,
+} from '../kernel/events';
 import { log } from '../utils/logger';
 
 // Register kernel-managed runtimes once. The legacy bridges
@@ -28,7 +34,7 @@ import { log } from '../utils/logger';
 // below because they are not yet wrapped by `RuntimeDescriptor`s; that
 // migration is incremental (see plan §3 / §6).
 let runtimesRegistered = false;
-function registerKernelRuntimes(): void {
+export function registerKernelRuntimes(): void {
   if (runtimesRegistered) return;
   runtimesRegistered = true;
   registerRuntime(socialRuntime);
@@ -39,7 +45,9 @@ function registerKernelRuntimes(): void {
   registerRuntime(federationRuntime);
   registerRuntime(homeRuntime);
   registerRuntime(appletsRuntime);
-  registerRuntime(momentsRuntime);
+  if (getDesktopHostPolicy().nativeSocialEnabled) {
+    registerRuntime(momentsRuntime);
+  }
   registerRuntime(agentCapabilityRuntime);
   registerRuntime(agentTopicRuntime);
   registerRuntime(chatRuntime);
@@ -49,6 +57,7 @@ function registerKernelRuntimes(): void {
 }
 
 let installed = false;
+let teardownStationLifecycleBridge: (() => void) | null = null;
 let deferredInstalled = false;
 let deferredInstallInFlight: Promise<void> | null = null;
 let criticalInstallInFlight: {
@@ -56,12 +65,14 @@ let criticalInstallInFlight: {
   promise: Promise<void>;
 } | null = null;
 
-const DEFERRED_APP_RUNTIME_IDS = [
-  searchRuntime.id,
-  settingsRuntime.id,
-  federationRuntime.id,
-  momentsRuntime.id,
-];
+function deferredAppRuntimeIds(): string[] {
+  return [
+    searchRuntime.id,
+    settingsRuntime.id,
+    federationRuntime.id,
+    ...(getDesktopHostPolicy().nativeSocialEnabled ? [momentsRuntime.id] : []),
+  ];
+}
 
 export const CRITICAL_SESSION_RUNTIME_IDS: ReadonlyArray<string> = [
   messagingRuntime.id,
@@ -85,6 +96,12 @@ export function installAppRuntime(): void {
 
   installIdentityChangedBridge();
   installNavigationBadgeProjection();
+  teardownStationLifecycleBridge = onWindowStationActiveChanged((detail) => {
+    eventBus.publish(EVENT.STATION_ACTIVE_CHANGED, {
+      stationUrl: detail.url,
+      label: detail.label,
+    });
+  });
 
   installRuntime(socialRuntime.id);
   installRuntime(appletsRuntime.id);
@@ -109,7 +126,7 @@ export function installDeferredAppRuntimeProjections(actorPtid: string): Promise
     await bootstrapRuntime(socialRuntime.id, actorPtid);
 
     const installedRuntimes: string[] = [];
-    for (const runtimeId of DEFERRED_APP_RUNTIME_IDS) {
+    for (const runtimeId of deferredAppRuntimeIds()) {
       installRuntime(runtimeId);
       await bootstrapRuntime(runtimeId, null);
       installedRuntimes.push(runtimeId);
@@ -171,6 +188,8 @@ export function teardownAppRuntime(): void {
   teardownRuntime(evaluationRuntime.id);
   teardownMediaRuntime();
   teardownNavigationBadgeProjection();
+  teardownStationLifecycleBridge?.();
+  teardownStationLifecycleBridge = null;
   teardownSessionKickBridge();
   teardownEventStreamBridge();
   teardownPresenceBridge();
