@@ -1266,6 +1266,42 @@ capabilities:
     forbidden_aliases: []
     superseded_symbols: []
 
+  - id: federation.presence.query
+    domain_owner: station.federation
+    truth_owner: presence.runtime
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/presence/query }
+    request_proto: peers_touch.model.presence.v1.PresenceQueryRequest
+    response_proto: peers_touch.model.presence.v1.PresenceQueryResponse
+    truth_stores: []
+    allowed_dependencies: [federation.auth.verify, presence.query]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.realtime.signal
+    domain_owner: station.federation
+    truth_owner: realtime.event
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/realtime/signal }
+    request_proto: peers_touch.model.realtime.v1.CallSignal
+    response_proto: ""
+    truth_stores: []
+    allowed_dependencies: [federation.auth.verify, conversation.membership.read, realtime.signal.publish]
+    forbidden_aliases: []
+    superseded_symbols: []
+
+  - id: federation.realtime.call_resolution.get
+    domain_owner: station.federation
+    truth_owner: realtime.call_resolution
+    exposure: peer
+    canonical_route: { method: POST, path: /federation/realtime/call-resolution }
+    request_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionRequest
+    response_proto: peers_touch.model.realtime.v1.GetFederatedCallResolutionResponse
+    truth_stores: [realtime_call_resolutions]
+    allowed_dependencies: [federation.auth.verify, actor.home_station.read, realtime.call_resolution.read]
+    forbidden_aliases: []
+    superseded_symbols: []
+
   - id: federation.realtime.group_call.authority_join
     domain_owner: station.federation
     truth_owner: conversation.authority

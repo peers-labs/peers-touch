@@ -51,24 +51,13 @@ export type {
   Actor,
 } from '../gen/proto/domain/actor/actor_pb';
 import {
-  FederationSelfViewSchema,
-} from '../gen/proto/domain/federation/federation_self_pb';
-import {
   FederationResolveViewSchema,
 } from '../gen/proto/domain/federation/federation_resolve_pb';
-import {
-  FederationHealthViewSchema,
-} from '../gen/proto/domain/federation/federation_health_pb';
 import {
   FederationCatalogSearchResponseSchema,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 import {
-  CreateFederationResponseSchema,
-  DeleteFederationResponseSchema,
-  JoinFederationResponseSchema,
-  LeaveFederationResponseSchema,
-  ListFederationsResponseSchema,
-  ListMemberStationsResponseSchema,
+  ListFederationContextsResponseSchema,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 import type {
   Conversation as ProtoAgentConversation,
@@ -179,34 +168,16 @@ import type {
   ListCollaborationTasksResponse,
   ListTaskEventsResponse,
 } from '../gen/proto/domain/agent/orchestration_pb';
-export {
-  FederationVisibility,
-  FederationVisibilityRequestSchema,
-} from '../gen/proto/domain/federation/federation_self_pb';
-export type {
-  FederationSelfView,
-  FederationVisibilityRequest,
-} from '../gen/proto/domain/federation/federation_self_pb';
 export type {
   FederationResolveView,
 } from '../gen/proto/domain/federation/federation_resolve_pb';
-export type {
-  FederationHealthView,
-} from '../gen/proto/domain/federation/federation_health_pb';
 export type {
   FederationCatalogSearchResponse,
   FederationCatalogEntry,
 } from '../gen/proto/domain/federation/federation_discovery_pb';
 export type {
-  ListFederationsResponse,
-  FederationSummary,
-  ActorCapability,
-  CreateFederationResponse,
-  DeleteFederationResponse,
-  JoinFederationResponse,
-  LeaveFederationResponse,
-  ListMemberStationsResponse,
-  MemberStationView,
+  ListFederationContextsResponse,
+  FederationContext,
 } from '../gen/proto/domain/federation/federation_projection_service_pb';
 export type {
   Friend,
@@ -2397,6 +2368,7 @@ export interface ProfileUpdateInput {
   timezone?: string;
   tags?: string[];
   links?: AccountProfileLink[];
+  discoverability?: 'hidden' | 'by_handle' | 'indexed';
   observed_revision: number;
 }
 
@@ -2428,6 +2400,10 @@ export interface AccountProfile {
   manually_approves_followers: boolean;
   message_permission: string;
   auto_expire_days: number;
+  federated_handle: string;
+  home_station_peer_id: string;
+  home_station_domain: string;
+  discoverability: 'hidden' | 'by_handle' | 'indexed';
   peers_touch: {
     network_id: string;
   };
@@ -7355,29 +7331,14 @@ export const api = {
     return data;
   },
 
-  // Federation API (Tier A1) — proto-first end-to-end. The Rust shim
-  // already encodes a typed FederationSelfView / FederationResolveView /
-  // FederationHealthView; `invokeRustProto` decodes the byte stream back
-  // into a typed proto-es message so callers never touch JSON.
-  federationGetSelf: () =>
-    invokeRustProto('federation_get_self', FederationSelfViewSchema),
-
-  federationUpdateVisibility: (visibility: string) =>
-    invokeRustProto(
-      'federation_update_visibility',
-      FederationSelfViewSchema,
-      { visibility },
-    ),
-
-  federationResolve: (handle: string) =>
+  // Read-only Federation context and discovery. Actor identity and
+  // discoverability are owned by the canonical profile commands.
+  federationResolve: (federationId: string, handle: string) =>
     invokeRustProto(
       'federation_resolve',
       FederationResolveViewSchema,
-      { handle },
+      { federation_id: federationId, handle },
     ),
-
-  federationHealth: () =>
-    invokeRustProto('federation_health', FederationHealthViewSchema),
 
   federationCatalogSearch: (params: {
     federation_id: string;
@@ -7387,30 +7348,8 @@ export const api = {
   }) =>
     invokeRustProto('federation_catalog_search', FederationCatalogSearchResponseSchema, params),
 
-  // Federation Lifecycle (Governance Subserver)
-  federationListFederations: () =>
-    invokeRustProto('federation_list_federations', ListFederationsResponseSchema),
-
-  federationCreate: (params: { name: string; description?: string; policy_type?: string }) =>
-    invokeRustProto('federation_create', CreateFederationResponseSchema, params),
-
-  federationJoin: (params: {
-    federation_endpoint?: string;
-    federation_id?: string;
-    message?: string;
-  }) =>
-    invokeRustProto('federation_join', JoinFederationResponseSchema, params),
-
-  federationLeave: (params: { federation_id: string; reason?: string }) =>
-    invokeRustProto('federation_leave', LeaveFederationResponseSchema, params),
-
-  federationDelete: (params: { federation_id: string }) =>
-    invokeRustProto('federation_delete', DeleteFederationResponseSchema, params),
-
-  federationListMemberStations: (federationId: string) =>
-    invokeRustProto('federation_list_member_stations', ListMemberStationsResponseSchema, {
-      federation_id: federationId,
-    }),
+  federationListContexts: () =>
+    invokeRustProto('federation_list_contexts', ListFederationContextsResponseSchema),
 
   /**
    * Fire a presence trigger to the Rust supervisor. Always resolves; the

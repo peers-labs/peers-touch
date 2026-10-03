@@ -203,25 +203,21 @@ export async function readFederationContexts() {
   requireActiveSocialRuntime();
   const gateway = useSocialStore.getState().profileGateway;
   if (!gateway) throw new Error('mobile.social.runtimeUnavailable');
-  const result = await gateway.listFederations();
+  const result = await gateway.listFederationContexts();
   if (!result.ok) throw new SocialApiError(result.error);
-  return result.data.map((federation) => ({
-    federationId: federation.federationId,
-    name: federation.name,
-    status: federation.status,
+  return result.data.map((context) => ({
+    federationId: context.federationId,
+    name: context.name,
+    status: context.status,
   }));
 }
 
-export async function searchSocialPeople(query: string): Promise<ActorSearchResult[]> {
+export async function searchSocialPeople(query: string, federationId: string): Promise<ActorSearchResult[]> {
   requireActiveSocialRuntime();
-  await useSocialStore.getState().searchPeople(query);
+  await useSocialStore.getState().searchPeople(query, federationId);
   const state = useSocialStore.getState();
   if (state.peopleSearchError) throw state.peopleSearchError;
   return [...state.peopleSearchResults];
-}
-
-export function readSocialPeopleSearchFederations() {
-  return [...useSocialStore.getState().peopleSearchFederations];
 }
 
 export async function reconcileSocialRuntimeDomains(

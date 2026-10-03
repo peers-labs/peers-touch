@@ -99,6 +99,35 @@ describe('gateway mutation admission', () => {
     );
   });
 
+  it('uses explicit read admission for read-only POST operations', async () => {
+    admission.writeAdmission = {
+      open: false,
+      reason: 'control_event_lost',
+      closedAt: 10,
+    };
+    const transport = createGatewayTransport(session, 'profile');
+
+    await expect(transport.request({
+      method: 'POST',
+      path: '/sub-federation/catalog/search',
+      admission: 'read',
+      body: {
+        federation_id: 'fed-1',
+        prefix: 'bob',
+        page_size: 20,
+      },
+    })).resolves.toEqual({ value: 'ok' });
+    expect(executeStationOperation).toHaveBeenCalledExactlyOnceWith(
+      session,
+      {
+        operationId: 'federation_catalog_search',
+        federation_id: 'fed-1',
+        prefix: 'bob',
+        page_size: 20,
+      },
+    );
+  });
+
   it('blocks only the stale mutation domain', async () => {
     admission.staleness.moments = {
       stale: true,

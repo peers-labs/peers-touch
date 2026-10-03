@@ -430,9 +430,9 @@ export function installAcceptanceHarness(): void {
     },
 
     async federationContext() {
-      const response = await api.federationListFederations();
+      const response = await api.federationListContexts();
       return {
-        federations: response.federations.map((federation) => ({
+        federations: response.contexts.map((federation) => ({
           federationId: federation.federationId,
           name: federation.name,
           status: federation.status,
@@ -456,16 +456,13 @@ export function installAcceptanceHarness(): void {
     },
 
     async onboardingIdentity() {
-      const [identity, federationSelf] = await Promise.all([
-        api.profileGet(),
-        api.federationGetSelf(),
-      ]);
+      const identity = await api.profileGet();
       return {
         actorPtid: activeActorPtid(),
         preferredUsername: identity.username,
-        federatedHandle: federationSelf.federatedHandle,
-        homeStationPeerId: federationSelf.homeStationPeerId,
-        homeStationDomain: federationSelf.homeStationDomain,
+        federatedHandle: identity.federated_handle,
+        homeStationPeerId: identity.home_station_peer_id,
+        homeStationDomain: identity.home_station_domain,
       };
     },
 

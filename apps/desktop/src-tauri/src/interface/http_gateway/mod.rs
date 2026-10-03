@@ -19,6 +19,8 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use x25519_dalek::{PublicKey, StaticSecret};
 
+#[cfg(feature = "acceptance-webdriver")]
+use crate::acceptance::federation_fixture as acceptance_federation_fixture;
 use crate::contracts::*;
 use crate::domain::crypto::{self};
 use crate::error::{AppResult, ErrorCode};
@@ -2775,6 +2777,43 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     error.into_app_result::<StubPayload>("acceptance_federation_context failed"),
                 ),
             }
+        }
+        #[cfg(feature = "acceptance-webdriver")]
+        "acceptance_federation_fixture_snapshot" => {
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(acceptance_federation_fixture::snapshot_result(&token))
+        }
+        #[cfg(feature = "acceptance-webdriver")]
+        "acceptance_federation_fixture_create" => {
+            let input = match parse_args::<
+                acceptance_federation_fixture::FederationFixtureCreateInput,
+            >(args)
+            {
+                Ok(input) => input,
+                Err(error) => return error,
+            };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(acceptance_federation_fixture::create_fixture(&token, input))
+        }
+        #[cfg(feature = "acceptance-webdriver")]
+        "acceptance_federation_fixture_join" => {
+            let input =
+                match parse_args::<acceptance_federation_fixture::FederationFixtureJoinInput>(args)
+                {
+                    Ok(input) => input,
+                    Err(error) => return error,
+                };
+            let token = match token_from_state(state) {
+                Ok(token) => token,
+                Err(error) => return error,
+            };
+            to_json(acceptance_federation_fixture::join_fixture(&token, input))
         }
         "social_get_relationship" => {
             let input = match parse_args::<SocialGetRelationshipInput>(args) {

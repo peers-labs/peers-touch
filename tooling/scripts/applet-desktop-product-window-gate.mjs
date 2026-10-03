@@ -316,7 +316,7 @@ function startControlledUpstream(manifest) {
       writeProto(res);
       return;
     }
-    if (parsed.pathname === '/actor/federation/health' || parsed.pathname === '/actor/federation/me') {
+    if (parsed.pathname === '/actor/federation/health') {
       writeProto(res, peersResponseProto(Buffer.alloc(0)));
       return;
     }

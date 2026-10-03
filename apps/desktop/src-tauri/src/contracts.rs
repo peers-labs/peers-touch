@@ -329,6 +329,7 @@ pub struct ProfileUpdateInput {
     pub timezone: Option<String>,
     pub tags: Option<Vec<String>>,
     pub links: Option<Vec<ProfileLinkInput>>,
+    pub discoverability: Option<String>,
     pub observed_revision: u64,
 }
 
@@ -2011,26 +2012,11 @@ pub struct SocialCircleListMembersInput {
     pub circle_id: String,
 }
 
-// Federation gateway inputs (Tier A1 — Desktop FederationRuntime).
-//
-// Two non-trivial commands take input:
-//
-//   • `federation_update_visibility`: the dropdown label the user just
-//     picked ("hidden" | "by_handle" | "indexed"). Server validates the
-//     vocabulary; we only round-trip whatever the UI sent.
-//   • `federation_resolve`: the canonical "@user@host" handle the user
-//     typed into search / add-friend.
-//
-// The remaining two (`federation_get_self`, `federation_health`) take
-// no payload and reuse `tauri::command` argument injection only.
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationVisibilityInput {
-    pub visibility: String,
-}
+// Read-only Federation context and discovery inputs.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FederationResolveInput {
+    pub federation_id: String,
     pub handle: String,
 }
 
@@ -2042,42 +2028,4 @@ pub struct FederationCatalogSearchInput {
     pub station_id: Option<String>,
     #[serde(default)]
     pub page_size: Option<u32>,
-}
-
-// ─── Federation Lifecycle Inputs ────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationCreateInput {
-    pub name: String,
-    #[serde(default)]
-    pub description: String,
-    #[serde(default)]
-    pub policy_type: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationJoinInput {
-    #[serde(default)]
-    pub federation_endpoint: String,
-    #[serde(default)]
-    pub federation_id: String,
-    #[serde(default)]
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationLeaveInput {
-    pub federation_id: String,
-    #[serde(default)]
-    pub reason: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationListMemberStationsInput {
-    pub federation_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FederationDeleteInput {
-    pub federation_id: String,
 }
