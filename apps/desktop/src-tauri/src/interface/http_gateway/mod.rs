@@ -2755,13 +2755,13 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                     ))
                 }
             };
-            match app_federation::list_contexts(&token) {
+            match app_federation::list_federations(&token) {
                 Ok(view) => to_json(to_stub(
                     "acceptance_federation_context",
                     json!({
                         "active_station_peer_id": active_station_peer_id,
                         "federations": view
-                            .contexts
+                            .federations
                             .iter()
                             .map(|federation| json!({
                                 "federation_id": federation.federation_id,
@@ -4938,7 +4938,7 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(v) => v,
                 Err(e) => return e,
             };
-            match app_federation::resolve(&token, &input.federation_id, &input.handle) {
+            match app_federation::resolve(&token, &input.handle) {
                 Ok(view) => to_json(AppResult::success(app_federation::encode_resolve(&view))),
                 Err(e) => to_json(e.into_app_result_proto("federation_resolve failed")),
             }
@@ -4970,8 +4970,8 @@ fn dispatch(cmd: &str, args: Value, state: &AppState, runtime: &GatewayRuntime) 
                 Ok(t) => t,
                 Err(e) => return e,
             };
-            match app_federation::list_contexts(&token) {
-                Ok(view) => to_json(AppResult::success(app_federation::encode_list_contexts(
+            match app_federation::list_federations(&token) {
+                Ok(view) => to_json(AppResult::success(app_federation::encode_list_federations(
                     &view,
                 ))),
                 Err(e) => to_json(e.into_app_result::<Vec<u8>>("federation_list_contexts failed")),
