@@ -133,12 +133,12 @@ def run_journey(
     created_screenshot = artifact_dir / "goal-created.png"
     client.driver.save_screenshot(str(created_screenshot))
 
-    visible_element(client, '[data-pt-primary-nav="agent"] button').click()
+    navigate_to_hash(client, "agent")
     wait_until(
         lambda: "#/agent" in str(client.driver.current_url),
         "Agent surface after leaving Home",
     )
-    client.driver.back()
+    navigate_to_hash(client, "home")
     reopened = wait_until(
         lambda: (
             element
