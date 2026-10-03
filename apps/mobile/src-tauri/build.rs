@@ -21,6 +21,7 @@ fn main() {
         "../../../model/domain/federation/federation_resolve.proto",
         "../../../model/domain/federation/federation_self.proto",
         "../../../model/domain/federation/profile.proto",
+        "../../../model/domain/key_exchange/key_exchange.proto",
         "../../../model/domain/oauth/mobile_oauth.proto",
         "../../../model/domain/notification/notification.proto",
         "../../../model/domain/secure_content/content.proto",

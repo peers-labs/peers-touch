@@ -138,6 +138,15 @@ pub struct PrivateMomentPublishIntent {
     pub poll: Option<PrivateMomentPollIntent>,
     #[serde(default)]
     pub repost: Option<PrivateMomentRepostIntent>,
+    #[serde(default)]
+    pub admission_only: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrivateMomentAdmissionResult {
+    pub state: &'static str,
+    pub draft_id: String,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -169,6 +178,7 @@ pub struct PrivateMomentPublishRejection {
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum PrivateMomentPublishOutcome {
+    Ready(PrivateMomentAdmissionResult),
     Published(PrivateMomentPublishResult),
     Rejected(PrivateMomentPublishRejection),
 }
@@ -211,6 +221,7 @@ enum PrivatePublishFailure {
     Preserve(String),
     Cleanup(String),
     RejectedBeforePrepare { station_error_code: String },
+    RecipientUnavailable,
 }
 
 impl PrivatePublishFailure {
@@ -234,6 +245,9 @@ impl PrivatePublishFailure {
     }
 
     fn from_prepare_transport(error: crate::secure_content::adapter::NativeTransportError) -> Self {
+        if matches!(error.stable_code, 30203 | 30206 | 30209) {
+            return Self::RecipientUnavailable;
+        }
         if error.http_status == Some(400)
             && error.stable_code == crate::model::error::ErrorCode::InvalidRequest as i32
             && error.disposition == NativeErrorDisposition::Terminal
@@ -262,6 +276,7 @@ impl PrivatePublishFailure {
                 format!("private Moment prepare was rejected: {station_error_code}"),
                 true,
             ),
+            Self::RecipientUnavailable => ("RECIPIENT_KEY_UNAVAILABLE".to_string(), false),
         }
     }
 }
@@ -358,7 +373,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         let mut upload_transfer_ids = Vec::new();
         let mut content_id = None;
         match self.publish_new(intent, &mut upload_transfer_ids, &mut content_id) {
-            Ok(result) => Ok(result.into()),
+            Ok(result) => Ok(result),
             Err(failure) => {
                 self.finish_publish_failure(intent, failure, content_id, upload_transfer_ids)
             }
@@ -370,7 +385,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         intent: &PrivateMomentPublishIntent,
         upload_transfer_ids: &mut Vec<String>,
         cleanup_content_id: &mut Option<String>,
-    ) -> Result<PrivateMomentPublishResult, PrivatePublishFailure> {
+    ) -> Result<PrivateMomentPublishOutcome, PrivatePublishFailure> {
         let prepare_command_id =
             bounded_command_id("moment-prepare", &intent.draft_id, intent.draft_revision);
         let kind =
@@ -453,6 +468,14 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             &subtype_prepare_authority_sha256,
         )
         .map_err(PrivatePublishFailure::cleanup)?;
+        if intent.admission_only {
+            return Ok(PrivateMomentPublishOutcome::Ready(
+                PrivateMomentAdmissionResult {
+                    state: "READY_PRIVATE",
+                    draft_id: intent.draft_id.clone(),
+                },
+            ));
+        }
 
         let mut attachment_metadata = Vec::with_capacity(intent.files.len());
         let mut descriptors = Vec::with_capacity(intent.files.len());
@@ -662,6 +685,7 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             .persist_moment_command(&command)
             .map_err(PrivatePublishFailure::preserve)?;
         self.replay_submit(command)
+            .map(PrivateMomentPublishOutcome::from)
             .map_err(PrivatePublishFailure::preserve)
     }
 
@@ -672,6 +696,18 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         content_id: Option<String>,
         upload_transfer_ids: Vec<String>,
     ) -> Result<PrivateMomentPublishOutcome, String> {
+        if intent.admission_only {
+            return Err(match failure {
+                PrivatePublishFailure::RejectedBeforePrepare { .. } => {
+                    "PRIVATE_UNSUPPORTED".to_string()
+                }
+                PrivatePublishFailure::RecipientUnavailable => {
+                    "RECIPIENT_KEY_UNAVAILABLE".to_string()
+                }
+                PrivatePublishFailure::Preserve(message)
+                | PrivatePublishFailure::Cleanup(message) => message,
+            });
+        }
         let station_error_code = match &failure {
             PrivatePublishFailure::RejectedBeforePrepare { station_error_code } => {
                 Some(station_error_code.clone())
@@ -1268,6 +1304,9 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         &self,
         intent: &PrivateMomentPublishIntent,
     ) -> Result<Option<PrivateMomentPublishResult>, String> {
+        if intent.admission_only {
+            return Ok(None);
+        }
         let existing = self
             .lease
             .store
@@ -2502,6 +2541,7 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         }
     }
 
@@ -2579,6 +2619,7 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         };
         assert!(validate_publish_intent(&valid).is_ok());
         for kind in &["FOLLOWERS", "SELF"] {
@@ -2777,10 +2818,18 @@ mod tests {
             location: None,
             poll: None,
             repost: None,
+            admission_only: false,
         };
         assert_eq!(
             private_moment_intent_hash(&intent).unwrap(),
             private_moment_intent_hash(&intent).unwrap()
+        );
+        let mut admission = intent.clone();
+        admission.admission_only = true;
+        assert_eq!(
+            private_moment_intent_hash(&intent).unwrap(),
+            private_moment_intent_hash(&admission).unwrap(),
+            "admission and publish must reuse one durable draft identity"
         );
 
         let mut changed = intent;
@@ -2792,6 +2841,82 @@ mod tests {
                 ..changed.clone()
             })
             .unwrap()
+        );
+    }
+
+    #[test]
+    fn remote_prekey_unavailable_preserves_the_admission_draft() {
+        let failure = PrivatePublishFailure::from_prepare_transport(
+            crate::secure_content::adapter::NativeTransportError {
+                http_status: Some(409),
+                stable_code: 30206,
+                retry_after_seconds: None,
+                disposition: NativeErrorDisposition::Terminal,
+                message: "CONTENT_PREKEY_POOL_DEPLETED".to_string(),
+            },
+        );
+        let (message, should_cleanup) = failure.into_parts();
+        assert_eq!(message, "RECIPIENT_KEY_UNAVAILABLE");
+        assert!(!should_cleanup);
+    }
+
+    #[test]
+    fn remote_prekey_admission_returns_only_typed_readiness() {
+        let value = serde_json::to_value(PrivateMomentPublishOutcome::Ready(
+            PrivateMomentAdmissionResult {
+                state: "READY_PRIVATE",
+                draft_id: "draft-remote".to_string(),
+            },
+        ))
+        .unwrap();
+        assert_eq!(value["state"], "READY_PRIVATE");
+        assert_eq!(value["draftId"], "draft-remote");
+        assert!(value.get("plan").is_none());
+        assert!(value.get("claims").is_none());
+    }
+
+    #[test]
+    fn remote_prekey_admission_never_replays_a_pending_publish() {
+        let station_key = SigningKey::from_bytes(&[8; 32]);
+        let lease = lease(&station_key);
+        let store = lease.store.clone();
+        let request_bytes = b"pending-private-publication".to_vec();
+        store
+            .persist_moment_command(&StoredMomentCommand {
+                draft_id: "draft-pending".to_string(),
+                draft_revision: 1,
+                content_id: "content-pending".to_string(),
+                generation: 1,
+                submit_command_id: "submit-pending".to_string(),
+                plan_bytes: vec![1],
+                request_sha256: Sha256::digest(&request_bytes).into(),
+                request_bytes,
+                root_key: [2; 32],
+                state: PublicationState::PendingPublication,
+                session_generation: lease.session.key.session_generation,
+                post_id: None,
+            })
+            .unwrap();
+        let supervisor = SecureContentSupervisor::new();
+        let orchestrator = PrivateMomentOrchestrator {
+            supervisor: &supervisor,
+            transport: SecureContentTransport::new(lease.session.clone()).unwrap(),
+            lease,
+        };
+        let mut admission = publish_intent("draft-pending", 1);
+        admission.admission_only = true;
+
+        assert!(orchestrator
+            .existing_publish_result(&admission)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            store
+                .moment_command("draft-pending", 1)
+                .unwrap()
+                .unwrap()
+                .state,
+            PublicationState::PendingPublication,
         );
     }
 

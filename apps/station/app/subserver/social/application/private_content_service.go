@@ -12,6 +12,7 @@ import (
 	"time"
 
 	securecontentkernel "github.com/peers-labs/peers-touch/station/app/internal/securecontent"
+	actoridentitydomain "github.com/peers-labs/peers-touch/station/app/subserver/actor_identity/domain"
 	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
@@ -139,6 +140,7 @@ type PrivateRecipientDirectory interface {
 	ResolveRecipientLocalities(
 		context.Context,
 		string,
+		string,
 		[]string,
 	) ([]socialdomain.RecipientLocality, error)
 	ResolveContentPreKeyTargets(
@@ -157,6 +159,8 @@ type PrivateRecipientDirectory interface {
 type PrivateContentKeyExchange interface {
 	ClaimContentPreKeys(
 		context.Context,
+		string,
+		[]socialdomain.RecipientLocality,
 		*securecontentpb.ClaimContentPreKeysRequest,
 	) (*securecontentpb.ClaimContentPreKeysResponse, error)
 	ValidateContentPreKeyClaims(
@@ -223,6 +227,7 @@ type PrivateContentService struct {
 	signatureVerifier PrivateContentAuthorSignatureVerifier
 	clock             PrivateContentClock
 	policy            securecontentkernel.Policy
+	metrics           federatedPrivateMetrics
 }
 
 func NewPrivateContentService(
@@ -272,6 +277,7 @@ func NewPrivateContentService(
 		signatureVerifier: signatureVerifier,
 		clock:             clock,
 		policy:            policy,
+		metrics:           newFederatedPrivateMetrics(),
 	}, nil
 }
 
@@ -384,8 +390,10 @@ func (s *PrivateContentService) prepare(
 	authorPTID := author.Endpoint.GetActor().GetPtid()
 	snapshot, err := s.bindRecipientLocalities(
 		ctx,
+		author.Endpoint.GetActor().GetPtid(),
 		author.HomeStationPeerID,
 		snapshot,
+		true,
 	)
 	if err != nil {
 		return nil, err
@@ -523,7 +531,13 @@ func (s *PrivateContentService) prepare(
 	if err != nil {
 		return nil, mapPrivateStoreError(operation, err)
 	}
-	return s.completePrepare(ctx, author, material, preparing.Plan)
+	return s.completePrepare(
+		ctx,
+		author,
+		material,
+		preparing.Plan,
+		normalizedSnapshot.RecipientLocalities,
+	)
 }
 
 func (s *PrivateContentService) resumePrepare(
@@ -557,7 +571,7 @@ func (s *PrivateContentService) resumePrepare(
 			"does not match the durable prepare plan",
 		)
 	}
-	response, err := s.completePrepare(ctx, author, material, existing.Plan)
+	response, err := s.completePrepare(ctx, author, material, existing.Plan, nil)
 	return response, true, err
 }
 
@@ -566,6 +580,7 @@ func (s *PrivateContentService) completePrepare(
 	author socialdomain.PrivateContentAuthor,
 	material socialdomain.PrivatePrepareMaterial,
 	persisted dbmodel.SocialPrivateContentPlan,
+	claimLocalities []socialdomain.RecipientLocality,
 ) (*privatecontentpb.PreparePrivateMomentResponse, error) {
 	const operation = "social.private_content.complete_prepare"
 	if persisted.State == dbmodel.SocialPrivatePlanStateConsumed {
@@ -625,10 +640,26 @@ func (s *PrivateContentService) completePrepare(
 			err,
 		)
 	}
+	if claimLocalities == nil {
+		resolvedLocalities, resolveErr := s.claimRecipientLocalities(
+			ctx,
+			author.Endpoint.GetActor().GetPtid(),
+			persisted.AuthorHomeStationPeerID,
+			persistedClaimRequest,
+		)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		claimLocalities = resolvedLocalities
+	}
+	claimStartedAt := time.Now()
 	claimResponse, err := s.keyExchange.ClaimContentPreKeys(
 		ctx,
+		persisted.AuthorHomeStationPeerID,
+		claimLocalities,
 		persistedClaimRequest,
 	)
+	s.observePreKeyClaim(claimStartedAt, claimResponse, err)
 	if err != nil {
 		return nil, mapPrivateDependencyError(operation, err)
 	}
@@ -1970,8 +2001,10 @@ func (s *PrivateContentService) resolveCurrentSnapshot(
 	}
 	snapshot, err = s.bindRecipientLocalities(
 		ctx,
+		authorPTID,
 		authorHomeStationPeerID,
 		snapshot,
+		false,
 	)
 	if err != nil {
 		return socialdomain.FriendsSnapshot{}, mapPrivateDependencyError(
@@ -1985,8 +2018,10 @@ func (s *PrivateContentService) resolveCurrentSnapshot(
 
 func (s *PrivateContentService) bindRecipientLocalities(
 	ctx context.Context,
+	authorPTID string,
 	authorHomeStationPeerID string,
 	snapshot socialdomain.FriendsSnapshot,
+	allowRemoteAdmission bool,
 ) (socialdomain.FriendsSnapshot, error) {
 	const operation = "social.private_content.recipient_locality"
 	if snapshot.Audience.GetKind() == actormodel.Audience_SELF {
@@ -1999,6 +2034,7 @@ func (s *PrivateContentService) bindRecipientLocalities(
 	if snapshot.Audience.GetKind() != actormodel.Audience_GROUP {
 		resolved, err := s.recipients.ResolveRecipientLocalities(
 			ctx,
+			authorPTID,
 			authorHomeStationPeerID,
 			snapshot.RecipientPTIDs,
 		)
@@ -2017,16 +2053,34 @@ func (s *PrivateContentService) bindRecipientLocalities(
 				"must cover every selected recipient",
 			)
 	}
+	remoteCount := 0
 	for _, locality := range localities {
 		if locality.HomeStationPeerID != authorHomeStationPeerID {
-			return socialdomain.FriendsSnapshot{},
-				socialdomain.NewPrivateContentError(
-					socialdomain.PrivateContentUnsupported,
-					operation,
-					"recipient_home_station_peer_id",
-					"v1 private content requires every recipient on the author Home Station",
-				)
+			remoteCount++
+			if locality.FederationID == "" {
+				return socialdomain.FriendsSnapshot{},
+					socialdomain.NewPrivateContentError(
+						socialdomain.PrivateContentUnsupported,
+						operation,
+						"recipient_federation_id",
+						"remote recipient has no verified active Federation",
+					)
+			}
 		}
+	}
+	audienceKind := snapshot.Audience.GetKind()
+	if remoteCount > 0 &&
+		(!allowRemoteAdmission ||
+			audienceKind != actormodel.Audience_CUSTOM_ALLOW ||
+			len(snapshot.RecipientPTIDs) != 1 ||
+			remoteCount != 1) {
+		return socialdomain.FriendsSnapshot{},
+			socialdomain.NewPrivateContentError(
+				socialdomain.PrivateContentUnsupported,
+				operation,
+				"recipient_home_station_peer_id",
+				"this slice admits exactly one selected remote friend",
+			)
 	}
 	snapshot.RecipientLocalities = append(
 		[]socialdomain.RecipientLocality(nil),
@@ -2034,6 +2088,78 @@ func (s *PrivateContentService) bindRecipientLocalities(
 	)
 
 	return snapshot, nil
+}
+
+func (s *PrivateContentService) claimRecipientLocalities(
+	ctx context.Context,
+	authorPTID string,
+	authorHomeStationPeerID string,
+	request *securecontentpb.ClaimContentPreKeysRequest,
+) ([]socialdomain.RecipientLocality, error) {
+	recipients := make([]string, 0, len(request.GetTargets()))
+	seen := map[string]struct{}{}
+	for _, target := range request.GetTargets() {
+		actorPTID := target.GetRecoveryActor().GetPtid()
+		if target.GetEndpoint() != nil {
+			actorPTID = target.GetEndpoint().GetActor().GetPtid()
+		}
+		if actorPTID == "" || actorPTID == authorPTID {
+			continue
+		}
+		if _, found := seen[actorPTID]; found {
+			continue
+		}
+		seen[actorPTID] = struct{}{}
+		recipients = append(recipients, actorPTID)
+	}
+	sort.Strings(recipients)
+	if len(recipients) == 0 {
+		return nil, nil
+	}
+	localities, err := s.recipients.ResolveRecipientLocalities(
+		ctx,
+		authorPTID,
+		authorHomeStationPeerID,
+		recipients,
+	)
+	if err != nil {
+		return nil, mapPrivateDependencyError(
+			"social.private_content.resolve_claim_localities",
+			err,
+		)
+	}
+	return localities, nil
+}
+
+func (s *PrivateContentService) observePreKeyClaim(
+	startedAt time.Time,
+	response *securecontentpb.ClaimContentPreKeysResponse,
+	err error,
+) {
+	outcome := "claimed"
+	reason := "none"
+	if err != nil {
+		outcome = "rejected"
+		switch keyexchangedomain.CodeOf(err) {
+		case keyexchangedomain.ErrorCodePoolDepleted:
+			reason = "pool_depleted"
+		case keyexchangedomain.ErrorCodeConflict:
+			reason = "conflict"
+		case keyexchangedomain.ErrorCodeUnauthorized:
+			reason = "unauthorized"
+		default:
+			reason = "dependency"
+		}
+	} else if response != nil && response.GetExactReplay() {
+		outcome = "replay"
+		reason = "exact"
+		s.metrics.replayTotal.Inc("content_prekey_claim", outcome, reason)
+	}
+	s.metrics.preKeyClaimTotal.Inc(outcome, reason)
+	s.metrics.preKeyClaimLatency.Observe(
+		time.Since(startedAt).Seconds(),
+		outcome,
+	)
 }
 
 func (s *PrivateContentService) buildCommitProof(
@@ -3902,6 +4028,16 @@ func mapPrivateDependencyError(operation string, err error) error {
 	if err == nil || socialdomain.PrivateContentCodeOf(err) != "" {
 		return err
 	}
+	switch actoridentitydomain.CodeOf(err) {
+	case actoridentitydomain.ErrorCodeIdentityUnavailable,
+		actoridentitydomain.ErrorCodeDeviceNotFound,
+		actoridentitydomain.ErrorCodeDeviceRevoked:
+		return socialdomain.WrapPrivateContentError(
+			socialdomain.PrivateContentRecipientKeyUnavailable,
+			operation,
+			err,
+		)
+	}
 	switch keyexchangedomain.CodeOf(err) {
 	case keyexchangedomain.ErrorCodeConflict:
 		return socialdomain.WrapPrivateContentError(
@@ -3916,9 +4052,11 @@ func mapPrivateDependencyError(operation string, err error) error {
 			operation,
 			err,
 		)
-	case keyexchangedomain.ErrorCodeNotFound:
+	case keyexchangedomain.ErrorCodeNotFound,
+		keyexchangedomain.ErrorCodePoolDepleted,
+		keyexchangedomain.ErrorCodeDependency:
 		return socialdomain.WrapPrivateContentError(
-			socialdomain.PrivateContentNotFound,
+			socialdomain.PrivateContentRecipientKeyUnavailable,
 			operation,
 			err,
 		)

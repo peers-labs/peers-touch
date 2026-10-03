@@ -47,6 +47,13 @@ interface PrivateMomentsState {
     reason: string,
     rendererGeneration: number,
   ) => Promise<void>;
+  admitMoment: (
+    intent: Omit<PrivateMomentPublishIntent, 'actorPtid' | 'rendererGeneration'>,
+    readinessState?: Extract<
+      PrivatePublishState,
+      'CHECKING_PRIVATE_READINESS' | 'CHECKING_REMOTE_READINESS'
+    >,
+  ) => Promise<PrivateMomentPublishResult>;
   publishMoment: (intent: Omit<PrivateMomentPublishIntent, 'actorPtid' | 'rendererGeneration'>) =>
     Promise<PrivateMomentPublishResult>;
   readMoment: (postId: string) => Promise<void>;
@@ -71,6 +78,8 @@ const initialData = () => ({
   publish: { state: 'IDLE' } as PrivatePublishProjection,
   reconciling: false,
 });
+
+let publishOperationSequence = 0;
 
 function compareGeneration(left: string, right: string): number {
   try {
@@ -181,6 +190,7 @@ function isPublishState(value: string): value is PrivatePublishState {
     'IDLE',
     'AUDIENCE_REQUIRED',
     'CHECKING_PRIVATE_READINESS',
+    'CHECKING_REMOTE_READINESS',
     'READY_PRIVATE',
     'PRIVATE_UNSUPPORTED',
     'RECIPIENT_KEY_UNAVAILABLE',
@@ -302,6 +312,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       ...initialData(),
 
       activateActor: (actorPtid, rendererGeneration) => {
+        publishOperationSequence += 1;
         set({
           ...initialData(),
           platform: resolvePrivateMomentsPlatform(),
@@ -314,6 +325,7 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
       },
 
       deactivate: (rendererGeneration) => {
+        publishOperationSequence += 1;
         const previous = get().scope;
         set({
           ...initialData(),
@@ -378,7 +390,86 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         }
       },
 
+      admitMoment: async (
+        intent,
+        readinessState = 'CHECKING_PRIVATE_READINESS',
+      ) => {
+        const operationSequence = ++publishOperationSequence;
+        const scope = get().scope;
+        const actorPtid = scope.actorPtid;
+        if (!actorPtid) {
+          const error = new PrivateMomentsNativeError({
+            code: 'AUTHENTICATION_REQUIRED',
+            state: 'PUBLISH_FAILED',
+          });
+          set({ publish: publishFailure(error) });
+          throw error;
+        }
+        if (get().platform !== 'native') {
+          const error = new PrivateMomentsNativeError({
+            code: 'PRIVATE_UNSUPPORTED',
+            state: 'PRIVATE_UNSUPPORTED',
+          });
+          set({
+            publish: {
+              state: 'PRIVATE_UNSUPPORTED',
+              draftId: intent.draftId,
+              errorCode: error.code,
+            },
+          });
+          throw error;
+        }
+
+        const rendererGeneration = scope.rendererGeneration;
+        set({
+          publish: {
+            state: readinessState,
+            draftId: intent.draftId,
+          },
+        });
+        try {
+          const result = await privateMomentsNative.admit({
+            ...intent,
+            actorPtid,
+            rendererGeneration,
+          });
+          if (
+            operationSequence !== publishOperationSequence
+            || !isCurrentScope(get().scope, actorPtid, rendererGeneration)
+          ) {
+            return result;
+          }
+          if (result.state !== 'READY_PRIVATE') {
+            throw new PrivateMomentsNativeError({
+              code: 'PRIVATE_PROJECTION_INVALID',
+              state: 'PUBLISH_FAILED',
+            });
+          }
+          set({
+            publish: {
+              state: 'READY_PRIVATE',
+              draftId: result.draftId,
+            },
+          });
+          return result;
+        } catch (error) {
+          if (
+            operationSequence === publishOperationSequence
+            && isCurrentScope(get().scope, actorPtid, rendererGeneration)
+          ) {
+            set({
+              publish: {
+                ...publishFailure(error),
+                draftId: intent.draftId,
+              },
+            });
+          }
+          throw error;
+        }
+      },
+
       publishMoment: async (intent) => {
+        const operationSequence = ++publishOperationSequence;
         const scope = get().scope;
         const actorPtid = scope.actorPtid;
         if (!actorPtid) {
@@ -429,7 +520,10 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
               : state
           ));
           const result = await pending;
-          if (!isCurrentScope(get().scope, actorPtid, rendererGeneration)) {
+          if (
+            operationSequence !== publishOperationSequence
+            || !isCurrentScope(get().scope, actorPtid, rendererGeneration)
+          ) {
             return result;
           }
           if (result.projection) {
@@ -455,7 +549,10 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
           });
           return result;
         } catch (error) {
-          if (isCurrentScope(get().scope, actorPtid, rendererGeneration)) {
+          if (
+            operationSequence === publishOperationSequence
+            && isCurrentScope(get().scope, actorPtid, rendererGeneration)
+          ) {
             set({
               publish: {
                 ...publishFailure(error),
@@ -641,9 +738,15 @@ export const usePrivateMomentsStore = createDesktopStore<PrivateMomentsState>(
         });
       },
 
-      clearPublishState: () => set({ publish: { state: 'IDLE' } }),
+      clearPublishState: () => {
+        publishOperationSequence += 1;
+        set({ publish: { state: 'IDLE' } });
+      },
 
-      reset: () => set(initialData()),
+      reset: () => {
+        publishOperationSequence += 1;
+        set(initialData());
+      },
     };
   },
 );

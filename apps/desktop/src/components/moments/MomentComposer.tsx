@@ -2,7 +2,14 @@ import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@lobehub/ui';
 import { Input, Space, Tooltip, Typography, message, theme } from 'antd';
-import { ImagePlus, LockKeyhole, RotateCcw, SendHorizontal, X } from 'lucide-react';
+import {
+  ImagePlus,
+  LockKeyhole,
+  RotateCcw,
+  SendHorizontal,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
 import { create } from '@bufbuild/protobuf';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
@@ -15,9 +22,21 @@ import {
 import { EncryptedMediaDescriptorSchema } from '../../gen/proto/domain/common/common_pb';
 import { AudiencePicker } from './AudiencePicker';
 import { api, type SocialEncryptedMediaDescriptorWire } from '../../services/desktop_api';
+import {
+  preparePrivateAudience,
+  prepareRemotePrivateRecipient,
+} from '../../runtimes/momentsRuntime';
+import { privateMomentPublishIntent } from '../../store/moments';
 import { log } from '../../utils/logger';
 import { UserSquareAvatar } from '../common/UserSquareAvatar';
-import { useActiveDiscoverySlice, useActiveMomentsSlice } from './useActiveMomentsStore';
+import { SocialPrivateState } from './surfaces';
+import {
+  useActiveDiscoverySlice,
+  useActiveMomentsSlice,
+  useActiveMomentsFederationSlice,
+  useActivePrivateMomentsSlice,
+  useActiveRelationshipsSlice,
+} from './useActiveMomentsStore';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -52,6 +71,11 @@ interface MomentComposerProps {
 
 function defaultAudience(): Audience {
   return create(AudienceSchema, { kind: Audience_Kind.PUBLIC });
+}
+
+function isPrivateAudience(audience: Audience): boolean {
+  return audience.kind !== Audience_Kind.PUBLIC
+    && audience.kind !== Audience_Kind.KIND_UNSPECIFIED;
 }
 
 interface PendingImage {
@@ -107,6 +131,14 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     clearDraft: s.clearComposerDraft,
     createPost: s.createPost,
   }));
+  const { privatePublish, clearPrivatePublishState } = useActivePrivateMomentsSlice((s) => ({
+    privatePublish: s.publish,
+    clearPrivatePublishState: s.clearPublishState,
+  }));
+  const localStationPeerId = useActiveMomentsFederationSlice(
+    (s) => s.self?.homeStationPeerId.trim() ?? '',
+  );
+  const mutualFriends = useActiveRelationshipsSlice((s) => s.mutualFriends);
 
   const [text, setText] = useState<string>(() => draft?.text ?? '');
   const [audience, setAudience] = useState<Audience>(
@@ -122,6 +154,9 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
   );
   const [draftId] = useState(() => draft?.draftId ?? makeLocalId());
   const draftRevision = useRef(draft?.revision ?? 0);
+  const readinessAttempt = useRef(0);
+  const [readinessReady, setReadinessReady] = useState(false);
+  const [checkingReadiness, setCheckingReadiness] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const uploadingCount = useMemo(
@@ -132,9 +167,55 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     () => pending.filter((p) => p.status === 'error').length,
     [pending],
   );
+  const remoteFriends = useMemo(() => (
+    mutualFriends
+      .filter((friend) => {
+        const homeStationPeerId = friend.homeStationPeerId.trim();
+        return Boolean(
+          homeStationPeerId
+          && (
+            !localStationPeerId
+            || homeStationPeerId !== localStationPeerId
+          )
+        );
+      })
+      .map((friend) => {
+        const identity = friend.displayName
+          || friend.username
+          || friend.federatedHandle
+          || friend.actorPtid;
+        const station = friend.homeStationName
+          || friend.homeStationDomain
+          || friend.homeStationPeerId;
+        return {
+          actorPtid: friend.actorPtid,
+          label: station ? `${identity} · ${station}` : identity,
+        };
+      })
+  ), [localStationPeerId, mutualFriends]);
   const slotsLeft = MAX_IMAGES_PER_POST - pending.length;
+  const privateAudience = isPrivateAudience(audience);
+  const selectedRemoteFriend = audience.kind === Audience_Kind.CUSTOM_ALLOW
+    && audience.actorPtids.length === 1
+    && remoteFriends.some((friend) => friend.actorPtid === audience.actorPtids[0]);
+  const audienceComplete = audience.kind !== Audience_Kind.CUSTOM_ALLOW
+    || selectedRemoteFriend;
+  const requiresRemoteAdmission = selectedRemoteFriend;
+  const privatePublishState = privatePublish.draftId === draftId
+    ? privatePublish.state
+    : 'IDLE';
+  const readyForCurrentDraft = (
+    privateAudience
+    && privatePublishState === 'READY_PRIVATE'
+    && readinessReady
+  );
   const canPublish =
-    !!text.trim() && uploadingCount === 0 && errorCount === 0 && !submitting;
+    !!text.trim()
+    && audienceComplete
+    && uploadingCount === 0
+    && errorCount === 0
+    && !checkingReadiness
+    && !submitting;
 
   const writeDraft = (
     revision: number,
@@ -161,6 +242,10 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
     nextAudience: Audience,
     nextPending: PendingImage[],
   ) => {
+    readinessAttempt.current += 1;
+    setReadinessReady(false);
+    setCheckingReadiness(false);
+    clearPrivatePublishState();
     draftRevision.current += 1;
     writeDraft(draftRevision.current, nextText, nextAudience, nextPending);
   };
@@ -298,43 +383,75 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
       return;
     }
 
-    setSubmitting(true);
-    try {
-      if (
-        audience.kind !== Audience_Kind.PUBLIC
-        && audience.kind !== Audience_Kind.KIND_UNSPECIFIED
-      ) {
-        const publishRevision = checkpointDraft();
-        const privateDraft = pending.length > 0
-          ? {
-              kind: 'image' as const,
-              text: trimmed,
-              imageIds: [],
-              localFiles: pending.map((item) => ({
-                intentId: item.localId,
-                filePath: item.filePath,
-                previewSrc: item.previewSrc,
-              })),
-              audience,
-              draftId,
-              draftRevision: publishRevision,
-            }
-          : {
-              kind: 'text' as const,
-              text: trimmed,
-              audience,
-              draftId,
-              draftRevision: publishRevision,
-            };
+    if (privateAudience) {
+      const publishRevision = checkpointDraft();
+      const privateDraft = pending.length > 0
+        ? {
+            kind: 'image' as const,
+            text: trimmed,
+            imageIds: [],
+            localFiles: pending.map((item) => ({
+              intentId: item.localId,
+              filePath: item.filePath,
+              previewSrc: item.previewSrc,
+            })),
+            audience,
+            draftId,
+            draftRevision: publishRevision,
+          }
+        : {
+            kind: 'text' as const,
+            text: trimmed,
+            audience,
+            draftId,
+            draftRevision: publishRevision,
+          };
+
+      if (!readyForCurrentDraft) {
+        const attempt = ++readinessAttempt.current;
+        setCheckingReadiness(true);
+        try {
+          const intent = privateMomentPublishIntent(privateDraft);
+          const result = requiresRemoteAdmission
+            ? await prepareRemotePrivateRecipient(intent)
+            : await preparePrivateAudience(intent);
+          if (
+            attempt === readinessAttempt.current
+            && draftRevision.current === publishRevision
+            && result.state === 'READY_PRIVATE'
+          ) {
+            setReadinessReady(true);
+          }
+        } catch (err) {
+          log.warn(TAG, 'private recipient readiness failed', { err: String(err) });
+        } finally {
+          if (attempt === readinessAttempt.current) {
+            setCheckingReadiness(false);
+          }
+        }
+        return;
+      }
+
+      setSubmitting(true);
+      try {
         const id = await createPost(privateDraft);
         message.success(t('moments.compose.published'));
         setText('');
         setPending([]);
+        setReadinessReady(false);
         clearDraft();
+        clearPrivatePublishState();
         onPublished?.(id);
-        return;
+      } catch (err) {
+        message.error(String(err));
+      } finally {
+        setSubmitting(false);
       }
+      return;
+    }
 
+    setSubmitting(true);
+    try {
       const uploaded: PendingImage[] = [];
       for (const item of pending) {
         if (item.status === 'done') {
@@ -444,6 +561,20 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
           </div>
         )}
 
+        {privateAudience && privatePublishState !== 'IDLE' && (
+          <div style={{ marginLeft: 54 }}>
+            <SocialPrivateState
+              state={privatePublishState}
+              compact
+              onRetry={
+                checkingReadiness || submitting
+                  ? undefined
+                  : () => void handlePublish()
+              }
+            />
+          </div>
+        )}
+
         <Space
           wrap
           style={{
@@ -491,6 +622,7 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
             </Space>
             <AudiencePicker
               value={audience}
+              remoteFriends={remoteFriends}
               onChange={(nextAudience) => {
                 setAudience(nextAudience);
                 persistDraft(text, nextAudience, pending);
@@ -505,11 +637,17 @@ export function MomentComposer({ initialAudience, onPublished }: MomentComposerP
             <Button
               type="primary"
               onClick={handlePublish}
-              loading={submitting}
+              loading={checkingReadiness || submitting}
               disabled={!canPublish}
-              icon={<SendHorizontal size={14} />}
+              icon={
+                privateAudience && !readyForCurrentDraft && !submitting
+                  ? <ShieldCheck size={14} />
+                  : <SendHorizontal size={14} />
+              }
             >
-              {t('moments.compose.publish')}
+              {privateAudience && !readyForCurrentDraft && !submitting
+                ? t('moments.compose.checkRecipients')
+                : t('moments.compose.publish')}
             </Button>
           </Space>
         </Space>
