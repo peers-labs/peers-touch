@@ -142,6 +142,19 @@ derives file classification, advisory signals, source identity, rubric hash,
 verdict fields, and per-file coverage. Reviewers submit semantic findings only;
 the source-bound and fail-closed requirements are unchanged.
 
+## 2026-10-03 Social EventBus Acceptance Review
+
+Cross-Station Private Social now makes the accepted Desktop runtime projection
+contract explicit in its Plan and Acceptance Review. `pt-github-review` was
+updated because the escaped-defect pattern is reusable: a typed event may exist
+without a producer, consumer, unique runtime owner, reconcile path, scope
+teardown, or receiver-visible proof. Desktop Social review must trace the full
+producer-to-`momentsRuntime` path, reject direct module-private listener
+bypasses and duplicate owners, and require hidden-page plus missed-event
+recovery evidence. The plan-owned
+`social-cross-station-eventbus-contract` supplies the deterministic fixture;
+the Native two-client Gate remains the product-behavior proof.
+
 ## 2026-09-29 Suite Runtime Review
 
 Acceptance Framework D-21 adds a closed, domain-neutral Suite Runtime contract

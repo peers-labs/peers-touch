@@ -1,7 +1,7 @@
 # Cross-Station Private Social Plan Review Prompt
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.3
 > **Created**: 2026-10-03 | **Updated**: 2026-10-03
 > **Owner**: Social / Federation
 
@@ -22,6 +22,7 @@ Federation 内两个 Home Station 之间的私密 Post、媒体、Comment、Reac
 - `docs/architecture/social/experience-contract.md`
 - `docs/architecture/social/product-state-model.md`
 - `docs/architecture/social/acceptance-matrix.md`
+- `docs/architecture/social-runtime/decisions.md`
 - `docs/architecture/cross-station-social/design.md`
 - `docs/architecture/cross-station-social/decisions.md`
 - `docs/architecture/cross-station-social/data-model.md`
@@ -30,6 +31,18 @@ Federation 内两个 Home Station 之间的私密 Post、媒体、Comment、Reac
 - `docs/architecture/secure-content/decisions.md`
 - `docs/architecture/api-ownership/decisions.md`
 - `docs/architecture/federation/README.md`
+- `docs/global/domain-model.md`
+- `docs/client/desktop/global-context-kernel.md`
+- `docs/client/desktop/runtime-projections.md`
+- `docs/architecture/i18n/i18n-architecture.md`
+- `docs/architecture/runtime/unified-handler-architecture.md`
+- `docs/architecture/realtime/event-stream.md`
+- `docs/global/coding-guide/desktop/kernel-events.md`
+- `docs/architecture/storage/unified-runtime-storage-architecture.md`
+- `docs/global/coding-guide/desktop/page-component.md`
+- `docs/global/coding-guide/common/logging.md`
+- `docs/architecture/acceptance-framework/README.md`
+- `docs/architecture/acceptance-framework/domain-onboarding.md`
 
 ## 计划路径
 
@@ -52,6 +65,23 @@ Federation 内两个 Home Station 之间的私密 Post、媒体、Comment、Reac
 11. Tauri embedded React 是否保留，同时 browser-gateway Social 注册被彻底移除。
 12. 九个单元串行是否与共享 contracts、Social authority 和同一运行环境一致。
 13. AS17..AS24 是否覆盖成功、网络错误、超时、非法输入、取消、重启和清理。
+14. `design.md` §2 是否逐项裁决 `AAR-C01..C10`，每项具备 trigger、owner、
+    disposition、integration、no-parallel-truth 和 evidence；任何缺项或无依据的
+    `not_applicable` 均阻断。
+15. Social 事件与 projection freshness 的权威契约是否只存在于 `design.md`
+    §4.1；Plan §9.1 是否只是无独立权威的执行投影，且没有发生语义漂移。
+16. 所有好友 Post、Comment、Reaction、删除、关系变化、撤销和 resync 是否从
+    已提交事实进入统一 typed EventBus，再由唯一 `momentsRuntime` owner 更新
+    projection；禁止页面刷新、模块私有 Tauri listener 或第二 runtime owner
+    充当 freshness 主路径。
+17. 每条事件链是否同时具备 producer、Rust bridge、Desktop kernel
+    `eventBus` catalog/type、runtime consumer、store effect 和 periodic reconcile；
+    任一孤立 producer/consumer、未消费事件、重复订阅或无对账路径均为阻塞项。
+18. Acceptance 是否从接收方证明：Moments 页面未打开或处于隐藏状态时事件仍使
+    projection 收敛，重复事件不重复计数，断线丢事件后 reconcile 可恢复，登出、
+    Actor/Station 切换后旧订阅与旧 projection 不泄漏。
+19. `social-cross-station-eventbus-contract` 是否存在且通过，并且静态 contract
+    Gate 没有被用来替代 `social-cross-station-native-e2e` 的真实双客户端证据。
 
 ## 输出格式
 
@@ -71,3 +101,4 @@ Federation 内两个 Home Station 之间的私密 Post、媒体、Comment、Reac
 5. 验收与失败覆盖
 6. 2-4 小时时间盒、commit 边界与串行约束
 7. Mobile/Browser 平台边界
+8. `AAR-C01..C10`、架构真源与 Plan 执行投影一致性

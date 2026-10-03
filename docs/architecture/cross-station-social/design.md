@@ -1,7 +1,7 @@
 # Cross-Station Private Social - Architecture Design
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-03 | **Updated**: 2026-10-03
 > **Owner**: Social / Federation
 
@@ -22,7 +22,24 @@
 6. **Platform claims are runtime-specific.** Tauri Native Desktop is required;
    Mobile is deferred; browser-gateway Social is prohibited.
 
-## 2. Target Topology
+## 2. Architecture Applicability Review
+
+| Case | Trigger | Disposition | Canonical source and binding |
+|---|---|---|---|
+| `AAR-C01` Shared Domain Contract | Cross-runtime Social, Federation, and Key Exchange messages | `adapted` | `docs/global/domain-model.md`; extend canonical proto roots and import Secure Content types, never hand-write a parallel DTO. |
+| `AAR-C02` Global Context / Runtime | Projection spans pages, login sessions, actor/Station switches, and background recovery | `adapted` | `global-context-kernel.md` + `runtime-projections.md`; GlobalContext owns lifecycle signals, `momentsRuntime` alone owns Social freshness. |
+| `AAR-C03` i18n | New visible pending, retry, unavailable, recovery, denial, and validation states | `reused` | `i18n-architecture.md` + `packages/locales`; reuse namespace/error-key loading and translate all supported locales. |
+| `AAR-C04` API / Handler Ownership | New peer routes, Social commands, and typed receiver handlers | `adapted` | API Ownership + Unified Handler; register one capability ID, canonical proto/route/truth owner, and reuse middleware. |
+| `AAR-C05` Event / Realtime Notification | Committed Social changes refresh hidden or unopened Desktop surfaces | `adapted` | Station event stream + Desktop kernel events; use typed wakes only, never a second truth or feature-private stream. |
+| `AAR-C06` Storage / Cache | New receiver tables, encrypted local projection, recovery, and purge | `adapted` | Unified Runtime Storage + Secure Content; preserve canonical/projection ownership, unified roots, bounded cleanup, and rebuildability. |
+| `AAR-C07` UI Foundation | Existing Moments UI gains remote states and Native-only registration | `reused` | Page/Component guide + `packages/ui`; reuse LobeUI, theme, icon, navigation, and feedback primitives. |
+| `AAR-C08` Identity / Security / Privacy | Cross-Station trust, credentials, private payloads, grants, and revocation | `reused` | Federation authentication + Key Exchange + Secure Content + Station authorization; plaintext stays Native-client owned. |
+| `AAR-C09` Logging / Metrics / Errors | Durable retry, replay, reconcile, rejection, recovery, and latency claims | `adapted` | Common logging and platform metrics; preserve typed errors, trace context, bounded metrics, and owner-attributable logs. |
+| `AAR-C10` Acceptance | New cross-Station product journeys and negative guarantees | `adapted` | Acceptance Framework/domain onboarding; extend Social Capability → Feature → Gate → Evidence and retain `UNPROVEN` on missing proof. |
+
+No baseline case is `not_applicable`: this change crosses shared contracts, global lifecycle, user-visible UI, persistence, trust boundaries, background delivery, and product Acceptance. Domain-specific Federation, Secure Content, Key Exchange, and Social authority candidates are defined below.
+
+## 3. Target Topology
 
 ```text
 Alice Native Desktop
@@ -51,7 +68,7 @@ Bob Native Desktop
 No Desktop connects directly to a remote Station. No private Social payload
 enters Federation Ledger.
 
-## 3. Sources Of Truth
+## 4. Sources Of Truth
 
 | Concern | Owner | Stored truth |
 |---|---|---|
@@ -64,7 +81,21 @@ enters Federation Ledger.
 | Plaintext and content keys | Native client | encrypted local store and active memory only |
 | Product freshness | Native Desktop `momentsRuntime` | event consumption plus periodic reconcile |
 
-## 4. Publish Lifecycle
+### 4.1 Desktop Event And Projection Contract
+
+This section is the canonical Social freshness contract. Plans, Tasks, and review prompts may repeat it for execution emphasis but cannot redefine it.
+
+```text
+committed Social fact -> Station event stream -> Rust host adapter -> Desktop typed event bus -> momentsRuntime -> projection stores
+```
+
+- Only committed facts publish wake events. Payloads carry identity, scope, revision/cursor, and dedup metadata, never private content objects.
+- GlobalContext owns identity, session, and Station lifecycle signals. `momentsRuntime` consumes them for bootstrap, reconcile, and complete actor-scoped teardown; it does not create a parallel global context.
+- `momentsRuntime` is the only long-lived Post, Comment, Reaction, revocation, and resync projection owner. Pages render projection and dispatch commands; page mount, polling, or private Tauri listeners cannot own freshness.
+- Immediate typed wake and Station-backed periodic reconcile are both required. Duplicate/reordered events are idempotent; cursor gaps trigger reconcile.
+- Subscriptions are scoped to actor/session/Station and are removed on logout, identity switch, Station switch, runtime teardown, and test cleanup.
+
+## 5. Publish Lifecycle
 
 ```text
 select audience
@@ -81,7 +112,7 @@ select audience
   -> Bob Desktop verifies source proof and decrypts
 ```
 
-### 4.1 Admission
+### 5.1 Admission
 
 - Every recipient must resolve to one canonical ActorRef and Home Station.
 - All Home Stations must belong to the same active Federation selected by the
@@ -92,7 +123,7 @@ select audience
 - Consumed one-time keys may be abandoned after failure; recipient sets may
   never be silently reduced.
 
-### 4.2 Remote Content PreKey Claim
+### 5.2 Remote Content PreKey Claim
 
 The canonical Content PreKey types remain in
 `model/domain/secure_content/prekey.proto`. Key Exchange-owned peer wrappers
@@ -109,16 +140,16 @@ The same tuple returns identical claims. Reusing the identity with another hash
 is terminal. Federation membership and target Station are verified before any
 claim is returned.
 
-### 4.3 Source Commit
+### 5.3 Source Commit
 
 The Social UOW uses the shared Federation outbox repository as a
 transaction-scoped port. Canonical resource rows and every required remote
 frame either commit together or do not commit. There is no post-commit
 best-effort fan-out step.
 
-## 5. Delivery And Read
+## 6. Delivery And Read
 
-### 5.1 Frame Shape
+### 6.1 Frame Shape
 
 Each durable frame carries exactly one target actor's:
 
@@ -132,7 +163,7 @@ Each durable frame carries exactly one target actor's:
 The frame does not carry plaintext, content keys, co-recipient identities,
 large object bytes, or business authorization decisions.
 
-### 5.2 Receiver Commit
+### 6.2 Receiver Commit
 
 Federation authenticates the source Station and validates frame bounds before
 dispatch. The Social receiver then verifies:
@@ -148,7 +179,7 @@ Inbox receipt and Social projection mutation commit in one receiver
 transaction. Duplicate delivery is a no-op. Same identity with another hash is
 terminal.
 
-### 5.3 Object Read
+### 6.3 Object Read
 
 Large object bytes remain at the source Social object authority.
 
@@ -165,7 +196,7 @@ The peer capability binds source resource, target actor/device, object ID,
 range, expiry, and Federation identity. A capability cannot be replayed for
 another object, actor, or range.
 
-## 6. Remote Interaction Lifecycle
+## 7. Remote Interaction Lifecycle
 
 Private Comment uses the existing prepare/submit split across the source
 authority:
@@ -186,9 +217,9 @@ The source returns exact replay results; hash conflict is terminal.
 Unknown outcomes remain pending and retry with the same command ID. Comment
 draft text stays on Bob's Native Desktop.
 
-## 7. Revocation And Recovery
+## 8. Revocation And Recovery
 
-### 7.1 Revocation
+### 8.1 Revocation
 
 Delete, friendship loss, audience loss, device revoke, and block produce a
 monotonic source lifecycle revision. The source emits one viewer-scoped
@@ -203,7 +234,7 @@ Receiver behavior:
 - ordinary local ciphertext/cache is purged without claiming deletion of
   exported or maliciously retained plaintext.
 
-### 7.2 Recovery
+### 8.2 Recovery
 
 The recipient projection retains the actor recovery envelope, source commit
 proof, and required retained-key attestation. After trusted recovery, a
@@ -211,7 +242,7 @@ replacement Native Desktop can decrypt authorized never-opened history without
 the author being online. Revoked devices, expired Federation membership, or a
 higher invalidation revision remain denied.
 
-## 8. Native Desktop Boundary
+## 9. Native Desktop Boundary
 
 The supported runtime is:
 
@@ -233,7 +264,14 @@ is a separate runtime and must not register:
 Registration is controlled by an explicit host capability/policy at boot. It
 must not rely on a page-level warning after the route has already been exposed.
 
-## 9. Failure Semantics
+### 9.1 Shared Client And Operability Contracts
+
+- User-visible states and typed errors use the existing i18n namespace/key pipeline; no React or Rust human-readable literals are introduced.
+- Existing Moments and shared UI primitives remain authoritative for theme, icons, feedback, navigation, and interaction patterns.
+- Desktop encrypted projection/cache paths use the unified storage owner and participate in actor-scoped cleanup and recovery; cache never becomes truth.
+- Background delivery and recovery preserve trace context and expose bounded, owner-attributable retry, rejection, replay, resync, and latency metrics.
+
+## 10. Failure Semantics
 
 | Failure | Result |
 |---|---|
@@ -247,7 +285,7 @@ must not rely on a page-level warning after the route has already been exposed.
 | missing recovery material | explicit recovery state; no plaintext fallback |
 | Browser route attempt | no registered Social route or action |
 
-## 10. Forbidden Relationships
+## 11. Forbidden Relationships
 
 - Social must not implement another network transport or outbox/inbox stack.
 - Federation must not authorize Social reads or mutations.
