@@ -3231,7 +3231,8 @@ func validateCanonicalPrivateContentSchema(database *gorm.DB) error {
 
 func canonicalPrivateSchemaModels() []any {
 	models := append([]any(nil), dbmodel.SocialPrivateContentModels()...)
-	return append(models, &dbmodel.SocialReaction{})
+	models = append(models, &dbmodel.SocialReaction{})
+	return append(models, RemotePrivateContentModels()...)
 }
 
 func validateCanonicalModelColumns(

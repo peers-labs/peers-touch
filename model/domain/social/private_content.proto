@@ -335,6 +335,9 @@ message PrivateContentVerification {
     PrivateRepostAuthority repost_authority = 4;
   }
   .peers_touch.model.secure_content.v1.StationContentSigningKeyAttestation station_signing_key_attestation = 5;
+  // Added only by the viewer's Home Station after Actor Identity verifies the
+  // retained source-author key. Federated source payloads must leave it unset.
+  .peers_touch.model.actor.v1.VerifiedActorDeviceSigningKey receiver_verified_sender_signing_key = 6;
 }
 
 message PrivateContentAccess {

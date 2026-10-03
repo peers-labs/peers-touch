@@ -97,7 +97,9 @@ export function usePresence(): void {
       fire('app_launch');
       // Open the unified realtime SSE stream on the same edge. Presence
       // flips are carried by StreamEvent.PresenceFlip on this channel.
-      void api.realtimeStreamStart().catch((error) => {
+      void api.realtimeStreamStart(
+        useSessionStore.getState().sessionEpoch,
+      ).catch((error) => {
         log.warn('presence', 'realtimeStreamStart failed', error);
       });
     };

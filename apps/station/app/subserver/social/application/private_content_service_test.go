@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"testing"
@@ -133,8 +134,8 @@ func TestPrivateContentServicePrepareSubmitReplay(t *testing.T) {
 	attestation := bobRead.GetResource().GetPrivateContent().GetVerification().
 		GetStationSigningKeyAttestation()
 	if attestation.GetStationPeerId() != "station-local" ||
-		attestation.GetProofSigningKeyId() != "station-key" ||
-		attestation.GetAttestingSigningKeyId() != "station-key" ||
+		attestation.GetProofSigningKeyId() != proof.GetStationSigningKeyId() ||
+		attestation.GetAttestingSigningKeyId() != proof.GetStationSigningKeyId() ||
 		!attestation.GetExpiresAt().AsTime().Equal(
 			attestation.GetIssuedAt().AsTime().Add(5*time.Minute),
 		) {
@@ -1723,6 +1724,7 @@ type privateContentServiceFixture struct {
 	store            *infrastructure.GORMPrivateContentStore
 	author           socialdomain.PrivateContentAuthor
 	authorPrivateKey ed25519.PrivateKey
+	stationSigner    privateContentTestSigner
 	audiences        *privateContentTestAudience
 	originalSnapshot socialdomain.FriendsSnapshot
 	clock            *privateContentTestClock
@@ -1731,6 +1733,13 @@ type privateContentServiceFixture struct {
 
 func newPrivateContentServiceFixture(
 	t *testing.T,
+) *privateContentServiceFixture {
+	return newPrivateContentServiceFixtureWithStoreOptions(t)
+}
+
+func newPrivateContentServiceFixtureWithStoreOptions(
+	t *testing.T,
+	options ...infrastructure.PrivateContentStoreOption,
 ) *privateContentServiceFixture {
 	t.Helper()
 	database, err := gorm.Open(
@@ -1752,7 +1761,7 @@ func newPrivateContentServiceFixture(
 			t.Errorf("close private-content database: %v", closeErr)
 		}
 	})
-	store, err := infrastructure.NewGORMPrivateContentStore(database)
+	store, err := infrastructure.NewGORMPrivateContentStore(database, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1767,6 +1776,16 @@ func newPrivateContentServiceFixture(
 		t.Fatal(err)
 	}
 	if err := friendStore.Migrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	deliveryStore, err := federationdelivery.NewGORMRepository(
+		database,
+		federationdelivery.SystemClock{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deliveryStore.Migrate(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.Exec(`
@@ -1796,6 +1815,13 @@ INSERT INTO social_relationship_projections (
 	if err != nil {
 		t.Fatal(err)
 	}
+	stationPublicDER, err := x509.MarshalPKIXPublicKey(
+		stationPrivateKey.Public(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stationKeyID := authfed.KidFromPubDER(stationPublicDER)
 	author := socialdomain.PrivateContentAuthor{
 		Endpoint: &actormodel.ActorDeviceRef{
 			Actor: &actormodel.ActorRef{
@@ -1822,6 +1848,11 @@ INSERT INTO social_relationship_projections (
 	clock := &privateContentTestClock{
 		now: time.Date(2026, 9, 14, 10, 0, 0, 0, time.UTC),
 	}
+	stationSigner := privateContentTestSigner{
+		stationID:  "station-local",
+		keyID:      stationKeyID,
+		privateKey: stationPrivateKey,
+	}
 	service, err := NewPrivateContentService(
 		store,
 		audiences,
@@ -1829,10 +1860,7 @@ INSERT INTO social_relationship_projections (
 		privateContentTestGroups{},
 		privateContentTestRecipients{author: author.Endpoint},
 		keyExchange,
-		privateContentTestSigner{
-			keyID:      "station-key",
-			privateKey: stationPrivateKey,
-		},
+		stationSigner,
 		privateContentTestAuthorVerifier{publicKey: authorPublicKey},
 		clock,
 	)
@@ -1845,6 +1873,7 @@ INSERT INTO social_relationship_projections (
 		store:            store,
 		author:           author,
 		authorPrivateKey: authorPrivateKey,
+		stationSigner:    stationSigner,
 		audiences:        audiences,
 		originalSnapshot: snapshot,
 		clock:            clock,
@@ -2043,6 +2072,7 @@ type privateContentTestKeyExchange struct {
 	response            *securecontentpb.ClaimContentPreKeysResponse
 	sourceStationPeerID string
 	recipientLocalities []socialdomain.RecipientLocality
+	publicKeysByTarget  map[string][]byte
 	claimError          error
 	stale               bool
 	claimCalls          int
@@ -2068,6 +2098,17 @@ func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 	).(*securecontentpb.ClaimContentPreKeysRequest)
 	response := &securecontentpb.ClaimContentPreKeysResponse{}
 	for index, target := range request.GetTargets() {
+		publicKey := bytes.Repeat([]byte{byte(index + 1)}, 32)
+		targetKey := fmt.Sprintf(
+			"%d:%s:%s",
+			target.GetKind(),
+			target.GetEndpoint().GetActor().GetPtid()+
+				target.GetRecoveryActor().GetPtid(),
+			target.GetEndpoint().GetDeviceId(),
+		)
+		if fixed := k.publicKeysByTarget[targetKey]; len(fixed) != 0 {
+			publicKey = clonePrivateTestBytes(fixed)
+		}
 		prekey := &securecontentpb.ContentOneTimePreKey{
 			Kind: target.GetKind(),
 			KeyId: fmt.Sprintf(
@@ -2075,7 +2116,7 @@ func (k *privateContentTestKeyExchange) ClaimContentPreKeys(
 				k.claimCalls,
 				index,
 			),
-			X25519PublicKey:        bytes.Repeat([]byte{byte(index + 1)}, 32),
+			X25519PublicKey:        publicKey,
 			ProfileOrRecoveryEpoch: uint64(index + 1),
 			IssuerSignature:        bytes.Repeat([]byte{byte(index + 11)}, 64),
 		}
@@ -2136,8 +2177,11 @@ func (k *privateContentTestKeyExchange) ValidateContentPreKeyClaims(
 }
 
 type privateContentTestSigner struct {
-	keyID      string
-	privateKey ed25519.PrivateKey
+	stationID         string
+	keyID             string
+	privateKey        ed25519.PrivateKey
+	importedProofKeys map[string][]byte
+	trustImportedErr  error
 }
 
 func (s privateContentTestSigner) SigningKeyID(context.Context) (string, error) {
@@ -2203,16 +2247,103 @@ func (s privateContentTestSigner) AttestContentProofVerificationKey(
 		return nil, fmt.Errorf("unexpected proof key ID")
 	}
 	publicKey := s.privateKey.Public().(ed25519.PublicKey)
-	return &securecontentpb.StationContentSigningKeyAttestation{
+	attestation := &securecontentpb.StationContentSigningKeyAttestation{
 		FormatVersion:         1,
-		StationPeerId:         "station-local",
+		StationPeerId:         s.stationID,
 		ProofSigningKeyId:     signingKeyID,
 		ProofEd25519PublicKey: append([]byte(nil), publicKey...),
 		AttestingSigningKeyId: s.keyID,
 		IssuedAt:              timestamppb.New(now),
 		ExpiresAt:             timestamppb.New(now.Add(5 * time.Minute)),
-		StationSignature:      ed25519.Sign(s.privateKey, []byte("test-attestation")),
-	}, nil
+	}
+	signingBytes, err := authfed.ContentProofKeyAttestationSigningBytes(
+		attestation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestation.StationSignature = ed25519.Sign(s.privateKey, signingBytes)
+	return attestation, nil
+}
+
+func (s privateContentTestSigner) AttestContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	_ federationdelivery.Transaction,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	return s.AttestContentProofVerificationKey(ctx, signingKeyID, now)
+}
+
+func (s privateContentTestSigner) AttestImportedContentProofVerificationKey(
+	ctx context.Context,
+	sourceStationPeerID string,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	proofKey := s.importedProofKeys[sourceStationPeerID+"\x00"+signingKeyID]
+	if len(proofKey) == 0 {
+		return nil, fmt.Errorf("imported proof key is unavailable")
+	}
+	attestation, err := s.AttestContentProofVerificationKey(
+		ctx,
+		s.keyID,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestation.ProofSigningKeyId = signingKeyID
+	attestation.ProofEd25519PublicKey = clonePrivateTestBytes(proofKey)
+	signingBytes, err := authfed.ContentProofKeyAttestationSigningBytes(
+		attestation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestation.StationSignature = ed25519.Sign(
+		s.privateKey,
+		signingBytes,
+	)
+	return attestation, nil
+}
+
+func (s privateContentTestSigner) TrustImportedContentProofVerificationKeyInTransaction(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	sourceStationPeerID string,
+	signingKeyID string,
+	proofKey []byte,
+	_ time.Time,
+) error {
+	if s.trustImportedErr != nil {
+		return s.trustImportedErr
+	}
+	if s.importedProofKeys == nil {
+		return fmt.Errorf("imported proof-key history is unavailable")
+	}
+	identity := sourceStationPeerID + "\x00" + signingKeyID
+	if existing := s.importedProofKeys[identity]; len(existing) != 0 &&
+		!bytes.Equal(existing, proofKey) {
+		return fmt.Errorf("imported proof-key history conflict")
+	}
+	s.importedProofKeys[identity] = clonePrivateTestBytes(proofKey)
+	return nil
+}
+
+func (s privateContentTestSigner) AttestImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	_ federationdelivery.Transaction,
+	sourceStationPeerID string,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	return s.AttestImportedContentProofVerificationKey(
+		ctx,
+		sourceStationPeerID,
+		signingKeyID,
+		now,
+	)
 }
 
 type privateContentUnavailableVerifier struct {
@@ -2247,13 +2378,39 @@ func (v privateContentTestAuthorVerifier) Verify(
 	_ federationdelivery.Transaction,
 	_ *actormodel.ActorDeviceRef,
 	_ string,
+	_ string,
 	canonical []byte,
 	signature []byte,
+	_ time.Time,
 ) error {
 	if !ed25519.Verify(v.publicKey, canonical, signature) {
 		return fmt.Errorf("invalid author signature")
 	}
 	return nil
+}
+
+func (v privateContentTestAuthorVerifier) ResolveRetained(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	sender *actormodel.ActorDeviceRef,
+	expectedHomeStationPeerID string,
+	signingKeyID string,
+	committedAt time.Time,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	if sender == nil || sender.GetActor() == nil || committedAt.IsZero() {
+		return nil, fmt.Errorf("invalid retained author key request")
+	}
+	return &actormodel.VerifiedActorDeviceSigningKey{
+		ActorPtid:         sender.GetActor().GetPtid(),
+		ActorDeviceId:     sender.GetDeviceId(),
+		HomeStationPeerId: expectedHomeStationPeerID,
+		SigningKeyId:      signingKeyID,
+		Ed25519PublicKey:  append([]byte(nil), v.publicKey...),
+		ProfileVersion:    1,
+		VerificationSource: actormodel.
+			ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+		ValidFromUnixMs: committedAt.Add(-time.Minute).UnixMilli(),
+	}, nil
 }
 
 type privateContentTestClock struct {

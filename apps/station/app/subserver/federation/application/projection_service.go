@@ -24,14 +24,20 @@ func (s *ProjectionService) ValidateActiveStationPair(
 		sourceStationPeerID == "" ||
 		targetStationPeerID == "" ||
 		sourceStationPeerID == targetStationPeerID {
-		return fmt.Errorf("active Federation station pair is invalid")
+		return fmt.Errorf(
+			"%w: identifiers are invalid",
+			domain.ErrInactiveStationPair,
+		)
 	}
 	federation, err := s.federationRepo.GetByID(ctx, federationID)
 	if err != nil {
 		return err
 	}
 	if federation == nil || federation.Status != "active" {
-		return fmt.Errorf("Federation is not active")
+		return fmt.Errorf(
+			"%w: Federation is not active",
+			domain.ErrInactiveStationPair,
+		)
 	}
 	for _, stationPeerID := range []string{
 		sourceStationPeerID,
@@ -46,7 +52,10 @@ func (s *ProjectionService) ValidateActiveStationPair(
 			return err
 		}
 		if membership == nil || membership.Status != "active" {
-			return fmt.Errorf("Station is not an active Federation member")
+			return fmt.Errorf(
+				"%w: Station is not an active Federation member",
+				domain.ErrInactiveStationPair,
+			)
 		}
 	}
 	return nil
