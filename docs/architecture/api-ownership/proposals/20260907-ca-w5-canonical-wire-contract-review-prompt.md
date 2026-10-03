@@ -12,7 +12,7 @@ against:
 - `docs/architecture/messaging-platform/`
 - `docs/architecture/identity/unified-actor-system.md`
 - `docs/architecture/federation/`
-- `docs/architecture/federated-social-activity/decisions.md` D-07
+- `docs/architecture/cross-station-social/decisions.md` `CSS-D01`
 - `model/domain/chat/`
 - `model/domain/actor/actor.proto`
 - `model/domain/key_exchange/key_exchange.proto`

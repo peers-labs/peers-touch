@@ -10,7 +10,7 @@ Review the mechanical W12A inventory correction in:
 Governing sources:
 
 - `plan.md`: W7-W11 source failures reopen W12A before mutation.
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/messaging-platform/README.md`
 
 ## Failure Evidence

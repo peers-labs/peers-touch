@@ -21,7 +21,7 @@
 - 私聊会话列表、消息阅读流、composer、私聊详情。
 - 群聊会话列表、群聊消息阅读流、群详情、成员管理与权限差异。
 - Chat 模块内的 `Chat` / `Contacts` 竖向二级 tab。
-- stream call：从 Chat 会话头部的语音 / 视频按钮进入；语音、呼出和来电复用 Agent 后台执行 tray 的紧凑尺寸与右下角锚点，视频可切换紧凑、覆盖 Chat 模块和全屏三种显示范围。
+- stream call：从 Chat 会话头部的语音 / 视频按钮进入；语音、呼出和来电复用现有后台任务 tray 的紧凑尺寸与右下角锚点，视频可切换紧凑、覆盖 Chat 模块和全屏三种显示范围。
 - Conversation action surface：静音、置顶、背景、搜索、清空历史、退出/解散/删除。
 
 原型只用于确认终态交互形态；确认后仍需在 Desktop 真实工程按运行时、store、i18n 和权限模型重新实现。
@@ -78,7 +78,7 @@ pnpm --filter @peers-touch/prototype-desktop-social-chat dev
 | 视频通话紧凑态 | 1440×1500 / light | [`20260920-call-video-compact.png`](./evidence-l2/20260920-call-video-compact.png) | 320px 宽、右下 20px 锚点；消息上下文保持可读 |
 | 视频覆盖 Chat 模块 | 1440×1500 / light | [`20260920-call-video-chat-fill.png`](./evidence-l2/20260920-call-video-chat-fill.png) | 覆盖完整 Chat 根边界；Desktop 全局 rail 保持可见 |
 | 视频全屏 | 1440×1500 / light | [`20260920-call-video-fullscreen.png`](./evidence-l2/20260920-call-video-fullscreen.png) | 覆盖整个 viewport |
-| 语音呼出紧凑态 | 1440×1500 / light | [`20260920-call-voice-compact.png`](./evidence-l2/20260920-call-voice-compact.png) | 单行 320×64；与 Agent 后台执行 tray 密度一致 |
+| 语音呼出紧凑态 | 1440×1500 / light | [`20260920-call-voice-compact.png`](./evidence-l2/20260920-call-voice-compact.png) | 单行 320×64；与后台任务 tray 密度一致 |
 | 视频来电紧凑态 | 1440×1500 / light | [`20260920-call-incoming-compact.png`](./evidence-l2/20260920-call-incoming-compact.png) | 无全屏 backdrop；接听/拒绝动作保持可见 |
 | 视频紧凑窄窗口 | 1024×1500 / light | [`20260920-call-video-compact-narrow.png`](./evidence-l2/20260920-call-video-compact-narrow.png) | 不超出 Chat 根边界；控件无截断或重叠 |
 

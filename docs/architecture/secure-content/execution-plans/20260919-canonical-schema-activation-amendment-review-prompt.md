@@ -71,7 +71,7 @@ product, runtime, Gate, or Acceptance proof claim.
 Review proposed `SC-D24` in:
 
 - `docs/architecture/secure-content/decisions.md`
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/secure-content/data-model.md`
 - `docs/architecture/secure-content/integration.md`
 - `docs/architecture/secure-content/operations.md`

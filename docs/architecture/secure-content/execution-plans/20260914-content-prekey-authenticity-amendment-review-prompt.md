@@ -12,7 +12,7 @@
 
 ## Upstream Sources
 
-- `docs/architecture/secure-content/design.md`
+- `docs/architecture/secure-content/README.md`
 - `docs/architecture/secure-content/security.md`
 - `docs/architecture/secure-content/data-model.md`
 - `docs/architecture/secure-content/decisions.md`

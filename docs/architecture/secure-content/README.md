@@ -67,7 +67,6 @@ wire, storage, and recovery behavior.
 
 | Document | Purpose |
 |---|---|
-| [design.md](./design.md) | Ownership, trust boundaries, runtime topology, flows, APIs, and failure semantics |
 | [decisions.md](./decisions.md) | Proposed architecture decisions and rejected alternatives |
 | [data-model.md](./data-model.md) | Proto shapes, persistence model, state machines, and cryptographic bindings |
 | [integration.md](./integration.md) | Social, Conversation, Identity, Key Exchange, Recovery, OSS, and client integration |
@@ -97,10 +96,10 @@ Accepted product inputs:
 - [`../social/product-definition.md`](../social/product-definition.md):
   `SOC-SEC-C01` through `SOC-SEC-C09`.
 - [`../social/experience-contract.md`](../social/experience-contract.md):
-  `SOC-SEC-J01` through `SOC-SEC-J09`.
+  `SOC-SEC-J01` through `SOC-SEC-J12`.
 - [`../social/product-state-model.md`](../social/product-state-model.md).
 - [`../social/acceptance-matrix.md`](../social/acceptance-matrix.md):
-  `SOC-SEC-AS01` through `SOC-SEC-AS16`.
+  `SOC-SEC-AS01` through `SOC-SEC-AS24`.
 
 The product contract and `SC-D01` through `SC-D29` are accepted. `SC-D21`
 defines the deterministic lifecycle barriers, runtime-owner restart
@@ -136,4 +135,4 @@ On 2026-10-03, the Owner selected Native Desktop cross-Station Social as the
 next product milestone, prohibited Browser Social, and deferred Mobile. Secure
 Content remains the crypto/validation substrate; Social and the shared
 Federation runtime own the new business and transport closures documented in
-[`../federated-social-activity/`](../federated-social-activity/README.md).
+[`../cross-station-social/`](../cross-station-social/README.md).
