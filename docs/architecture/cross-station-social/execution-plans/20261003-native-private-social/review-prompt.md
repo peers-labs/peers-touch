@@ -1,7 +1,7 @@
 # Cross-Station Private Social Plan Review Prompt
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-03 | **Updated**: 2026-10-03
 > **Owner**: Social / Federation
 
@@ -38,17 +38,20 @@ Federation 内两个 Home Station 之间的私密 Post、媒体、Comment、Reac
 ## 评审重点
 
 1. 计划是否严格限制为 Human private Social，未引入与需求无关的泛化领域层。
-2. Acceptance Gate 是否在功能任务引用前完成注册和 fail-closed runner 测试。
-3. `secure_content/prekey.proto` 与 `key_exchange.proto` 的职责是否正确区分。
-4. Source Social、recipient projection、Federation transport、Key Exchange 的
+2. 每个 Agent 单元是否能在 2-4 小时内形成独立可用版本，而非只交付底层部件。
+3. 每个单元是否严格对应一个可构建、可回滚的 Conventional Commit。
+4. 中间单元是否只跑 focused checks + 当前/前序 Journey，未要求全量 Gate。
+5. 最终单元是否只跑 Social/API ownership/Browser boundary 专项 Gate。
+6. `secure_content/prekey.proto` 与 `key_exchange.proto` 的职责是否正确区分。
+7. Source Social、recipient projection、Federation transport、Key Exchange 的
    authority 是否单一且无反向依赖。
-5. Comment 是否完整覆盖 prepare、submit、exact replay 和 source revalidation。
-6. 大对象是否只通过 source-authorized ciphertext peer stream，而非 durable frame、
+8. Comment 是否完整覆盖 prepare、submit、exact replay 和 source revalidation。
+9. 大对象是否只通过 source-authorized ciphertext peer stream，而非 durable frame、
    public URL 或客户端直连。
-7. Mobile 是否只有共享 proto 生成兼容，且无产品实现或 readiness 声明。
-8. Tauri embedded React 是否保留，同时 browser-gateway Social 注册被彻底移除。
-9. CSS-W04/W05 因共享 Social authority 文件而串行是否合理。
-10. AS17..AS24 是否覆盖成功、网络错误、超时、非法输入、取消、重启和清理。
+10. Mobile 是否只有共享 proto 生成兼容，且无产品实现或 readiness 声明。
+11. Tauri embedded React 是否保留，同时 browser-gateway Social 注册被彻底移除。
+12. 九个单元串行是否与共享 contracts、Social authority 和同一运行环境一致。
+13. AS17..AS24 是否覆盖成功、网络错误、超时、非法输入、取消、重启和清理。
 
 ## 输出格式
 
@@ -66,5 +69,5 @@ Federation 内两个 Home Station 之间的私密 Post、媒体、Comment、Reac
 3. Authority 与 proto-first
 4. 原子切换与删除义务
 5. 验收与失败覆盖
-6. 并行性与冲突控制
+6. 2-4 小时时间盒、commit 边界与串行约束
 7. Mobile/Browser 平台边界
