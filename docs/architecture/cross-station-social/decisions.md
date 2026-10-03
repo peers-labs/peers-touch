@@ -1,7 +1,7 @@
 # Cross-Station Private Social - Design Decisions
 
 > **Status**: active
-> **Version**: v1.0
+> **Version**: v1.1
 > **Created**: 2026-10-03 | **Updated**: 2026-10-03
 > **Owner**: Social / Federation
 
@@ -19,6 +19,7 @@
 | `CSS-D06` | Remote interactions return to source Social authority | accepted |
 | `CSS-D07` | Revocation combines local suppression with monotonic source invalidation | accepted |
 | `CSS-D08` | Current readiness is Native Desktop only | accepted |
+| `CSS-D09` | Federated GROUP extends the SC-D29 snapshot without replacing its authority | accepted |
 
 ## CSS-D01: Receiver Home Station Owns Friend Request Decisions
 
@@ -284,3 +285,91 @@ Runtime readiness cannot be inferred from shared proto or generated bindings.
 Shared proto generation may update tracked Mobile generated output only.
 Mobile feature, runtime, UI, and acceptance files remain outside execution
 scope.
+
+## CSS-D09: Federated GROUP Extends The SC-D29 Snapshot Without Replacing Its Authority
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+`SC-D29` established the typed canonical Conversation ID, Conversation-owned
+`PrepareSnapshot` / `WithSubmitFence` capability, complete member and Home
+Station snapshot, and fail-closed recipient rules. It also retained a temporary
+same-Station restriction because remote Content PreKey claim and receiver-side
+product evidence did not yet exist.
+
+The accepted Social product contract now requires `GROUP` members in the same
+active Federation to participate in cross-Station private publish. The
+cross-Station architecture supplies the missing authenticated remote PreKey,
+viewer-scoped delivery, receiver projection, and two-Station proof boundaries.
+
+### Decision
+
+`SC-D29` remains authoritative for the typed Audience target, Conversation
+membership ownership, lock ordering, and byte-for-byte submit fence. The
+Conversation snapshot is extended with its canonical Federation ID and
+continues to include every active member's canonical PTID and Home Station.
+
+Source Social must:
+
+- obtain the complete snapshot from the co-located Conversation capability;
+- verify at prepare and submit that its Federation ID is the selected active
+  Federation and every member Home Station is an active member;
+- exclude only the author and actors excluded by accepted Social policy;
+- bind the Federation ID, Conversation ID, membership epoch, authority head,
+  ordered members, and Home Stations into the immutable audience snapshot;
+- claim local and remote Content PreKeys through their existing owners; and
+- commit no Post, object, grant, delivery intent, or Federation frame unless
+  every required recipient remains valid under the submit fence.
+
+This decision supersedes only the `SC-D29` locality rejection for a remote
+recipient in the same active Federation. It does not supersede typed targets,
+the Conversation read fence, exact recipient coverage,
+`CUSTOM_DENY(PUBLIC)` rejection, cross-Federation rejection, or atomic
+no-partial-publish behavior.
+
+Social does not query a remote Conversation service and does not copy
+Conversation membership into a second authority. Federation transports the
+resulting viewer-scoped Social frames but does not decide Group membership.
+
+### Rationale
+
+The existing Conversation snapshot already provides the revision-bound,
+enumerable recipient authority that `SC-D29` required before lifting the
+locality restriction. Adding Federation identity to that snapshot makes the
+cross-Station admission decision explicit without changing ownership or
+creating a distributed Social membership service.
+
+### Alternatives Considered
+
+- Keep federated `GROUP` unsupported: rejected because it contradicts the
+  accepted `SOC-SEC-C01`, `SOC-SEC-C09`, `SOC-SEC-J10`, and `SOC-SEC-AS18`
+  product contract.
+- Let Social query each remote Station for Group members: rejected because it
+  creates a second membership authority and cannot preserve one submit fence.
+- Filter out remote Group members: rejected because it silently narrows user
+  intent and violates exact recipient coverage.
+- Copy Group membership into Social: rejected because Conversation is the
+  canonical membership and authority-head owner.
+
+### Consequences
+
+- `GroupRecipientSnapshot` gains one canonical Federation ID across
+  Conversation and Social value projections.
+- Existing same-Station Group behavior remains a strict subset of the new
+  path.
+- Any stale snapshot, inactive Federation, invalid Home Station, missing
+  PreKey, cross-Federation member, or changed membership rejects the whole
+  publish before Social commit.
+- The old remote-recipient `PRIVATE_UNSUPPORTED` guard is deleted only in the
+  vertical slice that proves mixed local/remote audience delivery.
+- Exact-source two-Station evidence for `SOC-SEC-AS18` is required before the
+  federated Group capability is claimed ready.
+
+### Review And Reversal Conditions
+
+Review this decision if Conversation no longer has a co-located authoritative
+snapshot, Actor Home Station becomes mutable, or Federation membership cannot
+be revalidated at submit. Any replacement must preserve one membership owner,
+one immutable recipient snapshot, and atomic no-partial-publish.
