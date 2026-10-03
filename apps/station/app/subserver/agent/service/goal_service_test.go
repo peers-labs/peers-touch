@@ -149,6 +149,47 @@ func TestGoalCreateRequiresInitialRevision(t *testing.T) {
 	assertGoalErrorCode(t, err, errcode.AgentInvalidRequest)
 }
 
+func TestGoalCreateEnforcesUTF8ByteLimits(t *testing.T) {
+	db := openGoalServiceTestDB(t)
+	svc := NewGoalService(db)
+	svc.newID = func() string { return "goal-unicode-boundary" }
+
+	accepted, err := svc.CreateDraft(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CreateAgentGoalRequest{
+			Title:          strings.Repeat("界", 85),
+			Outcome:        "A valid multibyte Goal title",
+			IdempotencyKey: "goal-unicode-accepted",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create multibyte Goal at byte limit: %v", err)
+	}
+	if accepted.GetGoalId() != "goal-unicode-boundary" {
+		t.Fatalf("accepted Goal ID = %q", accepted.GetGoalId())
+	}
+
+	_, err = svc.CreateDraft(
+		context.Background(),
+		"ptid:actor-1",
+		&model.CreateAgentGoalRequest{
+			Title:          strings.Repeat("界", 86),
+			Outcome:        "This title exceeds the UTF-8 byte limit",
+			IdempotencyKey: "goal-unicode-rejected",
+		},
+	)
+	assertGoalErrorCode(t, err, errcode.AgentInvalidRequest)
+
+	var count int64
+	if err := db.Model(&persistence.AgentGoal{}).Count(&count).Error; err != nil {
+		t.Fatalf("count Goals: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("Goal count = %d, want 1", count)
+	}
+}
+
 func TestGoalGetRejectsAnotherActor(t *testing.T) {
 	db := openGoalServiceTestDB(t)
 	svc := NewGoalService(db)
