@@ -100,6 +100,7 @@ export function GoalDraftCard() {
         </Typography.Text>
         {createError ? (
           <Alert
+            data-pt-home-goal-create-error=""
             message={t('agent.home.goalCreateFailed')}
             showIcon
             type="error"

@@ -22,7 +22,11 @@ let runtimeGeneration = 0;
 let activeActorId: string | null = null;
 let reconcileTimer: ReturnType<typeof setInterval> | null = null;
 let reconcileInFlight: Promise<void> | null = null;
-let goalReadbackInFlight: Promise<AgentGoal | null> | null = null;
+let goalReadbackInFlight: {
+  generation: number;
+  goalId: string;
+  promise: Promise<AgentGoal | null>;
+} | null = null;
 let unsubscribers: Array<() => void> = [];
 
 function homeCommandKey(kind: 'chat' | 'task' | 'goal'): string {
@@ -129,11 +133,16 @@ export async function createHomeGoalDraft(): Promise<AgentGoal> {
 }
 
 export function reopenHomeGoalDraft(): Promise<AgentGoal | null> {
-  if (goalReadbackInFlight) return goalReadbackInFlight;
   const goalID = useHomeStore.getState().savedGoal?.goalId;
   if (!goalID) return Promise.resolve(null);
 
   const generation = runtimeGeneration;
+  if (
+    goalReadbackInFlight?.generation === generation
+    && goalReadbackInFlight.goalId === goalID
+  ) {
+    return goalReadbackInFlight.promise;
+  }
   useHomeStore.getState().beginGoalReadback();
   const pending = (async () => {
     try {
@@ -153,9 +162,10 @@ export function reopenHomeGoalDraft(): Promise<AgentGoal | null> {
       throw error;
     }
   })();
-  goalReadbackInFlight = pending;
+  const flight = { generation, goalId: goalID, promise: pending };
+  goalReadbackInFlight = flight;
   const clearPending = () => {
-    if (goalReadbackInFlight === pending) {
+    if (goalReadbackInFlight === flight) {
       goalReadbackInFlight = null;
     }
   };
@@ -245,6 +255,11 @@ export const homeRuntime: RuntimeDescriptor = {
   },
   async bootstrap(actorId) {
     if (!actorId) {
+      if (activeActorId !== null) {
+        runtimeGeneration += 1;
+        reconcileInFlight = null;
+        goalReadbackInFlight = null;
+      }
       activeActorId = null;
       useHomeStore.getState().reset();
       return;
@@ -253,6 +268,7 @@ export const homeRuntime: RuntimeDescriptor = {
       activeActorId = actorId;
       runtimeGeneration += 1;
       reconcileInFlight = null;
+      goalReadbackInFlight = null;
       useHomeStore.getState().reset();
     }
     await loadHomeProjection('bootstrap');

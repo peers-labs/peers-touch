@@ -242,4 +242,50 @@ describe('homeRuntime', () => {
     expect(getAgentGoal).toHaveBeenCalledWith('goal-1');
     expect(applyGoalDraft).toHaveBeenCalledWith(goal, 'readback');
   });
+
+  it('starts a new Goal readback when the active actor changes', async () => {
+    const actorOneGoal = create(AgentGoalSchema, {
+      goalId: 'goal-1',
+      ownerPtid: 'ptid:actor-1',
+      title: 'Actor one Goal',
+      outcome: 'Must not cross the actor boundary',
+      status: AgentGoalStatus.DRAFT,
+      revision: 1n,
+    });
+    const actorTwoGoal = create(AgentGoalSchema, {
+      goalId: 'goal-2',
+      ownerPtid: 'ptid:actor-2',
+      title: 'Actor two Goal',
+      outcome: 'Must load from Station independently',
+      status: AgentGoalStatus.DRAFT,
+      revision: 1n,
+    });
+    let resolveActorOne!: (goal: AgentGoal) => void;
+    const actorOneReadback = new Promise<AgentGoal>((resolve) => {
+      resolveActorOne = resolve;
+    });
+    getAgentGoal.mockImplementation((goalId: string) => (
+      goalId === 'goal-1'
+        ? actorOneReadback
+        : Promise.resolve(actorTwoGoal)
+    ));
+    homeRuntime.install();
+    await homeRuntime.bootstrap('ptid:actor-1');
+    homeState.savedGoal = actorOneGoal;
+
+    const firstAcquire = homeRuntime.acquirePage?.('home', 'activate');
+    expect(getAgentGoal).toHaveBeenCalledWith('goal-1');
+
+    await homeRuntime.bootstrap('ptid:actor-2');
+    homeState.savedGoal = actorTwoGoal;
+    await homeRuntime.acquirePage?.('home', 'activate');
+
+    expect(getAgentGoal).toHaveBeenCalledWith('goal-2');
+    expect(applyGoalDraft).toHaveBeenCalledOnce();
+    expect(applyGoalDraft).toHaveBeenCalledWith(actorTwoGoal, 'readback');
+
+    resolveActorOne(actorOneGoal);
+    await firstAcquire;
+    expect(applyGoalDraft).toHaveBeenCalledOnce();
+  });
 });

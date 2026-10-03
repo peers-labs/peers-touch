@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -68,6 +69,44 @@ def visible_element(client: FoundationRuntimeClient, selector: str) -> Any:
     return element if element.is_displayed() else None
 
 
+def write_evidence_manifest(
+    artifact_dir: Path,
+    capture_path: Path,
+    native_log_path: Path,
+) -> tuple[Path, str]:
+    evidence_paths = [
+        capture_path,
+        native_log_path,
+        *sorted(artifact_dir.glob("*.png")),
+    ]
+    entries = [
+        {
+            "path": path.relative_to(artifact_dir).as_posix(),
+            "bytes": path.stat().st_size,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in evidence_paths
+        if path.is_file()
+    ]
+    generator_path = Path(__file__).resolve()
+    manifest = {
+        "algorithm": "sha256",
+        "generatedAt": datetime.now(timezone.utc).isoformat(),
+        "generator": {
+            "path": generator_path.relative_to(ROOT).as_posix(),
+            "sha256": hashlib.sha256(generator_path.read_bytes()).hexdigest(),
+        },
+        "files": entries,
+    }
+    manifest_path = artifact_dir / "evidence-manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    return manifest_path, manifest_digest
+
+
 def navigate_to_hash(client: FoundationRuntimeClient, route: str) -> None:
     client.driver.execute_script(
         """
@@ -117,6 +156,56 @@ def run_journey(
     outcome_input = visible_element(client, "[data-pt-home-goal-outcome]")
     title_input.send_keys(title)
     outcome_input.send_keys(outcome)
+
+    client._station_proxy.cut()  # noqa: SLF001 - provisioned fault transport.
+    try:
+        visible_element(client, "[data-pt-home-goal-create]").click()
+        wait_until(
+            lambda: visible_element(
+                client,
+                "[data-pt-home-goal-create-error]",
+            ),
+            "Goal create error",
+        )
+        preserved_title = str(
+            visible_element(
+                client,
+                "[data-pt-home-goal-title]",
+            ).get_attribute("value")
+            or ""
+        )
+        preserved_outcome = str(
+            visible_element(
+                client,
+                "[data-pt-home-goal-outcome]",
+            ).get_attribute("value")
+            or ""
+        )
+        saved_after_failure = [
+            element
+            for element in client.driver.find_elements(
+                By.CSS_SELECTOR,
+                '[data-pt-home-goal][data-pt-home-goal-status="DRAFT"]',
+            )
+            if element.is_displayed()
+        ]
+        require(
+            preserved_title == title,
+            "Goal title changed after create failure",
+        )
+        require(
+            preserved_outcome == outcome,
+            "Goal outcome changed after create failure",
+        )
+        require(
+            not saved_after_failure,
+            "failed Goal create exposed a saved Goal",
+        )
+        error_screenshot = artifact_dir / "goal-create-error.png"
+        client.driver.save_screenshot(str(error_screenshot))
+    finally:
+        client.restore_station_transport()
+
     visible_element(client, "[data-pt-home-goal-create]").click()
 
     saved = wait_until(
@@ -168,10 +257,16 @@ def run_journey(
             "data-pt-home-goal-readback-revision"
         ),
         "screenshots": [
+            str(error_screenshot),
             str(created_screenshot),
             str(reopened_screenshot),
         ],
         "assertions": {
+            "createFailureVisible": True,
+            "createFailurePreservesInput": (
+                preserved_title == title and preserved_outcome == outcome
+            ),
+            "createFailureCreatesNoGoal": not saved_after_failure,
             "realUiCreate": True,
             "stableGoalIdentity": True,
             "draftVisible": (
@@ -263,11 +358,31 @@ def main() -> int:
         json.dumps(capture, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    manifest_path, manifest_digest = write_evidence_manifest(
+        artifact_dir,
+        capture_path,
+        client.log_path,
+    )
     if failure is not None:
         raise HomeGoalDraftError(
-            f"{failure}; capture={capture_path}; cleanup={cleanup}"
+            f"{failure}; capture={capture_path}; manifest={manifest_path}; "
+            f"manifestDigest={manifest_digest}; cleanup={cleanup}"
         ) from failure
     require(cleanup.get("status") == "clean", f"cleanup failed: {cleanup}")
+    manifested_paths = {
+        entry["path"]
+        for entry in json.loads(
+            manifest_path.read_text(encoding="utf-8"),
+        )["files"]
+    }
+    require(
+        "capture.json" in manifested_paths
+        and client.log_path.name in manifested_paths
+        and {
+            Path(path).name for path in capture["screenshots"]
+        }.issubset(manifested_paths),
+        f"evidence manifest is incomplete: {sorted(manifested_paths)}",
+    )
     require(
         all(capture["assertions"].values()),
         f"PAOS-01 assertions failed: {capture['assertions']}",
@@ -275,6 +390,8 @@ def main() -> int:
     print(json.dumps({
         "status": "PASS",
         "artifact": str(capture_path),
+        "manifest": str(manifest_path),
+        "manifestDigest": manifest_digest,
         "goalId": capture["goalId"],
         "revision": capture["revision"],
     }, sort_keys=True))
