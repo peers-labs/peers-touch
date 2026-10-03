@@ -1,7 +1,7 @@
 # Agent 设计决策
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.3
 > **Created**: 2026-10-02 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 
@@ -20,6 +20,13 @@
 | MCA-D20 | 使用发布者签名 catalog 与权威读回 | accepted |
 | MCA-D22 | 使用 Station-owned 能力场景控制面 | accepted |
 | MCA-D23 | 单一场景控制面覆盖 ToolCall、MCP 与 Connector | accepted |
+| PAOS-D01 | 使用一等 Station AgentGoal 聚合 | accepted |
+| PAOS-D02 | TaskRun 是唯一可执行工作生命周期 | accepted |
+| PAOS-D03 | Goal、Canvas 与 Atelier 共用一个 Coordinator | accepted |
+| PAOS-D04 | Runtime Adapter 执行工作但不拥有工作 | accepted |
+| PAOS-D05 | Goal 完成必须通过独立证据验收 | accepted |
+| PAOS-D06 | 迁移后删除重复任务与完成真源 | accepted |
+| PAOS-D07 | durable Agent event 只通过共享 EventBus fan-out | accepted |
 
 ## MCA-D14: Home 工作状态由 Station 投影
 
@@ -273,3 +280,224 @@ ToolCall、MCP 和 Connector 的错误、取消与竞态需要一致的执行身
 ### Consequences
 
 所有场景必须证明零执行或一次执行边界，并保留完整 ToolCall lineage。
+
+## PAOS-D01: 使用一等 Station AgentGoal 聚合
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+当前 Goal 文本主要写入 `CollaborationTask.title/description/meta_json`，
+无法独立表达长期目标、非目标、预算、图版本、决策和验收生命周期。
+
+### Decision
+
+新增 Station-owned `AgentGoal` 聚合，作为 Goal 合同、图版本、预算、决策和
+终态验收的唯一真源。
+
+### Rationale
+
+Goal 必须跨越多次 TaskRun、重规划、重启和客户端会话。
+
+### Alternatives Considered
+
+继续把 Goal 塞入任务 metadata；拒绝，因为它无法形成稳定合同或独立恢复边界。
+
+### Consequences
+
+需要新增 proto、持久化和迁移；Home、Canvas、Atelier 只能消费 Goal 投影。
+
+## PAOS-D02: TaskRun 是唯一可执行工作生命周期
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+`AgentTask`、`CollaborationTask` 和 `TaskRun` 同时表达任务状态，恢复和完成语义
+因此可能分叉。
+
+### Decision
+
+所有真正执行的工作统一落到 `TaskRun + ExecutionStep + TaskRunStatus`。旧两类
+任务及其 status contract 只作为迁移输入，在消费者完成切换后删除其
+mutation authority。
+
+### Rationale
+
+现有 TaskRun 已覆盖 Chat、DirectRun、checkpoint、lease、artifact 和 gate，
+是收敛成本最低的执行真源。
+
+### Alternatives Considered
+
+保留三类实体并增加映射层；拒绝，因为映射不能消除冲突写入和终态歧义。
+
+### Consequences
+
+需要一次有界 schema/data migration 和 consumer hard cut。
+
+## PAOS-D03: Goal、Canvas 与 Atelier 共用一个 Coordinator
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+Agent Canvas 已定义 GoalKeeper 和调度，Atelier 已投影任务工程；两者若各自拥有
+状态机会产生重复编排。
+
+### Decision
+
+Station Goal Coordinator 统一拥有 planning、frontier、budget、decision、
+replan、resume 和进入 acceptance 的转换。Station `GoalAcceptanceService`
+独立拥有 acceptance round 与 terminal verdict。Canvas 只提交组合意图，
+Atelier/Home 只提交命令并渲染投影。
+
+### Rationale
+
+一个协调器才能保证跨入口、跨设备和重启后的相同行为。
+
+### Alternatives Considered
+
+为 Atelier 或 Canvas 建独立运行时；拒绝，因为违反 Station 单一真源。
+
+### Consequences
+
+Coordinator 成为关键服务，必须具备 lease、replay、overload 和恢复 Gate。
+
+## PAOS-D04: Runtime Adapter 执行工作但不拥有工作
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+Direct Model 与外部 CLI/ACP runtime 的会话、能力和事件不同，但业务任务语义
+不能随 adapter 改变。
+
+### Decision
+
+Adapter 统一声明 descriptor、admission、execute、cancel、resume、usage、
+artifact 和 typed failure；只回传执行事实，不能直接推进 Goal 状态。
+
+### Rationale
+
+这保留异构运行时能力，同时隔离上游协议差异。
+
+### Alternatives Considered
+
+按 runtime 建独立任务模型；拒绝，因为会把适配器差异扩散到产品层。
+
+### Consequences
+
+首版只要求 Direct Model 和一个 stateful external runtime 通过正式 Gate。
+
+## PAOS-D05: Goal 完成必须通过独立证据验收
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+当前 GoalKeeper 主要根据节点完成和 final summary 形成 verdict，不能证明用户
+验收条件已经满足。
+
+### Decision
+
+Station `GoalAcceptanceService` 读取版本化 criteria、immutable evidence 和
+独立 verdict，并且是唯一可提交 Goal terminal transition 的生产 owner。
+L0/L1 使用确定性 evaluator；L2 使用独立 reviewer 或 human。Acceptance
+Framework 只驱动生产入口、读取权威结果并保存正式证据，不能写 Goal 状态。
+
+### Rationale
+
+Agent 自报完成不能构成接收方证明；测试框架也不能成为生产业务 owner。
+
+### Alternatives Considered
+
+只保留 final summary 或让执行 Agent 自评；拒绝，因为无法防止假完成。
+
+### Consequences
+
+验收可能增加延迟和成本，但失败必须进入 repair、partial 或 failed，而非
+success。Station 必须提供可驱动、可读回的验收命令和结果合同。
+
+## PAOS-D06: 迁移后删除重复任务与完成真源
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+兼容读写会长期保留 `AgentTask`、`CollaborationTask`、metadata-derived Goal 和
+Applet completion inference。
+
+### Decision
+
+新真源、消费者切换和迁移验证完成后，在同一收口阶段删除旧 mutation 路径、
+旧 API 和旧完成推断。回滚只通过版本或部署回滚。
+
+### Rationale
+
+单一真源要求旧路径真正消失，而不是被 UI 隐藏。
+
+### Alternatives Considered
+
+永久双写或兼容 shim；拒绝，因为它们保留不可证明的一致性。
+
+### Consequences
+
+切换前必须有完整消费者清单、迁移幂等证明和零引用扫描。
+
+## PAOS-D07: durable Agent event 只通过共享 EventBus fan-out
+
+**Status**: accepted
+**Date**: 2026-10-03
+
+### Context
+
+Station 已有 `apps/station/app/subserver/events.EventBus` 作为全产品统一实时
+fan-out 和 `/events/stream` owner；Agent 子服务仍创建私有
+`MemoryEventBus`、维护 `EventStreamService` subscriber registry、暴露专属
+stream route，并允许多个 service/handler 直接 publish。当前
+`TaskEventWriter.Publish` 在部分 durable append 失败后仍继续发布，客户端可能
+看到不可重放的事件。
+
+### Decision
+
+Goal、TaskRun、Decision、Artifact、Gate 和 Acceptance mutation 必须在同一
+transaction 提交 durable domain record 与 `AgentRealtimeOutbox`。一个有
+lease、retry 和 delivery marker 的 relay 将 pending row 转换为 typed
+`StreamEvent` 并调用共享 Station `EventBus.Publish`。客户端只消费 canonical
+`/events/stream`，使用 cursor、`Resync` 和 snapshot 恢复。publish 后崩溃
+允许 at-least-once 重发，投影以 stable domain event identity 幂等收敛。
+Relay 按 target actor 和 durable sequence 有序推进，前序 pending 时不越过；
+目标 actor/device 只来自已持久化 ownership 与认证 context，不能来自 client
+metadata。Outbox backlog 有界，并为 terminal/control event 保留容量；达到
+上限时在启动新工作前暂停或拒绝 admission。
+
+Agent 私有 bus、feature-owned fan-out、direct dispatch、专属 SSE、未提交事件
+publish 和以 polling 驱动正常进度均禁止。队列和 ready frontier 必须有界；
+overflow 必须断开或显式 `Resync`，不能静默丢弃。
+
+### Rationale
+
+一个 fan-out owner 才能统一 ordering、replay、背压、重连和跨功能事件顺序，
+durable-before-fan-out 才能保证客户端看到的事实可在重启后读回。
+
+### Alternatives Considered
+
+- 保留 Agent 私有 bus，再桥接到共享 bus：拒绝，因为保留双 subscriber、
+  双 replay 和双 backpressure authority。
+- 继续由 UI/Applet polling：拒绝，因为轮询无法证明事件顺序且会形成第二恢复
+  协议。
+- append 失败时 best-effort publish：拒绝，因为制造不可重放的幽灵进度。
+
+### Consequences
+
+必须增加 Agent domain event 到 shared `StreamEvent` 的 typed adapter，迁移
+Desktop/Applet 消费者，删除 Agent 私有 bus/SSE，并以
+`agent-personal-goal-event-fanout-e2e` 与最终
+`agent-personal-goal-architecture-guard` 证明 durable-before-fan-out、唯一
+入口、ordered retry、bounded overload、resync、actor isolation 和零旁路。
