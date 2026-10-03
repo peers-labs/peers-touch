@@ -150,10 +150,16 @@ def inspect_runtime_identity(
         / "peers-touch-desktop"
     )
     require(native_binary.is_file(), "Native Desktop binary is missing")
-    tauri_available = client.driver.execute_script(
-        "return typeof window.__TAURI__ === 'object';"
+    tauri_bridge_available = client.driver.execute_script(
+        """
+        return typeof window.__TAURI_INTERNALS__ === 'object'
+          || typeof window.__TAURI__ === 'object';
+        """
     )
-    require(tauri_available is True, "Native Tauri API is unavailable")
+    require(
+        tauri_bridge_available is True,
+        "Native Tauri bridge is unavailable",
+    )
     require(
         client.process is not None and client.process.poll() is None,
         "Native Desktop process is not running",
@@ -187,7 +193,7 @@ def inspect_runtime_identity(
             "binarySha256": sha256_file(native_binary),
             "processId": client.process.pid,
             "windowUrl": str(client.driver.current_url),
-            "tauriApiAvailable": tauri_available,
+            "tauriBridgeAvailable": tauri_bridge_available,
             "gatewayPort": client.spec.gateway_port,
             "rendererPort": client.spec.renderer_port,
             "webdriverPort": client.spec.webdriver_port,
