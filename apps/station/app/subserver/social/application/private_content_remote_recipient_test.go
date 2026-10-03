@@ -169,6 +169,7 @@ func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 				},
 			},
 			group: socialdomain.GroupRecipientSnapshot{
+				FederationID:        "federation-remote-recipient",
 				ConversationID:      "group-remote-recipient",
 				AuthorPTID:          "ptid:alice",
 				MembershipEpoch:     7,
@@ -290,7 +291,7 @@ func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 	}
 }
 
-func TestPrivateContentServiceFencesExactPreparedGroupSnapshot(t *testing.T) {
+func TestPrivateContentServiceSubmitFenceRejectsStaleFederationID(t *testing.T) {
 	fixture := newPrivateContentServiceFixture(t)
 	audiences, err := infrastructure.NewGORMPrivateAudienceAuthority(
 		fixture.database,
@@ -299,6 +300,7 @@ func TestPrivateContentServiceFencesExactPreparedGroupSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	preparedGroup := socialdomain.GroupRecipientSnapshot{
+		FederationID:        "federation-prepared-snapshot",
 		ConversationID:      "group-prepared-snapshot",
 		AuthorPTID:          "ptid:alice",
 		MembershipEpoch:     7,
@@ -362,10 +364,7 @@ func TestPrivateContentServiceFencesExactPreparedGroupSnapshot(t *testing.T) {
 		)
 	}
 
-	groups.current.MembershipEpoch++
-	groups.current.AuthorityHeadSHA256 = privateDigest(
-		"group-authority-head-8",
-	)
+	groups.current.FederationID = "federation-other"
 	submit := privateTextSubmitRequest(
 		t,
 		prepared.GetPlan(),
@@ -392,11 +391,28 @@ func TestPrivateContentServiceFencesExactPreparedGroupSnapshot(t *testing.T) {
 		)
 	}
 	if groups.fenceCalls != 1 ||
+		groups.commitCalls != 0 ||
 		!reflect.DeepEqual(groups.expected, preparedGroup) {
 		t.Fatalf(
-			"submit fence = calls %d expected %+v",
+			"submit fence = calls %d commit calls %d expected %+v",
 			groups.fenceCalls,
+			groups.commitCalls,
 			groups.expected,
+		)
+	}
+	afterReject, err := fixture.store.LoadSubmitPreparation(
+		context.Background(),
+		prepared.GetPlan().GetPlanId(),
+		fixture.author.Endpoint.GetActor().GetPtid(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterReject.Plan.State != persisted.Plan.State {
+		t.Fatalf(
+			"plan state after stale Federation ID = %s, want %s",
+			afterReject.Plan.State,
+			persisted.Plan.State,
 		)
 	}
 	assertPrivateContentCount(
@@ -528,6 +544,7 @@ type privateContentFencedGroupReader struct {
 	expected     socialdomain.GroupRecipientSnapshot
 	prepareCalls int
 	fenceCalls   int
+	commitCalls  int
 }
 
 func (r *privateContentFencedGroupReader) PrepareSnapshot(
@@ -556,6 +573,7 @@ func (r *privateContentFencedGroupReader) WithSubmitFence(
 		)
 	}
 
+	r.commitCalls++
 	return commit(clonePrivateContentGroupSnapshot(r.current))
 }
 
