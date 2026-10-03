@@ -1,7 +1,7 @@
 # Agent 架构设计
 
 > **Status**: active
-> **Version**: v1.1
+> **Version**: v1.3
 > **Created**: 2026-10-02 | **Updated**: 2026-10-03
 > **Owner**: Peers-Touch Agent Team
 > **Module**: `model/domain/agent/`, `apps/station/app/subserver/agent/`, `apps/desktop/`
@@ -16,6 +16,8 @@
 3. **显式能力绑定**：Agent 只能使用已声明、已绑定且当前 ready 的能力。
 4. **可恢复执行**：Turn、ToolCall 和最终回复必须具备稳定身份，可在进程重启后读回。
 5. **证据不越权**：Acceptance Harness 只驱动生产路径并读取结果，不创建替代业务路径。
+6. **单一实时出口**：业务事件先持久化，再通过共享 Station EventBus
+   fan-out；模块私有总线、专属 SSE 和进度轮询不得成为并行实时架构。
 
 详细产品、失败语义和运行时合同由
 [`modern-chat-agent/`](./modern-chat-agent/README.md) 定义。
@@ -106,3 +108,83 @@ MCP 配置接口返回已脱敏的 Station 权威投影；Desktop 只为
 Desktop-local 与 Station-local stdio，并证明 Station-local 调用在 Desktop
 executor 离线时仍成功。Browser、Mobile 与更广能力矩阵保持显式
 `UNPROVEN`，不能由相邻 Gate 推断。
+
+## 6. Personal Agent OS
+
+[`PAOS-D01` through `PAOS-D07`](./proposals/20261003-personal-agent-os.md)
+extend the Agent architecture above the single-conversation runtime:
+
+```text
+Home / Atelier / Agent Canvas
+            |
+            v
+        AgentGoal
+  contract + graph + decisions
+            |
+            v
+   TaskRun + ExecutionStep
+            |
+     +------+------+
+     |             |
+Direct Model   External Runtime
+     |             |
+     +------+------+
+            v
+ Artifact + Gate + GoalAcceptanceService
+            |
+            v
+ durable Goal/Task event
+            |
+            v
+ shared Station EventBus
+            |
+            v
+ /events/stream projection
+```
+
+Station owns `AgentGoal`, graph revision, decisions, TaskRun dispatch, budget,
+and terminal acceptance through `GoalAcceptanceService`. Acceptance Framework
+is a read-only product proof system and never a production mutation
+dependency. Agent Canvas contributes participant composition and engine intent.
+Modern Chat Agent supplies Conversation/Turn execution. Atelier and Home render
+Station projections and submit commands; they do not schedule work or infer
+completion.
+
+The target has one executable lifecycle: `TaskRun + ExecutionStep`.
+`AgentTask` and `CollaborationTask` are migration sources, not permanent
+parallel authorities. A Goal coordinator may dispatch Direct Model or
+registered external runtime adapters, but those adapters can only return
+events, artifacts, usage, and execution outcomes. They cannot mutate Goal
+state directly.
+
+Goal completion requires independent acceptance over immutable evidence.
+Restart recovery first reconciles the Goal coordinator lease and every
+in-flight TaskRun before dispatching new work. Duplicate commands and replayed
+events are fenced by Goal revision, stable operation identity, and monotonic
+event sequence.
+
+Every durable Agent event follows one causal chain:
+
+```text
+Goal/Task mutation transaction
+  -> domain event + AgentRealtimeOutbox commit
+  -> leased retryable realtime relay
+  -> typed StreamEvent adapter
+  -> apps/station/app/subserver/events.EventBus.Publish
+  -> canonical /events/stream
+  -> idempotent Desktop/Applet projection
+```
+
+The current Agent-private `MemoryEventBus`, `EventStreamService` subscriber
+registry, direct service/handler publishers, and Agent-specific stream routes
+must be removed by the cutover. Durable append failure blocks publication;
+shared EventBus failure leaves the outbox pending. A crash after publish may
+redeliver, so projections deduplicate by stable domain event identity. Relay
+order is fenced per target actor, and persisted ownership plus authenticated
+context determine recipients. Outbox, subscriber, replay, and ready-frontier
+buffers are bounded with terminal/control capacity reserved. Overflow produces
+admission pause/rejection, disconnect, or `Resync`; snapshot plus cursor replay
+is the recovery contract. Polling may perform bounded cold-load reconciliation
+only; it cannot drive normal Goal progress. A sandboxed applet may drain a
+bounded Desktop Host bridge queue after the Host consumes canonical SSE, but
+that adapter owns neither the Station cursor nor business truth.

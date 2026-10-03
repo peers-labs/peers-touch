@@ -1,8 +1,8 @@
 # 架构文档标准
 
 > **Status**: active
-> **Version**: v1.1
-> **Created**: 2026-04-20 | **Updated**: 2026-09-27
+> **Version**: v1.2
+> **Created**: 2026-04-20 | **Updated**: 2026-10-03
 > **Owner**: Architecture Team
 
 ---
@@ -18,6 +18,7 @@
 - 设计决策的记录格式
 - 执行计划的关联方式
 - 架构模块正向能力声明与机器校验入口
+- 架构适用性盘点、复用/适配判定与 DESIGN 验收要求
 
 本文档不定义：
 
@@ -35,6 +36,8 @@
 4. **按特征完备** — 协议、状态、存储、ownership 与跨运行时特征决定必需文件
 5. **当前态优先** — active 文档只描述当前允许关系，历史事实由 Git 或 `context/` 承载
 6. **正向声明** — 只登记当前能力、owner、consumer、契约根和允许依赖
+7. **适用性先行** — 选择拓扑前先盘点所有由范围触发的全局、模块与平台架构
+8. **语义匹配优先** — 能复用则复用，需要适配则保留原 owner；不为形式完整强行引入无关能力
 
 ---
 
@@ -111,6 +114,96 @@ architecture/<module>/
 - 已删除标识符不进入 active 文档、模块声明或永久扫描清单。
 - 历史原因通过 Git 历史或 `docs/context/` 查证。
 - 接口完整性通过当前能力全量 inventory 与 fail-closed discovery 证明。
+
+### 3.6 架构适用性评审
+
+新架构模块、重大能力、跨模块集成、迁移或任何改变 ownership、契约、运行时
+边界、状态流转、数据流或失败语义的设计，必须在选择拓扑前完成
+**Architecture Applicability Review**。文字、元数据或链接修正不触发此要求。
+
+候选来源必须从以下入口按范围信号发现，不能只检查需求中点名的技术或模块：
+
+1. `docs/global/architecture.md` 与 `docs/README.md` §4.1 的当前架构索引；
+2. `architecture-modules.json` 中与目标路径、capability、consumer、contract root、
+   runtime 或 trust boundary 相交的 active 模块；
+3. 目标域与目标平台最近的正式架构、平台和 operational knowledge 真源；
+4. 范围触发的 ownership/SoT、协议/API、状态/事件/实时通知、存储/缓存/投递、
+   身份/授权/安全/隐私/加密、Federation/多设备、runtime/lifecycle/projection、
+   observability/acceptance/operability 等横切关注面。
+
+候选集不是“仓库全部文档”的机械罗列。评审必须覆盖范围实际触发的每个关注面，
+并记录每个已发现候选模块或能力的判定：
+
+| Case | 候选架构 / capability | 触发信号与证据 | 判定 | 落地约束或集成方式 | 理由与重审触发条件 |
+|---|---|---|---|---|---|
+| `AAR-Cxx` / domain-specific | `<source or capability>` | `<scope/path/runtime/contract evidence>` | `required` / `reused` / `adapted` / `not_applicable` | `<owner, contract root, dependency, or none>` | `<why; when to revisit>` |
+
+判定语义：
+
+- `required`：上游架构直接约束本设计；必须逐项遵守并在设计中可追踪。
+- `reused`：现有 owner 与 capability 语义匹配；直接消费，不建立第二份实现或真源。
+- `adapted`：现有 owner 继续权威，但需要扩展 contract、adapter 或质量保证；必须记录
+  delta、owner、兼容/切换后果和验证。
+- `not_applicable`：候选的触发条件与本次边界不匹配；必须给出基于 scope、runtime、
+  trust、lifecycle 或语义的证据，并写明何种范围变化会重新触发评审。
+
+强制规则：
+
+- 已有 capability 能满足语义时，平行实现属于架构重复；只有 accepted decision
+  证明 ownership、trust、lifecycle、failure semantics 或质量目标确实不兼容时才可另建。
+- `adapted` 不得复制原 capability 的 source of truth；扩展必须回到原 owner 或通过
+  显式 adapter 消费其 canonical contract。
+- 某项能力存在，不代表每个设计都必须使用。没有范围触发信号却增加依赖、运行时、
+  状态或失败面，同样是 DESIGN 缺陷。
+- 不得用名称不相似、当前代码尚未接入或“这次不想改”作为 `not_applicable` 理由。
+- 当前实现与 active 架构冲突时，记录迁移或删除，不得把 active 架构降为不适用。
+- 来源层级能裁决时遵守上游约束；同层 active 真源冲突或多个 materially valid
+  方案无法裁决时，返回 `DESIGN_ARCHITECTURE_CONFLICT`，解决前不得进入 PLAN。
+
+该矩阵是 `design.md` 的必需评审证据，也是 DESIGN acceptance review 的阻断项；
+它不替代各候选架构本身的契约。
+
+#### 3.6.1 基线评审 Case
+
+以下 case 是每次 Architecture Applicability Review 的最低扫描集，不是完整架构
+清单。评审按“触发条件”判断是否适用；不得把所有 case 强制塞进设计，也不得因为
+需求没有点名就跳过。
+
+| Case | 通用能力与当前真源 | 触发条件 | PASS 标准 | BLOCK 示例 |
+|---|---|---|---|---|
+| `AAR-C01` | Shared Domain Contract：`docs/global/domain-model.md`、`model/domain/` | 数据、枚举、命令或事件跨 Client / Model / Station 或跨运行时共享 | 复用或扩展 canonical proto，生成端只是投影，owner 唯一 | 手写平行 DTO、各端各定义枚举、修改生成物代替修改 proto |
+| `AAR-C02` | Global Context / Runtime：`docs/client/desktop/global-context-kernel.md`、`docs/client/desktop/runtime-projections.md` | 状态或生命周期跨页面、模块、窗口、进程、登录周期或后台恢复 | GlobalContext、Runtime、Boot 各守边界；长期投影有唯一 runtime owner，页面只消费 | 页面 `useEffect` 自建全局刷新、第二个 Provider/store 持有同一 truth、页面卸载导致全局能力停止 |
+| `AAR-C03` | i18n：`docs/architecture/i18n/i18n-architecture.md`、`packages/locales/` | 新增或修改用户可见文案、错误、通知、菜单或设置项 | 复用 namespace/key、运行时加载和统一错误翻译链路；所有受支持语言同步 | UI/Rust 硬编码可见文案、业务模块维护私有字典、组件自行翻译结构化错误 |
+| `AAR-C04` | API / Handler Ownership：`docs/architecture/api-ownership/README.md`、`docs/architecture/runtime/unified-handler-architecture.md` | 新增或改变公开 route、command、RPC、stream ingress 或 client capability | 唯一 capability ID、domain owner、canonical route/proto/truth store；复用统一 handler/middleware | 为同一语义新增第二 route、绕过 registry、业务 handler 复制鉴权/校验/错误处理 |
+| `AAR-C05` | Event / Realtime Notification：`docs/global/coding-guide/desktop/kernel-events.md`、`docs/architecture/realtime/event-stream.md` | 跨模块刷新、跨窗口通知、Station-to-client 实时投递、重连或 replay | 按边界复用 Desktop typed event bus 或 canonical Station stream，并定义 ordering、replay、backpressure、resync | feature-private bus/SSE/polling、第二重连链路；纯局部同步调用却为形式引入事件系统 |
+| `AAR-C06` | Storage / Cache：`docs/architecture/storage/unified-runtime-storage-architecture.md` | 引入持久化、缓存、文件、日志、恢复、清理或密钥材料 | 使用统一路径解析与资源 owner；cache 仍是 projection，敏感材料进入系统安全设施 | 手拼根路径、组件缓存成为第二 truth、密钥明文落项目目录、无 cleanup/recovery |
+| `AAR-C07` | UI Foundation：`docs/global/coding-guide/desktop/page-component.md`、`packages/ui/` | 新增页面、通用交互、主题、图标、导航入口或重复视觉模式 | 先复用 LobeUI / `packages/ui`，缺失时使用既定 fallback；图标、token、Provider 和注册入口一致 | 自造已有基础组件、私建主题/Toast/Modal Provider、手绘已有图标、平行导航注册 |
+| `AAR-C08` | Identity / Auth / Security / Privacy：`docs/architecture/boundaries/station-desktop-scope-boundary.md`、`docs/global/coding-guide/common/security.md` | 跨 trust boundary、身份选择、权限判断、凭据、私密数据或加密 | Station/shared security owner 作最终裁决，客户端只持 projection 或窄 adapter；失败保持 typed、fail closed | UI-only 权限、客户端成为共享身份 truth、明文 fallback、字符串猜测认证错误 |
+| `AAR-C09` | Logging / Metrics / Errors：`docs/global/coding-guide/common/logging.md` 与平台观测规范 | 新增后台任务、外部调用、失败路径、性能或可靠性声明 | 复用 logger/metrics，保留 trace/request context、typed error 和可归因指标 | `print`/私有 logger、吞错、无上下文日志、用“有日志”替代质量证据 |
+| `AAR-C10` | Acceptance：`docs/architecture/acceptance-framework/README.md`、`domain-onboarding.md` | 新增或改变产品能力、用户 Journey、跨端行为、负向约束或质量声明 | 复用 Domain → Capability → Feature → Gate → Evidence 链；缺证据明确 `UNPROVEN` | 业务自建另一套验收框架、脚本名代替 capability、smoke/单测冒充 E2E、silent pass |
+
+#### 3.6.2 统一判定标准
+
+每个被触发的 case 必须同时满足以下条件才可记为 `PASS`：
+
+1. **Trigger**：用 scope、路径、runtime、trust boundary、数据流或用户可见面证明为何触发。
+2. **Authority**：指出唯一 owner、source of truth、contract root 和允许的 consumer。
+3. **Disposition**：明确 `required`、`reused` 或 `adapted`；若适配，记录 delta 与不变量。
+4. **Integration**：说明调用、依赖、生命周期、错误、清理和切换边界。
+5. **No Parallel Truth**：证明没有第二 owner、平行协议、平行状态或重复基础设施。
+6. **Evidence**：给出可执行 Gate、静态约束或明确的待证明项；不能以组件名代替证明。
+
+`not_applicable` 只有在 Trigger 不成立且提供重审条件时才合法。评审结果 fail
+closed：
+
+| Finding | 阻断条件 |
+|---|---|
+| `AAR_MISSING_CASE` | 范围触发了基线 case，但矩阵没有该项 |
+| `AAR_UNPROVEN_NOT_APPLICABLE` | `not_applicable` 没有边界证据或重审条件 |
+| `AAR_DUPLICATE_OWNER` | 同一 truth、contract、state 或 lifecycle 出现第二 owner |
+| `AAR_FORCED_REUSE` | 无触发信号仍为满足形式而引入共享能力 |
+| `AAR_UNJUSTIFIED_PARALLEL_CAPABILITY` | 已有能力可复用/适配，却新建平行实现且无 accepted decision |
+| `DESIGN_ARCHITECTURE_CONFLICT` | active 真源冲突且无法由层级或 accepted decision 裁决 |
 
 ---
 
@@ -200,19 +293,23 @@ lifecycle 状态。
 
 （影响本模块所有设计的基本原则，3–5 条）
 
-## 2. 系统架构
+## 2. 架构适用性评审
+
+（按 §3.6 列出候选架构 / capability、触发证据、判定、集成约束与重审条件）
+
+## 3. 系统架构
 
 （整体架构图 + 文字说明，用 ASCII art 或 Mermaid）
 
-## 3. 核心接口
+## 4. 核心接口
 
 （关键接口/契约定义，用代码块）
 
-## 4. 组件关系
+## 5. 组件关系
 
 （组件间的依赖、调用、数据流关系）
 
-## 5. 端点 / API（如适用）
+## 6. 端点 / API（如适用）
 
 （HTTP 端点、RPC 方法等）
 ```
@@ -221,6 +318,7 @@ lifecycle 状态。
 - 控制在 **100–300 行**
 - 系统架构图是必选的，至少一张
 - 接口定义用代码块，标注语言
+- §3.6 触发时，架构适用性矩阵是必选的；`not_applicable` 必须有证据和重审条件
 
 ### 5.3 decisions.md
 
@@ -486,13 +584,15 @@ pnpm dev          # Vite，浏览器打开 localhost
 
 ### 7.1 新建模块文档
 
-1. 创建 `architecture/<module>/` 目录
-2. 至少创建必选三件套：`README.md`、`design.md`、`decisions.md`
-3. 根据内容特征补齐条件必选文件
-4. 每个文件顶部填写元数据块，Status 设为 `draft`
-5. 设计稳定后将 Status 改为 `active`
-6. 在 `docs/README.md` 的 §4.1 架构层真源中注册
-7. 在架构模块 registry 中登记 owner、governed paths、decisions 和当前 capabilities
+1. 从当前架构索引、registry、目标域和目标平台建立架构适用性候选集
+2. 创建 `architecture/<module>/` 目录
+3. 至少创建必选三件套：`README.md`、`design.md`、`decisions.md`
+4. 根据内容特征补齐条件必选文件
+5. 在 `design.md` 记录 §3.6 的适用性矩阵并解决冲突
+6. 每个文件顶部填写元数据块，Status 设为 `draft`
+7. 设计稳定并通过 DESIGN acceptance review 后将 Status 改为 `active`
+8. 在 `docs/README.md` 的 §4.1 架构层真源中注册
+9. 在架构模块 registry 中登记 owner、governed paths、decisions 和当前 capabilities
 
 ### 7.2 维护规则
 
@@ -502,6 +602,7 @@ pnpm dev          # Vite，浏览器打开 localhost
 - 更新时同步刷新 `Updated` 日期和 `Version`
 - active 模块被修改时必须通过架构模块治理校验
 - 模块能力只维护正向 allowlist，未知接口必须 fail closed
+- ownership、契约、运行时边界、数据流或失败语义变化时同步刷新架构适用性矩阵
 
 ### 7.3 存量文档迁移
 
