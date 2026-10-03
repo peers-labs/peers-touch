@@ -86,7 +86,14 @@ func (p *MomentEventPublisher) publish(ctx context.Context, targetActorPTID stri
 	if _, err := liveBus.Publish(targetActorPTID, &realtime.StreamEvent{
 		Kind: &realtime.StreamEvent_Moment{Moment: ev},
 	}); err != nil {
-		logger.Warn(ctx, "moment.realtime: publish failed", "target_actor_ptid", targetActorPTID, "post_id", ev.PostId, "kind", ev.Kind.String(), "error", err)
+		logger.Warn(
+			ctx,
+			"moment.realtime: publish failed",
+			"kind",
+			ev.Kind.String(),
+			"error",
+			err,
+		)
 	}
 }
 

@@ -1,0 +1,81 @@
+{
+  "id": "social-private-cross-station-desktop",
+  "status": "active",
+  "product_area": "social",
+  "owners": [
+    "apps/desktop/src/acceptance/moments/**",
+    "apps/desktop/src/kernel/**",
+    "apps/desktop/src/pages/moments/**",
+    "apps/desktop/src/runtimes/momentsRuntime.ts",
+    "apps/desktop/src/services/privateMomentsNative.ts",
+    "apps/desktop/src/store/moments.ts",
+    "apps/station/app/subserver/conversation/**",
+    "apps/station/app/subserver/key_exchange/**",
+    "apps/station/app/subserver/social/**",
+    "apps/station/frame/core/federation/**",
+    "model/domain/federation/**",
+    "model/domain/key_exchange/**",
+    "model/domain/social/**",
+    "tooling/development/secure_content/**"
+  ],
+  "truth_sources": [
+    "author Home Station canonical Social resources and lifecycle revisions",
+    "recipient Home Station viewer-scoped ciphertext projections and tombstones",
+    "Federation durable outbox, inbox, ordering, deduplication and peer authentication",
+    "recipient Key Exchange one-time Content PreKey claims",
+    "Native Desktop encrypted storage and receiver-visible projections"
+  ],
+  "visible_surfaces": [
+    {
+      "type": "desktop",
+      "route": "#/moments"
+    },
+    {
+      "type": "desktop",
+      "route": "#/moments/:postId"
+    },
+    {
+      "type": "http",
+      "route": "/social/*"
+    }
+  ],
+  "required_gates": [
+    "station-api-ownership",
+    "social-cross-station-contract",
+    "social-cross-station-eventbus-contract",
+    "social-cross-station-prekey",
+    "social-cross-station-delivery",
+    "social-cross-station-interaction",
+    "social-cross-station-revocation-recovery",
+    "social-cross-station-desktop-functional",
+    "social-private-desktop-e2e",
+    "social-cross-station-native-e2e",
+    "browser-social-zero-registration"
+  ],
+  "acceptance": {
+    "runtime": [
+      "one source-bound Suite Runtime provisions both Stations and Alice/Bob once, then runs AS17 through AS24 and same-station-regression attach-only",
+      "Alice uses profile four and station-four while Bob, Eve and Bob2 bind to profile fiveArm and station-five-arm",
+      "Bob2 is the only replacement-device launch and at most two Native Desktop clients are active concurrently",
+      "same-Federation remote recipients are admitted only after identity, membership, endpoint manifest and Content PreKey verification",
+      "unsupported cross-Federation or unresolved recipients and oversized audiences fail before durable admission or Content PreKey consumption",
+      "source and receiver Station failure, retry, restart, duplicate, reorder and tamper cases converge without duplicate or partial Social state"
+    ],
+    "visible": [
+      "Alice publishes private text and media from the Native Desktop Moment composer on Station four",
+      "Bob reads authorized plaintext and media from Station fiveArm in Native Desktop HOME and detail surfaces",
+      "Bob comments and reacts from his Home Station while Alice and Bob converge on one source-authoritative result",
+      "Bob2 restores authorized never-opened history after trusted replacement-device recovery",
+      "Eve cannot render private parent, comment or media while unauthorized",
+      "pending, retrying, source-unavailable, revoked and recovery states are localized and receiver-visible"
+    ]
+  },
+  "negative": [
+    "Browser Social and Mobile parity are not claimed",
+    "cross-Federation private delivery is not claimed",
+    "development FUNCTIONAL_PASS artifacts are not treated as formal Acceptance proof",
+    "no Scenario may rebuild, redeploy, register an account, or create another Suite Runtime after the first Scenario starts",
+    "Harness and API observations cannot replace required Native UI actions or receiver-visible assertions",
+    "logs, metrics and responses expose no plaintext, content key, actor list, device ID, object bytes or envelope material"
+  ]
+}

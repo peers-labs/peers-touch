@@ -46,6 +46,14 @@ from tooling.development.secure_content.runtime_owner import (
     SOCIAL_ACCEPTANCE_PLAN_ID,
     SOCIAL_ACCEPTANCE_RUNTIME_REUSE,
     SOCIAL_ACCEPTANCE_TASK_IDS,
+    SOCIAL_CROSS_STATION_CLIENT_BINDINGS,
+    SOCIAL_CROSS_STATION_FIXTURE_ONLY_CLIENT_IDS,
+    SOCIAL_CROSS_STATION_JOURNEY,
+    SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS,
+    SOCIAL_CROSS_STATION_PLAN_ID,
+    SOCIAL_CROSS_STATION_RUNTIME_REUSE,
+    SOCIAL_CROSS_STATION_SLOT,
+    SOCIAL_CROSS_STATION_TASK_ID,
     W7_RUNTIME_REUSE,
     W8_RUNTIME_REUSE,
     W8_SCENARIOS,
@@ -261,6 +269,90 @@ class RuntimeOwnerTest(unittest.TestCase):
         )
         self.assertTrue(
             SOCIAL_ACCEPTANCE_RUNTIME_REUSE.allow_client_replacement
+        )
+
+    def test_social_cross_station_suite_contract_and_bindings_are_closed(
+        self,
+    ) -> None:
+        self.assertEqual(
+            "CROSS-STATION-SOCIAL-NATIVE-20261003",
+            SOCIAL_CROSS_STATION_PLAN_ID,
+        )
+        self.assertEqual(
+            "CSS-09-final-proof",
+            SOCIAL_CROSS_STATION_TASK_ID,
+        )
+        self.assertEqual("SOC-SEC-J10-J12", SOCIAL_CROSS_STATION_JOURNEY)
+        self.assertEqual(13, SOCIAL_CROSS_STATION_SLOT)
+        self.assertEqual(
+            (
+                "AS17",
+                "AS18",
+                "AS19",
+                "AS20",
+                "AS21",
+                "AS22",
+                "AS23",
+                "AS24",
+                "same-station-regression",
+            ),
+            SOCIAL_CROSS_STATION_RUNTIME_REUSE.scenario_ids,
+        )
+        self.assertEqual(
+            1,
+            SOCIAL_CROSS_STATION_RUNTIME_REUSE.max_provisioning_runs,
+        )
+        self.assertEqual(
+            3,
+            SOCIAL_CROSS_STATION_RUNTIME_REUSE.max_client_launches,
+        )
+        self.assertTrue(
+            SOCIAL_CROSS_STATION_RUNTIME_REUSE.allow_client_replacement,
+        )
+        self.assertEqual(
+            (
+                (
+                    "cross-station-social-alice",
+                    "alice",
+                    "four",
+                    "station-four",
+                ),
+                (
+                    "cross-station-social-bob",
+                    "bob",
+                    "fiveArm",
+                    "station-five-arm",
+                ),
+                (
+                    "cross-station-social-eve",
+                    "eve",
+                    "fiveArm",
+                    "station-five-arm",
+                ),
+                (
+                    "cross-station-social-bob2",
+                    "bob",
+                    "fiveArm",
+                    "station-five-arm",
+                ),
+            ),
+            SOCIAL_CROSS_STATION_CLIENT_BINDINGS,
+        )
+        self.assertEqual(
+            (
+                "cross-station-social-alice",
+                "cross-station-social-bob",
+                "cross-station-social-bob2",
+            ),
+            SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS,
+        )
+        self.assertEqual(
+            ("cross-station-social-eve",),
+            SOCIAL_CROSS_STATION_FIXTURE_ONLY_CLIENT_IDS,
+        )
+        self.assertEqual(
+            SOCIAL_CROSS_STATION_RUNTIME_REUSE.max_client_launches,
+            len(SOCIAL_CROSS_STATION_LAUNCHED_CLIENT_IDS),
         )
         self.assertEqual(14, len(SOCIAL_ACCEPTANCE_IDS))
         source = inspect.getsource(W7RuntimeOwner._run_w8_suite)
@@ -762,6 +854,77 @@ class RuntimeOwnerTest(unittest.TestCase):
         self.assertEqual(0, status)
         run_suite.assert_called_once_with(slot=12)
 
+    def test_social_cross_station_cli_dispatches_once(self) -> None:
+        with patch.object(
+            W7RuntimeOwner,
+            "run_social_cross_station_suite",
+            return_value={
+                "status": "FUNCTIONAL_PASS",
+                "proofState": "UNPROVEN",
+            },
+        ) as run_suite:
+            status = main(
+                [
+                    "run-social-cross-station-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                    "--slot",
+                    "13",
+                ]
+            )
+
+        self.assertEqual(0, status)
+        run_suite.assert_called_once_with(slot=13)
+
+    def test_social_cross_station_cli_rejects_wrong_binding(self) -> None:
+        cases = (
+            (["run-social-cross-station-suite"], "profile:four"),
+            (
+                [
+                    "run-social-cross-station-suite",
+                    "--profiles",
+                    "fiveArm,four",
+                    "--slot",
+                    "13",
+                ],
+                "runtime:social-cross-station",
+            ),
+            (
+                [
+                    "run-social-cross-station-suite",
+                    "--profiles",
+                    "four,fiveArm",
+                    "--slot",
+                    "12",
+                ],
+                "profile:four",
+            ),
+            (
+                [
+                    "run-social-cross-station-suite",
+                    "--profile",
+                    "fiveArm",
+                    "--profiles",
+                    "four,fiveArm",
+                    "--slot",
+                    "13",
+                ],
+                "profile:four",
+            ),
+        )
+        for arguments, resource in cases:
+            with self.subTest(arguments=arguments):
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    status = main(arguments)
+                self.assertEqual(2, status)
+                payload = json.loads(stderr.getvalue())
+                self.assertEqual(
+                    "CONTROLLER_BINDING_MISMATCH",
+                    payload["code"],
+                )
+                self.assertEqual(resource, payload["resource"])
+
     def test_w8_suite_requires_complete_profile_closure(
         self,
     ) -> None:
@@ -944,6 +1107,12 @@ class RuntimeOwnerTest(unittest.TestCase):
                 "four,fiveArm",
                 "--slot",
                 "12",
+            ],
+            "run-social-cross-station-suite": [
+                "--profiles",
+                "four,fiveArm",
+                "--slot",
+                "13",
             ],
             "run-w9-suite": [],
             "run-w2-suite": ["--profiles", "four,fiveArm"],
