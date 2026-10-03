@@ -2108,8 +2108,8 @@ exhausted the previous contract.
 
 **2026-10-03 successor note**: the same-Station restriction remains the current
 implementation guard until the Native Desktop cross-Station plan completes.
-Its removal is governed by `FHSA-D08..FHSA-D15` in
-`docs/architecture/federated-social-activity/decisions.md`. The typed Audience,
+Its removal is governed by `CSS-D02..CSS-D08` in
+`docs/architecture/cross-station-social/decisions.md`. The typed Audience,
 frozen recipient set, `CUSTOM_DENY(PUBLIC)` rejection and no-partial-publish
 requirements remain unchanged.
 
