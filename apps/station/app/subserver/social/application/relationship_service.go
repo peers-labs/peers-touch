@@ -46,7 +46,7 @@ func (s *RelationshipService) Follow(ctx context.Context, followerPTID, targetAc
 		return nil, fmt.Errorf("target actor station is blocked")
 	}
 
-	logger.Info(ctx, "Follow", "follower_ptid", followerPTID, "following_ptid", targetActorPTID)
+	logger.Info(ctx, "Follow relationship accepted")
 
 	err := s.followRepo.Follow(ctx, followerPTID, targetActorPTID)
 	if err != nil {
@@ -64,7 +64,7 @@ func (s *RelationshipService) Follow(ctx context.Context, followerPTID, targetAc
 }
 
 func (s *RelationshipService) Unfollow(ctx context.Context, followerPTID, targetActorPTID string) error {
-	logger.Info(ctx, "Unfollow", "follower_ptid", followerPTID, "following_ptid", targetActorPTID)
+	logger.Info(ctx, "Unfollow relationship accepted")
 
 	err := s.followRepo.Unfollow(ctx, followerPTID, targetActorPTID)
 	if err != nil {
@@ -278,7 +278,6 @@ func (s *RelationshipService) GetFollowing(ctx context.Context, actorPTID string
 			HomeStationDomain: homeStationDomainOf(follow.Following),
 			HomeStationPeerId: homeStationPeerIDOf(follow.Following),
 		}
-		logger.Info(ctx, "Following user", "actorPtid", f.ActorPtid, "username", f.Username, "displayName", f.DisplayName, "displayNameBytes", []byte(f.DisplayName))
 		following = append(following, f)
 	}
 

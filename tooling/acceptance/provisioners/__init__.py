@@ -30,6 +30,7 @@ from .native_desktop_linux import NativeDesktopLinuxProvisioner
 from .native_desktop_macos import NativeDesktopMacOSProvisioner
 from .native_desktop_windows import NativeDesktopWindowsProvisioner
 from .native_tauri_embedded_webdriver import (
+    CrossStationSocialNativeProvisioner,
     NativeTauriEmbeddedWebDriverProvisioner,
 )
 from .native_tauri_current_profile import (
@@ -50,6 +51,9 @@ from .station_access_login_browser import (
 _PROVISIONERS: dict[str, type[EnvironmentProvisioner]] = {
     ChatMixedNativeProvisioner.environment_id: ChatMixedNativeProvisioner,
     ChatStorageNativeProvisioner.environment_id: ChatStorageNativeProvisioner,
+    CrossStationSocialNativeProvisioner.environment_id: (
+        CrossStationSocialNativeProvisioner
+    ),
     DesktopPrimaryNavigationBrowserProvisioner.environment_id: (
         DesktopPrimaryNavigationBrowserProvisioner
     ),
@@ -107,7 +111,10 @@ def get_provisioner(
         raise ProvisioningError(
             f"no provisioner registered for environment: {contract.id}"
         )
-    if provisioner_class is NativeTauriEmbeddedWebDriverProvisioner:
+    if provisioner_class in {
+        CrossStationSocialNativeProvisioner,
+        NativeTauriEmbeddedWebDriverProvisioner,
+    }:
         if service_profiles:
             raise ProvisioningError(
                 f"environment {contract.id!r} does not accept service profile bindings"
@@ -152,6 +159,7 @@ def get_runtime_cell_lifecycle(cell_id: str) -> RuntimeCellLifecycle:
 __all__ = [
     "ChatMixedNativeProvisioner",
     "ChatStorageNativeProvisioner",
+    "CrossStationSocialNativeProvisioner",
     "DesktopPrimaryNavigationBrowserProvisioner",
     "DevUiLocalBrowserProvisioner",
     "HomeStationProvisioner",

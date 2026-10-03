@@ -126,8 +126,8 @@ func (s *MomentService) CreateMoment(ctx context.Context, req *model.CreatePostR
 		// is CUSTOM_*. This is logged at WARN so the limitation is
 		// audible.
 		if authorPTID == "" && (req.Audience.Kind == model.Audience_CUSTOM_ALLOW || req.Audience.Kind == model.Audience_CUSTOM_DENY) {
-			logger.Warn(ctx, "moment.create: CUSTOM_* author-PTID check skipped - actor resolver is no-op (P3 wiring pending)",
-				"audience_kind", req.Audience.Kind.String(), "author_ptid", authorPTID)
+			logger.Warn(ctx, "moment.create: CUSTOM_* author identity check skipped - actor resolver is no-op (P3 wiring pending)",
+				"audience_kind", req.Audience.Kind.String())
 		} else {
 			return nil, fmt.Errorf("audience validation: %w", err)
 		}
@@ -178,12 +178,10 @@ func (s *MomentService) CreateMoment(ctx context.Context, req *model.CreatePostR
 	if err != nil {
 		// Hydration errors are non-fatal — return the post with
 		// whatever fields succeeded; clients render partial.
-		logger.Warn(ctx, "moment.create: hydration partial", "post_id", domainPost.ID, "error", err)
+		logger.Warn(ctx, "moment.create: hydration partial", "error", err)
 	}
 
 	logger.Info(ctx, "moment.created",
-		"post_id", domainPost.ID,
-		"author_ptid", authorPTID,
 		"audience_kind", req.Audience.Kind.String(),
 		"is_public", domainPost.IsPublic())
 	if s.publisher != nil {
@@ -490,10 +488,10 @@ func (s *MomentService) DeleteMoment(ctx context.Context, postIDStr, authorPTID 
 	}
 	if s.repos.Deliveries != nil {
 		if err := s.repos.Deliveries.RevokePost(ctx, postID); err != nil {
-			logger.Warn(ctx, "moment.delete: delivery revoke failed", "post_id", postID, "error", err)
+			logger.Warn(ctx, "moment.delete: delivery revoke failed", "error", err)
 		}
 	}
-	logger.Info(ctx, "moment.deleted", "post_id", postID, "author_ptid", authorPTID)
+	logger.Info(ctx, "moment.deleted")
 	if s.publisher != nil {
 		s.publisher.PublishDeleted(ctx, postID, authorPTID)
 	}
@@ -620,7 +618,7 @@ func (s *MomentService) hydratePosts(ctx context.Context, posts []*domain.Post, 
 		}
 		hp, hErr := s.hydratePostWith(ctx, p, viewerPTID, authors)
 		if hErr != nil {
-			logger.Warn(ctx, "hydrate_posts: partial hydration", "post_id", p.ID, "error", hErr)
+			logger.Warn(ctx, "hydrate_posts: partial hydration", "error", hErr)
 		}
 		if hp != nil {
 			out = append(out, hp)
