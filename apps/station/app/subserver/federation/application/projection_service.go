@@ -2,10 +2,55 @@ package application
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
 	pb "github.com/peers-labs/peers-touch/station/app/subserver/federation/pb"
 )
+
+// ValidateActiveStationPair verifies that both Stations belong to one active
+// Federation. It exposes membership truth without leaking Federation stores.
+func (s *ProjectionService) ValidateActiveStationPair(
+	ctx context.Context,
+	federationID string,
+	sourceStationPeerID string,
+	targetStationPeerID string,
+) error {
+	federationID = strings.TrimSpace(federationID)
+	sourceStationPeerID = strings.TrimSpace(sourceStationPeerID)
+	targetStationPeerID = strings.TrimSpace(targetStationPeerID)
+	if federationID == "" ||
+		sourceStationPeerID == "" ||
+		targetStationPeerID == "" ||
+		sourceStationPeerID == targetStationPeerID {
+		return fmt.Errorf("active Federation station pair is invalid")
+	}
+	federation, err := s.federationRepo.GetByID(ctx, federationID)
+	if err != nil {
+		return err
+	}
+	if federation == nil || federation.Status != "active" {
+		return fmt.Errorf("Federation is not active")
+	}
+	for _, stationPeerID := range []string{
+		sourceStationPeerID,
+		targetStationPeerID,
+	} {
+		membership, err := s.membershipRepo.GetByStation(
+			ctx,
+			federationID,
+			stationPeerID,
+		)
+		if err != nil {
+			return err
+		}
+		if membership == nil || membership.Status != "active" {
+			return fmt.Errorf("Station is not an active Federation member")
+		}
+	}
+	return nil
+}
 
 type ProjectionService struct {
 	federationRepo domain.FederationRepository

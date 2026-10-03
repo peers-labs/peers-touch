@@ -47,6 +47,8 @@ const (
 	KeyExchangeMLSFetchRoute = "/federation/key-exchange/mls/key-package/fetch"
 	// KeyExchangeMLSClaimRoute irreversibly claims a prepared MLS KeyPackage.
 	KeyExchangeMLSClaimRoute = "/federation/key-exchange/mls-key-package/claim"
+	// KeyExchangeContentPreKeyClaimRoute irreversibly claims Content PreKeys.
+	KeyExchangeContentPreKeyClaimRoute = "/federation/key-exchange/content-prekeys/claim"
 	// RealtimeCallResolutionRoute reads call truth from the callee Home Station.
 	RealtimeCallResolutionRoute = "/federation/realtime/call-resolution"
 	// RealtimeSignalRoute forwards a realtime call signal to a recipient's Home Station.
@@ -75,6 +77,7 @@ const (
 	PeerRouteKeyExchangeDirectFetch         PeerRoute = "key-exchange-direct-fetch"
 	PeerRouteKeyExchangeMLSFetch            PeerRoute = "key-exchange-mls-fetch"
 	PeerRouteKeyExchangeMLSClaim            PeerRoute = "key-exchange-mls-claim"
+	PeerRouteKeyExchangeContentPreKeyClaim  PeerRoute = "key-exchange-content-prekey-claim"
 	PeerRouteRealtimeCallResolution         PeerRoute = "realtime-call-resolution"
 	PeerRouteRealtimeSignal                 PeerRoute = "realtime-signal"
 	PeerRouteGroupCallAuthorityJoin         PeerRoute = "group-call-authority-join"
@@ -126,6 +129,7 @@ var peerRouteSpecs = []peerRouteSpec{
 	{PeerRouteKeyExchangeDirectFetch, "federation-key-exchange-direct-fetch", KeyExchangeDirectFetchRoute, server.POST, KeyExchangeDirectFetchScope},
 	{PeerRouteKeyExchangeMLSFetch, "federation-key-exchange-mls-fetch", KeyExchangeMLSFetchRoute, server.POST, KeyExchangeMLSFetchScope},
 	{PeerRouteKeyExchangeMLSClaim, "federation-key-exchange-mls-claim", KeyExchangeMLSClaimRoute, server.POST, KeyExchangeMLSClaimScope},
+	{PeerRouteKeyExchangeContentPreKeyClaim, "federation-key-exchange-content-prekey-claim", KeyExchangeContentPreKeyClaimRoute, server.POST, KeyExchangeContentPreKeyClaimScope},
 	{PeerRouteRealtimeCallResolution, "federation-realtime-call-resolution", RealtimeCallResolutionRoute, server.POST, RealtimeCallResolutionScope},
 	{PeerRouteRealtimeSignal, "federation-realtime-signal", RealtimeSignalRoute, server.POST, RealtimeSignalScope},
 	{PeerRouteGroupCallAuthorityJoin, "federation-group-call-authority-join", GroupCallAuthorityJoinRoute, server.POST, GroupCallAuthorityJoinScope},
@@ -296,6 +300,13 @@ func (f *PeerRouteFactory) Handlers() []server.Handler {
 			server.POST,
 			f.dispatchRoute(PeerRouteKeyExchangeMLSClaim),
 			f.wrappers[PeerRouteKeyExchangeMLSClaim],
+		),
+		server.NewSimpleHandler(
+			"federation-key-exchange-content-prekey-claim",
+			KeyExchangeContentPreKeyClaimRoute,
+			server.POST,
+			f.dispatchRoute(PeerRouteKeyExchangeContentPreKeyClaim),
+			f.wrappers[PeerRouteKeyExchangeContentPreKeyClaim],
 		),
 		server.NewSimpleHandler(
 			"federation-realtime-call-resolution",

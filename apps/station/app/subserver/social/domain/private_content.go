@@ -42,18 +42,19 @@ const (
 type PrivateContentErrorCode string
 
 const (
-	PrivateContentInvalidArgument PrivateContentErrorCode = "SOCIAL_PRIVATE_INVALID_ARGUMENT"
-	PrivateContentUnsupported     PrivateContentErrorCode = "SOCIAL_PRIVATE_UNSUPPORTED"
-	PrivateContentUnauthorized    PrivateContentErrorCode = "SOCIAL_PRIVATE_UNAUTHORIZED"
-	PrivateContentNotFound        PrivateContentErrorCode = "SOCIAL_PRIVATE_NOT_FOUND"
-	PrivateContentConflict        PrivateContentErrorCode = "SOCIAL_PRIVATE_CONFLICT"
-	PrivateContentStalePlan       PrivateContentErrorCode = "SOCIAL_PRIVATE_STALE_PLAN"
-	PrivateContentExpiredPlan     PrivateContentErrorCode = "SOCIAL_PRIVATE_EXPIRED_PLAN"
-	PrivateContentRateLimited     PrivateContentErrorCode = "SOCIAL_PRIVATE_RATE_LIMITED"
-	PrivateContentIntegrityFailed PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRITY_FAILED"
-	PrivateContentDependency      PrivateContentErrorCode = "SOCIAL_PRIVATE_DEPENDENCY_FAILURE"
-	PrivateContentIntegrationGap  PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRATION_GAP"
-	PrivateContentInternal        PrivateContentErrorCode = "SOCIAL_PRIVATE_INTERNAL"
+	PrivateContentInvalidArgument         PrivateContentErrorCode = "SOCIAL_PRIVATE_INVALID_ARGUMENT"
+	PrivateContentUnsupported             PrivateContentErrorCode = "SOCIAL_PRIVATE_UNSUPPORTED"
+	PrivateContentUnauthorized            PrivateContentErrorCode = "SOCIAL_PRIVATE_UNAUTHORIZED"
+	PrivateContentNotFound                PrivateContentErrorCode = "SOCIAL_PRIVATE_NOT_FOUND"
+	PrivateContentConflict                PrivateContentErrorCode = "SOCIAL_PRIVATE_CONFLICT"
+	PrivateContentStalePlan               PrivateContentErrorCode = "SOCIAL_PRIVATE_STALE_PLAN"
+	PrivateContentExpiredPlan             PrivateContentErrorCode = "SOCIAL_PRIVATE_EXPIRED_PLAN"
+	PrivateContentRateLimited             PrivateContentErrorCode = "SOCIAL_PRIVATE_RATE_LIMITED"
+	PrivateContentRecipientKeyUnavailable PrivateContentErrorCode = "SOCIAL_PRIVATE_RECIPIENT_KEY_UNAVAILABLE"
+	PrivateContentIntegrityFailed         PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRITY_FAILED"
+	PrivateContentDependency              PrivateContentErrorCode = "SOCIAL_PRIVATE_DEPENDENCY_FAILURE"
+	PrivateContentIntegrationGap          PrivateContentErrorCode = "SOCIAL_PRIVATE_INTEGRATION_GAP"
+	PrivateContentInternal                PrivateContentErrorCode = "SOCIAL_PRIVATE_INTERNAL"
 )
 
 // PrivateContentError is the transport-independent error returned by the W6
@@ -191,6 +192,7 @@ type FriendsSnapshot struct {
 type RecipientLocality struct {
 	ActorPTID         string
 	HomeStationPeerID string
+	FederationID      string
 }
 
 // GroupRecipientSnapshot is Social's value-only projection of Conversation
@@ -553,6 +555,16 @@ func NormalizeFriendsSnapshot(
 		); err != nil {
 			return FriendsSnapshot{}, [sha256.Size]byte{}, err
 		}
+		if locality.FederationID != "" {
+			if err := validateIdentifier(
+				locality.FederationID,
+				255,
+				"recipient_localities.federation_id",
+				operation,
+			); err != nil {
+				return FriendsSnapshot{}, [sha256.Size]byte{}, err
+			}
+		}
 		if locality.ActorPTID != normalized.RecipientPTIDs[index] {
 			return FriendsSnapshot{}, [sha256.Size]byte{}, NewPrivateContentError(
 				PrivateContentConflict,
@@ -594,6 +606,13 @@ func NormalizeFriendsSnapshot(
 			2,
 			locality.HomeStationPeerID,
 		)
+		if locality.FederationID != "" {
+			localityBytes = appendStringField(
+				localityBytes,
+				3,
+				locality.FederationID,
+			)
+		}
 		canonical = appendBytesField(canonical, 7, localityBytes)
 	}
 	return normalized, sha256.Sum256(canonical), nil

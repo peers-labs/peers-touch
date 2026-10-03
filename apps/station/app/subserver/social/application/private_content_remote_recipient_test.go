@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	keyexchangedomain "github.com/peers-labs/peers-touch/station/app/subserver/key_exchange/domain"
 	socialdomain "github.com/peers-labs/peers-touch/station/app/subserver/social/domain"
 	"github.com/peers-labs/peers-touch/station/app/subserver/social/infrastructure"
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
@@ -12,6 +13,139 @@ import (
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestRemoteRecipientAdmissionRejectsBroadFriendsAudienceWithoutClaim(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	fixture.audiences.snapshot.RecipientLocalities = nil
+	recipients := &privateContentRemoteRecipientDirectory{
+		delegate: privateContentTestRecipients{author: fixture.author.Endpoint},
+		localities: []socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+	}
+	fixture.service.recipients = recipients
+
+	_, err := fixture.service.PreparePrivateMoment(
+		context.Background(),
+		fixture.author,
+		privateMomentPrepareRequest(
+			"prepare-broad-remote-friends",
+			"content-broad-remote-friends",
+		),
+	)
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentUnsupported,
+	) {
+		t.Fatalf("broad FRIENDS remote admission error = %v", err)
+	}
+	if recipients.preKeyTargetCalls != 0 ||
+		fixture.keyExchange.claimCalls != 0 {
+		t.Fatalf(
+			"broad FRIENDS target/claim calls = %d/%d, want 0/0",
+			recipients.preKeyTargetCalls,
+			fixture.keyExchange.claimCalls,
+		)
+	}
+	assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+}
+
+func TestRemoteRecipientAdmissionClaimsSelectedFriendPreKeysWithoutBusinessCommit(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	fixture.audiences.snapshot.Audience = &actormodel.Audience{
+		Kind:       actormodel.Audience_CUSTOM_ALLOW,
+		ActorPtids: []string{"ptid:bob"},
+	}
+	fixture.audiences.snapshot.RecipientLocalities = nil
+	recipients := &privateContentRemoteRecipientDirectory{
+		delegate: privateContentTestRecipients{author: fixture.author.Endpoint},
+		localities: []socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+	}
+	fixture.service.recipients = recipients
+	request := privateMomentPrepareRequest(
+		"prepare-selected-remote-friend",
+		"content-selected-remote-friend",
+	)
+	request.Audience = proto.Clone(
+		fixture.audiences.snapshot.Audience,
+	).(*actormodel.Audience)
+
+	prepared, err := fixture.service.PreparePrivateMoment(
+		context.Background(),
+		fixture.author,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.GetPlan() == nil {
+		t.Fatal("selected remote friend admission returned no encryption plan")
+	}
+	if recipients.preKeyTargetCalls != 1 ||
+		fixture.keyExchange.claimCalls != 1 {
+		t.Fatalf(
+			"selected remote friend target/claim calls = %d/%d, want 1/1",
+			recipients.preKeyTargetCalls,
+			fixture.keyExchange.claimCalls,
+		)
+	}
+	assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+}
+
+func TestRemoteRecipientAdmissionUnavailablePreservesNoBusinessCommit(
+	t *testing.T,
+) {
+	fixture := newPrivateContentServiceFixture(t)
+	fixture.audiences.snapshot.Audience = &actormodel.Audience{
+		Kind:       actormodel.Audience_CUSTOM_ALLOW,
+		ActorPtids: []string{"ptid:bob"},
+	}
+	fixture.audiences.snapshot.RecipientLocalities = nil
+	fixture.service.recipients = &privateContentRemoteRecipientDirectory{
+		delegate: privateContentTestRecipients{author: fixture.author.Endpoint},
+		localities: []socialdomain.RecipientLocality{{
+			ActorPTID:         "ptid:bob",
+			HomeStationPeerID: "station-remote",
+			FederationID:      "federation-one",
+		}},
+	}
+	fixture.keyExchange.claimError = keyexchangedomain.NewError(
+		keyexchangedomain.ErrorCodePoolDepleted,
+		"test.remote_content_prekey",
+		"pool",
+		"is depleted",
+	)
+
+	request := privateMomentPrepareRequest(
+		"prepare-remote-unavailable",
+		"content-remote-unavailable",
+	)
+	request.Audience = proto.Clone(
+		fixture.audiences.snapshot.Audience,
+	).(*actormodel.Audience)
+	_, err := fixture.service.PreparePrivateMoment(
+		context.Background(),
+		fixture.author,
+		request,
+	)
+	if !socialdomain.IsPrivateContentCode(
+		err,
+		socialdomain.PrivateContentRecipientKeyUnavailable,
+	) {
+		t.Fatalf("remote unavailable error = %v", err)
+	}
+	assertRemoteRecipientAdmissionHasNoBusinessRows(t, fixture)
+}
 
 func TestPrivateContentServiceRejectsRemoteRecipientsBeforePrepareSideEffects(
 	t *testing.T,
@@ -288,6 +422,7 @@ type privateContentRemoteRecipientDirectory struct {
 func (r *privateContentRemoteRecipientDirectory) ResolveRecipientLocalities(
 	context.Context,
 	string,
+	string,
 	[]string,
 ) ([]socialdomain.RecipientLocality, error) {
 	r.localityCalls++
@@ -356,6 +491,26 @@ func assertPrivateContentRemotePrepareLeftNoRows(
 		&dbmodel.SocialPrivateRecipientGrant{},
 		&dbmodel.SocialPrivateContentPost{},
 		&dbmodel.SocialPrivateContentEnvelope{},
+		&dbmodel.SocialPrivateCommandReceipt{},
+	}
+	for _, model := range models {
+		assertPrivateContentCount(t, fixture.database, model, 0)
+	}
+}
+
+func assertRemoteRecipientAdmissionHasNoBusinessRows(
+	t *testing.T,
+	fixture *privateContentServiceFixture,
+) {
+	t.Helper()
+	models := []any{
+		&dbmodel.SocialPrivateAudienceSnapshot{},
+		&dbmodel.SocialPrivateRecipientGrant{},
+		&dbmodel.SocialPrivateContentPost{},
+		&dbmodel.SocialPrivateContentEnvelope{},
+		&dbmodel.SocialPrivateDeliveryIntent{},
+		&dbmodel.SocialPrivateObjectAttachment{},
+		&dbmodel.SocialPrivateObjectGrant{},
 		&dbmodel.SocialPrivateCommandReceipt{},
 	}
 	for _, model := range models {

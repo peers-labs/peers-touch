@@ -36,6 +36,7 @@ export type PrivatePublishState =
   | 'IDLE'
   | 'AUDIENCE_REQUIRED'
   | 'CHECKING_PRIVATE_READINESS'
+  | 'CHECKING_REMOTE_READINESS'
   | 'READY_PRIVATE'
   | 'PRIVATE_UNSUPPORTED'
   | 'RECIPIENT_KEY_UNAVAILABLE'
@@ -204,7 +205,7 @@ export interface PrivateMomentPublishIntent {
 }
 
 interface PrivateMomentPublishSuccess {
-  state: Extract<PrivatePublishState, 'UNKNOWN_COMMIT' | 'PUBLISHED'>;
+  state: Extract<PrivatePublishState, 'READY_PRIVATE' | 'UNKNOWN_COMMIT' | 'PUBLISHED'>;
   draftId: string;
   postId?: string;
   projection?: PrivateMomentProjection;
@@ -285,6 +286,7 @@ const PUBLISH_STATES = new Set<PrivatePublishState>([
   'IDLE',
   'AUDIENCE_REQUIRED',
   'CHECKING_PRIVATE_READINESS',
+  'CHECKING_REMOTE_READINESS',
   'READY_PRIVATE',
   'PRIVATE_UNSUPPORTED',
   'RECIPIENT_KEY_UNAVAILABLE',
@@ -752,7 +754,11 @@ function normalizePublishResult(value: unknown): PrivateMomentPublishResult {
       },
     };
   }
-  if (state !== 'PUBLISHED' && state !== 'UNKNOWN_COMMIT') {
+  if (
+    state !== 'READY_PRIVATE'
+    && state !== 'PUBLISHED'
+    && state !== 'UNKNOWN_COMMIT'
+  ) {
     throw privateProjectionContractError('private publish result state is invalid');
   }
   const projectionValue = value.projection;
@@ -813,7 +819,10 @@ async function invokePrivateNative<T>(
   return unpackNativeData(result.data) as T;
 }
 
-function nativeIntent(intent: PrivateMomentPublishIntent): Record<string, unknown> {
+function nativeIntent(
+  intent: PrivateMomentPublishIntent,
+  admissionOnly = false,
+): Record<string, unknown> {
   return {
     actor_ptid: intent.actorPtid,
     renderer_generation: intent.rendererGeneration,
@@ -865,6 +874,7 @@ function nativeIntent(intent: PrivateMomentPublishIntent): Record<string, unknow
           source_post_id: intent.repost.sourcePostId,
         }
       : undefined,
+    admission_only: admissionOnly,
   };
 }
 
@@ -909,8 +919,17 @@ export const privateMomentsNative = {
     assertNative('PRIVATE_UNSUPPORTED');
     return normalizePublishResult(await invokePrivateNative(
       PRIVATE_MOMENTS_COMMANDS.publish,
-      nativeIntent(intent),
+      nativeIntent(intent, false),
       'PUBLISH_FAILED',
+    ));
+  },
+
+  async admit(intent: PrivateMomentPublishIntent): Promise<PrivateMomentPublishResult> {
+    assertNative('PRIVATE_UNSUPPORTED');
+    return normalizePublishResult(await invokePrivateNative(
+      PRIVATE_MOMENTS_COMMANDS.publish,
+      nativeIntent(intent, true),
+      'RECIPIENT_KEY_UNAVAILABLE',
     ));
   },
 

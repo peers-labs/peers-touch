@@ -138,10 +138,20 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize Social private audience authority: %w", err)
 	}
+	privateFederationMembership, err :=
+		resolvePrivateContentFederationMembership()
+	if err != nil {
+		return fmt.Errorf(
+			"initialize Social private Federation membership port: %w",
+			err,
+		)
+	}
 	privateGroupRecipients := newPrivateContentGroupRecipientPort()
 	privateRecipientDirectory, err := newPrivateContentRecipientDirectory(
 		actorCapabilities,
 		federationRuntime,
+		privateAudienceAuthority,
+		privateFederationMembership,
 	)
 	if err != nil {
 		return fmt.Errorf("initialize Social private recipient directory: %w", err)
