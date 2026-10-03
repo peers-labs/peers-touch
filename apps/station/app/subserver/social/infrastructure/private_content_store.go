@@ -14,6 +14,7 @@ import (
 
 	federationdelivery "github.com/peers-labs/peers-touch/station/frame/core/federation/delivery"
 	dbmodel "github.com/peers-labs/peers-touch/station/frame/touch/model/db"
+	privatecontentpb "github.com/peers-labs/peers-touch/station/frame/touch/model/privatecontent"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -60,6 +61,9 @@ const (
 	PrivateContentBoundaryObjectAttachment  PrivateContentWriteBoundary = "object_attachment"
 	PrivateContentBoundaryObjectGrants      PrivateContentWriteBoundary = "object_grants"
 	PrivateContentBoundaryCommitProof       PrivateContentWriteBoundary = "commit_proof"
+	PrivateContentBoundaryFederationOutbox  PrivateContentWriteBoundary = "federation_outbox"
+	PrivateContentBoundaryRemoteResource    PrivateContentWriteBoundary = "remote_resource"
+	PrivateContentBoundaryRemoteEnvelopes   PrivateContentWriteBoundary = "remote_envelopes"
 	PrivateContentBoundaryCommandReceipt    PrivateContentWriteBoundary = "command_receipt"
 	PrivateContentBoundaryPostDeleted       PrivateContentWriteBoundary = "post_deleted"
 	PrivateContentBoundaryCommentsDeleted   PrivateContentWriteBoundary = "comments_deleted"
@@ -182,6 +186,12 @@ type PrivateCommentPage struct {
 // transaction. Implementations never create or commit nested transactions.
 type PrivateContentTransaction interface {
 	ContentPreKeyValidationTransaction() federationdelivery.Transaction
+	Outbox() federationdelivery.OutboxWriter
+	EnqueueFederationFrame(
+		context.Context,
+		*federationdelivery.Frame,
+		time.Time,
+	) (federationdelivery.EnqueueResult, error)
 	LoadPrepareBinding(context.Context, string) (PrivatePrepareBinding, error)
 	RejectStale(context.Context) error
 	Expire(context.Context) error
@@ -240,6 +250,18 @@ type PrivateContentUnitOfWork interface {
 type PrivateContentStore interface {
 	PrivateContentUnitOfWork
 	Migrate(context.Context) error
+	InspectRemotePrivateResource(
+		context.Context,
+		federationdelivery.Transaction,
+		*privatecontentpb.FederatedPrivateResourceDelivery,
+		[]byte,
+	) (bool, error)
+	ApplyRemotePrivateResource(
+		context.Context,
+		federationdelivery.Transaction,
+		*privatecontentpb.FederatedPrivateResourceDelivery,
+		[]byte,
+	) (bool, error)
 	ListRecoverablePrivateContent(
 		context.Context,
 		RecoverablePrivateContentQuery,
@@ -268,6 +290,16 @@ type PrivateContentStore interface {
 		string,
 		string,
 	) (*PrivatePostReadModel, error)
+	ReadRemotePrivatePost(
+		context.Context,
+		string,
+		string,
+		string,
+		func(
+			federationdelivery.Transaction,
+			*RemotePrivatePostReadModel,
+		) error,
+	) error
 	GetPrivateComment(
 		context.Context,
 		string,
@@ -564,6 +596,7 @@ type GORMPrivateContentStore struct {
 
 type gormPrivateContentTransaction struct {
 	db             *gorm.DB
+	outbox         federationdelivery.OutboxWriter
 	failpoint      PrivateContentFailpoint
 	plan           *dbmodel.SocialPrivateContentPlan
 	domainCommitID string
@@ -571,7 +604,8 @@ type gormPrivateContentTransaction struct {
 }
 
 type privateContentValidationTransaction struct {
-	db *gorm.DB
+	db     *gorm.DB
+	outbox federationdelivery.OutboxWriter
 }
 
 var privateContentSQLiteLocks sync.Map
@@ -580,12 +614,40 @@ func (t privateContentValidationTransaction) DB() *gorm.DB {
 	return t.db
 }
 
-func (privateContentValidationTransaction) Outbox() federationdelivery.OutboxWriter {
-	return nil
+func (t privateContentValidationTransaction) Outbox() federationdelivery.OutboxWriter {
+	return t.outbox
 }
 
 func (tx *gormPrivateContentTransaction) ContentPreKeyValidationTransaction() federationdelivery.Transaction {
-	return privateContentValidationTransaction{db: tx.db}
+	return privateContentValidationTransaction{db: tx.db, outbox: tx.outbox}
+}
+
+func (tx *gormPrivateContentTransaction) Outbox() federationdelivery.OutboxWriter {
+	return tx.outbox
+}
+
+func (tx *gormPrivateContentTransaction) EnqueueFederationFrame(
+	ctx context.Context,
+	frame *federationdelivery.Frame,
+	now time.Time,
+) (federationdelivery.EnqueueResult, error) {
+	if tx.outbox == nil {
+		return federationdelivery.EnqueueResult{}, fmt.Errorf(
+			"%w: Federation outbox is unavailable",
+			ErrPrivateContentInvalid,
+		)
+	}
+	result, err := tx.outbox.Enqueue(ctx, frame, now)
+	if err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+	if err := tx.afterWrite(
+		ctx,
+		PrivateContentBoundaryFederationOutbox,
+	); err != nil {
+		return federationdelivery.EnqueueResult{}, err
+	}
+	return result, nil
 }
 
 func (tx *gormPrivateContentTransaction) LoadPrepareBinding(
@@ -628,6 +690,9 @@ func (s *GORMPrivateContentStore) Migrate(ctx context.Context) error {
 	}
 	if err := database.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("social private content migrate: %w", err)
+	}
+	if err := migrateRemotePrivateResources(database); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1440,8 +1505,16 @@ func (s *GORMPrivateContentStore) Execute(
 		return fmt.Errorf("%w: transaction callback is required", ErrPrivateContentInvalid)
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		outbox, err := federationdelivery.NewGORMRepository(
+			tx,
+			federationdelivery.SystemClock{},
+		)
+		if err != nil {
+			return err
+		}
 		return fn(&gormPrivateContentTransaction{
 			db:        tx,
+			outbox:    outbox,
 			failpoint: s.failpoint,
 		})
 	})
@@ -1545,8 +1618,16 @@ func (s *GORMPrivateContentStore) ExecuteSubmit(
 				)
 			}
 
+			outbox, err := federationdelivery.NewGORMRepository(
+				tx,
+				federationdelivery.SystemClock{},
+			)
+			if err != nil {
+				return err
+			}
 			bound := &gormPrivateContentTransaction{
 				db:             tx,
+				outbox:         outbox,
 				failpoint:      s.failpoint,
 				plan:           &plan,
 				domainCommitID: command.DomainCommitID,

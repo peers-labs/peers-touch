@@ -241,12 +241,36 @@ pub fn decrypt_projection_from_response(
     supplied_root: Option<ContentKey>,
     expected_recovery_epoch: Option<u64>,
 ) -> Result<DecryptedPrivateMoment, PrivateProjectionError> {
-    verify_response_integrity(
+    decrypt_projection_from_response_at(
+        session,
+        store,
+        expected_post_id,
+        response,
+        sender_signing_key,
+        supplied_root,
+        expected_recovery_epoch,
+        current_unix_seconds(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn decrypt_projection_from_response_at(
+    session: &SecureContentSession,
+    store: &SecureContentStore,
+    expected_post_id: &str,
+    response: &social::GetMomentResourceResponse,
+    sender_signing_key: Option<&VerifyingKey>,
+    supplied_root: Option<ContentKey>,
+    expected_recovery_epoch: Option<u64>,
+    now: i64,
+) -> Result<DecryptedPrivateMoment, PrivateProjectionError> {
+    verify_response_integrity_at(
         session,
         expected_post_id,
         response,
         sender_signing_key,
         expected_recovery_epoch,
+        now,
     )?;
     let parts = private_response_parts(response)?;
     let metadata = parts.metadata;
@@ -2056,6 +2080,7 @@ mod tests {
                                 proof_key,
                                 now,
                             )),
+                            receiver_verified_sender_signing_key: None,
                         }),
                     },
                 )),
@@ -2385,7 +2410,7 @@ mod tests {
 
     #[test]
     fn secure_content_historical_proof_key_requires_current_station_pin() {
-        let now = 1_900_000_000;
+        let now = current_unix_seconds();
         let trusted = SigningKey::from_bytes(&[7; 32]);
         let historical = SigningKey::from_bytes(&[8; 32]);
         let session = session(&trusted);
@@ -2449,6 +2474,135 @@ mod tests {
             now,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn federated_private_text_decrypts_exact_receiver_projection() {
+        use crate::secure_content::store::{PublicationState, StoredPublication};
+
+        let response_bytes = hex::decode(
+            include_str!(
+                "../../../../../model/domain/social/testdata/federated_private_text_receiver_response.hex"
+            )
+            .trim(),
+        )
+        .unwrap();
+        let response =
+            social::GetMomentResourceResponse::decode(response_bytes.as_slice()).unwrap();
+        let private = match response
+            .resource
+            .as_ref()
+            .and_then(|resource| resource.body.as_ref())
+        {
+            Some(social::post_resource::Body::PrivateContent(private)) => private,
+            _ => panic!("fixture must contain receiver private content"),
+        };
+        let verification = private.verification.as_ref().unwrap();
+        let attestation = verification
+            .station_signing_key_attestation
+            .as_ref()
+            .unwrap();
+        let endpoint = match private
+            .viewer_envelope
+            .as_ref()
+            .and_then(|envelope| envelope.recipient.as_ref())
+        {
+            Some(wire::viewer_content_key_envelope::Recipient::Endpoint(endpoint)) => endpoint,
+            _ => panic!("fixture must contain Bob's endpoint envelope"),
+        };
+        let envelope = private.viewer_envelope.as_ref().unwrap();
+        let binding = envelope.binding.as_ref().unwrap();
+        let receiver_station_key = SigningKey::from_bytes(&[0x62; 32]);
+        let receiver_session = SecureContentSession::new(
+            crate::secure_content::SecureContentSessionKey {
+                station_peer_id: attestation.station_peer_id.clone(),
+                actor_ptid: endpoint.actor.as_ref().unwrap().ptid.clone(),
+                device_id: endpoint.device_id.clone(),
+                jwt_session_id: "fixture-session".to_string(),
+                window_label: "main".to_string(),
+                session_generation: 1,
+            },
+            "fixture-account".to_string(),
+            "https://station-remote.test".to_string(),
+            "fixture-token".to_string(),
+            "fixture-device-key".to_string(),
+            1,
+            SigningKey::from_bytes(&[9; 32]),
+            TrustedStationSigningKey {
+                key_id: attestation.attesting_signing_key_id.clone(),
+                verifying_key: receiver_station_key.verifying_key(),
+            },
+        );
+        let post_id = response
+            .resource
+            .as_ref()
+            .and_then(|resource| resource.metadata.as_ref())
+            .map(|metadata| metadata.post_id.as_str())
+            .unwrap();
+        let now = attestation.issued_at.as_ref().unwrap().seconds;
+        let sender = sender_key_requirement(post_id, &response).unwrap();
+        let sender_key = super::super::private_moment::receiver_verified_sender_signing_key(
+            &response,
+            &sender.sender,
+            sender.signing_key_id.as_deref().unwrap(),
+            sender.committed_at_unix_ms,
+        )
+        .unwrap()
+        .unwrap();
+        let endpoint_prekey = ContentPreKeyPrivate::from_bytes([0x0b; 32]);
+        let endpoint_public = *endpoint_prekey.public_key().as_bytes();
+        let store = SecureContentStore::in_memory().unwrap();
+        let publication_bytes = b"federated-private-text-fixture".to_vec();
+        store
+            .persist_prekey_publication(
+                &StoredPublication {
+                    command_id: "federated-private-text-fixture".to_string(),
+                    key_kind: wire::ContentPreKeyKind::ContentPrekeyKindEndpoint as i32,
+                    pool_epoch: envelope.principal_epoch,
+                    request_sha256: Sha256::digest(&publication_bytes).into(),
+                    request_bytes: publication_bytes,
+                    state: PublicationState::PendingPublication,
+                    lease_generation: 0,
+                    session_generation: 0,
+                },
+                &[(
+                    binding.recipient_key_id.clone(),
+                    Some(endpoint_prekey.to_bytes()),
+                    endpoint_public,
+                )],
+            )
+            .unwrap();
+
+        let decrypted = decrypt_projection_from_response_at(
+            &receiver_session,
+            &store,
+            post_id,
+            &response,
+            Some(&sender_key),
+            None,
+            None,
+            now,
+        )
+        .unwrap();
+        assert_eq!(
+            response
+                .explanation
+                .as_ref()
+                .and_then(|explanation| explanation.source.as_ref())
+                .map(|source| source.station_peer_id.as_str()),
+            Some("station-local"),
+        );
+        assert_eq!(attestation.station_peer_id, "station-remote");
+        assert_eq!(
+            decrypted.projection.content,
+            Some(PrivateMomentContentProjection::Text {
+                text: "cross-station exact text".to_string(),
+            }),
+        );
+        assert_eq!(
+            decrypted.consumed_prekey.as_deref(),
+            Some(binding.recipient_key_id.as_str()),
+        );
     }
 
     #[test]

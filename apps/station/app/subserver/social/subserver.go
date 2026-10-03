@@ -188,6 +188,16 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 	if err != nil {
 		return fmt.Errorf("initialize Social private content service: %w", err)
 	}
+	if err := s.privateContentSvc.ConfigureFederatedPrivateDelivery(
+		federationRuntime.LocalStationPeerID(),
+		privateFederationMembership,
+		momentEvents,
+	); err != nil {
+		return fmt.Errorf(
+			"configure Social private Federation delivery: %w",
+			err,
+		)
+	}
 	dataDirectory, err := appdir.Resolve("station", "data")
 	if err != nil {
 		return fmt.Errorf("resolve Social private object data directory: %w", err)
@@ -248,9 +258,15 @@ func (s *subServer) Init(ctx context.Context, _ ...option.Option) error {
 		); err != nil {
 			return err
 		}
-		return infrastructure.RegisterFederatedRelationshipReceiver(
+		if err := infrastructure.RegisterFederatedRelationshipReceiver(
 			registry,
 			s.federatedRelationshipSvc,
+		); err != nil {
+			return err
+		}
+		return infrastructure.RegisterFederatedPrivateResourceReceiver(
+			registry,
+			s.privateContentSvc,
 		)
 	}); err != nil {
 		return fmt.Errorf("register Social Federation receivers: %w", err)

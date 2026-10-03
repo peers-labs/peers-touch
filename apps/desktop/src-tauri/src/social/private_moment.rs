@@ -16,7 +16,7 @@ use secure_content_core::ports::{ObjectBlob, ObjectTransferRepository};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::model::{secure_content as wire, social};
+use crate::model::{actor, secure_content as wire, social};
 use crate::secure_content::adapter::{NativeErrorDisposition, SecureContentTransport};
 use crate::secure_content::recovery::open_recovery_content_key;
 use crate::secure_content::station_trust::{
@@ -1516,6 +1516,25 @@ impl<'a> PrivateMomentOrchestrator<'a> {
         )? {
             return Ok(Some(key));
         }
+        if let Some(key) = receiver_verified_sender_signing_key(
+            response,
+            &requirement.sender,
+            signing_key_id,
+            requirement.committed_at_unix_ms,
+        )? {
+            return Ok(Some(key));
+        }
+        let source_station_peer_id = response
+            .explanation
+            .as_ref()
+            .and_then(|explanation| explanation.source.as_ref())
+            .map(|source| source.station_peer_id.as_str())
+            .unwrap_or_default();
+        if !source_station_peer_id.is_empty()
+            && source_station_peer_id != self.lease.session.key.station_peer_id
+        {
+            return Err("remote private Moment sender signing key is unavailable".to_string());
+        }
         let profile = self
             .transport
             .get_actor_federation_profile(
@@ -1719,6 +1738,66 @@ impl<'a> PrivateMomentOrchestrator<'a> {
             Err("secure content session generation is stale".to_string())
         }
     }
+}
+
+pub(super) fn receiver_verified_sender_signing_key(
+    response: &social::GetMomentResourceResponse,
+    expected_sender: &actor::ActorDeviceRef,
+    expected_signing_key_id: &str,
+    committed_at_unix_ms: i64,
+) -> Result<Option<VerifyingKey>, String> {
+    let key = match response
+        .resource
+        .as_ref()
+        .and_then(|resource| resource.body.as_ref())
+        .and_then(|body| match body {
+            social::post_resource::Body::PrivateContent(private) => private.verification.as_ref(),
+            _ => None,
+        })
+        .and_then(|verification| verification.receiver_verified_sender_signing_key.as_ref())
+    {
+        Some(key) => key,
+        None => return Ok(None),
+    };
+    let expected_actor_ptid = expected_sender
+        .actor
+        .as_ref()
+        .map(|actor| actor.ptid.as_str())
+        .unwrap_or_default();
+    let source_station_peer_id = response
+        .explanation
+        .as_ref()
+        .and_then(|explanation| explanation.source.as_ref())
+        .map(|source| source.station_peer_id.as_str())
+        .unwrap_or_default();
+    if expected_actor_ptid.is_empty()
+        || expected_sender.device_id.is_empty()
+        || expected_signing_key_id.is_empty()
+        || source_station_peer_id.is_empty()
+        || key.actor_ptid != expected_actor_ptid
+        || key.actor_device_id != expected_sender.device_id
+        || key.home_station_peer_id != source_station_peer_id
+        || key.signing_key_id != expected_signing_key_id
+        || key.ed25519_public_key.len() != 32
+        || key.profile_version <= 0
+        || key.valid_from_unix_ms <= 0
+        || key.valid_from_unix_ms > committed_at_unix_ms
+        || (key.revoked_at_unix_ms != 0
+            && (key.revoked_at_unix_ms <= key.valid_from_unix_ms
+                || committed_at_unix_ms >= key.revoked_at_unix_ms))
+        || !matches!(
+            actor::ActorSigningKeyVerificationSource::try_from(key.verification_source).ok(),
+            Some(actor::ActorSigningKeyVerificationSource::VerifiedProfile)
+                | Some(actor::ActorSigningKeyVerificationSource::VerifiedLocator)
+        )
+    {
+        return Err("receiver-verified private Moment sender signing key is invalid".to_string());
+    }
+    VerifyingKey::from_bytes(key.ed25519_public_key.as_slice().try_into().map_err(|_| {
+        "receiver-verified private Moment sender signing key is invalid".to_string()
+    })?)
+    .map(Some)
+    .map_err(|_| "receiver-verified private Moment sender signing key is invalid".to_string())
 }
 
 fn private_moment_intent_hash(intent: &PrivateMomentPublishIntent) -> Result<[u8; 32], String> {
@@ -2595,6 +2674,91 @@ mod tests {
             .to_bytes()
             .to_vec();
         plan
+    }
+
+    #[test]
+    fn remote_sender_key_uses_receiver_verified_historical_projection() {
+        let sender_key = SigningKey::from_bytes(&[6; 32]);
+        let committed_at_unix_ms = 1_900_000_000_000;
+        let sender = actor::ActorDeviceRef {
+            actor: Some(actor::ActorRef {
+                ptid: "ptid:alice".to_string(),
+                kind: actor::ActorKind::Person as i32,
+                ..Default::default()
+            }),
+            device_id: "alice-device".to_string(),
+        };
+        let mut response = social::GetMomentResourceResponse {
+            explanation: Some(social::FeedObjectExplanation {
+                source: Some(social::ActivitySource {
+                    kind: social::activity_source::Kind::ActivitySourceRemote as i32,
+                    station_peer_id: "station-a".to_string(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            resource: Some(social::PostResource {
+                body: Some(social::post_resource::Body::PrivateContent(
+                    social::PrivateContentAccess {
+                        verification: Some(social::PrivateContentVerification {
+                            receiver_verified_sender_signing_key: Some(
+                                actor::VerifiedActorDeviceSigningKey {
+                                    actor_ptid: "ptid:alice".to_string(),
+                                    actor_device_id: "alice-device".to_string(),
+                                    home_station_peer_id: "station-a".to_string(),
+                                    signing_key_id: "alice-signing-key".to_string(),
+                                    ed25519_public_key: sender_key
+                                        .verifying_key()
+                                        .to_bytes()
+                                        .to_vec(),
+                                    profile_version: 7,
+                                    verification_source:
+                                        actor::ActorSigningKeyVerificationSource::VerifiedProfile
+                                            as i32,
+                                    valid_from_unix_ms: committed_at_unix_ms - 60_000,
+                                    revoked_at_unix_ms: committed_at_unix_ms + 1,
+                                },
+                            ),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let resolved = receiver_verified_sender_signing_key(
+            &response,
+            &sender,
+            "alice-signing-key",
+            committed_at_unix_ms,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(resolved, sender_key.verifying_key());
+
+        response
+            .resource
+            .as_mut()
+            .and_then(|resource| resource.body.as_mut())
+            .and_then(|body| match body {
+                social::post_resource::Body::PrivateContent(private) => {
+                    private.verification.as_mut()
+                }
+                _ => None,
+            })
+            .and_then(|verification| verification.receiver_verified_sender_signing_key.as_mut())
+            .unwrap()
+            .revoked_at_unix_ms = committed_at_unix_ms;
+        assert!(receiver_verified_sender_signing_key(
+            &response,
+            &sender,
+            "alice-signing-key",
+            committed_at_unix_ms,
+        )
+        .is_err());
     }
 
     #[test]
