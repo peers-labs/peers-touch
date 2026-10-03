@@ -3,6 +3,7 @@ package social
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"testing"
 	"time"
 
@@ -202,10 +203,20 @@ func TestPrivateContentAuthorSignatureVerifierUsesAuthorHomeStation(
 	if err != nil {
 		t.Fatal(err)
 	}
+	committedAt := time.Now().UTC()
 	actors := &recordingPrivateContentActorCapabilities{
 		homeStationPeerID: "station-author-home",
+		homeStationError:  errors.New("current Home Station route unavailable"),
 		key: &actormodel.VerifiedActorDeviceSigningKey{
-			Ed25519PublicKey: publicKey,
+			ActorPtid:         "alice",
+			ActorDeviceId:     "alice-device",
+			HomeStationPeerId: "station-author-home",
+			SigningKeyId:      "alice-signing-key",
+			Ed25519PublicKey:  publicKey,
+			ProfileVersion:    1,
+			VerificationSource: actormodel.
+				ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+			ValidFromUnixMs: committedAt.Add(-time.Minute).UnixMilli(),
 		},
 	}
 	canonical := []byte("private-content-author-signature")
@@ -221,9 +232,11 @@ func TestPrivateContentAuthorSignatureVerifierUsesAuthorHomeStation(
 		context.Background(),
 		testFederationTransaction{},
 		sender,
+		actors.homeStationPeerID,
 		"alice-signing-key",
 		canonical,
 		ed25519.Sign(privateKey, canonical),
+		committedAt,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -359,6 +372,20 @@ func (a *recordingPrivateContentActorCapabilities) ResolveVerifiedActorDeviceSig
 	a.resolvedDeviceID = deviceID
 	a.resolvedSigningKeyID = signingKeyID
 
+	return a.key, nil
+}
+
+func (a *recordingPrivateContentActorCapabilities) ResolveRetainedActorDeviceSigningKey(
+	_ context.Context,
+	_ federationdelivery.Transaction,
+	actorPTID string,
+	deviceID string,
+	signingKeyID string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	a.resolvedActorPTID = actorPTID
+	a.resolvedHomeStationPeerID = a.homeStationPeerID
+	a.resolvedDeviceID = deviceID
+	a.resolvedSigningKeyID = signingKeyID
 	return a.key, nil
 }
 
@@ -615,15 +642,33 @@ type recordingPrivateContentAuthorKeyResolver struct {
 func (r *recordingPrivateContentAuthorKeyResolver) ResolveVerifiedActorDeviceSigningKey(
 	_ context.Context,
 	_ federationdelivery.Transaction,
-	_ string,
+	actorPTID string,
 	expectedHomeStationPeerID string,
-	_ string,
-	_ string,
+	deviceID string,
+	signingKeyID string,
 ) (*actormodel.VerifiedActorDeviceSigningKey, error) {
 	r.expectedHomeStationPeerID = expectedHomeStationPeerID
 	return &actormodel.VerifiedActorDeviceSigningKey{
-		Ed25519PublicKey: append([]byte(nil), r.publicKey...),
+		ActorPtid:         actorPTID,
+		ActorDeviceId:     deviceID,
+		HomeStationPeerId: expectedHomeStationPeerID,
+		SigningKeyId:      signingKeyID,
+		Ed25519PublicKey:  append([]byte(nil), r.publicKey...),
+		ProfileVersion:    1,
+		VerificationSource: actormodel.
+			ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION,
+		ValidFromUnixMs: time.Now().Add(-time.Minute).UnixMilli(),
 	}, nil
+}
+
+func (r *recordingPrivateContentAuthorKeyResolver) ResolveRetainedActorDeviceSigningKey(
+	context.Context,
+	federationdelivery.Transaction,
+	string,
+	string,
+	string,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	return nil, nil
 }
 
 func (r *recordingPrivateContentAuthorKeyResolver) ResolveActorHomeStationPeerID(
@@ -653,9 +698,11 @@ func TestPrivateContentAuthorSignatureVerifierBindsLocalHomeStation(
 			Actor:    &actormodel.ActorRef{Ptid: "actor-alice"},
 			DeviceId: "device-one",
 		},
+		"station-local",
 		"signing-key-one",
 		canonical,
 		ed25519.Sign(privateKey, canonical),
+		time.Now(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -665,6 +712,59 @@ func TestPrivateContentAuthorSignatureVerifierBindsLocalHomeStation(
 			"expected Home Station = %q, want station-local",
 			resolver.expectedHomeStationPeerID,
 		)
+	}
+}
+
+func TestPrivateContentAuthorSignatureVerifierAcceptsRetainedKeyAtCommitTime(
+	t *testing.T,
+) {
+	committedAt := time.Date(2026, 10, 3, 20, 0, 0, 0, time.UTC)
+	resolver := &recordingPrivateContentActorCapabilities{
+		homeStationPeerID: "station-author-home",
+		homeStationError:  errors.New("current Home Station route unavailable"),
+		key: &actormodel.VerifiedActorDeviceSigningKey{
+			ActorPtid:         "ptid:alice",
+			ActorDeviceId:     "alice-device",
+			HomeStationPeerId: "station-author-home",
+			SigningKeyId:      "alice-signing-key",
+			Ed25519PublicKey:  make([]byte, ed25519.PublicKeySize),
+			ProfileVersion:    7,
+			VerificationSource: actormodel.
+				ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+			ValidFromUnixMs: committedAt.Add(-time.Minute).UnixMilli(),
+			RevokedAtUnixMs: committedAt.Add(time.Minute).UnixMilli(),
+		},
+	}
+	verifier := privateContentAuthorSignatureVerifier{
+		actors:             resolver,
+		localStationPeerID: "station-receiver",
+	}
+	sender := &actormodel.ActorDeviceRef{
+		Actor:    &actormodel.ActorRef{Ptid: "ptid:alice"},
+		DeviceId: "alice-device",
+	}
+
+	key, err := verifier.ResolveRetained(
+		context.Background(),
+		testFederationTransaction{},
+		sender,
+		"station-author-home",
+		"alice-signing-key",
+		committedAt,
+	)
+	if err != nil || key == nil {
+		t.Fatalf("retained key = %+v, error = %v", key, err)
+	}
+	resolver.key.RevokedAtUnixMs = committedAt.UnixMilli()
+	if _, err := verifier.ResolveRetained(
+		context.Background(),
+		testFederationTransaction{},
+		sender,
+		"station-author-home",
+		"alice-signing-key",
+		committedAt,
+	); err == nil {
+		t.Fatal("key revoked at commit time was accepted")
 	}
 }
 

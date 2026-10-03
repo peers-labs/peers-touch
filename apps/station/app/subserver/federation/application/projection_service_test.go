@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/peers-labs/peers-touch/station/app/subserver/federation/domain"
@@ -9,6 +10,7 @@ import (
 
 type federatedContentPreKeyFederationRepo struct {
 	record *domain.FederationRecord
+	err    error
 }
 
 func (*federatedContentPreKeyFederationRepo) Create(
@@ -22,7 +24,7 @@ func (r *federatedContentPreKeyFederationRepo) GetByID(
 	context.Context,
 	string,
 ) (*domain.FederationRecord, error) {
-	return r.record, nil
+	return r.record, r.err
 }
 
 func (*federatedContentPreKeyFederationRepo) ListByStation(
@@ -51,6 +53,7 @@ func (*federatedContentPreKeyFederationRepo) UpdateStatus(
 
 type federatedContentPreKeyMembershipRepo struct {
 	records map[string]*domain.MembershipRecord
+	err     error
 }
 
 func (*federatedContentPreKeyMembershipRepo) Upsert(
@@ -65,7 +68,7 @@ func (r *federatedContentPreKeyMembershipRepo) GetByStation(
 	_ string,
 	stationPeerID string,
 ) (*domain.MembershipRecord, error) {
-	return r.records[stationPeerID], nil
+	return r.records[stationPeerID], r.err
 }
 
 func (*federatedContentPreKeyMembershipRepo) ListByFederation(
@@ -115,12 +118,29 @@ func TestFederatedContentPreKeyRequiresActiveStationPair(t *testing.T) {
 		t.Fatal(err)
 	}
 	memberships.records["station-target"].Status = "left"
-	if err := service.ValidateActiveStationPair(
+	err := service.ValidateActiveStationPair(
 		context.Background(),
 		"federation-one",
 		"station-source",
 		"station-target",
-	); err == nil {
-		t.Fatal("inactive target Station was accepted")
+	)
+	if !errors.Is(err, domain.ErrInactiveStationPair) {
+		t.Fatalf("inactive target Station error = %v", err)
+	}
+
+	repositoryErr := errors.New("temporary Federation repository failure")
+	memberships.records["station-target"].Status = "active"
+	memberships.err = repositoryErr
+	err = service.ValidateActiveStationPair(
+		context.Background(),
+		"federation-one",
+		"station-source",
+		"station-target",
+	)
+	if !errors.Is(err, repositoryErr) {
+		t.Fatalf("repository error = %v", err)
+	}
+	if errors.Is(err, domain.ErrInactiveStationPair) {
+		t.Fatalf("repository error classified as inactive pair: %v", err)
 	}
 }

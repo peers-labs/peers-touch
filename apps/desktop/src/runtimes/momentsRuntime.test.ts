@@ -214,6 +214,117 @@ afterEach(() => {
 });
 
 describe('momentsRuntime identity fence', () => {
+  it('loads an imported private Moment while the Moments page is unopened', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+
+    const wake = {
+      eventId: 'remote-private-event-1',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId: '01REMOTEPRIVATEPOST',
+      authorActorPtid: 'ptid:alice',
+      occurredAtUnixMs: 456,
+      audience: 'FRIENDS',
+    };
+    eventBus.publish(EVENT.MOMENT_CREATED, wake);
+
+    await vi.waitFor(() => {
+      expect(mocks.moments.loadPost).toHaveBeenCalledWith(
+        '01REMOTEPRIVATEPOST',
+      );
+      expect(mocks.privateMoments.readMoment).toHaveBeenCalledWith(
+        '01REMOTEPRIVATEPOST',
+      );
+      expect(mocks.moments.syncProjection).toHaveBeenCalledWith(
+        'event:moment.created',
+      );
+    });
+
+    eventBus.publish(EVENT.MOMENT_CREATED, wake);
+    await Promise.resolve();
+    expect(mocks.privateMoments.readMoment).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects imported Moment wakes from another actor or Station scope', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+
+    eventBus.publish(EVENT.MOMENT_CREATED, {
+      eventId: 'remote-private-wrong-actor',
+      targetActorPtid: 'ptid:bob',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId: '01WRONGACTOR',
+      authorActorPtid: 'ptid:alice',
+      occurredAtUnixMs: 456,
+      audience: 'FRIENDS',
+    });
+    eventBus.publish(EVENT.MOMENT_CREATED, {
+      eventId: 'remote-private-wrong-station',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-b',
+      stationUrl: 'https://station-b.test',
+      postId: '01WRONGSTATION',
+      authorActorPtid: 'ptid:alice',
+      occurredAtUnixMs: 457,
+      audience: 'FRIENDS',
+    });
+    eventBus.publish(EVENT.MOMENT_CREATED, {
+      eventId: 'remote-private-wrong-session',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 2,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId: '01WRONGSESSION',
+      authorActorPtid: 'ptid:alice',
+      occurredAtUnixMs: 458,
+      audience: 'FRIENDS',
+    });
+    await Promise.resolve();
+
+    expect(mocks.privateMoments.readMoment).not.toHaveBeenCalled();
+    expect(mocks.moments.syncProjection).not.toHaveBeenCalled();
+  });
+
+  it('allows a failed imported Moment wake to retry under the same event ID', async () => {
+    momentsRuntime.install();
+    await flushRuntime();
+    vi.clearAllMocks();
+    mocks.moments.loadPost
+      .mockRejectedValueOnce(new Error('temporary read failure'))
+      .mockResolvedValueOnce(undefined);
+
+    const wake = {
+      eventId: 'remote-private-retry',
+      targetActorPtid: 'ptid:alice',
+      sessionEpoch: 1,
+      stationPeerId: 'station-a',
+      stationUrl: 'https://station-a.test',
+      postId: '01REMOTERETRY',
+      authorActorPtid: 'ptid:bob',
+      occurredAtUnixMs: 458,
+      audience: 'FRIENDS',
+    };
+    eventBus.publish(EVENT.MOMENT_CREATED, wake);
+    await vi.waitFor(() => {
+      expect(mocks.moments.loadPost).toHaveBeenCalledTimes(1);
+    });
+    eventBus.publish(EVENT.MOMENT_CREATED, wake);
+    await vi.waitFor(() => {
+      expect(mocks.privateMoments.readMoment).toHaveBeenCalledWith(
+        '01REMOTERETRY',
+      );
+    });
+    expect(mocks.moments.loadPost).toHaveBeenCalledTimes(2);
+  });
+
   it('returns typed readiness for one remote recipient before publish', async () => {
     momentsRuntime.install();
     await flushRuntime();

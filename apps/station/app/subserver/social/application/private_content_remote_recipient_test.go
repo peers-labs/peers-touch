@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestRemoteRecipientAdmissionRejectsBroadFriendsAudienceWithoutClaim(
+func TestRemoteRecipientAdmissionClaimsSingleRemoteFriendsAudience(
 	t *testing.T,
 ) {
 	fixture := newPrivateContentServiceFixture(t)
@@ -29,7 +29,7 @@ func TestRemoteRecipientAdmissionRejectsBroadFriendsAudienceWithoutClaim(
 	}
 	fixture.service.recipients = recipients
 
-	_, err := fixture.service.PreparePrivateMoment(
+	prepared, err := fixture.service.PreparePrivateMoment(
 		context.Background(),
 		fixture.author,
 		privateMomentPrepareRequest(
@@ -37,16 +37,17 @@ func TestRemoteRecipientAdmissionRejectsBroadFriendsAudienceWithoutClaim(
 			"content-broad-remote-friends",
 		),
 	)
-	if !socialdomain.IsPrivateContentCode(
-		err,
-		socialdomain.PrivateContentUnsupported,
-	) {
-		t.Fatalf("broad FRIENDS remote admission error = %v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if recipients.preKeyTargetCalls != 0 ||
-		fixture.keyExchange.claimCalls != 0 {
+	if prepared.GetPlan() == nil ||
+		prepared.GetPlan().GetResource().GetContentId() == "" {
+		t.Fatalf("remote FRIENDS plan = %+v", prepared.GetPlan())
+	}
+	if recipients.preKeyTargetCalls != 1 ||
+		fixture.keyExchange.claimCalls != 1 {
 		t.Fatalf(
-			"broad FRIENDS target/claim calls = %d/%d, want 0/0",
+			"remote FRIENDS target/claim calls = %d/%d, want 1/1",
 			recipients.preKeyTargetCalls,
 			fixture.keyExchange.claimCalls,
 		)

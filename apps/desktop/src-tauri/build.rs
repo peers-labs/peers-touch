@@ -115,6 +115,7 @@ fn compile_protos() {
         "domain/social/relationship.proto",
         "domain/social/circle.proto",
         "domain/social/private_content.proto",
+        "domain/social/private_federation.proto",
         "domain/agent/skill.proto",
         "domain/agent/memory.proto",
         "domain/realtime/event.proto",

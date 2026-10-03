@@ -18,6 +18,7 @@ import (
 	securecontentpb "github.com/peers-labs/peers-touch/station/frame/core/types/securecontent"
 	actormodel "github.com/peers-labs/peers-touch/station/frame/touch/model"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type privateContentActorCapabilities interface {
@@ -42,6 +43,13 @@ type privateContentActorCapabilities interface {
 		transaction federationdelivery.Transaction,
 		actorPTID string,
 		expectedHomeStationPeerID string,
+		deviceID string,
+		signingKeyID string,
+	) (*actormodel.VerifiedActorDeviceSigningKey, error)
+	ResolveRetainedActorDeviceSigningKey(
+		ctx context.Context,
+		transaction federationdelivery.Transaction,
+		actorPTID string,
 		deviceID string,
 		signingKeyID string,
 	) (*actormodel.VerifiedActorDeviceSigningKey, error)
@@ -281,6 +289,16 @@ func (d *privateContentRecipientDirectory) ValidateActiveEndpoint(
 ) error {
 	if endpoint == nil || endpoint.GetActor() == nil {
 		return errors.New("active endpoint is required")
+	}
+	homeStationPeerID, err := d.actors.ResolveActorHomeStationPeerID(
+		ctx,
+		endpoint.GetActor().GetPtid(),
+	)
+	if err != nil {
+		return err
+	}
+	if homeStationPeerID != d.runtime.LocalStationPeerID() {
+		return application.ErrPrivateContentInactiveEndpoint
 	}
 	manifest, err := d.endpointManifest(
 		ctx,
@@ -711,6 +729,209 @@ func (s privateContentStationSigner) AttestContentProofVerificationKey(
 	)
 }
 
+func (s privateContentStationSigner) AttestContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	if s.proofKeyAuthority == nil ||
+		transaction == nil ||
+		transaction.DB() == nil {
+		return nil, errors.New(
+			"Social private transactional proof-key authority is unavailable",
+		)
+	}
+	proofKey, err :=
+		s.proofKeyAuthority.ResolveContentProofVerificationKeyInTransaction(
+			ctx,
+			transaction.DB(),
+			s.stationPeerID,
+			signingKeyID,
+		)
+	if err != nil {
+		return nil, err
+	}
+	return s.attestImportedContentProofVerificationKeyInTransaction(
+		ctx,
+		transaction,
+		signingKeyID,
+		proofKey,
+		now,
+	)
+}
+
+func (s privateContentStationSigner) TrustImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	sourceStationPeerID string,
+	signingKeyID string,
+	proofKey []byte,
+	observedAt time.Time,
+) error {
+	if s.proofKeyAuthority == nil ||
+		transaction == nil ||
+		transaction.DB() == nil {
+		return errors.New(
+			"Social private imported proof-key authority is unavailable",
+		)
+	}
+	return s.proofKeyAuthority.
+		TrustImportedContentProofVerificationKeyInTransaction(
+			ctx,
+			transaction.DB(),
+			sourceStationPeerID,
+			signingKeyID,
+			proofKey,
+			observedAt,
+		)
+}
+
+func (s privateContentStationSigner) AttestImportedContentProofVerificationKey(
+	ctx context.Context,
+	sourceStationPeerID string,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	if s.proofKeyAuthority == nil {
+		return nil, errors.New(
+			"Social private imported proof-key authority is unavailable",
+		)
+	}
+	proofKey, err := s.proofKeyAuthority.ResolveContentProofVerificationKey(
+		ctx,
+		sourceStationPeerID,
+		signingKeyID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestingKeyID, err := s.SigningKeyID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	attestation, signingBytes, err := importedProofKeyAttestation(
+		s.stationPeerID,
+		signingKeyID,
+		proofKey,
+		attestingKeyID,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	signature, err := s.Sign(ctx, attestingKeyID, signingBytes)
+	if err != nil {
+		return nil, err
+	}
+	attestation.StationSignature = signature
+	return attestation, nil
+}
+
+func (s privateContentStationSigner) AttestImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	sourceStationPeerID string,
+	signingKeyID string,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	if s.proofKeyAuthority == nil ||
+		transaction == nil ||
+		transaction.DB() == nil {
+		return nil, errors.New(
+			"Social private transactional imported proof-key authority is unavailable",
+		)
+	}
+	proofKey, err :=
+		s.proofKeyAuthority.ResolveContentProofVerificationKeyInTransaction(
+			ctx,
+			transaction.DB(),
+			sourceStationPeerID,
+			signingKeyID,
+		)
+	if err != nil {
+		return nil, err
+	}
+	return s.attestImportedContentProofVerificationKeyInTransaction(
+		ctx,
+		transaction,
+		signingKeyID,
+		proofKey,
+		now,
+	)
+}
+
+func (s privateContentStationSigner) attestImportedContentProofVerificationKeyInTransaction(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	signingKeyID string,
+	proofKey []byte,
+	now time.Time,
+) (*securecontentpb.StationContentSigningKeyAttestation, error) {
+	attestingKeyID, err := s.SigningKeyIDInTransaction(ctx, transaction)
+	if err != nil {
+		return nil, err
+	}
+	attestation, signingBytes, err := importedProofKeyAttestation(
+		s.stationPeerID,
+		signingKeyID,
+		proofKey,
+		attestingKeyID,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	signature, err := s.SignInTransaction(
+		ctx,
+		transaction,
+		attestingKeyID,
+		signingBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	attestation.StationSignature = signature
+	return attestation, nil
+}
+
+func importedProofKeyAttestation(
+	stationPeerID string,
+	proofSigningKeyID string,
+	proofKey []byte,
+	attestingSigningKeyID string,
+	now time.Time,
+) (
+	*securecontentpb.StationContentSigningKeyAttestation,
+	[]byte,
+	error,
+) {
+	if now.IsZero() {
+		return nil, nil, errors.New(
+			"Social private proof-key attestation time is required",
+		)
+	}
+	issuedAt := now.UTC()
+	attestation := &securecontentpb.StationContentSigningKeyAttestation{
+		FormatVersion:         authfed.ContentProofKeyAttestationFormatVersion,
+		StationPeerId:         stationPeerID,
+		ProofSigningKeyId:     proofSigningKeyID,
+		ProofEd25519PublicKey: append([]byte(nil), proofKey...),
+		AttestingSigningKeyId: attestingSigningKeyID,
+		IssuedAt:              timestamppb.New(issuedAt),
+		ExpiresAt: timestamppb.New(
+			issuedAt.Add(authfed.ContentProofKeyAttestationTTL),
+		),
+	}
+	signingBytes, err := authfed.ContentProofKeyAttestationSigningBytes(
+		attestation,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return attestation, signingBytes, nil
+}
+
 type privateContentAuthorSignatureVerifier struct {
 	actors             privateContentActorCapabilities
 	localStationPeerID string
@@ -720,50 +941,150 @@ func (v privateContentAuthorSignatureVerifier) Verify(
 	ctx context.Context,
 	transaction federationdelivery.Transaction,
 	sender *actormodel.ActorDeviceRef,
+	expectedHomeStationPeerID string,
 	signingKeyID string,
 	canonical []byte,
 	signature []byte,
+	committedAt time.Time,
 ) error {
 	if v.actors == nil ||
 		strings.TrimSpace(v.localStationPeerID) == "" ||
 		sender == nil ||
 		sender.GetActor() == nil ||
 		len(canonical) == 0 ||
-		len(signature) != ed25519.SignatureSize {
+		len(signature) != ed25519.SignatureSize ||
+		committedAt.IsZero() {
 		return errors.New("Social private author signature is incomplete")
 	}
 	actorPTID := sender.GetActor().GetPtid()
-	homeStationPeerID, err := v.actors.ResolveActorHomeStationPeerID(
-		ctx,
-		actorPTID,
-	)
-	if err != nil {
-		return err
-	}
-	if homeStationPeerID != v.localStationPeerID {
-		return errors.New("Social private author is not homed on this Station")
-	}
-	key, err := v.actors.ResolveVerifiedActorDeviceSigningKey(
+	key, err := v.actors.ResolveRetainedActorDeviceSigningKey(
 		ctx,
 		transaction,
 		actorPTID,
-		homeStationPeerID,
 		sender.GetDeviceId(),
 		signingKeyID,
 	)
 	if err != nil {
 		return err
 	}
-	if key == nil ||
-		len(key.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
-		!ed25519.Verify(
-			ed25519.PublicKey(key.GetEd25519PublicKey()),
-			canonical,
-			signature,
-		) {
+	if key == nil {
+		homeStationPeerID, err := v.actors.ResolveActorHomeStationPeerID(
+			ctx,
+			actorPTID,
+		)
+		if err != nil {
+			return err
+		}
+		if homeStationPeerID != expectedHomeStationPeerID {
+			return errors.New("Social private author Home Station changed")
+		}
+		key, err = v.actors.ResolveVerifiedActorDeviceSigningKey(
+			ctx,
+			transaction,
+			actorPTID,
+			homeStationPeerID,
+			sender.GetDeviceId(),
+			signingKeyID,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	if err := validatePrivateContentAuthorKey(
+		key,
+		sender,
+		expectedHomeStationPeerID,
+		signingKeyID,
+		committedAt,
+	); err != nil {
+		return err
+	}
+	if !ed25519.Verify(
+		ed25519.PublicKey(key.GetEd25519PublicKey()),
+		canonical,
+		signature,
+	) {
 		return errors.New("Social private author signature is invalid")
 	}
 	return nil
+}
+
+func (v privateContentAuthorSignatureVerifier) ResolveRetained(
+	ctx context.Context,
+	transaction federationdelivery.Transaction,
+	sender *actormodel.ActorDeviceRef,
+	expectedHomeStationPeerID string,
+	signingKeyID string,
+	committedAt time.Time,
+) (*actormodel.VerifiedActorDeviceSigningKey, error) {
+	if v.actors == nil ||
+		strings.TrimSpace(v.localStationPeerID) == "" ||
+		transaction == nil ||
+		sender == nil ||
+		sender.GetActor() == nil ||
+		committedAt.IsZero() {
+		return nil, errors.New(
+			"Social private retained author signing key request is incomplete",
+		)
+	}
+	actorPTID := sender.GetActor().GetPtid()
+	key, err := v.actors.ResolveRetainedActorDeviceSigningKey(
+		ctx,
+		transaction,
+		actorPTID,
+		sender.GetDeviceId(),
+		signingKeyID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePrivateContentAuthorKey(
+		key,
+		sender,
+		expectedHomeStationPeerID,
+		signingKeyID,
+		committedAt,
+	); err != nil {
+		return nil, err
+	}
+	return proto.Clone(key).(*actormodel.VerifiedActorDeviceSigningKey), nil
+}
+
+func validatePrivateContentAuthorKey(
+	key *actormodel.VerifiedActorDeviceSigningKey,
+	sender *actormodel.ActorDeviceRef,
+	expectedHomeStationPeerID string,
+	signingKeyID string,
+	committedAt time.Time,
+) error {
+	actorPTID := sender.GetActor().GetPtid()
+	committedAtUnixMS := committedAt.UTC().UnixMilli()
+	if key == nil ||
+		key.GetActorPtid() != actorPTID ||
+		key.GetActorDeviceId() != sender.GetDeviceId() ||
+		key.GetHomeStationPeerId() != expectedHomeStationPeerID ||
+		key.GetSigningKeyId() != signingKeyID ||
+		len(key.GetEd25519PublicKey()) != ed25519.PublicKeySize ||
+		key.GetProfileVersion() <= 0 ||
+		key.GetValidFromUnixMs() <= 0 ||
+		key.GetValidFromUnixMs() > committedAtUnixMS ||
+		(key.GetRevokedAtUnixMs() != 0 &&
+			(key.GetRevokedAtUnixMs() <= key.GetValidFromUnixMs() ||
+				committedAtUnixMS >= key.GetRevokedAtUnixMs())) {
+		return errors.New(
+			"Social private retained author signing key is invalid at commit time",
+		)
+	}
+	switch key.GetVerificationSource() {
+	case actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_LOCAL_DEVICE_REGISTRATION,
+		actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_PROFILE,
+		actormodel.ActorSigningKeyVerificationSource_ACTOR_SIGNING_KEY_VERIFICATION_SOURCE_VERIFIED_LOCATOR:
+		return nil
+	default:
+		return errors.New(
+			"Social private retained author signing key has no trusted verification source",
+		)
+	}
 }
 
 type privateContentSystemClock struct{}
